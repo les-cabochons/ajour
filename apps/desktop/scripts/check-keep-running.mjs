@@ -472,6 +472,10 @@ async function main() {
       .press("Escape")
       .catch(() => panel.keyboard.press("Escape"));
     await panel.getByLabel("Hours", { exact: true }).fill("0:30");
+    // The picker fades out; capture the composer without it.
+    await panel
+      .locator('[data-slot="popover-content"]')
+      .waitFor({ state: "detached" });
     await panel.screenshot({
       path: path.join(captureDir, "tray-panel-entry.png"),
     });
@@ -487,6 +491,9 @@ async function main() {
         ),
       { what: "the panel to hide" },
     );
+    // Hiding blurs the panel, and a tray click within 150 ms of a blur is
+    // the click that dismissed it, so it is ignored.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await trayClick("Timer panel");
     await panel.getByLabel("Hours", { exact: true }).waitFor();
     expect(
@@ -530,6 +537,9 @@ async function main() {
         .count()) === 1,
       "the panel total counts a continued entry once",
     );
+    await panel.screenshot({
+      path: path.join(captureDir, "tray-panel-running.png"),
+    });
     await panel
       .getByRole("list", { name: "Time entries" })
       .getByRole("button", { name: "Stop timer", exact: true })

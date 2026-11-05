@@ -363,7 +363,15 @@ const trayPanel = createTrayPanelController({
   getBounds: () => tray.bounds(),
   getWorkArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
   request: () => sendTrayPanelState("open"),
-  visibility: (visible) => sendTrayPanelState(visible ? "show" : "hide"),
+  visibility: (visible) => {
+    // The panel's document runs on its owner's frame clock, which Chromium
+    // pauses while the owner is hidden: popups would freeze mid-animation.
+    // The owner runs unthrottled only while the panel shows.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.setBackgroundThrottling(!visible);
+    }
+    sendTrayPanelState(visible ? "show" : "hide");
+  },
 });
 
 // Returns false when there is no window to render the panel.

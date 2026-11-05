@@ -147,7 +147,7 @@ describe("the compact timer panel", () => {
     fireEvent.change(screen.getByLabelText("Hours"), {
       target: { value: "0:30" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create entry" }));
     expect(
       localStore
         .snapshot()

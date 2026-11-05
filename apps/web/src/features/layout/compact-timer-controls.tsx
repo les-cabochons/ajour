@@ -2,9 +2,12 @@ import type { ReactNode } from "react";
 import { RiAddLine, RiPlayFill, RiStopFill } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
-import { Value } from "@/components/ui/value";
-import { formatElapsedDuration } from "@/domain/time/running-entry";
-import { useRunningEntry } from "@/features/layout/timer-dock";
+import {
+  DOCK_PRIMARY_BUTTON_CLASS,
+  NEW_ENTRY_BUTTON_CLASS,
+  RunningEntryCardBody,
+  useRunningEntry,
+} from "@/features/layout/timer-dock";
 import type { TimeEntryEditorTarget } from "@/features/time/time-entry-editor-form";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -38,6 +41,11 @@ export function TrackButton({
   );
 }
 
+/**
+ * The panel's timer card, the sidebar dock's twin: "+" and Start at rest; the
+ * running entry's card with "+" and Stop in its corner while one runs. Its
+ * editors open in the panel instead of a popover.
+ */
 export function PanelTimer({
   onEdit,
   disabled = false,
@@ -47,71 +55,69 @@ export function PanelTimer({
 }) {
   const { timer, summary, runningDurationMs } = useRunningEntry();
   const today = useTodayIsoDate();
+  const newEntry = (
+    <TooltipButton
+      label="Create time entry"
+      className={NEW_ENTRY_BUTTON_CLASS}
+      render={<button type="button" disabled={disabled} />}
+      onClick={() => onEdit({ kind: "create", localDate: today })}
+    >
+      <RiAddLine className="size-4" />
+    </TooltipButton>
+  );
+  if (!timer || !summary) {
+    return (
+      <section
+        aria-label="Timer"
+        className="mx-2.5 mt-2.5 flex items-center gap-1.5 rounded-md border bg-background p-2.5"
+      >
+        {newEntry}
+        <TooltipButton
+          label="Start timer"
+          className={DOCK_PRIMARY_BUTTON_CLASS}
+          render={<button type="button" disabled={disabled} />}
+          onClick={() => {
+            localStore.startTimer({});
+            const started = localStore.snapshot().timers[0];
+            if (started) onEdit({ kind: "running", timer: started });
+          }}
+        >
+          <RiPlayFill className="size-3.5" />
+        </TooltipButton>
+      </section>
+    );
+  }
   return (
     <section
-      aria-label="Timer"
-      className="mx-2.5 mt-2.5 rounded-md border bg-background p-2.5"
+      aria-label="Running entry"
+      className="relative mx-2.5 mt-2.5 rounded-md border bg-background"
     >
-      {timer && summary ? (
-        <button
-          disabled={disabled}
-          className="mb-2 block w-full truncate text-left text-sm font-medium"
-          onClick={() => onEdit({ kind: "running", timer })}
-        >
-          {summary.title}
-        </button>
-      ) : null}
-      <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        aria-label="Edit the running entry"
+        disabled={disabled}
+        className="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
+        onClick={() => onEdit({ kind: "running", timer })}
+      >
+        <RunningEntryCardBody
+          summary={summary}
+          runningDurationMs={runningDurationMs}
+        />
+      </button>
+      <span className="absolute top-2 right-2 flex gap-1">
+        {newEntry}
         <TooltipButton
-          label="Create time entry"
-          render={
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={disabled}
-              onClick={() => onEdit({ kind: "create", localDate: today })}
-            />
-          }
+          label="Stop timer"
+          className={DOCK_PRIMARY_BUTTON_CLASS}
+          render={<button type="button" disabled={disabled} />}
+          onClick={() => {
+            if (localStore.snapshot().timers.some((t) => t._id === timer._id))
+              localStore.saveTimer(timer._id);
+          }}
         >
-          <RiAddLine />
+          <RiStopFill className="size-3.5" />
         </TooltipButton>
-        <TooltipButton
-          label={timer ? "Stop timer" : "Start timer"}
-          render={
-            <Button
-              size="icon"
-              disabled={disabled}
-              className="bg-foreground text-background hover:bg-foreground/85"
-              onClick={() => {
-                if (timer) {
-                  if (
-                    localStore
-                      .snapshot()
-                      .timers.some((item) => item._id === timer._id)
-                  )
-                    localStore.saveTimer(timer._id);
-                } else {
-                  localStore.startTimer({});
-                  const started = localStore.snapshot().timers[0];
-                  if (started) onEdit({ kind: "running", timer: started });
-                }
-              }}
-            />
-          }
-        >
-          {timer ? <RiStopFill /> : <RiPlayFill />}
-        </TooltipButton>
-        {timer ? (
-          <Value size="lg" className="ml-1">
-            {formatElapsedDuration(runningDurationMs)}
-          </Value>
-        ) : null}
-      </div>
-      {summary?.meta ? (
-        <div className="mt-2 truncate text-xs text-muted-foreground">
-          {summary.meta}
-        </div>
-      ) : null}
+      </span>
     </section>
   );
 }

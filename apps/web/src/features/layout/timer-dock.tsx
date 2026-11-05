@@ -150,10 +150,7 @@ function StopButton({
     <TooltipButton
       label="Stop"
       shortcut="entry.stop-or-start"
-      className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85",
-        className,
-      )}
+      className={cn(DOCK_PRIMARY_BUTTON_CLASS, className)}
       onClick={() => localStore.saveTimer(timerId)}
     >
       <StopIcon className="size-3.5" />
@@ -161,7 +158,7 @@ function StopButton({
   );
 }
 
-const NEW_ENTRY_BUTTON_CLASS =
+export const NEW_ENTRY_BUTTON_CLASS =
   "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring";
 
 /** The docks' "+". It opens the new entry editor in a popover anchored to it. */
@@ -210,17 +207,71 @@ function WindowNewEntryButton() {
   );
 }
 
+/** The dock's Start and Stop: the strongest control in the card. */
+export const DOCK_PRIMARY_BUTTON_CLASS =
+  "flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85";
+
 /** Starts an empty entry and opens its editor. */
 function StartButton() {
   return (
     <TooltipButton
       label="Start"
       shortcut="entry.stop-or-start"
-      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85"
+      className={DOCK_PRIMARY_BUTTON_CLASS}
       onClick={startBlankEntry}
     >
       <PlayIcon className="size-3.5" />
     </TooltipButton>
+  );
+}
+
+/**
+ * What the running entry's card shows: its title, the time counted, and how
+ * much of the item's remaining estimate it uses. The sidebar dock and the
+ * desktop tray panel share it.
+ */
+export function RunningEntryCardBody({
+  summary,
+  runningDurationMs,
+}: {
+  summary: NonNullable<ReturnType<typeof useRunningEntry>["summary"]>;
+  runningDurationMs: number;
+}) {
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-2 pr-16">
+        <RunningDot />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {summary.title}
+        </span>
+      </span>
+      <span className="mt-2 mb-1.5 block font-mono text-xl leading-none font-medium tabular-nums">
+        {formatElapsedDuration(runningDurationMs)}
+      </span>
+      {summary.estimateUsed !== undefined ? (
+        <span className="block h-[3px] overflow-hidden rounded-full bg-foreground/10">
+          <span
+            className={cn(
+              "block h-full",
+              summary.remainingMs !== undefined && summary.remainingMs < 0
+                ? "bg-destructive"
+                : "bg-[var(--success)]",
+            )}
+            style={{ width: `${summary.estimateUsed * 100}%` }}
+          />
+        </span>
+      ) : null}
+      {summary.meta || summary.remainingMs !== undefined ? (
+        <span className="mt-1.5 flex justify-between gap-2 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate">{summary.meta}</span>
+          {summary.remainingMs !== undefined ? (
+            <span className="shrink-0">
+              {formatRemainingEstimate(summary.remainingMs)}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -280,38 +331,10 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <span className="flex min-w-0 items-center gap-2 pr-16">
-          <RunningDot />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {summary.title}
-          </span>
-        </span>
-        <span className="mt-2 mb-1.5 block font-mono text-xl leading-none font-medium tabular-nums">
-          {formatElapsedDuration(runningDurationMs)}
-        </span>
-        {summary.estimateUsed !== undefined ? (
-          <span className="block h-[3px] overflow-hidden rounded-full bg-foreground/10">
-            <span
-              className={cn(
-                "block h-full",
-                summary.remainingMs !== undefined && summary.remainingMs < 0
-                  ? "bg-destructive"
-                  : "bg-[var(--success)]",
-              )}
-              style={{ width: `${summary.estimateUsed * 100}%` }}
-            />
-          </span>
-        ) : null}
-        {summary.meta || summary.remainingMs !== undefined ? (
-          <span className="mt-1.5 flex justify-between gap-2 text-xs text-muted-foreground">
-            <span className="min-w-0 truncate">{summary.meta}</span>
-            {summary.remainingMs !== undefined ? (
-              <span className="shrink-0">
-                {formatRemainingEstimate(summary.remainingMs)}
-              </span>
-            ) : null}
-          </span>
-        ) : null}
+        <RunningEntryCardBody
+          summary={summary}
+          runningDurationMs={runningDurationMs}
+        />
       </TimeEntryEditorPopover>
       <span className="absolute top-2 right-2 flex gap-1">
         {newEntryButton}
