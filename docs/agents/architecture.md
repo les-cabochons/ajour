@@ -742,11 +742,16 @@ version 1. Legacy data shape API 1 packages stay installed and cannot execute
 ("This plugin needs an update"). Both development and packaged builds run
 shapes through the sandboxed renderer runtime, and the catalog installs them
 like any plugin.
-The data-shape host reads
-the same development plugin directories as the plugin host (Settings > Debug,
-`AJOUR_DEV_PLUGIN_DIRS`). A renderer and its storage are keyed by plugin id, so
-a shape that takes the id of a plugin host package from another folder is
-refused, with the reason in its error. A shape may also declare no connection
+The data-shape host runs only the packages the plugin host holds, and only
+when the plugin host would run them: the plugin's switch, the unsigned plugins
+setting, consent to what it reaches, the "keeps stopping" suspension and the
+package-change guard, through `PluginManager.admitPackageOperation`, which
+applies the plugin host's own gate. A shape that is off is neither listed in
+Projects import and export nor run. A package change waits for a running shape
+operation, and a switch, the unsigned setting or an uninstall cancels one. The
+plugin host holds the development plugin directories (Settings > Debug,
+`AJOUR_DEV_PLUGIN_DIRS`), so a shape in one is held and gated the same way; a
+folder it doesn't hold is not read. A shape may also declare no connection
 access.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday

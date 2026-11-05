@@ -1,5 +1,6 @@
 import os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
+import { InvalidPluginResultError } from "./event-errors.ts";
 import { PluginOperationLifetime } from "./plugin-operation-lifetime.ts";
 import type {
   PluginInvocation,
@@ -115,6 +116,105 @@ describe("plugin operation lifetime", () => {
     expect(await b).toBeInstanceOf(Error);
     expect(runs.every((run) => run.terminated.length === 1)).toBe(true);
   });
+  it("cancels only the plugin's operations whose method matches", async () => {
+    const { host, runs } = setup();
+    const start = (method: string) =>
+      host.run("github", method, async () => ({
+        invocation: { ...invocation, pluginId: "github", method },
+        parse: (value: unknown) => value,
+      }));
+    const pullRequests = start("syncPullRequests").catch((e) => e);
+    const workItems = start("syncConnection").catch((e) => e);
+    await waitForWorkerStart();
+
+    const cancelled = await host.cancel(
+      new Error("Pull requests turned off"),
+      "capability_off",
+      "github",
+      (method) => method === "syncPullRequests",
+    );
+
+    expect(cancelled).toBe(1);
+    expect(await pullRequests).toMatchObject({
+      message: "Pull requests turned off",
+      reason: "capability_off",
+    });
+    expect(host.activeOperationCount).toBe(1);
+    expect(runs[0]!.terminated).toEqual(["cancelled"]);
+    expect(runs[1]!.terminated).toEqual([]);
+    await host.shutdown();
+    expect(await workItems).toBeInstanceOf(Error);
+  });
+
+  it("releases its slot after a result fails validation", async () => {
+    const { host, runs } = setup();
+    const result = host
+      .run("test", "sync", async () => ({
+        invocation,
+        parse: () => {
+          throw new Error("Invalid response");
+        },
+      }))
+      .catch((e) => e);
+    await waitForWorkerStart();
+    runs[0]!.complete({ ok: true, result: null });
+
+    expect(await result).toBeInstanceOf(InvalidPluginResultError);
+    expect(runs[0]!.terminated).toEqual(["settled"]);
+    expect(host.activeOperationCount).toBe(0);
+  });
+
+  it("releases its slot when the run fails to start or exits before replying", async () => {
+    const { host, runs, run } = setup();
+    const refusing = run();
+    await waitForWorkerStart();
+    runs[0]!.complete({
+      ok: false,
+      failure: "runtime_unavailable",
+      reason: "No sandbox on this computer.",
+    });
+    await expect(refusing).rejects.toMatchObject({
+      reason: "runtime_unavailable",
+    });
+    expect(host.activeOperationCount).toBe(0);
+
+    const exiting = run();
+    await waitForWorkerStart();
+    runs[1]!.complete({ ok: false, failure: "exited_early", exitCode: 3 });
+    await expect(exiting).rejects.toThrow(
+      'Plugin "test" exited before returning a result (code 3).',
+    );
+    expect(host.activeOperationCount).toBe(0);
+
+    const crashing = run();
+    await waitForWorkerStart();
+    runs[2]!.complete({ ok: false, failure: "crashed", cause: "oom" });
+    await expect(crashing).rejects.toMatchObject({ reason: "crashed" });
+    expect(host.activeOperationCount).toBe(0);
+  });
+
+  it("marks an error it cuts with an ellipsis, so the host can tell a cut secret", async () => {
+    const { runs, run } = setup();
+    const result = run().catch((e) => e);
+    await waitForWorkerStart();
+    runs[0]!.complete({
+      ok: false,
+      failure: "plugin_error",
+      message: "x".repeat(5000),
+    });
+
+    expect(((await result) as Error).message).toBe(`${"x".repeat(4_095)}…`);
+  });
+
+  it("never fails with a blank message", async () => {
+    const { runs, run } = setup();
+    const result = run().catch((e) => e);
+    await waitForWorkerStart();
+    runs[0]!.complete({ ok: false, failure: "plugin_error", message: "   " });
+
+    expect(((await result) as Error).message).toBe("Unknown plugin error.");
+  });
+
   it("waits for running operations up to a limit, as a quit drains them", async () => {
     const finishes = deferred<void>();
     const host = new PluginOperationLifetime<string>({

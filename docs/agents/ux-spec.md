@@ -1090,8 +1090,12 @@ non-secret settings and imported data remain. Team sync stays paused until a
 compatible port exists. The standalone API runs no plugins and reports
 "Plugins need the desktop app". Catalog fallback entries target API 4 and
 include ICS, and the catalog installs schema packages such as Workday project
-data like any other plugin. The source owner publishes the signed catalog with
-the six ports.
+data like any other plugin. A schema package is a plugin like the rest: it
+stays inactive until the user turns it on, so Settings › Projects and the
+import and export pickers list only the schemas that are on, and no import or
+export runs for one that is off, unsigned while unsigned plugins are off, held
+for more access, or suspended for stopping. The source owner publishes the
+signed catalog with the six ports.
 
 The first launch of a build that moves a user to API 4 changes one saved value
 on its own. A GitHub connection saved as `www.github.com`, `http://github.com`
