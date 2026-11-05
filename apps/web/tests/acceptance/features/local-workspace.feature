@@ -203,6 +203,15 @@ Feature: Open the local time workspace
     And I double-click Monday's first entry while watching its composer
     Then the entry composer opened below that entry without sliding
 
+  Scenario: An open entry composer centers when the window narrows, and floats again when it widens
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I double-click Monday's first entry while watching its composer
+    And the window is 390 pixels wide
+    Then the entry composer is centered in the window
+    When the window is 1440 pixels wide
+    Then the entry composer floats below that entry
+
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
     When I open the Week Days view

@@ -365,12 +365,15 @@
 /* A floating composer: a card at the top right of the window, with no
    backdrop and no dock, so the page behind stays live: its rows, keys and
    menus keep working while a form is open (forms council round 8). */
+/* --composer-top is where placeFloatingComposer puts the card, below the day
+   strip or the row it edits; the card stops 16px short of the window's
+   bottom from there. */
 [data-slot="dialog-content"].composer-floating {
-  top: 64px;
+  top: var(--composer-top, 64px);
   right: 16px;
   left: auto;
   width: min(30rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 80px);
+  max-height: calc(100dvh - var(--composer-top, 64px) - 16px);
   translate: none;
   transform: none;
   box-shadow: var(--shadow-popup);

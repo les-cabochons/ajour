@@ -3358,6 +3358,30 @@ Then(
   },
 );
 
+Then("the entry composer is centered in the window", async ({ page }) => {
+  const composer = page.getByRole("dialog", { name: /time entry$/ });
+  await expect(composer).not.toHaveClass(/composer-floating/);
+  // Its open animation has ended; the narrow dialog has none to wait for.
+  await page.waitForTimeout(300);
+  const box = (await composer.boundingBox())!;
+  const window = page.viewportSize()!;
+  const above = box.y;
+  const below = window.height - (box.y + box.height);
+  expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
+});
+
+Then("the entry composer floats below that entry", async ({ page }) => {
+  const composer = page.getByRole("dialog", { name: /time entry$/ });
+  await expect(composer).toHaveClass(/composer-floating/);
+  await page.waitForTimeout(300);
+  const row = (await page
+    .locator("main [data-entry-id]")
+    .first()
+    .boundingBox())!;
+  const box = (await composer.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(row.y + row.height);
+});
+
 Then("the Day view is visible", async ({ page }) => {
   await expect(page.locator(".day-strip")).toBeVisible();
   await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
