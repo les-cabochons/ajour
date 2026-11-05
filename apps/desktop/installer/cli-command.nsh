@@ -1,5 +1,14 @@
 !include "LogicLib.nsh"
 
+; Only the ordinary uninstall removes the optional CLI. An update keeps it.
+!macro customUnInstall
+  ${IfNot} ${isUpdated}
+    Call un.RemoveAjourCommand
+  ${EndIf}
+!macroend
+
+!ifdef BUILD_UNINSTALLER
+
 ; Each directory must exist, be a directory and not be a reparse point.
 ; The caller closes this LogicLib If so guards can nest.
 !macro AjourSafeDirectory DIR
@@ -79,12 +88,40 @@ Function un.AjourUuid
   uuidDone:
 FunctionEnd
 
-; Only the ordinary uninstall removes the optional CLI. An update keeps it.
-!macro customUnInstall
-  ${IfNot} ${isUpdated}
-    Call un.RemoveAjourCommand
-  ${EndIf}
-!macroend
+; Input $R5, output $R0. Accept only the controller's Windows ZIP names.
+Function un.AjourArchiveName
+  StrCpy $R0 0
+  StrCpy $0 $R5 6
+  StrCmpS $0 "ajour-" 0 archiveDone
+  StrCpy $0 $R5 "" -16
+  StrCmpS $0 "-windows-x64.zip" archiveX64
+  StrCpy $0 $R5 "" -18
+  StrCmpS $0 "-windows-arm64.zip" 0 archiveDone
+  StrCpy $1 18
+  Goto archiveVersion
+  archiveX64:
+    StrCpy $1 16
+  archiveVersion:
+    StrLen $0 $R5
+    IntOp $0 $0 - $1
+    IntCmp $0 6 archiveDone archiveDone
+    StrCpy $1 6
+  archiveLoop:
+    StrCpy $2 $R5 1 $1
+    StrCpy $3 0
+    archiveCharacter:
+      StrCpy $4 "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-+" 1 $3
+      StrCmpS $4 "" archiveDone
+      StrCmpS $2 $4 archiveNext
+      IntOp $3 $3 + 1
+      Goto archiveCharacter
+    archiveNext:
+      IntOp $1 $1 + 1
+      IntCmp $1 $0 archiveValid archiveLoop archiveDone
+  archiveValid:
+    StrCpy $R0 1
+  archiveDone:
+FunctionEnd
 
 Function un.RemoveAjourCommand
   Push $0
@@ -199,7 +236,18 @@ Function un.RemoveAjourCommand
                 !insertmacro AjourArchiveDocs "$8\$R4\unpacked"
                 RMDir "$8\$R4\unpacked"
               ${EndIf}
-              ; Unknown archive names and all other entries stay untouched.
+              FindFirst $R1 $R5 "$8\$R4\*"
+              stagingArchives:
+                StrCmp $R5 "" stagingArchivesDone
+                Call un.AjourArchiveName
+                StrCmp $R0 1 0 nextStagingArchive
+                Delete "$8\$R4\$R5"
+                nextStagingArchive:
+                  FindNext $R1 $R5
+                  Goto stagingArchives
+              stagingArchivesDone:
+                FindClose $R1
+              ; Unknown entries keep the directory nonempty and stay untouched.
               RMDir "$8\$R4"
             ${EndIf}
             Goto nextLeftover
@@ -246,3 +294,4 @@ Function un.RemoveAjourCommand
   Pop $1
   Pop $0
 FunctionEnd
+!endif
