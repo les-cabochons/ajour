@@ -28,7 +28,7 @@ describe("project task editor", () => {
       name: "Build",
       billable: true,
       budget: "12:30",
-      adjustment: "-01:30",
+      adjustment: "-1:30",
     });
   });
 

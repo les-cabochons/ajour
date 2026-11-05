@@ -11,6 +11,7 @@ import {
   RiArrowLeftLine as ArrowLeft,
   RiCloseCircleLine as NoProject,
   RiSubtractLine as NoTask,
+  RiFolderLine as EmptyProjectIcon,
 } from "@remixicon/react";
 import {
   Command,
@@ -379,7 +380,14 @@ export function ProjectTaskPicker({
             color={selectedProject.color}
             className="size-4 shrink-0"
           />
-        ) : null}
+        ) : (
+          // Empty, the picker names what it picks with its mark (forms
+          // council round 9).
+          <EmptyProjectIcon
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+        )}
         <span
           className={cn(
             "min-w-0 flex-1 truncate",

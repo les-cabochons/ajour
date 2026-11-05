@@ -205,7 +205,7 @@ Then("the Settle state draft remains Unlisted", async ({ page }) => {
   const select = page
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByLabel("State", { exact: true });
-  await expect(select).toHaveText("Unlisted");
+  await expect(select).toContainText("Unlisted");
 });
 Then(
   "Settle requires an available state before submitting",
@@ -374,7 +374,9 @@ Then(
   async ({ page }, state: string, priority: string) => {
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("State", { exact: true })).toHaveText(state);
+    await expect(dialog.getByLabel("State", { exact: true })).toContainText(
+      state,
+    );
     await expect(dialog.getByLabel("Priority", { exact: true })).toHaveText(
       PRIORITY_NAMES[priority] ?? priority,
     );

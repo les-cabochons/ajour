@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { RiFolderLine as EmptyProjectIcon } from "@remixicon/react";
+import { ProjectIcon } from "@/lib/project-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -110,6 +112,13 @@ function CreateTaskForm({
     const option = (project: LocalProject) => ({
       value: project._id,
       label: getLocalProjectDisplayName(project),
+      icon: (
+        <ProjectIcon
+          icon={project.icon}
+          color={project.color}
+          className="size-3.5 shrink-0"
+        />
+      ),
     });
     const recent = recentIds.flatMap((id) => {
       const project = activeProjects.find((item) => item._id === id);
@@ -192,7 +201,19 @@ function CreateTaskForm({
               iconLabel
               className="composer-chip"
               value={projectId}
-              options={[{ value: "", label: "Project", disabled: true }]}
+              options={[
+                {
+                  value: "",
+                  label: "Project",
+                  disabled: true,
+                  icon: (
+                    <EmptyProjectIcon
+                      aria-hidden
+                      className="size-3.5 text-muted-foreground"
+                    />
+                  ),
+                },
+              ]}
               groups={projectGroups}
               onChange={setProjectId}
             />

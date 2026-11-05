@@ -191,8 +191,10 @@ export function SnoozePickerHost() {
     >
       <DialogContent className="max-w-sm gap-4">
         <DialogHeader className="gap-1">
-          <DialogTitle>Snooze until</DialogTitle>
-          <DialogDescription className="truncate">{title}</DialogDescription>
+          <DialogTitle className="composer-kicker">Snooze until</DialogTitle>
+          <DialogDescription className="truncate text-[15px] font-semibold text-foreground">
+            {title}
+          </DialogDescription>
           {target?.kind === "backlog-item" && target.request?.comment ? (
             <DialogDescription>
               Your comment is posted with the snooze.
@@ -228,6 +230,7 @@ export function SnoozePickerHost() {
             <Suspense fallback={<div className="min-w-0 flex-1" />}>
               <div className="composer-date">
                 <DateField
+                  chip
                   aria-label="Custom date"
                   calendarLabel="Pick the day"
                   value={customDate}

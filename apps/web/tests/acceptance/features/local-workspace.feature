@@ -319,7 +319,7 @@ Feature: Open the local time workspace
     And I press New backlog item in the sidebar header
     Then the New backlog item dialog opens over the open entry
     When I cancel the New backlog item dialog
-    Then the open entry still shows "02:00" hours with the note
+    Then the open entry still shows "2:00" hours with the note
 
   Scenario: Create a backlog item from the sidebar header while the Backlog page creates one
     Given I have no saved Ajour workspace

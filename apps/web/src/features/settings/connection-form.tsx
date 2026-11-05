@@ -247,11 +247,11 @@ export function PluginConnectionForm({
         />
       </FieldGroup>
       {saveHint ? (
-        <p className="max-w-lg text-xs text-muted-foreground" data-save-hint>
+        <p className="max-w-xl text-xs text-muted-foreground" data-save-hint>
           {saveHint}
         </p>
       ) : null}
-      <div className="flex max-w-lg flex-wrap justify-end gap-2 pt-2">
+      <div className="flex max-w-xl flex-wrap justify-end gap-2 pt-2">
         <Button variant="ghost" disabled={isMutating} onClick={onCancel}>
           Cancel
         </Button>

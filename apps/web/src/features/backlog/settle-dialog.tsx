@@ -383,8 +383,10 @@ export function SettleDialogHost() {
     >
       <DialogContent className="max-w-sm gap-4">
         <DialogHeader className="gap-1">
-          <DialogTitle>Settle</DialogTitle>
-          <DialogDescription className="truncate">
+          {/* The composer's header: the verb as a quiet kicker, the item
+              as the subject (forms council round 9). */}
+          <DialogTitle className="composer-kicker">Settle</DialogTitle>
+          <DialogDescription className="truncate text-[15px] font-semibold text-foreground">
             {workItem?.title}
           </DialogDescription>
         </DialogHeader>
@@ -405,6 +407,7 @@ export function SettleDialogHost() {
                 label="State"
                 size="sm"
                 className="composer-chip"
+                prefix={<span className="text-muted-foreground">State ·</span>}
                 value={stateName}
                 invalid={load.status === "ready" && !stateDraftValid}
                 disabled={load.status !== "ready" || pending}

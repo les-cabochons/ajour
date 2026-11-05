@@ -5,6 +5,7 @@ import {
   FieldTitle,
 } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import type { PluginField, PluginFieldValue } from "@ajour/shared";
@@ -55,7 +56,8 @@ function PluginFieldInput({
         )}
         <div className="connection-row-value">
           {field.type === "checkbox" ? (
-            <Checkbox
+            // A yes-or-no setting is a switch, as on every settings row.
+            <Switch
               id={field.id}
               checked={value === true}
               onCheckedChange={(checked) => onChange(checked)}
@@ -95,7 +97,10 @@ function PluginFieldInput({
                 }
                 onChange(event.target.value);
               }}
-              placeholder={field.placeholder || "Empty"}
+              // An empty value reads as empty, never as a saved one.
+              placeholder={
+                field.placeholder ? `e.g. ${field.placeholder}` : "Not set"
+              }
               autoComplete="off"
             />
           )}
@@ -108,6 +113,7 @@ function PluginFieldInput({
     return (
       <SecretFieldInput
         field={field}
+        row={row}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
         binding={

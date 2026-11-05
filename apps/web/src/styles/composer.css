@@ -364,3 +364,53 @@
   box-shadow: var(--shadow-popup);
   border: 1px solid var(--border);
 }
+
+/* Writing that can change says so: a faint tint on hover and a ring on
+   keyboard focus, with no border at rest and no change of size (forms
+   council round 9). */
+.composer :is(.composer-title, .composer-subtitle, textarea.composer-note) {
+  border-radius: 4px;
+}
+
+.composer
+  :is(.composer-title, .composer-subtitle, textarea.composer-note):hover {
+  background: oklch(from var(--foreground) l c h / 4%);
+  box-shadow: 0 0 0 4px oklch(from var(--foreground) l c h / 4%);
+}
+
+.composer
+  :is(
+    .composer-title,
+    .composer-subtitle,
+    textarea.composer-note
+  ):focus-visible {
+  /* A text field matches focus-visible on every focus: a tint, not a ring,
+     so the title never turns back into a box. */
+  background: oklch(from var(--foreground) l c h / 5%);
+  box-shadow: 0 0 0 4px oklch(from var(--foreground) l c h / 5%);
+}
+
+/* A modal over a floating composer, such as Create task opened from its
+   task chip, dims the composer too: one form is active at a time. */
+body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
+  [data-slot="dialog-content"].composer-floating,
+[data-slot="dialog-content"].composer-floating[data-nested-dialog-open] {
+  filter: brightness(0.55);
+  pointer-events: none;
+}
+
+/* A reminder date in a connection row: the typed date reads as text until
+   hovered, as the row's other values. */
+.connection-rows .inline-field-date [data-slot="input"] {
+  width: calc(12ch + 44px);
+  margin-inline-start: -10px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.connection-rows
+  .inline-field-date
+  [data-slot="input"]:is(:hover, :focus-visible) {
+  border-color: var(--field-border);
+  background: var(--field-bg);
+}

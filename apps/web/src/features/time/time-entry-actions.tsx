@@ -346,10 +346,12 @@ export function useTimeEntryActions({
     >
       <DialogContent className="w-auto gap-4">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="composer-kicker">
             {isMove ? `Move ${dialogSubject}` : `Duplicate ${dialogSubject}`}
           </DialogTitle>
-          <DialogDescription>Choose the destination date.</DialogDescription>
+          <DialogDescription className="text-[15px] font-semibold text-foreground">
+            Pick the day it goes to
+          </DialogDescription>
         </DialogHeader>
         <Calendar
           mode="single"

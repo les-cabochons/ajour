@@ -59,6 +59,7 @@ export function OptionSelect<T extends string>({
   size = "sm",
   iconValue = false,
   iconLabel = false,
+  prefix,
   className,
 }: {
   id?: string;
@@ -74,6 +75,8 @@ export function OptionSelect<T extends string>({
   iconValue?: boolean;
   /** Shows the chosen option's icon before its label, as a composer chip does. */
   iconLabel?: boolean;
+  /** Names the property in the trigger before its value: "State · Active". */
+  prefix?: ReactNode;
   className?: string;
 }) {
   const all = [...(options ?? []), ...(groups ?? []).flatMap((g) => g.options)];
@@ -133,13 +136,21 @@ export function OptionSelect<T extends string>({
         </Tooltip>
       ) : iconLabel && chosen ? (
         trigger(
-          <SelectValue>
-            {chosen.icon}
-            {chosen.label}
-          </SelectValue>,
+          <>
+            {prefix}
+            <SelectValue>
+              {chosen.icon}
+              {chosen.label}
+            </SelectValue>
+          </>,
         )
       ) : (
-        trigger(<SelectValue />)
+        trigger(
+          <>
+            {prefix}
+            <SelectValue />
+          </>,
+        )
       )}
       <SelectContent>
         {options?.map(renderItem)}

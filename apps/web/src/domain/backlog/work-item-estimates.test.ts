@@ -172,7 +172,7 @@ describe("getWorkItemEstimateSummary", () => {
         remainingEstimateHours: 1,
         completedEstimateHours: 1,
       }),
-    ).toBe("Original 08:00 · Remaining 01:00 · Completed 01:00");
+    ).toBe("Original 8:00 · Remaining 1:00 · Completed 1:00");
   });
 
   it("returns null when all estimate values are empty or zero", () => {
@@ -193,16 +193,16 @@ describe("getWorkItemEstimateBadgeLabel", () => {
         remainingEstimateHours: 1,
         completedEstimateHours: 1,
       }),
-    ).toBe("01:00 | 01:00");
+    ).toBe("1:00 | 1:00");
   });
 
-  it("shows remaining and 00:00 when remaining exists but completed is missing", () => {
+  it("shows remaining and 0:00 when remaining exists but completed is missing", () => {
     expect(
       getWorkItemEstimateBadgeLabel({
         remainingEstimateHours: 1,
         completedEstimateHours: undefined,
       }),
-    ).toBe("01:00 | 00:00");
+    ).toBe("1:00 | 0:00");
   });
 
   it("shows completed only when no remaining time exists", () => {
@@ -211,27 +211,27 @@ describe("getWorkItemEstimateBadgeLabel", () => {
         remainingEstimateHours: 0,
         completedEstimateHours: 1.5,
       }),
-    ).toBe("01:30");
+    ).toBe("1:30");
   });
 
-  it("shows 00:00 when completed is missing and no remaining time exists", () => {
+  it("shows 0:00 when completed is missing and no remaining time exists", () => {
     expect(
       getWorkItemEstimateBadgeLabel({
         originalEstimateHours: 2,
         remainingEstimateHours: 0,
         completedEstimateHours: undefined,
       }),
-    ).toBe("00:00");
+    ).toBe("0:00");
   });
 
-  it("shows 00:00 when every estimate is zero", () => {
+  it("shows 0:00 when every estimate is zero", () => {
     expect(
       getWorkItemEstimateBadgeLabel({
         originalEstimateHours: 0,
         remainingEstimateHours: 0,
         completedEstimateHours: 0,
       }),
-    ).toBe("00:00");
+    ).toBe("0:00");
   });
 });
 

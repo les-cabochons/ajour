@@ -111,7 +111,7 @@ export function TimeEntryFields({
           projectId={projectId}
           taskId={taskId}
           onChange={onProjectTaskChange}
-          placeholder="Task"
+          placeholder="Project"
           className="time-entry-task-picker composer-task-chip"
         />
         {localDate !== undefined ? (
@@ -120,6 +120,7 @@ export function TimeEntryFields({
               Date
             </label>
             <DateField
+              chip
               id={dateId}
               value={localDate}
               onChange={(value) => onDateChange?.(value)}
