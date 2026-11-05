@@ -278,6 +278,61 @@ export async function mergePullRequest(connection) {
 };
 
 /**
+ * A project source. Every name, code, URL and group in its snapshot is
+ * marked, and so is its cursor. It answers `unchanged` only to the cursor it gave.
+ */
+const canaryProjectSource: TestPlugin = {
+  id: "canary-projects",
+  displayName: "Canary projects",
+  capabilities: { projectSource: {} },
+  connectionFields: [
+    { id: "label", label: "Label", type: "text", required: true },
+    { id: "tenantLabel", label: "Site", type: "text", required: true },
+    { id: "siteUrl", label: "Site URL", type: "url", required: true },
+    {
+      id: "token",
+      label: "Token",
+      type: "password",
+      required: true,
+      secret: true,
+    },
+  ],
+  network: {
+    auth: { scheme: "bearer", secretField: "token" },
+    baseAddress: { field: "siteUrl" },
+    endpoints: [{ method: "GET", path: "/" }],
+  },
+  source: `
+const MARKER = ${JSON.stringify(MARKER)};
+const CURSOR = 'W/"' + MARKER + '"';
+export async function validateConnection(connection) {
+  return { normalizedConfig: connection.config, connectionSummary: {} };
+}
+export async function syncProjects(connection, request) {
+  if (request.cursor === CURSOR) return { unchanged: true };
+  return {
+    cursor: CURSOR,
+    snapshot: {
+      source: { label: "Source " + MARKER, url: connection.config.siteUrl },
+      asOf: "2026-10-31T23:59:59.000Z",
+      me: { hoursAvailable: false, hoursNote: "Note " + MARKER },
+      projects: [{
+        remoteId: "p-" + MARKER, name: "Project " + MARKER, code: "CODE-" + MARKER,
+        url: connection.config.siteUrl + "/projects/" + MARKER,
+        client: "Client " + MARKER, complete: false,
+        budget: { unit: "hours", total: 40, consumed: 31.5, status: "warning" },
+        tasks: [{
+          remoteId: "t-" + MARKER, name: "Task " + MARKER, group: "Phase " + MARKER,
+          closed: false, assigned: true,
+        }],
+      }],
+    },
+  };
+}
+`,
+};
+
+/**
  * Where the marker may stay: the error message of a `plugin_operation` event
  * and of the `request` event of the call that ran it, and nothing else. ADR
  * 0011 makes `error.message` a sensitive field: the scrubber removes the
@@ -507,7 +562,10 @@ const callCodeHost = (operation: string, body: unknown) =>
   );
 
 beforeAll(async () => {
-  api = await startLocalApi({ plugin: canaryPlugin });
+  api = await startLocalApi({
+    plugin: canaryPlugin,
+    morePlugins: [canaryProjectSource],
+  });
   vi.resetModules();
   vi.stubEnv("VITE_APP_API_BASE_URL", api.baseUrl);
   vi.stubGlobal("fetch", fetchAsTheApp);
@@ -1021,6 +1079,46 @@ describe("the privacy canary", () => {
           `api request pull_request.${name}`,
           `api plugin_operation pull_request.${name}`,
         ]),
+      ]),
+    );
+    expectNoLeak();
+  });
+
+  it("keeps a project source's snapshot and cursor out of every event", async () => {
+    const from = mark();
+    const { connection } = await app.appApi.savePluginConnection(
+      "canary-projects",
+      {
+        label: `Projects ${MARKER}`,
+        tenantLabel: `Site ${MARKER}`,
+        siteUrl: SITE,
+        token: SECRET,
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+      },
+    );
+    // No client in the renderer calls it yet: called as the route takes it.
+    const sync = async () => {
+      const response = await fetchAsTheApp(
+        `${api.baseUrl}/api/plugins/canary-projects/connections/${connection.id}/sync-projects`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trigger: "manual" }),
+        },
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as Record<string, unknown>;
+    };
+
+    expect(JSON.stringify(await sync())).toContain(`Project ${MARKER}`);
+    // The second sync sends the marked cursor back, and nothing changed.
+    expect(await sync()).toMatchObject({ unchanged: true });
+
+    expect(namesSince(from)).toEqual(
+      expect.arrayContaining([
+        "api request project_source.sync",
+        "api plugin_operation project_source.sync",
       ]),
     );
     expectNoLeak();

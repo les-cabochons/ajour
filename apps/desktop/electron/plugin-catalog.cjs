@@ -29,6 +29,7 @@ const INSTALLABLE_CAPABILITIES = new Set([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
   "agentTask",
   "schema",
 ]);

@@ -59,12 +59,13 @@ export type PluginManifest = {
     codeHost?: {} | undefined;
     calendar?: {} | undefined;
     team?: { apiVersion: 1 } | undefined;
+    projectSource?: {} | undefined;
     agentTask?:
       | {
           tasks: {
             id: string;
-            prompt: string;
             label: string;
+            prompt: string;
             placement: "commit-week" | "submit-week";
             estimateMinutes: number;
             tools: (
@@ -107,9 +108,9 @@ export type PluginManifest = {
               | {
                   type:
                     | "number"
+                    | "url"
                     | "text"
                     | "password"
-                    | "url"
                     | "select"
                     | "checkbox";
                   id: string;
@@ -124,7 +125,12 @@ export type PluginManifest = {
                   max?: number | undefined;
                   step?: number | undefined;
                   capability?:
-                    "connector" | "codeHost" | "calendar" | "team" | undefined;
+                    | "connector"
+                    | "codeHost"
+                    | "calendar"
+                    | "team"
+                    | "projectSource"
+                    | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
               | undefined;
@@ -158,7 +164,7 @@ export type PluginManifest = {
   entrypoint?: string | undefined;
   connectionFields?:
     | {
-        type: "number" | "text" | "password" | "url" | "select" | "checkbox";
+        type: "number" | "url" | "text" | "password" | "select" | "checkbox";
         id: string;
         label: string;
         options?: { value: string; label: string }[] | undefined;
@@ -170,7 +176,13 @@ export type PluginManifest = {
         min?: number | undefined;
         max?: number | undefined;
         step?: number | undefined;
-        capability?: "connector" | "codeHost" | "calendar" | "team" | undefined;
+        capability?:
+          | "connector"
+          | "codeHost"
+          | "calendar"
+          | "team"
+          | "projectSource"
+          | undefined;
         passToPlugin?: boolean | undefined;
       }[]
     | undefined;
@@ -203,6 +215,7 @@ export type PluginManifest = {
                 pathPrefix?: string | undefined;
                 keepBasePath?: boolean | undefined;
               }[];
+              label?: string | undefined;
               endpoints?:
                 | {
                     path: string;
@@ -211,7 +224,6 @@ export type PluginManifest = {
                     access?: string | undefined;
                   }[]
                 | undefined;
-              label?: string | undefined;
             }[]
           | undefined;
         endpoints?:
@@ -242,7 +254,7 @@ export type PluginManifest = {
 
 /** A connection field or agent task setting. Secret fields never reach the plugin. */
 export type PluginField = {
-  type: "number" | "text" | "password" | "url" | "select" | "checkbox";
+  type: "number" | "url" | "text" | "password" | "select" | "checkbox";
   id: string;
   label: string;
   options?: { value: string; label: string }[] | undefined;
@@ -254,7 +266,13 @@ export type PluginField = {
   min?: number | undefined;
   max?: number | undefined;
   step?: number | undefined;
-  capability?: "connector" | "codeHost" | "calendar" | "team" | undefined;
+  capability?:
+    | "connector"
+    | "codeHost"
+    | "calendar"
+    | "team"
+    | "projectSource"
+    | undefined;
   passToPlugin?: boolean | undefined;
 };
 
@@ -284,6 +302,7 @@ export type PluginNetwork = {
           pathPrefix?: string | undefined;
           keepBasePath?: boolean | undefined;
         }[];
+        label?: string | undefined;
         endpoints?:
           | {
               path: string;
@@ -291,7 +310,6 @@ export type PluginNetwork = {
               access?: string | undefined;
             }[]
           | undefined;
-        label?: string | undefined;
       }[]
     | undefined;
   endpoints?:
@@ -326,6 +344,7 @@ export type PluginDerivedHost = {
     pathPrefix?: string | undefined;
     keepBasePath?: boolean | undefined;
   }[];
+  label?: string | undefined;
   endpoints?:
     | {
         path: string;
@@ -333,7 +352,6 @@ export type PluginDerivedHost = {
         access?: string | undefined;
       }[]
     | undefined;
-  label?: string | undefined;
 };
 
 /** A method and path pattern: `*` matches one segment, `**` the rest. */
@@ -349,8 +367,8 @@ export type PluginHttpMethod =
 /** The connection each operation receives, without its secret fields. */
 export type PluginConnection = {
   id: string;
-  access: string[];
   label: string;
+  access: string[];
   pluginId: string;
   tenantLabel: string;
   autoSync: boolean;
@@ -361,7 +379,9 @@ export type PluginConnection = {
 };
 
 export type ValidationContext = {
-  capabilities: ("connector" | "codeHost" | "calendar" | "team")[];
+  capabilities: (
+    "connector" | "codeHost" | "calendar" | "team" | "projectSource"
+  )[];
 };
 
 export type ValidationResult = {
@@ -406,8 +426,8 @@ export type BacklogSyncWorkItem = {
 export type BacklogSyncResult = {
   items: {
     sourceId: string;
-    tenantLabel: string;
     source: string;
+    tenantLabel: string;
     connectionId: string;
     connectionLabel: string;
     externalId: string;
@@ -588,7 +608,7 @@ export type CodeHostOperations = {
           threadId?: string | undefined;
         }[];
         url: string;
-        state: "merged" | "open" | "closed";
+        state: "closed" | "merged" | "open";
         title: string;
         repository: string;
         draft: boolean;
@@ -743,7 +763,7 @@ export type CodeHostOperations = {
   };
   readonly browsePullRequests: {
     request: {
-      state: "all" | "merged" | "open" | "closed";
+      state: "closed" | "all" | "merged" | "open";
       cursor?: string | undefined;
       author?: string | undefined;
       text?: string | undefined;
@@ -762,7 +782,7 @@ export type CodeHostOperations = {
         createdAt: number;
         updatedAt: number;
         url: string;
-        state: "merged" | "open" | "closed";
+        state: "closed" | "merged" | "open";
         title: string;
         repository: string;
         draft: boolean;
@@ -1050,4 +1070,136 @@ export type DataShapeImportResult = {
     name?: string | undefined;
     color?: string | undefined;
   }[];
+};
+
+/** What `syncProjects` receives: the cursor Ajour kept from the last sync, absent on the first. */
+export type ProjectSourceSyncRequest = { cursor?: string | undefined };
+
+/** What `syncProjects` answers: the snapshot and the next cursor, or that nothing changed. */
+export type ProjectSourceSyncResult =
+  | { unchanged: true }
+  | {
+      snapshot: {
+        projects: {
+          code: string;
+          name: string;
+          remoteId: string;
+          tasks: {
+            name: string;
+            remoteId: string;
+            assigned: boolean;
+            closed: boolean;
+            billable?: boolean | undefined;
+            group?: string | undefined;
+            estimateHours?: number | undefined;
+            myHours?: number | undefined;
+          }[];
+          complete: boolean;
+          url?: string | undefined;
+          client?: string | undefined;
+          startsOn?: string | undefined;
+          endsOn?: string | undefined;
+          budget?:
+            | {
+                unit: "hours" | "money";
+                consumed: number;
+                status?: "unknown" | "ok" | "warning" | "over" | undefined;
+                total?: number | undefined;
+                remaining?: number | undefined;
+              }
+            | undefined;
+        }[];
+        source: { label: string; url?: string | undefined };
+        asOf: string;
+        me?:
+          | { hoursAvailable: boolean; hoursNote?: string | undefined }
+          | undefined;
+      };
+      cursor?: string | undefined;
+    };
+
+/** The user's projects, tasks and budgets as the source knows them, as of `asOf`. */
+export type ProjectSourceSnapshot = {
+  projects: {
+    code: string;
+    name: string;
+    remoteId: string;
+    tasks: {
+      name: string;
+      remoteId: string;
+      assigned: boolean;
+      closed: boolean;
+      billable?: boolean | undefined;
+      group?: string | undefined;
+      estimateHours?: number | undefined;
+      myHours?: number | undefined;
+    }[];
+    complete: boolean;
+    url?: string | undefined;
+    client?: string | undefined;
+    startsOn?: string | undefined;
+    endsOn?: string | undefined;
+    budget?:
+      | {
+          unit: "hours" | "money";
+          consumed: number;
+          status?: "unknown" | "ok" | "warning" | "over" | undefined;
+          total?: number | undefined;
+          remaining?: number | undefined;
+        }
+      | undefined;
+  }[];
+  source: { label: string; url?: string | undefined };
+  asOf: string;
+  me?: { hoursAvailable: boolean; hoursNote?: string | undefined } | undefined;
+};
+
+export type ProjectSourceProject = {
+  code: string;
+  name: string;
+  remoteId: string;
+  tasks: {
+    name: string;
+    remoteId: string;
+    assigned: boolean;
+    closed: boolean;
+    billable?: boolean | undefined;
+    group?: string | undefined;
+    estimateHours?: number | undefined;
+    myHours?: number | undefined;
+  }[];
+  complete: boolean;
+  url?: string | undefined;
+  client?: string | undefined;
+  startsOn?: string | undefined;
+  endsOn?: string | undefined;
+  budget?:
+    | {
+        unit: "hours" | "money";
+        consumed: number;
+        status?: "unknown" | "ok" | "warning" | "over" | undefined;
+        total?: number | undefined;
+        remaining?: number | undefined;
+      }
+    | undefined;
+};
+
+export type ProjectSourceTask = {
+  name: string;
+  remoteId: string;
+  assigned: boolean;
+  closed: boolean;
+  billable?: boolean | undefined;
+  group?: string | undefined;
+  estimateHours?: number | undefined;
+  myHours?: number | undefined;
+};
+
+/** A project's budget. The source writes every figure; `remaining` may be negative. */
+export type ProjectSourceBudget = {
+  unit: "hours" | "money";
+  consumed: number;
+  status?: "unknown" | "ok" | "warning" | "over" | undefined;
+  total?: number | undefined;
+  remaining?: number | undefined;
 };

@@ -222,6 +222,11 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/connections/:connectionId/sync",
     name: "backlog.sync",
   },
+  projectSourceSync: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/sync-projects",
+    name: "project_source.sync",
+  },
   codeHost: {
     method: "POST",
     path: "/api/code-hosts/:pluginId/connections/:connectionId/:operation",

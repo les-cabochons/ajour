@@ -1,0 +1,26 @@
+{
+  "id": "example-project-source",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Example planner",
+  "description": "A project source that serves a fixture, for Ajour's own tests.",
+  "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='2' width='12' height='12' rx='2' fill='currentColor'/></svg>",
+  "entrypoint": "plugin.ts",
+  "connectionFields": [
+    { "id": "label", "label": "Label", "type": "text", "required": true },
+    {
+      "id": "tenantLabel",
+      "label": "Workspace",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "serviceUrl",
+      "label": "Service URL",
+      "type": "url",
+      "required": true,
+      "defaultValue": "https://planner.example"
+    }
+  ],
+  "capabilities": { "projectSource": {} }
+}

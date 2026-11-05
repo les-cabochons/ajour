@@ -15,12 +15,14 @@ const capabilityDescriptions: Record<SwitchableCapability, string> = {
   codeHost: "List the pull requests you wrote or were asked to review.",
   calendar: "Suggest your calendar's meetings as time entries.",
   team: "Keep shared projects and tasks in step with your team.",
+  projectSource:
+    "Bring your projects, tasks and budgets from the system that holds them.",
 };
 
 /**
  * The Capabilities section of a plugin that declares more than one of a
- * backlog capability, a code host, a calendar and a team: one switch each, under the
- * plugin's own switch. Turning one off
+ * backlog capability, a code host, a calendar, a team and a project source:
+ * one switch each, under the plugin's own switch. Turning one off
  * pauses it and keeps its connections and data.
  */
 export function PluginCapabilitySwitches({

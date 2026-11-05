@@ -2072,6 +2072,29 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * One read of a project source's snapshot (#504): the route and the
+     * plugin method. Counts only: the snapshot's names stay out.
+     */
+    "project_source.sync": {
+      kinds: ["request", "plugin_operation"],
+      reasons: [...pluginRequestReasons, "connection_changed_during_sync"],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        project_source_sync: {
+          trigger: operational<"manual" | "auto">(),
+          /** Whether Ajour had a cursor from the last sync to send. */
+          has_cursor: operational<boolean>(),
+          /** The plugin answered that nothing changed since the cursor. */
+          unchanged: operational<boolean>(),
+          project_count: operational<number>(),
+          task_count: operational<number>(),
+          /** The plugin gave a cursor for the next sync. */
+          has_next_cursor: operational<boolean>(),
+        },
+      },
+    },
     /** The schema plugins a project import or export can use. */
     "schema.list": {
       kinds: ["command", "request"],

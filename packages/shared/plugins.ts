@@ -8,6 +8,10 @@ import {
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import {
+  projectSourceCapabilitySchema,
+  projectSourceSnapshotSchema,
+} from "./project-source.ts";
+import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
 } from "./plugin-lifecycle.ts";
@@ -126,6 +130,7 @@ export const switchableCapabilitySchema = z.enum([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -136,6 +141,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     codeHost: "Pull requests",
     calendar: "Calendar events",
     team: "Projects",
+    projectSource: "Managed projects",
   };
 
 export const pluginFieldSchema = z.object({
@@ -333,6 +339,11 @@ export const pluginCapabilitiesObjectSchema = z.object({
   calendar: z.object({}).optional(),
   /** Keeps a team's shared projects in step. See ADR 0006. */
   team: teamCapabilitySchema.optional(),
+  /**
+   * Brings the user's projects, tasks and budgets from the system that holds
+   * them, read only. Plugin API 4 only: see `project-source.ts`.
+   */
+  projectSource: projectSourceCapabilitySchema.optional(),
   agentTask: z
     .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
     .optional(),
@@ -373,6 +384,12 @@ export function pluginHasCalendar(manifest: {
 
 export function pluginHasTeam(manifest: { capabilities: PluginCapabilities }) {
   return manifest.capabilities.team !== undefined;
+}
+
+export function pluginHasProjectSource(manifest: {
+  capabilities: PluginCapabilities;
+}) {
+  return manifest.capabilities.projectSource !== undefined;
 }
 
 export function pluginHasAgentTasks(manifest: {
@@ -446,6 +463,13 @@ export const pluginManifestObjectSchema = z.object({
 
 export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
   (manifest, context) => {
+    if (manifest.capabilities.projectSource !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["capabilities", "projectSource"],
+        message: "The projectSource capability needs plugin API 4.",
+      });
+    }
     if (!pluginRunsCode(manifest)) return;
     if (!manifest.entrypoint) {
       context.addIssue({
@@ -1475,3 +1499,36 @@ export const backlogSyncResultSchema = z.object({
     .default([]),
 });
 export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;
+
+/** `POST /api/plugins/:pluginId/connections/:connectionId/sync-projects`. */
+export const projectSourceSyncRouteRequestSchema = z.object({
+  trigger: z.enum(["manual", "auto"]).default("manual"),
+  /**
+   * Reads the whole snapshot, without the cursor, such as when the web holds
+   * nothing from the connection yet: an unchanged answer would leave it
+   * empty.
+   */
+  fresh: z.boolean().default(false),
+});
+export type ProjectSourceSyncRouteRequest = z.infer<
+  typeof projectSourceSyncRouteRequestSchema
+>;
+
+/**
+ * What the route answers: the connection as the overview shows it, and the
+ * snapshot, or that nothing changed since the last one. The cursor stays
+ * in the API: the web never sees it.
+ */
+export const projectSourceSyncRouteResponseSchema = z.union([
+  z.object({
+    connection: pluginConnectionSummarySchema,
+    unchanged: z.literal(true),
+  }),
+  z.object({
+    connection: pluginConnectionSummarySchema,
+    snapshot: projectSourceSnapshotSchema,
+  }),
+]);
+export type ProjectSourceSyncRouteResponse = z.infer<
+  typeof projectSourceSyncRouteResponseSchema
+>;

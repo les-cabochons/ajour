@@ -227,7 +227,7 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team, project source or sign-in. When a plugin provides more than one of backlog, code host, calendar, team and project source, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
+An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team, project source or sign-in. When a plugin provides more than one of backlog, code host, calendar, team and project source, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events, Projects and Managed projects.
 _Avoid_: Extension, add-on, integration, connector
 
 **Plugin source**:

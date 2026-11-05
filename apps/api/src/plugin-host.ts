@@ -97,6 +97,12 @@ import {
   type TeamSyncResult,
 } from "../../../packages/shared/team-sync.ts";
 import {
+  parseProjectSourceSyncResult,
+  projectSourceSyncRequestSchema,
+  type ProjectSourceSyncRequest,
+  type ProjectSourceSyncResult,
+} from "../../../packages/shared/project-source.ts";
+import {
   codeHostOperations,
   type CodeHostOperation,
   type CodeHostOperationRequest,
@@ -276,6 +282,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   ...COMMENT_EVENTS,
   createTeam: "team.create",
   syncTeamProjects: "team.sync",
+  syncProjects: "project_source.sync",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
 
 /** The code of an install refused while plugin operations run. */
@@ -286,6 +293,7 @@ const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   codeHost: "does not provide pull requests",
   calendar: "does not provide calendar events",
   team: "does not sync a team's projects",
+  projectSource: "does not provide projects from a source",
 };
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(
@@ -305,6 +313,7 @@ export function capabilityOfMethod(
   if (method === "createTeam" || method === "syncTeamProjects") {
     return "team";
   }
+  if (method === "syncProjects") return "projectSource";
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
 }
@@ -901,6 +910,29 @@ export class PluginManager {
       teamSyncResultSchema,
       admit,
       requireCapability("team"),
+    );
+  }
+
+  /**
+   * Reads a project source's snapshot, or that nothing changed since the
+   * cursor. See packages/shared/project-source.ts.
+   */
+  async syncProjects(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: ProjectSourceSyncRequest,
+    admit?: PluginAdmission,
+  ): Promise<ProjectSourceSyncResult> {
+    return await this.invokePlugin(
+      pluginId,
+      "syncProjects",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: projectSourceSyncRequestSchema.parse(request),
+      },
+      { parse: parseProjectSourceSyncResult },
+      admit,
+      requireCapability("projectSource"),
     );
   }
 

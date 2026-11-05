@@ -31,6 +31,7 @@ const capabilityLabels: Record<PluginCatalogCapability, string> = {
   codeHost: "Code host",
   calendar: "Calendar",
   team: "Team",
+  projectSource: "Project source",
   agentTask: "Agent tasks",
   schema: "Schema",
 };
@@ -128,6 +129,7 @@ const capabilityFlows: Record<
   codeHost: { start: "Code host", end: "Pull requests" },
   calendar: { start: "Calendar", end: "Time suggestions" },
   team: { start: "Ajour projects", end: "Team" },
+  projectSource: { start: "Project source", end: "Ajour projects" },
   agentTask: { start: "Task prompt", end: "Coding agent" },
   schema: { start: "Ajour projects", end: "Excel files" },
 };

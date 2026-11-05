@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPluginArchive } from "../api/src/plugin-package.ts";
+import { pluginCatalogCapabilitySchema } from "../../packages/shared/plugin-catalog.ts";
 
 const require = createRequire(import.meta.url);
 const sources = require("./electron/plugin-sources.cjs") as {
@@ -158,6 +159,16 @@ describe("ajour.json", () => {
       path: "plugins/weather",
     });
   });
+
+  it.each(pluginCatalogCapabilitySchema.options)(
+    "reads a plugin with the %s capability",
+    (capability) => {
+      const parsed = sources.parseSourceManifest(
+        bytesOf(listing({ pluginApiVersion: 4, capabilities: [capability] })),
+      );
+      expect(parsed.plugins[0]).toMatchObject({ capabilities: [capability] });
+    },
+  );
 
   it.each([
     ["an unknown key", { homepage: "https://example.com" }, "unknown key"],

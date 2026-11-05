@@ -284,3 +284,45 @@ export function workdayAgentManifest(): Fixture {
     runtime: { start: "alwaysReady", memoryCeilingMb: 128 },
   };
 }
+
+/** A project source: a read-only token for a service that holds the user's projects. */
+export function projectSourceManifest(): Fixture {
+  return {
+    id: "ajc-project-source",
+    version: "4.0.0",
+    apiVersion: 4,
+    displayName: "Project source",
+    iconSvg: ICON,
+    entrypoint: "dist/index.js",
+    connectionFields: [
+      {
+        id: "serviceUrl",
+        label: "Service URL",
+        type: "url",
+        required: true,
+      },
+      {
+        id: "token",
+        label: "Personal token",
+        type: "password",
+        required: true,
+        secret: true,
+      },
+    ],
+    capabilities: { projectSource: {} },
+    network: {
+      auth: {
+        scheme: "headerTemplate",
+        header: "X-Token",
+        template: "{secret}",
+        secretField: "token",
+      },
+      baseAddress: { field: "serviceUrl" },
+      endpoints: [
+        { method: "GET", path: "/integration/me" },
+        { method: "GET", path: "/integration/snapshot" },
+      ],
+      requestHeaders: ["If-None-Match"],
+    },
+  };
+}
