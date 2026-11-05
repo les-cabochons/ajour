@@ -27,6 +27,10 @@ import {
   backlogWriteDescriptionResultSchema,
   backlogSyncRequestSchema,
   backlogSyncResultSchema,
+  projectSourceSyncRouteRequestSchema,
+  projectSourceSyncRouteResponseSchema,
+  type ProjectSourceSyncRouteRequest,
+  type ProjectSourceSyncRouteResponse,
   type BacklogSettleWriteRequest,
   type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
@@ -134,6 +138,14 @@ const pullRequestSyncs = new Map<string, Promise<CodeHostSyncResult>>();
 const connectionGenerations = new Map<string, number>();
 const connectionKey = (pluginId: string, connectionId: string) =>
   JSON.stringify([pluginId, connectionId]);
+
+/**
+ * Counts the saves and deletes of a connection made in this window, so a
+ * sync can tell that its answer is for a connection that changed meanwhile.
+ */
+export function connectionGeneration(pluginId: string, connectionId: string) {
+  return connectionGenerations.get(connectionKey(pluginId, connectionId)) ?? 0;
+}
 
 /**
  * Syncs a connection's pull requests as one `pull_request.sync` job. A
@@ -962,6 +974,7 @@ export async function deletePluginConnection(
       localStore.removeConnectionPullRequests(pluginId, connectionId);
       localStore.removeConnectionCalendarData(pluginId, connectionId);
       localStore.removeConnectionTeamData(connectionId);
+      localStore.removeConnectionProjectSource(connectionId);
       describeConnectionDelete(
         before,
         localStore.snapshot(),
@@ -1204,6 +1217,50 @@ export function runTeamSyncRound(
     { method: "POST", body: JSON.stringify(request) },
     teamSyncResultSchema,
   );
+}
+
+/**
+ * Reads a project source connection's snapshot (#504), or that nothing
+ * changed since the last one. `fresh` reads it all, without the cursor the
+ * local API keeps. `lib/project-source-sync.ts` applies it. The overview
+ * takes the connection's new last sync time or error.
+ */
+export async function syncProjectSource(
+  pluginId: string,
+  connectionId: string,
+  input: Partial<ProjectSourceSyncRouteRequest> = {},
+): Promise<ProjectSourceSyncRouteResponse> {
+  const payload = projectSourceSyncRouteRequestSchema.parse(input);
+  const result = await appApiRequest(
+    "syncProjectSource",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync-projects`,
+    { method: "POST", body: JSON.stringify(payload) },
+    projectSourceSyncRouteResponseSchema,
+  );
+  replaceCachedConnection(pluginId, result.connection);
+  return result;
+}
+
+/** Puts a connection's summary from a sync's answer in the cached overview. */
+function replaceCachedConnection(
+  pluginId: string,
+  connection: ProjectSourceSyncRouteResponse["connection"],
+) {
+  const overview = getCachedPluginsOverview();
+  if (!overview) return;
+  cachePluginsOverview({
+    ...overview,
+    connectionGroups: overview.connectionGroups.map((group) =>
+      group.plugin.id === pluginId
+        ? {
+            ...group,
+            connections: group.connections.map((entry) =>
+              entry.id === connection.id ? connection : entry,
+            ),
+          }
+        : group,
+    ),
+  });
 }
 
 /** Who starts each kind of backlog sync: the user, the scheduler, or a time entry saved on a synced item. */

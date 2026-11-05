@@ -708,7 +708,7 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
   `reentry()` and runs its later calls in it.
 - **Background jobs** (#310). Each is one `job` event per run, `detached`,
   so one another unit started is its child span and still emits its own:
-  - `backlog.sync`, `pull_request.sync` and `team.sync`, in the client
+  - `backlog.sync`, `pull_request.sync`, `team.sync` and `project_source.sync`, in the client
     functions that run them, whoever calls them: the user from Settings,
     the scheduler (`schedule`), or a time entry saved on a synced item
     (`system`). The store commands that apply the answer fold into the job.
@@ -996,7 +996,10 @@ channel to read the event each emits.
 | `project.share`                      | command                            | store command                                    |
 | `project.unshare`                    | command                            | store command                                    |
 | `project.update`                     | command                            | store command                                    |
-| `project_source.sync`                | request, plugin_operation          | route, plugin method                             |
+| `project_source.answer_waiting`      | command                            | store command                                    |
+| `project_source.apply_sync`          | command                            | store command                                    |
+| `project_source.resolve_held`        | command                            | store command                                    |
+| `project_source.sync`                | job, request, plugin_operation     | route, plugin method, client call, renderer      |
 | `pull_request.apply_sync`            | command                            | store command                                    |
 | `pull_request.browse`                | command, request, plugin_operation | route, plugin method                             |
 | `pull_request.change`                | command                            | store command                                    |

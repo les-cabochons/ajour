@@ -540,6 +540,7 @@ async function loadRenderer() {
     agentCommentTools: await import("@/features/agents/agent-comment-tools"),
     errors: await import("@/features/feedback/app-error-handler"),
     backlogView: await import("@/lib/backlog-view-settings"),
+    projectSource: await import("@/lib/project-source-sync"),
   };
 }
 
@@ -1097,26 +1098,41 @@ describe("the privacy canary", () => {
         autoSyncIntervalMinutes: 15,
       },
     );
-    // No client in the renderer calls it yet: called as the route takes it.
-    const sync = async () => {
-      const response = await fetchAsTheApp(
-        `${api.baseUrl}/api/plugins/canary-projects/connections/${connection.id}/sync-projects`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ trigger: "manual" }),
-        },
+    // A local project of the marked name: the sync holds the marked
+    // project for review, and the user links it.
+    const localId = app.localStore.addProject({
+      name: `project ${MARKER}`,
+      color: "#123456",
+    });
+    const sync = () =>
+      app.projectSource.syncProjectSourceConnection(
+        "canary-projects",
+        connection.id,
       );
-      expect(response.status).toBe(200);
-      return (await response.json()) as Record<string, unknown>;
-    };
 
-    expect(JSON.stringify(await sync())).toContain(`Project ${MARKER}`);
+    expect(await sync()).toMatchObject({
+      kind: "applied",
+      counts: { held: 1 },
+    });
+    expect(
+      app.localStore.resolveHeldSourceProject(
+        { pluginId: "canary-projects", connectionId: connection.id },
+        "p-" + MARKER,
+        { kind: "link", projectId: localId },
+      ),
+    ).toEqual({ kind: "linked", projectId: localId });
+    expect(
+      app.localStore
+        .snapshot()
+        .projects.find((project) => project._id === localId),
+    ).toMatchObject({ name: `Project ${MARKER}`, client: `Client ${MARKER}` });
     // The second sync sends the marked cursor back, and nothing changed.
-    expect(await sync()).toMatchObject({ unchanged: true });
+    expect(await sync()).toEqual({ kind: "unchanged" });
 
     expect(namesSince(from)).toEqual(
       expect.arrayContaining([
+        "renderer job project_source.sync",
+        "renderer command project_source.resolve_held",
         "api request project_source.sync",
         "api plugin_operation project_source.sync",
       ]),

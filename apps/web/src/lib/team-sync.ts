@@ -90,8 +90,11 @@ async function currentIdentity(pluginId: string, connectionId: string) {
 
 const runningSyncs = new Map<string, Promise<TeamSyncOutcome>>();
 
-/** Runs `operation` while no other window of this app syncs the same connection. */
-function exclusively<T>(name: string, operation: () => Promise<T>): Promise<T> {
+/** Runs `operation` while no other window of this app holds the lock `name`. */
+export function exclusively<T>(
+  name: string,
+  operation: () => Promise<T>,
+): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   // The lock resolves with what the operation resolves with.
   return locks

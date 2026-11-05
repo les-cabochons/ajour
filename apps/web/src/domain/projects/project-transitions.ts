@@ -17,6 +17,13 @@ import {
 } from "@/domain/projects/task-import";
 import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
+  normalizeArchiveMark,
+  normalizeProjectSourceBudget,
+  normalizeProjectSourceLink,
+  normalizeSourceText,
+  normalizeTaskSourceLink,
+} from "@/domain/projects/source-link";
+import {
   normalizeProjectTeamLink,
   normalizeTaskTeamLink,
 } from "@/domain/projects/team-link";
@@ -101,6 +108,8 @@ export function normalizeProject(
   let hydrationTimestamp: number | undefined;
   const getHydrationTimestamp = () => (hydrationTimestamp ??= now());
   const team = normalizeProjectTeamLink(project.team);
+  // A project is managed or shared, never both: the team link wins.
+  const source = team ? undefined : normalizeProjectSourceLink(project.source);
 
   return {
     ...project,
@@ -111,6 +120,13 @@ export function normalizeProject(
     localOnly: normalizeLocalOnly(project.localOnly),
     favoritedAt: normalizeFavoritedAt(project.favoritedAt),
     team,
+    source,
+    client: normalizeSourceText(project.client),
+    startsOn: normalizeSourceText(project.startsOn),
+    endsOn: normalizeSourceText(project.endsOn),
+    budget: normalizeProjectSourceBudget(project.budget),
+    archivedByMissingSync: normalizeArchiveMark(project.archivedByMissingSync),
+    archivedBySource: normalizeArchiveMark(project.archivedBySource),
     status:
       project.status === "archived" || project.status === "active"
         ? project.status
@@ -136,6 +152,10 @@ export function normalizeProject(
         commitAs: normalizeTaskCommitAs(task.commitAs),
         // Only a project the team knows can have tasks the team knows.
         team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
+        // Only a managed project can have tasks its source knows.
+        source: source ? normalizeTaskSourceLink(task.source) : undefined,
+        archivedByMissingSync: normalizeArchiveMark(task.archivedByMissingSync),
+        archivedBySource: normalizeArchiveMark(task.archivedBySource),
       };
     }),
   };
@@ -177,6 +197,11 @@ export function updateProject(
       project.displayName === project.name
     ) {
       nextProject.displayName = patch.name;
+    }
+    // The user's archive or restore: no longer the project source's.
+    if (patch.status !== undefined && patch.status !== project.status) {
+      delete nextProject.archivedByMissingSync;
+      delete nextProject.archivedBySource;
     }
     return nextProject;
   });
@@ -438,6 +463,9 @@ export function setProjectTaskStatus(
                     status === "archived"
                       ? (task.archivedAt ?? now())
                       : undefined,
+                  // The user's archive or restore: no longer the source's.
+                  archivedByMissingSync: undefined,
+                  archivedBySource: undefined,
                 }
               : task,
           ),

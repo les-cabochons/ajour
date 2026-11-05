@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { ProjectSourceSnapshot } from "@ajour/shared";
 import { fixtureSnapshot } from "../../../../../packages/example/index.ts";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
-import type { ProjectFactories } from "@/domain/projects/project-transitions";
+import {
+  setProjectTaskStatus,
+  updateProject,
+  type ProjectFactories,
+} from "@/domain/projects/project-transitions";
 import {
   answerSourceWaitingTasks,
   disconnectProjectSource,
@@ -388,6 +392,52 @@ describe("syncProjectSource", () => {
     const globex = next.projects.find((project) => project._id === "globex")!;
     expect(globex.status).toBe("archived");
     expect(globex.archivedBySource).toBeUndefined();
+  });
+
+  it("forgets the source's archive once the user changes the status by hand", () => {
+    const first = sync(stateWith([]));
+    const globex = projectNamed(first, "Globex - Internal");
+    // Restored by hand, then archived by hand: the user's archive now.
+    const handled = {
+      ...first,
+      projects: updateProject(
+        updateProject(first.projects, globex._id, { status: "active" }),
+        globex._id,
+        { status: "archived" },
+      ),
+    };
+    const closedTask = projectNamed(first, "Acme - Support").tasks.find(
+      (task) => task.source?.remoteId === "1003",
+    )!;
+    const acmeId = projectNamed(first, "Acme - Support")._id;
+    handled.projects = setProjectTaskStatus(
+      setProjectTaskStatus(
+        handled.projects,
+        acmeId,
+        closedTask._id,
+        "active",
+        () => 1,
+      ),
+      acmeId,
+      closedTask._id,
+      "archived",
+      () => 1,
+    );
+
+    const reopened = sync(
+      handled,
+      snapshot((copy) => {
+        copy.projects[1]!.complete = false;
+        copy.projects[0]!.tasks[2]!.closed = false;
+      }),
+    );
+
+    expect(projectNamed(reopened, "Globex - Internal").status).toBe("archived");
+    expect(
+      projectNamed(reopened, "Acme - Support").tasks.find(
+        (task) => task._id === closedTask._id,
+      )?.status,
+    ).toBe("archived");
   });
 
   it("links a task without a source by name, so its time stays, and confirms a Not known yet task", () => {

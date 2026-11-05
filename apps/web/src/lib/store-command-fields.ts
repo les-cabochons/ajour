@@ -501,6 +501,13 @@ export function describeConnectionDelete(
         after.projects.filter(
           (project) => project.team?.connectionId === connectionId,
         ).length,
+      managed_project_count:
+        before.projects.filter(
+          (project) => project.source?.connectionId === connectionId,
+        ).length -
+        after.projects.filter(
+          (project) => project.source?.connectionId === connectionId,
+        ).length,
     },
   });
 }

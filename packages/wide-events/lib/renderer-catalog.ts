@@ -137,6 +137,8 @@ const connectionData = {
     calendar_decision_count: operational<number>(),
     event_rule_count: operational<number>(),
     team_project_count: operational<number>(),
+    /** Managed projects that became local projects. */
+    managed_project_count: operational<number>(),
   },
 };
 const importCounts = {
@@ -525,6 +527,25 @@ export const rendererEvents = {
       choice: operational<"link" | "add_separately">(),
       result: operational(),
     },
+  }),
+  /** A project source's snapshot applied (#505). It folds into the sync's job. */
+  "project_source.apply_sync": command({
+    plugin: { id: operational() },
+    connection: { id: operational() },
+  }),
+  /** The user's answer for a source project held in Sync review. */
+  "project_source.resolve_held": command({
+    plugin: { id: operational() },
+    connection: { id: operational() },
+    project_source: {
+      choice: operational<"link" | "add_as_new">(),
+      result: operational(),
+    },
+  }),
+  /** The answers to a project source sync's Not known yet question. */
+  "project_source.answer_waiting": command({
+    ...projectId,
+    project_source: { matched_count: operational<number>() },
   }),
   "connection.delete": command(connectionData, {
     kinds: ["command", "request"],

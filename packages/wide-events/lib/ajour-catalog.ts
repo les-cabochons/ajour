@@ -2074,10 +2074,11 @@ export const catalog = defineCatalog({
     },
     /**
      * One read of a project source's snapshot (#504): the route and the
-     * plugin method. Counts only: the snapshot's names stay out.
+     * plugin method, and in the renderer the whole sync, with what it did to
+     * the projects (#505). Counts only: the snapshot's names stay out.
      */
     "project_source.sync": {
-      kinds: ["request", "plugin_operation"],
+      kinds: ["job", "request", "plugin_operation"],
       reasons: [...pluginRequestReasons, "connection_changed_during_sync"],
       fields: {
         ...requestFields,
@@ -2092,6 +2093,23 @@ export const catalog = defineCatalog({
           task_count: operational<number>(),
           /** The plugin gave a cursor for the next sync. */
           has_next_cursor: operational<boolean>(),
+          // In the renderer, for the whole sync: what it did to the projects.
+          /** The web held nothing from the connection, so it asked for all of it. */
+          fresh: operational<boolean>(),
+          linked_count: operational<number>(),
+          created_count: operational<number>(),
+          updated_count: operational<number>(),
+          archived_count: operational<number>(),
+          restored_count: operational<number>(),
+          /** Source projects waiting in Sync review because only a name matched. */
+          held_count: operational<number>(),
+          unchanged_count: operational<number>(),
+          /** Source projects whose match is a shared project, never linked. */
+          refused_shared_count: operational<number>(),
+          /** Projects whose Not known yet tasks the sync asks about. */
+          waiting_question_count: operational<number>(),
+          /** Why the answer was not applied: the connection changed or went. */
+          discarded: operational<"connection_changed" | "connection_gone">(),
         },
       },
     },
