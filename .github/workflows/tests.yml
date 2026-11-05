@@ -353,6 +353,17 @@ jobs:
           set -o pipefail
           corepack pnpm --filter @ajour/desktop check:keep-running 2>&1 | tee "$LOG"
 
+      - name: Run the macOS ajour command follow check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.LIFECYCLE == 'true' }}
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/cli-command.log
+        run: |
+          set -o pipefail
+          sudo mkdir -p /usr/local/bin
+          sudo chown "$(id -u):$(id -g)" /usr/local/bin
+          corepack pnpm --filter @ajour/desktop check:cli-command --skip-build 2>&1 | tee "$LOG"
+
       - name: Upload the checks' logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -361,6 +372,7 @@ jobs:
           path: |
             ${{ runner.temp }}/plugin-sandbox.log
             ${{ runner.temp }}/desktop-lifecycle.log
+            ${{ runner.temp }}/cli-command.log
           if-no-files-found: ignore
           retention-days: 14
 

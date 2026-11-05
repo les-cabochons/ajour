@@ -429,3 +429,31 @@ it("shows the macOS password hint before installation", async () => {
     ),
   ).toBeTruthy();
 });
+
+it("shows follow progress and its failure with Retry in the fixed-height row", async () => {
+  cleanup();
+  installDomShims();
+  const main = desktop({
+    ...INSTALLED,
+    status: "installing",
+    pending: "1.2.3",
+    progress: 42,
+  });
+  await mount();
+  expect(status()).toContain("Updating ajour to 1.2.3, 42%");
+  main.push({
+    ...INSTALLED,
+    status: "error",
+    pending: "1.2.3",
+    error: "GitHub is offline",
+  });
+  expect(screen.getByRole("alert").textContent).toBe(
+    "ajour couldn't update to 1.2.3: GitHub is offline. The installed version keeps working.",
+  );
+  expect(screen.getByRole("status").parentElement!.className).toContain("h-12");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(main.installCliCommand).toHaveBeenCalledOnce();
+  await main.finish(INSTALLED);
+  cleanup();
+  delete window.ajourDesktop;
+});

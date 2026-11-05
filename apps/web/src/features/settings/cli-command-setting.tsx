@@ -11,6 +11,9 @@ const DEVELOPMENT_REASON = "The ajour command installs from released builds.";
 
 /** What the status's first line says in each state. */
 function statusLine(state: DesktopCliCommandState) {
+  if (state.status === "installing" && state.pending) {
+    return `Updating ajour to ${state.pending}, ${state.progress ?? 0}%`;
+  }
   if (state.status === "installing") {
     if (state.phase === "checking") return "Checking ajour…";
     if (state.phase === "linking") return "Adding ajour to your PATH…";
@@ -116,7 +119,11 @@ export function CliCommandSetting() {
   const development = state?.status === "unsupported";
   const installed = state?.status === "installed";
   const macos = desktop?.runtime?.platform === "darwin";
-  const error = state?.error ?? refused;
+  const reason = state?.error ?? refused;
+  const error =
+    reason && state?.pending
+      ? `ajour couldn't update to ${state.pending}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`
+      : reason;
 
   function install() {
     if (installing || development) return;

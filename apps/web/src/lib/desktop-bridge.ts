@@ -134,6 +134,8 @@ export interface DesktopWindowSettings {
  * it and asks for an install: it never passes a path or a URL.
  */
 export interface DesktopCliCommandState {
+  /** Version being followed, also after a failed update. */
+  pending?: string;
   status:
     "unsupported" | "not-installed" | "installing" | "installed" | "error";
   /** Why it can't install here: a development build, or a system without it yet. */

@@ -306,7 +306,7 @@ async function serveRelease() {
       response.end();
       return;
     }
-    const { tag, asset, bytes, digest } = served;
+    const { tag, asset, bytes, digest, missing } = served;
     const origin = `http://127.0.0.1:${server.address().port}`;
     const releasePage = `/les-cabochons/ajour/releases/download/${tag}/${asset}`;
     if (request.url === `/repos/les-cabochons/ajour/releases/tags/${tag}`) {
@@ -314,14 +314,16 @@ async function serveRelease() {
       response.end(
         JSON.stringify({
           tag_name: tag,
-          assets: [
-            {
-              name: asset,
-              size: bytes.byteLength,
-              digest: `sha256:${digest}`,
-              browser_download_url: `${origin}${releasePage}`,
-            },
-          ],
+          assets: missing
+            ? []
+            : [
+                {
+                  name: asset,
+                  size: bytes.byteLength,
+                  digest: `sha256:${digest}`,
+                  browser_download_url: `${origin}${releasePage}`,
+                },
+              ],
         }),
       );
     } else if (request.url === releasePage) {
@@ -343,15 +345,79 @@ async function serveRelease() {
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
     requests,
-    serve(release, bytes) {
+    serve(release, bytes, missing = false) {
       served = {
         ...release,
+        missing,
         bytes,
         digest: createHash("sha256").update(bytes).digest("hex"),
       };
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/** Restart version A as B, first without B's asset, then publish it. */
+async function checkFollow(electronApp, env, release, version, binary) {
+  await electronApp.close();
+  const nextVersion = "0.0.2";
+  if (version === nextVersion)
+    throw new Error("Follow fixture versions must differ.");
+  const next = releaseOf(nextVersion);
+  buildCliArchive(next);
+  // B's release metadata is present but its asset is absent.
+  release.serve(next, readFileSync(next.archivePath), true);
+  const app = await _electron.launch({
+    args: [checkMain],
+    cwd: desktopRoot,
+    env: {
+      ...env,
+      AJOUR_CLI_CHECK_VERSION: nextVersion,
+      AJOUR_CLI_FOLLOW_RETRY_MS: "1000",
+    },
+    timeout: 60_000,
+  });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    expect(
+      (await app.evaluate(({ app }) => app.getVersion())) === nextVersion,
+      "the restarted app runs as version B",
+    );
+    const waitForState = async (status) => {
+      const deadline = Date.now() + INSTALL_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        const state = await page.evaluate(() =>
+          window.ajourDesktop.getCliCommand(),
+        );
+        if (
+          state.status === status &&
+          (status === "error" ? state.pending : state.version) === nextVersion
+        )
+          return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error(`Follow did not reach ${status}.`);
+    };
+    await waitForState("error");
+    expect(
+      (await run(binary, ["-V"])).stdout.trim() === `ajour ${version}`,
+      "follow missing asset keeps version A working",
+    );
+    release.serve(next, readFileSync(next.archivePath));
+    await waitForState("installed");
+    const printed = (await run(binary, ["-V"])).stdout.trim();
+    expect(
+      printed === `ajour ${nextVersion}`,
+      "follow retry picks up version B without another restart and ajour -V prints B",
+      {
+        printed,
+        state: await page.evaluate(() => window.ajourDesktop.getCliCommand()),
+      },
+    );
+  } finally {
+    await app.close();
+  }
 }
 
 const entriesOf = (value) =>
@@ -547,6 +613,14 @@ async function main() {
         cli_command: event.cli_command,
       })),
     );
+    await checkFollow(
+      electronApp,
+      env,
+      release,
+      appVersion,
+      path.join(installDir, "ajour.exe"),
+    );
+    electronApp = undefined;
   } catch (error) {
     expect(false, `the check ran to the end: ${error.message}`, {
       stderr: stderr.slice(-1_500),
@@ -718,6 +792,8 @@ async function macMain() {
       stdout,
     );
     await run("/usr/bin/codesign", ["--verify", "--strict", binary]);
+    await checkFollow(electronApp, env, release, version, LINK);
+    electronApp = undefined;
   } finally {
     await electronApp?.close().catch(() => undefined);
     await release.close();

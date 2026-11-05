@@ -13,6 +13,9 @@
 const { app, Menu } = require("electron");
 const path = require("node:path");
 
+if (!app.isPackaged && process.env.AJOUR_CLI_CHECK_VERSION)
+  app.setVersion(process.env.AJOUR_CLI_CHECK_VERSION);
+
 const userData = process.env.AJOUR_USER_DATA_PATH;
 if (!userData) throw new Error("Set AJOUR_USER_DATA_PATH to a temp folder.");
 app.setPath("appData", path.join(userData, "app-data"));

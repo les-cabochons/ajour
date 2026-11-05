@@ -361,6 +361,10 @@ const tray = createTrayController({
 // ignores both.
 const cliCommand = createCliCommandController({
   // It follows each redirect itself, to check where it leads.
+  events,
+  followRetryMs: app.isPackaged
+    ? undefined
+    : Number(process.env.AJOUR_CLI_FOLLOW_RETRY_MS),
   fetch: createManualRedirectFetch(net),
   fs: fsPromises,
   exec: (file, args, options) =>
@@ -2241,7 +2245,8 @@ if (!hasSingleInstanceLock) {
 
       // An install of the ajour command that a quit or a crash cut short
       // is finished first: rolled back, or kept if it committed.
-      void cliCommand.reconcile().catch(() => undefined);
+      const commandReconciled = cliCommand.reconcile();
+      void commandReconciled.catch(() => undefined);
 
       void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();
@@ -2260,6 +2265,11 @@ if (!hasSingleInstanceLock) {
 
       const windowStartedAt = Date.now();
       const { loadMs, loadOutcome } = await createMainWindow("launch");
+      if (loadOutcome !== "error" && loadOutcome !== "cancelled") {
+        void commandReconciled
+          .then(() => cliCommand.followAppVersion())
+          .catch(() => undefined);
+      }
       launchUnit.set({
         launch: {
           window_ms: Date.now() - windowStartedAt,

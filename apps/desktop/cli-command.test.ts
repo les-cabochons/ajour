@@ -12,7 +12,7 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { macosLinkFixture } from "./fake-macos-command-link.ts";
 import { recordingEvents } from "./recording-events.ts";
 
@@ -42,10 +42,12 @@ type CliState = {
   error: string | null;
   reason?: "development_build" | "unsupported_platform";
   newlyInstalled?: boolean;
+  pending?: string;
 };
 type Controller = {
   state(): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
+  followAppVersion(): Promise<CliState>;
   reconcile(): Promise<CliState>;
   stop(timeoutMs?: number): Promise<void>;
   onChange(listener: (state: CliState) => void): () => void;
@@ -391,6 +393,7 @@ function controllerWith({
   development = false,
   releaseOrigin,
   allowAdHocSignature,
+  events,
 }: {
   github?: ReturnType<typeof fakeGithub>;
   exec?: ReturnType<typeof fakeExec>;
@@ -402,6 +405,7 @@ function controllerWith({
   development?: boolean;
   releaseOrigin?: string;
   allowAdHocSignature?: boolean;
+  events?: unknown;
 } = {}) {
   const controller = createCliCommandController({
     fetch: github.fetch,
@@ -413,6 +417,7 @@ function controllerWith({
     development,
     releaseOrigin,
     allowAdHocSignature,
+    events,
     paths: { installDir, recordFile, tar: TAR },
     link: link.link,
     now: () => Date.parse("2026-11-04T10:00:00Z"),
@@ -1547,6 +1552,58 @@ describe("macOS signature verification", () => {
     };
     return controllerWith({ platform: "darwin", github, exec, ...overrides });
   }
+  it("follows with the macOS link unchanged and never prompts", async () => {
+    await mac(false, { appVersion: "0.0.0" }).controller.install();
+    const f = macosLinkFixture({
+      target: "/Users/alex/Ajour/bin/ajour",
+      writable: false,
+    });
+    const adapter = f.link();
+    const { controller } = mac(false, {
+      link: {
+        link: {
+          add: (_folder: string, options?: unknown) =>
+            adapter.add("/Users/alex/Ajour/bin", options),
+          remove: (_folder: string, options?: unknown) =>
+            adapter.remove("/Users/alex/Ajour/bin", options),
+        },
+      },
+    });
+    expect(await controller.followAppVersion()).toMatchObject({
+      status: "installed",
+      version: VERSION,
+    });
+    expect(f.calls).toEqual([]);
+  });
+  it("surfaces a password-needing follow repair and permits it only on Retry", async () => {
+    await mac(false, { appVersion: "0.0.0" }).controller.install();
+    const prompts: boolean[] = [];
+    const link = {
+      add: async (_folder: string, options?: { interactive: boolean }) => {
+        prompts.push(options?.interactive ?? false);
+        if (!options?.interactive) throw new Error("Press Retry in Settings.");
+        return { added: false };
+      },
+      remove: async () => ({ added: false }),
+    };
+    const { controller } = mac(false, { link: { link } });
+    expect(await controller.followAppVersion()).toMatchObject({
+      status: "error",
+      version: "0.0.0",
+      pending: VERSION,
+    });
+    expect(prompts.every((interactive) => !interactive)).toBe(true);
+    // Once repaired interactively, noninteractive verification succeeds too.
+    link.add = async (_folder, options) => {
+      prompts.push(options?.interactive ?? false);
+      return { added: false };
+    };
+    expect(await controller.install()).toMatchObject({
+      status: "installed",
+      version: VERSION,
+    });
+    expect(prompts).toContain(true);
+  });
   it("verifies the team before executing the binary and installs the macOS archive", async () => {
     const { controller, exec } = mac();
     expect(await controller.install()).toMatchObject({
@@ -1837,4 +1894,344 @@ describe("macOS signature verification", () => {
     },
     60_000,
   );
+});
+
+describe("following the app version", () => {
+  it("replaces a newer installed CLI with the app's version", async () => {
+    await installedBefore("0.0.1-nightly.20261105.295");
+    const { controller } = controllerWith();
+    expect(await controller.followAppVersion()).toMatchObject({
+      status: "installed",
+      version: VERSION,
+    });
+    expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
+      `binary ${VERSION}`,
+    );
+  });
+
+  it("updates a previous install without changing its Path", async () => {
+    await installedBefore("0.0.0");
+    const { controller, link } = controllerWith();
+    await controller.reconcile();
+    const before = link.current();
+    const result = await controller.followAppVersion();
+    expect(result).toMatchObject({ status: "installed", version: VERSION });
+    expect(link.current()).toEqual(before);
+    expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
+      `binary ${VERSION}`,
+    );
+  });
+});
+
+it("records cli_command.follow and its refusal while keeping the old command usable", async () => {
+  await installedBefore("0.0.0");
+  const { events, recorded } = recordingEvents();
+  const { controller } = controllerWith({
+    events,
+    github: fakeGithub({ asset: { digest: "sha256:" + "0".repeat(64) } }),
+  });
+  const failed = await controller.followAppVersion();
+  expect(failed).toMatchObject({
+    status: "error",
+    version: "0.0.0",
+    pending: VERSION,
+  });
+  expect(
+    await fakeExec().exec(path.join(installDir, "ajour.exe"), ["-V"]),
+  ).toEqual({ stdout: "ajour 0.0.0\n" });
+  expect(recorded).toContainEqual(
+    expect.objectContaining({
+      name: "cli_command.follow",
+      kind: "job",
+      outcome: "refused",
+      outcome_reason: "digest_mismatch",
+    }),
+  );
+});
+
+it("retries a missing asset after five minutes, then hourly, until the asset appears", async () => {
+  await installedBefore("0.0.0");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const missing = fakeGithub({ release: { assets: [] } });
+  const available = fakeGithub();
+  let ready = false;
+  let attempts = 0;
+  const github = {
+    ...missing,
+    fetch: async (...args: Parameters<typeof missing.fetch>) => {
+      if (args[0].includes("/tags/")) attempts++;
+      return (ready ? available : missing).fetch(...args);
+    },
+  };
+  const { controller } = controllerWith({ github });
+  const states: CliState[] = [];
+  let settled!: () => void;
+  controller.onChange((state) => {
+    states.push(state);
+    if (state.status === "error" || state.status === "installed") settled();
+  });
+  const nextSettlement = () =>
+    new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+  try {
+    const initialFollow = nextSettlement();
+    await controller.followAppVersion();
+    await initialFollow;
+    expect(attempts).toBe(1);
+    expect(states.at(-1)).toMatchObject({ status: "error", pending: VERSION });
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(attempts).toBe(1);
+    const firstRetry = nextSettlement();
+    await vi.advanceTimersByTimeAsync(1);
+    await firstRetry;
+    expect(attempts).toBe(2);
+    expect(states.filter((state) => state.status === "error")).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(3_599_999);
+    expect(attempts).toBe(2);
+    const hourlyRetry = nextSettlement();
+    await vi.advanceTimersByTimeAsync(1);
+    await hourlyRetry;
+    expect(attempts).toBe(3);
+    expect(states.filter((state) => state.status === "error")).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(3_599_999);
+    expect(attempts).toBe(3);
+    ready = true;
+    const successfulRetry = nextSettlement();
+    await vi.advanceTimersByTimeAsync(1);
+    await successfulRetry;
+    expect(states.at(-1)).toMatchObject({
+      status: "installed",
+      version: VERSION,
+    });
+    expect(attempts).toBe(4);
+    expect(missing.requests).toEqual([API, API, API]);
+    expect(available.requests).toEqual([API, DOWNLOAD, ASSET_HOST]);
+    await vi.advanceTimersByTimeAsync(2 * 3_600_000);
+    expect(attempts).toBe(4);
+  } finally {
+    await controller.stop();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["Install", "Retry"])(
+  "joins an in-flight %s when a previously queued retry timer fires",
+  async (action) => {
+    await installedBefore("0.0.0");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const missing = fakeGithub({ release: { assets: [] } });
+    const available = fakeGithub();
+    let ready = false;
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const exec = fakeExec({
+      versionOutput: async () => {
+        reached();
+        await hold;
+        return `ajour ${VERSION}`;
+      },
+    });
+    const github = {
+      ...missing,
+      fetch: (...args: Parameters<typeof missing.fetch>) =>
+        (ready ? available : missing).fetch(...args),
+    };
+    const { controller } = controllerWith({ github, exec });
+    const states: CliState[] = [];
+    controller.onChange((state) => states.push(state));
+    try {
+      await controller.followAppVersion();
+      const callback = timers.mock.calls.find(
+        (call) => call[1] === 300_000,
+      )![0];
+      expect(typeof callback).toBe("function");
+      // Reconciliation clears the follow error, so Install takes its normal path.
+      if (action === "Install") await controller.reconcile();
+      ready = true;
+      const installing = controller.install();
+      await atGate;
+      const requests = [...available.requests];
+      const calls = exec.calls.length;
+      const emissions = states.length;
+      // Cancellation cannot retract a callback already queued by the event loop.
+      (callback as () => void)();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(available.requests).toEqual(requests);
+      expect(exec.calls).toHaveLength(calls);
+      expect(states).toHaveLength(emissions);
+      release();
+      expect(await installing).toMatchObject({
+        status: "installed",
+        version: VERSION,
+      });
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(available.requests).toEqual([API, DOWNLOAD, ASSET_HOST]);
+      expect(
+        states.filter(
+          (state) => state.status === "installed" && state.version === VERSION,
+        ),
+      ).toHaveLength(1);
+    } finally {
+      release();
+      await controller.stop();
+      timers.mockRestore();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("defers a retry timer's install until in-flight reconciliation finishes", async () => {
+  await installedBefore("0.0.0");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const missing = fakeGithub({ release: { assets: [] } });
+  const available = fakeGithub();
+  let ready = false;
+  let blocked = false;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached!: () => void;
+  const atGate = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let diskPasses = 0;
+  const files = fsWith({
+    readdir: async (...args: Parameters<typeof fs.readdir>) => {
+      if (args[0] === installDir && blocked) {
+        diskPasses++;
+        reached();
+        await hold;
+      }
+      return fs.readdir(...args);
+    },
+  });
+  const github = {
+    ...missing,
+    fetch: (...args: Parameters<typeof missing.fetch>) =>
+      (ready ? available : missing).fetch(...args),
+  };
+  const { controller } = controllerWith({ github, files });
+  const installed = new Promise<void>((resolve) => {
+    controller.onChange((state) => {
+      if (state.status === "installed" && state.version === VERSION) resolve();
+    });
+  });
+  try {
+    await controller.followAppVersion();
+    blocked = true;
+    const reconciling = controller.reconcile();
+    await atGate;
+    ready = true;
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(diskPasses).toBe(1);
+    expect(available.requests).toEqual([]);
+    expect(missing.requests).toEqual([API]);
+    blocked = false;
+    release();
+    await reconciling;
+    await installed;
+    expect(available.requests).toEqual([API, DOWNLOAD, ASSET_HOST]);
+    expect(await controller.state()).toMatchObject({
+      status: "installed",
+      version: VERSION,
+    });
+  } finally {
+    release();
+    await controller.stop();
+    vi.useRealTimers();
+  }
+});
+
+it("does not retry other failures until another launch or an explicit Retry", async () => {
+  await installedBefore("0.0.0");
+  const github = fakeGithub({ download: { status: 503 } });
+  const { controller } = controllerWith({ github });
+  await controller.followAppVersion();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const requests = github.requests.length;
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    expect(github.requests).toHaveLength(requests);
+  } finally {
+    await controller.stop();
+    vi.useRealTimers();
+  }
+  const next = controllerWith().controller;
+  expect(await next.followAppVersion()).toMatchObject({
+    status: "installed",
+    version: VERSION,
+  });
+});
+
+it("clears a pending missing-asset retry on stop", async () => {
+  await installedBefore("0.0.0");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { controller, github } = controllerWith({
+    github: fakeGithub({ release: { assets: [] } }),
+  });
+  try {
+    await controller.followAppVersion();
+    await controller.stop();
+    await vi.advanceTimersByTimeAsync(10 * 60 * 60_000);
+    expect(github.requests).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does nothing when not installed or in a development build", async () => {
+  const fresh = controllerWith();
+  await fresh.controller.followAppVersion();
+  expect(fresh.github.requests).toEqual([]);
+  expect(existsSync(installDir)).toBe(false);
+  await installedBefore("0.0.0");
+  const dev = controllerWith({ development: true });
+  await dev.controller.followAppVersion();
+  expect(dev.github.requests).toEqual([]);
+});
+
+it("sets aside a running Windows executable and cleans it on a later launch", async () => {
+  await installedBefore("0.0.0");
+  let locked = true;
+  const files = fsWith({
+    rm: async (...args: Parameters<typeof fs.rm>) => {
+      if (locked && /ajour\.exe\.old-/.test(String(args[0])))
+        throw Object.assign(new Error("running exe"), { code: "EPERM" });
+      return fs.rm(...args);
+    },
+    rename: async (source: string, target: string) => {
+      // Windows allows renaming a running executable, but not replacing it directly.
+      if (
+        locked &&
+        target === path.join(installDir, "ajour.exe") &&
+        existsSync(target)
+      )
+        throw Object.assign(new Error("running exe"), { code: "EPERM" });
+      return fs.rename(source, target);
+    },
+  });
+  expect(
+    await controllerWith({ files }).controller.followAppVersion(),
+  ).toMatchObject({ status: "installed", version: VERSION });
+  expect(
+    (await readdir(installDir)).some((name) =>
+      name.startsWith("ajour.exe.old-"),
+    ),
+  ).toBe(true);
+  locked = false;
+  await controllerWith({ files }).controller.reconcile();
+  expect(
+    (await readdir(installDir)).some((name) =>
+      name.startsWith("ajour.exe.old-"),
+    ),
+  ).toBe(false);
 });
