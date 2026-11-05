@@ -35,7 +35,8 @@ export async function connect(
   );
 
   const url = ajourUrl(io);
-  const client = mcpClient({ url, token });
+  const transport = await io.transport?.(url);
+  const client = mcpClient({ url, token, fetch: transport?.fetch });
   let windowOpen = true;
   try {
     await client.check();
@@ -57,7 +58,11 @@ export async function connect(
       );
     }
   } finally {
-    await client.close();
+    try {
+      await client.close();
+    } finally {
+      transport?.close();
+    }
   }
   if (!windowOpen) io.stderr.write(`${WINDOW_CLOSED_NOTE}\n`);
   return 0;

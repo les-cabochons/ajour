@@ -729,6 +729,8 @@ An agent's write is the user's action, through the same action sets, with the sa
 
 ## Terminal
 
+Inside WSL, the Linux `ajour` uses the Windows `ajour.exe` beside its parent folder to reach Ajour for loopback URLs, including `AJOUR_URL`. Both ordinary commands and `connect` use this relay. WSL is detected by `WSL_DISTRO_NAME` or `/proc/sys/fs/binfmt_misc/WSLInterop`. Without WSL, without the sibling executable, or with a non-loopback URL, connections stay direct. A relay that cannot start exits 3 and says "ajour can't start ajour.exe to reach Ajour on Windows. Check that WSL can run Windows programs." A refused connection keeps the existing "Ajour isn't running" advice. The relay command is hidden from help, completion and the manual. See [#603](https://github.com/les-cabochons/ajour/issues/603).
+
 The `ajour` command does in a terminal what the window does, through the MCP endpoint with its own client token, so every rule above applies to it unchanged (spec [#525](https://github.com/les-cabochons/ajour/issues/525), [#536](https://github.com/les-cabochons/ajour/issues/536), [#537](https://github.com/les-cabochons/ajour/issues/537)). Its vocabulary is the app's: start, switch, stop, continue, discard, entry, saved; never "timer".
 
 - Every write answers with the entry's row: ● when it runs, its time, project code, task, note, ✓ when Workday holds it as it is, its short id, and its day when it isn't today. Rows printed together line up, and on a terminal they are cut to its width, the note first.

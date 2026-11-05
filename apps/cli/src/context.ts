@@ -2,6 +2,7 @@ import { mcpClient, type AjourClient } from "./client.ts";
 import { ajourUrl, readToken } from "./config.ts";
 import { UnreachableError } from "./errors.ts";
 import type { CliIo } from "./io.ts";
+import type { RelayTransport } from "./relay-transport.ts";
 import {
   painter,
   shouldColor,
@@ -30,6 +31,7 @@ export function createContext(
   options: { color: ColorMode; json: boolean; quiet: boolean },
 ): Context {
   let client: AjourClient | undefined;
+  let transport: RelayTransport | undefined;
   return {
     io,
     ...options,
@@ -40,11 +42,17 @@ export function createContext(
       if (client) return client;
       const token = await readToken(io);
       if (!token) throw new UnreachableError(NOT_CONNECTED);
-      client = mcpClient({ url: ajourUrl(io), token });
+      const url = ajourUrl(io);
+      transport = await io.transport?.(url);
+      client = mcpClient({ url, token, fetch: transport?.fetch });
       return client;
     },
     async close() {
-      await client?.close();
+      try {
+        await client?.close();
+      } finally {
+        transport?.close();
+      }
     },
   };
 }
