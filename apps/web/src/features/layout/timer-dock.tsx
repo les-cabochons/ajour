@@ -12,6 +12,7 @@ import {
 import { RunningDot } from "@/components/running-dot";
 import { TooltipButton } from "@/components/tooltip-button";
 import { formatClockDuration } from "@/domain/time/duration";
+import { useRouterState } from "@tanstack/react-router";
 import {
   formatElapsedDuration,
   formatRemainingEstimate,
@@ -19,8 +20,8 @@ import {
 } from "@/domain/time/running-entry";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import {
-  getRunningEntryPageHost,
   openBlankEntryEditor,
+  requestRunningEntryOnPage,
 } from "@/features/time/new-entry-request";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import { useLocalState } from "@/lib/local-hooks";
@@ -194,6 +195,9 @@ function StartButton() {
  */
 export function TimerDock() {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const editorOpen = useRunningEntryEditor(Boolean(timer));
 
   if (!timer || !summary) {
@@ -219,7 +223,7 @@ export function TimerDock() {
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
         open={editorOpen}
-        onOpenChange={(open) => openRunningEditor(open, timer._id)}
+        onOpenChange={(open) => openRunningEditor(open, timer._id, pathname)}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
@@ -306,6 +310,9 @@ export function FloatingTimerDock({
 }) {
   const { timer, summary, runningDurationMs } = useRunningEntry();
   const editorOpen = useRunningEntryEditor(Boolean(timer));
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   if (!timer || !summary) return null;
 
   return (
@@ -319,7 +326,7 @@ export function FloatingTimerDock({
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
         open={editorOpen}
-        onOpenChange={(open) => openRunningEditor(open, timer._id)}
+        onOpenChange={(open) => openRunningEditor(open, timer._id, pathname)}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pl-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -366,11 +373,8 @@ export function TodayTotal() {
  * Opens the running entry's editor: in the Time page's side panel while that
  * page is open, as a click on its row does, else in the dock's popover.
  */
-function openRunningEditor(open: boolean, timerId: string) {
-  const pageHost = open ? getRunningEntryPageHost() : null;
-  if (pageHost) {
-    pageHost(timerId);
-    return;
-  }
+function openRunningEditor(open: boolean, timerId: string, pathname: string) {
+  // The page may still be loading: it opens the entry once it is ready.
+  if (open && requestRunningEntryOnPage(pathname, timerId)) return;
   setRunningEntryEditorOpen(open);
 }

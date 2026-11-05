@@ -59,7 +59,8 @@ import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import {
-  getNewEntryPageHost,
+  dropHeldPageRequests,
+  requestNewEntryOnPage,
   useNewEntryRequests,
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
@@ -394,6 +395,12 @@ function GlobalTimerBar({
     null,
   );
   const [totalsElement, setTotalsElement] = useState<HTMLElement | null>(null);
+  const pathname = useRouterState({
+    select: (routerState) => routerState.location.pathname,
+  });
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+  useEffect(() => dropHeldPageRequests(pathname), [pathname]);
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
@@ -410,11 +417,14 @@ function GlobalTimerBar({
     (values?: NewTimeEntryValues, anchor: HTMLElement | null = null) => {
       // On the Time page, a new entry opens in its side panel, as its own
       // New entry does. A note or backlog link only the popover carries.
-      const pageHost = getNewEntryPageHost();
-      if (pageHost && !values?.note && !values?.workItemId) {
+      // The page may still be loading: it opens the entry once it is ready.
+      if (
+        !values?.note &&
+        !values?.workItemId &&
+        requestNewEntryOnPage(pathnameRef.current, values)
+      ) {
         // One entry editor at a time, there too.
         setRunningEntryEditorOpen(false);
-        pageHost(values);
         return;
       }
       // One entry editor at a time: the new entry closes the running one.
