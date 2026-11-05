@@ -39,8 +39,8 @@ Ajour checks every snapshot before it applies any of it, and refuses one that le
 - A project Ajour already follows matches by `remoteId`. Otherwise a local project with the same `code`, ignoring case, becomes the managed one without a question, and keeps its time entries. A project that only matches a local project's name waits for the user in Sync review, who links it or adds it as new. Any other project is added.
 - Every sync takes the project's `name`, `code`, `client`, dates and budget, and each task's `name`, `billable` and `estimateHours`. The user's display name, color, icon, favorites, pins and plugin properties stay.
 - A task matches by `remoteId`, then by name among the project's tasks the source doesn't know yet.
-- `complete: true` archives the project, and `complete: false` restores it if Ajour archived it for that. A `closed` task is archived the same way. A project or task left out of the snapshot is archived, never deleted, and comes back when it returns.
-- A project shared with a team is never linked to a source.
+- `complete: true` archives the project, and `complete: false` restores it if Ajour archived it for that. A `closed` task is archived the same way. A project or task left out of the snapshot is archived, never deleted, and comes back when it returns. The user can't restore what the source archived, so your snapshot decides when it comes back.
+- A project shared with a team is never linked to a source: a project with its code or name is added beside it.
 
 ## Types
 
