@@ -3806,6 +3806,35 @@ describe("following the app version in WSL", () => {
     expect((await recordNow()).wsl.version).toBe(VERSION);
   });
 
+  // Measured in the real app on WSL 2: right after `-V` ran the staged build
+  // through /mnt/c, moving its folder failed with EPERM for under 300 ms.
+  it("waits out the moment Windows holds the staged build after its -V check, and follows", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    let held = 2;
+    const files = fsWith({
+      rename: async (source: string, target: string) => {
+        if (held > 0 && target === linuxFolder()) {
+          held--;
+          throw Object.assign(new Error("EPERM: operation not permitted"), {
+            code: "EPERM",
+          });
+        }
+        return fs.rename(source, target);
+      },
+    });
+
+    const state = await controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+      files,
+    }).controller.followAppVersion();
+
+    expect(distroRow(state, "Ubuntu")?.status).toBe("added");
+    expect(held).toBe(0);
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+    expect(await leftovers()).toEqual([]);
+  });
+
   it("keeps the old Linux build, and says why, when the new one prints another version in the distro", async () => {
     const wsl = await addedBefore(["Ubuntu"]);
     wsl.distros.get("Ubuntu")!.versionOutput = "ajour 0.0.0";

@@ -1060,6 +1060,25 @@ function createCliCommandController({
   }
 
   /**
+   * `swapLinuxIn`, again after 50 ms, doubling up to 800 ms, while a rename
+   * fails as Windows fails one on a folder still in use. Right after `-V`
+   * ran the staged build through `/mnt/c`, Windows holds its folder for a
+   * moment (under 300 ms, measured on WSL 2). A running Linux ajour holds
+   * `bin\linux` for as long as it runs: that still fails, about 1.5 s on.
+   * A retry finishes a swap half done: `swapIn` skips an entry set aside.
+   */
+  async function swapLinuxInPatiently(id, staged) {
+    for (let wait = 50; ; wait *= 2) {
+      try {
+        return await swapLinuxIn(id, staged);
+      } catch (error) {
+        if (!BUSY_CODES.includes(error?.code) || wait > 800) throw error;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+  }
+
+  /**
    * Checks inside `distro` that the Linux build at `target` prints the
    * app's version. `ending` closes each refusal's sentence.
    */
@@ -1388,7 +1407,7 @@ function createCliCommandController({
       );
       swapped = true;
       try {
-        await swapLinuxIn(id, staged);
+        await swapLinuxInPatiently(id, staged);
       } catch (error) {
         if (BUSY_CODES.includes(error?.code))
           throw Object.assign(new Error(LINUX_BUSY), { busy: true });
