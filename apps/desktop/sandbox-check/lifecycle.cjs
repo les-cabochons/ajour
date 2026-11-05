@@ -228,7 +228,7 @@ async function lifecycle() {
     ],
     projectDataShapePluginDirectories: [],
     allowDevelopmentPlugins: true,
-    pluginApi4Runtime: runtime,
+    pluginRuntime: runtime,
     pluginRequestTimeoutMs: 3_000,
     pluginDrainMs: 5_000,
     brokerActivityWindowMs: 0,

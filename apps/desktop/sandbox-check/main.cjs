@@ -294,7 +294,7 @@ async function main() {
     ],
     projectDataShapePluginDirectories: [path.join(FIXTURES, "fixture-shape")],
     allowDevelopmentPlugins: true,
-    pluginApi4Runtime: runtime,
+    pluginRuntime: runtime,
     brokerActivityWindowMs: 0,
   });
   const request = (method, url, body) =>
