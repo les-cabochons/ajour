@@ -149,6 +149,7 @@ module.exports = {
     executableName: "Ajour",
   },
   nsis: {
+    include: path.resolve(desktopRoot, "installer/cli-command.nsh"),
     artifactName: "Ajour-${version}-${arch}.${ext}",
     oneClick: true,
     perMachine: false,

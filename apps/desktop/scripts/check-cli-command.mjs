@@ -415,6 +415,39 @@ async function checkFollow(electronApp, env, release, version, binary) {
         state: await page.evaluate(() => window.ajourDesktop.getCliCommand()),
       },
     );
+    const pathBeforeRemove =
+      process.platform === "win32" ? await readUserPath() : null;
+    const removed = await page.evaluate(() =>
+      window.ajourDesktop.removeCliCommand(),
+    );
+    expect(
+      removed.status === "not-installed",
+      "Remove ends Not installed",
+      removed,
+    );
+    const folder = env.AJOUR_CLI_INSTALL_DIR;
+    expect(!existsSync(folder), "Remove deletes the install folder");
+    expect(
+      !existsSync(path.join(env.AJOUR_USER_DATA_PATH, "cli-command.json")),
+      "Remove deletes the record",
+    );
+    if (process.platform === "darwin") {
+      expect(
+        !(await lstat("/usr/local/bin/ajour").catch(() => null)),
+        "Remove deletes the macOS command link",
+      );
+    } else {
+      const after = await readUserPath();
+      expect(
+        after?.kind === pathBeforeRemove?.kind &&
+          after?.value ===
+            (pathBeforeRemove?.value ?? "")
+              .split(";")
+              .filter((entry) => entry !== folder)
+              .join(";"),
+        "Remove preserves the other Path entries and registry type",
+      );
+    }
   } finally {
     await app.close();
   }

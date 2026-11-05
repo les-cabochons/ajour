@@ -1769,6 +1769,16 @@ export const catalog = defineCatalog({
      * sign-in.
      */
     "cli_command.path_broadcast": { kinds: ["job"], fields: {} },
+    "cli_command.remove": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender", "admin_cancelled", "remove_failed"],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          result: operational<"removed" | "refused" | "failed">(),
+        },
+      },
+    },
     /** Whether closing the window keeps Ajour running (#534). */
     "window.get_settings": {
       kinds: ["ipc"],

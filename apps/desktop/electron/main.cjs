@@ -698,6 +698,11 @@ ipc.handle("ajour:install-cli-command", async (event) => {
   return await cliCommand.install({ unit: events.current() });
 });
 
+ipc.handle("ajour:remove-cli-command", async (event) => {
+  assertActiveDesktopWindow(event, "remove the ajour command");
+  return await cliCommand.remove({ unit: events.current() });
+});
+
 // The window sends the running entry when it changes; main counts its time.
 ipc.onMessage("ajour:set-tray-state", (event, state) => {
   assertActiveDesktopWindow(event, "update the tray icon");

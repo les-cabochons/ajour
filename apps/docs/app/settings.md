@@ -24,6 +24,10 @@ Settings has three groups: **App**, **Work** and **Data**.
 
 On macOS, the Terminal section installs a signed command and shows `/usr/local/bin/ajour`. Ajour asks for your password if it needs administrator access to add the link. Cancelling leaves nothing installed. An existing command from another source stays untouched. If the link needs repair and a password, Settings shows **Retry**. Ajour never asks for the password at launch.
 
+Press **Remove** in Settings to take the command off your PATH and delete its install folder. There is no confirmation dialog. The row says "Removing ajour…", then "Not installed." Errors appear inline with **Retry**. Your CLI connection token and Undo state stay on your computer. On macOS, removal may ask for your password. Cancelling leaves everything installed.
+
+Uninstalling Ajour on Windows removes the command too. An app update keeps it. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
+
 ## Plugins
 
 Install, activate and connect plugins. See [Plugins](/plugins/).
