@@ -194,11 +194,15 @@ function createTrayController({
   createTray,
   buildMenu,
   onAction,
+  onPanelRequested,
+  imageForState,
 }) {
   let tray = null;
   let entry = null;
   let menuKey = null;
   let tick = null;
+  let menu = null;
+  let runningIcon = null;
 
   function stopTicking() {
     if (tick) clearTimeout(tick);
@@ -210,28 +214,46 @@ function createTrayController({
     if (!tray) return;
     const time = now();
     const model = trayMenuModel({ entry, now: time, platform });
+    if (imageForState && runningIcon !== Boolean(entry)) {
+      runningIcon = Boolean(entry);
+      tray.setImage(imageForState(runningIcon));
+    }
     tray.setToolTip(model.tooltip);
+    if (platform === "darwin" && onPanelRequested) {
+      tray.setTitle(entry ? formatCountedTime(countedMsOf(entry, time)) : "", {
+        fontType: "monospacedDigit",
+      });
+    }
     // The menu holds no time, so it changes only with the entry. Its Stop
     // carries the timer, so another entry with the same title rebuilds it.
     const key = JSON.stringify([entry?.timerId ?? null, model.items]);
     if (key !== menuKey) {
       menuKey = key;
       const shown = entry;
-      tray.setContextMenu(
-        buildMenu(
-          model.items.map((item) =>
-            "type" in item
-              ? item
-              : {
-                  label: item.label,
-                  enabled: item.enabled,
-                  ...(item.id === "entry"
-                    ? {}
-                    : { click: () => onAction(item.id, shown) }),
-                },
-          ),
+      menu = buildMenu(
+        [
+          ...(onPanelRequested
+            ? [{ id: "panel", label: "Timer panel", enabled: true }]
+            : []),
+          ...model.items,
+        ].map((item) =>
+          "type" in item
+            ? item
+            : {
+                label: item.label,
+                enabled: item.enabled,
+                ...(item.id === "entry"
+                  ? {}
+                  : {
+                      click: () =>
+                        item.id === "panel"
+                          ? onPanelRequested()
+                          : onAction(item.id, shown),
+                    }),
+              },
         ),
       );
+      if (platform !== "darwin" || !onPanelRequested) tray.setContextMenu(menu);
     }
     if (entry) {
       tick = setTimeout(
@@ -247,9 +269,15 @@ function createTrayController({
       if (tray) return;
       tray = createTray();
       menuKey = null;
+      runningIcon = null;
       // Windows opens the app on a click and the menu on a right-click. The
       // macOS menu bar item and Linux open the menu on a click.
-      if (platform === "win32") tray.on("click", () => onAction("open", entry));
+      if (onPanelRequested && platform !== "linux") {
+        tray.on("click", onPanelRequested);
+        if (platform === "darwin")
+          tray.on("right-click", () => tray.popUpContextMenu(menu));
+      } else if (platform === "win32")
+        tray.on("click", () => onAction("open", entry));
       render();
     },
     remove() {
@@ -263,6 +291,7 @@ function createTrayController({
     },
     /** The running entry the window last sent, or null. */
     entry: () => entry,
+    bounds: () => tray?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 },
   };
 }
 

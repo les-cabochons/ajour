@@ -1,3 +1,4 @@
+import { usePortalContainer } from "@/components/ui/portal-container";
 import { useEffect } from "react";
 import { Toast as ToastPrimitive } from "@base-ui/react/toast";
 import { RiCloseLine } from "@remixicon/react";
@@ -256,7 +257,7 @@ function ToastList() {
 export function Toaster() {
   return (
     <ToastPrimitive.Provider toastManager={toastManager} limit={3}>
-      <ToastPrimitive.Portal>
+      <ToastPrimitive.Portal container={usePortalContainer()}>
         <ToastPrimitive.Viewport
           className={cn(
             "fixed right-4 bottom-[calc(1rem+var(--agent-indicator-clearance,0px))] z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",

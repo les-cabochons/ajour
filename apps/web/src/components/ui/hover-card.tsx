@@ -1,4 +1,5 @@
-"use client";
+import { usePortalContainer } from "@/components/ui/portal-container";
+("use client");
 
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
@@ -42,7 +43,7 @@ function HoverCardContent({
     positionerClassName?: string;
   }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={usePortalContainer()}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

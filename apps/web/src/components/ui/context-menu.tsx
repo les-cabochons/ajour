@@ -1,3 +1,4 @@
+import { usePortalContainer } from "@/components/ui/portal-container";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ function ContextMenuContent({
   ...props
 }: ContextMenuPrimitive.Popup.Props) {
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.Portal container={usePortalContainer()}>
       <ContextMenuPrimitive.Positioner className="isolate z-50 outline-none">
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"

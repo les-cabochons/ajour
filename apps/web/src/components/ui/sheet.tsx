@@ -1,4 +1,5 @@
-"use client";
+import { usePortalContainer } from "@/components/ui/portal-container";
+("use client");
 
 import * as React from "react";
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
@@ -20,7 +21,13 @@ function SheetClose({ ...props }: SheetPrimitive.Close.Props) {
 }
 
 function SheetPortal({ ...props }: SheetPrimitive.Portal.Props) {
-  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
+  return (
+    <SheetPrimitive.Portal
+      container={usePortalContainer()}
+      data-slot="sheet-portal"
+      {...props}
+    />
+  );
 }
 
 function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {

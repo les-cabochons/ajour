@@ -1,3 +1,4 @@
+import { createTrayPanelController } from "./electron/tray-panel.cjs";
 import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -10,6 +11,16 @@ import { noWindowSession, recordingEvents } from "./recording-events.ts";
 // by statement, in a VM context with Electron replaced. The rules themselves
 // live in the electron/*.cjs modules and have their own tests. `events`, the
 // main process's emitter, is a VM global with a recording sink.
+
+function emptyTrayPanel() {
+  return createTrayPanelController({
+    platform: "win32",
+    getBounds: () => ({ x: 0, y: 0, width: 20, height: 20 }),
+    getWorkArea: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
+    request: () => {},
+    visibility: () => {},
+  });
+}
 
 const require = createRequire(import.meta.url);
 
@@ -137,6 +148,7 @@ describe("quitting and installing an update", () => {
       drainSync: vi.fn(),
     };
     const context = vm.createContext({
+      trayPanel: emptyTrayPanel(),
       localLogs,
       closePluginRenderers,
       cliCommand,
@@ -1047,6 +1059,7 @@ describe("the main window", () => {
     const savedSettings: unknown[] = [];
     const app = { quit: vi.fn() };
     const context = vm.createContext({
+      trayPanel: emptyTrayPanel(),
       BrowserWindow: FakeBrowserWindow,
       app,
       Notification: FakeNotification,

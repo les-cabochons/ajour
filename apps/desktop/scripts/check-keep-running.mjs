@@ -29,7 +29,7 @@
 // port it was built for. --keep keeps the user data folder, and --events
 // prints the app's last events, which a failed run always prints.
 import { spawnSync, execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import net from "node:net";
@@ -236,7 +236,9 @@ async function main() {
 
     const windowState = () =>
       electronApp.evaluate(({ BrowserWindow }) => {
-        const [window] = BrowserWindow.getAllWindows();
+        const window = BrowserWindow.getAllWindows().find(
+          (candidate) => candidate.webContents.getURL() !== "about:blank",
+        );
         return window
           ? { exists: !window.isDestroyed(), visible: window.isVisible() }
           : { exists: false, visible: false };
@@ -302,7 +304,9 @@ async function main() {
 
     // 2. Close the window: it hides, and stays loaded.
     await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].close();
+      BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.webContents.getURL() !== "about:blank")
+        .close();
     });
     const hidden = await waitFor(
       async () => {
@@ -314,7 +318,9 @@ async function main() {
     expect(hidden !== null, "closing the window hides it", await windowState());
     // Playwright keeps the page's visibilityState "visible", so ask main.
     const loaded = await electronApp.evaluate(({ BrowserWindow }) => {
-      const { webContents } = BrowserWindow.getAllWindows()[0];
+      const { webContents } = BrowserWindow.getAllWindows().find(
+        (candidate) => candidate.webContents.getURL() !== "about:blank",
+      );
       return !webContents.isDestroyed() && !webContents.isCrashed();
     });
     expect(
@@ -378,6 +384,133 @@ async function main() {
       saved,
     );
 
+    for (const title of [
+      "Review purchase requests",
+      "Resolve stock update deadlocks",
+      "Merge duplicate suppliers",
+      "Plan server migration",
+      "Review timer behavior",
+    ]) {
+      await callTool(agent, "create_work_item", { title });
+    }
+    await electronApp.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.webContents.getURL() !== "about:blank")
+        .close(),
+    );
+    await waitFor(async () => !(await windowState()).visible, {
+      what: "the owner to hide before opening the panel",
+    });
+    // The compact panel is a child document, with no second store.
+    const panelOpened = electronApp.waitForEvent("window");
+    expect(
+      await trayClick("Timer panel"),
+      "the tray menu opens the timer panel",
+    );
+    const panel = await panelOpened;
+    await panel.getByRole("searchbox", { name: "Search tasks" }).waitFor();
+    expect(
+      await panel.evaluate(() => window.ajourDesktop === undefined),
+      "the blank child exposes no privileged bridge",
+    );
+    const captureDir = path.join(repoRoot, "qa/ui/out");
+    await mkdir(captureDir, { recursive: true });
+    await panel.screenshot({
+      path: path.join(captureDir, "tray-panel-light.png"),
+    });
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+    await panel.waitForFunction(() =>
+      document.documentElement.classList.contains("dark"),
+    );
+    await panel.screenshot({
+      path: path.join(captureDir, "tray-panel-dark.png"),
+    });
+    await panel.getByRole("searchbox").fill("Lifecycle check");
+    const panelRow = panel
+      .getByRole("link", { name: "Lifecycle check", exact: true })
+      .locator("..");
+    await panelRow
+      .getByRole("button", { name: "Start timer", exact: true })
+      .click();
+    expect(
+      (await callTool(agent, "get_running_timer")).running?.workItemId ===
+        item.workItemId,
+      "panel Start runs through the owner and MCP sees it",
+    );
+    await panelRow
+      .getByRole("button", { name: "Stop timer", exact: true })
+      .click();
+    expect(
+      !(await callTool(agent, "get_running_timer")).running,
+      "panel Stop saves through the owner",
+    );
+    await panelRow
+      .getByRole("button", { name: "Add time", exact: true })
+      .click();
+    await panel.getByRole("button", { name: "Project or task" }).click();
+    await panel.locator('[data-slot="popover-content"]').waitFor();
+    expect(
+      (await panel.locator('[data-slot="popover-content"]').count()) > 0,
+      "entry pickers open in the child document",
+    );
+    await panel
+      .getByRole("combobox")
+      .press("Escape")
+      .catch(() => panel.keyboard.press("Escape"));
+    await panel.getByLabel("Hours", { exact: true }).fill("0:30");
+    await panel.screenshot({
+      path: path.join(captureDir, "tray-panel-entry.png"),
+    });
+    await panel.getByLabel("Hours", { exact: true }).press("Enter");
+    await panel.getByRole("searchbox").waitFor();
+    expect(
+      await page.evaluate(
+        (id) =>
+          JSON.parse(
+            localStorage.getItem("ajour.local-state.v2"),
+          ).timesheetEntries.some(
+            (entry) => entry.workItemId === id && entry.durationMs === 1800000,
+          ),
+        item.workItemId,
+      ),
+      "panel Add time saves its linked entry through the canonical editor",
+    );
+    await panel.getByRole("button", { name: "Today", exact: true }).click();
+    await panel.getByRole("tablist", { name: "Days of the week" }).waitFor();
+    expect(true, "the panel switches to the day entries view");
+    const halfHour = panel
+      .getByRole("list", { name: "Time entries" })
+      .locator("li")
+      .filter({ has: panel.getByText("0:30", { exact: true }) });
+    await halfHour
+      .getByRole("button", { name: "Continue entry", exact: true })
+      .click();
+    expect(
+      (await callTool(agent, "get_running_timer")).running?.countedMinutes ===
+        30,
+      "Continue preserves the entry's saved time",
+    );
+    expect(
+      (await panel
+        .locator("footer")
+        .getByText("0:30", { exact: true })
+        .count()) === 1,
+      "the panel total counts a continued entry once",
+    );
+    await panel
+      .getByRole("list", { name: "Time entries" })
+      .getByRole("button", { name: "Stop timer", exact: true })
+      .click();
+    await panel.screenshot({
+      path: path.join(captureDir, "tray-panel-today.png"),
+    });
+    await panel
+      .getByRole("button", { name: "Open Ajour", exact: true })
+      .click();
+    await waitFor(async () => (await windowState()).visible, {
+      what: "Open Ajour from the panel",
+    });
+
     // The bundled CLI talks to the real app. Its saved Undo stays in this temp profile.
     const cli = async (...args) => {
       const { stdout } = await promisify(execFile)(
@@ -398,7 +531,9 @@ async function main() {
       return JSON.parse(stdout);
     };
     await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].close();
+      BrowserWindow.getAllWindows()
+        .find((candidate) => candidate.webContents.getURL() !== "about:blank")
+        .close();
     });
     await waitFor(async () => !(await windowState()).visible, {
       what: "the window to hide for the CLI",

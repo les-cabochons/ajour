@@ -41,6 +41,7 @@ import {
   useRunningEntryEditor,
 } from "@/features/layout/timer-dock";
 import { DesktopTrayState } from "@/features/layout/desktop-tray";
+import { DesktopTrayPanel } from "@/features/layout/desktop-tray-panel";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { getAppSection } from "@/features/layout/app-section";
 import { CommandPalette } from "@/features/command-palette/command-palette";
@@ -648,6 +649,7 @@ export function AppShell() {
     >
       <RunningEntryWindowTitle />
       {isDesktopShell && <DesktopTrayState />}
+      {isDesktopShell && <DesktopTrayPanel />}
       <BacklogAutoSyncScheduler />
       <PendingSourceWritesFlush />
       <ShortcutOverlay />

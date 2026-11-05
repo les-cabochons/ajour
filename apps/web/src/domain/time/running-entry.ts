@@ -42,7 +42,7 @@ export interface RunningEntrySummary {
  * entry only counts what it added since.
  */
 export function summarizeRunningEntry(
-  timer: LocalTimer,
+  timer: Pick<LocalTimer, "projectId" | "taskId" | "workItemId" | "note">,
   context: {
     projects: readonly LocalProject[];
     workItems: readonly LocalWorkItem[];
