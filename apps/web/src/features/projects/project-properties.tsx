@@ -25,6 +25,10 @@ import {
   getLocalProjectDisplayName,
   type LocalProject,
 } from "@/domain/local-state";
+import {
+  formatProjectDates,
+  getProjectEndedOn,
+} from "@/domain/projects/project-dates";
 import { isManagedProject } from "@/domain/projects/project-transitions";
 import {
   getTaskNameField,
@@ -50,6 +54,7 @@ import {
   ProjectTeamRow,
 } from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
+import { useTodayIsoDate } from "@/lib/use-now";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { subscribePluginsOverview } from "@/lib/app-api";
 import {
@@ -329,8 +334,10 @@ function PluginPropertySection({
 
 /**
  * The project page's Properties card: full name, code, color and icon change
- * in place. On a managed project, the full name, code and client are its
- * source's, locked, and Open in <source> leads the actions. Each active
+ * in place. On a managed project, the full name, code, client and dates are
+ * its source's, locked, the client and dates only when the source gave them,
+ * and Open in <source> leads the actions. A muted line says when a managed
+ * project past its last day ended. Each active
  * plugin that adds project properties gets a collapsed section below them.
  * Import tasks… and Archive or Restore sit at its bottom, in place of the
  * "…" menu the page had.
@@ -355,6 +362,12 @@ export function ProjectPropertiesCard({
   const isArchived = project.status === "archived";
   const managed = isManagedProject(project);
   const sourceUrl = project.source?.url;
+  const today = useTodayIsoDate();
+  const currentYear = Number(today.slice(0, 4));
+  const dates = managed ? formatProjectDates(project, currentYear) : undefined;
+  const endedOn = managed
+    ? getProjectEndedOn(project, today, currentYear)
+    : undefined;
   const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
   // The first plugin that commits tasks under a name, such as Workday, names
   // the Local only row.
@@ -433,11 +446,14 @@ export function ProjectPropertiesCard({
             />
           )}
         </PropertyRow>
-        {managed ? (
+        {managed && project.client ? (
           <PropertyRow label="Client">
-            <LockedValue label={sourceLabel} muted={!project.client}>
-              {project.client || "None"}
-            </LockedValue>
+            <LockedValue label={sourceLabel}>{project.client}</LockedValue>
+          </PropertyRow>
+        ) : null}
+        {dates ? (
+          <PropertyRow label="Dates">
+            <LockedValue label={sourceLabel}>{dates}</LockedValue>
           </PropertyRow>
         ) : null}
         <PropertyRow label="Color">
@@ -529,6 +545,9 @@ export function ProjectPropertiesCard({
         ) : null}
         <ProjectTeamRow project={project} teams={teams} />
       </PropertyList>
+      {endedOn ? (
+        <p className="text-xs text-muted-foreground">Ended on {endedOn}</p>
+      ) : null}
       {plugins.map((plugin) => (
         <PluginPropertySection
           key={plugin.pluginId}
