@@ -318,7 +318,11 @@ function wslStatusLine(
     return "Removing ajour…";
   if (mode.kind === "running" && mode.operation === "follow") {
     const progress = distro.status === "updating" ? distro.progress : null;
-    return `Updating ajour to ${pending ?? ""}, ${progress ?? 0}%`;
+    return followSentence(
+      pending,
+      (to) => `Updating ajour to ${to}, ${progress ?? 0}%`,
+      "Updating ajour…",
+    );
   }
   if (mode.kind === "running") {
     // Until main reports the Add, it starts as a download does.
@@ -333,9 +337,26 @@ function wslStatusLine(
   return "Not added.";
 }
 
+/**
+ * A sentence of the Linux build's follow (#606), which names the version
+ * it follows to, or `plain` while main names none.
+ */
+function followSentence(
+  pending: string | undefined,
+  sentence: (version: string) => string,
+  plain: string,
+) {
+  return pending ? sentence(pending) : plain;
+}
+
 /** Why the Linux build couldn't follow the app (#606): the old one works. */
 function followFailure(pending: string | undefined, reason: string) {
-  return `ajour in WSL couldn't update to ${pending ?? ""}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`;
+  return followSentence(
+    pending,
+    (to) =>
+      `ajour in WSL couldn't update to ${to}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`,
+    reason,
+  );
 }
 
 /** What a distro row says when main rejects its call without a sentence. */

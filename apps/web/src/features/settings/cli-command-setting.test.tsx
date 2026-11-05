@@ -967,7 +967,36 @@ describe("the WSL command rows", () => {
       screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
     ).toBe(true);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(ubuntuRow().querySelector(".h-12")).toBeTruthy();
+  });
+
+  it("Given main names no version the Linux build follows to, its rows say Updating and the reason, without an empty version", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        version: VERSION,
+        distros: [
+          { name: "Ubuntu", wslVersion: 2, status: "updating", progress: 42 },
+          {
+            name: "Debian",
+            wslVersion: 2,
+            status: "error",
+            operation: "follow",
+            error: "An ajour running in WSL is using its files.",
+            added: true,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+    await mount();
+
+    expect(rowLines()).toEqual(["Updating ajour…"]);
+    const debian = screen
+      .getByText("Debian")
+      .closest(".settings-row") as HTMLElement;
+    expect(within(debian).getByRole("alert").textContent).toBe(
+      "An ajour running in WSL is using its files.",
+    );
   });
 
   it("Given the Linux build couldn't follow, added rows say so inline, keep the installed version, and Retry follows again", async () => {
@@ -997,11 +1026,22 @@ describe("the WSL command rows", () => {
       removeCliCommandWsl: remove,
     });
     await mount();
+    // Rows keep a fixed height (ui-rules): each state fills the same box,
+    // one cut line per sentence, its whole text in the title.
+    const box = ubuntuRow().querySelector('[role="status"]')!.parentElement!;
+    const steady = () => {
+      expect(ubuntuRow().querySelector('[role="status"]')!.parentElement).toBe(
+        box,
+      );
+      for (const line of box.querySelectorAll("[data-line]"))
+        expect(line.getAttribute("title")).toBe(line.textContent);
+    };
 
     expect(rowLines()).toEqual([`ajour ${VERSION} · ~/.local/bin/ajour`]);
     expect(within(ubuntuRow()).getByRole("alert").textContent).toBe(
       `ajour in WSL couldn't update to ${NEXT}: An ajour running in WSL is using its files. The installed version keeps working.`,
     );
+    steady();
     fireEvent.click(within(ubuntuRow()).getByRole("button", { name: "Retry" }));
 
     expect(main.installCliCommand).toHaveBeenCalledOnce();
@@ -1009,6 +1049,7 @@ describe("the WSL command rows", () => {
     expect(remove).not.toHaveBeenCalled();
     expect(within(ubuntuRow()).queryByRole("alert")).toBeNull();
     expect(rowLines()).toEqual([`Updating ajour to ${NEXT}, 0%`]);
+    steady();
     await main.finish({
       ...INSTALLED,
       version: NEXT,
@@ -1018,6 +1059,7 @@ describe("the WSL command rows", () => {
       },
     });
     expect(rowLines()).toEqual([`ajour ${NEXT} · ~/.local/bin/ajour`]);
+    steady();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(mocks.error).not.toHaveBeenCalled();
   });
