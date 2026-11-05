@@ -25,7 +25,11 @@ import {
   RiArrowDownSLine,
   RiArrowRightSLine,
 } from "@remixicon/react";
-import { useNavigate, Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  SettingsLink,
+  useOpenSettings,
+} from "@/features/settings/settings-link";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -131,6 +135,7 @@ export function BacklogPage() {
   const now = useNow();
   const narrow = useIsNarrowView();
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const icons = useWorkItemIconData(state.projects);
   const [peekId, setPeekId] = useState<string | null>(null);
   // The selected rows, as in a file explorer: a click selects one, Cmd or
@@ -711,8 +716,8 @@ export function BacklogPage() {
   const unmappedRising = isUnmappedRising(unmapped, unmappedSeen);
   const unmappedLink =
     unmapped > 0 ? (
-      <Link
-        to="/settings/workflow"
+      <SettingsLink
+        page="workflow"
         className={cn("backlog-unmapped", unmappedRising && "is-rising")}
         aria-label={`${unmapped} unmapped source ${unmapped === 1 ? "state" : "states"}`}
         onClick={async (event) => {
@@ -726,7 +731,7 @@ export function BacklogPage() {
           )
             return;
           event.preventDefault();
-          if (await leaveDraft()) void navigate({ to: "/settings/workflow" });
+          if (await leaveDraft()) void openSettings("workflow");
         }}
       >
         {/* A calm line carries no icon; the warning shows only while the
@@ -739,7 +744,7 @@ export function BacklogPage() {
             source {unmapped === 1 ? "state" : "states"}
           </span>
         </span>
-      </Link>
+      </SettingsLink>
     ) : null;
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
   return (

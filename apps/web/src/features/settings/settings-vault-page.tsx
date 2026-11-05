@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { RiDeleteBinLine as Trash2 } from "@remixicon/react";
 import { MessagePanel, ResultLine } from "@/components/app-surface";
 import {
@@ -42,9 +42,8 @@ function ReplaceButton({ row }: { row: VaultRow }) {
   const text = row.state.kind === "rejected" ? "Replace token" : "Replace";
   return (
     // A link that looks like the outline button: it goes to a page.
-    <Link
-      to="/settings/plugins/$pluginId"
-      params={{ pluginId: replace.pluginId }}
+    <SettingsLink
+      page={`plugins/${replace.pluginId}`}
       search={
         replace.type === "connection"
           ? { connection: replace.connectionId, field: replace.fieldId }
@@ -56,7 +55,7 @@ function ReplaceButton({ row }: { row: VaultRow }) {
       className={buttonVariants({ variant: "outline", size: "sm" })}
     >
       {text}
-    </Link>
+    </SettingsLink>
   );
 }
 

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import {
+  SettingsLink,
+  useSettingsSearch,
+} from "@/features/settings/settings-link";
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiArrowRightLine as ArrowRight,
@@ -178,9 +182,8 @@ export function SettingsImportReviewPage() {
   );
   // Opened from an item's conflict mark or a toast: that item's issues
   // come into view, highlighted.
-  const { item: focusedItemId, held: focusedHeldConnectionId } = useSearch({
-    strict: false,
-  }) as SyncReviewSearch;
+  const { item: focusedItemId, held: focusedHeldConnectionId } =
+    useSettingsSearch() as SyncReviewSearch;
   const descriptionConflicts = useMemo(
     () =>
       localWorkItems.filter((workItem) => workItem.descriptionSync?.conflict),
@@ -530,13 +533,13 @@ export function SettingsImportReviewPage() {
         ) : connectionGroups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No staged imports yet. Go to{" "}
-            <Link
-              to="/settings/plugins"
+            <SettingsLink
+              page="plugins"
               replace
               className="font-medium text-foreground underline underline-offset-4"
             >
               Plugins
-            </Link>{" "}
+            </SettingsLink>{" "}
             and sync one of your plugin connections first.
           </p>
         ) : (

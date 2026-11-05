@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import {
-  RiArrowLeftLine as ArrowLeft,
   RiArrowRightSLine as ChevronRight,
   RiBugLine as Bug,
   RiCalendarLine as CalendarIcon,
@@ -16,26 +15,13 @@ import {
   RiGitPullRequestLine as PullRequestIcon,
   RiFlowChart as Workflow,
 } from "@remixicon/react";
-import {
-  CustomSidebarMenuButton,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-} from "@/components/custom-sidebar";
-import { Button } from "@/components/ui/button";
-import { TimerDock } from "@/features/layout/timer-dock";
-import { Sidebar } from "@/components/ui/sidebar";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
 
 /**
- * Wide windows show the settings pages in the app's left column, in place of
- * the app sidebar. The narrow view shows them as a full-width list that opens
- * Settings.
+ * Wide windows show the settings pages in the settings window's left column
+ * (`SettingsWindow`). The narrow view shows them as a full-width list that
+ * opens each page.
  */
 export type SettingsNavigationView = "wide" | "narrow";
 
@@ -115,133 +101,53 @@ export function getSettingsPages(
 }
 
 /**
- * The list of settings pages. In wide windows the app shell shows it in place
- * of the app sidebar, full height, headed by Back to app (`onBack`), and
- * switching pages replaces the history entry. In the narrow view it fills the
- * page as headed sections of full-width rows, and each page it opens has a
- * back arrow to it.
+ * The narrow view's list of settings pages, at /settings: headed sections of
+ * full-width rows, and each page it opens has a back arrow to it.
  */
-export function SettingsNavigation({
-  pathname,
-  view,
-  onBack,
-}: {
-  pathname: string;
-  view: SettingsNavigationView;
-  onBack?: () => void;
-}) {
+export function SettingsNavigation() {
   const { groups: codeHosts } = useCodeHostConnections();
   const calendars = useCalendarSources();
   const groups = getSettingsGroups(
-    view,
+    "narrow",
     codeHosts.length > 0,
     calendars.length > 0,
   );
 
-  if (view === "narrow") {
-    return (
-      <nav className="settings-narrow-nav" aria-label="Settings sections">
-        {groups.map((group) => (
-          <section
-            key={group.label}
-            className="settings-narrow-nav-group"
-            aria-labelledby={`settings-group-${group.label}`}
-          >
-            <h2
-              id={`settings-group-${group.label}`}
-              className="settings-narrow-nav-heading"
-            >
-              {group.label}
-            </h2>
-            <ul className="settings-narrow-nav-list">
-              {group.pages.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <li key={item.to}>
-                    <Link to={item.to} className="settings-narrow-nav-link">
-                      <Icon className="settings-narrow-nav-icon" />
-                      <span className="settings-narrow-nav-label">
-                        {item.label}
-                      </span>
-                      <ChevronRight
-                        className="settings-narrow-nav-chevron"
-                        aria-hidden
-                      />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
-      </nav>
-    );
-  }
-
   return (
-    <Sidebar
-      className="ajour-shell-sidebar ajour-settings-navigation"
-      innerClassName="ajour-shell-sidebar-inner"
-      collapsible="none"
-      role="navigation"
-      aria-label="Settings sections"
-    >
-      <div
-        className="ajour-sidebar-window-drag-region desktop-drag-region"
-        aria-hidden="true"
-      />
-      <SidebarHeader className="ajour-app-sidebar-header">
-        <Button
-          variant="ghost"
-
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onBack}
+    <nav className="settings-narrow-nav" aria-label="Settings sections">
+      {groups.map((group) => (
+        <section
+          key={group.label}
+          className="settings-narrow-nav-group"
+          aria-labelledby={`settings-group-${group.label}`}
         >
-          <ArrowLeft />
-          Back to app
-        </Button>
-      </SidebarHeader>
-      {/* The app sidebar's timer card, so Settings shows the one form of the
-          timer (council round 25). */}
-      {/* 16px from Back to app and from the first group (council round
-          26). */}
-      <div className="-mb-3 pt-2">
-        <TimerDock />
-      </div>
-      <SidebarContent>
-        {groups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel className="ajour-settings-navigation-label">
-              {group.label}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.pages.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = pathname.startsWith(item.to);
-                  return (
-                    <SidebarMenuItem key={item.to}>
-                      <CustomSidebarMenuButton
-                        render={
-                          <Link
-                            to={item.to}
-                            replace
-                            aria-current={isActive ? "page" : undefined}
-                          />
-                        }
-                        isActive={isActive}
-                      >
-                        <Icon />
-                        <span>{item.label}</span>
-                      </CustomSidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
-    </Sidebar>
+          <h2
+            id={`settings-group-${group.label}`}
+            className="settings-narrow-nav-heading"
+          >
+            {group.label}
+          </h2>
+          <ul className="settings-narrow-nav-list">
+            {group.pages.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.to}>
+                  <Link to={item.to} className="settings-narrow-nav-link">
+                    <Icon className="settings-narrow-nav-icon" />
+                    <span className="settings-narrow-nav-label">
+                      {item.label}
+                    </span>
+                    <ChevronRight
+                      className="settings-narrow-nav-chevron"
+                      aria-hidden
+                    />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </nav>
   );
 }

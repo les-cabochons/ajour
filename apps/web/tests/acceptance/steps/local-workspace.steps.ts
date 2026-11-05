@@ -629,10 +629,19 @@ Then("the window title shows the running entry", async ({ page }) => {
   await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
 });
 
-// Settings shows the sidebar's own timer card, not the floating dock
-// (council round 25).
-Then("Settings shows the running entry under Back to app", async ({ page }) => {
-  const settings = page.getByRole("navigation", {
+/** The settings window: the dialog that holds the settings pages list. */
+function settingsWindow(page: Page) {
+  return page
+    .getByRole("dialog")
+    .filter({
+      has: page.getByRole("navigation", { name: "Settings sections" }),
+    });
+}
+
+// The settings window shows the sidebar's own timer card, not the floating
+// dock (council round 25).
+Then("Settings shows the running entry in its window", async ({ page }) => {
+  const settings = settingsWindow(page).getByRole("navigation", {
     name: "Settings sections",
   });
   await expect(
@@ -1753,32 +1762,42 @@ Then("the app sidebar is expanded beside the page", async ({ page }) => {
   expect(pageBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
 });
 
-Then("the Settings pages replace the app sidebar", async ({ page }) => {
-  const settingsNavigation = page.getByRole("navigation", {
+Then("Settings opens as a window over the app", async ({ page }) => {
+  const window = settingsWindow(page);
+  await expect(window).toBeVisible();
+  const settingsNavigation = window.getByRole("navigation", {
     name: "Settings sections",
   });
-  await expect(
-    page.getByRole("navigation", { name: "Primary navigation" }),
-  ).toHaveCount(0);
-  await expect(settingsNavigation).toBeVisible();
   await expect(
     settingsNavigation.getByRole("link", { name: "General" }),
   ).toHaveAttribute("aria-current", "page");
   await expect(
-    settingsNavigation.getByRole("button", { name: "Back to app" }),
+    window.getByRole("heading", { level: 1, name: "General" }),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("button", { name: "Close settings" }),
   ).toBeVisible();
   // The narrow view's back arrow does not show in wide windows.
   await expect(
     page.getByRole("button", { name: "Back", exact: true }),
   ).toHaveCount(0);
 
+  // Centered over the page, clear of the viewport's edges, 1120 by 760 at
+  // most.
   const [box, viewport] = await Promise.all([
-    settingsNavigation.boundingBox(),
-    page.evaluate(() => ({ height: window.innerHeight })),
+    window.boundingBox(),
+    page.evaluate(() => ({
+      width: globalThis.innerWidth,
+      height: globalThis.innerHeight,
+    })),
   ]);
-  expect(box?.x).toBe(0);
-  expect(box?.y).toBe(0);
-  expect(box?.height).toBe(viewport.height);
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeLessThanOrEqual(1120);
+  expect(box!.height).toBeLessThanOrEqual(760);
+  expect(box!.x).toBeGreaterThan(0);
+  expect(box!.y).toBeGreaterThan(0);
+  expect(Math.abs(box!.x * 2 + box!.width - viewport.width)).toBeLessThan(4);
+  expect(Math.abs(box!.y * 2 + box!.height - viewport.height)).toBeLessThan(4);
 });
 
 When(
@@ -2003,10 +2022,10 @@ Then(
 );
 
 When("I go back to the app from Settings", async ({ page }) => {
-  await page
-    .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("button", { name: "Back to app" })
+  await settingsWindow(page)
+    .getByRole("button", { name: "Close settings" })
     .click();
+  await expect(settingsWindow(page)).toHaveCount(0);
   await expect(
     page.getByRole("navigation", { name: "Primary navigation" }),
   ).toBeVisible();

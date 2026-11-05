@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  SettingsLink,
+  useOpenSettings,
+} from "@/features/settings/settings-link";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
@@ -291,9 +295,8 @@ function PluginCatalogRow({
 
   return (
     <div className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-[var(--hover-bg)]">
-      <Link
-        to="/settings/plugins/$pluginId"
-        params={{ pluginId: catalog.id }}
+      <SettingsLink
+        page={`plugins/${catalog.id}`}
         replace
         className="flex min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
         aria-label={`View ${catalog.title}`}
@@ -325,7 +328,7 @@ function PluginCatalogRow({
               : null}
           </span>
         </span>
-      </Link>
+      </SettingsLink>
       {unavailableReason && offersUpdate ? (
         update
       ) : pluginGroup ? (
@@ -541,14 +544,14 @@ function PluginsHeader({
 
 function AllPluginsLink() {
   return (
-    <Link
-      to="/settings/plugins"
+    <SettingsLink
+      page="plugins"
       replace
       className="inline-flex w-fit items-center gap-1.5 rounded-[var(--control-radius)] text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
     >
       <ArrowLeft className="size-4" />
       All plugins
-    </Link>
+    </SettingsLink>
   );
 }
 
@@ -611,6 +614,7 @@ export function SettingsPluginsPage({
 }) {
   const state = useLocalState();
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const heldEdits = useHeldEdits();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
@@ -782,9 +786,9 @@ export function SettingsPluginsPage({
     if (!completed) return;
     setFormState(null);
     if (heldForReview) {
-      void navigate({
-        to: "/settings/sync-review",
-        search: { held: heldForReview } as never,
+      void openSettings({
+        page: "sync-review",
+        search: { held: heldForReview },
       });
       return;
     }
@@ -1481,7 +1485,7 @@ export function SettingsPluginsPage({
             installed ? (
               <Button
                 variant="outline"
-                render={<Link to="/settings/projects" replace />}
+                render={<SettingsLink page="projects" replace />}
               >
                 Use in Projects
               </Button>

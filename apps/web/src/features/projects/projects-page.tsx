@@ -12,6 +12,7 @@ import {
   RiMoreLine as More,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { MessagePanel } from "@/components/app-surface";
 import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
@@ -2146,7 +2147,7 @@ export function ProjectsPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
-                        render={<Link to="/settings/projects" />}
+                        render={<SettingsLink page="projects" />}
                       >
                         Import and export…
                       </DropdownMenuItem>

@@ -21,6 +21,7 @@ import {
 } from "@/features/command-palette/command-palette-items";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
+import { useOpenSettings } from "@/features/settings/settings-link";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { withEventAttribution } from "@/lib/wide-events";
@@ -65,6 +66,7 @@ const ROOT_VIEW: PaletteView = { kind: "root" };
  */
 export function CommandPalette() {
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const router = useRouter();
   const state = useLocalState();
   const isNarrowView = useIsNarrowView();
@@ -176,7 +178,12 @@ export function CommandPalette() {
         shortcutRunner.run(command.shortcutId);
         return;
       case "navigate":
-        void navigate({ to: command.to as never });
+        // A settings page opens in the settings window.
+        if (command.to.startsWith("/settings/")) {
+          void openSettings(command.to);
+        } else {
+          void navigate({ to: command.to as never });
+        }
         return;
       case "show":
         return;

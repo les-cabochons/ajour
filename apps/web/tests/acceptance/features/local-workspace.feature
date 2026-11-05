@@ -33,7 +33,7 @@ Feature: Open the local time workspace
     Then the timer dock opens the running entry
     And the window title shows the running entry
     When I open Settings from the desktop sidebar
-    Then Settings shows the running entry under Back to app
+    Then Settings shows the running entry in its window
     When I go back to the app from Settings
     And I hide the app sidebar with its button
     Then the running entry floats at the bottom left
@@ -272,11 +272,11 @@ Feature: Open the local time workspace
     And the Week Grid entry draft still has invalid hours
     And the "Code review" cell on Monday shows "1:00"
 
-  Scenario: Open Settings in place of the app sidebar
+  Scenario: Open Settings as a window over the app
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
     And I open Settings from the desktop sidebar
-    Then the Settings pages replace the app sidebar
+    Then Settings opens as a window over the app
     When I open Plugins from the Settings navigation
     And I go back to the app from Settings
     Then the Time workspace is visible
@@ -347,7 +347,7 @@ Feature: Open the local time workspace
   Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly
-    Then the Settings pages replace the app sidebar
+    Then Settings opens as a window over the app
 
   Scenario: Open the Projects list beside primary navigation
     Given I have projects with searchable tasks

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import {
   agentTaskSettingFields,
   type AgentTask,
@@ -66,9 +66,9 @@ export function PluginAgentTasks({
       <h2 className="settings-section-title">Tasks</h2>
       <p className="settings-section-desc">
         An agent runs these tasks from a prompt. Pick the agent in{" "}
-        <Link to="/settings/agents" className="underline">
+        <SettingsLink page="agents" className="underline">
           Settings &gt; Agents
-        </Link>
+        </SettingsLink>
         .
       </p>
       <AppPanel>

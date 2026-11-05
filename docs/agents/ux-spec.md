@@ -125,7 +125,7 @@ The app is not in production. The rename ships with no migration code, no redire
 
 ### Settings navigation
 
-Each nav label matches its page title. Old routes are removed, not redirected.
+Each nav label matches its page title. Old routes are removed, not redirected. In wide windows a `/settings/...` route opens the settings window over the last page outside Settings (see App shell); in the narrow view it is a page.
 
 The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pull requests also appears under Work in the narrow view, and Calendar only while a calendar plugin is on.
 
@@ -161,7 +161,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. The sidebar stays beside the page at every desktop width, down to the narrow view. It never opens over the page.
-- Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open, that column shows the app sidebar's timer card under Back to app, the one form of the timer beside a sidebar (council round 25), and the titlebar shows no Show sidebar button. The timer dock floats only while the app sidebar is hidden.
+- Settings opens as a window over the page, as in T3 Code: the page stays where it was, blurred and dimmed behind the window, and Esc, Close or the browser's Back returns to it with nothing moved, its search state included, such as the Week view or the entry open in the side panel. The window is 1120 by 760 at most, 40px clear of the window's edges in a smaller one. Its left column, 232px, lists the settings pages under their App, Work and Data groups and ends with the app sidebar's timer card, the one form of the timer beside a sidebar (council round 25); the timer dock never floats while the window is open. The open page sits at the right under a "Settings / Page" header with Close, where the page's name is the one heading. Switching pages replaces the history entry. The browser shows `/settings/...` while the window is open, so links, bookmarks and the acceptance URLs read as before. The app sidebar stays as it was behind the window, and Cmd/Ctrl+B waits. In the narrow view Settings stays a page.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
 - The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 

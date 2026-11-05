@@ -58,7 +58,7 @@ App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side ca
 
 The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
 
-The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
+The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur. Dialog overlays are plain black at 40% (60% in dark). The settings window's backdrop is the one blur: `--overlay-scrim` (black at 35%, 55% in dark) over `backdrop-filter: blur(var(--overlay-blur))`, 10px, which `prefers-reduced-transparency` turns off.
 
 ## Shadows
 

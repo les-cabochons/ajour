@@ -1,5 +1,4 @@
 import { memo } from "react";
-import { Link } from "@tanstack/react-router";
 import {
   RiSettings3Line as Settings,
   RiArrowUpCircleLine as UpdateAvailable,
@@ -10,6 +9,7 @@ import {
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { SidebarFooter } from "@/components/ui/sidebar";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { CommitWeekButton } from "@/features/time/commit-week-button";
 import { useUserPreferences } from "@/lib/local-hooks";
 import {
@@ -82,8 +82,8 @@ export const AppSidebarFooter = memo(function AppSidebarFooter({
           shortcut="app.settings"
           side="top"
           render={
-            <Link
-              to="/settings/general"
+            <SettingsLink
+              page="general"
               className={cn(
                 buttonVariants({ variant: "ghost", size: "icon" }),
                 "text-muted-foreground",
