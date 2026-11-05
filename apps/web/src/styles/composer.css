@@ -671,3 +671,10 @@ body:has([data-slot="dialog-content"].composer-floating)
     min-height: 32px;
   }
 }
+
+/* An empty select chip names its field in muted text, as an empty Project
+   or State chip does: "Priority", not "No priority" (forms council round
+   19). */
+.composer-chips [data-slot="select-trigger"] [data-placeholder] {
+  color: var(--muted-foreground);
+}

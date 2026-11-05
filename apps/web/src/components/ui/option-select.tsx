@@ -59,6 +59,7 @@ export function OptionSelect<T extends string>({
   size = "sm",
   iconValue = false,
   iconLabel = false,
+  emptyNamesField = false,
   prefix,
   className,
 }: {
@@ -77,6 +78,12 @@ export function OptionSelect<T extends string>({
   iconLabel?: boolean;
   /** Names the property in the trigger before its value: "State · Active". */
   prefix?: ReactNode;
+  /**
+   * With `iconLabel`, an empty value names the field in muted text, as an
+   * empty composer chip does: "Priority", not "No priority" (forms council
+   * round 19).
+   */
+  emptyNamesField?: boolean;
   className?: string;
 }) {
   const all = [...(options ?? []), ...(groups ?? []).flatMap((g) => g.options)];
@@ -140,7 +147,11 @@ export function OptionSelect<T extends string>({
             {prefix}
             <SelectValue>
               {chosen.icon}
-              {chosen.label}
+              {emptyNamesField && value === "" && label ? (
+                <span data-placeholder="">{label}</span>
+              ) : (
+                chosen.label
+              )}
             </SelectValue>
           </>,
         )
