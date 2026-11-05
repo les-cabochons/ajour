@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { AppPanel } from "@/components/app-surface";
 import { Markdown } from "@/components/markdown";
 import {
@@ -129,13 +130,9 @@ function HeldGroupBlocker({
 }) {
   if (blocker === undefined || blocker === "unknown") return null;
   const link = (text: string) => (
-    <Link
-      to="/settings/plugins/$pluginId"
-      params={{ pluginId }}
-      className={pluginLinkClass}
-    >
+    <SettingsLink page={`plugins/${pluginId}`} className={pluginLinkClass}>
       {text}
-    </Link>
+    </SettingsLink>
   );
   return (
     <p className="text-xs text-muted-foreground" data-held-blocker={blocker}>

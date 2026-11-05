@@ -439,7 +439,10 @@ When("I confirm adding the source", async ({ page }) => {
 });
 
 Then("Alice's plugins is listed as an unsigned source", async ({ page }) => {
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The confirmation closed; Settings itself is a window, a dialog too.
+  await expect(
+    page.getByRole("heading", { name: "Add Alice's plugins?" }),
+  ).toHaveCount(0);
   await expect(
     page.getByText("Alice's plugins is added.", { exact: true }),
   ).toBeVisible();

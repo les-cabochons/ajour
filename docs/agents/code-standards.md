@@ -123,7 +123,7 @@ Runtime performance is a hard constraint. Visual polish never costs render time.
   - re-rendering the titlebar or the page every second while a timer runs, instead of sharing one clock through `useRunningClock`;
   - a store write that re-reads storage for each subscriber;
   - pickers, tooltips, and menus mounted on every row before hover or focus;
-  - `backdrop-filter`, shadows on scrolling rows, and hover transitions on long lists;
+  - `backdrop-filter` (the one exception is the settings window's backdrop, which paints only while the window is open; see `ui-rules.md` and `ui-tokens.md`), shadows on scrolling rows, and hover transitions on long lists;
   - a wrapper element around every row only to hold a drag ref.
 
 ## Logging And Privacy

@@ -11,6 +11,7 @@ import {
   RiArrowLeftLine as ArrowLeft,
   RiCloseCircleLine as NoProject,
   RiSubtractLine as NoTask,
+  RiFolderLine as EmptyProjectIcon,
 } from "@remixicon/react";
 import {
   Command,
@@ -142,10 +143,12 @@ export function ProjectTaskPicker({
   const selectedTask = selectedProject?.tasks.find(
     (task) => task._id === taskId,
   );
+  // The trigger names the project as people say it; its mark is the icon
+  // before it, and its code stays in the list's rows for search.
   const selectedLabel = selectedProject
     ? selectedTask
-      ? `${getProjectLabel(selectedProject)} · ${selectedTask.name}`
-      : `${getProjectLabel(selectedProject)} · No task`
+      ? `${getLocalProjectDisplayName(selectedProject)} · ${selectedTask.name}`
+      : `${getLocalProjectDisplayName(selectedProject)} · No task`
     : placeholder;
   const browsingProject =
     view.kind === "tasks"
@@ -377,7 +380,14 @@ export function ProjectTaskPicker({
             color={selectedProject.color}
             className="size-4 shrink-0"
           />
-        ) : null}
+        ) : (
+          // Empty, the picker names what it picks with its mark (forms
+          // council round 9).
+          <EmptyProjectIcon
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+        )}
         <span
           className={cn(
             "min-w-0 flex-1 truncate",
@@ -398,7 +408,7 @@ export function ProjectTaskPicker({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="project-task-picker-popover w-[min(26rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-hover)] bg-[var(--surface-low)] p-0 shadow-[var(--shadow-lg)]"
+        className="project-task-picker-popover w-[min(26rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-[var(--radius-md)] border border-border bg-popover p-0 shadow-[var(--shadow-popup)]"
       >
         <Command
           shouldFilter={false}

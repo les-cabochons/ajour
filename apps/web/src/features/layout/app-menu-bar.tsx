@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, type FocusEvent } from "react";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
+import {
+  useOpenSettings,
+  useSettingsWindowLocationReader,
+} from "@/features/settings/settings-link";
 import {
   Menubar,
   MenubarContent,
@@ -31,9 +35,10 @@ const isWindowsDesktopShell =
 const showWindowsMenuBar = false;
 
 function useAppMenuActionRunner() {
-  const navigate = useNavigate();
   const router = useRouter();
   const runShortcut = useRunShortcut();
+  const openSettings = useOpenSettings();
+  const readSettingsWindowLocation = useSettingsWindowLocationReader();
 
   return useCallback(
     (action: unknown) =>
@@ -45,14 +50,17 @@ function useAppMenuActionRunner() {
           toggleSidebarDensity();
         } else if (command?.kind === "check-for-updates") {
           // Opening General checks for updates. When it is already open, ask it.
-          if (router.state.location.pathname === "/settings/general") {
+          if (
+            router.state.location.pathname === "/settings/general" ||
+            readSettingsWindowLocation()?.page === "general"
+          ) {
             requestUpdateCheck();
           } else {
-            void navigate({ to: "/settings/general" });
+            void openSettings("general");
           }
         }
       }),
-    [navigate, router, runShortcut],
+    [openSettings, readSettingsWindowLocation, router, runShortcut],
   );
 }
 

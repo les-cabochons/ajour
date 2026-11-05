@@ -59,16 +59,25 @@ import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import {
+  dropHeldPageRequests,
+  requestNewEntryOnPage,
   useNewEntryRequests,
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { WeekTargetPromptHost } from "@/features/time/week-target-prompt";
 import { CommitWeekButton } from "@/features/time/commit-week-button";
+import { getSettingsPages } from "@/features/settings/settings-navigation";
 import {
-  SettingsNavigation,
-  getSettingsPages,
-} from "@/features/settings/settings-navigation";
+  useOpenSettings,
+  useSettingsWindowLocation,
+  useSettingsWindowMaskRepair,
+} from "@/features/settings/settings-link";
+import {
+  rememberAppLocation,
+  settingsLocationOf,
+} from "@/features/settings/settings-location";
+import { SettingsWindow } from "@/features/settings/settings-window";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -156,22 +165,14 @@ function DefaultPageHeader({
       </>
     );
   }
-  const settingsPage = pathname.startsWith("/settings")
-    ? getSettingsPages("wide", false, true).find((page) =>
-        pathname.startsWith(page.to),
-      )
-    : undefined;
-  const title = settingsPage
-    ? settingsPage.label
-    : pathname.startsWith("/settings")
-      ? "Settings"
-      : pathname.startsWith("/backlog")
-        ? "Backlog"
-        : pathname.startsWith("/projects")
-          ? "Projects"
-          : pathname.startsWith("/pull-requests")
-            ? "Pull requests"
-            : "Ajour";
+  // In wide windows Settings is a window over the page, with its own title.
+  const title = pathname.startsWith("/backlog")
+    ? "Backlog"
+    : pathname.startsWith("/projects")
+      ? "Projects"
+      : pathname.startsWith("/pull-requests")
+        ? "Pull requests"
+        : "Ajour";
   return <PageTitle as="div">{title}</PageTitle>;
 }
 
@@ -386,6 +387,12 @@ function GlobalTimerBar({
     null,
   );
   const [totalsElement, setTotalsElement] = useState<HTMLElement | null>(null);
+  const pathname = useRouterState({
+    select: (routerState) => routerState.location.pathname,
+  });
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+  useEffect(() => dropHeldPageRequests(pathname), [pathname]);
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
@@ -400,6 +407,18 @@ function GlobalTimerBar({
 
   const openNewEntry = useCallback(
     (values?: NewTimeEntryValues, anchor: HTMLElement | null = null) => {
+      // On the Time page, a new entry opens in its side panel, as its own
+      // New entry does. A note or backlog link only the popover carries.
+      // The page may still be loading: it opens the entry once it is ready.
+      if (
+        !values?.note &&
+        !values?.workItemId &&
+        requestNewEntryOnPage(pathnameRef.current, values)
+      ) {
+        // One entry editor at a time, there too.
+        setRunningEntryEditorOpen(false);
+        return;
+      }
       // One entry editor at a time: the new entry closes the running one.
       setRunningEntryEditorOpen(false);
       setNewEntryValues(values);
@@ -546,10 +565,19 @@ export function AppShell() {
     () => timeRouteDate ?? todayIsoDate(),
   );
   const isNarrowView = useIsNarrowView();
-  // In wide windows Settings fills the left column, so Cmd/Ctrl+B waits.
-  const appSidebar = useAppSidebar({
-    suspended: isSettingsActive && !isNarrowView,
-  });
+  const narrowSettingsPage =
+    isNarrowView && isSettingsActive
+      ? getSettingsPages("wide", false, true).find((page) =>
+          pathname.startsWith(page.to),
+        )
+      : undefined;
+  // In wide windows Settings is a window over the page (`SettingsWindow`),
+  // open while the page's search names a settings page. Cmd/Ctrl+B waits
+  // while it is open.
+  const settingsWindowLocation = useSettingsWindowLocation();
+  const showsSettingsWindow = settingsWindowLocation !== null && !isNarrowView;
+  useSettingsWindowMaskRepair(settingsWindowLocation);
+  const appSidebar = useAppSidebar({ suspended: showsSettingsWindow });
   const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
   useGlobalShortcuts(selectedTimeDate);
 
@@ -578,20 +606,36 @@ export function AppShell() {
     }
   }, [timeRouteDate]);
 
-  // Back to app returns to the last page outside Settings, with its search
-  // state, such as the Week view or the entry open in the side panel.
-  const href = useRouterState({ select: (state) => state.location.href });
-  const lastAppHrefRef = useRef("/time/today");
+  // A /settings route opens the window over the last page outside Settings,
+  // with its search, such as the Week view or the entry open in the side
+  // panel.
+  const search = useRouterState({ select: (state) => state.location.search });
   useEffect(() => {
-    if (!isSettingsActive) lastAppHrefRef.current = href;
-  }, [isSettingsActive, href]);
+    rememberAppLocation({ pathname, search });
+  }, [pathname, search]);
 
-  // In wide windows Settings takes the left column with its own pages list.
-  const showsSettingsSidebar = isSettingsActive && !isNarrowView;
-  const isSidebarInline =
-    !showsSettingsSidebar && appSidebar.state === "expanded" && !isNarrowView;
-  const leftColumnWidth =
-    showsSettingsSidebar || isSidebarInline ? sidebarWidth : 0;
+  // A resize across the narrow breakpoint moves Settings between its window
+  // and its pages, on the same page.
+  const openSettings = useOpenSettings();
+  useEffect(() => {
+    if (isNarrowView && settingsWindowLocation) {
+      void openSettings(settingsWindowLocation, { replace: true });
+    } else if (!isNarrowView && isSettingsActive) {
+      void openSettings(settingsLocationOf(pathname, search), {
+        replace: true,
+      });
+    }
+  }, [
+    isNarrowView,
+    isSettingsActive,
+    openSettings,
+    pathname,
+    search,
+    settingsWindowLocation,
+  ]);
+
+  const isSidebarInline = appSidebar.state === "expanded" && !isNarrowView;
+  const leftColumnWidth = isSidebarInline ? sidebarWidth : 0;
 
   return (
     <div
@@ -620,6 +664,9 @@ export function AppShell() {
       <WaitingTasksDialogHost />
       <SourceStateDialogHost />
       <WeekTargetPromptHost />
+      {!isNarrowView && settingsWindowLocation ? (
+        <SettingsWindow location={settingsWindowLocation} />
+      ) : null}
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
@@ -638,17 +685,6 @@ export function AppShell() {
       >
         {/* The narrow view has no sidebars. Its titlebar holds the
             navigation instead. */}
-        {showsSettingsSidebar ? (
-          <SettingsNavigation
-            pathname={pathname}
-            view="wide"
-            // Replacing the Settings entry keeps the browser's Back from
-            // reopening Settings.
-            onBack={() =>
-              void navigate({ href: lastAppHrefRef.current, replace: true })
-            }
-          />
-        ) : null}
         {isSidebarInline ? (
           <AppNavigationSidebar
             pathname={pathname}
@@ -700,9 +736,16 @@ export function AppShell() {
                     section elsewhere (council round 6). It is hidden on
                     desktop, where the page header does this. */}
                 {isNarrowView && !isTimeActive ? (
-                  <span className="ajour-titlebar-section">
-                    {section ? SECTION_TITLES[section] : null}
-                  </span>
+                  narrowSettingsPage ? (
+                    // A settings page names itself here, its one heading.
+                    <h1 className="ajour-titlebar-section">
+                      {narrowSettingsPage.label}
+                    </h1>
+                  ) : (
+                    <span className="ajour-titlebar-section">
+                      {section ? SECTION_TITLES[section] : null}
+                    </span>
+                  )
                 ) : (
                   <TimeDatePicker
                     date={selectedTimeDate}
@@ -751,10 +794,10 @@ export function AppShell() {
 
               <GlobalTimerBar
                 date={selectedTimeDate}
-                // Settings shows the sidebar's own timer card under Back to
-                // app (council round 25); only a hidden sidebar floats it.
+                // The settings window shows the sidebar's own timer card
+                // (council round 25); only a hidden sidebar floats it.
                 showsFloatingDock={
-                  !showsSettingsSidebar && appSidebar.state === "hidden"
+                  !showsSettingsWindow && appSidebar.state === "hidden"
                 }
               />
             </div>

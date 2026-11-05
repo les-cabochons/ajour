@@ -58,7 +58,7 @@ describe("typing hours in a Week Grid cell", () => {
 
   it("keeps the exact saved duration when the shown hours are left as they were", () => {
     expect(
-      commitWeekGridCellText({ text: "01:00", entry, row, localDate }),
+      commitWeekGridCellText({ text: "1:00", entry, row, localDate }),
     ).toEqual({ kind: "unchanged" });
   });
 

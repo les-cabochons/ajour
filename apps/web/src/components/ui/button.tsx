@@ -8,8 +8,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Disabled, it turns a neutral pill instead of a dimmed indigo, and
+        // lights up once the form can be sent (forms council round 3).
         default:
-          "bg-primary-fill text-primary-foreground hover:bg-primary-fill/90",
+          "bg-primary-fill text-primary-foreground hover:bg-primary-fill/90 disabled:bg-[var(--surface-high)] disabled:text-muted-foreground disabled:opacity-100",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-transparent dark:hover:bg-input/30",
         secondary:

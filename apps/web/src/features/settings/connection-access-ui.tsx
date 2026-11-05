@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import {
   connectionAccessAllows,
   EDIT_WORK_ITEMS_ACCESS,
@@ -73,13 +73,13 @@ export function HeldEditsLine({
     <p className="text-xs text-muted-foreground" data-held-count={count}>
       {changes(count)} held.{" "}
       {editing ? (
-        <Link
-          to="/settings/sync-review"
-          search={{ held: connectionId } as never}
+        <SettingsLink
+          page="sync-review"
+          search={{ held: connectionId }}
           className="text-primary underline-offset-2 hover:underline"
         >
           Review them in Sync review
-        </Link>
+        </SettingsLink>
       ) : (
         "Turn on editing to review and send them."
       )}

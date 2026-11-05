@@ -339,17 +339,34 @@ export function useTimeEntryActions({
     dateAction && "entries" in dateAction ? dateAction.entries.length : 1;
   const dialogSubject =
     entryCount === 1 ? "time entry" : formatEntryCount(entryCount);
+  // The subject line names what moves, as Settle and Snooze name their item
+  // (forms council round 10): the entry's note, else how many.
+  const movedEntry =
+    dateAction && "entry" in dateAction
+      ? dateAction.entry
+      : dateAction && dateAction.entries.length === 1
+        ? dateAction.entries[0]
+        : undefined;
+  const dialogTitleLine =
+    movedEntry?.note?.trim() ||
+    (entryCount === 1 ? "This time entry" : formatEntryCount(entryCount));
   const dialogs = (
     <Dialog
       open={dateAction !== null}
       onOpenChange={(open) => !open && setDateAction(null)}
     >
-      <DialogContent className="w-auto gap-4">
+      {/* As wide as the calendar, never wider than the window. A width
+          from the content shrank, on a dialog centered from its left edge,
+          to half a phone's width and cut the calendar's last columns
+          (forms council round 17). */}
+      <DialogContent className="w-[min(20rem,calc(100%-2rem))] gap-4">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="composer-kicker">
             {isMove ? `Move ${dialogSubject}` : `Duplicate ${dialogSubject}`}
           </DialogTitle>
-          <DialogDescription>Choose the destination date.</DialogDescription>
+          <DialogDescription className="truncate text-[15px] font-semibold text-foreground">
+            {dialogTitleLine}
+          </DialogDescription>
         </DialogHeader>
         <Calendar
           mode="single"

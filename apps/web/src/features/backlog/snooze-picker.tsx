@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { isValidLocalDate } from "@/domain/time/local-date";
 import { commentSourceOf } from "@/domain/backlog/comments";
 import { releaseSettleComment } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -19,6 +19,16 @@ import {
 import { getCachedPluginsOverview } from "@/lib/app-api";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
+
+/*
+ * The calendar loads with the dialog, not with this module: actions and
+ * rows import the snooze request from here and need none of it.
+ */
+const DateField = lazy(() =>
+  import("@/components/ui/date-field").then((module) => ({
+    default: module.DateField,
+  })),
+);
 
 /**
  * Runs once the item is snoozed, telling whether the comment given went with
@@ -122,13 +132,15 @@ export function snoozeBacklogItem(
 /** The Snooze… dialog: the presets, then a custom date and time. Mounted once in the app shell. */
 export function SnoozePickerHost() {
   const [target, setTarget] = useState<SnoozeTarget | null>(null);
-  const [custom, setCustom] = useState("");
+  const [customDate, setCustomDate] = useState("");
+  const [customTime, setCustomTime] = useState("9:00");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const listener = (target: SnoozeTarget) => {
       setNow(Date.now());
-      setCustom("");
+      setCustomDate("");
+      setCustomTime("9:00");
       setTarget(target);
     };
     requestListener = listener;
@@ -147,7 +159,16 @@ export function SnoozePickerHost() {
       ? state.pullRequests?.find((item) => item._id === target.id)
       : undefined;
   const title = workItem?.title ?? pullRequest?.facts.title;
-  const customUntil = custom ? new Date(custom).getTime() : Number.NaN;
+  const timeMatch = customTime.trim().match(/^(\d{1,2}):(\d{2})$/);
+  const customUntil =
+    isValidLocalDate(customDate) &&
+    timeMatch &&
+    Number(timeMatch[1]) < 24 &&
+    Number(timeMatch[2]) < 60
+      ? new Date(
+          `${customDate}T${timeMatch[1]!.padStart(2, "0")}:${timeMatch[2]}:00`,
+        ).getTime()
+      : Number.NaN;
   const customIsValid = Number.isFinite(customUntil) && customUntil > now;
 
   function choose(until: number) {
@@ -170,8 +191,10 @@ export function SnoozePickerHost() {
     >
       <DialogContent className="max-w-sm gap-4">
         <DialogHeader className="gap-1">
-          <DialogTitle>Snooze until</DialogTitle>
-          <DialogDescription className="truncate">{title}</DialogDescription>
+          <DialogTitle className="composer-kicker">Snooze until</DialogTitle>
+          <DialogDescription className="truncate text-[15px] font-semibold text-foreground">
+            {title}
+          </DialogDescription>
           {target?.kind === "backlog-item" && target.request?.comment ? (
             <DialogDescription>
               Your comment is posted with the snooze.
@@ -201,12 +224,34 @@ export function SnoozePickerHost() {
             if (customIsValid) choose(customUntil);
           }}
         >
-          <Input
-            type="datetime-local"
-            aria-label="Custom date and time"
-            value={custom}
-            onChange={(event) => setCustom(event.target.value)}
-          />
+          {/* The custom time as chips, as the composers': the day, then
+              the time typed in place (forms council round 7). */}
+          <div className="composer-chips min-w-0 flex-1">
+            <Suspense fallback={<div className="min-w-0 flex-1" />}>
+              <div className="composer-date">
+                <DateField
+                  chip
+                  aria-label="Custom date"
+                  calendarLabel="Pick the day"
+                  value={customDate}
+                  onChange={setCustomDate}
+                />
+              </div>
+            </Suspense>
+            <div className="composer-chip composer-estimate">
+              <label htmlFor="snooze-custom-time">At</label>
+              <input
+                id="snooze-custom-time"
+                aria-label="Custom time"
+                className="composer-estimate-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="9:00"
+                value={customTime}
+                onChange={(event) => setCustomTime(event.target.value)}
+              />
+            </div>
+          </div>
           <DialogFooter className="shrink-0">
             <Button type="submit" variant="outline" disabled={!customIsValid}>
               Snooze

@@ -5,9 +5,9 @@ import { SettingsNavigation } from "@/features/settings/settings-navigation";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 
 /**
- * Settings inside the app shell: the page. In wide windows the app shell shows
- * the settings pages list in place of the app sidebar. The narrow view's list
- * is the /settings page itself, and the app shell adds the back arrow to it.
+ * Settings as pages, in the narrow view: the list at /settings, and each page
+ * under it with the app shell's back arrow. Wide windows never render these:
+ * their /settings routes open `SettingsWindow` over the page instead.
  */
 export function SettingsLayout() {
   return (
@@ -28,7 +28,7 @@ export function SettingsIndex() {
   const isNarrowView = useIsNarrowView();
 
   if (isNarrowView) {
-    return <SettingsNavigation pathname="/settings" view="narrow" />;
+    return <SettingsNavigation />;
   }
 
   return <Navigate to="/settings/general" replace />;

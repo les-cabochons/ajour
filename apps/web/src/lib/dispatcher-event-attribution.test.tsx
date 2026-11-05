@@ -376,10 +376,10 @@ describe("a drag", () => {
 describe("the entry editor", () => {
   /** Types 1.5 hours into a new entry and saves it. */
   async function saveNewEntry() {
-    fireEvent.change(await screen.findByPlaceholderText("01:30"), {
+    fireEvent.change(await screen.findByPlaceholderText("0:00"), {
       target: { value: "01:30" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create entry" }));
   }
 
   it("marks a save in the side panel as editor", async () => {
@@ -428,11 +428,11 @@ describe("the backlog item editor", () => {
       path: "/backlog?action=create",
     });
     sink.events.length = 0;
-    fireEvent.change(await screen.findByPlaceholderText("Item name"), {
+    fireEvent.change(await screen.findByPlaceholderText("Item title"), {
       target: { value: `Created in a ${narrow ? "dialog" : "side panel"}` },
     });
     const inDialog = screen.queryByRole("dialog") !== null;
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create item" }));
     // The page also lists plugins on mount, so wait for the create command only.
     await waitFor(() =>
       expect(commands("backlog_item.create")).toHaveLength(1),
@@ -447,20 +447,20 @@ describe("the backlog item editor", () => {
     ]);
   });
 
-  it("marks a save in the side panel as editor", async () => {
-    expect(await saveNewItem(false)).toBe(false);
+  it("marks a save in the wide page's floating composer as dialog", async () => {
+    expect(await saveNewItem(false)).toBe(true);
     expect(commands("backlog_item.create")).toEqual([
-      { name: "backlog_item.create", trigger: "user", surface: "editor" },
+      { name: "backlog_item.create", trigger: "user", surface: "dialog" },
     ]);
   });
 
   it("marks a save in the sidebar's New backlog item dialog as dialog", async () => {
     render(<NewBacklogItemDialogHost />);
     act(() => requestNewBacklogItem());
-    fireEvent.change(await screen.findByPlaceholderText("Item name"), {
+    fireEvent.change(await screen.findByPlaceholderText("Item title"), {
       target: { value: "Created from the sidebar" },
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create item" }));
 
     await waitFor(() =>
       expect(commands("backlog_item.create")).toEqual([

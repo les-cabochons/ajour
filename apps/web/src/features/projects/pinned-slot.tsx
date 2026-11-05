@@ -98,14 +98,20 @@ export function PinnedSlotDialog({
         }}
       >
         <DialogHeader className="gap-1">
-          <DialogTitle>Assign shortcut</DialogTitle>
-          <DialogDescription>
-            Pick a number key for "{taskName}". The key opens a new entry for
-            it, and Shift with the key starts it.
+          {/* The composer header (forms council round 10): the verb as a
+              kicker, the task as the subject, the keys' meaning in one line. */}
+          <DialogTitle className="composer-kicker">Assign shortcut</DialogTitle>
+          <p className="truncate text-[15px] font-semibold text-foreground">
+            {taskName}
+          </p>
+          <DialogDescription className="text-xs">
+            The key opens a new entry · Shift with the key starts it
           </DialogDescription>
         </DialogHeader>
+        {/* Five keys a row on wide windows, four on a phone, so a task
+            name keeps room (forms council round 17). */}
         <div
-          className="grid grid-cols-5 gap-2"
+          className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2"
           role="group"
           aria-label="Number keys"
         >
@@ -146,7 +152,8 @@ export function PinnedSlotDialog({
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
+            className="mr-auto"
             disabled={!slot}
             onClick={() => choose(undefined)}
           >
@@ -178,21 +185,20 @@ export function PinnedSlotField({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
+  // A chip in the task composer's row: "Shortcut ⇧1", or "Shortcut"
+  // while none is set (forms council round 7).
   return (
-    <Field>
-      <FieldLabel htmlFor="project-task-editor-shortcut">Shortcut</FieldLabel>
-      <Button
+    <>
+      <button
         id="project-task-editor-shortcut"
         type="button"
-        variant="outline"
-
-        className="justify-start gap-2 self-start"
+        className="composer-pill"
         aria-label={slot ? `Shortcut ${slot}, change` : "Shortcut none, assign"}
         onClick={() => setIsOpen(true)}
       >
+        <span className="text-muted-foreground">Shortcut</span>
         {slot ? <PinnedSlotBadge slot={slot} /> : null}
-        {slot ? "Change…" : "Assign shortcut…"}
-      </Button>
+      </button>
       {isOpen ? (
         <PinnedSlotDialog
           taskName={taskName.trim() || "this task"}
@@ -202,6 +208,6 @@ export function PinnedSlotField({
           onClose={() => setIsOpen(false)}
         />
       ) : null}
-    </Field>
+    </>
   );
 }

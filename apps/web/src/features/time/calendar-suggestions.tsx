@@ -146,25 +146,28 @@ export function SuggestionPicker({
   projects: LocalProject[];
   className?: string;
 }) {
+  // The same project chip as the time composer's (forms council round 11).
   return (
-    <ProjectTaskPicker
-      projects={projects}
-      projectId={suggestion.projectId ?? ""}
-      taskId={suggestion.taskId ?? ""}
-      allowNoProject={false}
-      placeholder="Choose project…"
-      ariaLabel={`Project for ${suggestion.title}`}
-      className={className}
-      open={actions.openPicker === suggestion.key}
-      onOpenChange={(open) =>
-        actions.setOpenPicker(open ? suggestion.key : null)
-      }
-      onChange={(selection) => {
-        if (selection.projectId) {
-          actions.add(suggestion, selection, true);
+    <div className="composer-chips">
+      <ProjectTaskPicker
+        projects={projects}
+        projectId={suggestion.projectId ?? ""}
+        taskId={suggestion.taskId ?? ""}
+        allowNoProject={false}
+        placeholder="Project"
+        ariaLabel={`Project for ${suggestion.title}`}
+        className={cn("composer-task-chip", className)}
+        open={actions.openPicker === suggestion.key}
+        onOpenChange={(open) =>
+          actions.setOpenPicker(open ? suggestion.key : null)
         }
-      }}
-    />
+        onChange={(selection) => {
+          if (selection.projectId) {
+            actions.add(suggestion, selection, true);
+          }
+        }}
+      />
+    </div>
   );
 }
 

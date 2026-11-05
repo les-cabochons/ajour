@@ -7,7 +7,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Quiet, utilitarian, and work-focused.
 - Dense but organized: 13px body, 28px controls, 28px to 40px rows. The sidebar's Comfortable backlog rows are the exception: 80px, three lines, like T3 Code's thread list. In the narrow view, Day rows and Backlog list rows are 52px with two lines.
 - One accent color, used for actions and selection, never for decoration.
-- No decorative gradients, blobs, blur, or purely atmospheric visuals.
+- No decorative gradients, blobs, blur, or purely atmospheric visuals. The one blur is the settings window's backdrop, which blurs the page behind it.
 - Every page shares the same anatomy: the top bar carries the page title and actions, the content below is cardless. Pages that edit in place, the backlog item page and the project page, keep their actions next to the content they act on instead.
 
 ## Layout
@@ -71,7 +71,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 ## Motion and performance
 
 - No transitions on rows, hover states, nav items or chips. Transitions only on overlays opening and closing, at most 150ms, opacity and transform only. No shimmer.
-- No `backdrop-filter` anywhere. No `box-shadow` inside a scrolling list.
+- No `backdrop-filter`, except the settings window's backdrop (`--overlay-blur`, off under `prefers-reduced-transparency`), which paints only while the window is open. No `box-shadow` inside a scrolling list.
 - Rows mount their pickers, tooltips and menus on hover or focus, and sidebar rows stay memoized. A redesign may not add a component that mounts per row.
 - Every shell, list or sidebar change is measured with `just ui-perf` before and after on the large workspace. The budgets are in the Performance section of `docs/agents/code-standards.md`; a regression over 10% blocks the change.
 

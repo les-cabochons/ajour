@@ -29,7 +29,7 @@ Feature: Create a task from a task picker
     And I open "[ACME] Acme website" in the task menu
     And I type "07 Run" in the task menu
     And I press Enter
-    Then the picker shows "[ACME] Acme website · 07 Run"
+    Then the picker shows "Acme website · 07 Run"
 
   Scenario: Create a task from the task menu's start view with a project
     Given a backlog item is on a project without the task "07 Run"
@@ -40,7 +40,7 @@ Feature: Create a task from a task picker
     Then the Create task dialog asks for a project for "Temp migration"
     When I pick the project "Acme website" in the dialog
     And I press "Create task"
-    Then the picker shows "[ACME] Acme website · Temp migration"
+    Then the picker shows "Acme website · Temp migration"
 
   Scenario: A task import asks which new task a Not known yet task waited for
     Given project "Acme website" has a Not known yet task "Temp migration"

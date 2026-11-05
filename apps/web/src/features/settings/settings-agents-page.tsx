@@ -61,7 +61,7 @@ export function SettingsAgentsPage() {
   const showInstallHint = noneInstalled || selectedCli?.installed === false;
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">Agent</h2>
         <p className="settings-section-desc">

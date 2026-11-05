@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
+
 const { Given, When, Then } = createBdd();
 
 /** The settle writes the fixture's plugin received, in order. */
@@ -134,7 +137,9 @@ async function openEditor(page: Page) {
   await row.hover();
   await row.getByRole("button", { name: `Actions for ${ITEM_TITLE}` }).click();
   await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
-  const editor = page.getByLabel("Backlog item editor");
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
+  });
   await editor.getByRole("combobox", { name: "Priority" }).click();
   return editor;
 }
@@ -164,7 +169,7 @@ When(
   async ({ page }, level: string) => {
     const editor = await openEditor(page);
     await page.getByRole("option", { name: level, exact: true }).click();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
   },
 );
 

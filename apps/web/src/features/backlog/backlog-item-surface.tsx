@@ -1,3 +1,4 @@
+import type { ObjectAction } from "@/domain/actions/object-actions";
 import {
   RiCornerDownRightLine,
   RiPlayFill,
@@ -306,6 +307,7 @@ export function BacklogItemSurface({
   onKeyDown,
   onPointerDown,
   beforeChange,
+  selectionMenu,
 }: {
   item: LocalWorkItem;
   state: LocalAppState;
@@ -321,8 +323,16 @@ export function BacklogItemSurface({
    * hovered or focused. The narrow view passes it: its actions always show.
    */
   alwaysLive?: boolean;
-  onSelect: () => void;
+  onSelect: (event: React.MouseEvent) => void;
   onOpen: () => void;
+  /**
+   * The menu a right-click opens while the row belongs to a selection of
+   * several: the actions every selected item shares, run on each.
+   */
+  selectionMenu?: {
+    actions: ObjectAction<BacklogItemActionId>[];
+    onAction: (action: BacklogItemActionId) => void;
+  };
   onAction: (action: BacklogItemActionId) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
@@ -368,7 +378,7 @@ export function BacklogItemSurface({
       return;
     if (openModifiedSourceClick(e, item.sourceUrl)) return;
     e.currentTarget instanceof HTMLElement && e.currentTarget.focus();
-    onSelect();
+    onSelect(e);
   };
   const markers = (
     <>
@@ -428,8 +438,8 @@ export function BacklogItemSurface({
   );
   return (
     <ObjectContextMenu
-      actions={actions}
-      onAction={onAction}
+      actions={selectionMenu?.actions ?? actions}
+      onAction={selectionMenu?.onAction ?? onAction}
       keys={BACKLOG_ITEM_ACTION_KEYS}
       render={
         <div
@@ -450,6 +460,11 @@ export function BacklogItemSurface({
             selected && "is-selected",
           )}
           onClick={click}
+          // Shift and Cmd/Ctrl+click extend the selection; the browser must
+          // not select the page's text meanwhile.
+          onMouseDown={(e) => {
+            if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault();
+          }}
           onDoubleClick={(e) => {
             if (
               e.target instanceof Element &&

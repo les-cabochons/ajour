@@ -91,21 +91,25 @@ export function CloseSubitemsDialogHost() {
             {request?.workItem.title}
           </DialogDescription>
         </DialogHeader>
-        <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto text-[13px]">
+        <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto text-sm">
           {request?.subitems.map((subitem) => (
             <li key={subitem._id} className="truncate">
               {subitem.title}
             </li>
           ))}
         </ul>
-        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <Checkbox
             checked={remember}
             onCheckedChange={(checked) => setRemember(checked === true)}
           />
           Remember my choice
         </label>
+        {/* The shared footer: Cancel, then the two answers. */}
         <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => answer(null)}>
+            Cancel
+          </Button>
           <Button type="button" variant="outline" onClick={() => answer(false)}>
             Only this item
           </Button>

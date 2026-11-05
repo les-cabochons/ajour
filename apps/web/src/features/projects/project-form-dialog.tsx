@@ -1,20 +1,20 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import {
-  RiFolderAddLine as FolderPlus,
-  RiSaveLine as Save,
+  RiHashtag as CodeIcon,
+  RiPencilLine as EditIcon,
 } from "@remixicon/react";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import type { LocalProject } from "@/domain/local-state";
 import {
   createProjectFormFields,
@@ -24,6 +24,12 @@ import {
   type ProjectFormValues,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 
 /**
  * The project form, opened by "New project" and by Edit in the project's action set.
@@ -57,89 +63,144 @@ export function ProjectFormDialog({
     }
   }
 
+  const narrow = useIsNarrowView();
+  const iconLabel =
+    fields.icon.kind === "upload"
+      ? "Uploaded favicon"
+      : (PROJECT_ICON_PRESETS.find(
+          (preset) =>
+            fields.icon.kind === "preset" && preset.name === fields.icon.name,
+        )?.label ?? "Preset");
+
   return (
     <Dialog
       open
+      // Floating on a wide window, as every composer (forms council round 10).
+      modal={narrow}
       disablePointerDismissal
       onOpenChange={(open) => !open && onClose()}
     >
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto">
+      <DialogContent
+        className={cn(
+          "max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto",
+          !narrow && "composer-floating",
+        )}
+        overlay={narrow}
+      >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <DialogHeader className="gap-1">
-            <DialogTitle>
+          <DialogHeader className="sr-only">
+            {/* The composer says what it makes by itself; its title only
+                names the dialog for assistive tech (forms council round 13). */}
+            <DialogTitle className="sr-only">
               {isCreate ? "New project" : "Edit project"}
             </DialogTitle>
-            <DialogDescription>
-              Name, display name, code, icon and color.
-            </DialogDescription>
           </DialogHeader>
 
-          <FieldGroup className="gap-4">
-            <Field>
-              <FieldLabel htmlFor="project-form-name">Full name</FieldLabel>
-              <Input
-                id="project-form-name"
-                autoFocus
-                placeholder="Full name"
-                value={fields.name}
-                onChange={(event) =>
-                  setFields((current) =>
-                    setProjectFormName(current, event.target.value),
-                  )
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="project-form-display-name">
-                Display name
-              </FieldLabel>
-              <Input
-                id="project-form-display-name"
-                placeholder="Display name"
-                value={fields.displayName}
-                onChange={(event) =>
-                  update({ displayName: event.target.value })
-                }
-              />
-            </Field>
-            <ProjectIconField
-              icon={fields.icon}
-              color={fields.color}
-              onChange={(icon) => update({ icon })}
-            />
-            <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
-              <Field>
-                <FieldLabel htmlFor="project-form-code">Code</FieldLabel>
-                <Input
+          {/* A composer, as Linear's new project: the icon as an avatar
+              beside the name and short name to write in, then the code and
+              color as chips (forms council rounds 6 and 13). */}
+          <FieldGroup className="composer gap-2">
+            {/* The icon is the project's avatar, beside its name, tinted
+                in its color, as a workspace logo (forms council round 13). */}
+            <div className="project-form-identity">
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="project-form-avatar"
+                      style={
+                        { "--project-color": fields.color } as CSSProperties
+                      }
+                      aria-label={`Project icon: ${iconLabel}`}
+                    />
+                  }
+                >
+                  <ProjectIcon
+                    icon={fields.icon}
+                    color={fields.color}
+                    className="size-5"
+                  />
+                  <span aria-hidden className="project-form-avatar-badge">
+                    <EditIcon className="size-2.5" />
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80">
+                  <ProjectIconField
+                    icon={fields.icon}
+                    color={fields.color}
+                    onChange={(icon) => update({ icon })}
+                  />
+                </PopoverContent>
+              </Popover>
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Field>
+                  <FieldLabel htmlFor="project-form-name" className="sr-only">
+                    Full name
+                  </FieldLabel>
+                  <input
+                    id="project-form-name"
+                    className="composer-title"
+                    autoFocus
+                    autoComplete="off"
+                    placeholder="Project name"
+                    value={fields.name}
+                    onChange={(event) =>
+                      setFields((current) =>
+                        setProjectFormName(current, event.target.value),
+                      )
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel
+                    htmlFor="project-form-display-name"
+                    className="sr-only"
+                  >
+                    Display name
+                  </FieldLabel>
+                  <input
+                    id="project-form-display-name"
+                    className="composer-subtitle"
+                    autoComplete="off"
+                    placeholder="Add a short name for lists…"
+                    value={fields.displayName}
+                    onChange={(event) =>
+                      update({ displayName: event.target.value })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+            <div className="composer-chips pt-2">
+              <div className="composer-chip composer-estimate">
+                <CodeIcon aria-hidden className="size-3.5 shrink-0" />
+                <label htmlFor="project-form-code">Code</label>
+                <input
                   id="project-form-code"
-                  placeholder="Code"
+                  className="composer-estimate-input"
+                  autoComplete="off"
+                  placeholder="ATL"
                   value={fields.code}
                   onChange={(event) => update({ code: event.target.value })}
                 />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="project-form-color">Color</FieldLabel>
-                <ColorField
-                  id="project-form-color"
-                  label="Project color"
-                  className="w-full"
-                  value={fields.color}
-                  onChange={(color) => update({ color })}
-                />
-              </Field>
+              </div>
+              <ColorField
+                id="project-form-color"
+                label="Project color"
+                className="composer-color"
+                value={fields.color}
+                onChange={(color) => update({ color })}
+                trailing={<span>Color</span>}
+              />
             </div>
           </FieldGroup>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={!values}>
-              {isCreate ? (
-                <FolderPlus data-icon="inline-start" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
               {isCreate ? "Create project" : "Save"}
             </Button>
           </DialogFooter>

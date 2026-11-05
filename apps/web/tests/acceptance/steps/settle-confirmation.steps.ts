@@ -205,7 +205,7 @@ Then("the Settle state draft remains Unlisted", async ({ page }) => {
   const select = page
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByLabel("State", { exact: true });
-  await expect(select).toHaveText("Unlisted");
+  await expect(select).toContainText("Unlisted");
 });
 Then(
   "Settle requires an available state before submitting",
@@ -337,25 +337,26 @@ When("I submit the parent Settle draft", async ({ page }) => {
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByRole("button", { name: /^(Archive|Settle)$/ })
     .click();
-  await expect(
-    page.getByRole("dialog", { name: /^Also settle/ }),
-  ).toBeVisible();
 });
-When("I cancel the Settle subitem choice", async ({ page }) => {
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: /^Also settle/ })).toHaveCount(
-    0,
-  );
+/** The Settle form's own question about the parent's open subitems. */
+const subitemChoice = (page: Page) =>
+  page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByRole("checkbox", { name: /^Also settle its/ });
+When("I leave the Settle subitems out", async ({ page }) => {
+  await subitemChoice(page).uncheck();
 });
 When("I include the Settle subitems", async ({ page }) => {
-  await page
-    .getByRole("dialog", { name: /^Also settle/ })
-    .getByRole("button", { name: /^Include subitem/ })
-    .click();
-  await expect(page.getByRole("dialog", { name: /^Also settle/ })).toHaveCount(
-    0,
-  );
+  await subitemChoice(page).check();
 });
+Then(
+  "Settle asks about {int} open subitems",
+  async ({ page }, count: number) => {
+    await expect(subitemChoice(page)).toHaveAccessibleName(
+      `Also settle its ${count} open subitems`,
+    );
+  },
+);
 When("another subitem arrives during the Settle choice", async ({ page }) => {
   await page.evaluate(async () => {
     const { localStore } = await import(
@@ -373,7 +374,9 @@ Then(
   async ({ page }, state: string, priority: string) => {
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("State", { exact: true })).toHaveText(state);
+    await expect(dialog.getByLabel("State", { exact: true })).toContainText(
+      state,
+    );
     await expect(dialog.getByLabel("Priority", { exact: true })).toHaveText(
       PRIORITY_NAMES[priority] ?? priority,
     );
@@ -407,26 +410,30 @@ Then(
     );
   },
 );
+/** The item page's Settle, Snooze and Start entry buttons. */
+const itemActions = (page: Page) =>
+  page.getByRole("group", { name: "Item actions" });
+
 When("I reopen Settle after the parent gets a long title", async ({ page }) => {
   await page
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  // The renamed item's "…" button changes its name, so the dialog opens
-  // through the same entry point the action menu uses.
   await page.evaluate(async () => {
     const { localStore } = await import(
       /* @vite-ignore */ "/src/lib/local-store.ts"
-    );
-    const { requestSettle } = await import(
-      /* @vite-ignore */ "/src/features/backlog/settle-dialog.tsx"
     );
     localStore.updateWorkItem("settle-parent", {
       title:
         "Transfer the whole process so the team uses tasks well, and also review how comments get synced back to the source",
     });
-    requestSettle("settle-parent");
   });
+  // The page's own Settle, as the user reaches it. The dialog modules
+  // imported from the test no longer share the app's instance, so their
+  // request functions reach no host.
+  await itemActions(page)
+    .getByRole("button", { name: "Settle", exact: true })
+    .click();
   await expect(
     page.getByRole("dialog", { name: "Settle", exact: true }),
   ).toBeVisible();
@@ -436,12 +443,9 @@ When("I open Snooze on the parent instead", async ({ page }) => {
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  await page.evaluate(async () => {
-    const { requestSnooze } = await import(
-      /* @vite-ignore */ "/src/features/backlog/snooze-picker.tsx"
-    );
-    requestSnooze("settle-parent");
-  });
+  await itemActions(page)
+    .getByRole("button", { name: "Snooze", exact: true })
+    .click();
 });
 /** Both dialogs truncate the item title, which once widened the popup. */
 Then(

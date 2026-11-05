@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useOpenSettings } from "@/features/settings/settings-link";
 import { RiAlarmWarningLine } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { showActionToast } from "@/components/ui/toast";
@@ -35,12 +35,12 @@ export function parseSyncReviewSearch(
  * saved; a draft that cannot be saved keeps the user where they are.
  */
 export function useOpenSyncReview() {
-  const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   return async (itemId?: string) => {
     if (!(await leaveOpenDraft())) return;
-    void navigate({
-      to: "/settings/sync-review",
-      search: (itemId ? { item: itemId } : {}) as never,
+    void openSettings({
+      page: "sync-review",
+      search: itemId ? { item: itemId } : {},
     });
   };
 }

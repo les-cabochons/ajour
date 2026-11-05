@@ -133,7 +133,14 @@ const editorTheme = EditorView.theme({
     fontSize: "var(--text-sm)",
   },
   "&.cm-focused": { outline: "none" },
-  ".cm-scroller": { fontFamily: "var(--font-sans)", lineHeight: "1.55" },
+  // A host can cap the editor's height with --markdown-editor-max-height;
+  // the text then scrolls inside it.
+  ".cm-scroller": {
+    fontFamily: "var(--font-sans)",
+    lineHeight: "1.55",
+    maxHeight: "var(--markdown-editor-max-height, none)",
+    overflow: "auto",
+  },
   ".cm-content": {
     padding: "0",
     minHeight: "calc(var(--markdown-editor-lines, 3) * 1.55em)",

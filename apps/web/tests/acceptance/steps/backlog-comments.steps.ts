@@ -978,12 +978,10 @@ const settleDialog = (page: Page) =>
 /** Picks Waiting in the open settle dialog and settles the parent alone. */
 async function settleInWaiting(page: Page) {
   const dialog = settleDialog(page);
+  // The parent has an open subitem; it stays on the list. The settle form
+  // asks about it itself.
+  await dialog.getByRole("checkbox", { name: /^Also settle its/ }).uncheck();
   await dialog.getByRole("button", { name: "Settle", exact: true }).click();
-  // The parent has an open subitem; it stays on the list.
-  await page
-    .getByRole("dialog", { name: /^Also settle/ })
-    .getByRole("button", { name: "Only this item" })
-    .click();
   await expect(dialog).toHaveCount(0);
 }
 

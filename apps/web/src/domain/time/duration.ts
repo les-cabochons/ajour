@@ -73,9 +73,13 @@ export function formatDecimalHours(durationMs: number): string {
   return toDecimalHours(durationMs).toFixed(2).replace(".", ",");
 }
 
+/**
+ * Hours as the fields show and take them: "0:45", "8:00", "120:00", as every
+ * list reads them, with no padded hour (forms council round 9).
+ */
 export function formatDurationHoursInput(durationMs: number): string {
   const { hours, minutes } = getRoundedDurationParts(durationMs);
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
 export function parseHoursInput(value: string): number | null {

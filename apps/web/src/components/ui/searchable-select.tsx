@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -32,6 +33,8 @@ export interface SearchableSelectOption {
   label: string;
   group?: string;
   keywords?: string[];
+  /** A mark before the label, in the list and, once chosen, in the field. */
+  icon?: ReactNode;
 }
 
 interface SearchableSelectProps {
@@ -51,6 +54,8 @@ interface SearchableSelectProps {
    * width.
    */
   popoverMinWidth?: number;
+  /** The mark the field shows while nothing is chosen, such as a chip's. */
+  placeholderIcon?: ReactNode;
   /**
    * A last row that makes the typed text into a new option, such as
    * `Create task "07 Run"`. `label` gets the typed text, trimmed, and returns
@@ -109,6 +114,7 @@ export function SearchableSelect({
   inputClassName,
   popoverMinWidth,
   create,
+  placeholderIcon,
 }: SearchableSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +182,9 @@ export function SearchableSelect({
 
     return groups;
   }, [visibleOptions]);
+  const chosenOption = options.find((option) => option.value === value);
+  const leadingIcon =
+    value && chosenOption ? chosenOption.icon : placeholderIcon;
   const inputValue = isOpen
     ? isTyping
       ? query
@@ -426,6 +435,15 @@ export function SearchableSelect({
         )}
         data-disabled={disabled ? "true" : undefined}
       >
+        {leadingIcon ? (
+          <InputGroupAddon
+            align="inline-start"
+            aria-hidden="true"
+            className="searchable-select-leading"
+          >
+            {leadingIcon}
+          </InputGroupAddon>
+        ) : null}
         <InputGroupInput
           ref={inputRef}
           type="text"
@@ -530,7 +548,9 @@ export function SearchableSelect({
                         >
                           {option.value === CREATE_VALUE ? (
                             <Plus aria-hidden="true" />
-                          ) : null}
+                          ) : (
+                            option.icon
+                          )}
                           <span>{option.label}</span>
                         </CommandItem>
                       ))}

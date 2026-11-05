@@ -1,9 +1,10 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import {
   isCapabilityActive,
   pluginConnectionFormFields,
   pluginHasTeam,
   type PluginConnectionSummary,
+  type PluginField,
   type PluginOverviewGroup,
   type VaultStatusSummary,
 } from "@ajour/shared";
@@ -13,6 +14,9 @@ import { FieldGroup } from "@/components/ui/field";
 import {
   areExpiryDraftsValid,
   canSubmitPluginForm,
+  groupConnectionFields,
+  sectionConnectionBlocks,
+  type ConnectionFormBlock,
   isPluginFieldShown,
   isPluginFormDirty,
   withAccessChoice,
@@ -47,6 +51,7 @@ export function PluginConnectionForm({
   onCancel,
   onSave,
   onRemoveSecret,
+  status,
 }: {
   group: PluginOverviewGroup;
   form: PluginFormState;
@@ -63,6 +68,8 @@ export function PluginConnectionForm({
   onCancel: () => void;
   onSave: () => void;
   onRemoveSecret: (fieldId: string) => void;
+  /** The edited connection's status chip and note: the form stands in for its row. */
+  status?: ReactNode;
 }) {
   const { plugin } = group;
   const editing = form.editingConnectionId !== null;
@@ -73,72 +80,143 @@ export function PluginConnectionForm({
   const update = (patch: (current: PluginFormState) => PluginFormState) =>
     setForm((current) => (current ? patch(current) : current));
 
-  return (
-    <AppPanel className="pb-4">
-      <div>
-        <h3 className="text-sm font-medium text-foreground">
-          {editing
-            ? `Edit ${plugin.displayName} connection`
-            : `New ${plugin.displayName} connection`}
-        </h3>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {editing
-            ? "Update this connection without re-entering unchanged secrets."
-            : "The connection is validated by the plugin and stored locally."}
-        </p>
-      </div>
-      <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
-        {pluginConnectionFormFields(plugin).map((field) => {
-          if (
-            !isPluginFieldShown(
-              plugin,
-              field,
-              form.values,
-              group.inactiveCapabilities,
-            )
-          ) {
-            return null;
-          }
-
-          return (
-            <PluginFieldInput
-              // A form opened anew starts its secret fields over.
-              key={`${form.instance}/${field.id}`}
-              field={field}
-              value={form.values[field.id]}
-              onChange={(nextValue) =>
+  const renderField = (
+    field: PluginField,
+    { label, hideHelp }: { label?: string; hideHelp?: boolean } = {},
+  ) => (
+    <PluginFieldInput
+      label={label}
+      hideHelp={hideHelp}
+      row
+      // A form opened anew starts its secret fields over.
+      key={`${form.instance}/${field.id}`}
+      field={field}
+      value={form.values[field.id]}
+      onChange={(nextValue) =>
+        update((current) => ({
+          ...current,
+          values: { ...current.values, [field.id]: nextValue },
+        }))
+      }
+      secret={
+        field.secret
+          ? {
+              existing: editing,
+              summary: connection?.secretFields?.find(
+                (secret) => secret.id === field.id,
+              ),
+              expiry: form.expiry[field.id] ?? "",
+              onExpiryChange: (expiry) =>
                 update((current) => ({
                   ...current,
-                  values: { ...current.values, [field.id]: nextValue },
-                }))
-              }
-              secret={
-                field.secret
-                  ? {
-                      existing: editing,
-                      summary: connection?.secretFields?.find(
-                        (secret) => secret.id === field.id,
-                      ),
-                      expiry: form.expiry[field.id] ?? "",
-                      onExpiryChange: (expiry) =>
-                        update((current) => ({
-                          ...current,
-                          expiry: { ...current.expiry, [field.id]: expiry },
-                        })),
-                      onRemove: () => onRemoveSecret(field.id),
-                      startReplacing: form.replaceFieldId === field.id,
-                      blockedReason,
-                      now,
-                      busy: isMutating,
-                      removeEffect: field.required
-                        ? `${connection?.label ?? "This connection"} pauses until you add a new one. Its settings and synced data stay.`
-                        : "Ajour deletes it from this computer. The connection's settings and synced data stay.",
-                    }
-                  : undefined
-              }
-            />
-          );
-        })}
+                  expiry: { ...current.expiry, [field.id]: expiry },
+                })),
+              onRemove: () => onRemoveSecret(field.id),
+              startReplacing: form.replaceFieldId === field.id,
+              blockedReason,
+              now,
+              busy: isMutating,
+              removeEffect: field.required
+                ? `${connection?.label ?? "This connection"} pauses until you add a new one. Its settings and synced data stay.`
+                : "Ajour deletes it from this computer. The connection's settings and synced data stay.",
+            }
+          : undefined
+      }
+    />
+  );
+
+  const shownFields = pluginConnectionFormFields(plugin).filter((field) =>
+    isPluginFieldShown(plugin, field, form.values, group.inactiveCapabilities),
+  );
+
+  const renderBlock = (block: ConnectionFormBlock) =>
+    block.kind === "field" ? (
+      renderField(block.field)
+    ) : (
+      <fieldset
+        key={`${form.instance}/${block.fields[0]!.field.id}`}
+        className="connection-row"
+      >
+        <legend className="sr-only">{block.legend}</legend>
+        <span aria-hidden className="connection-row-label">
+          {block.legend}
+        </span>
+        <div className="connection-row-value">
+          <div className="composer-chips">
+            {block.fields.map(({ field, label }) => (
+              <div
+                key={`${form.instance}/${field.id}`}
+                className="composer-chip composer-estimate"
+              >
+                <label htmlFor={field.id}>{label}</label>
+                <input
+                  id={field.id}
+                  className="composer-estimate-input"
+                  autoComplete="off"
+                  inputMode={field.type === "number" ? "numeric" : undefined}
+                  value={String(form.values[field.id] ?? "")}
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    const next =
+                      field.type === "number"
+                        ? Number.isFinite(Number(text))
+                          ? Number(text)
+                          : 0
+                        : text;
+                    update((current) => ({
+                      ...current,
+                      values: { ...current.values, [field.id]: next },
+                    }));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">{block.help}</p>
+        </div>
+      </fieldset>
+    );
+  const sections = sectionConnectionBlocks(groupConnectionFields(shownFields));
+
+  return (
+    <AppPanel className="connection-form pb-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The form's title outranks its section headings. */}
+          <h3 className="text-base font-semibold text-foreground">
+            {editing
+              ? `Edit ${connection?.label ?? `${plugin.displayName} connection`}`
+              : `New ${plugin.displayName} connection`}
+          </h3>
+          {status}
+        </div>
+        {editing ? null : (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            The plugin checks the connection, and Ajour keeps it on this
+            computer.
+          </p>
+        )}
+      </div>
+      {/* One column at a reading measure, as Linear's forms are. */}
+      <FieldGroup className="connection-rows max-w-xl gap-6">
+        {sections.map((section) =>
+          sections.length === 1 ? (
+            section.blocks.map(renderBlock)
+          ) : (
+            // Titled parts, Connection, Sync and Field mapping, so a long
+            // form scans like Linear's settings (forms council round 4).
+            <section
+              key={section.title}
+              aria-label={section.title}
+              className="flex flex-col gap-1 border-t border-[var(--border-row)] pt-4 first:border-t-0 first:pt-0"
+            >
+              <h4 className="text-sm font-semibold text-foreground">
+                {section.title}
+              </h4>
+              {section.blocks.map(renderBlock)}
+            </section>
+          ),
+        )}
         {pluginHasTeam(plugin) && !editing ? (
           <TeamCreateField
             pluginId={plugin.id}
@@ -169,12 +247,12 @@ export function PluginConnectionForm({
         />
       </FieldGroup>
       {saveHint ? (
-        <p className="text-sm text-muted-foreground" data-save-hint>
+        <p className="max-w-xl text-xs text-muted-foreground" data-save-hint>
           {saveHint}
         </p>
       ) : null}
-      <div className="flex flex-wrap justify-end gap-3 pt-2">
-        <Button variant="outline" disabled={isMutating} onClick={onCancel}>
+      <div className="flex max-w-xl flex-wrap justify-end gap-2 pt-2">
+        <Button variant="ghost" disabled={isMutating} onClick={onCancel}>
           Cancel
         </Button>
         <Button
