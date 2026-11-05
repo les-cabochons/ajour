@@ -599,6 +599,63 @@ describe("the WSL command rows", () => {
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
+  it("Given main rejects Ubuntu's Add, its reason shows in Ubuntu's row with Retry, never in a toast", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          { name: "Ubuntu", status: "not-added", progress: null, error: null },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(async () => {
+        throw new Error(
+          "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+        );
+      }),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await act(async () => {});
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given Ubuntu's Add failed, Retry clears the old reason while it runs", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            status: "error",
+            progress: null,
+            error:
+              "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(() => new Promise(() => {})),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => {});
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Downloading ajour, 0%")).toBeTruthy();
+  });
+
   it.each(["darwin", "linux", "win32"])(
     "Given no command on %s, WSL rows stay hidden",
     async (platform) => {

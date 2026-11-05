@@ -3,7 +3,10 @@ import { RiExternalLinkLine as ExternalLink } from "@remixicon/react";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { DisabledReason } from "@/components/disabled-reason";
 import { Button } from "@/components/ui/button";
-import type { DesktopCliCommandState } from "@/lib/desktop-bridge";
+import type {
+  DesktopCliCommandState,
+  DesktopCliWslDistro,
+} from "@/lib/desktop-bridge";
 import { traceCarrier } from "@/lib/wide-events";
 
 const GUIDE_URL = "https://docs.ajour.day/terminal/";
@@ -243,13 +246,18 @@ function messageOf(error: unknown) {
     : "Ajour couldn't install the ajour command.";
 }
 
+/**
+ * One WSL distro under the ajour command (#604): Add, its three phases, the
+ * added command with the hint for a new terminal, or the reason an Add
+ * failed, inline with Retry. Main serializes Adds, so each row runs alone.
+ */
 function WslRow({
   distro,
   version,
   disabled,
   onChange,
 }: {
-  distro: import("@/lib/desktop-bridge").DesktopCliWslDistro;
+  distro: DesktopCliWslDistro;
   version?: string;
   disabled: boolean;
   onChange: (state: DesktopCliCommandState) => void;
@@ -257,6 +265,8 @@ function WslRow({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const adding = starting || distro.status === "adding";
+  // A Retry hides the reason it retries.
+  const reason = adding ? null : (error ?? distro.error);
   let line = "Not added.";
   if (distro.status === "added")
     line = `ajour ${version ?? ""} · ~/.local/bin/ajour`;
@@ -276,12 +286,8 @@ function WslRow({
             <Line text={line} />
             {distro.hint ? <Line text={distro.hint} /> : null}
           </span>
-          {distro.error || error ? (
-            <Line
-              role="alert"
-              text={distro.error ?? error!}
-              className="text-destructive"
-            />
+          {reason ? (
+            <Line role="alert" text={reason} className="text-destructive" />
           ) : null}
         </span>
       }

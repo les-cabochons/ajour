@@ -129,9 +129,9 @@ export interface DesktopWindowSettings {
 }
 
 /**
- * The ajour command, as main's controller reports it
- * (`apps/desktop/electron/cli-command.cjs`, #568). The renderer only reads
- * it and asks for an install: it never passes a path or a URL.
+ * One WSL distro under the ajour command (#604). Main lists them on
+ * Windows, with the command installed; the renderer passes back only a
+ * distro's name.
  */
 export interface DesktopCliWslDistro {
   name: string;
@@ -139,9 +139,17 @@ export interface DesktopCliWslDistro {
   phase?: "downloading" | "checking" | "linking";
   progress: number | null;
   error: string | null;
+  /** After an Add in this launch: open a new terminal, or fix the PATH. */
   hint?: string;
 }
+
+/**
+ * The ajour command, as main's controller reports it
+ * (`apps/desktop/electron/cli-command.cjs`, #568). The renderer only reads
+ * it and asks for an install: it never passes a path or a URL.
+ */
 export interface DesktopCliCommandState {
+  /** The WSL distros, when there is any to add the command to. */
   wsl?: { version?: string; distros: DesktopCliWslDistro[] };
   operation?: "remove";
   /** Version being followed, also after a failed update. */
