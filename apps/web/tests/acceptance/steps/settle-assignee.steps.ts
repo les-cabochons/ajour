@@ -285,7 +285,10 @@ Then("no assignee was sent to the source", async ({ page }) => {
 });
 
 Then("the Settle dialog has no Assignee field", async ({ page }) => {
-  await expect(settleDialog(page).getByText("Priority")).toBeVisible();
+  // The form has loaded: its Priority chip shows, which names its field.
+  await expect(
+    settleDialog(page).getByLabel("Priority", { exact: true }),
+  ).toBeVisible();
   await expect(
     settleDialog(page).getByRole("combobox", { name: "Assignee" }),
   ).toHaveCount(0);
