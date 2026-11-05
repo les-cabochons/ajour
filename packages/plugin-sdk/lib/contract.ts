@@ -1106,13 +1106,18 @@ export type ProjectSourceSyncResult =
                 status?: "unknown" | "ok" | "warning" | "over" | undefined;
                 total?: number | undefined;
                 remaining?: number | undefined;
+                since?: string | undefined;
               }
             | undefined;
         }[];
         source: { label: string; url?: string | undefined };
         asOf: string;
         me?:
-          | { hoursAvailable: boolean; hoursNote?: string | undefined }
+          | {
+              hoursAvailable: boolean;
+              hoursNote?: string | undefined;
+              hoursSince?: string | undefined;
+            }
           | undefined;
       };
       cursor?: string | undefined;
@@ -1146,12 +1151,19 @@ export type ProjectSourceSnapshot = {
           status?: "unknown" | "ok" | "warning" | "over" | undefined;
           total?: number | undefined;
           remaining?: number | undefined;
+          since?: string | undefined;
         }
       | undefined;
   }[];
   source: { label: string; url?: string | undefined };
   asOf: string;
-  me?: { hoursAvailable: boolean; hoursNote?: string | undefined } | undefined;
+  me?:
+    | {
+        hoursAvailable: boolean;
+        hoursNote?: string | undefined;
+        hoursSince?: string | undefined;
+      }
+    | undefined;
 };
 
 export type ProjectSourceProject = {
@@ -1180,6 +1192,7 @@ export type ProjectSourceProject = {
         status?: "unknown" | "ok" | "warning" | "over" | undefined;
         total?: number | undefined;
         remaining?: number | undefined;
+        since?: string | undefined;
       }
     | undefined;
 };
@@ -1202,4 +1215,5 @@ export type ProjectSourceBudget = {
   status?: "unknown" | "ok" | "warning" | "over" | undefined;
   total?: number | undefined;
   remaining?: number | undefined;
+  since?: string | undefined;
 };

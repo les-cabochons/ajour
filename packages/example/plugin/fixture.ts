@@ -8,7 +8,8 @@ export const FIXTURE_CURSOR = 'W/"example-planner-1"';
 export const fixtureSnapshot: ProjectSourceSnapshot = {
   source: { label: "Example planner", url: "https://planner.example" },
   asOf: "2026-10-31T23:59:59.000Z",
-  me: { hoursAvailable: true },
+  // The user's hours cover October, the budget the whole year.
+  me: { hoursAvailable: true, hoursSince: "2026-10-01" },
   projects: [
     {
       remoteId: "ACME-SUP",
@@ -25,6 +26,7 @@ export const fixtureSnapshot: ProjectSourceSnapshot = {
         consumed: 31.5,
         remaining: 8.5,
         status: "warning",
+        since: "2026-01-01",
       },
       tasks: [
         {

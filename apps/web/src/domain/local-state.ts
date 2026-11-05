@@ -6,6 +6,7 @@ import type {
   BucketEvidenceItem,
   CaptureSettings,
   ProjectSourceBudget,
+  ProjectSourceMe,
   ProjectSourceProject,
   BacklogSource,
   ImportedDraftStatus,
@@ -103,7 +104,7 @@ export interface LocalProjectSource {
   /** When the source's figures are from. */
   asOf: string;
   /** Whether the source can give the user's hours, and why not. */
-  me?: { hoursAvailable: boolean; hoursNote?: string };
+  me?: ProjectSourceMe;
   /** When the last snapshot applied. */
   syncedAt: number;
   /**

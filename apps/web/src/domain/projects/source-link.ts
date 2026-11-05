@@ -1,5 +1,6 @@
 import {
   projectSourceBudgetSchema,
+  projectSourceMeSchema,
   projectSourceProjectSchema,
 } from "@ajour/shared";
 import type {
@@ -132,6 +133,9 @@ export function normalizeProjectSources(
       continue;
     }
     const me = asRecord(record.me);
+    const hoursSince = projectSourceMeSchema.shape.hoursSince.safeParse(
+      me?.hoursSince,
+    ).data;
     records[connectionId] = {
       pluginId: record.pluginId,
       label: record.label,
@@ -144,6 +148,7 @@ export function normalizeProjectSources(
               ...(nonEmptyString(me.hoursNote)
                 ? { hoursNote: me.hoursNote }
                 : {}),
+              ...(hoursSince ? { hoursSince } : {}),
             },
           }
         : {}),

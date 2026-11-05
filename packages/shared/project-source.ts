@@ -82,6 +82,11 @@ export const projectSourceBudgetSchema = z.object({
   consumed: z.number().finite().nonnegative(),
   remaining: z.number().finite().optional(),
   status: projectSourceBudgetStatusSchema.optional(),
+  /**
+   * The first day `consumed` covers, when the budget covers a period. Ajour
+   * counts the user's entries from that day only. Without it, all count.
+   */
+  since: dateSchema.optional(),
 });
 export type ProjectSourceBudget = z.infer<typeof projectSourceBudgetSchema>;
 
@@ -117,6 +122,24 @@ export const projectSourceProjectSchema = z.object({
 });
 export type ProjectSourceProject = z.infer<typeof projectSourceProjectSchema>;
 
+/**
+ * Whether the source can give the user's own hours (`myHours`), and from
+ * which day.
+ */
+export const projectSourceMeSchema = z.object({
+  /** Whether `myHours` can be known. When not, `hoursNote` says why. */
+  hoursAvailable: z.boolean(),
+  /** The plugin's sentence for the user, such as how to link their account. */
+  hoursNote: z.string().trim().min(1).max(300).optional(),
+  /**
+   * The first day the tasks' `myHours` cover, such as the first of the
+   * month. Ajour compares the user's entries from that day only.
+   * Without it, all count.
+   */
+  hoursSince: dateSchema.optional(),
+});
+export type ProjectSourceMe = z.infer<typeof projectSourceMeSchema>;
+
 export const projectSourceSnapshotSchema = z
   .object({
     source: z.object({
@@ -127,14 +150,7 @@ export const projectSourceSnapshotSchema = z
     }),
     /** When the source's figures are from: its hours lag the user's entries. */
     asOf: z.string().datetime({ offset: true }),
-    me: z
-      .object({
-        /** Whether `myHours` can be known. When not, `hoursNote` says why. */
-        hoursAvailable: z.boolean(),
-        /** The plugin's sentence for the user, such as how to link their account. */
-        hoursNote: z.string().trim().min(1).max(300).optional(),
-      })
-      .optional(),
+    me: projectSourceMeSchema.optional(),
     projects: z
       .array(projectSourceProjectSchema)
       .max(PROJECT_SOURCE_MAX_PROJECTS),
