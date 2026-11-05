@@ -76,7 +76,8 @@ const pluginFiles = {
     JSON.stringify({
       id: "weather",
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
+      runtime: { start: "whenNeeded" },
       displayName: "Weather",
       iconSvg: "<svg/>",
       entrypoint: "src/plugin.ts",
@@ -103,7 +104,7 @@ function listing(overrides: Record<string, unknown> = {}) {
         name: "Weather",
         description: "Suggests rainy days off.",
         version: "1.0.0",
-        pluginApiVersion: 3,
+        pluginApiVersion: 4,
         capabilities: ["calendar"],
         features: ["calendar-events"],
         tags: ["weather"],

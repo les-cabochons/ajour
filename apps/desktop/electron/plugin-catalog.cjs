@@ -30,6 +30,7 @@ const INSTALLABLE_CAPABILITIES = new Set([
   "calendar",
   "team",
   "agentTask",
+  "schema",
 ]);
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|avif)$/iu;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -515,7 +516,7 @@ function createPluginCatalogService(options) {
       )
     ) {
       throw notAvailable(
-        "This Ajour version cannot install packaged schema plugins yet.",
+        "This Ajour version cannot install a plugin with none of the capabilities it knows.",
       );
     }
     const listing = listings.get(entry.source.url);

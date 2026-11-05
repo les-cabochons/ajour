@@ -85,7 +85,8 @@ function pluginFiles(id: string, version: string, capabilities: object) {
       JSON.stringify({
         id,
         version,
-        apiVersion: 3,
+        apiVersion: 4,
+        runtime: { start: "whenNeeded" },
         displayName: id,
         iconSvg: "<svg/>",
         entrypoint: "src/plugin.ts",
@@ -111,7 +112,7 @@ function listedPlugin(
     name: id === "jira" ? "Jira" : id,
     description: `${id} plugin.`,
     version: "1.0.0",
-    pluginApiVersion: 3,
+    pluginApiVersion: 4,
     capabilities: ["connector"],
     features: ["work-item-sync"],
     tags: ["test"],
@@ -179,6 +180,9 @@ function world() {
   };
   for (const [filePath, bytes] of Object.entries(jiraFiles)) {
     served[`${raw}/${COMMIT}/plugins/jira/${filePath}`] = bytes;
+  }
+  for (const [filePath, bytes] of Object.entries(schemaFiles)) {
+    served[`${raw}/${COMMIT}/plugins/shape/${filePath}`] = bytes;
   }
   for (const [filePath, bytes] of Object.entries(weatherFiles)) {
     served[`${ALICE}/raw/commit/${COMMIT}/plugins/weather/${filePath}`] = bytes;
@@ -346,6 +350,22 @@ describe("plugin catalog from plugin sources", () => {
     expect(catalog.entries.map((entry: { id: string }) => entry.id)).toContain(
       "jira",
     );
+    expect(
+      catalog.entries.map((entry: { id: string }) => entry.id).sort(),
+    ).toEqual([
+      "azure_devops",
+      "github",
+      "ics",
+      "jira",
+      "workday-agent",
+      "workday-project-data",
+    ]);
+    expect(
+      catalog.entries.every(
+        (entry: { compatibility: { pluginApiVersion: number } }) =>
+          entry.compatibility.pluginApiVersion === 4,
+      ),
+    ).toBe(true);
     expect(catalog.warning).toContain("could not read the plugin sources");
     expect(catalog.sources).toMatchObject([
       { url: OFFICIAL, state: "unreachable" },
@@ -426,16 +446,18 @@ describe("plugin catalog from plugin sources", () => {
     );
   });
 
-  it("refuses schema plugins and plugins no source lists", async () => {
+  it("downloads schema plugins and refuses plugins no source lists", async () => {
     const fake = world();
     const service = await serviceIn(fake, [
       { url: OFFICIAL, hostKind: "github" },
     ]);
     await service.refresh();
 
-    await expect(service.downloadPluginArchive("shape")).rejects.toMatchObject({
-      code: "not_available",
-    });
+    await expect(service.downloadPluginArchive("shape")).resolves.toMatchObject(
+      {
+        archiveFilename: "shape-1.0.0.ajour-connector",
+      },
+    );
     await expect(
       service.downloadPluginArchive("missing"),
     ).rejects.toMatchObject({
