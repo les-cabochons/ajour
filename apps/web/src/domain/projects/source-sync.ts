@@ -483,6 +483,19 @@ export function syncProjectSource(
 // ---------------------------------------------------------------------------
 // Held projects, Not known yet tasks, and a removed connection
 
+/**
+ * The local project a held source project would link to: one neither
+ * managed nor shared with its name. Undefined when none has it any more.
+ */
+export function findHeldSourceMatch(
+  projects: readonly LocalProject[],
+  held: Pick<ProjectSourceProject, "name">,
+): LocalProject | undefined {
+  return projects.find(
+    (project) => isLinkable(project) && sameName(project.name, held.name),
+  );
+}
+
 export type HeldSourceProjectChoice =
   { kind: "link"; projectId: string } | { kind: "addAsNew" };
 

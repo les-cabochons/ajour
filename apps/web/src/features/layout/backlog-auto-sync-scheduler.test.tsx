@@ -176,3 +176,81 @@ describe("the automatic sync scheduler", () => {
     );
   });
 });
+
+describe("the scheduler and a project source", () => {
+  /** A project source connection last synced `minutesAgo` minutes ago. */
+  function projectSourceOverview(minutesAgo: number): PluginsOverview {
+    const overview = structuredClone(codeHostOverview);
+    const group = overview.connectionGroups[0]!;
+    group.plugin = {
+      ...group.plugin,
+      id: "planner",
+      apiVersion: 4,
+      displayName: "Planner",
+      capabilities: { projectSource: {} },
+    };
+    const connection = group.connections[0]!;
+    connection.pluginId = "planner";
+    // Its own interval is the backlog's: Managed projects keep 15 minutes.
+    connection.autoSyncIntervalMinutes = 60;
+    connection.lastSyncAt = Date.now() - minutesAgo * 60_000;
+    return overview;
+  }
+
+  function stubProjectSourceApi(overview: PluginsOverview) {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) =>
+      init?.method === "POST" && url.endsWith("/sync-projects")
+        ? Response.json({
+            connection: overview.connectionGroups[0]!.connections[0],
+            unchanged: true,
+          })
+        : Response.json(overview),
+    );
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
+
+  it("syncs a project source connection every 15 minutes, as an automatic sync", async () => {
+    const fetch = stubProjectSourceApi(projectSourceOverview(16));
+
+    render(<BacklogAutoSyncScheduler />);
+    await waitFor(() => expect(sink.events).toHaveLength(1));
+
+    expect(sink.events[0]).toMatchObject({
+      name: "project_source.sync",
+      kind: "job",
+      trigger: "schedule",
+      plugin: { id: "planner" },
+      connection: { id: "work" },
+    });
+    const [url, init] = fetch.mock.calls.find(([, call]) =>
+      Boolean(call?.method === "POST"),
+    )!;
+    expect(String(url)).toContain(
+      "/api/plugins/planner/connections/work/sync-projects",
+    );
+    expect(JSON.parse(String(init!.body))).toMatchObject({ trigger: "auto" });
+  });
+
+  it("leaves a project source synced less than 15 minutes ago alone", async () => {
+    const fetch = stubProjectSourceApi(projectSourceOverview(10));
+
+    render(<BacklogAutoSyncScheduler />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(sink.events).toEqual([]);
+  });
+
+  it("leaves a project source whose Managed projects switch is off alone", async () => {
+    const overview = projectSourceOverview(16);
+    overview.connectionGroups[0]!.inactiveCapabilities = ["projectSource"];
+    const fetch = stubProjectSourceApi(overview);
+
+    render(<BacklogAutoSyncScheduler />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(sink.events).toEqual([]);
+  });
+});

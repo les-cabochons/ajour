@@ -10,6 +10,7 @@ import {
 import {
   answerSourceWaitingTasks,
   disconnectProjectSource,
+  findHeldSourceMatch,
   resolveHeldSourceProject,
   syncProjectSource,
   type ProjectSourceSyncState,
@@ -557,6 +558,14 @@ describe("resolveHeldSourceProject", () => {
     expect(next.projects).toHaveLength(3);
     expect(next.projectSources.c1!.held).toEqual([]);
     expect(sync(next).result.held).toBe(0);
+  });
+
+  it("names the local project a held one would link to", () => {
+    const state = held();
+    const [waiting] = state.projectSources.c1!.held;
+
+    expect(findHeldSourceMatch(state.projects, waiting!)?._id).toBe("mine");
+    expect(findHeldSourceMatch([], waiting!)).toBeUndefined();
   });
 
   it("refuses to link a shared or managed project", () => {

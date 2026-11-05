@@ -1,4 +1,9 @@
 import type { syncTeamConnection, TeamSyncOutcome } from "@/lib/team-sync";
+import {
+  describeProjectSourceSync,
+  type syncProjectSourceConnection,
+} from "@/lib/project-source-sync";
+import type { SourceWaitingQuestion } from "@/domain/projects/source-sync";
 import type * as appApi from "@/lib/app-api";
 import type { LocalAppState } from "@/domain/local-state";
 import { connectionSaveBlock } from "./plugin-form-state";
@@ -76,6 +81,16 @@ export type PluginSettingsDependencies = Pick<
 > & {
   /** From `lib/team-sync.ts`: runs a team connection's rounds. */
   syncTeamConnection: typeof syncTeamConnection;
+  /** From `lib/project-source-sync.ts`: syncs a project source connection. */
+  syncProjectSourceConnection: typeof syncProjectSourceConnection;
+  /**
+   * Asks which new source task each Not known yet task waited for, after a
+   * sync added some (#481, #505).
+   */
+  askSourceWaitingQuestions(
+    sourceLabel: string,
+    questions: readonly SourceWaitingQuestion[],
+  ): Promise<void>;
   /**
    * Held changes (#395), from `features/backlog/held-edit-review.ts` and
    * the local store: holding the estimates a connection would upload, how
@@ -135,6 +150,8 @@ type PluginSettingsCommand =
   | { type: "retryVault" }
   | { type: "sync"; pluginId: string; connectionId: string }
   | { type: "teamSync"; pluginId: string; connectionId: string }
+  /** Sync now on a project source connection: its managed projects. */
+  | { type: "projectSourceSync"; pluginId: string; connectionId: string }
   | { type: "install" }
   | { type: "system"; enabled: boolean }
   /** Lets unsigned plugins run, or deactivates every one of them. */
@@ -157,6 +174,7 @@ const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   retryVault: "Unable to open the vault again.",
   sync: "Unable to sync backlog items.",
   teamSync: "Unable to sync the team's projects.",
+  projectSourceSync: "Unable to sync the managed projects.",
   install: "Unable to install the plugin.",
   system: "Unable to update the plugin system.",
   unsigned: "Unable to change unsigned plugins.",
@@ -386,16 +404,19 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   }
 
   /** The connection's label, for status lines. */
-  function connectionLabel(command: {
-    pluginId: string;
-    connectionId: string;
-  }) {
+  function connectionLabel(
+    command: {
+      pluginId: string;
+      connectionId: string;
+    },
+    fallback = "Team",
+  ) {
     return (
       snapshot.overview?.connectionGroups
         .find((group) => group.plugin.id === command.pluginId)
         ?.connections.find(
           (connection) => connection.id === command.connectionId,
-        )?.label ?? "Team"
+        )?.label ?? fallback
     );
   }
 
@@ -628,6 +649,32 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           finish(describeTeamSync(connectionLabel(command), outcome));
           break;
         }
+        case "projectSourceSync": {
+          const outcome = await deps.syncProjectSourceConnection(
+            command.pluginId,
+            command.connectionId,
+            { trigger: "user" },
+          );
+          if (!isCurrent()) return false;
+          await refreshPlugins();
+          finish(
+            describeProjectSourceSync(
+              connectionLabel(
+                command,
+                outcome.kind === "applied" ? outcome.label : "Managed projects",
+              ),
+              outcome,
+            ),
+          );
+          // Asked after the line, so the dialog opens on what the sync did.
+          if (outcome.kind === "applied") {
+            void deps.askSourceWaitingQuestions(
+              outcome.label,
+              outcome.waitingQuestions,
+            );
+          }
+          break;
+        }
         case "install": {
           const result = await deps.installPlugin();
           // A cancelled file picker returns null.
@@ -724,7 +771,11 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         // A refused sync can change what the rows say: the API marks a
         // rejected token (401), and answers 409 once a connection is paused.
         // Reading the overview clears the error, so it is shown again.
-        if (command.type === "sync" || command.type === "teamSync") {
+        if (
+          command.type === "sync" ||
+          command.type === "teamSync" ||
+          command.type === "projectSourceSync"
+        ) {
           void refreshPlugins().then(() => {
             if (isCurrent()) update(failure);
           });
@@ -871,7 +922,12 @@ export function describeMissingPluginRemoval(heldCount = 0) {
 export function describeConnectionRemoval(
   plugin: {
     id: string;
-    capabilities: { codeHost?: object; calendar?: object; team?: object };
+    capabilities: {
+      codeHost?: object;
+      calendar?: object;
+      team?: object;
+      projectSource?: object;
+    };
   },
   connectionId: string,
   state: Pick<
@@ -911,7 +967,17 @@ export function describeConnectionRemoval(
       : "This removes the connection from this device.";
   // Changes held while editing was off go with it (#395).
   const discarded = describeHeldDiscard(heldCount);
-  const removal = discarded ? `${removed} ${discarded}` : removed;
+  const withHeld = discarded ? `${removed} ${discarded}` : removed;
+  // Its managed projects stay, as local projects (#505).
+  const managed = plugin.capabilities.projectSource
+    ? state.projects.filter(
+        (project) => project.source?.connectionId === connectionId,
+      ).length
+    : 0;
+  const removal =
+    managed === 0
+      ? withHeld
+      : `${withHeld} Its ${count(managed, "managed project becomes a local project", "managed projects become local projects")} here, with ${managed === 1 ? "its" : "their"} tasks and time entries.`;
   if (!plugin.capabilities.team) return removal;
   const shared = state.projects.filter(
     (project) => project.team?.connectionId === connectionId,

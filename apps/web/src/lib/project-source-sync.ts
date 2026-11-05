@@ -157,7 +157,7 @@ export function describeProjectSourceSync(
   outcome: ProjectSourceSyncOutcome,
 ) {
   if (outcome.kind === "unchanged") {
-    return `${connectionLabel} · No change since the last sync`;
+    return `${connectionLabel} · up to date`;
   }
   if (outcome.kind === "discarded") {
     return `${connectionLabel} changed while syncing. Sync again.`;
@@ -174,7 +174,7 @@ export function describeProjectSourceSync(
       ? `${counts.refusedShared} skipped: shared with a team`
       : undefined,
   ].filter(Boolean);
-  return [connectionLabel, ...(parts.length ? parts : ["Up to date"])].join(
+  return [connectionLabel, ...(parts.length ? parts : ["up to date"])].join(
     " · ",
   );
 }

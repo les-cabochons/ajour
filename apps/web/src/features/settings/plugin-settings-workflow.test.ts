@@ -90,6 +90,8 @@ function dependencies() {
     retryVault: unused,
     syncBacklogConnection: unused,
     syncTeamConnection: unused,
+    syncProjectSourceConnection: unused,
+    askSourceWaitingQuestions: vi.fn(async () => undefined),
     installPlugin: vi.fn(async () => null),
     setPluginSystemEnabled: vi.fn(async (enabled) => ({
       ...overview,
@@ -888,5 +890,78 @@ describe("team connections", () => {
         heldArrivals: [],
       }),
     ).toBe("Acme · up to date");
+  });
+});
+
+describe("a project source connection", () => {
+  it("syncs now, says what changed, and asks about the waiting tasks the new ones may be", async () => {
+    const { deps } = dependencies();
+    const question = {
+      projectId: "acme",
+      choices: [{ taskId: "t1", name: "Login bug", newNames: ["Login"] }],
+    };
+    deps.syncProjectSourceConnection = vi.fn(async () => ({
+      kind: "applied" as const,
+      label: "Example planner",
+      counts: {
+        linked: 1,
+        created: 1,
+        updated: 0,
+        archived: 1,
+        restored: 0,
+        held: 1,
+        unchanged: 0,
+        refusedShared: 0,
+      },
+      waitingQuestions: [question],
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await expect(
+      workflow.execute({
+        type: "projectSourceSync",
+        pluginId: "planner",
+        connectionId: "c1",
+      }),
+    ).resolves.toBe(true);
+
+    expect(deps.syncProjectSourceConnection).toHaveBeenCalledWith(
+      "planner",
+      "c1",
+      { trigger: "user" },
+    );
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Example planner · 1 linked · 1 added · 1 archived · 1 held for review",
+    );
+    expect(deps.askSourceWaitingQuestions).toHaveBeenCalledWith(
+      "Example planner",
+      [question],
+    );
+  });
+
+  it("says the connection's managed projects become local when it is removed", () => {
+    const managed = {
+      _id: "p1",
+      name: "Acme",
+      color: "#123456",
+      icon: { kind: "preset" as const, name: "dot" as const },
+      status: "active" as const,
+      tasks: [],
+      source: {
+        pluginId: "planner",
+        connectionId: "work",
+        remoteId: "ACME",
+        syncedAt: 1,
+      },
+    };
+    expect(
+      describeConnectionRemoval(
+        { id: "planner", capabilities: { projectSource: {} } },
+        "work",
+        { pullRequests: [], calendarEventRules: [], projects: [managed] },
+      ),
+    ).toBe(
+      "This removes the connection from this device. Its 1 managed project becomes a local project here, with its tasks and time entries.",
+    );
   });
 });

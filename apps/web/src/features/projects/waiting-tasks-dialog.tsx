@@ -21,10 +21,29 @@ import { normalizeTaskImportName } from "@/domain/projects/task-import";
  * time and backlog items stay on it.
  */
 
+/**
+ * What the dialog says about where the new tasks came from. Import tasks…
+ * uses the file's words; a project source sync names its source (#505).
+ */
+export interface WaitingTasksWording {
+  description: string;
+  /** The heading over the new tasks in each select. */
+  newGroupLabel: string;
+  confirmLabel: string;
+}
+
+const FILE_WORDING: WaitingTasksWording = {
+  description:
+    "This file adds new tasks. Pick the one each task was waiting for. Ajour renames it, so its time and backlog items stay on it.",
+  newGroupLabel: "New in this file",
+  confirmLabel: "Import",
+};
+
 interface WaitingTasksRequest {
   choices: WaitingTaskChoice[];
   /** The plugin's name for the timesheet tool, such as Workday. */
   toolName: string;
+  wording: WaitingTasksWording;
   resolve: (answers: Record<string, WaitingTaskAnswer> | null) => void;
 }
 
@@ -38,6 +57,7 @@ let requestListener: ((request: WaitingTasksRequest) => void) | null = null;
 export function requestWaitingTaskAnswers(
   choices: WaitingTaskChoice[],
   toolName: string,
+  wording: WaitingTasksWording = FILE_WORDING,
 ): Promise<Record<string, WaitingTaskAnswer> | null> {
   return new Promise((resolve) => {
     if (!requestListener) {
@@ -51,7 +71,7 @@ export function requestWaitingTaskAnswers(
       );
       return;
     }
-    requestListener({ choices, toolName, resolve });
+    requestListener({ choices, toolName, wording, resolve });
   });
 }
 
@@ -139,10 +159,7 @@ export function WaitingTasksDialogHost() {
               ? `1 task is waiting for its ${request?.toolName} task`
               : `${count} tasks are waiting for their ${request?.toolName} task`}
           </DialogTitle>
-          <DialogDescription>
-            This file adds new tasks. Pick the one each task was waiting for.
-            Ajour renames it, so its time and backlog items stay on it.
-          </DialogDescription>
+          <DialogDescription>{request?.wording.description}</DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-2">
           {request?.choices.map((choice) => (
@@ -165,7 +182,7 @@ export function WaitingTasksDialogHost() {
                 }
                 groups={[
                   {
-                    label: "New in this file",
+                    label: request?.wording.newGroupLabel ?? "",
                     options: choice.newNames.map((name) => ({
                       value: name,
                       label: name,
@@ -193,7 +210,7 @@ export function WaitingTasksDialogHost() {
             Cancel
           </Button>
           <Button type="button" disabled={twice} onClick={() => answer(true)}>
-            Import
+            {request?.wording.confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
