@@ -152,9 +152,9 @@ describe(
           if (!hold) return run;
           return {
             settled: held.then(() => run.settled),
-            terminate: () => {
+            terminate: (reason) => {
               terminated += 1;
-              return run.terminate();
+              return run.terminate(reason);
             },
           };
         },
