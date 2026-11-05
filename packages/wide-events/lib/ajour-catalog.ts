@@ -2104,8 +2104,6 @@ export const catalog = defineCatalog({
           /** Source projects waiting in Sync review because only a name matched. */
           held_count: operational<number>(),
           unchanged_count: operational<number>(),
-          /** Source projects whose match is a shared project, never linked. */
-          refused_shared_count: operational<number>(),
           /** Projects whose Not known yet tasks the sync asks about. */
           waiting_question_count: operational<number>(),
           /** Why the answer was not applied: the connection changed or went. */

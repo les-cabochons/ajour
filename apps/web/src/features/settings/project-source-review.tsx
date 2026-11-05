@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { AppPanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { showErrorToast, showToast } from "@/components/ui/toast";
@@ -7,6 +7,7 @@ import {
   findHeldSourceMatch,
   type HeldSourceProjectChoice,
 } from "@/domain/projects/source-sync";
+import { askAndReportSourceWaitingQuestions } from "@/features/projects/source-waiting-tasks";
 import { SettingsLink } from "@/features/settings/settings-link";
 import { localStore } from "@/lib/local-store";
 
@@ -51,40 +52,42 @@ export function HeldSourceProjectsLine({ count }: { count: number }) {
 /** Sync review's section of held source projects, by connection. */
 export function HeldSourceProjectsReview() {
   const { projectSources, projects } = useProjectSourceState();
-  const [busy, setBusy] = useState<string | null>(null);
   const groups = Object.entries(projectSources).filter(
     ([, record]) => record.held.length > 0,
   );
   if (groups.length === 0) return null;
   const count = groups.reduce((sum, [, record]) => sum + record.held.length, 0);
 
+  // The answer applies at once, and the row leaves with it: nothing to wait for.
   const resolve = (
     connectionId: string,
-    pluginId: string,
+    record: { pluginId: string; label: string },
     remoteId: string,
     name: string,
     choice: HeldSourceProjectChoice,
   ) => {
-    setBusy(`${connectionId}:${remoteId}`);
-    try {
-      const result = localStore.resolveHeldSourceProject(
-        { pluginId, connectionId },
-        remoteId,
-        choice,
-      );
-      if (result.kind === "linked") showToast(`${name} linked`);
-      else if (result.kind === "added") showToast(`${name} added`);
-      else
-        showErrorToast({
-          title: `Can't link ${name}`,
-          description:
-            result.kind === "notLinkable"
-              ? "That project is shared with a team or managed already. Add this one as new instead."
-              : "It no longer waits: a sync or another window took it.",
-        });
-    } finally {
-      setBusy(null);
-    }
+    const result = localStore.resolveHeldSourceProject(
+      { pluginId: record.pluginId, connectionId },
+      remoteId,
+      choice,
+    );
+    if (result.kind === "linked") {
+      showToast(`${name} linked`);
+      // The link added the source's tasks: the #481 question, as after a sync.
+      if (result.waitingQuestion) {
+        void askAndReportSourceWaitingQuestions(record.label, [
+          result.waitingQuestion,
+        ]);
+      }
+    } else if (result.kind === "added") showToast(`${name} added`);
+    else
+      showErrorToast({
+        title: `Can't link ${name}`,
+        description:
+          result.kind === "notLinkable"
+            ? "That project is shared with a team or managed already. Add this one as new instead."
+            : "It no longer waits: a sync or another window took it.",
+      });
   };
 
   return (
@@ -107,7 +110,6 @@ export function HeldSourceProjectsReview() {
           </span>
           {record.held.map((held) => {
             const match = findHeldSourceMatch(projects, held);
-            const key = `${connectionId}:${held.remoteId}`;
             return (
               <div
                 key={held.remoteId}
@@ -133,16 +135,13 @@ export function HeldSourceProjectsReview() {
                         ? `Link ${held.name} to ${getLocalProjectDisplayName(match)}`
                         : `Link ${held.name}`
                     }
-                    disabled={!match || busy === key}
+                    disabled={!match}
                     onClick={() =>
                       match &&
-                      resolve(
-                        connectionId,
-                        record.pluginId,
-                        held.remoteId,
-                        held.name,
-                        { kind: "link", projectId: match._id },
-                      )
+                      resolve(connectionId, record, held.remoteId, held.name, {
+                        kind: "link",
+                        projectId: match._id,
+                      })
                     }
                   >
                     Link
@@ -150,15 +149,10 @@ export function HeldSourceProjectsReview() {
                   <Button
                     variant="outline"
                     aria-label={`Add as new: ${held.name}`}
-                    disabled={busy === key}
                     onClick={() =>
-                      resolve(
-                        connectionId,
-                        record.pluginId,
-                        held.remoteId,
-                        held.name,
-                        { kind: "addAsNew" },
-                      )
+                      resolve(connectionId, record, held.remoteId, held.name, {
+                        kind: "addAsNew",
+                      })
                     }
                   >
                     Add as new

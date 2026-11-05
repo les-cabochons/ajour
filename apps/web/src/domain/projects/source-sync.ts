@@ -60,8 +60,6 @@ export interface ProjectSourceSyncCounts {
   held: number;
   /** Managed projects the sync left as they were. */
   unchanged: number;
-  /** Source projects whose match is a shared project, so never linked. */
-  refusedShared: number;
 }
 
 /**
@@ -92,13 +90,30 @@ function isLinkable(project: LocalProject) {
   return !project.source && !project.team;
 }
 
-/** Whether two records hold the same values, the time of the sync aside. */
+/** `value` with its object keys sorted and its undefined fields dropped. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, field]) => field !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, field]) => [key, canonical(field)]),
+  );
+}
+
+/**
+ * Whether two records hold the same values, the time of the sync aside,
+ * whatever order their fields were written in.
+ */
 function sameExceptSyncTime(left: LocalProject, right: LocalProject) {
   const strip = (project: LocalProject) =>
-    JSON.stringify({
-      ...project,
-      source: project.source ? { ...project.source, syncedAt: 0 } : undefined,
-    });
+    JSON.stringify(
+      canonical({
+        ...project,
+        source: project.source ? { ...project.source, syncedAt: 0 } : undefined,
+      }),
+    );
   return strip(left) === strip(right);
 }
 
@@ -117,14 +132,19 @@ function taskSourceOf(task: ProjectSourceTask) {
   };
 }
 
+/** The fields a sync's archive reads and writes, on a project or a task. */
+type SourceArchived = Pick<
+  LocalProject,
+  "status" | "archivedBySource" | "archivedByMissingSync"
+>;
+
 /**
  * Archives what the source says is done, and restores what only the source
  * archived. A record the user archived by hand stays archived.
  */
-function withSourceStatus<T extends LocalProject | LocalProjectTask>(
+function withSourceStatus<T extends SourceArchived>(
   record: T,
   done: boolean,
-  now: number,
 ): T {
   if (done) {
     if (record.status === "archived") {
@@ -137,12 +157,7 @@ function withSourceStatus<T extends LocalProject | LocalProjectTask>(
           }
         : record;
     }
-    return {
-      ...record,
-      status: "archived",
-      archivedBySource: true,
-      ...("createdAt" in record ? { archivedAt: now } : {}),
-    };
+    return { ...record, status: "archived", archivedBySource: true };
   }
   if (
     record.status === "archived" &&
@@ -153,10 +168,40 @@ function withSourceStatus<T extends LocalProject | LocalProjectTask>(
       status: "active",
       archivedBySource: undefined,
       archivedByMissingSync: undefined,
-      ...("createdAt" in record ? { archivedAt: undefined } : {}),
     };
   }
   return record;
+}
+
+/** Archives a record the snapshot lacks, unless it is archived already. */
+function withMissingArchive<T extends SourceArchived>(record: T): T {
+  if (record.status === "archived") return record;
+  return { ...record, status: "archived", archivedByMissingSync: true };
+}
+
+/** A task's archive time, for the status the sync gave it. */
+function withTaskArchivedAt(
+  before: LocalProjectTask,
+  after: LocalProjectTask,
+  now: number,
+): LocalProjectTask {
+  if (before.status === after.status) return after;
+  return {
+    ...after,
+    archivedAt: after.status === "archived" ? now : undefined,
+  };
+}
+
+function withTaskSourceStatus(
+  task: LocalProjectTask,
+  closed: boolean,
+  now: number,
+) {
+  return withTaskArchivedAt(task, withSourceStatus(task, closed), now);
+}
+
+function withTaskMissingArchive(task: LocalProjectTask, now: number) {
+  return withTaskArchivedAt(task, withMissingArchive(task), now);
 }
 
 /** A task's source-owned fields, as the snapshot has them. */
@@ -165,7 +210,7 @@ function withTaskSourceFields(
   sourceTask: ProjectSourceTask,
   now: number,
 ): LocalProjectTask {
-  return withSourceStatus(
+  return withTaskSourceStatus(
     {
       ...task,
       name: sourceTask.name,
@@ -220,7 +265,7 @@ function mergeTasks(
   return {
     tasks: next.map((task) =>
       task.source && !seen.has(task.source.remoteId)
-        ? withMissingArchive(task, now)
+        ? withTaskMissingArchive(task, now)
         : task,
     ),
     createdIds,
@@ -250,20 +295,27 @@ function waitingQuestionOf(
   return choices.length > 0 ? { projectId: project._id, choices } : undefined;
 }
 
-function withMissingArchive<T extends LocalProject | LocalProjectTask>(
-  record: T,
-  now: number,
-): T {
-  if (record.status === "archived") return record;
-  return {
-    ...record,
-    status: "archived",
-    archivedByMissingSync: true,
-    ...("createdAt" in record ? { archivedAt: now } : {}),
-  };
+/**
+ * The display name after the source's: a project being linked keeps the one
+ * it shows, its full name included. Once managed, a display name that was
+ * the full name follows it, and one the user chose stays.
+ */
+function displayNameAfter(
+  project: LocalProject,
+  sourceName: string,
+  linking: boolean,
+) {
+  const shown = project.displayName?.trim()
+    ? project.displayName
+    : project.name;
+  if (linking) return shown;
+  return shown.trim() === project.name.trim() ? sourceName : shown;
 }
 
-/** The project's source-owned fields and tasks, as the snapshot has them. */
+/**
+ * The project's source-owned fields and tasks, as the snapshot has them.
+ * `linking` is set when a local project becomes managed.
+ */
 function withSourceFields(
   project: LocalProject,
   sourceProject: ProjectSourceProject,
@@ -271,16 +323,13 @@ function withSourceFields(
   connection: ProjectSourceConnectionRef,
   factories: ProjectFactories,
   now: number,
+  linking: boolean,
 ): { project: LocalProject; createdTaskIds: Set<string> } {
   const merged = mergeTasks(project.tasks, sourceProject.tasks, factories, now);
-  // A display name that was the full name follows it; one the user chose stays.
-  const followsName =
-    !project.displayName?.trim() ||
-    project.displayName.trim() === project.name.trim();
   const next: LocalProject = {
     ...project,
     name: sourceProject.name,
-    displayName: followsName ? sourceProject.name : project.displayName,
+    displayName: displayNameAfter(project, sourceProject.name, linking),
     code: sourceProject.code,
     client: sourceProject.client,
     startsOn: sourceProject.startsOn,
@@ -298,7 +347,7 @@ function withSourceFields(
     },
   };
   return {
-    project: withSourceStatus(next, sourceProject.complete, now),
+    project: withSourceStatus(next, sourceProject.complete),
     createdTaskIds: merged.createdIds,
   };
 }
@@ -337,6 +386,7 @@ function createManagedProject(
     connection,
     factories,
     now,
+    false,
   ).project;
 }
 
@@ -361,7 +411,6 @@ export function syncProjectSource(
     restored: 0,
     held: 0,
     unchanged: 0,
-    refusedShared: 0,
     waitingQuestions: [],
   };
 
@@ -370,7 +419,11 @@ export function syncProjectSource(
     if (after.status === "archived") result.archived += 1;
     else result.restored += 1;
   };
-  const update = (index: number, sourceProject: ProjectSourceProject) => {
+  const update = (
+    index: number,
+    sourceProject: ProjectSourceProject,
+    linking: boolean,
+  ) => {
     const before = projects[index]!;
     const { project: after, createdTaskIds } = withSourceFields(
       before,
@@ -379,6 +432,7 @@ export function syncProjectSource(
       connection,
       factories,
       now,
+      linking,
     );
     projects[index] = after;
     countStatus(before, after);
@@ -397,7 +451,7 @@ export function syncProjectSource(
         project.source.remoteId === sourceProject.remoteId,
     );
     if (linkedIndex !== -1) {
-      const { before, after } = update(linkedIndex, sourceProject);
+      const { before, after } = update(linkedIndex, sourceProject, false);
       if (sameExceptSyncTime(before, after)) result.unchanged += 1;
       else result.updated += 1;
       continue;
@@ -408,26 +462,21 @@ export function syncProjectSource(
       (project) => isLinkable(project) && normalizeCode(project.code) === code,
     );
     if (index !== -1) {
-      update(index, sourceProject);
+      update(index, sourceProject, true);
       result.linked += 1;
       continue;
     }
 
-    // A shared project follows its team: a source never takes it over, and
-    // a second project of the same work would be a twin.
+    // A shared project follows its team: a source never takes it over, so
+    // the source project is added beside it, not held.
+    const matchesShared = projects.some(
+      (project) =>
+        project.team &&
+        (normalizeCode(project.code) === code ||
+          sameName(project.name, sourceProject.name)),
+    );
     if (
-      projects.some(
-        (project) =>
-          project.team &&
-          (normalizeCode(project.code) === code ||
-            sameName(project.name, sourceProject.name)),
-      )
-    ) {
-      result.refusedShared += 1;
-      continue;
-    }
-
-    if (
+      !matchesShared &&
       projects.some(
         (project) =>
           isLinkable(project) && sameName(project.name, sourceProject.name),
@@ -458,7 +507,7 @@ export function syncProjectSource(
     ) {
       return;
     }
-    const archived = withMissingArchive(project, now);
+    const archived = withMissingArchive(project);
     if (archived !== project) {
       projects[index] = archived;
       result.archived += 1;
@@ -500,7 +549,12 @@ export type HeldSourceProjectChoice =
   { kind: "link"; projectId: string } | { kind: "addAsNew" };
 
 export type HeldSourceProjectResult =
-  | { kind: "linked"; projectId: string }
+  | {
+      kind: "linked";
+      projectId: string;
+      /** The #481 question, when the link added tasks beside waiting ones. */
+      waitingQuestion?: SourceWaitingQuestion;
+    }
   | { kind: "added"; projectId: string }
   /** The source project waits no more: a sync or another window took it. */
   | { kind: "notHeld" }
@@ -554,18 +608,28 @@ export function resolveHeldSourceProject(
     return { ...state, result: { kind: "notLinkable" } };
   }
   const projects = [...state.projects];
-  projects[index] = withSourceFields(
+  const linked = withSourceFields(
     project,
     held,
     record.asOf,
     connection,
     factories,
     now,
-  ).project;
+    true,
+  );
+  projects[index] = linked.project;
+  const waitingQuestion = waitingQuestionOf(
+    linked.project,
+    linked.createdTaskIds,
+  );
   return {
     projects,
     projectSources,
-    result: { kind: "linked", projectId: project._id },
+    result: {
+      kind: "linked",
+      projectId: project._id,
+      ...(waitingQuestion ? { waitingQuestion } : {}),
+    },
   };
 }
 

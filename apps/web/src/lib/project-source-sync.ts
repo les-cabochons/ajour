@@ -124,7 +124,6 @@ export function syncProjectSourceConnection(
         restored_count: counts.restored,
         held_count: counts.held,
         unchanged_count: counts.unchanged,
-        refused_shared_count: counts.refusedShared,
         waiting_question_count: waitingQuestions.length,
       },
     });
@@ -170,9 +169,6 @@ export function describeProjectSourceSync(
     counts.archived ? `${counts.archived} archived` : undefined,
     counts.restored ? `${counts.restored} restored` : undefined,
     counts.held ? `${counts.held} held for review` : undefined,
-    counts.refusedShared
-      ? `${counts.refusedShared} skipped: shared with a team`
-      : undefined,
   ].filter(Boolean);
   return [connectionLabel, ...(parts.length ? parts : ["up to date"])].join(
     " · ",

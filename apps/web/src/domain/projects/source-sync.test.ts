@@ -259,6 +259,75 @@ describe("syncProjectSource", () => {
     expect(renamed.result).toMatchObject({ updated: 1, unchanged: 1 });
   });
 
+  it("keeps a linked local project's name as its display name, then follows renames like any managed project", () => {
+    const local = localProject("acme", {
+      name: "Support",
+      displayName: "Support",
+      code: "ACME-SUP",
+    });
+    const unnamed = localProject("globex", {
+      name: "Globex",
+      displayName: undefined,
+      code: "GLOBEX-INT",
+    });
+
+    const linked = sync(stateWith([local, unnamed]));
+
+    expect(
+      linked.projects.map(({ _id, name, displayName }) => ({
+        _id,
+        name,
+        displayName,
+      })),
+    ).toEqual([
+      { _id: "acme", name: "Acme - Support", displayName: "Support" },
+      { _id: "globex", name: "Globex - Internal", displayName: "Globex" },
+    ]);
+    expect(linked.result.linked).toBe(2);
+
+    const named = {
+      ...linked,
+      projects: linked.projects.map((project) =>
+        project._id === "acme"
+          ? { ...project, displayName: project.name }
+          : project,
+      ),
+    };
+    const renamed = sync(
+      named,
+      snapshot((copy) => {
+        copy.projects[0]!.name = "Acme - Support 2027";
+      }),
+    );
+    expect(
+      renamed.projects.find((project) => project._id === "acme")?.displayName,
+    ).toBe("Acme - Support 2027");
+  });
+
+  it("counts a project stored with its fields in another order as unchanged", () => {
+    const first = sync(stateWith([]));
+    const reordered = {
+      ...first,
+      projects: first.projects.map((project) => {
+        const { source, tasks, ...rest } = project;
+        return {
+          tasks: tasks.map(
+            (task) =>
+              Object.fromEntries(
+                Object.entries(task).reverse(),
+              ) as unknown as LocalProjectTask,
+          ),
+          source: Object.fromEntries(
+            Object.entries(source!).reverse(),
+          ) as unknown as LocalProject["source"],
+          ...Object.fromEntries(Object.entries(rest).reverse()),
+        } as LocalProject;
+      }),
+    };
+
+    expect(sync(reordered).result).toMatchObject({ unchanged: 2, updated: 0 });
+  });
+
   it("keeps a display name the user chose through a rename", () => {
     const first = sync(stateWith([]));
     const id = projectNamed(first, "Acme - Support")._id;
@@ -452,7 +521,7 @@ describe("syncProjectSource", () => {
     expect(tasks).toHaveLength(4);
   });
 
-  it("never links a shared project, by code or by name, and counts what it skipped", () => {
+  it("never links a shared project with the same code or name: it adds the source project as a new one", () => {
     const team = { connectionId: "team-1" };
     const byCode = localProject("shared-code", {
       name: "Acme",
@@ -466,14 +535,28 @@ describe("syncProjectSource", () => {
 
     const next = sync(stateWith([byCode, byName]));
 
-    expect(next.projects).toEqual([byCode, byName]);
+    expect(next.projects.slice(0, 2)).toEqual([byCode, byName]);
+    expect(next.projects.slice(2)).toEqual([
+      expect.objectContaining({
+        _id: expect.stringMatching(/^project-new-/),
+        name: "Acme - Support",
+        source: expect.objectContaining({ remoteId: "ACME-SUP" }),
+      }),
+      expect.objectContaining({
+        _id: expect.stringMatching(/^project-new-/),
+        name: "Globex - Internal",
+        source: expect.objectContaining({ remoteId: "GLOBEX-INT" }),
+      }),
+    ]);
+    expect(next.projects.slice(2).every((project) => !project.team)).toBe(true);
     expect(next.projectSources.c1!.held).toEqual([]);
     expect(next.result).toMatchObject({
-      refusedShared: 2,
       linked: 0,
-      created: 0,
+      created: 2,
       held: 0,
     });
+    // The next sync follows them by their remote IDs.
+    expect(sync(next).result).toMatchObject({ created: 0, unchanged: 2 });
   });
 });
 
@@ -616,6 +699,41 @@ describe("resolveHeldSourceProject", () => {
     // The next sync follows it by its remote ID: nothing is held again.
     const after = sync(next);
     expect(after.result).toMatchObject({ held: 0, unchanged: 2 });
+  });
+
+  it("keeps the picked project's display name, and asks about its Not known yet tasks", () => {
+    const local = localProject("mine", {
+      name: "acme - support",
+      displayName: undefined,
+      tasks: [localTask("wait", { name: "Login bug", commitAs: "waiting" })],
+    });
+    const state = sync(stateWith([local]));
+
+    const next = resolveHeldSourceProject(
+      state,
+      CONNECTION,
+      "ACME-SUP",
+      { kind: "link", projectId: "mine" },
+      createFactories(),
+    );
+
+    expect(next.result).toEqual({
+      kind: "linked",
+      projectId: "mine",
+      waitingQuestion: {
+        projectId: "mine",
+        choices: [
+          {
+            taskId: "wait",
+            name: "Login bug",
+            newNames: ["Ticket #101 - Login", "Ticket #102 - Export"],
+          },
+        ],
+      },
+    });
+    expect(
+      next.projects.find((project) => project._id === "mine"),
+    ).toMatchObject({ name: "Acme - Support", displayName: "acme - support" });
   });
 
   it("adds the held project as a new one, and leaves the local one alone", () => {

@@ -911,7 +911,6 @@ describe("a project source connection", () => {
         restored: 0,
         held: 1,
         unchanged: 0,
-        refusedShared: 0,
       },
       waitingQuestions: [question],
     }));
