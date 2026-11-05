@@ -5,6 +5,8 @@ import type {
   BacklogPerson,
   BucketEvidenceItem,
   CaptureSettings,
+  ProjectSourceBudget,
+  ProjectSourceProject,
   BacklogSource,
   ImportedDraftStatus,
   RuleRecord,
@@ -40,6 +42,76 @@ export interface LocalProject {
   favoritedAt?: number;
   /** Present on a shared project: the team it belongs to. See team-sync.ts. */
   team?: LocalProjectTeamLink;
+  /**
+   * Present on a managed project: the project source it follows. A project
+   * is managed or shared, never both. See source-sync.ts and ADR 0016.
+   */
+  source?: LocalProjectSourceLink;
+  /** The client, as the project source names it. Source-owned. */
+  client?: string;
+  /** The project's first day, `YYYY-MM-DD`, from its source. Source-owned. */
+  startsOn?: string;
+  /** The project's last day, `YYYY-MM-DD`, from its source. Source-owned. */
+  endsOn?: string;
+  /** The budget as the project source counts it at `asOf`. Source-owned. */
+  budget?: LocalProjectSourceBudget;
+  /** A project source sync archived it because the snapshot lacked it. */
+  archivedByMissingSync?: true;
+  /** A project source sync archived it because the source marked it complete. */
+  archivedBySource?: true;
+}
+
+/** A managed project's link to its project source. */
+export interface LocalProjectSourceLink {
+  pluginId: string;
+  connectionId: string;
+  /** The project's ID in the source: a sync links it by this once linked. */
+  remoteId: string;
+  /** Where "Open in <source>" goes. */
+  url?: string;
+  /** When the last sync that carried the project applied. */
+  syncedAt: number;
+}
+
+/** The source's budget figures and the time they are from. */
+export type LocalProjectSourceBudget = ProjectSourceBudget & {
+  /** When the source's figures are from: the snapshot's `asOf`. */
+  asOf: string;
+};
+
+/** A managed project's task as its source knows it. */
+export interface LocalTaskSourceLink {
+  remoteId: string;
+  /** How the source groups the task, such as a phase. */
+  group?: string;
+  /** Whether the source assigns the task to the user. */
+  assigned: boolean;
+  /** The user's hours on the task as the source counts them, when it can. */
+  myHours?: number;
+}
+
+/**
+ * What a project source connection keeps between syncs, so the UI names the
+ * source and its figures' time without repeating them on every project.
+ */
+export interface LocalProjectSource {
+  pluginId: string;
+  /** What Ajour calls the source, such as in "From <label>". */
+  label: string;
+  /** The source's home. */
+  url?: string;
+  /** When the source's figures are from. */
+  asOf: string;
+  /** Whether the source can give the user's hours, and why not. */
+  me?: { hoursAvailable: boolean; hoursNote?: string };
+  /** When the last snapshot applied. */
+  syncedAt: number;
+  /**
+   * Source projects that only match a local project by name. Each waits in
+   * Sync review for the user to link it or add it as new, and later syncs
+   * keep it current meanwhile.
+   */
+  held: ProjectSourceProject[];
 }
 
 /**
@@ -108,6 +180,12 @@ export interface LocalProjectTask {
    */
   commitAs?: TaskCommitAs;
   team?: LocalTaskTeamLink;
+  /** Present on a task of a managed project that the source knows. */
+  source?: LocalTaskSourceLink;
+  /** A project source sync archived it because the snapshot lacked it. */
+  archivedByMissingSync?: true;
+  /** A project source sync archived it because the source closed it. */
+  archivedBySource?: true;
 }
 
 /**
@@ -803,6 +881,8 @@ export interface LocalAppState {
   settleRules?: LocalSettleRule[];
   /** Sync state by team connection ID. */
   teamConnections?: Record<string, LocalTeamConnection>;
+  /** What each project source connection keeps, by connection ID. */
+  projectSources?: Record<string, LocalProjectSource>;
   /**
    * Shared projects the last action changed while its Undo is open, so a team
    * sync in any window waits for them. The acting window clears it when the
