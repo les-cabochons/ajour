@@ -176,6 +176,18 @@ interface PluginHostOptions {
   /** The crash budget's clock. Tests move it. */
   now?: () => number;
   /**
+   * The secret values of a saved connection, read from the vault, to scrub
+   * a plugin's error in the operation's event. Called only at that moment,
+   * and the values are dropped after: the plugin and the operation's record
+   * never hold them. The broker scrubs what a service sends back; this is
+   * the host's own layer, for a plugin that has a secret and echoes it.
+   */
+  secretValues?: (
+    pluginId: string,
+    connectionId: string,
+    manifest: PluginManifest,
+  ) => Promise<readonly string[]>;
+  /**
    * How many operations another host runs from this host's packages, such as
    * the data shape host's. A package change waits for them as for its own,
    * so no folder is replaced under a run.
@@ -361,6 +373,7 @@ export class PluginManager {
   private readonly broker: CredentialBrokerPort;
   private readonly pluginState?: PluginHostOptions["pluginState"];
   private readonly outsideOperations?: () => number;
+  private readonly secretValues?: PluginHostOptions["secretValues"];
   private readonly stops: PluginStopBudget;
   /** The readiness syncs, one after another. */
   private readinessPromise: Promise<void> = Promise.resolve();
@@ -393,6 +406,7 @@ export class PluginManager {
     this.broker = options.broker ?? NO_BROKER;
     this.pluginState = options.pluginState;
     this.outsideOperations = options.outsideOperations;
+    this.secretValues = options.secretValues;
     this.stops = new PluginStopBudget(options.now);
     this.workers = new PluginOperationLifetime({
       name: "Plugin",
@@ -1000,7 +1014,23 @@ export class PluginManager {
             connection?.config,
             params.config as PluginFieldValues | undefined,
           ];
-          record.secrets(connectionSecretValues(plugin.manifest, configs));
+          const connectionId =
+            typeof connection?.id === "string" ? connection.id : undefined;
+          // What the operation was given, and, read when the event is
+          // scrubbed, what the vault holds for the saved connection.
+          const scrubWith = (fields: SecretConnectionFields) => {
+            record.secrets(async () => [
+              ...connectionSecretValues(fields, configs),
+              ...(connectionId
+                ? ((await this.secretValues?.(
+                    pluginId,
+                    connectionId,
+                    plugin.manifest,
+                  )) ?? [])
+                : []),
+            ]);
+          };
+          scrubWith(plugin.manifest);
           // A plugin runs only in a runtime that keeps it to the broker. The
           // standalone API has none: its answer is the same as the overview's.
           if (!this.runsPluginApi4) {
@@ -1030,8 +1060,7 @@ export class PluginManager {
           );
           const admitted = await admit?.(plugin.manifest);
           // A field the vault holds stays secret after an update unmarks it.
-          if (admitted)
-            record.secrets(connectionSecretValues(admitted, configs));
+          if (admitted) scrubWith(admitted);
           let args: unknown[];
           let lifecycle: PluginLifecycle | undefined;
           if (isPluginApi4Manifest(plugin.manifest)) {

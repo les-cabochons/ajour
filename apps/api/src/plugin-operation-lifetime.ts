@@ -131,8 +131,12 @@ export interface OperationRecord {
     source: "installed" | "development";
     apiVersion: number;
   }): void;
-  /** The secret values the plugin receives, which its errors may echo. */
-  secrets(values: readonly string[]): void;
+  /**
+   * The secret values an error of the operation may echo. A reader is called
+   * only when the event is scrubbed, so the values are not held while the
+   * operation runs.
+   */
+  secrets(values: readonly string[] | (() => Promise<readonly string[]>)): void;
 }
 
 interface Operation {
@@ -225,7 +229,16 @@ export class PluginOperationLifetime<TMethod extends string> {
         timeout_ms: this.options.requestTimeoutMs,
       },
     });
-    let secrets: readonly string[] | undefined;
+    const secretReaders: Array<() => Promise<readonly string[]>> = [];
+    /** The secret values to scrub the event with, read now. Undefined when one can't be read. */
+    const readSecrets = async (): Promise<readonly string[] | undefined> => {
+      try {
+        const all = await Promise.all(secretReaders.map((read) => read()));
+        return all.flat();
+      } catch {
+        return undefined;
+      }
+    };
     const record: OperationRecord = {
       plugin: (facts) => {
         unit.set({
@@ -237,7 +250,11 @@ export class PluginOperationLifetime<TMethod extends string> {
         });
       },
       secrets: (values) => {
-        secrets = values;
+        // Each call replaces the last.
+        secretReaders.length = 0;
+        secretReaders.push(
+          typeof values === "function" ? values : async () => values,
+        );
       },
     };
     let operation: Operation | undefined;
@@ -293,12 +310,15 @@ export class PluginOperationLifetime<TMethod extends string> {
       } else if (error instanceof PluginOperationRefused) {
         unit.refuse(error.reason);
       } else if (error instanceof PluginOperationFailure) {
-        unit.fail(error, {
+        const secrets = await readSecrets();
+        // A message that can't be scrubbed is dropped, not kept as it is.
+        unit.fail(secrets ? error : withoutContent(error), {
           ...(error.reason === "timeout" ? { outcome: "timeout" } : {}),
           reason: error.reason,
           ...(secrets ? { secrets } : {}),
         });
       } else if (unit.outcome === undefined) {
+        const secrets = await readSecrets();
         unit.fail(withoutContent(error), secrets ? { secrets } : {});
       }
       throw error;

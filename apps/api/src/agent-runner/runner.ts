@@ -28,10 +28,7 @@ import {
   fillTemplate,
   listTemplateSlots,
 } from "../../../../packages/shared/agent-task-templates.ts";
-import {
-  PLUGIN_API_4,
-  type AgentTaskMcpTool,
-} from "../../../../packages/shared/plugin-api-4.ts";
+import type { AgentTaskMcpTool } from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
   errorIdentity,
@@ -394,12 +391,9 @@ export class AgentRunner {
               : {}),
             blockers,
           },
-          // An API 4 task's run gets only the tools it declares, and none
-          // if it somehow declares no list. API 3 tasks keep every tool
-          // until they move to API 4 (#402).
-          ...(plugin.apiVersion === PLUGIN_API_4
-            ? { tools: task.tools ?? [] }
-            : {}),
+          // A task's run gets only the tools it declares, and none if it
+          // somehow declares no list.
+          tools: task.tools ?? [],
           secretSettings,
         });
       }

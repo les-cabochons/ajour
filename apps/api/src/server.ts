@@ -121,6 +121,7 @@ import {
   ConnectionPausedError,
   api4SavedConfig,
   connectionCredentials,
+  connectionSecretValues,
   effectiveSecretFields,
   isEmptySecretValue,
   mergeSecretsForSave,
@@ -1025,6 +1026,40 @@ async function brokerConnection(
 }
 
 /**
+ * The credentials a failed call's error and messages are scrubbed with: the
+ * secret values of the saved connection, read from the vault now, and the
+ * ones in `configs`. Two layers keep a secret out of a plugin's words. The
+ * broker scrubs what a service sends back, before the plugin sees it. This is
+ * the host's own layer, for a plugin that put a secret in its error or a
+ * message anyway, such as one handed the token by something other than the
+ * broker. An operation's connection holds no secret (only the broker reads
+ * them), so they are read here, for this one scrub, and let go with the
+ * result. They are never stored, logged or put on an event except through
+ * the scrubber. A vault that can't be read adds none: the broker's layer
+ * still holds.
+ */
+async function scrubbingCredentials(
+  storage: AppApiStorage,
+  call: ReturnType<typeof admittedCall>,
+  connection: { pluginId: string; id: string },
+  ...configs: (PluginFieldValues | undefined)[]
+) {
+  let saved: PluginFieldValues | undefined;
+  try {
+    saved = (
+      await storage.readConnectionSecrets(
+        connection.pluginId,
+        connection.id,
+        secretManifestOf(call.manifest),
+      )
+    )?.connection.config;
+  } catch {
+    saved = undefined;
+  }
+  return call.credentials(...configs, saved);
+}
+
+/**
  * Records a failed plugin call on the request's event, and returns the
  * connection's credentials for the message the user sees. A 401 means the
  * service refused the connection's saved secrets: they are marked rejected,
@@ -1044,7 +1079,12 @@ async function failedCall(
   call: ReturnType<typeof admittedCall>,
   connection: OperationConnection,
 ) {
-  const credentials = call.credentials(connection.config);
+  const credentials = await scrubbingCredentials(
+    storage,
+    call,
+    connection,
+    connection.config,
+  );
   recordPluginFailure(unit, error, credentials.secrets);
   if (error instanceof PluginOperationFailure && error.httpStatus === 401) {
     // The plugin's answer and the connection's error matter more than the mark.
@@ -1312,6 +1352,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
     // A data shape import or export is an operation of its package too.
     outsideOperations: () => projectDataShapePluginManager.activeOperationCount,
+    // The host's own scrub of a plugin's error, besides the broker's. Read
+    // from the vault when the event is scrubbed, and not kept.
+    secretValues: async (pluginId, connectionId, manifest) => {
+      const read = await storage.readConnectionSecrets(
+        pluginId,
+        connectionId,
+        secretManifestOf(manifest),
+      );
+      if (!read) return [];
+      return connectionSecretValues(
+        redactionFields(manifest.connectionFields, read.connection.secrets),
+        [read.connection.config],
+      );
+    },
     pluginState: async (pluginId, runnable) => ({
       on: await pluginMayRun(storage, pluginId, runnable),
       settings: await storage.getPluginRuntimeSettings(pluginId),
@@ -2082,6 +2136,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
+      // Only an API 4 package is found as a plugin to run (a package of
+      // another API is unavailable), so this only narrows the type.
+      if (!isPluginApi4Manifest(plugin)) {
+        unit.refuse("not_supported");
+        writeJson(response, 409, { error: "This plugin needs an update" });
+        return;
+      }
       // Saving validates the connection, which runs the plugin's code with
       // the credential just typed. That waits until the plugin is on, so
       // nothing runs before the user has seen its access, and, after an
@@ -2134,7 +2195,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // An address that is the secret holds no user name or password. The
       // plugin never sees it, so the check is Ajour's. The message names the
       // field and none of the address.
-      if (isPluginApi4Manifest(plugin)) {
+      {
         const auth = plugin.network?.auth;
         const given =
           auth?.scheme === "secretAddress"
@@ -2166,7 +2227,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       });
       // Only a plugin whose manifest allows it reaches private addresses.
       const allowsOnPremises =
-        isPluginApi4Manifest(plugin) &&
         plugin.network?.baseAddress?.allowOnPremises === true;
       if (parsedValues.onPremises === true && !allowsOnPremises) {
         readInput(() => {
@@ -2211,14 +2271,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       // An API 4 plugin never saw the secrets, so they come from the save,
       // and so do the address and the user its credential is sent to.
-      const normalizedConfig = isPluginApi4Manifest(plugin)
-        ? api4SavedConfig(
-            secretFields,
-            validation.normalizedConfig,
-            configForSave,
-            pluginNetworkFieldIds(plugin.network),
-          )
-        : validation.normalizedConfig;
+      const normalizedConfig = api4SavedConfig(
+        secretFields,
+        validation.normalizedConfig,
+        configForSave,
+        pluginNetworkFieldIds(plugin.network),
+      );
       // The plugin may answer with a key it didn't declare, which goes to
       // the vault as a secret does.
       if (
@@ -2859,7 +2917,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 fetched.workItemUpdates,
                 heldEstimates,
               ),
-              call.credentials(connection.config).redaction,
+              (
+                await scrubbingCredentials(
+                  storage,
+                  call,
+                  connection,
+                  connection.config,
+                )
+              ).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
@@ -3503,22 +3568,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 409, { error: unsupported });
       return undefined;
     }
-    // Paused, with a 409, when a secret it needs can't reach the plugin.
-    const withSecrets = await storage.connectionForOperation(
+    // Paused, with a 409, when a secret it needs can't reach the broker.
+    const operationConnection = await storage.connectionForOperation(
       pluginId,
       connectionId,
       secretManifestOf(plugin),
     );
-    if (!withSecrets) {
+    if (!operationConnection) {
       unit.refuse("connection_not_found");
       writeJson(response, 404, { error: "Plugin connection not found." });
       return undefined;
     }
     return {
       pluginId,
-      connection: withSecrets,
+      connection: operationConnection,
       plugin,
-      call: admittedCall(plugin, withSecrets.secrets),
+      call: admittedCall(plugin, operationConnection.secrets),
     };
   }
 
