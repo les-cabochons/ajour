@@ -1740,6 +1740,11 @@ export const catalog = defineCatalog({
         "follow_failed",
         /** A running Linux ajour holds its files: the old build stays. */
         "files_in_use",
+        /**
+         * Every added distro WSL lists is on WSL 1, where nothing can check
+         * the Linux build (#611): it keeps its version.
+         */
+        "wsl1_unsupported",
         "invalid_signature",
         "development_build",
         "unsupported_platform",

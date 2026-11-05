@@ -105,8 +105,8 @@ function linksLeftSentence(distros) {
 
 /** Why the Linux build kept its version: a running Linux ajour holds it (#606). */
 const LINUX_BUSY = "An ajour running in WSL is using its files.";
-/** How a rename fails on Windows while a file in the folder is open. */
-const BUSY_CODES = ["EBUSY", "EPERM", "EACCES"];
+/** Whether `error` is how a rename fails on Windows while a file in the folder is open. */
+const isBusy = (error) => ["EBUSY", "EPERM", "EACCES"].includes(error?.code);
 
 const UNKNOWN_DISTRO =
   "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.";
@@ -158,6 +158,7 @@ function distrosOf(stdout) {
  *     remove(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean, cleanupSafe?: boolean }>,
  *   },
  *   now?: () => number,
+ *   sleep?: (ms: number) => Promise<void>,
  *   env?: Record<string, string | undefined>,
  * }} options
  */
@@ -176,6 +177,7 @@ function createCliCommandController({
   followRetryMs,
   allowAdHocSignature = false,
   now = Date.now,
+  sleep,
   env = process.env,
 }) {
   const localOrigin = localReleaseOrigin(development, releaseOrigin);
@@ -200,8 +202,6 @@ function createCliCommandController({
   let following = false;
   let retryTimer;
   let missingAttempts = 0;
-  /** Set when a target of the follow running lacks its release asset. */
-  let followMissing = false;
   const retryDelay = (first) =>
     development &&
     localOrigin &&
@@ -215,6 +215,21 @@ function createCliCommandController({
   let initialized = false;
   /** Aborts a download when Ajour quits; no install starts after. */
   const quitting = new AbortController();
+  /** Waits `ms`, or less when Ajour quits, on a timer that keeps no process alive. */
+  const wait =
+    sleep ??
+    ((ms) =>
+      new Promise((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          quitting.signal.removeEventListener("abort", done);
+          resolve();
+        };
+        if (quitting.signal.aborted) return resolve();
+        const timer = setTimeout(done, ms);
+        timer.unref?.();
+        quitting.signal.addEventListener("abort", done);
+      }));
 
   // WSL distros (#604): x64 Windows only, as no linux-arm64 build ships.
   const wslSupported =
@@ -364,7 +379,6 @@ function createCliCommandController({
     };
   }
 
-  /** Whether the record's Linux build is another version than the app's. */
   function linuxBehind(record) {
     return Boolean(record?.wsl) && record.wsl.version !== appVersion;
   }
@@ -743,134 +757,170 @@ function createCliCommandController({
     }
   }
 
-  async function runInstall(unit, follow = false, interactive = !follow) {
-    const report = { platform, arch, version: appVersion };
-    // A follow names its build; the Linux one follows on its own (#606).
-    if (follow) report.target = PLATFORM_NAMES[platform].os;
-    const started = now();
-    const id = randomUUID();
-    let staging;
-    let swapped = false;
-    let committed = false;
-    let linkAdded = false;
-    removalNotice = null;
+  /**
+   * One build's install, as Install and each follow run it (#570, #606).
+   * `work(run)` installs it: it names `run.staging`, sets `run.swapped`
+   * before its swap and `run.committed` once the record holds the build,
+   * and fills `report`, which the event gets at the end. Until the commit,
+   * reconcile takes a swap back out. A failure ends `unit` refused with its
+   * reason, or failed through `fail(error)`, and comes back as the sentence
+   * the row shows.
+   * @returns {Promise<null | { message: string, reason?: string }>}
+   */
+  async function installBuild(unit, report, { work, fail, quit, fallback }) {
+    const run = {
+      id: randomUUID(),
+      started: now(),
+      staging: undefined,
+      swapped: false,
+      committed: false,
+    };
     try {
-      if (reconciliation) await reconciliation;
-      await reconcileDisk(platform === "darwin" && interactive);
-      initialized = true;
-      // Retry repairs an existing commit without another download or swap.
-      if (
-        transient?.status === "error" &&
-        (await readRecord())?.version === appVersion
-      ) {
-        transient = null;
-        report.result = "installed";
-        newlyInstalled = true;
-        const state = await settledState();
-        emit(state);
-        return state;
-      }
-      await refuseForeignFiles();
-      publishInstalling("downloading", 0);
-      stopIfQuitting();
-      const resolved = await resolveAsset(report);
-      stopIfQuitting();
-      await fs.mkdir(paths.installDir, { recursive: true });
-      staging = path.join(paths.installDir, `.staging-${id}`);
-      await fs.mkdir(staging);
-      const archive = path.join(staging, asset);
-      await download(resolved, archive);
-      report.download_ms = now() - started;
-
-      publishInstalling("checking");
-      const unpacked = path.join(staging, "unpacked");
-      await unpack(archive, unpacked);
-      if (platform === "darwin") {
-        try {
-          const file = path.join(unpacked, binary);
-          await exec(
-            "/usr/bin/codesign",
-            development && localOrigin && allowAdHocSignature
-              ? ["--verify", "--strict", file]
-              : codesignVerifyArgs(file),
-            { timeout: VERSION_CHECK_TIMEOUT_MS },
-          );
-        } catch {
-          throw refusal(
-            "invalid_signature",
-            "The download isn't signed by Ajour. Nothing was installed.",
-          );
-        }
-      }
-      await checkVersion(path.join(unpacked, binary));
-      // From here the swap runs to its end, or rolls back: quitting waits.
-      stopIfQuitting();
-
-      publishInstalling("linking");
-      await moveIntoShare(unpacked);
-      const digests = {};
-      for (const name of [binary, "share"])
-        digests[name] = await contentDigest(path.join(unpacked, name));
-      // Upgrade a pre-digest record before any swap, while its files are whole.
-      const previous = await readRecord();
-      if (previous && !previous.digests) {
-        previous.digests = {};
-        for (const name of [binary, "share"])
-          previous.digests[name] = await contentDigest(targetOf(name));
-        await writeRecord(previous);
-      }
-      await refuseForeignFiles();
-      await writePendingMarker(id, digests);
-      swapped = true;
-      for (const name of [binary, "share"])
-        await swapIn(name, path.join(unpacked, name), id);
-      if (platform === "darwin")
-        linkAdded = (await link.add(paths.installDir, { interactive })).added;
-      await writeRecord({
-        version: appVersion,
-        binaryPath: targetOf(binary),
-        ...(previous?.wsl ? { wsl: previous.wsl } : {}),
-        installedAt: new Date(now()).toISOString(),
-        digests,
-      });
-      committed = true;
-      const { added } = await reconcileDisk();
-      report.path_added = added || linkAdded;
-      report.result = "installed";
-      newlyInstalled = !follow;
-      missingAttempts = 0;
-      transient = null;
-      // Settings shows the WSL rows with the installed command. A follow
-      // runs at launch, which never reads them.
-      if (!follow && wslSupported) await listDistros();
+      await work(run);
+      return null;
     } catch (error) {
       initialized = true;
-      if (swapped && !committed) await reconcileDisk().catch(() => undefined);
-      if (staging) await removeQuietly(staging);
-      const message = quitting.signal.aborted
-        ? "Ajour quit before ajour was installed."
-        : error instanceof Error && error.message
-          ? error.message
-          : "Ajour couldn't install ajour.";
       report.result = error.reason ? "refused" : "failed";
-      if (error.reason) {
-        unit?.refuse(error.reason);
-      } else {
-        unit?.fail(error, follow ? { reason: "follow_failed" } : undefined);
-      }
+      if (error.reason) unit?.refuse(error.reason);
+      else fail(error);
+      return {
+        message: quitting.signal.aborted
+          ? quit
+          : error instanceof Error && error.message
+            ? error.message
+            : fallback,
+        reason: error.reason,
+      };
+    } finally {
+      if (run.swapped && !run.committed)
+        await reconcileDisk().catch(() => undefined);
+      if (run.staging) await removeQuietly(run.staging);
+      unit?.set({ cli_command: report });
+    }
+  }
+
+  /**
+   * Installs the command's own build at the app's version: from Settings,
+   * or as the follow (`follow`, #570), which names its target and keeps the
+   * version it follows to after a failure. Emits nothing; its caller does.
+   * @returns {Promise<{ missing: boolean }>} `missing`: the release lacks the asset.
+   */
+  async function installNative(
+    unit,
+    { follow = false, interactive = !follow } = {},
+  ) {
+    const report = { platform, arch, version: appVersion };
+    if (follow) report.target = PLATFORM_NAMES[platform].os;
+    removalNotice = null;
+    const failure = await installBuild(unit, report, {
+      quit: "Ajour quit before ajour was installed.",
+      fallback: "Ajour couldn't install ajour.",
+      fail: (error) =>
+        unit?.fail(error, follow ? { reason: "follow_failed" } : undefined),
+      work: async (run) => {
+        if (reconciliation) await reconciliation;
+        await reconcileDisk(platform === "darwin" && interactive);
+        initialized = true;
+        // Retry repairs an existing commit without another download or swap.
+        if (
+          transient?.status === "error" &&
+          (await readRecord())?.version === appVersion
+        ) {
+          transient = null;
+          report.result = "installed";
+          newlyInstalled = true;
+          return;
+        }
+        await refuseForeignFiles();
+        publishInstalling("downloading", 0);
+        stopIfQuitting();
+        const resolved = await resolveAsset(report);
+        stopIfQuitting();
+        await fs.mkdir(paths.installDir, { recursive: true });
+        run.staging = path.join(paths.installDir, `.staging-${run.id}`);
+        await fs.mkdir(run.staging);
+        const archive = path.join(run.staging, asset);
+        await download(resolved, archive);
+        report.download_ms = now() - run.started;
+
+        publishInstalling("checking");
+        const unpacked = path.join(run.staging, "unpacked");
+        await unpack(archive, unpacked);
+        if (platform === "darwin") {
+          try {
+            const file = path.join(unpacked, binary);
+            await exec(
+              "/usr/bin/codesign",
+              development && localOrigin && allowAdHocSignature
+                ? ["--verify", "--strict", file]
+                : codesignVerifyArgs(file),
+              { timeout: VERSION_CHECK_TIMEOUT_MS },
+            );
+          } catch {
+            throw refusal(
+              "invalid_signature",
+              "The download isn't signed by Ajour. Nothing was installed.",
+            );
+          }
+        }
+        await checkVersion(path.join(unpacked, binary));
+        // From here the swap runs to its end, or rolls back: quitting waits.
+        stopIfQuitting();
+
+        publishInstalling("linking");
+        await moveIntoShare(unpacked);
+        const digests = {};
+        for (const name of [binary, "share"])
+          digests[name] = await contentDigest(path.join(unpacked, name));
+        // Upgrade a pre-digest record before any swap, while its files are whole.
+        const previous = await readRecord();
+        if (previous && !previous.digests) {
+          previous.digests = {};
+          for (const name of [binary, "share"])
+            previous.digests[name] = await contentDigest(targetOf(name));
+          await writeRecord(previous);
+        }
+        await refuseForeignFiles();
+        await writePendingMarker(run.id, digests);
+        run.swapped = true;
+        for (const name of [binary, "share"])
+          await swapIn(name, path.join(unpacked, name), run.id);
+        const linkAdded =
+          platform === "darwin" &&
+          (await link.add(paths.installDir, { interactive })).added;
+        await writeRecord({
+          version: appVersion,
+          binaryPath: targetOf(binary),
+          ...(previous?.wsl ? { wsl: previous.wsl } : {}),
+          installedAt: new Date(now()).toISOString(),
+          digests,
+        });
+        run.committed = true;
+        const { added } = await reconcileDisk();
+        report.path_added = added || linkAdded;
+        report.result = "installed";
+        newlyInstalled = !follow;
+        transient = null;
+        // Settings shows the WSL rows with the installed command. A follow
+        // runs at launch, which never reads them.
+        if (!follow && wslSupported) await listDistros();
+      },
+    });
+    if (failure)
       transient = {
         status: "error",
         progress: null,
-        error: message,
+        error: failure.message,
         ...(follow ? { pending: appVersion } : {}),
       };
-      if (follow && error.reason === "missing_asset") followMissing = true;
-    } finally {
-      unit?.set({ cli_command: report });
-    }
+    return { missing: failure?.reason === "missing_asset" };
+  }
+
+  /** Install from Settings: the command's own build, then the new state. */
+  async function runInstall(unit) {
+    await installNative(unit);
     const state = await settledState();
-    // A follow reports its end once its retry, if any, is queued.
-    if (!follow) emit(state);
+    emit(state);
     return state;
   }
 
@@ -1068,12 +1118,13 @@ function createCliCommandController({
    * A retry finishes a swap half done: `swapIn` skips an entry set aside.
    */
   async function swapLinuxInPatiently(id, staged) {
-    for (let wait = 50; ; wait *= 2) {
+    for (let delay = 50; ; delay *= 2) {
       try {
         return await swapLinuxIn(id, staged);
       } catch (error) {
-        if (!BUSY_CODES.includes(error?.code) || wait > 800) throw error;
-        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (!isBusy(error) || delay > 800) throw error;
+        // Quitting ends the wait, and swapLinuxIn then stops.
+        await wait(delay);
       }
     }
   }
@@ -1349,113 +1400,104 @@ function createCliCommandController({
   /**
    * Follows the Linux build for WSL to the app's version (#606), after
    * `ajour.exe`, and never touching it. The new build is checked inside the
-   * first recorded distro WSL still lists, then swapped into `bin\linux`,
-   * where every added distro's link finds it. A running Linux ajour holds
-   * the files through `/mnt/c`: the rename fails, the old build keeps
-   * working, and the next launch tries again. With no recorded distro left,
-   * the record lets go of the build.
+   * first recorded distro WSL still lists on WSL 2, then swapped into
+   * `bin\linux`, where every added distro's link finds it. A running Linux
+   * ajour holds the files through `/mnt/c`: the rename fails, the old build
+   * keeps working, and the next launch tries again. With no recorded distro
+   * left, the record lets go of the build.
+   * @returns {Promise<{ missing: boolean }>} `missing`: the release lacks the asset.
    */
   async function runFollowLinux(unit) {
-    const report = {
-      target: "linux",
-      platform: "linux",
-      arch: "x64",
-      version: appVersion,
-    };
-    const started = now();
-    const id = randomUUID();
-    let staging;
-    let swapped = false;
+    const report = { target: "linux", platform, arch, version: appVersion };
     let progress = null;
     const publish = async (_phase, percent) => {
       if (Number.isFinite(percent)) progress = percent;
       wslFollow = { status: "updating", progress };
       emit(await settledState());
     };
-    try {
-      if (reconciliation) await reconciliation;
-      await reconcileDisk();
-      initialized = true;
-      const record = await readRecord();
-      if (!linuxBehind(record)) {
-        wslFollow = null;
-        return;
-      }
-      // The follow is the newest word on the rows of its distros.
-      for (const name of record.wsl.distros ?? [])
-        if (wslStates.get(name)?.status === "error") wslStates.delete(name);
-      await listDistros({ fresh: true });
-      if (!distroList.ok)
-        throw new Error("Ajour couldn't read the list of WSL distros.");
-      const distro = (record.wsl.distros ?? []).find(listedDistro);
-      if (!distro) {
-        // Every distro it was added to is gone: nothing links to it.
-        await dropWsl(record);
-        report.result = "removed";
-        return;
-      }
-      staging = targetOf(`.staging-${id}`);
-      await fs.mkdir(staging);
-      const staged = await stageLinux(staging, publish, report);
-      report.download_ms = now() - started;
-      // Checked before the swap, so a build that fails never replaces one
-      // that works.
-      await checkLinuxVersion(
-        distro,
-        await linuxTargetIn(distro, path.join(staged.unpacked, "ajour")),
-        ".",
-      );
-      swapped = true;
-      try {
-        await swapLinuxInPatiently(id, staged);
-      } catch (error) {
-        if (BUSY_CODES.includes(error?.code))
-          throw Object.assign(new Error(LINUX_BUSY), { busy: true });
-        throw error;
-      }
-      await writeRecord({
-        ...record,
-        wsl: { ...record.wsl, version: appVersion, digests: staged.digests },
-      });
-      swapped = false;
-      await reconcileDisk().catch(() => undefined);
-      wslFollow = null;
-      report.result = "installed";
-    } catch (error) {
-      const message = quitting.signal.aborted
-        ? "Ajour quit before ajour was updated."
-        : error instanceof Error && error.message
-          ? error.message
-          : "Ajour couldn't update ajour in WSL.";
-      wslFollow = { status: "error", error: message };
-      report.result = error.reason ? "refused" : "failed";
-      if (error.reason) unit?.refuse(error.reason);
+    const failure = await installBuild(unit, report, {
+      quit: "Ajour quit before ajour was updated.",
+      fallback: "Ajour couldn't update ajour in WSL.",
       // Never the message: it can name a distro or a path.
-      else
+      fail: (error) =>
         unit?.fail(new Error("Ajour couldn't update ajour in WSL."), {
-          reason: error.busy ? "files_in_use" : "follow_failed",
+          reason: isBusy(error.cause) ? "files_in_use" : "follow_failed",
+        }),
+      work: async (run) => {
+        if (reconciliation) await reconciliation;
+        await reconcileDisk();
+        initialized = true;
+        const record = await readRecord();
+        if (!linuxBehind(record)) {
+          wslFollow = null;
+          return;
+        }
+        const recorded = record.wsl.distros ?? [];
+        // The follow is the newest word on the rows of its distros.
+        for (const name of recorded)
+          if (wslStates.get(name)?.status === "error") wslStates.delete(name);
+        await listDistros({ fresh: true });
+        if (!distroList.ok)
+          throw new Error("Ajour couldn't read the list of WSL distros.");
+        const distro = recorded.find(
+          (name) => listedDistro(name)?.wslVersion === 2,
+        );
+        if (!distro && recorded.some(listedDistro)) {
+          // Only distros converted to WSL 1 are left, where the Linux ajour
+          // can't start (#611). Their links stay, and so does the build:
+          // nothing can check a new one until one is on WSL 2 again.
+          wslFollow = null;
+          report.result = "refused";
+          unit?.refuse("wsl1_unsupported");
+          return;
+        }
+        if (!distro) {
+          // Every distro it was added to is gone: nothing links to it.
+          await dropWsl(record);
+          report.result = "removed";
+          return;
+        }
+        run.staging = targetOf(`.staging-${run.id}`);
+        await fs.mkdir(run.staging);
+        const staged = await stageLinux(run.staging, publish, report);
+        report.download_ms = now() - run.started;
+        // Checked before the swap, so a build that fails never replaces one
+        // that works.
+        await checkLinuxVersion(
+          distro,
+          await linuxTargetIn(
+            distro,
+            path.join(staged.unpacked, binaryName("linux")),
+          ),
+          ".",
+        );
+        run.swapped = true;
+        try {
+          await swapLinuxInPatiently(run.id, staged);
+        } catch (error) {
+          throw isBusy(error) ? new Error(LINUX_BUSY, { cause: error }) : error;
+        }
+        await writeRecord({
+          ...record,
+          wsl: { ...record.wsl, version: appVersion, digests: staged.digests },
         });
-      if (error.reason === "missing_asset") followMissing = true;
-    } finally {
-      // A failure before the commit takes the new build back out.
-      if (swapped) await reconcileDisk().catch(() => undefined);
-      if (staging) await removeQuietly(staging);
-      unit?.set({ cli_command: report });
-    }
+        run.committed = true;
+        await reconcileDisk().catch(() => undefined);
+        wslFollow = null;
+        report.result = "installed";
+      },
+    });
+    if (failure) wslFollow = { status: "error", error: failure.message };
+    return { missing: failure?.reason === "missing_asset" };
   }
 
-  /** Runs one target's follow under its own `cli_command.follow` event. */
-  async function followTarget(run) {
+  function followTarget(run) {
     const unit = events?.start("cli_command.follow", {
       kind: "job",
       trigger: "system",
       detached: true,
     });
-    try {
-      return await run(unit);
-    } finally {
-      unit?.end();
-    }
+    return run(unit).finally(() => unit?.end());
   }
 
   /**
@@ -1477,15 +1519,25 @@ function createCliCommandController({
         const native =
           record && (record.version !== appVersion || transient?.pending);
         const linux = wslSupported && linuxBehind(record);
-        if (!native && !linux) return settledState();
-        followMissing = false;
+        if (!native && !linux) {
+          missingAttempts = 0;
+          return settledState();
+        }
+        const outcomes = [];
         if (native) {
-          await followTarget((unit) => runInstall(unit, true, interactive));
+          outcomes.push(
+            await followTarget((unit) =>
+              installNative(unit, { follow: true, interactive }),
+            ),
+          );
           // ajour.exe's outcome shows while the Linux build follows.
           if (linux) emit(await settledState());
         }
-        if (linux) await followTarget(runFollowLinux);
-        if (followMissing && !quitting.signal.aborted) {
+        if (linux) outcomes.push(await followTarget(runFollowLinux));
+        // One timer for every build still missing its asset: 5 minutes, then
+        // hourly, until none is.
+        if (!outcomes.some(({ missing }) => missing)) missingAttempts = 0;
+        else if (!quitting.signal.aborted) {
           retryTimer = setTimeout(
             () => {
               retryTimer = undefined;
@@ -1494,7 +1546,7 @@ function createCliCommandController({
             retryDelay(missingAttempts++ === 0),
           );
           retryTimer.unref?.();
-        } else if (!followMissing) missingAttempts = 0;
+        }
         const state = await settledState();
         emit(state);
         return state;
