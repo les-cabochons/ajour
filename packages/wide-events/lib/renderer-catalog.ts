@@ -652,7 +652,10 @@ export const rendererEvents = {
   }),
   "backlog_item.open": command(backlogItem),
   "backlog_item.change_source_state": command(backlogItem),
-  "backlog_item.apply_timelog": command(backlogItem),
+  /** Refused when the timelog names what a project source archived (#637). */
+  "backlog_item.apply_timelog": command(backlogItem, {
+    reasons: ["archived_by_source"],
+  }),
   "backlog_item.resolve_estimate": command({
     backlog_item: {
       id: operational(),

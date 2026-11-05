@@ -5,7 +5,11 @@ import type {
   LocalProjectTaskDraft,
 } from "@/domain/local-state";
 import type { ProjectDataShapeImportProject } from "@ajour/shared";
-import { isManagedProject } from "@/domain/projects/project-transitions";
+import {
+  getProjectRestoreRefusal,
+  getTaskRestoreRefusal,
+  isManagedProject,
+} from "@/domain/projects/project-transitions";
 import {
   durationHoursValueToMs,
   durationMsToHoursValue,
@@ -241,9 +245,10 @@ function mergeImportedTasks(
 
     // A source task's status, billable and budget are its source's.
     const fromSource = existingTask.source !== undefined;
-    const status = fromSource
-      ? existingTask.status
-      : (importedTask.status ?? existingTask.status);
+    const status =
+      fromSource || getTaskRestoreRefusal(project, existingTask, undefined)
+        ? existingTask.status
+        : (importedTask.status ?? existingTask.status);
     const budgetMs =
       fromSource || importedTask.budgetMs === undefined
         ? existingTask.budgetMs
@@ -471,7 +476,12 @@ export function importProjectWorkbookRows(
           ? existingProject.code
           : (group.code ?? existingProject.code),
         color: group.color || existingProject.color,
-        status: group.status ?? existingProject.status,
+        // The source owns a managed project's status, and nothing restores a
+        // project it archived.
+        status:
+          managed || getProjectRestoreRefusal(existingProject, undefined)
+            ? existingProject.status
+            : (group.status ?? existingProject.status),
         tasks: nextTasks,
       };
     }

@@ -546,4 +546,36 @@ describe("a managed project's import", () => {
     });
     expect(operation.projects[0]?.code).toBeUndefined();
   });
+
+  it("keeps the status of a project its source archived when a file says active", () => {
+    const { factories, project } = managed();
+    const archived = {
+      ...project,
+      status: "archived" as const,
+      archivedBySource: true as const,
+    };
+
+    const operation = importProjectWorkbookRows(
+      [archived],
+      [
+        {
+          project: "Acme - Support",
+          code: "",
+          color: "",
+          status: "active",
+          task: "Login",
+          taskStatus: "",
+          billable: "",
+          budgetHours: "",
+          adjustmentHours: "",
+        },
+      ],
+      factories,
+    );
+
+    expect(operation.projects[0]).toMatchObject({
+      status: "archived",
+      archivedBySource: true,
+    });
+  });
 });

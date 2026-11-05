@@ -122,6 +122,7 @@ import {
 import {
   applyDescriptionTimelogs,
   applyItemTimelog,
+  getItemTimelogRefusal,
 } from "@/domain/backlog/description-timelog";
 import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
@@ -2925,6 +2926,12 @@ const store = {
    * Returns an undo token, or null when nothing changed.
    */
   applyTimelogWithUndo(workItemId: string) {
+    // What a project source archived stays archived, and the command ends
+    // refused so the log says why nothing changed.
+    if (getItemTimelogRefusal(readState(), workItemId)) {
+      refuseStoreCommand("archived_by_source");
+      return null;
+    }
     return updateStateWithUndo((state) =>
       applyItemTimelog(state, workItemId, {
         createId,

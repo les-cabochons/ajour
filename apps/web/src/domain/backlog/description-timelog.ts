@@ -43,7 +43,7 @@ export type TimelogMismatch =
       taskName?: string;
       /** An archived project of that name, which applying restores. */
       archivedProjectId?: string;
-      /** Why that archived project can't be restored: its source archived it. */
+      /** Why that archived project, or its task, can't be restored: its source archived it. */
       refusal?: string;
     }
   | {
@@ -142,8 +142,17 @@ export function getTimelogMismatch(
   if (!timelog || !target) return null;
 
   if (target.kind === "no-project") {
+    // Restoring the project also restores the task the timelog names, so a
+    // task its source closed refuses the whole Restore project…
+    const archivedTask =
+      target.archived && timelog.task
+        ? findProjectTaskByImportName(target.archived, timelog.task)
+        : undefined;
     const refusal = target.archived
-      ? getProjectRestoreRefusal(target.archived, projectSources)
+      ? (getProjectRestoreRefusal(target.archived, projectSources) ??
+        (archivedTask
+          ? getTaskRestoreRefusal(target.archived, archivedTask, projectSources)
+          : undefined))
       : undefined;
     return {
       kind: "missing-project",
@@ -340,4 +349,22 @@ export function applyItemTimelog(
     createProject: true,
     changeSharedTasks: true,
   });
+}
+
+/**
+ * Why the user can't apply the item's timelog: the project or the task it
+ * names is one its project source archived. Undefined when Apply can go on.
+ */
+export function getItemTimelogRefusal(
+  state: LocalAppState,
+  workItemId: string,
+): string | undefined {
+  const workItem = state.workItems.find((item) => item._id === workItemId);
+  if (!workItem) return undefined;
+  const mismatch = getTimelogMismatch(
+    state.projects,
+    workItem,
+    state.projectSources,
+  );
+  return mismatch && "refusal" in mismatch ? mismatch.refusal : undefined;
 }

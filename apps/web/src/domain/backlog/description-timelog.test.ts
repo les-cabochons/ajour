@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyDescriptionTimelogs,
   applyItemTimelog,
+  getItemTimelogRefusal,
   getTimelogMismatch,
 } from "@/domain/backlog/description-timelog";
 import type {
@@ -836,5 +837,51 @@ describe("a timelog naming what a project source archived (#637)", () => {
     );
     expect(applied.projects).toEqual([acmeManaged]);
     expect(applied.workItems[0]?.taskId).toBeUndefined();
+  });
+
+  const handArchived = project({
+    _id: "initech",
+    name: "Initech - Support",
+    status: "archived",
+    source: { ...source, remoteId: "INI-SUP" },
+    tasks: [
+      {
+        ...task("zone", "Ticket #099 - Time zone", "archived"),
+        archivedBySource: true as const,
+      },
+    ],
+  });
+
+  it("says why the task can't be restored when the user archived the project", () => {
+    expect(
+      getTimelogMismatch(
+        [handArchived],
+        item({
+          description: timelog("Initech - Support", "Ticket #099 - Time zone"),
+        }),
+        projectSources,
+      ),
+    ).toMatchObject({
+      kind: "missing-project",
+      archivedProjectId: "initech",
+      refusal: "Example planner closed this task.",
+    });
+  });
+
+  it("changes nothing when the project is restorable but its task is not", () => {
+    const state = createState({
+      projects: [handArchived],
+      projectSources,
+      workItems: [
+        item({
+          description: timelog("Initech - Support", "Ticket #099 - Time zone"),
+        }),
+      ],
+    });
+
+    expect(applyItemTimelog(state, "item", createFactories())).toBe(state);
+    expect(getItemTimelogRefusal(state, "item")).toBe(
+      "Example planner closed this task.",
+    );
   });
 });

@@ -8,6 +8,8 @@ import type {
 import {
   createProject,
   createProjectTask,
+  getProjectRestoreRefusal,
+  getTaskRestoreRefusal,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
 import {
@@ -177,6 +179,19 @@ function ensureImportedProjectAndTask(
       ? resolveImportedTask(existingProject, taskName)
       : undefined;
 
+    // Nothing restores what a project source archived, and a twin task next
+    // to a closed one would only hide it: the row waits with the reason.
+    const refusal =
+      getProjectRestoreRefusal(existingProject, state.projectSources) ??
+      (existingTask
+        ? getTaskRestoreRefusal(
+            existingProject,
+            existingTask,
+            state.projectSources,
+          )
+        : undefined);
+    if (refusal) return { refusal };
+
     if (existingTask || !taskName) {
       return {
         projects: state.projects.map((project) =>
@@ -246,6 +261,14 @@ function commitDraft(
     },
     factories,
   );
+  if ("refusal" in ensured) {
+    return {
+      ...state,
+      timesheetImportDrafts: state.timesheetImportDrafts.map((item) =>
+        item._id === draft._id ? { ...item, refusal: ensured.refusal } : item,
+      ),
+    };
+  }
   const timesheetEntry = createTimesheetEntry(
     ensured.projects,
     {
@@ -284,6 +307,13 @@ export function commitTimesheetImportDraft(
   }
 
   const committed = commitDraft(state, draft, factories);
+  // A refused row stays, with the reason.
+  if (
+    committed.timesheetImportDrafts.find((item) => item._id === draftId)
+      ?.refusal
+  ) {
+    return committed;
+  }
   return {
     ...committed,
     timesheetImportDrafts: committed.timesheetImportDrafts.filter(
@@ -313,7 +343,15 @@ export function commitReadyTimesheetImportDrafts(
       continue;
     }
 
-    committed = commitDraft(committed, draft, factories);
+    const next = commitDraft(committed, draft, factories);
+    const refused = next.timesheetImportDrafts.find(
+      (item) => item._id === draft._id,
+    )?.refusal;
+    if (refused) {
+      retainedDrafts.push({ ...draft, refusal: refused });
+      continue;
+    }
+    committed = next;
   }
 
   return {

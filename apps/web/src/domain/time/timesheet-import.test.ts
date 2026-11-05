@@ -355,3 +355,122 @@ describe("timesheet import commits", () => {
     ]);
   });
 });
+
+describe("a timesheet import naming what a project source archived (#637)", () => {
+  const projectSources = {
+    planner: {
+      pluginId: "example-project-source",
+      label: "Example planner",
+      asOf: "2026-10-31T23:59:59.000Z",
+      syncedAt: 1,
+      held: [],
+    },
+  };
+  const source = {
+    pluginId: "example-project-source",
+    connectionId: "planner",
+    remoteId: "ACME",
+    syncedAt: 1,
+  };
+  const row = (project: string, task: string) => ({
+    date: "2026-07-30",
+    project,
+    task,
+    hours: 1,
+  });
+
+  function stagedState(
+    project: LocalProject,
+    projectName: string,
+    taskName: string,
+  ) {
+    return stageTimesheetImportRows(
+      createState({ projects: [project], projectSources }),
+      [row(projectName, taskName)],
+      createFactories(),
+    );
+  }
+
+  it("keeps a row for a task its source closed, with the refusal, and adds no twin", () => {
+    const project: LocalProject = {
+      ...createProject(),
+      source,
+      tasks: [
+        {
+          _id: "task-1",
+          name: "Build",
+          status: "archived",
+          createdAt: 100,
+          archivedBySource: true,
+        },
+      ],
+    };
+    const staged = stagedState(project, "Mercury", "Build");
+
+    const one = commitTimesheetImportDraft(
+      staged,
+      staged.timesheetImportDrafts[0]!._id,
+      createFactories(),
+    );
+    const all = commitReadyTimesheetImportDrafts(staged, createFactories());
+
+    for (const committed of [one, all]) {
+      expect(committed.timesheetEntries).toHaveLength(0);
+      expect(committed.projects).toEqual([project]);
+      expect(committed.timesheetImportDrafts).toEqual([
+        expect.objectContaining({
+          refusal: "Example planner closed this task.",
+        }),
+      ]);
+    }
+  });
+
+  it("keeps a row for a project its source archived, with the refusal", () => {
+    const project: LocalProject = {
+      ...createProject("archived"),
+      source,
+      archivedByMissingSync: true,
+    };
+    const staged = stagedState(project, "Mercury", "");
+
+    const committed = commitReadyTimesheetImportDrafts(
+      staged,
+      createFactories(),
+    );
+
+    expect(committed.timesheetEntries).toHaveLength(0);
+    expect(committed.projects).toEqual([project]);
+    expect(committed.timesheetImportDrafts[0]?.refusal).toBe(
+      "This project is no longer in Example planner.",
+    );
+  });
+
+  it("still imports the other rows", () => {
+    const closed: LocalProject = {
+      ...createProject(),
+      source,
+      tasks: [
+        {
+          _id: "task-1",
+          name: "Build",
+          status: "archived",
+          createdAt: 100,
+          archivedBySource: true,
+        },
+      ],
+    };
+    const staged = stageTimesheetImportRows(
+      createState({ projects: [closed], projectSources }),
+      [row("Mercury", "Build"), row("Venus", "Plan")],
+      createFactories(),
+    );
+
+    const committed = commitReadyTimesheetImportDrafts(
+      staged,
+      createFactories(),
+    );
+
+    expect(committed.timesheetEntries).toHaveLength(1);
+    expect(committed.timesheetImportDrafts).toHaveLength(1);
+  });
+});

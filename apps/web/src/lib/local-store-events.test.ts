@@ -363,6 +363,69 @@ describe("store command events", () => {
     ]);
   });
 
+  it("ends apply_timelog refused when the timelog names what a project source closed", async () => {
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        projects: [
+          {
+            _id: "hand",
+            name: "Hand",
+            color: "#123456",
+            icon: { kind: "preset", name: "dot" },
+            status: "archived",
+            source: {
+              pluginId: "planner",
+              connectionId: "c1",
+              remoteId: "P1",
+              syncedAt: 1,
+            },
+            tasks: [
+              {
+                _id: "closed",
+                name: "Closed",
+                status: "archived",
+                createdAt: 1,
+                archivedBySource: true,
+                source: { remoteId: "T1", assigned: true },
+              },
+            ],
+          },
+        ],
+        projectSources: {
+          c1: {
+            pluginId: "planner",
+            label: "Planner",
+            asOf: "2026-11-01T00:00:00.000Z",
+            syncedAt: 1,
+            held: [],
+          },
+        },
+        workItems: [
+          {
+            _id: "item",
+            title: "Item",
+            description:
+              "---\ntimelog:\n  project: Hand\n  task: Closed\n---\n",
+            status: "active",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+    const { sink, localStore } = await loadStore();
+
+    expect(localStore.applyTimelogWithUndo("item")).toBeNull();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "backlog_item.apply_timelog",
+        outcome: "refused",
+        outcome_reason: "archived_by_source",
+      },
+    ]);
+  });
+
   it("merges a task with Undo, and its event holds counts and ids, never names", async () => {
     browser.storage.set(
       STORAGE_KEY,
