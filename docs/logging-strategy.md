@@ -1033,6 +1033,7 @@ channel to read the event each emits.
 | `task.create`                        | command                            | store command                                    |
 | `task.favorite`                      | command                            | store command                                    |
 | `task.import`                        | command                            | store command                                    |
+| `task.merge`                         | command                            | store command                                    |
 | `task.pin`                           | command                            | store command                                    |
 | `task.reorder`                       | command                            | store command                                    |
 | `task.restore`                       | command                            | store command                                    |

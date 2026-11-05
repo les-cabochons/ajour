@@ -350,6 +350,24 @@ function getComputedTranslateY(row: SharedTableDragRow) {
  * without the shift that makes room for the dragged item, so bringing the item
  * back over its own slot always gives its original index.
  */
+/**
+ * The height of the rows a drag hides above the dragged row, such as
+ * suggestion rows. Hiding them moves every task row up while the pointer
+ * stays put, so a drag measures the pointer this much higher to keep its
+ * place in the collapsed list.
+ */
+export function getCollapsedRowsHeightAbove(
+  rows: Iterable<Pick<Element, "getBoundingClientRect">>,
+  draggedRowTop: number,
+) {
+  let height = 0;
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (rect.top < draggedRowTop) height += rect.height;
+  }
+  return height;
+}
+
 export function getSharedTableDragTargetIndex(
   itemIds: string[],
   sourceItemId: string,

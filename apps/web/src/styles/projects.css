@@ -373,6 +373,35 @@
     white-space: nowrap;
   }
 
+  /* A merge suggestion under its task (#507): a quiet line, indented
+     under the name, with Merge and Not the same right after the text. */
+  .project-task-suggestion {
+    border-bottom: 1px solid var(--border-row);
+  }
+
+  /* Like the name cell, no intrinsic width: a long name ellipsizes. */
+  .project-task-suggestion td {
+    contain: inline-size;
+    padding: 0 0.25rem;
+  }
+
+  .project-task-suggestion-content {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 32px;
+    padding-left: 1rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .project-task-suggestion-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .project-task-trailing {
     width: 1%;
     text-align: right;

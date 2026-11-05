@@ -1,3 +1,6 @@
+import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
+import { getCommitTarget } from "@/domain/projects/commit-target";
+
 /**
  * Action sets for user-facing objects, from the action model in docs/agents/ux-spec.md.
  *
@@ -427,17 +430,25 @@ export type TaskActionId =
   | "assign-shortcut"
   | "favorite"
   | "unfavorite"
+  | "merge-into"
   | "archive"
   | "restore";
 
 /**
  * Lists a task's actions: Start entry · New entry… | Edit · Assign shortcut… ·
- * Add to favorites/Remove from favorites | Archive/Restore.
+ * Add to favorites/Remove from favorites | Merge into… | Archive/Restore.
+ * Merge into… is on the tasks of a managed project only (#507), archived ones
+ * included, so a task the source left out can hand its entries over.
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
-  project: { status: ArchiveStatus },
-  task: { status: ArchiveStatus; favoritedAt?: number },
+  project: Pick<LocalProject, "source" | "localOnly"> & {
+    status: ArchiveStatus;
+  },
+  task: Pick<LocalProjectTask, "commitAs"> & {
+    status: ArchiveStatus;
+    favoritedAt?: number;
+  },
 ): ObjectAction<TaskActionId>[] {
   const projectReason =
     project.status === "archived" ? RESTORE_PROJECT_FIRST : undefined;
@@ -466,6 +477,18 @@ export function getTaskActions(
       disabledReason: workReason,
     },
     favoriteAction(task.favoritedAt, "edit", workReason),
+    // Time on a Local only task never reaches the source, so it has nothing
+    // to merge into.
+    ...(project.source && getCommitTarget(project, task) !== "local"
+      ? [
+          {
+            id: "merge-into" as const,
+            label: "Merge into…",
+            group: "merge",
+            disabledReason: projectReason,
+          },
+        ]
+      : []),
     isTaskArchived
       ? {
           id: "restore",

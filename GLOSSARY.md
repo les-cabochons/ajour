@@ -39,7 +39,7 @@ The user's time on a managed project that the project source cannot have yet: en
 _Avoid_: Pending hours, uncommitted (alone), lag, conflict
 
 **Merge into**:
-To move every time entry of a task to another task of the same project, mark the committed ones for re-commit under the new task, and archive the empty task.
+To move every time entry of a task to another task of the same managed project, mark the committed ones for re-commit under the new task, and archive the task. Entries of submitted weeks stay where they were submitted.
 _Avoid_: Combine, deduplicate, link (for tasks)
 
 **Commits as**:

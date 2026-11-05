@@ -498,6 +498,38 @@ export const rendererEvents = {
   "task.archive": command(changedTask),
   /** Refused when the project source closed it or left it out (#505). */
   "task.restore": command(changedTask, { reasons: ["archived_by_source"] }),
+  /**
+   * Merge into… on a managed project (#507): the task's entries moved to
+   * `into_task_id` and it was archived. Counts and ids only.
+   */
+  "task.merge": command(
+    {
+      ...changedTask,
+      task_merge: {
+        into_task_id: operational(),
+        /** The suggestion the user took, when the merge came from one. */
+        suggestion: operational<"renamed" | "lookalike">(),
+        moved_entry_count: operational<number>(),
+        /** Entries of submitted weeks, left on the merged task. */
+        kept_entry_count: operational<number>(),
+        stale_entry_count: operational<number>(),
+        moved_timer_count: operational<number>(),
+        moved_work_item_count: operational<number>(),
+        moved_pin: operational<boolean>(),
+        moved_favorite: operational<boolean>(),
+      },
+    },
+    {
+      reasons: [
+        "not_managed",
+        "missing",
+        "other_project",
+        "same_task",
+        "archived_target",
+        "local_only_target",
+      ],
+    },
+  ),
   "task.reorder": command(changedTask),
   "task.pin": command(changedTask),
   "task.favorite": command(changedTask),

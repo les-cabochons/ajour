@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { placeFloatingComposerFor } from "@/lib/floating-composer";
 import {
   Tooltip,
@@ -101,7 +108,13 @@ import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import {
+  MergeTaskDialog,
+  TaskMergeSuggestionRow,
+  useTaskMergeSuggestionRows,
+} from "@/features/projects/task-merge-ui";
 import { showToast } from "@/components/ui/toast";
+import { isDateLocked } from "@/domain/time/locked-weeks";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
 import {
@@ -122,6 +135,7 @@ import {
   getSharedTableDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
+  getCollapsedRowsHeightAbove,
   getSharedTableDragTargetIndex,
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
@@ -160,6 +174,7 @@ type TaskEditorSession = {
 
 /** The task whose Assign shortcut… picker is open, from its row menu or the palette. */
 type ShortcutRequest = { projectId: string; task: LocalProjectTask };
+type MergeRequest = { projectId: string; taskId: string };
 
 type ProjectTaskFilter = "active" | "archived";
 
@@ -188,6 +203,8 @@ type TaskDragState = {
   minTop: number;
   width: number;
   height: number;
+  /** The height of the suggestion rows the drag hides above this task. */
+  collapsedAboveY: number;
 };
 
 type ProjectDragState = {
@@ -579,6 +596,7 @@ function ProjectDetail({
   onNewTask,
   onLeave,
   onAssignShortcut,
+  onMergeInto,
   entries,
   weekMs,
   taskPropertyPlugins,
@@ -603,6 +621,8 @@ function ProjectDetail({
   onLeave: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
   onAssignShortcut: (task: LocalProjectTask) => void;
+  /** Opens Merge into…'s task picker for a task of a managed project. */
+  onMergeInto: (task: LocalProjectTask) => void;
   /** Active plugins that add task properties, for the "→ 07 Run" hints. */
   taskPropertyPlugins: TaskPropertyPlugin[];
 }) {
@@ -809,6 +829,9 @@ function ProjectDetail({
         case "assign-shortcut":
           onAssignShortcut(task);
           return;
+        case "merge-into":
+          onMergeInto(task);
+          return;
         case "favorite":
         case "unfavorite":
           setTaskFavorite(project._id, task._id, actionId === "favorite");
@@ -864,6 +887,12 @@ function ProjectDetail({
       const firstRowRect = taskRowRefs.current
         .get(activeTaskIds[0] ?? taskId)
         ?.getBoundingClientRect();
+      // Merge suggestion rows hide during a drag, which moves the rows up.
+      const collapsedAboveY = getCollapsedRowsHeightAbove(
+        row.parentElement?.querySelectorAll("[data-task-merge-suggestion]") ??
+          [],
+        rect.top,
+      );
       setSharedTableDragDocumentState(true, "project-task-drag-active");
       suppressTaskClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
@@ -881,6 +910,7 @@ function ProjectDetail({
         minTop: firstRowRect?.top ?? rect.top,
         width: rect.width,
         height: rect.height,
+        collapsedAboveY,
       };
       taskDragStateRef.current = nextDragState;
       setTaskDragState(nextDragState);
@@ -909,7 +939,7 @@ function ProjectDetail({
           targetIndex: getSharedTableDragTargetIndex(
             activeTaskIds,
             current.taskId,
-            pointer.clientY,
+            pointer.clientY - current.collapsedAboveY,
             taskRowRefs.current,
           ),
         };
@@ -965,6 +995,11 @@ function ProjectDetail({
   }
 
   const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
+  const mergeSuggestions = useTaskMergeSuggestionRows(
+    project,
+    entries,
+    projectSources,
+  );
 
   function renderTaskRow(task: LocalProjectTask, index: number) {
     const taskActions = getTaskActions(project, task);
@@ -1333,7 +1368,24 @@ function ProjectDetail({
                   )}
                 >
                   <tbody data-focus-scope>
-                    {visibleTasks.map(renderTaskRow)}
+                    {visibleTasks.map((task, index) => (
+                      <Fragment key={task._id}>
+                        {renderTaskRow(task, index)}
+                        {/* Merge suggestions sit under their task, in the
+                            active list only, and hide during a drag. */}
+                        {!isArchivedTaskFilter && !taskDragState && !isArchived
+                          ? mergeSuggestions
+                              .get(task._id)
+                              ?.map((suggestion) => (
+                                <TaskMergeSuggestionRow
+                                  key={`${suggestion.fromTaskId}:${suggestion.intoTaskId}`}
+                                  project={project}
+                                  suggestion={suggestion}
+                                />
+                              ))
+                          : null}
+                      </Fragment>
+                    ))}
                   </tbody>
                 </table>
               )}
@@ -1493,6 +1545,7 @@ export function ProjectsPage() {
   const [taskEditor, setTaskEditor] = useState<TaskEditorSession | null>(null);
   const [shortcutRequest, setShortcutRequest] =
     useState<ShortcutRequest | null>(null);
+  const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
   const [pressedProjectId, setPressedProjectId] = useState<string | null>(null);
   const [projectDragState, setProjectDragState] =
     useState<ProjectDragState | null>(null);
@@ -1869,6 +1922,9 @@ export function ProjectsPage() {
     if (requested.id === "assign-shortcut") {
       setShortcutRequest({ projectId: project._id, task });
     }
+    if (requested.id === "merge-into") {
+      setMergeRequest({ projectId: project._id, taskId: task._id });
+    }
     if (requested.id === "archive") {
       offerUndo(localStore.archiveProjectTask(project._id, task._id), {
         title: "Task archived",
@@ -2145,12 +2201,40 @@ export function ProjectsPage() {
       />
     ) : null;
 
-  const selectedEntries = selectedProject
-    ? state.timesheetEntries
-        .filter((entry) => entry.projectId === selectedProject._id)
-        .sort((a, b) => b.localDate.localeCompare(a.localDate))
-    : [];
+  // Memoized: a new array on every render would recompute the merge
+  // suggestions on every store write.
+  const entriesProjectId = selectedProject?._id;
+  const selectedEntries = useMemo(
+    () =>
+      entriesProjectId
+        ? state.timesheetEntries
+            .filter((entry) => entry.projectId === entriesProjectId)
+            .sort((a, b) => b.localDate.localeCompare(a.localDate))
+        : [],
+    [state.timesheetEntries, entriesProjectId],
+  );
   const listProjects = isArchivePage ? archivedProjects : activeProjects;
+  // Read from the state each render, so the picker shows the task as it is.
+  const mergeProject = mergeRequest
+    ? state.projects.find((project) => project._id === mergeRequest.projectId)
+    : undefined;
+  const mergeTask = mergeProject?.tasks.find(
+    (task) => task._id === mergeRequest?.taskId,
+  );
+  // The entries that move: those of submitted weeks stay on the task.
+  const mergeEntryCount = useMemo(
+    () =>
+      mergeRequest
+        ? state.timesheetEntries.filter(
+            (entry) =>
+              entry.projectId === mergeRequest.projectId &&
+              entry.taskId === mergeRequest.taskId &&
+              !isDateLocked(state, entry.localDate),
+          ).length
+        : 0,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the locks are read from the state
+    [state.timesheetEntries, state.lockedWeeks, mergeRequest],
+  );
 
   return (
     <div className="project-page">
@@ -2178,6 +2262,12 @@ export function ProjectsPage() {
             onLeave={(event) => handleLeaveProjectClick(event, null)}
             onAssignShortcut={(task) =>
               setShortcutRequest({ projectId: selectedProject._id, task })
+            }
+            onMergeInto={(task) =>
+              setMergeRequest({
+                projectId: selectedProject._id,
+                taskId: task._id,
+              })
             }
             taskPropertyPlugins={taskPropertyPlugins}
           />
@@ -2311,6 +2401,15 @@ export function ProjectsPage() {
           slot={shortcutRequest.task.pinnedSlot}
           onChoose={(slot) => assignShortcut(shortcutRequest, slot)}
           onClose={() => setShortcutRequest(null)}
+        />
+      ) : null}
+
+      {mergeProject && mergeTask ? (
+        <MergeTaskDialog
+          project={mergeProject}
+          task={mergeTask}
+          entryCount={mergeEntryCount}
+          onClose={() => setMergeRequest(null)}
         />
       ) : null}
 

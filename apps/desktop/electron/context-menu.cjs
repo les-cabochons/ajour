@@ -286,6 +286,7 @@ const OBJECT_ACTION_IDS = new Set([
   "forget-meeting",
   "hide-meeting",
   "mark-not-committed",
+  "merge-into",
   "move-to",
   "new-entry",
   "new-task",

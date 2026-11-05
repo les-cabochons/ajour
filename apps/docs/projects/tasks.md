@@ -67,9 +67,25 @@ Right-click a task, or press its **…** button.
 | **New entry…**       | Logs hours on the task.                        |
 | **Edit**             | Opens the task editor.                         |
 | **Assign shortcut…** | Gives the task a number key.                   |
+| **Merge into…**      | Moves its entries to another task. See below.  |
 | **Archive**          | Hides the task from pickers. Its entries stay. |
 
 Tasks are archived, never deleted. Press <kbd>Backspace</kbd> on a focused task to archive it. An Undo toast follows. The **Archived** tab of the task list shows archived tasks, with **Restore**.
+
+## Merge a task into another
+
+In a project that follows a project source, such as a planning tool, a task can arrive twice: once as the task you created before the source knew it, once from the source. A source can also rename a task in a way Ajour sees as one task gone and a new one.
+
+Choose **Merge into…** in the task's actions, on an active or archived task, and pick the task to keep. Ajour moves the task's entries, and its running entry, to that task, then archives the task. The task you keep also gets its shortcut and its favorite star, when it has none of its own. An Undo toast follows.
+
+Entries you already committed are committed again under the new task the next time you [commit your week](/time/commit), so your timesheet tool follows the merge. Entries of submitted weeks stay where they are. A **Local only** task can't be the one you keep: its time never reaches your timesheet tool.
+
+Ajour suggests merges in a quiet line under a task:
+
+- **Renamed from "Design"?** A task that left the source still holds entries, and a new task arrived in the same group.
+- **Looks like "Design reviews" from Planner.** A task of your own has a name close to a source task's.
+
+Press **Merge**, or **Not the same** to stop suggesting that pair on this computer. Local only tasks never get a suggestion.
 
 ## Import tasks from Excel
 
