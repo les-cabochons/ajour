@@ -209,10 +209,10 @@ export function AppNavigationSidebar({
   const matcher = useMemo(
     () =>
       createSidebarMatcher(
-        { query, projectId: layout.projectId },
+        { query, projectId: layout.projectId, client: layout.client },
         state.projects,
       ),
-    [query, layout.projectId, state.projects],
+    [query, layout.projectId, layout.client, state.projects],
   );
   const pullRequests = useSidebarPullRequests();
   const listed = useMemo(
@@ -281,7 +281,10 @@ export function AppNavigationSidebar({
           <SidebarFilterMenu
             projects={state.projects}
             projectId={layout.projectId}
-            onChange={(projectId) => updateSidebarLayout({ projectId })}
+            client={layout.client}
+            onChange={({ projectId, client }) =>
+              updateSidebarLayout({ projectId, client })
+            }
             ordering={state.backlogSortMode}
             onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
           />

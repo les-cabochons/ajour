@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProject } from "@/domain/local-state";
-import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
+import {
+  createSidebarMatcher,
+  getSidebarClients,
+} from "@/domain/backlog/sidebar-filter";
 
 function project(overrides: Partial<LocalProject> & { _id: string }) {
   return {
@@ -93,5 +96,85 @@ describe("createSidebarMatcher", () => {
       true,
     );
     expect(matcher.pullRequest(pullRequest("Fix", "org/other"))).toBe(false);
+  });
+});
+
+describe("the client filter (#508)", () => {
+  const source = (remoteId: string) => ({
+    pluginId: "example-project-source",
+    connectionId: "planner",
+    remoteId,
+    syncedAt: 1,
+  });
+  const managed = [
+    project({
+      _id: "support",
+      name: "Acme - Support",
+      client: "Acme inc.",
+      source: source("ACME-SUP"),
+    }),
+    project({
+      _id: "website",
+      name: "Acme - Website",
+      client: "Acme inc.",
+      source: source("ACME-WEB"),
+    }),
+    project({
+      _id: "globex",
+      name: "Globex - Internal",
+      client: "Globex corp.",
+      source: source("GLOBEX-INT"),
+    }),
+    project({
+      _id: "initech",
+      name: "Initech",
+      client: "Initech",
+      status: "archived",
+      source: source("INITECH"),
+    }),
+    ...projects,
+  ];
+
+  it("offers each client of the active managed projects once, by name", () => {
+    expect(getSidebarClients(managed)).toEqual(["Acme inc.", "Globex corp."]);
+    expect(getSidebarClients(projects)).toEqual([]);
+  });
+
+  it("keeps only the items of the client's projects and hides pull requests", () => {
+    const matcher = createSidebarMatcher(
+      { query: "", client: "Acme inc." },
+      managed,
+    );
+
+    expect(matcher.active).toBe(true);
+    expect(matcher.projectId).toBeUndefined();
+    expect(matcher.workItem({ title: "A", projectId: "support" })).toBe(true);
+    expect(matcher.workItem({ title: "B", projectId: "website" })).toBe(true);
+    expect(matcher.workItem({ title: "C", projectId: "globex" })).toBe(false);
+    expect(matcher.workItem({ title: "D", projectId: "ajour" })).toBe(false);
+    expect(matcher.workItem({ title: "E" })).toBe(false);
+    expect(matcher.pullRequest(pullRequest("Fix", "org/acme"))).toBe(false);
+  });
+
+  it("still needs every typed word among the client's items", () => {
+    const matcher = createSidebarMatcher(
+      { query: "login", client: "Acme inc." },
+      managed,
+    );
+
+    expect(matcher.workItem({ title: "Login", projectId: "support" })).toBe(
+      true,
+    );
+    expect(matcher.workItem({ title: "Export", projectId: "support" })).toBe(
+      false,
+    );
+  });
+
+  it("ignores a client no active managed project has any more", () => {
+    for (const client of ["Initech", "Gone"]) {
+      const matcher = createSidebarMatcher({ query: "", client }, managed);
+      expect(matcher.active).toBe(false);
+      expect(matcher.workItem({ title: "A", projectId: "ajour" })).toBe(true);
+    }
   });
 });

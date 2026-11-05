@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import {
+  RiBuilding2Line as ClientIcon,
   RiCloseLine as CloseIcon,
   RiDraggable as CustomOrderIcon,
   RiFilter3Line as FilterIcon,
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -33,6 +35,7 @@ import {
   type BacklogSortMode,
   type LocalProject,
 } from "@/domain/local-state";
+import { getSidebarClients } from "@/domain/backlog/sidebar-filter";
 import { ProjectIcon } from "@/lib/project-icons";
 import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
@@ -151,31 +154,41 @@ const SIDEBAR_ORDERINGS = [
 
 /**
  * The filter menu beside Search, like T3 Code's: a search box with the
- * ordering toggle beside it, then "All projects" and the active projects. The
+ * ordering toggle beside it, then "All projects", the active projects, and
+ * under Clients each client of the active managed projects (#508). The
  * ordering is the Backlog page's, so switching it here switches both. The
  * toggle offers Custom and Priority; when the Backlog page picked another
  * ordering, neither is pressed. Picking an ordering keeps the menu open. The
- * project pick is saved per device in the sidebar layout.
+ * project or client pick is saved per device in the sidebar layout.
  */
 export function SidebarFilterMenu({
   projects,
   projectId,
+  client,
   onChange,
   ordering,
   onOrderingChange,
 }: {
   projects: readonly LocalProject[];
   projectId?: string;
-  onChange: (projectId: string | undefined) => void;
+  client?: string;
+  /** Picks a project or a client; neither means all projects. */
+  onChange: (pick: { projectId?: string; client?: string }) => void;
   ordering: BacklogSortMode;
   onOrderingChange: (ordering: BacklogSortMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const active = projects.filter((project) => project.status === "active");
   const picked = active.find((project) => project._id === projectId);
+  // Built only while the menu is open, so a closed menu costs nothing.
+  const clients = open ? getSidebarClients(projects) : [];
+  const pickedClient =
+    !picked && client && getSidebarClients(projects).includes(client)
+      ? client
+      : undefined;
 
-  function pick(nextProjectId: string | undefined) {
-    onChange(nextProjectId);
+  function pick(next: { projectId?: string; client?: string }) {
+    onChange(next);
     setOpen(false);
   }
 
@@ -185,7 +198,9 @@ export function SidebarFilterMenu({
         label={
           picked
             ? `Filtered to ${getLocalProjectDisplayName(picked)}`
-            : "Filter and order"
+            : pickedClient
+              ? `Filtered to ${pickedClient}`
+              : "Filter and order"
         }
         side="bottom"
         render={
@@ -196,7 +211,8 @@ export function SidebarFilterMenu({
                 size="icon"
                 className={cn(
                   "ajour-app-sidebar-toggle",
-                  picked && "bg-foreground/[0.07] text-foreground",
+                  (picked || pickedClient) &&
+                    "bg-foreground/[0.07] text-foreground",
                 )}
               />
             }
@@ -270,8 +286,8 @@ export function SidebarFilterMenu({
               <CommandItem
                 value="all-projects"
                 keywords={["All projects"]}
-                data-checked={picked ? undefined : "true"}
-                onSelect={() => pick(undefined)}
+                data-checked={picked || pickedClient ? undefined : "true"}
+                onSelect={() => pick({})}
               >
                 <AllProjectsIcon className="text-muted-foreground" />
                 <span className="flex-1">All projects</span>
@@ -288,7 +304,7 @@ export function SidebarFilterMenu({
                   data-checked={
                     project._id === picked?._id ? "true" : undefined
                   }
-                  onSelect={() => pick(project._id)}
+                  onSelect={() => pick({ projectId: project._id })}
                 >
                   <ProjectIcon
                     icon={project.icon}
@@ -300,6 +316,22 @@ export function SidebarFilterMenu({
                   </span>
                 </CommandItem>
               ))}
+              {clients.length > 0 ? (
+                <CommandGroup heading="Clients" className="p-0">
+                  {clients.map((name) => (
+                    <CommandItem
+                      key={name}
+                      value={`client:${name}`}
+                      keywords={[name]}
+                      data-checked={name === pickedClient ? "true" : undefined}
+                      onSelect={() => pick({ client: name })}
+                    >
+                      <ClientIcon className="text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : null}
             </CommandList>
           ) : null}
         </Command>

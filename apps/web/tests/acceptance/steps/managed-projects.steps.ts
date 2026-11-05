@@ -249,6 +249,83 @@ Then(
   },
 );
 
+Given(
+  "{string} has the backlog item {string}, beside {string} in no project",
+  async ({ page }, _project: string, title: string, loose: string) => {
+    await page.addInitScript(
+      ({ title, loose }) => {
+        if (sessionStorage.getItem("managed-projects-items")) return;
+        sessionStorage.setItem("managed-projects-items", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        const item = (_id: string, title: string, projectId?: string) => ({
+          _id,
+          title,
+          projectId,
+          source: "manual",
+          status: "active",
+          createdAt: Date.now(),
+        });
+        state.workItems = [item("login", title, "mine"), item("loose", loose)];
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { title, loose },
+    );
+  },
+);
+
+When("I open the archived project {string}", async ({ page }, name: string) => {
+  await page.goto("/projects");
+  await page.getByRole("tab", { name: "Archived", exact: true }).click();
+  await page.getByRole("link", { name, exact: true }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+});
+
+/** The value cell of the Properties card's row labelled `label`. */
+function propertyValue(page: Page, label: string) {
+  return page
+    .getByRole("region", { name: "Properties" })
+    .locator("dt", { hasText: new RegExp(`^${label}$`) })
+    .locator("+ dd");
+}
+
+Then(
+  "the Dates row says {string}, locked by {string}",
+  async ({ page }, dates: string, label: string) => {
+    const value = propertyValue(page, "Dates");
+    await expect(value.getByText(dates, { exact: true })).toBeVisible();
+    await expect(value.getByText(`Locked. ${label} sets it.`)).toBeAttached();
+  },
+);
+
+Then("the card says {string}", async ({ page }, text: string) => {
+  await expect(
+    page
+      .getByRole("region", { name: "Properties" })
+      .getByText(text, { exact: true }),
+  ).toBeVisible();
+});
+
+Then("the card has no Client row", async ({ page }) => {
+  await expect(propertyValue(page, "Client")).toHaveCount(0);
+});
+
+When(
+  "I filter the sidebar to the client {string}",
+  async ({ page }, client: string) => {
+    const sidebar = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await sidebar.getByRole("button", { name: "Filter and order" }).click();
+    const clients = page.getByRole("group", { name: "Clients" });
+    await clients.getByRole("option", { name: client }).click();
+    await expect(
+      sidebar.getByRole("button", { name: `Filtered to ${client}` }),
+    ).toBeVisible();
+  },
+);
+
 /*
  * Merge into… (#507): a local task of the linked project, its entries, and
  * the task picker or a suggestion that moves them to a source task.

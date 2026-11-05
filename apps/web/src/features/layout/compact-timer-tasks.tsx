@@ -38,13 +38,13 @@ export const PanelTasks = memo(function PanelTasks({
   const today = useTodayIsoDate();
   const items = useMemo(() => {
     const matcher = createSidebarMatcher(
-      { query, projectId: layout.projectId },
+      { query, projectId: layout.projectId, client: layout.client },
       state.projects,
     );
     return selectSidebarBacklogItems(state, now)
       .filter(matcher.workItem)
       .slice(0, 6);
-  }, [state, now, query, layout.projectId]);
+  }, [state, now, query, layout.projectId, layout.client]);
   const fills = getWorkflowStateFills(state.workflowStates);
 
   function track(
