@@ -280,7 +280,7 @@ describe("an API 4 plugin through the real broker", () => {
       body: JSON.stringify({ trigger: "auto", workItems: [] }),
     });
 
-    expect(synced.status).toBe(200);
+    expect(synced.status, JSON.stringify(synced.body)).toBe(200);
     expect(synced.body).toMatchObject({
       mode: "backlog",
       items: [

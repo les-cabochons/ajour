@@ -14,6 +14,7 @@ import {
 } from "../../../api/src/server.ts";
 import { WINDOW_TOKEN_HEADER } from "../../../api/src/window-token.ts";
 import { MemorySecretVault } from "../../../api/src/test-support/memory-secret-vault.ts";
+import { InProcessPluginRuntime } from "../../../api/src/test-support/in-process-plugin-runtime.ts";
 
 /*
  * The real local API, started on a free port with a temporary state file
@@ -47,7 +48,7 @@ export const fetchAsTheApp: typeof fetch = (input, init) => {
 
 /** The `jira` plugin's code. */
 const pluginSource = `
-export async function validateConnection(config) {
+export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
@@ -69,6 +70,8 @@ export interface TestPlugin {
   displayName: string;
   capabilities: Record<string, unknown>;
   connectionFields: Record<string, unknown>[];
+  /** The API 4 network declaration; a plugin with a secret needs one. */
+  network?: Record<string, unknown>;
   source: string;
 }
 
@@ -99,13 +102,14 @@ async function writePlugin(root: string, plugin: TestPlugin) {
     JSON.stringify({
       id: plugin.id,
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: plugin.displayName,
       description: "Test plugin.",
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
       capabilities: plugin.capabilities,
       connectionFields: plugin.connectionFields,
+      ...(plugin.network ? { network: plugin.network } : {}),
     }),
   );
   await writeFile(path.join(directory, "plugin.mjs"), plugin.source);
@@ -135,6 +139,7 @@ export async function startLocalApi({
     installedPluginDirectory: path.join(root, "installed"),
     developmentPluginDirectories: [await writePlugin(root, plugin)],
     allowDevelopmentPlugins: true,
+    pluginRuntime: new InProcessPluginRuntime(),
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
     windowToken: WINDOW_TOKEN,

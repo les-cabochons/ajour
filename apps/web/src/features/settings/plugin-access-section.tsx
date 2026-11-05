@@ -158,12 +158,9 @@ export function PluginAccessSection({
         Access
       </h2>
       <p className="settings-section-desc">
-        {/* Only what holds before the cut-over (#403): until plugins run in
-            their sandbox, the broker limits the requests it is asked to
-            send, not every way out. */}
         {listed
-          ? "What this plugin can reach. Requests it makes through Ajour are limited to what is listed here."
-          : "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does."}
+          ? "What this plugin can reach. Ajour runs it in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here."
+          : "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update."}
       </p>
       {listed ? (
         <p className="text-sm text-muted-foreground" data-access-activity>
@@ -242,7 +239,7 @@ export function CatalogAccessSection({
       <p className="settings-section-desc">
         {pluginApiVersion >= FIRST_LIMITED_PLUGIN_API
           ? "The addresses it reaches, the credential it uses, its agent tasks and how it starts are listed here once you download it."
-          : "This plugin is built for an older plugin API, which Ajour can't limit. Its entry lists no addresses."}
+          : "This plugin is built for an older plugin API, which this version of Ajour doesn't run. Its entry lists no addresses."}
       </p>
       {canDownload ? (
         <p className="text-sm text-muted-foreground">

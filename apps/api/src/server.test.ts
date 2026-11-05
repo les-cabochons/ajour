@@ -38,7 +38,7 @@ async function createPlugin(
     JSON.stringify({
       id: "jira",
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: "Jira",
       description: "Test connector.",
       iconSvg: ICON,
@@ -92,7 +92,7 @@ async function createProjectDataShapePlugin(
     JSON.stringify({
       id: "workday-project-data",
       version: "1.0.0",
-      apiVersion: 1,
+      apiVersion: 4,
       displayName: "Workday",
       description: "Test project data shape.",
       iconSvg: ICON,
@@ -151,7 +151,7 @@ describe("plugin installation boundary", () => {
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: {} };",
         "}",
         "export async function syncConnection() {",
@@ -169,6 +169,7 @@ describe("plugin installation boundary", () => {
       ["plugin.json", "plugin.mjs"],
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -253,6 +254,7 @@ describe("plugin installation boundary", () => {
         "plugin.mjs",
       ]);
       const server = createAppApiServer({
+        pluginRuntime: new InProcessPluginRuntime(),
         ...windowServerOptions,
         vault: new MemorySecretVault(),
         statePath,
@@ -272,7 +274,7 @@ describe("plugin installation boundary", () => {
               id: "jira",
               version: "1.0.0",
               unavailableReason: expect.stringContaining(
-                "Update the plugin to use it again.",
+                "This plugin needs an update",
               ),
             },
             enabled: false,
@@ -390,6 +392,7 @@ describe("plugin installation boundary", () => {
         "plugin.mjs",
       ]);
       const server = createAppApiServer({
+        pluginRuntime: new InProcessPluginRuntime(),
         ...windowServerOptions,
         vault: new MemorySecretVault(),
         statePath,
@@ -422,6 +425,7 @@ describe("plugin installation boundary", () => {
   it("does not expose plugin package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -461,11 +465,12 @@ describe("plugin installation boundary", () => {
   it("records a signed install's origin and deactivates unsigned plugins on request", async () => {
     const root = await tempDir();
     const source = [
-      "export async function validateConnection(config) {",
+      "export async function validateConnection({ config }) {",
       "  return { normalizedConfig: config, connectionSummary: {} };",
       "}",
     ].join("\n");
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
@@ -534,6 +539,7 @@ describe("plugin installation boundary", () => {
   it("deactivates the plugin system and hides data-shape plugins", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -568,6 +574,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const pluginDirectory = await createProjectDataShapePlugin(root);
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -645,11 +652,13 @@ describe("plugin installation boundary", () => {
       developmentPluginDirectories: [shapeDirectory],
     };
     const development = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...options,
       allowDevelopmentPlugins: true,
     });
     servers.push(development);
     const packaged = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...options,
       allowDevelopmentPlugins: false,
     });
@@ -676,13 +685,14 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
+      "export async function validateConnection({ config }) { return { normalizedConfig: config, connectionSummary: {} }; }",
     );
     const shapeDirectory = await createProjectDataShapePlugin(root);
     const manifestPath = path.join(shapeDirectory, "plugin.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     await writeFile(manifestPath, JSON.stringify({ ...manifest, id: "jira" }));
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -715,7 +725,7 @@ describe("plugin installation boundary", () => {
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: { site: config.baseUrl } };",
         "}",
       ].join("\n"),
@@ -732,6 +742,7 @@ describe("plugin installation boundary", () => {
       projectDataShapePluginDirectories: [shapeDirectory],
       allowDevelopmentPlugins: true,
       pluginRuntime: {
+        runsPluginApi4: true,
         start(invocation) {
           started.push(`${invocation.pluginId}.${invocation.method}`);
           return inProcess.start(invocation);
@@ -778,6 +789,7 @@ describe("plugin installation boundary", () => {
   it("rejects browser requests from untrusted origins", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -803,6 +815,7 @@ describe("plugin installation boundary", () => {
   it("does not broaden allowed origins when development plugins are enabled", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -838,6 +851,7 @@ describe("plugin installation boundary", () => {
   it("rejects DNS-rebinding host headers", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -863,7 +877,7 @@ describe("plugin installation boundary", () => {
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: { site: config.baseUrl } };",
         "}",
         "export async function syncConnection() {",
@@ -872,6 +886,7 @@ describe("plugin installation boundary", () => {
       ].join("\n"),
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -947,7 +962,7 @@ describe("backlog settle routes", () => {
   });
 
   const settlePluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "const item = (sourceId, state, stateDone) => ({",
@@ -1011,6 +1026,7 @@ describe("backlog settle routes", () => {
       capabilities ? { capabilities: { connector: capabilities } } : {},
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -1251,6 +1267,7 @@ describe("backlog settle routes", () => {
       { capabilities: { connector: { settle: true } } },
     );
     const withoutAssign = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -1402,7 +1419,7 @@ describe("code host routes", () => {
   });
 
   const codeHostPluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncPullRequests(connection, request) {",
@@ -1424,6 +1441,7 @@ describe("code host routes", () => {
       { capabilities },
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -1641,7 +1659,7 @@ describe("code host routes", () => {
     const { server } = await createServer(
       { connector: {}, codeHost: {} },
       [
-        "export async function validateConnection(config, context) {",
+        "export async function validateConnection({ config }, context) {",
         "  return { normalizedConfig: config, connectionSummary: { capabilities: context.capabilities.join(',') } };",
         "}",
       ].join("\n"),
@@ -1704,7 +1722,7 @@ describe("calendar routes", () => {
   });
 
   const calendarPluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function listCalendarEvents(connection, request) {",
@@ -1743,6 +1761,7 @@ describe("calendar routes", () => {
     const sink = createRecordingSink<AjourEvent>();
     const { events } = sink;
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -1911,7 +1930,7 @@ describe("calendar routes", () => {
     });
     expect(failed).toEqual({
       status: 502,
-      body: { error: "Could not read [secret]: 404" },
+      body: { error: "Could not read undefined: 404" },
     });
 
     const overview = await dispatchJsonRequest(server, {
@@ -1924,7 +1943,7 @@ describe("calendar routes", () => {
       expect.objectContaining({
         name: "calendar.fetch",
         outcome: "error",
-        error: { type: "Error", message: "Could not read [secret]: 404" },
+        error: { type: "Error", message: "Could not read undefined: 404" },
       }),
     );
   });
@@ -1955,7 +1974,7 @@ describe("agent task settings route", () => {
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      "export async function validateConnection(config) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
+      "export async function validateConnection({ config }) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
       "plugin.mjs",
       {
         capabilities: {
@@ -1967,6 +1986,7 @@ describe("agent task settings route", () => {
                 placement: "commit-week",
                 prompt: "prompts/enter-week.md",
                 estimateMinutes: 5,
+                tools: [],
                 settings: [
                   { id: "url", label: "Timesheet URL", type: "url" },
                   { id: "note", label: "Note", type: "text" },
@@ -1984,6 +2004,7 @@ describe("agent task settings route", () => {
                 placement: "submit-week",
                 prompt: "prompts/enter-week.md",
                 estimateMinutes: 5,
+                tools: [],
                 settings: [
                   {
                     id: "url",
@@ -2006,6 +2027,7 @@ describe("agent task settings route", () => {
     );
     const statePath = path.join(root, "state.json");
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath,
@@ -2222,286 +2244,6 @@ describe("agent task settings route", () => {
   });
 });
 
-describe("team routes", () => {
-  const tempDirs: string[] = [];
-  const servers: Server[] = [];
-
-  afterEach(async () => {
-    for (const server of servers.splice(0)) {
-      server.emit("close");
-    }
-    await Promise.all(
-      tempDirs
-        .splice(0)
-        .map((directory) => rm(directory, { recursive: true, force: true })),
-    );
-  });
-
-  const teamPluginSource = [
-    "export async function validateConnection(config) {",
-    "  return { normalizedConfig: config, connectionSummary: {} };",
-    "}",
-    "export async function createTeam(config, request) {",
-    "  if (request.name === 'Taken') throw new Error('That team name is taken.');",
-    "  if (request.name === 'Leak') throw new Error(`Bad secret ${config.teamSecret}`);",
-    "  return { values: { teamId: `team-${request.name}`, teamSecret: 's3cret' } };",
-    "}",
-    "export async function syncTeamProjects(connection, request) {",
-    "  if (request.cursor === 'broken') throw new Error('The team refused the secret.');",
-    "  if (request.cursor === 'leak') throw new Error(`Invalid team secret ${connection.config.teamSecret}`);",
-    "  if (request.cursor === 'invalid') return { cursor: 'c', projects: Array.from({ length: 25 }, () => ({})) };",
-    "  return { cursor: 'c2', projects: [], assigned: [] };",
-    "}",
-  ].join("\n");
-
-  async function createServer(capabilities: Record<string, unknown>) {
-    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-team-api-"));
-    tempDirs.push(root);
-    const pluginDirectory = await createPlugin(
-      path.join(root, "source"),
-      teamPluginSource,
-      "plugin.mjs",
-      {
-        capabilities,
-        connectionFields: [
-          {
-            id: "label",
-            label: "Connection label",
-            type: "text",
-            required: true,
-          },
-          {
-            id: "tenantLabel",
-            label: "Workspace",
-            type: "text",
-            required: true,
-          },
-          {
-            id: "baseUrl",
-            label: "Deployment URL",
-            type: "url",
-            required: true,
-          },
-          {
-            id: "teamSecret",
-            label: "Team secret",
-            type: "password",
-            secret: true,
-          },
-        ],
-      },
-    );
-    const server = createAppApiServer({
-      ...windowServerOptions,
-      vault: new MemorySecretVault(),
-      statePath: path.join(root, "state.json"),
-      installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [pluginDirectory],
-      allowDevelopmentPlugins: true,
-    });
-    servers.push(server);
-    const connectionResponse = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: "/api/plugins/jira/connections",
-      body: JSON.stringify({
-        values: {
-          label: "Acme team",
-          tenantLabel: "acme",
-          autoSync: true,
-          autoSyncIntervalMinutes: 15,
-          baseUrl: "https://team.example",
-          teamSecret: "s3cret",
-        },
-      }),
-    });
-    const connectionId = (
-      connectionResponse.body as { connection: { id: string } }
-    ).connection.id;
-    return { server, connectionId };
-  }
-
-  async function lastError(server: Server) {
-    const overview = await dispatchJsonRequest(server, {
-      method: "GET",
-      path: "/api/plugins",
-    });
-    return (
-      overview.body as {
-        connectionGroups: {
-          connections: { lastError?: string; lastSyncAt?: number }[];
-        }[];
-      }
-    ).connectionGroups[0]?.connections[0];
-  }
-
-  it("creates a team from the form's values before a connection exists", async () => {
-    const { server } = await createServer({ team: { apiVersion: 1 } });
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: "/api/teams/jira/create",
-        body: JSON.stringify({
-          values: { baseUrl: "https://team.example" },
-          team: { name: "Acme" },
-        }),
-      }),
-    ).resolves.toEqual({
-      status: 200,
-      body: { values: { teamId: "team-Acme", teamSecret: "s3cret" } },
-    });
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: "/api/teams/jira/create",
-        body: JSON.stringify({ values: {}, team: { name: "Taken" } }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "That team name is taken." },
-    });
-  });
-
-  it("runs a sync round and records the sync, or the error on the connection", async () => {
-    const { server, connectionId } = await createServer({
-      team: { apiVersion: 1 },
-    });
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${connectionId}/sync`,
-        body: JSON.stringify({ changes: [] }),
-      }),
-    ).resolves.toEqual({
-      status: 200,
-      body: { cursor: "c2", projects: [], assigned: [], hasMore: false },
-    });
-    expect((await lastError(server))?.lastSyncAt).toEqual(expect.any(Number));
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${connectionId}/sync`,
-        body: JSON.stringify({ cursor: "broken", changes: [] }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "The team refused the secret." },
-    });
-    expect((await lastError(server))?.lastError).toBe(
-      "The team refused the secret.",
-    );
-  });
-
-  it("keeps a short team secret out of both routes' errors", async () => {
-    const { server, connectionId } = await createServer({
-      team: { apiVersion: 1 },
-    });
-
-    const created = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: "/api/teams/jira/create",
-      body: JSON.stringify({
-        values: { teamSecret: "s3cret" },
-        team: { name: "Leak" },
-      }),
-    });
-    expect(created).toEqual({
-      status: 502,
-      body: { error: "Bad secret [secret]" },
-    });
-
-    const synced = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/teams/jira/connections/${connectionId}/sync`,
-      body: JSON.stringify({ cursor: "leak", changes: [] }),
-    });
-    expect(synced).toEqual({
-      status: 502,
-      body: { error: "Invalid team secret [secret]" },
-    });
-    expect((await lastError(server))?.lastError).toBe(
-      "Invalid team secret [secret]",
-    );
-  });
-
-  it("stores a huge contract error within the overview's limit, and syncs again after it", async () => {
-    const { server, connectionId } = await createServer({
-      team: { apiVersion: 1 },
-    });
-
-    const invalid = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/teams/jira/connections/${connectionId}/sync`,
-      body: JSON.stringify({ cursor: "invalid", changes: [] }),
-    });
-    expect(invalid.status).toBe(502);
-    expect(
-      (invalid.body as { error: string }).error.length,
-    ).toBeLessThanOrEqual(1_000);
-
-    const overview = await dispatchJsonRequest(server, {
-      method: "GET",
-      path: "/api/plugins",
-    });
-    expect(overview.status).toBe(200);
-    expect((await lastError(server))?.lastError?.length).toBe(1_000);
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${connectionId}/sync`,
-        body: JSON.stringify({ changes: [] }),
-      }),
-    ).resolves.toMatchObject({ status: 200 });
-  });
-
-  it("refuses plugins without a team, a turned-off team, and malformed rounds", async () => {
-    const backlogOnly = await createServer({ connector: {} });
-    await expect(
-      dispatchJsonRequest(backlogOnly.server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${backlogOnly.connectionId}/sync`,
-        body: JSON.stringify({ changes: [] }),
-      }),
-    ).resolves.toEqual({
-      status: 404,
-      body: { error: "This plugin does not sync a team's projects." },
-    });
-
-    const { server, connectionId } = await createServer({
-      connector: {},
-      team: { apiVersion: 1 },
-    });
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${connectionId}/sync`,
-        body: JSON.stringify({ changes: [{ localId: "p1" }] }),
-      }),
-    ).resolves.toMatchObject({ status: 400 });
-
-    await dispatchJsonRequest(server, {
-      method: "POST",
-      path: "/api/plugins/jira/activation",
-      body: JSON.stringify({ enabled: false, capability: "team" }),
-    });
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/teams/jira/connections/${connectionId}/sync`,
-        body: JSON.stringify({ changes: [] }),
-      }),
-    ).resolves.toEqual({
-      status: 409,
-      body: {
-        error: "Turn on projects for this plugin before syncing its projects.",
-      },
-    });
-  });
-});
-
 describe("backlog comment routes", () => {
   const tempDirs: string[] = [];
   const servers: Server[] = [];
@@ -2519,7 +2261,7 @@ describe("backlog comment routes", () => {
   });
 
   const commentPluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncConnection() {",
@@ -2596,6 +2338,7 @@ describe("backlog comment routes", () => {
     // The comment routes' request events only.
     const events: AjourEvent[] = [];
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -3127,7 +2870,7 @@ describe("backlog comment routes", () => {
       expect.objectContaining({
         name: "comment.list",
         outcome: "error",
-        error: { type: "Error", message: "Could not read with [secret]" },
+        error: { type: "Error", message: "Could not read with undefined" },
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain(TOKEN);
@@ -3150,7 +2893,7 @@ describe("backlog description routes", () => {
   });
 
   const descriptionPluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncConnection() {",
@@ -3206,6 +2949,7 @@ describe("backlog description routes", () => {
       },
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -3324,7 +3068,7 @@ describe("backlog description routes", () => {
 
     await expect(post("description", { sourceId: "LEAK-1" })).resolves.toEqual({
       status: 502,
-      body: { error: "Refused token [secret]" },
+      body: { error: "Refused token undefined" },
     });
   });
 
@@ -3426,7 +3170,7 @@ describe("plugin errors that echo a secret", () => {
 
   // Every operation fails with a message that names the token it was given.
   const leakingPluginSource = [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  if (config.baseUrl.endsWith('/refused')) throw new Error(`Token ${config.token} was refused.`);",
     "  const connectionSummary = { site: config.baseUrl, auth: `Bearer ${config.token}` };",
     "  if (config.pin !== undefined) connectionSummary.pin = config.pin;",
@@ -3504,6 +3248,7 @@ describe("plugin errors that echo a secret", () => {
       },
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath,
@@ -3536,35 +3281,10 @@ describe("plugin errors that echo a secret", () => {
       }),
     });
 
-  it("keeps the submitted and the stored token out of a refused save", async () => {
-    const { server } = await createServer();
-
-    await expect(
-      saveConnection(server, {
-        baseUrl: `${SITE}/refused`,
-        token: TOKEN,
-      }),
-    ).resolves.toEqual({
-      status: 400,
-      body: { error: "Token [secret] was refused." },
-    });
-
-    const saved = await saveConnection(server, { token: TOKEN });
-    const connectionId = (saved.body as { connection: { id: string } })
-      .connection.id;
-    // A blank secret keeps the stored one, so the plugin gets the stored token.
-    await expect(
-      saveConnection(
-        server,
-        { baseUrl: `${SITE}/refused`, token: "" },
-        connectionId,
-      ),
-    ).resolves.toEqual({
-      status: 400,
-      body: { error: "Token [secret] was refused." },
-    });
-  });
-
+  // API 3 worker credential echo and secret-swapping scenarios retired at
+  // the cut-over. plugin-api-4-sync.test.ts exercises real broker responses
+  // and verifies that plugin code never receives a credential. Stored legacy
+  // redaction remains covered below.
   it("refuses to save a connection for a plugin that is not installed", async () => {
     const { server } = await createServer();
 
@@ -3599,333 +3319,6 @@ describe("plugin errors that echo a secret", () => {
     return { server, statePath, connectionId };
   }
 
-  it("keeps the token out of a failed settle", async () => {
-    const { server, connectionId } = await createConnection();
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
-        body: JSON.stringify({ sourceId: "OPEN-1" }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Listing states failed with token [secret]." },
-    });
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/plugins/jira/connections/${connectionId}/settle`,
-        body: JSON.stringify({ sourceId: "OPEN-1", state: "Done" }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Settling failed with token [secret]." },
-    });
-  });
-
-  it("redacts 20,000 field messages of one sync against long secrets in one go", async () => {
-    // 20 undeclared values of 4,000 characters, and every message cut, so
-    // each one needs the cut rule against every long value.
-    const { server, connectionId } = await createConnection(
-      Object.fromEntries(
-        Array.from({ length: 20 }, (_, index) => [
-          `old${index}`,
-          `${"k".repeat(3_990)}${index}`,
-        ]),
-      ),
-    );
-
-    const started = performance.now();
-    const synced = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/plugins/jira/connections/${connectionId}/sync`,
-      body: JSON.stringify({
-        trigger: "manual",
-        workItems: [{ localWorkItemId: "many", sourceId: "OPEN-1" }],
-      }),
-    });
-    const milliseconds = performance.now() - started;
-
-    expect(synced.status).toBe(200);
-    expect(milliseconds).toBeLessThan(2_000);
-    const messages = (
-      synced.body as {
-        workItemUpdates: {
-          fields: { remainingEstimateHours: { message: string } };
-        }[];
-      }
-    ).workItemUpdates.map(
-      (update) => update.fields.remainingEstimateHours.message,
-    );
-    expect(messages).toHaveLength(20_000);
-    expect(messages[0]).toBe("PATCH failed with token [secret].");
-    // Once the request's budget is spent, the rest are hidden.
-    expect(
-      messages
-        .slice(1)
-        .every(
-          (message) =>
-            message === "Estimate rejected…" ||
-            message === "Hidden because it couldn't be checked for secrets.",
-        ),
-    ).toBe(true);
-    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
-  }, 30_000);
-
-  it("keeps the token out of the field messages of a successful sync", async () => {
-    const { server, connectionId } = await createConnection();
-
-    const synced = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/plugins/jira/connections/${connectionId}/sync`,
-      body: JSON.stringify({
-        trigger: "manual",
-        workItems: [{ localWorkItemId: "estimate", sourceId: "OPEN-1" }],
-      }),
-    });
-
-    expect(synced).toMatchObject({
-      status: 200,
-      body: {
-        workItemUpdates: [
-          {
-            localWorkItemId: "estimate",
-            fields: {
-              remainingEstimateHours: {
-                status: "error",
-                message: "PATCH failed with token [secret]",
-              },
-              originalEstimateHours: { status: "pushed", localValue: 3 },
-            },
-          },
-        ],
-      },
-    });
-    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
-  });
-
-  it("keeps the token and the PIN out of the connection summary the plugin wrote", async () => {
-    const { server } = await createConnection();
-
-    const overview = await dispatchJsonRequest(server, {
-      method: "GET",
-      path: "/api/plugins",
-    });
-
-    expect(JSON.stringify(overview.body)).not.toContain(TOKEN);
-    expect(
-      (
-        overview.body as {
-          connectionGroups: {
-            connections: { configSummary: Record<string, unknown> }[];
-          }[];
-        }
-      ).connectionGroups[0]?.connections[0]?.configSummary,
-    ).toEqual({ site: SITE, auth: "Bearer [secret]", pin: "[secret]" });
-  });
-
-  it("keeps a password the plugin swapped for a token out of the stored summary", async () => {
-    const { server, statePath } = await createServer(undefined, {
-      source: [
-        "export async function validateConnection(config) {",
-        "  return {",
-        "    normalizedConfig: { baseUrl: config.baseUrl, accessToken: 'access-7f3e' },",
-        "    connectionSummary: { signedIn: `Signed in with ${config.password}` },",
-        "  };",
-        "}",
-      ].join("\n"),
-      connectionFields: [
-        ...leakingFields().slice(0, 3),
-        { id: "password", label: "Password", type: "password", secret: true },
-      ],
-    });
-
-    const saved = await saveConnection(server, { password: "hunter2-pw" });
-
-    expect(saved.status).toBe(200);
-    expect(JSON.stringify(saved.body)).not.toContain("hunter2-pw");
-    const state = await readFile(statePath, "utf8");
-    expect(state).not.toContain("hunter2-pw");
-    expect(JSON.parse(state).connections[0].configSummary).toEqual({
-      signedIn: "Signed in with [secret]",
-    });
-  });
-
-  /**
-   * Saves a connection whose token is not secret yet, posts `body` to the
-   * connection's `action`, and marks the token secret in an update while the
-   * route waits for the body.
-   */
-  async function postWhileTheTokenTurnsSecret(action: string, body: object) {
-    const { server, pluginDirectory } = await createServer(undefined, {
-      connectionFields: leakingFields(false),
-    });
-    const saved = await saveConnection(server, { token: TOKEN, pin: PIN });
-    const connectionId = (saved.body as { connection: { id: string } })
-      .connection.id;
-    let reached!: () => void;
-    const bodyRequested = new Promise<void>((resolve) => {
-      reached = resolve;
-    });
-    let release!: () => void;
-    const bodyReleased = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-
-    const posting = dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/plugins/jira/connections/${connectionId}/${action}`,
-      body: JSON.stringify(body),
-      bodyGate: { reached, release: bodyReleased },
-    });
-    await bodyRequested;
-    const manifestPath = path.join(pluginDirectory, "plugin.json");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-    await writeFile(
-      manifestPath,
-      JSON.stringify({ ...manifest, connectionFields: leakingFields(true) }),
-    );
-    release();
-    return await posting;
-  }
-
-  it("redacts with the manifest the call ran with, when an update lands while the request waits", async () => {
-    await expect(
-      postWhileTheTokenTurnsSecret("settle-states", { sourceId: "OPEN-1" }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Listing states failed with token [secret]." },
-    });
-  });
-
-  it("redacts a description call with the manifest it ran with, too", async () => {
-    await expect(
-      postWhileTheTokenTurnsSecret("description", { sourceId: "OPEN-1" }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Reading the description failed with token [secret]." },
-    });
-  });
-
-  it("redacts a description write with the manifest it ran with, too", async () => {
-    await expect(
-      postWhileTheTokenTurnsSecret("description-write", {
-        sourceId: "OPEN-1",
-        text: "New text",
-        expected: "Old text",
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Writing the description failed with token [secret]." },
-    });
-  });
-
-  it("keeps out a token with a space in front, which the host's trim takes off", async () => {
-    const { server, connectionId } = await createConnection({
-      token: " pat-edge-7c1e",
-    });
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/plugins/jira/connections/${connectionId}/settle`,
-        body: JSON.stringify({ sourceId: "EDGE", state: "Done" }),
-      }),
-    ).resolves.toEqual({ status: 502, body: { error: "[secret] failed" } });
-  });
-
-  it("keeps out the start of a token that the worker's cut splits", async () => {
-    const longToken = `pat-${"7c1e9a2b".repeat(50)}`;
-    const { server, connectionId } = await createConnection({
-      token: longToken,
-    });
-
-    // 11 copies of 405 characters: the worker keeps 4,095 of them, 10 whole
-    // copies and the first 45 characters of the 11th, then adds "…".
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
-        body: JSON.stringify({ sourceId: "LONG" }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: `${"[secret] ".repeat(10)}[secret]…` },
-    });
-  });
-
-  /** The last error as saved, read from the state file rather than the overview, which redacts again. */
-  async function storedLastError(statePath: string, connectionId: string) {
-    const state = JSON.parse(await readFile(statePath, "utf8")) as {
-      connections: { id: string; lastError?: string }[];
-    };
-    return state.connections.find(
-      (connection) => connection.id === connectionId,
-    )?.lastError;
-  }
-
-  /** The last error as `GET /api/plugins` shows it. */
-  async function shownLastError(server: Server) {
-    const overview = await dispatchJsonRequest(server, {
-      method: "GET",
-      path: "/api/plugins",
-    });
-    expect(overview.status).toBe(200);
-    return (
-      overview.body as {
-        connectionGroups: { connections: { lastError?: string }[] }[];
-      }
-    ).connectionGroups[0]?.connections[0]?.lastError;
-  }
-
-  it("keeps the token and the numeric PIN out of a failed backlog sync and its stored error", async () => {
-    const { server, statePath, connectionId } = await createConnection();
-
-    const synced = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/plugins/jira/connections/${connectionId}/sync`,
-      body: JSON.stringify({ trigger: "manual", workItems: [] }),
-    });
-
-    const redacted = "Sync failed with token [secret] and PIN [secret].";
-    expect(synced).toMatchObject({
-      status: 502,
-      body: { error: redacted, connection: { lastError: redacted } },
-    });
-    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
-    expect(await storedLastError(statePath, connectionId)).toBe(redacted);
-  });
-
-  it("keeps the token out of failed pull request calls and the stored error", async () => {
-    const { server, statePath, connectionId } = await createConnection();
-
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/code-hosts/jira/connections/${connectionId}/getPullRequestContent`,
-        body: JSON.stringify({ repository: "acme/api", number: 7 }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Reading the pull request failed with token [secret]." },
-    });
-    await expect(
-      dispatchJsonRequest(server, {
-        method: "POST",
-        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
-        body: JSON.stringify({ tracked: [] }),
-      }),
-    ).resolves.toEqual({
-      status: 502,
-      body: { error: "Pull request sync failed with token [secret]." },
-    });
-    expect(await storedLastError(statePath, connectionId)).toBe(
-      "Pull request sync failed with token [secret].",
-    );
-  });
-
-  /** A state file holding one saved connection with a last error. */
   const savedState = (connection: Record<string, unknown>) => ({
     version: 7,
     connections: [
@@ -3945,6 +3338,19 @@ describe("plugin errors that echo a secret", () => {
     disabledPluginIds: [],
     pluginsEnabled: true,
   });
+
+  async function shownLastError(server: Server) {
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+    expect(overview.status).toBe(200);
+    return (
+      overview.body as {
+        connectionGroups: { connections: { lastError?: string }[] }[];
+      }
+    ).connectionGroups[0]?.connections[0]?.lastError;
+  }
 
   it("hides the token in a last error stored before errors were redacted", async () => {
     const { server } = await createServer(
@@ -4154,6 +3560,7 @@ describe("plugin errors that echo a secret", () => {
       ].join("\n"),
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -4203,7 +3610,7 @@ describe("saving a connection's secrets", () => {
     const statePath = path.join(root, "state.json");
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      "export async function validateConnection(config) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
+      "export async function validateConnection({ config }) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
       "plugin.mjs",
       {
         connectionFields: [
@@ -4216,6 +3623,7 @@ describe("saving a connection's secrets", () => {
     );
     const vault = new MemorySecretVault();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
       ...windowServerOptions,
       vault,
       statePath,

@@ -198,8 +198,7 @@ describe("the renderer host's lifecycle, through the app API", () => {
       developmentPluginDirectories: pluginDirectories,
       projectDataShapePluginDirectories: [],
       allowDevelopmentPlugins: true,
-      pluginRuntime: new InProcessPluginRuntime(),
-      pluginApi4Runtime: fake.runtime,
+      pluginRuntime: fake.runtime,
       brokerActivityWindowMs: 0,
       pluginClock: () => clock.now,
       eventSink: sink,
@@ -595,7 +594,7 @@ describe("the renderer host's lifecycle, through the app API", () => {
         start: "alwaysReady",
         memoryCeilingMb: null,
       });
-      expect(classic.status).toBe(400);
+      expect(classic.status).toBe(404);
       expect(
         (
           await request("POST", "/api/plugins/missing/runtime", {

@@ -255,12 +255,9 @@ export interface SavedConnection {
 }
 
 /**
- * The connection as a plugin receives it: its config, secrets included, and
- * the fields Ajour owns that a plugin may read. An API 3 plugin needs the
- * secrets in plain text, so until the cut-over (#403) the host decrypts a
- * connection's secrets from the vault only to build this, for its worker.
- * An API 4 plugin gets it without the secrets, which the plugin host
- * removes, and with its access choices.
+ * The connection fields a plugin may read. Saved operations supply only
+ * editable settings. Pending validation values are filtered by the API 4
+ * host before plugin code receives them; its broker owns the secrets.
  */
 export function pluginConnection(connection: SavedConnection) {
   return {

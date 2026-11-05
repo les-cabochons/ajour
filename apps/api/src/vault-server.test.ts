@@ -1,3 +1,5 @@
+import { STATE_VERSION } from "./state-migrations.ts";
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import os from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
@@ -15,6 +17,7 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   createAppApiServer,
+  stopAppApiServer,
   installPluginForServer,
   uninstallPluginForServer,
 } from "./server.ts";
@@ -71,6 +74,7 @@ const jira = {
           placement: "commit-week",
           prompt: "prompts/enter-week.md",
           estimateMinutes: 5,
+          tools: [],
           settings: [
             { id: "url", label: "Timesheet URL", type: "url" },
             { id: "apiKey", label: "API key", type: "password", secret: true },
@@ -80,11 +84,12 @@ const jira = {
     },
   },
   source: [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: { site: config.baseUrl } };",
     "}",
     "export async function syncConnection(connection) {",
-    `  if (connection.config.token !== ${JSON.stringify(TOKEN)}) throw new Error('The plugin got no saved token.');`,
+    "  if (connection.config.token !== undefined) throw new Error('The plugin received a credential.');",
+    "  await ajour.http({connectionId:connection.id,method:'GET',path:'/'});",
     "  return { items: [], workItemUpdates: [] };",
     "}",
   ].join("\n"),
@@ -96,7 +101,7 @@ const notes = {
   connectionFields: baseFields,
   capabilities: { connector: {} },
   source: [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncConnection() {",
@@ -111,7 +116,7 @@ const trader = {
   connectionFields: baseFields,
   capabilities: { connector: {} },
   source: [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     `  return { normalizedConfig: { ...config, sessionId: ${JSON.stringify(SESSION)} }, connectionSummary: {} };`,
     "}",
     "export async function syncConnection() {",
@@ -147,7 +152,7 @@ const jiraRenamed = {
 
 /**
  * Jira after an update dropped `secret: true` from its token, with a sync
- * that echoes the token in its error.
+ * that says in its error whether it received the token.
  */
 const jiraWithoutSecretFlag = {
   ...jira,
@@ -156,11 +161,12 @@ const jiraWithoutSecretFlag = {
     { id: "token", label: "API token", type: "password" },
   ],
   source: [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncConnection(connection) {",
-    "  throw new Error('Token ' + connection.config.token + ' was refused.');",
+    "  const got = connection.config.token === undefined ? 'withheld' : 'received';",
+    "  throw new Error('Token ' + got + ' was refused.');",
     "}",
   ].join("\n"),
 };
@@ -189,13 +195,29 @@ async function writePlugin(parent: string, plugin: Fixture) {
     JSON.stringify({
       id: plugin.id,
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: plugin.id,
       description: "Test plugin.",
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
       capabilities: plugin.capabilities,
       connectionFields: plugin.connectionFields,
+      ...(plugin.id === "jira" &&
+      plugin.connectionFields.some(
+        (field) =>
+          "id" in field &&
+          field.id === "token" &&
+          "secret" in field &&
+          field.secret,
+      )
+        ? {
+            network: {
+              auth: { scheme: "bearer", secretField: "token" },
+              baseAddress: { field: "baseUrl" },
+              endpoints: [{ method: "GET", path: "/" }],
+            },
+          }
+        : {}),
     }),
   );
   await writeFile(
@@ -250,7 +272,7 @@ describe("secrets in the vault", () => {
 
   afterEach(async () => {
     failStateRename = false;
-    for (const server of servers.splice(0)) server.emit("close");
+    for (const server of servers.splice(0)) await stopAppApiServer(server);
     await Promise.all(
       tempDirs
         .splice(0)
@@ -283,6 +305,18 @@ describe("secrets in the vault", () => {
       ),
     );
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
+      brokerResolver: {
+        resolve: async () => ({ addresses: ["93.184.216.34"] }),
+      },
+      brokerTransport: {
+        send: async () => ({
+          status: 200,
+          headers: {},
+          body: new TextEncoder().encode("{}"),
+          remoteAddress: "93.184.216.34",
+        }),
+      },
       ...windowServerOptions,
       ...(options.vault ? { vault: options.vault } : {}),
       statePath: path.join(directory, "state.json"),
@@ -393,7 +427,7 @@ describe("secrets in the vault", () => {
       version: number;
       agentRunner: object;
     };
-    expect(state.version).toBe(9);
+    expect(state.version).toBe(STATE_VERSION);
     await expect(
       storedConnection(directory, "jira_main"),
     ).resolves.toMatchObject({
@@ -482,7 +516,7 @@ describe("secrets in the vault", () => {
       await next.overview();
       const moved = await stateText(directory);
       for (const secret of SECRETS) expect(moved).not.toContain(secret);
-      expect(JSON.parse(moved).version).toBe(9);
+      expect(JSON.parse(moved).version).toBe(STATE_VERSION);
       await expect(next.sync("jira", "jira_main")).resolves.toMatchObject({
         status: 200,
       });
@@ -576,7 +610,7 @@ describe("secrets in the vault", () => {
     const api = await launch(directory, { vault: next });
 
     await expect(api.sync("jira", "jira_main")).resolves.toMatchObject({
-      status: 409,
+      status: 502,
     });
     const tried = next.decryptAttempts;
     await expect(api.sync("jira", "jira_main")).resolves.toMatchObject({
@@ -709,6 +743,18 @@ describe("secrets in the vault", () => {
     ]);
     const vault = new MemorySecretVault();
     const server = createAppApiServer({
+      pluginRuntime: new InProcessPluginRuntime(),
+      brokerResolver: {
+        resolve: async () => ({ addresses: ["93.184.216.34"] }),
+      },
+      brokerTransport: {
+        send: async () => ({
+          status: 200,
+          headers: {},
+          body: new TextEncoder().encode("{}"),
+          remoteAddress: "93.184.216.34",
+        }),
+      },
       ...windowServerOptions,
       vault,
       statePath: path.join(directory, "state.json"),
@@ -816,6 +862,18 @@ describe("secrets in the vault", () => {
       ]);
       const vault = new MemorySecretVault();
       const server = createAppApiServer({
+        pluginRuntime: new InProcessPluginRuntime(),
+        brokerResolver: {
+          resolve: async () => ({ addresses: ["93.184.216.34"] }),
+        },
+        brokerTransport: {
+          send: async () => ({
+            status: 200,
+            headers: {},
+            body: new TextEncoder().encode("{}"),
+            remoteAddress: "93.184.216.34",
+          }),
+        },
         ...windowServerOptions,
         vault,
         statePath: path.join(directory, "state.json"),
@@ -894,24 +952,11 @@ describe("secrets in the vault", () => {
     });
   });
 
-  it("refuses, clearly, a plugin's answer with a key it doesn't declare when there is no vault", async () => {
+  it("ignores an API 4 plugin's undeclared normalized secret when there is no vault", async () => {
     const directory = await root();
     const api = await launch(directory, { plugins: [trader, notes] });
-
-    await expect(api.save("trader", {})).resolves.toEqual({
-      status: 400,
-      body: {
-        error: `Ajour can't protect credentials on this computer, so it can't save a secret. ${NO_VAULT_REASON}`,
-      },
-    });
-
-    expect(await stateText(directory).catch(() => "")).not.toContain("trader");
-    expect(
-      api.events.find(
-        (event) =>
-          event.name === "connection.save" && event.outcome === "refused",
-      ),
-    ).toMatchObject({ outcome_reason: "vault_unavailable" });
+    expect((await api.save("trader", {})).status).toBe(200);
+    expect(await stateText(directory)).not.toContain(SESSION);
   });
 
   it("pauses a connection holding an undeclared key with vault_unavailable when there is no vault", async () => {
@@ -952,9 +997,9 @@ describe("secrets in the vault", () => {
       config: { baseUrl: SITE },
       secrets: { fields: ["token"] },
     });
-    // The plugin still gets the value it saved under its old id.
+    // The old value stays in the vault. The API 4 package declared no auth for it.
     await expect(api.sync("jira", "jira_main")).resolves.toMatchObject({
-      status: 200,
+      status: 502,
     });
   });
 
@@ -1017,7 +1062,7 @@ describe("secrets in the vault", () => {
     });
   });
 
-  it("redacts a secret the vault holds after an update drops its secret flag", async () => {
+  it("withholds a secret the vault holds from the plugin after an update drops its secret flag", async () => {
     const directory = await root({ ...plainState, disabledPluginIds: [] });
     const vault = new MemorySecretVault();
     await (await launch(directory, { vault })).overview();
@@ -1030,11 +1075,11 @@ describe("secrets in the vault", () => {
 
     expect(failed.status).toBe(502);
     expect(failed.body).toMatchObject({
-      error: "Token [secret] was refused.",
+      error: "Token withheld was refused.",
     });
     expect(
       pausedOf(await api.overview(), "jira_main") as { lastError?: string },
-    ).toMatchObject({ lastError: "Token [secret] was refused." });
+    ).toMatchObject({ lastError: "Token withheld was refused." });
   });
 
   it("pauses a connection whose secret waits in plain text with the reason encryption is unavailable", async () => {
@@ -1096,7 +1141,7 @@ describe("secrets in the vault", () => {
     await next.overview();
     const moved = await stateText(directory);
     for (const secret of SECRETS) expect(moved).not.toContain(secret);
-    expect(JSON.parse(moved).version).toBe(9);
+    expect(JSON.parse(moved).version).toBe(STATE_VERSION);
     await expect(next.sync("jira", "jira_second")).resolves.toMatchObject({
       status: 200,
     });

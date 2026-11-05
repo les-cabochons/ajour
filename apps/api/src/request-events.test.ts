@@ -18,6 +18,8 @@ import {
   windowTokenHeader,
 } from "./test-support/window-token.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
+import { connectionAccessChoicesOf } from "../../../packages/shared/connection-access.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
 const running: (() => Promise<void>)[] = [];
@@ -38,6 +40,7 @@ async function startTestApi(
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-request-events-"));
   const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
+    pluginRuntime: new InProcessPluginRuntime(),
     port: 0,
     statePath: path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
@@ -340,8 +343,8 @@ const TOKEN = "tok_request_canary_51c2";
 
 /** A plugin with backlog items (and settle), pull requests and a team. */
 const pluginSource = `
-export async function validateConnection(config) {
-  if (config.token === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));
+export async function validateConnection({ config }) {
+  if (config.delay === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
@@ -362,7 +365,7 @@ export async function listSettleStates() {
   ] };
 }
 export async function writeSettle(connection, request) {
-  if (request.sourceId === 'FAIL-1') throw new Error('Rejected ' + connection.config.token);
+  if (request.sourceId === 'FAIL-1') throw new Error('Rejected fixture failure');
   if (request.sourceId === 'BAD-1') return { priority: 'Secret priority' };
   return { state: request.state };
 }
@@ -374,6 +377,7 @@ export async function searchAssignees(connection, request) {
   return { people: request.query ? people.slice(0, 1) : people };
 }
 export async function syncPullRequests() {
+  await new Promise(resolve => setTimeout(resolve, 300));
   return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };
 }
 export async function syncTeamProjects(connection, request) {
@@ -393,7 +397,10 @@ async function writePlugin(
     JSON.stringify({
       id,
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
+      ...(id === "azure_devops"
+        ? { connectionAccess: connectionAccessChoicesOf({ id, apiVersion: 3 }) }
+        : {}),
       displayName: "Jira",
       description: "Test plugin.",
       iconSvg: ICON,
@@ -401,9 +408,9 @@ async function writePlugin(
       capabilities: {
         connector: { settle: true, assign },
         codeHost: {},
-        team: { apiVersion: 1 },
       },
       connectionFields: [
+        { id: "delay", label: "Delay", type: "text" },
         { id: "label", label: "Label", type: "text", required: true },
         { id: "tenantLabel", label: "Site", type: "text", required: true },
         {
@@ -424,7 +431,7 @@ async function writePlugin(
     JSON.stringify({
       id: "workday",
       version: "1.0.0",
-      apiVersion: 1,
+      apiVersion: 4,
       displayName: "Workday",
       description: "Test schema.",
       iconSvg: ICON,
@@ -595,7 +602,7 @@ describe("route events", () => {
       }),
       expect.objectContaining({
         outcome: "error",
-        error: expect.objectContaining({ message: "Rejected [secret]" }),
+        error: expect.objectContaining({ message: "Rejected fixture failure" }),
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain(TOKEN);
@@ -750,33 +757,16 @@ describe("route events", () => {
     expect(JSON.stringify(events)).not.toContain("Secret priority");
   });
 
-  it("records a pull request sync and a team sync", async () => {
+  it("records a pull request sync", async () => {
     const { port, events, connectionId } = await connectedApi();
-
     await call(
       port,
       `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
       { tracked: [] },
     );
-    await call(port, `/api/teams/jira/connections/${connectionId}/sync`, {
-      changes: [],
-    });
-
     expect(await lastRequest(events, "pull_request.sync")).toMatchObject({
       outcome: "ok",
       pull_request: { tracked_count: 0, received_count: 0 },
-      http: {
-        route: "/api/code-hosts/:pluginId/connections/:connectionId/:operation",
-      },
-    });
-    expect(await lastRequest(events, "team.sync")).toMatchObject({
-      outcome: "ok",
-      team_sync: {
-        projects_sent: 0,
-        projects_received: 0,
-        assigned_count: 0,
-        has_more: false,
-      },
     });
   });
 
@@ -1064,13 +1054,13 @@ describe("request events: abandoned requests", () => {
       },
     });
     const connectionId = saved.body.connection.id as string;
-    const body = JSON.stringify({ cursor: "slow", changes: [] });
+    const body = JSON.stringify({ tracked: [] });
 
     const outgoing = httpRequest({
       host: "127.0.0.1",
       port: api.port,
       method: "POST",
-      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
       headers: {
         ...windowTokenHeader,
         Origin: APP_ORIGIN,
@@ -1083,7 +1073,7 @@ describe("request events: abandoned requests", () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     outgoing.destroy();
 
-    const event = await eventually(api.events, "team.sync");
+    const event = await eventually(api.events, "pull_request.sync");
     expect(event).toMatchObject({
       outcome: "cancelled",
       outcome_reason: "client_closed",
@@ -1109,13 +1099,13 @@ describe("request events: abandoned requests", () => {
       },
     });
     const connectionId = saved.body.connection.id as string;
-    const body = JSON.stringify({ cursor: "slow", changes: [] });
+    const body = JSON.stringify({ tracked: [] });
 
     const outgoing = httpRequest({
       host: "127.0.0.1",
       port: api.port,
       method: "POST",
-      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
       headers: {
         ...windowTokenHeader,
         Origin: APP_ORIGIN,
@@ -1130,7 +1120,7 @@ describe("request events: abandoned requests", () => {
 
     // The plugin timed out after the client left: the request says so, as
     // its operation does, still without a status nobody received.
-    const event = await eventually(api.events, "team.sync");
+    const event = await eventually(api.events, "pull_request.sync");
     expect(event).toMatchObject({
       outcome: "timeout",
       outcome_reason: "timeout",
@@ -1139,7 +1129,8 @@ describe("request events: abandoned requests", () => {
     expect(event.http?.status_code).toBeUndefined();
     const operation = api.events.find(
       (candidate) =>
-        candidate.kind === "plugin_operation" && candidate.name === "team.sync",
+        candidate.kind === "plugin_operation" &&
+        candidate.name === "pull_request.sync",
     );
     expect(operation).toMatchObject({
       outcome: "timeout",
@@ -1197,12 +1188,12 @@ describe("request events: a plugin operation's reason", () => {
 
     const timedOut = await call(
       port,
-      `/api/teams/jira/connections/${connectionId}/sync`,
-      { cursor: "slow", changes: [] },
+      `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+      { tracked: [] },
     );
 
     expect(timedOut.status).toBe(502);
-    expect(await bothHops(events, "team.sync")).toEqual([
+    expect(await bothHops(events, "pull_request.sync")).toEqual([
       ["timeout", "timeout"],
       ["timeout", "timeout"],
     ]);
@@ -1213,14 +1204,14 @@ describe("request events: a plugin operation's reason", () => {
 
     const syncing = call(
       port,
-      `/api/teams/jira/connections/${connectionId}/sync`,
-      { cursor: "slow", changes: [] },
+      `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+      { tracked: [] },
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     await call(port, "/api/plugins/jira/activation", { enabled: false });
     expect((await syncing).status).toBe(502);
 
-    expect(await bothHops(events, "team.sync")).toEqual([
+    expect(await bothHops(events, "pull_request.sync")).toEqual([
       ["cancelled", "plugin_off"],
       ["cancelled", "plugin_off"],
     ]);
@@ -1273,7 +1264,8 @@ describe("request events: what the server does is not a hang-up", () => {
         tenantLabel: "Acme",
         autoSync: false,
         autoSyncIntervalMinutes: 15,
-        token: "slow",
+        token: TOKEN,
+        delay: "slow",
       },
     });
 
@@ -1386,7 +1378,8 @@ describe("request events: limits, sources and shutdown", () => {
         tenantLabel: "Acme",
         autoSync: false,
         autoSyncIntervalMinutes: 15,
-        token: "slow",
+        token: TOKEN,
+        delay: "slow",
       },
     });
 

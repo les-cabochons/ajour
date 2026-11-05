@@ -176,9 +176,9 @@ import { decideUpdateConsent } from "./plugin-consent.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
-  PluginWorkerFailure,
+  PluginOperationFailure,
   type PluginFailureReason,
-} from "./plugin-worker-lifetime.ts";
+} from "./plugin-operation-lifetime.ts";
 import {
   accessOffAnswer,
   accessOffMessage,
@@ -195,8 +195,11 @@ import {
   withoutHeldEstimateUpdates,
 } from "../../../packages/shared/connection-access.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import { SplitPluginRuntime, type PluginRuntime } from "./plugin-runtime.ts";
-import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
+import {
+  DesktopRequiredPluginRuntime,
+  type PluginRuntime,
+} from "./plugin-runtime.ts";
+
 import {
   connectionlessPluginErrorMessage,
   errorMessage,
@@ -228,7 +231,7 @@ import {
 import {
   AppApiStorage,
   resolveStatePath,
-  type ConnectionWithSecrets,
+  type OperationConnection,
   type RunnablePlugins,
   type StoredConnection,
 } from "./storage.ts";
@@ -244,17 +247,13 @@ interface AppApiServerOptions {
   allowDevelopmentPlugins?: boolean;
   pluginRequestTimeoutMs?: number;
   /**
-   * What runs plugin code, for both the plugin and the data-shape host. A
-   * worker thread per operation by default. Tests run plugins in process.
+   * What runs plugin code, for both the plugin and the data-shape host. The
+   * desktop app passes its sandboxed renderer runtime; while that can't
+   * sandbox plugins, no plugin runs, and the overview says why. Tests pass
+   * an in-process fake. The standalone API passes none and runs no plugin:
+   * "Plugins need the desktop app".
    */
   pluginRuntime?: PluginRuntime;
-  /**
-   * What runs plugin API 4 packages, each in its sandbox: development
-   * builds of the desktop app pass the renderer runtime, until the cut-over
-   * (#403). `pluginRuntime` keeps running API 3 packages beside it. While it
-   * can't sandbox plugins, no plugin runs, and the overview says why.
-   */
-  pluginApi4Runtime?: PluginRuntime;
   /**
    * Where the data shape host reads packages. By default, the development
    * plugin directories, when development plugins are allowed.
@@ -704,7 +703,7 @@ function recordPluginFailure(
     unit.refuse(error.reason);
   } else if (error instanceof PluginOperationCancelled) {
     unit.cancel(error.reason);
-  } else if (error instanceof PluginWorkerFailure) {
+  } else if (error instanceof PluginOperationFailure) {
     unit.fail(error, {
       ...(error.reason === "timeout" ? { outcome: "timeout" } : {}),
       reason: error.reason,
@@ -996,7 +995,7 @@ async function brokerConnection(
 ): Promise<BrokerConnection | undefined> {
   let connection: StoredConnection | null;
   try {
-    connection = await storage.connectionForOperation(
+    connection = await storage.connectionForBroker(
       pluginId,
       connectionId,
       secretManifestOf(manifest),
@@ -1043,11 +1042,11 @@ async function failedCall(
   unit: Parameters<typeof recordPluginFailure>[0],
   error: unknown,
   call: ReturnType<typeof admittedCall>,
-  connection: ConnectionWithSecrets,
+  connection: OperationConnection,
 ) {
   const credentials = call.credentials(connection.config);
   recordPluginFailure(unit, error, credentials.secrets);
-  if (error instanceof PluginWorkerFailure && error.httpStatus === 401) {
+  if (error instanceof PluginOperationFailure && error.httpStatus === 401) {
     // The plugin's answer and the connection's error matter more than the mark.
     try {
       await storage.markSecretsRejected(connection.pluginId, connection.id, {
@@ -1141,6 +1140,22 @@ async function findPlugin(pluginManager: PluginManager, pluginId: string) {
   };
 }
 
+/**
+ * Ends a request for a plugin whose package is installed but can't run, such
+ * as one built for an older plugin API, with the reason, in the one status
+ * every route gives it. Returns whether it did.
+ */
+function refuseUnavailablePlugin(
+  response: ServerResponse,
+  unit: { refuse(reason: "not_supported"): void },
+  unavailableReason: string | undefined,
+) {
+  if (unavailableReason === undefined) return false;
+  unit.refuse("not_supported");
+  writeJson(response, 409, { error: unavailableReason });
+  return true;
+}
+
 /** The plugins that can run, each with what it reaches now. */
 function runnablePlugins(
   plugins: readonly PluginManifest[],
@@ -1232,13 +1247,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
-  const api3Runtime = options.pluginRuntime ?? new WorkerPluginRuntime();
-  const pluginRuntime: PluginRuntime = options.pluginApi4Runtime
-    ? new SplitPluginRuntime({
-        api3: api3Runtime,
-        api4: options.pluginApi4Runtime,
-      })
-    : api3Runtime;
+  const pluginRuntime: PluginRuntime =
+    options.pluginRuntime ?? new DesktopRequiredPluginRuntime();
   // A way out the sandbox closed counts as a blocked attempt, as the
   // broker's refusals do, for the plugin's Access review.
   pluginRuntime.attach?.({
@@ -1352,7 +1362,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       (allowDevelopmentPlugins ? developmentPluginDirectories : []),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
-    admitPluginApi4: allowDevelopmentPlugins,
     pluginHostPackages: () => pluginManager.packageDirectories(),
     events,
   });
@@ -2627,7 +2636,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
       if (!plugin?.capabilities.connector) {
         unit.refuse("not_supported");
         writeJson(response, 409, {
@@ -2881,7 +2896,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown code host operation." });
         return;
       }
-      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
       if (!plugin || !pluginHasCodeHost(plugin)) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -2969,7 +2990,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown comment operation." });
         return;
       }
-      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
       if (!plugin?.capabilities.connector?.comments) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -3145,7 +3172,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown calendar operation." });
         return;
       }
-      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
       if (!plugin || !pluginHasCalendar(plugin)) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -3426,7 +3459,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       });
       return undefined;
     }
-    const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+    const { plugin, runnable, unavailableReason } = await findPlugin(
+      pluginManager,
+      pluginId,
+    );
+    if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+      return undefined;
+    }
     const inactive = await inactiveCapability(
       storage,
       pluginId,
@@ -3534,7 +3573,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     unit: Parameters<typeof recordPluginFailure>[0],
     error: unknown,
     call: ReturnType<typeof admittedCall>,
-    connection: ConnectionWithSecrets,
+    connection: OperationConnection,
   ) {
     if (answerAccessOff(response, unit, error)) return;
     const credentials = await failedCall(
@@ -3600,7 +3639,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     unit: Unit<AjourCatalog, "team.create" | "team.sync">,
     create: boolean,
   ) {
-    const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+    const { plugin, runnable, unavailableReason } = await findPlugin(
+      pluginManager,
+      pluginId,
+    );
+    if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+      return undefined;
+    }
     if (!plugin || !pluginHasTeam(plugin)) {
       unit.refuse("not_supported");
       writeJson(response, 404, {
@@ -4064,7 +4109,11 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     }
     const closePromise = new Promise<void>((resolve, reject) => {
       server.close((error) => {
-        if (error) {
+        // Stopping a server that never listened, as in-process tests do, is fine.
+        if (
+          error &&
+          (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING"
+        ) {
           reject(error);
           return;
         }

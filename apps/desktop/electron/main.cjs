@@ -1402,13 +1402,11 @@ function pluginRendererProcessRecord() {
 
 /**
  * The runtime that runs plugin API 4 packages, each in a sandboxed renderer
- * of its own, made once, after `ready`. Development builds only, until the
- * cut-over (#403): release builds admit no API 4 package yet. Without a
+ * of its own, made once, after `ready`, in all builds. Without a
  * sandbox, as with `--no-sandbox` or on Linux, it runs no plugin and says why.
  */
 let pluginRendererRuntime = null;
-function internalAppApiPluginApi4Runtime() {
-  if (app.isPackaged) return undefined;
+function internalAppApiPluginRuntime() {
   pluginRendererRuntime ??= createPluginRendererRuntime({
     app,
     session,
@@ -1560,7 +1558,7 @@ async function ensureInternalAppApiRunning() {
       vault: internalAppApiVault(internalAppApiModule, statePath),
       brokerTransport: internalAppApiBrokerNetwork().transport,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
-      pluginApi4Runtime: internalAppApiPluginApi4Runtime(),
+      pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []

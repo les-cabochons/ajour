@@ -42,9 +42,9 @@ const SITE = `https://${MARKER.toLowerCase()}.example.test/${MARKER}`;
 /**
  * A tracker with every capability whose content an event could pick up:
  * synced items with descriptions, settles, comments, mentions and calendar
- * events, all of them marked. A connection whose token ends in `-revoked`
- * fails, echoing the token and the site in its error, as a careless plugin
- * would; one whose token ends in `-garbled` answers what breaks the
+ * events, all of them marked. A connection whose label ends in `-revoked`
+ * fails, echoing its label and the site in its error, as a careless plugin
+ * would; one whose label ends in `-garbled` answers what breaks the
  * contract.
  */
 const canaryPlugin: TestPlugin = {
@@ -63,7 +63,6 @@ const canaryPlugin: TestPlugin = {
     },
     calendar: {},
     codeHost: {},
-    team: { apiVersion: 1 },
   },
   connectionFields: [
     { id: "label", label: "Label", type: "text", required: true },
@@ -77,21 +76,29 @@ const canaryPlugin: TestPlugin = {
       secret: true,
     },
   ],
+  network: {
+    auth: { scheme: "bearer", secretField: "token" },
+    baseAddress: { field: "siteUrl" },
+    endpoints: [{ method: "GET", path: "/" }],
+  },
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
 const person = { id: "person-" + MARKER, displayName: "Ana " + MARKER, email: MARKER + "@example.test" };
 function check(connection) {
-  const { token, siteUrl } = connection.config;
-  if (token.endsWith("-revoked")) {
-    throw new Error("The tracker refused " + token + " at " + siteUrl + "/rest/api");
+  const { siteUrl } = connection.config;
+  if (connection.config.token !== undefined) {
+    throw new Error("The plugin received a credential.");
+  }
+  if (connection.label.endsWith("-revoked")) {
+    throw new Error("The tracker refused " + connection.label + " at " + siteUrl + "/rest/api");
   }
 }
-export async function validateConnection(config) {
+export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
   check(connection);
-  if (connection.config.token.endsWith("-garbled")) {
+  if (connection.label.endsWith("-garbled")) {
     return { items: [{ title: "Garbled " + MARKER, sourceId: MARKER }] };
   }
   return {
@@ -136,7 +143,7 @@ export async function listItemComments(connection) {
 export async function postItemComment(connection, request) {
   check(connection);
   if (request.body.includes("refuse me")) {
-    throw new Error("Could not post with " + connection.config.token);
+    throw new Error("Could not post to " + connection.config.siteUrl);
   }
   if (request.body.includes("no such issue")) {
     throw new Error("Issue " + MARKER + "-9 not found");
@@ -233,7 +240,7 @@ export async function browsePullRequests(connection) {
 export async function submitReview(connection, request) {
   check(connection);
   if (request.body && request.body.includes("refuse")) {
-    throw new Error("Review rejected: " + request.body + " with " + connection.config.token);
+    throw new Error("Review rejected: " + request.body + " with " + connection.config.siteUrl);
   }
   return { reviewId: "review-" + MARKER };
 }
@@ -263,28 +270,6 @@ export async function updatePullRequest(connection, request) {
 export async function mergePullRequest(connection) {
   check(connection);
   return { mergeCommitSha: "merge-" + MARKER };
-}
-export async function createTeam(config, request) {
-  if (request.name.includes("taken")) {
-    throw new Error("Team " + request.name + " exists, " + config.token);
-  }
-  return { values: { teamId: "team-" + MARKER } };
-}
-export async function syncTeamProjects(connection, request) {
-  check(connection);
-  const assigned = request.changes.flatMap((change) => [
-    { localId: change.localId, remoteId: "r-" + change.localId },
-    ...change.tasks.map((task) => ({ localId: task.localId, remoteId: "r-" + task.localId })),
-  ]);
-  return {
-    cursor: "cursor-" + MARKER,
-    projects: [{
-      remoteId: "team-" + MARKER, name: "Team project " + MARKER, displayName: "Team project " + MARKER,
-      code: "CODE-" + MARKER, color: "#123456", icon: { kind: "preset", name: "dot" }, status: "active",
-      tasks: [{ remoteId: "tt-" + MARKER, name: "Team task " + MARKER, status: "active", billable: true, budgetMs: null }],
-    }],
-    assigned,
-  };
 }
 `,
 };
@@ -489,7 +474,6 @@ async function loadRenderer() {
     descriptions: await import("@/lib/description-save"),
     settle: await import("@/features/backlog/settle-dialog"),
     commentDeletes: await import("@/lib/comment-deletes"),
-    teamSync: await import("@/lib/team-sync"),
     calendar: await import("@/lib/calendar-suggestions"),
     calendarDomain: await import("@/domain/time/calendar-suggestions"),
     bridge: await import("@/lib/mcp-bridge"),
@@ -538,17 +522,17 @@ afterAll(async () => {
 describe("the privacy canary", () => {
   it("keeps a connection's names, URL and secret out of every event", async () => {
     const from = mark();
-    const save = (token: string) =>
+    const save = (variant: string) =>
       new Promise<string>((resolve, reject) => {
         void app.workflow
           .execute({
             type: "save",
             pluginId: "canary",
             values: {
-              label: `Work ${MARKER}`,
+              label: `Work ${MARKER}${variant}`,
               tenantLabel: `Site ${MARKER}`,
               siteUrl: SITE,
-              token,
+              token: SECRET,
               autoSync: false,
               autoSyncIntervalMinutes: 15,
               agentAccess: "readWrite",
@@ -559,8 +543,8 @@ describe("the privacy canary", () => {
             if (!ok) reject(new Error("The connection wasn't saved."));
           });
       });
-    connections.work = await save(SECRET);
-    connections.revoked = await save(`${SECRET}-revoked`);
+    connections.work = await save("");
+    connections.revoked = await save("-revoked");
     // A save the API refuses: its validation error lists what it got.
     await expect(
       app.appApi.savePluginConnection("canary", {
@@ -1039,59 +1023,6 @@ describe("the privacy canary", () => {
     expectNoLeak();
   });
 
-  it("keeps a team's projects, tasks and name out of every event", async () => {
-    const from = mark();
-    const created = await app.appApi.createTeam("canary", {
-      values: {
-        label: `Work ${MARKER}`,
-        tenantLabel: `Site ${MARKER}`,
-        siteUrl: SITE,
-        token: SECRET,
-      },
-      team: { name: `Team ${MARKER}` },
-    });
-    expect(created.values.teamId).toContain(MARKER);
-
-    // The first sync brings the team's project here. Then a local project
-    // goes to the team, and the next sync sends it.
-    const sync = () =>
-      app.teamSync.syncTeamConnection("canary", connections.work);
-    const first = await sync();
-    expect(first.createdProjectIds).toHaveLength(1);
-    const mine = app.localStore
-      .snapshot()
-      .projects.find(
-        (project) => project.name.includes(MARKER) && !project.team,
-      )!;
-    const shared = app.localStore.shareProjectWithTeam(
-      connections.work,
-      mine._id,
-    );
-    expect(shared.result.kind).toBe("shared");
-    // The Undo toast closes, so the sync no longer waits for the project.
-    app.localStore.forgetUndo(shared.undoToken!);
-    const outcome = await sync();
-    expect(outcome.sentProjectCount).toBe(1);
-    expect(
-      app.localStore
-        .snapshot()
-        .projects.some((project) => project.name === `Team project ${MARKER}`),
-    ).toBe(true);
-
-    expect(namesSince(from)).toEqual(
-      expect.arrayContaining([
-        "renderer command team.create",
-        "api request team.create",
-        "api plugin_operation team.create",
-        "renderer command project.share",
-        "renderer job team.sync",
-        "api request team.sync",
-        "api plugin_operation team.sync",
-      ]),
-    );
-    expectNoLeak();
-  });
-
   it("keeps a plugin error that echoes the secret, and what breaks the contract, out of every event", async () => {
     const from = mark();
     await expect(
@@ -1116,10 +1047,10 @@ describe("the privacy canary", () => {
       ),
     ).rejects.toThrow();
     const garbled = await app.appApi.savePluginConnection("canary", {
-      label: `Garbled ${MARKER}`,
+      label: `Garbled ${MARKER}-garbled`,
       tenantLabel: `Site ${MARKER}`,
       siteUrl: SITE,
-      token: `${SECRET}-garbled`,
+      token: SECRET,
       autoSync: false,
       autoSyncIntervalMinutes: 15,
     });
@@ -1190,20 +1121,6 @@ describe("the privacy canary", () => {
       expect((await callCodeHost(operation, body)).status, operation).toBe(502);
     }
     await expect(
-      app.appApi.createTeam("canary", {
-        values: {
-          label: "Work",
-          tenantLabel: "Site",
-          siteUrl: SITE,
-          token: SECRET,
-        },
-        team: { name: `Team ${MARKER} taken` },
-      }),
-    ).rejects.toThrow();
-    await expect(
-      app.teamSync.syncTeamConnection("canary", connections.revoked),
-    ).rejects.toThrow();
-    await expect(
       app.appApi.syncCodeHostConnection("canary", connections.revoked),
     ).rejects.toThrow();
 
@@ -1216,7 +1133,7 @@ describe("the privacy canary", () => {
     // The scrubbed message stays: it says what failed, without the secret
     // or the URL.
     expect(pluginFailure?.error?.message).toBe(
-      "The tracker refused [secret] at [url]",
+      `The tracker refused Work ${MARKER}-revoked at [url]`,
     );
     // What a plugin echoes stays too, and is the only place the marker may be.
     const messages = (name: string) =>
@@ -1235,22 +1152,17 @@ describe("the privacy canary", () => {
       `ENOENT: no such file or directory, open '${path.join("[user data]", MARKER, "plan.xlsx")}'`,
     ]);
     expect(messages("pull_request.submit_review")).toEqual([
-      `Review rejected: Please refuse ${MARKER} with [secret]`,
+      `Review rejected: Please refuse ${MARKER} with [url]`,
     ]);
     expect(messages("pull_request.comment")).toEqual([
       `Cannot comment on ${REPOSITORY}#7`,
     ]);
-    expect(messages("team.create")).toEqual([
-      `Team Team ${MARKER} taken exists, [secret]`,
-    ]);
     expect(namesSince(from)).toEqual(
       expect.arrayContaining([
-        "api plugin_operation team.sync",
         "api plugin_operation pull_request.sync",
         "api plugin_operation pull_request.load_file",
         "api plugin_operation pull_request.submit_review",
         "api plugin_operation pull_request.comment",
-        "api plugin_operation team.create",
         "renderer job backlog.sync",
         "api request backlog.sync",
         "api plugin_operation backlog.sync",

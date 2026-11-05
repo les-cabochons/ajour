@@ -1,9 +1,9 @@
 import path from "node:path";
 import {
   PluginOperationRefused,
-  PluginWorkerLifetime,
+  PluginOperationLifetime,
   type PluginCancelReason,
-} from "./plugin-worker-lifetime.ts";
+} from "./plugin-operation-lifetime.ts";
 import { pluginMethodArguments, type PluginMethod } from "./plugin-methods.ts";
 import type {
   PluginLifecycle,
@@ -19,7 +19,7 @@ import {
   type PluginStopCause,
   type PluginSuspension,
 } from "../../../packages/shared/plugin-lifecycle.ts";
-import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
+import { DesktopRequiredPluginRuntime } from "./plugin-runtime.ts";
 import {
   CALENDAR_EVENTS,
   CODE_HOST_EVENTS,
@@ -123,7 +123,6 @@ import {
   readPlugin,
   uninstallPluginPackage,
   type InstalledPlugin,
-  type PluginAdmissionPolicy,
   type ResolvedPlugin,
   type UnavailablePlugin,
 } from "./plugin-package.ts";
@@ -134,7 +133,7 @@ interface PluginHostOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   requestTimeoutMs?: number;
-  /** What runs plugin code. A worker thread per operation by default. */
+  /** Desktop supplies the sandboxed renderer runtime. Standalone runs nothing. */
   runtime?: PluginRuntime;
   /**
    * Runs once the operation is registered and before its worker starts, and
@@ -344,10 +343,9 @@ export class PluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
-  private readonly admission: PluginAdmissionPolicy;
   private readonly operationGate?: PluginHostOptions["operationGate"];
   private readonly events?: ApiEvents;
-  private readonly workers: PluginWorkerLifetime<PluginMethod>;
+  private readonly workers: PluginOperationLifetime<PluginMethod>;
   private readonly runsPluginApi4: boolean;
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
@@ -375,17 +373,16 @@ export class PluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
-    // Development builds admit plugin API 4 until the cut-over (#403).
-    this.admission = { admitPluginApi4: this.allowDevelopmentPlugins };
     this.operationGate = options.operationGate;
     this.events = options.events;
-    const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
+    const runtime: PluginRuntime =
+      options.runtime ?? new DesktopRequiredPluginRuntime();
     this.runtime = runtime;
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
     this.pluginState = options.pluginState;
     this.stops = new PluginStopBudget(options.now);
-    this.workers = new PluginWorkerLifetime({
+    this.workers = new PluginOperationLifetime({
       name: "Plugin",
       events: options.events,
       eventNames: PLUGIN_OPERATION_EVENTS,
@@ -496,8 +493,7 @@ export class PluginManager {
 
   /**
    * Whether plugins can run in their sandbox on this computer, when the
-   * runtime sandboxes them. Undefined for a runtime that doesn't, such as
-   * the worker threads alone.
+   * runtime sandboxes them. Undefined for a runtime that doesn't say.
    */
   sandboxStatus(): PluginSandboxStatus | undefined {
     if (!this.runtime.unavailableReason) return undefined;
@@ -576,7 +572,6 @@ export class PluginManager {
         archiveFilename,
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
-        policy: this.admission,
       });
       if (installed.backupLeft) {
         this.events?.current()?.count("plugin_backup_failed");
@@ -964,14 +959,20 @@ export class PluginManager {
             params.config as PluginFieldValues | undefined,
           ];
           record.secrets(connectionSecretValues(plugin.manifest, configs));
-          // A worker thread would hand an API 4 plugin its secrets and the
-          // network. It runs only in a runtime that keeps it to the broker.
-          if (isPluginApi4Manifest(plugin.manifest) && !this.runsPluginApi4) {
+          // A plugin runs only in a runtime that keeps it to the broker. The
+          // standalone API has none: its answer is the same as the overview's.
+          if (!this.runsPluginApi4) {
             throw new PluginOperationRefused(
-              `Plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+              "Plugins need the desktop app",
               "not_supported",
             );
           }
+          const unavailable = this.runtime.unavailableReason?.();
+          if (unavailable)
+            throw new PluginOperationRefused(
+              `Plugins are turned off: this computer can't run them in a sandbox. ${unavailable}`,
+              "runtime_unavailable",
+            );
           requirement?.(plugin.manifest);
           // Discovery awaited, so shutdown or a package change may have started meanwhile.
           this.assertCanInvoke();
@@ -1015,15 +1016,11 @@ export class PluginManager {
             );
             broker = prepared.broker;
             args = prepared.args;
-          } else if (connection && "access" in connection) {
-            // Access choices are plugin API 4's.
-            const { access: _access, ...api3Connection } = connection;
-            args = pluginMethodArguments(method, {
-              ...params,
-              connection: api3Connection,
-            });
           } else {
-            args = pluginMethodArguments(method, params);
+            throw new PluginOperationRefused(
+              "This plugin needs an update",
+              "not_supported",
+            );
           }
           return {
             invocation: {
@@ -1213,7 +1210,6 @@ export class PluginManager {
       const unavailable = new Map<string, UnavailablePlugin>();
       const installed = await discoverInstalledPlugins(
         this.installedPluginDirectory,
-        this.admission,
       );
 
       for (const plugin of installed.plugins) {
@@ -1227,13 +1223,15 @@ export class PluginManager {
       }
 
       if (this.allowDevelopmentPlugins) {
+        const developmentIds = new Set<string>();
         for (const directory of this.developmentPluginDirectories) {
           try {
-            const plugin = await readPlugin(
-              directory,
-              "development",
-              this.admission,
-            );
+            const plugin = await readPlugin(directory, "development");
+            if (developmentIds.has(plugin.manifest.id)) {
+              this.events?.current()?.count("invalid_plugin");
+              continue;
+            }
+            developmentIds.add(plugin.manifest.id);
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
           } catch {
@@ -1266,7 +1264,6 @@ export class PluginManager {
   private async installBundledPlugins() {
     const failedBackups = await reconcilePluginInstallRoot(
       this.installedPluginDirectory,
-      this.admission,
     );
     if (failedBackups > 0) {
       this.events?.current()?.count("plugin_backup_failed", failedBackups);
@@ -1279,7 +1276,6 @@ export class PluginManager {
           archiveFilename: path.basename(archivePath),
           installRoot: this.installedPluginDirectory,
           replaceExisting: false,
-          policy: this.admission,
         });
       } catch {
         this.events?.current()?.count("bundled_plugin_failed");

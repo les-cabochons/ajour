@@ -1,20 +1,16 @@
 /**
  * The port every plugin operation runs through. A runtime starts one
- * operation, reports how it settled, and terminates it. The worker lifetime
- * keeps admission, quota, timeout, cancellation, wide events and result
+ * operation, reports how it settled, and terminates it. The operation lifetime
+ * (`plugin-operation-lifetime.ts`) keeps admission, quota, timeout, cancellation, wide events and result
  * validation around it, so a runtime only runs plugin code.
  *
- * The worker-thread runtime (`plugin-worker-runtime.ts`) runs plugin API 3
- * packages. Development builds of the desktop app run API 4 packages in a
- * sandboxed renderer each (`apps/desktop/electron/plugin-renderer-runtime.cjs`),
- * beside it, through `SplitPluginRuntime`. Tests may use the in-process fake
- * in `test-support/`.
+ * Desktop runs every plugin in its own sandboxed renderer. Standalone
+ * runs none. Tests use the in-process fake in `test-support/`.
  *
  * An API 4 plugin reaches the network only through the broker its
  * invocation carries (`credential-broker.ts`): a runtime hands the plugin's
  * `ajour.http` and `ajour.publicFetch` calls to it, in process or over IPC.
- * A runtime that can't keep the plugin from everything else, such as the
- * worker thread, never runs one.
+ * A runtime that cannot restrict plugin code to the broker never runs it.
  */
 
 import type { OperationBroker } from "./credential-broker.ts";
@@ -197,47 +193,17 @@ export function settledRun(outcome: PluginRunOutcome): PluginRun {
   return { settled: Promise.resolve(outcome), terminate: async () => {} };
 }
 
-/**
- * Runs plugin API 3 packages on one runtime and API 4 packages on another,
- * the sandboxed one, until the cut-over removes API 3 (#403). While the
- * sandboxed runtime can't run plugins, no plugin runs, API 3 included:
- * plugins are off on this computer.
- */
-export class SplitPluginRuntime implements PluginRuntime {
-  readonly runsPluginApi4: boolean;
-  private readonly api3: PluginRuntime;
-  private readonly api4: PluginRuntime;
-
-  constructor(runtimes: { api3: PluginRuntime; api4: PluginRuntime }) {
-    this.api3 = runtimes.api3;
-    this.api4 = runtimes.api4;
-    this.runsPluginApi4 = runtimes.api4.runsPluginApi4 === true;
-  }
-
+/** Standalone API execution fails closed. Only desktop provides a sandbox. */
+export class DesktopRequiredPluginRuntime implements PluginRuntime {
   unavailableReason() {
-    return this.api4.unavailableReason?.();
+    return "Plugins need the desktop app";
   }
-
-  attach(host: PluginRuntimeHost) {
-    this.api3.attach?.(host);
-    this.api4.attach?.(host);
-  }
-
-  start(invocation: PluginInvocation): PluginRun {
-    const reason = this.unavailableReason();
-    if (reason !== undefined) {
-      return settledRun({ ok: false, failure: "runtime_unavailable", reason });
-    }
-    return (invocation.apiVersion >= 4 ? this.api4 : this.api3).start(
-      invocation,
-    );
-  }
-
-  keepReady(plugins: readonly ReadyPlugin[], stopped?: readonly string[]) {
-    this.api4.keepReady?.(
-      plugins.filter((plugin) => plugin.apiVersion >= 4),
-      stopped,
-    );
+  start(_invocation: PluginInvocation): PluginRun {
+    return settledRun({
+      ok: false,
+      failure: "runtime_unavailable",
+      reason: this.unavailableReason(),
+    });
   }
 }
 

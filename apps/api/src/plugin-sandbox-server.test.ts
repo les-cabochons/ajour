@@ -19,7 +19,7 @@ const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 const MANIFEST = {
   id: "tracker",
   version: "1.0.0",
-  apiVersion: 3,
+  apiVersion: 4,
   displayName: "Tracker",
   description: "Test plugin.",
   iconSvg: ICON,
@@ -32,7 +32,7 @@ const MANIFEST = {
 };
 
 const SOURCE = `
-export async function validateConnection(config) {
+export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection() {
@@ -66,7 +66,7 @@ describe("plugins and their sandbox, through the app API", () => {
     );
   });
 
-  async function setup(pluginApi4Runtime?: PluginRuntime) {
+  async function setup(pluginRuntime?: PluginRuntime) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-sandbox-api-"));
     directories.push(root);
     const pluginDirectory = path.join(root, "tracker");
@@ -86,7 +86,7 @@ describe("plugins and their sandbox, through the app API", () => {
       allowDevelopmentPlugins: true,
       pluginRuntime: new InProcessPluginRuntime(),
       brokerActivityWindowMs: 0,
-      ...(pluginApi4Runtime ? { pluginApi4Runtime } : {}),
+      ...(pluginRuntime ? { pluginRuntime } : {}),
     });
     const overview = async () =>
       (

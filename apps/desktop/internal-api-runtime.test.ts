@@ -124,7 +124,7 @@ async function runtime(
       transport: "broker-transport",
       resolver: "broker-resolver",
     }),
-    internalAppApiPluginApi4Runtime: () => "plugin-renderer-runtime",
+    internalAppApiPluginRuntime: () => "plugin-renderer-runtime",
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
@@ -280,7 +280,7 @@ describe("desktop plugin runtime ownership", () => {
     await app.invoke("ajour:download-catalog-plugin");
 
     expect(app.start).toHaveBeenCalledWith(
-      expect.objectContaining({ pluginApi4Runtime: "plugin-renderer-runtime" }),
+      expect.objectContaining({ pluginRuntime: "plugin-renderer-runtime" }),
     );
   });
 

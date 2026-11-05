@@ -2,16 +2,16 @@ import path from "node:path";
 import { realpath } from "node:fs/promises";
 import {
   PluginOperationRefused,
-  PluginWorkerLifetime,
+  PluginOperationLifetime,
   type OperationRecord,
   type PluginCancelReason,
-} from "./plugin-worker-lifetime.ts";
+} from "./plugin-operation-lifetime.ts";
 import {
   projectDataShapeMethodArguments,
   type ProjectDataShapeMethod,
 } from "./plugin-methods.ts";
 import type { PluginInvocation, PluginRuntime } from "./plugin-runtime.ts";
-import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
+import { DesktopRequiredPluginRuntime } from "./plugin-runtime.ts";
 import type { PluginOperationEventName } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
 import {
@@ -27,22 +27,17 @@ import {
   type ProjectDataShapeSheet,
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
+  NotAProjectDataShapeError,
   readProjectDataShapePlugin,
   type ResolvedProjectDataShapePlugin,
 } from "./project-data-shape-plugin.ts";
-import type { PluginAdmissionPolicy } from "./plugin-package.ts";
 import { isPluginApi4Manifest } from "../../../packages/shared/plugin-api-4.ts";
 
 interface ProjectDataShapeHostOptions {
   pluginDirectories?: string[];
   requestTimeoutMs?: number;
-  /** What runs plugin code. A worker thread per operation by default. */
+  /** What runs plugin code. The standalone API has none, and runs no plugin. */
   runtime?: PluginRuntime;
-  /**
-   * Whether plugin API 4 data shape packages are admitted. Development builds
-   * admit them until the cut-over (#403); a packaged build lists none.
-   */
-  admitPluginApi4?: boolean;
   /**
    * The folder of every package the plugin host holds, by plugin id. A
    * renderer and its storage are keyed by plugin id alone, so a data shape
@@ -83,21 +78,20 @@ function comparePlugins(
 export class ProjectDataShapePluginManager {
   private readonly pluginDirectories: string[];
   private readonly events?: ApiEvents;
-  private readonly admission: PluginAdmissionPolicy;
   private readonly pluginHostPackages?: () => Promise<
     ReadonlyMap<string, string>
   >;
   private readonly runsPluginApi4: boolean;
-  private readonly workers: PluginWorkerLifetime<PluginMethod>;
+  private readonly workers: PluginOperationLifetime<PluginMethod>;
 
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
     this.pluginHostPackages = options.pluginHostPackages;
-    this.admission = { admitPluginApi4: options.admitPluginApi4 ?? false };
-    const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
+    const runtime: PluginRuntime =
+      options.runtime ?? new DesktopRequiredPluginRuntime();
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
-    this.workers = new PluginWorkerLifetime({
+    this.workers = new PluginOperationLifetime({
       name: "Schema plugin",
       events: options.events,
       eventNames: SCHEMA_OPERATION_EVENTS,
@@ -212,12 +206,18 @@ export class ProjectDataShapePluginManager {
     const plugins = new Map<string, ResolvedProjectDataShapePlugin>();
     const refused = new Map<string, string>();
     const hostPackages = await this.pluginHostPackages?.();
-    for (const directory of this.pluginDirectories) {
+    // Installed packages are plugins of every kind: only those that declare
+    // a data shape are listed, and the others are not invalid.
+    const installed = new Set(hostPackages?.values() ?? []);
+    const directories = new Set([...this.pluginDirectories, ...installed]);
+    for (const directory of directories) {
       try {
-        const plugin = await readProjectDataShapePlugin(
-          directory,
-          this.admission,
-        );
+        const plugin: ResolvedProjectDataShapePlugin = {
+          ...(await readProjectDataShapePlugin(directory)),
+          source: this.pluginDirectories.includes(directory)
+            ? "development"
+            : "installed",
+        };
         const id = plugin.manifest.id;
         const owner = hostPackages?.get(id);
         if (
@@ -234,7 +234,14 @@ export class ProjectDataShapePluginManager {
         }
         plugins.set(id, plugin);
         refused.delete(id);
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof NotAProjectDataShapeError &&
+          installed.has(directory) &&
+          !this.pluginDirectories.includes(directory)
+        ) {
+          continue;
+        }
         // Skipped, as an invalid plugin package is: the event counts it.
         this.events?.current()?.count("invalid_plugin");
       }
@@ -254,14 +261,19 @@ export class ProjectDataShapePluginManager {
     }
     record.plugin({
       version: plugin.manifest.version,
-      source: "development",
+      source: plugin.source ?? "development",
       apiVersion: plugin.manifest.apiVersion,
     });
-    // A worker thread would give an API 4 plugin the network. It runs only
-    // in a runtime that keeps it to the broker.
-    if (isPluginApi4Manifest(plugin.manifest) && !this.runsPluginApi4) {
+    // Only a runtime that keeps a plugin to the broker runs it.
+    if (!isPluginApi4Manifest(plugin.manifest)) {
       throw new PluginOperationRefused(
-        `Schema plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+        "This plugin needs an update",
+        "not_supported",
+      );
+    }
+    if (!this.runsPluginApi4) {
+      throw new PluginOperationRefused(
+        "Plugins need the desktop app",
         "not_supported",
       );
     }

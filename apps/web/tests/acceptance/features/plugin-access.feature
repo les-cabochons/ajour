@@ -55,10 +55,10 @@ Feature: Access review on the plugin page
     Then the Access section says "Not used yet."
     And the Access section shows no blocked attempts
 
-  Scenario: A plugin on an older plugin API says Ajour cannot limit it
+  Scenario: A plugin on an older plugin API says it needs an update
     Given an installed Tracker plugin on plugin API 3
     When I open the Tracker plugin page
-    Then the Access section says "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does."
+    Then the Access section says "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update."
     And the Access section lists these lines
       | line                              |
       | Any address                       |

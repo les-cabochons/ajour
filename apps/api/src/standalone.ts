@@ -3,7 +3,8 @@ import { createWindowToken } from "./window-token.ts";
 
 // The local API run on its own, as `just api-start` and the web dev server
 // do. The desktop app and the tests start it through `startAppApiServer`
-// instead.
+// instead. It passes no plugin runtime, so it runs no plugin: the plugin
+// overview and every plugin operation answer "Plugins need the desktop app".
 //
 // The window token comes from whoever started this process, as the web dev
 // server passes it in AJOUR_APP_API_WINDOW_TOKEN. It leaves the environment

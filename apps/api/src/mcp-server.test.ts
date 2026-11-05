@@ -1628,6 +1628,7 @@ describe("an agent task's declared tools", () => {
                 placement: "commit-week",
                 prompt: "prompts/enter-week.md",
                 estimateMinutes: 5,
+                tools: [],
                 ...(task.tools ? { tools: task.tools } : {}),
               },
             ],
@@ -1697,6 +1698,10 @@ describe("an agent task's declared tools", () => {
       taskId: "enter-week",
       weekOf: "2026-10-12",
     });
+    if (task.apiVersion === 3) {
+      expect(started.body.error).toBe("This agent task is not available.");
+      return { replies: [], logged, refused: started.body.error };
+    }
     expect(started.body.error).toBeUndefined();
     await vi.waitFor(
       async () =>
@@ -1894,22 +1899,14 @@ describe("an agent task's declared tools", () => {
   );
 
   it(
-    "keeps every tool for an API 3 task's run, which declares none",
+    "refuses an API 3 task before starting its agent CLI",
     { timeout: 20_000 },
     async () => {
-      const everyTool = await (async () => {
-        const { baseUrl } = await startTestApi();
-        const { token } = await enableMcpWithClient(baseUrl);
-        const agent = await connectAgent(baseUrl, token);
-        return (await agent.listTools()).tools.map((tool) => tool.name).sort();
-      })();
-
-      const { replies } = await runTask({ apiVersion: 3 }, [
-        { method: "tools/list" },
-      ]);
-
-      expect(everyTool).toContain("submit_week");
-      expect(toolNames(replies[0]!.reply)).toEqual(everyTool);
+      const result = await runTask({ apiVersion: 3 }, []);
+      expect(result.replies).toEqual([]);
+      expect("refused" in result && result.refused).toBe(
+        "This agent task is not available.",
+      );
     },
   );
 });
