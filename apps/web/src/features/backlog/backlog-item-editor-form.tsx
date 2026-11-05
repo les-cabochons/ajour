@@ -666,21 +666,14 @@ export function BacklogItemEditorForm({
       className={cn("flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      {/* Without the kicker, the title sits closer to the ticket line. */}
-      <header
-        className={cn(
-          "flex items-start justify-between gap-2",
-          target.kind === "edit" && "-mb-2",
-        )}
-      >
+      {/* With no kicker, the title sits closer to the ticket line. */}
+      <header className={cn("flex items-start justify-between gap-2", "-mb-2")}>
         <div className="flex min-w-0 flex-col gap-0.5">
-          {/* In a dialog the title takes the dialog's size, as every dialog's does. */}
-          {/* An existing item opens on its ticket line, not "Edit backlog
-              item": the title it labels the dialog with stays for assistive
-              tech (forms council round 13). */}
-          <Title
-            className={target.kind === "edit" ? "sr-only" : "composer-kicker"}
-          >
+          {/* No "New backlog item" or "Edit backlog item" line: the
+              composer says what it is by itself, and an existing item opens
+              on its ticket line. The title stays for assistive tech, naming
+              the dialog (forms council rounds 13 and 15). */}
+          <Title className="sr-only">
             {getEditorTitle(target, editor.isSubitem)}
           </Title>
           {parent ? (

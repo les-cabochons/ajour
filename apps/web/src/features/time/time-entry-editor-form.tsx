@@ -416,12 +416,13 @@ export function TimeEntryEditorForm({
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-7 items-center justify-between gap-2">
-        {/* One title for new and edit, the size every editor's is; the
-            record shows under it as one muted line (forms council round 3). */}
-        <Title className="composer-kicker truncate">
+        {/* No "New time entry" line: the hours open the composer. The
+            title stays for assistive tech, naming the dialog (forms council
+            round 15). */}
+        <Title className="sr-only">
           {target.kind === "create" ? "New time entry" : "Edit time entry"}
         </Title>
-        <div className="flex items-center">
+        <div className="ml-auto flex items-center">
           {actionTarget ? (
             <ObjectActionsButton
               actions={entryActions.getActions(actionTarget, {
