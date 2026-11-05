@@ -1092,8 +1092,11 @@ On Windows x64, with the command installed, Terminal lists one SettingRow per us
 | Adding    | "Downloading ajour, 42%", then "Checking ajour in Ubuntu…", then "Linking ~/.local/bin/ajour…"                                           | Disabled                 |
 | Added     | "ajour <version> · ~/.local/bin/ajour". After Add, "Open a new Ubuntu terminal to use it." or "Add ~/.local/bin to your PATH in Ubuntu." | None until Remove (#605) |
 | Failed    | The reason inline with role="alert"                                                                                                      | Retry                    |
+| WSL 1     | "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu 2"                                                                     | None                     |
 
 The description has a fixed height and uses role="status". Add shows no toast or confirmation dialog. A foreign command is refused with "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again." A distro WSL no longer lists is refused inline with "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list." A distro that can't run commands shows "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again." Retry hides the previous reason while it runs.
+
+Add needs WSL 2: the Linux `ajour` can't start in WSL 1 ([#611](https://github.com/les-cabochons/ajour/issues/611)). The list is read with `wsl.exe --list --verbose`, which gives each distro's version. A WSL 1 distro's row shows the WSL 1 sentence in its status line, not as an alert, and has no Add, neither disabled nor explained by a DisabledReason. If Add is asked for anyway, it is refused with the reason `wsl1_unsupported`: nothing is downloaded, nothing runs in the distro, and the record doesn't change. #611 lifts this once the Linux build starts in WSL 1.
 
 Removing the ajour command deletes `bin\linux` with it, without entering a distro, so a later Install starts clean.
 

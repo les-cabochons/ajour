@@ -40,6 +40,7 @@ type CliState = {
       name: string;
       status: string;
       error: string | null;
+      reason?: string;
       hint?: string;
     }[];
   };
@@ -2437,14 +2438,19 @@ type FakeDistro = {
   versionOutput?: string;
   /** How running the downloaded binary fails here, as WSL 1 fails one it can't load. */
   versionFailure?: { code?: number; killed?: boolean; message: string };
+  /** The WSL version the distro runs on: 2 unless a test says 1. */
+  version: 1 | 2;
+  /** The STATE column, which WSL translates. */
+  state: string;
 };
 
 const exited = (code: number, message = `exited with ${code}`) =>
   Object.assign(new Error(message), { code });
 
 /**
- * `wsl.exe` over fake distros. `--list --quiet` answers in `encoding`, as
- * WSL answers in UTF-16LE unless `WSL_UTF8` is honoured, and lists Docker
+ * `wsl.exe` over fake distros. `--list --verbose` answers in `encoding`, as
+ * WSL answers in UTF-16LE unless `WSL_UTF8` is honoured: a header, then
+ * NAME, STATE and VERSION, `*` before the default distro, and Docker
  * Desktop's distros too. `-d NAME --exec PROGRAM ARGS…` runs in a distro:
  * `wslpath -u` mounts the Windows path under /mnt/c, the mounted binary
  * prints the version its file holds, `sh -lc` prints the login HOME and
@@ -2468,6 +2474,8 @@ function fakeWsl(
           loginPath: `${home}/.local/bin:/usr/local/bin:/usr/bin`,
           bin: false,
           entry: null,
+          version: 2,
+          state: "Stopped",
           ...distro,
         },
       ];
@@ -2485,11 +2493,22 @@ function fakeWsl(
   ) => {
     if (!file.endsWith("wsl.exe")) return base.exec(file, args, options);
     if (args[0] === "--list") {
+      expect(args).toEqual(["--list", "--verbose"]);
+      expect(options?.env?.WSL_UTF8).toBe("1");
       lists.push(args);
+      const row = (
+        marker: string,
+        name: string,
+        state: string,
+        version: 1 | 2,
+      ) => `${marker} ${name.padEnd(22)} ${state.padEnd(15)} ${version}`;
       const listed = [
-        ...distros.keys(),
-        "docker-desktop",
-        "docker-desktop-data",
+        "  NAME                   STATE           VERSION",
+        ...[...distros].map(([name, distro], index) =>
+          row(index === 0 ? "*" : " ", name, distro.state, distro.version),
+        ),
+        row(" ", "docker-desktop", "Running", 2),
+        row(" ", "docker-desktop-data", "Running", 2),
       ];
       return {
         stdout: Buffer.from(`${listed.join("\r\n")}\r\n`, encoding),
@@ -2575,12 +2594,56 @@ describe("the WSL distros", () => {
       const state = await controller.state();
 
       expect(state.wsl?.distros).toEqual([
-        { name: "Ubuntu", status: "not-added", progress: null, error: null },
-        { name: "Debian", status: "not-added", progress: null, error: null },
+        {
+          name: "Ubuntu",
+          version: 2,
+          status: "not-added",
+          progress: null,
+          error: null,
+        },
+        {
+          name: "Debian",
+          version: 2,
+          status: "not-added",
+          progress: null,
+          error: null,
+        },
       ]);
       expect(wsl.entered).toEqual([]);
     },
   );
+
+  it("lists a WSL 1 distro as unsupported, with its version, and enters none", async () => {
+    await installedBefore(VERSION);
+    const wsl = fakeWsl({
+      // WSL translates STATE, sometimes into several words.
+      "Ubuntu-24.04": { version: 1, state: "Wird ausgeführt" },
+      Debian: {},
+    });
+    const { controller } = controllerWith({ exec: wsl });
+
+    const state = await controller.state();
+
+    expect(state.wsl?.distros).toEqual([
+      {
+        name: "Ubuntu-24.04",
+        version: 1,
+        status: "unsupported",
+        progress: null,
+        error: null,
+        reason:
+          "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+      },
+      {
+        name: "Debian",
+        version: 2,
+        status: "not-added",
+        progress: null,
+        error: null,
+      },
+    ]);
+    expect(wsl.entered).toEqual([]);
+  });
 
   it("reads the list when the state is asked for, once per 30 seconds, never at launch", async () => {
     await installedBefore(VERSION);
@@ -2835,6 +2898,48 @@ describe("adding the command to a WSL distro", () => {
     );
   });
 
+  // The Linux ajour can't start in WSL 1 (#611).
+  it("refuses a WSL 1 distro without downloading or entering it", async () => {
+    await installedBefore(VERSION);
+    const wsl = fakeWsl({ "Ubuntu-24.04": { version: 1 } });
+    const { events, recorded } = recordingEvents();
+    const { controller, github } = controllerWith({
+      exec: wsl,
+      github: linuxRelease(),
+    });
+    await controller.state();
+    const before = await wslSnapshot(wsl);
+
+    const state = await events.run(
+      "cli_command.wsl_add",
+      { kind: "ipc", trigger: "user" },
+      (unit: unknown) => controller.addWsl("Ubuntu-24.04", { unit }),
+    );
+
+    expect(distroRow(state, "Ubuntu-24.04")).toEqual({
+      name: "Ubuntu-24.04",
+      version: 1,
+      status: "unsupported",
+      progress: null,
+      error: null,
+      reason:
+        "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+    });
+
+    expect(github.requests).toEqual([]);
+    expect(wsl.entered).toEqual([]);
+    expect(await wslSnapshot(wsl)).toEqual(before);
+    expect(existsSync(path.join(installDir, "linux"))).toBe(false);
+    const event = recorded.find(
+      (candidate) => candidate.name === "cli_command.wsl_add",
+    )!;
+    expect([event.outcome, event.outcome_reason]).toEqual([
+      "refused",
+      "wsl1_unsupported",
+    ]);
+    expect(JSON.stringify(event)).not.toContain("Ubuntu");
+  });
+
   it("removes the link it made when a later step fails", async () => {
     await installedBefore(VERSION);
     const wsl = fakeWsl({ Ubuntu: {} });
@@ -2969,7 +3074,8 @@ it("Given the Linux release asset, the shared pipeline verifies and unpacks ajou
 
 // The link scripts in a real POSIX shell, with a temp folder as HOME.
 // Windows has no shell with real symbolic links outside WSL; there the
-// real-app check (`check:cli-command`) runs them in WSL1 Ubuntu on CI.
+// real-app check (`check:cli-command`) runs them in a WSL 2 distro, locally.
+// CI's WSL 1 Ubuntu only checks the refusal (#611).
 describe.runIf(process.platform !== "win32")(
   "the link step in a real shell",
   () => {

@@ -85,7 +85,13 @@ You can also add the folder in **Edit environment variables for your account**. 
 
 ## WSL
 
-With the `ajour` command installed from Ajour on Windows, **Settings › General › Terminal** lists your WSL distros under **ajour command**. Press **Add** next to a distro. Ajour downloads the Linux build of its own version into `%LOCALAPPDATA%\Ajourin\linux`, checks it inside that distro, and links `~/.local/bin/ajour` to it. Docker Desktop's distros aren't listed.
+With the `ajour` command installed from Ajour on Windows, **Settings › General › Terminal** lists your WSL distros under **ajour command**. Press **Add** next to a distro. Ajour downloads the Linux build of its own version into `%LOCALAPPDATA%\Ajour\bin\linux`, checks it inside that distro, and links `~/.local/bin/ajour` to it. Docker Desktop's distros aren't listed.
+
+Add needs WSL 2. The Linux `ajour` can't start in WSL 1 yet ([#611](https://github.com/les-cabochons/ajour/issues/611)), so a WSL 1 distro shows "WSL 1 isn't supported." with no **Add**. To use it, convert the distro to WSL 2 in **Windows PowerShell**, replacing `Ubuntu` with its name, then reopen Settings:
+
+```powershell
+wsl --set-version Ubuntu 2
+```
 
 Open a new terminal in that distro, then pair it once. Each distro keeps its own token:
 
@@ -102,7 +108,7 @@ Removing the `ajour` command deletes the Linux build too, and leaves each distro
 
 ### Install the archive by hand
 
-Without Add, run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution.
+Without Add, run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution on WSL 2, as it can't start in WSL 1 yet ([#611](https://github.com/les-cabochons/ajour/issues/611)).
 
 The CLI connects to the Windows app at `http://127.0.0.1:8787`. Use [mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) so WSL can reach that Windows loopback address. It requires Windows 11 22H2 or newer and a current WSL installation.
 

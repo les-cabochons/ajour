@@ -381,8 +381,13 @@ async function serveRelease() {
   };
 }
 
-/** CI opts into its disposable Ubuntu; local runs never enter a user's distro. */
-async function checkWsl(page, version, baseUrl) {
+/**
+ * CI opts into its disposable Ubuntu; local runs never enter a user's
+ * distro. The Linux ajour can't start in WSL 1 (#611), and GitHub's Windows
+ * runners only run WSL 1: there the check proves the refusal. On a WSL 2
+ * distro it runs Add end to end.
+ */
+async function checkWsl(page, version, baseUrl, { events, installDir }) {
   const distro = process.env.AJOUR_CLI_CHECK_WSL_DISTRO;
   if (!distro) {
     process.stdout.write(
@@ -407,7 +412,21 @@ async function checkWsl(page, version, baseUrl) {
           .slice(0, 800)}`,
       );
     });
-  await page.evaluate(() => window.ajourDesktop.getCliCommand());
+  const listed = (
+    await page.evaluate(() => window.ajourDesktop.getCliCommand())
+  ).wsl?.distros.find((row) => row.name === distro);
+  if (listed?.version === 1) {
+    process.stdout.write(
+      `WSL 1 path: ${distro} runs on WSL 1, so the check proves Add's refusal (#611).\n`,
+    );
+    await checkWsl1Refusal(page, { distro, events, installDir, inWsl, listed });
+    return;
+  }
+  if (listed?.version !== 2)
+    throw new Error(`${distro} isn't in Settings' WSL rows.`);
+  process.stdout.write(
+    `WSL 2 path: ${distro} runs on WSL 2, so the check runs Add end to end.\n`,
+  );
   const added = await page.evaluate(
     (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
     distro,
@@ -485,6 +504,63 @@ async function checkWsl(page, version, baseUrl) {
     "-c",
     'test "$(cat "$HOME/.local/bin/ajour")" = foreign && rm "$HOME/.local/bin/ajour"',
   ]);
+}
+
+/**
+ * A WSL 1 distro (#611): its row says how to convert it, and Add is refused
+ * with `wsl1_unsupported`, leaving the distro's `~/.local/bin` and Ajour's
+ * `bin\linux` as they were.
+ */
+async function checkWsl1Refusal(
+  page,
+  { distro, events, installDir, inWsl, listed },
+) {
+  const sentence = `WSL 1 isn't supported. Convert it with: wsl --set-version ${distro} 2`;
+  expect(
+    listed.status === "unsupported" && listed.reason === sentence,
+    "a WSL 1 Ubuntu's row says how to convert it",
+    listed,
+  );
+  // `~/.local/bin`'s entries, or that it's absent.
+  const localBin = async () =>
+    (
+      await inWsl("sh", [
+        "-c",
+        'if [ -d "$HOME/.local/bin" ]; then ls -la "$HOME/.local/bin"; else echo absent; fi',
+      ])
+    ).stdout;
+  const linux = path.join(installDir, "linux");
+  const before = { localBin: await localBin(), linux: existsSync(linux) };
+  const refused = await page.evaluate(
+    (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
+    distro,
+  );
+  const row = refused.wsl?.distros.find(
+    (candidate) => candidate.name === distro,
+  );
+  // Main prints the event on stdout as the call ends.
+  let event;
+  for (const deadline = Date.now() + 5_000; !event && Date.now() < deadline;) {
+    event = events.find(
+      (candidate) => candidate.name === "cli_command.wsl_add",
+    );
+    if (!event) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  expect(
+    row?.status === "unsupported" &&
+      row.reason === sentence &&
+      event?.outcome === "refused" &&
+      event.outcome_reason === "wsl1_unsupported" &&
+      !JSON.stringify(event).includes(distro),
+    "Add refuses a WSL 1 Ubuntu with wsl1_unsupported",
+    { row, event },
+  );
+  const after = { localBin: await localBin(), linux: existsSync(linux) };
+  expect(
+    JSON.stringify(after) === JSON.stringify(before) && !after.linux,
+    "the refusal leaves ~/.local/bin and bin\\linux untouched",
+    { before, after },
+  );
 }
 
 /** Restart version A as B, first without B's asset, then publish it. */
@@ -791,7 +867,10 @@ async function main() {
         cli_command: event.cli_command,
       })),
     );
-    await checkWsl(page, appVersion, `http://127.0.0.1:${port}`);
+    await checkWsl(page, appVersion, `http://127.0.0.1:${port}`, {
+      events,
+      installDir,
+    });
     await checkFollow(
       electronApp,
       env,

@@ -81,8 +81,19 @@ const UNLINK_SCRIPT = [
 /** The login shell's HOME and PATH, last, after anything its profile prints. */
 const LOGIN_PATH_SCRIPT = 'printf "\\n%s\\n%s\\n" "$HOME" "$PATH"';
 
-/** The distros `wsl.exe --list --quiet` printed, in UTF-8 or UTF-16LE. */
-function distroNamesOf(stdout) {
+/** Why a WSL 1 distro has no Add, and how to convert it (#611). */
+function wsl1Sentence(distro) {
+  return `WSL 1 isn't supported. Convert it with: wsl --set-version ${distro} 2`;
+}
+
+/**
+ * The distros `wsl.exe --list --verbose` printed, in UTF-8 or UTF-16LE: a
+ * header, then NAME, STATE and VERSION, with `*` before the default distro.
+ * WSL translates the header and STATE, so a row is any line ending in a
+ * version; names have no spaces, a translated state may.
+ * @returns {{ name: string, state: string, version: 1 | 2 }[]}
+ */
+function distrosOf(stdout) {
   const bytes = Buffer.isBuffer(stdout)
     ? stdout
     : Buffer.from(String(stdout), "utf8");
@@ -90,15 +101,17 @@ function distroNamesOf(stdout) {
   const text = bytes.includes(0)
     ? bytes.toString("utf16le")
     : bytes.toString("utf8");
-  return [
-    ...new Set(
-      text
-        .replace(/^﻿/, "")
-        .split(/\r?\n/)
-        .map((name) => name.trim())
-        .filter((name) => name && !DOCKER_DISTRO.test(name)),
-    ),
-  ];
+  const distros = new Map();
+  for (const line of text.replace(/^﻿/, "").split(/\r?\n/)) {
+    const row = /^\s*\*?\s*(\S+)\s+(.*\S)\s+([12])\s*$/.exec(line);
+    if (!row || DOCKER_DISTRO.test(row[1]) || distros.has(row[1])) continue;
+    distros.set(row[1], {
+      name: row[1],
+      state: row[2],
+      version: row[3] === "1" ? 1 : 2,
+    });
+  }
+  return [...distros.values()];
 }
 
 /**
@@ -182,8 +195,8 @@ function createCliCommandController({
   // WSL distros (#604): x64 Windows only, as no linux-arm64 build ships.
   const wslSupported =
     !unsupportedReason && platform === "win32" && arch === "x64";
-  /** The distros WSL listed last, and when. Never read at launch. */
-  let distroNames = [];
+  /** The distros WSL listed last, with their versions, and when. Never read at launch. */
+  let listedDistros = [];
   let distroReadAt = -Infinity;
   let distroRead = null;
   /**
@@ -202,15 +215,15 @@ function createCliCommandController({
     if (!fresh && now() - distroReadAt < DISTRO_LIST_MS) return;
     distroRead ??= (async () => {
       try {
-        const { stdout } = await exec(wslExe, ["--list", "--quiet"], {
+        const { stdout } = await exec(wslExe, ["--list", "--verbose"], {
           timeout: VERSION_CHECK_TIMEOUT_MS,
           env: { ...env, WSL_UTF8: "1" },
           encoding: "buffer",
         });
-        distroNames = distroNamesOf(stdout);
+        listedDistros = distrosOf(stdout);
       } catch {
         // No WSL, or none it can list: no rows.
-        distroNames = [];
+        listedDistros = [];
       }
       distroReadAt = now();
     })().finally(() => {
@@ -221,16 +234,27 @@ function createCliCommandController({
 
   /** The `wsl` part of the state: one row per listed distro. */
   function wslFields(record) {
-    if (!wslSupported || !record || !distroNames.length) return {};
+    if (!wslSupported || !record || !listedDistros.length) return {};
     return {
       wsl: {
         version: record.wsl?.version,
-        distros: distroNames.map((name) => {
+        distros: listedDistros.map(({ name, version }) => {
+          // The Linux ajour can't start in WSL 1 (#611).
+          if (version === 1)
+            return {
+              name,
+              version,
+              status: "unsupported",
+              progress: null,
+              error: null,
+              reason: wsl1Sentence(name),
+            };
           const added = record.wsl?.distros?.includes(name) ?? false;
           const live = wslStates.get(name);
-          if (live?.status) return { name, ...live };
+          if (live?.status) return { name, version, ...live };
           return {
             name,
+            version,
             status: added ? "added" : "not-added",
             progress: null,
             error: null,
@@ -866,14 +890,22 @@ function createCliCommandController({
   async function runAddWsl(distro, unit) {
     if (!wslSupported || quitting.signal.aborted) return settledState();
     // The renderer passes a name; only one WSL lists now is used.
-    if (!distroNames.includes(distro)) await listDistros({ fresh: true });
-    if (!distroNames.includes(distro)) {
+    const listed = () => listedDistros.find(({ name }) => name === distro);
+    if (!listed()) await listDistros({ fresh: true });
+    if (!listed()) {
       unit?.refuse("unknown_distro");
       unit?.set({ cli_command: { result: "refused" } });
       throw refusal(
         "unknown_distro",
         "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
       );
+    }
+    // The Linux ajour can't start in WSL 1 (#611): nothing is downloaded or
+    // run, and the row keeps its sentence. Not thrown: it names the distro.
+    if (listed().version === 1) {
+      unit?.refuse("wsl1_unsupported");
+      unit?.set({ cli_command: { result: "refused" } });
+      return settledState();
     }
     const id = randomUUID();
     let staging;
@@ -1069,7 +1101,8 @@ function createCliCommandController({
 
     /**
      * Adds the command to the WSL distro `distro`, after the operation
-     * running. Rejects only for a distro WSL doesn't list.
+     * running. Rejects only for a distro WSL doesn't list; a WSL 1 distro
+     * is refused with its state unchanged (#611).
      * @param {string} distro
      * @param {{ unit?: any }} [options] The event of the call that asked.
      */

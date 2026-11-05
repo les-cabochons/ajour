@@ -1788,6 +1788,7 @@ export const catalog = defineCatalog({
       reasons: [
         "foreign_sender",
         "unknown_distro",
+        "wsl1_unsupported",
         "not_installed",
         "foreign_command",
         "wrong_version",

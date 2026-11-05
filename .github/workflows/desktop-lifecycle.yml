@@ -146,7 +146,10 @@ jobs:
           name: cli-command-linux
           path: apps/cli/out/archives
 
-      - name: Install disposable WSL1 Ubuntu
+      # GitHub's Windows runners only run WSL 1, where the Linux ajour can't
+      # start (#611): the check proves Add's refusal there. The Linux
+      # archives serve a WSL 2 distro, and WSL 1 once #611 is fixed.
+      - name: Install disposable WSL1 Ubuntu (WSL 1 path, Add refused)
         if: runner.os == 'Windows'
         uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
         with:
@@ -165,7 +168,7 @@ jobs:
           "AJOUR_CLI_CHECK_WSL_DISTRO=Ubuntu-24.04" >> $env:GITHUB_ENV
           "AJOUR_CLI_CHECK_LINUX_ARCHIVES=$env:GITHUB_WORKSPACE\apps\cli\out\archives" >> $env:GITHUB_ENV
 
-      - name: Run the ajour command install check
+      - name: Run the ajour command install check${{ runner.os == 'Windows' && ' (WSL 1 path, Add refused, #611)' || '' }}
         # It reuses the renderer the lifecycle check built, and builds the
         # CLI archive of the app's version with the release scripts.
         if: ${{ !cancelled() }}

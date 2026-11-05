@@ -135,10 +135,15 @@ export interface DesktopWindowSettings {
  */
 export interface DesktopCliWslDistro {
   name: string;
-  status: "not-added" | "adding" | "added" | "removing" | "error";
+  /** The WSL version it runs on. A WSL 1 distro is `unsupported` (#611). */
+  version: 1 | 2;
+  status:
+    "unsupported" | "not-added" | "adding" | "added" | "removing" | "error";
   phase?: "downloading" | "checking" | "linking";
   progress: number | null;
   error: string | null;
+  /** Why an `unsupported` distro has no Add, and how to convert it. */
+  reason?: string;
   /** After an Add in this launch: open a new terminal, or fix the PATH. */
   hint?: string;
 }

@@ -514,7 +514,13 @@ describe("the WSL command rows", () => {
       ...INSTALLED,
       wsl: {
         distros: [
-          { name: "Ubuntu", status: "not-added", progress: null, error: null },
+          {
+            name: "Ubuntu",
+            version: 2,
+            status: "not-added",
+            progress: null,
+            error: null,
+          },
         ],
       },
     });
@@ -524,6 +530,7 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
+            version: 2 as const,
             status: "added" as const,
             progress: null,
             error: null,
@@ -558,6 +565,7 @@ describe("the WSL command rows", () => {
           distros: [
             {
               name: "Ubuntu",
+              version: 2,
               status: "adding",
               phase,
               progress: 42,
@@ -584,6 +592,7 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
+            version: 2,
             status: "error",
             progress: null,
             error:
@@ -604,7 +613,13 @@ describe("the WSL command rows", () => {
       ...INSTALLED,
       wsl: {
         distros: [
-          { name: "Ubuntu", status: "not-added", progress: null, error: null },
+          {
+            name: "Ubuntu",
+            version: 2,
+            status: "not-added",
+            progress: null,
+            error: null,
+          },
         ],
       },
     });
@@ -635,6 +650,7 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
+            version: 2,
             status: "error",
             progress: null,
             error:
@@ -656,6 +672,51 @@ describe("the WSL command rows", () => {
     expect(screen.getByText("Downloading ajour, 0%")).toBeTruthy();
   });
 
+  it("Given a WSL 1 distro, its row says how to convert it and offers no Add", async () => {
+    const add = vi.fn();
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu-24.04",
+            version: 1,
+            status: "unsupported",
+            progress: null,
+            error: null,
+            reason:
+              "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+          },
+          {
+            name: "Debian",
+            version: 2,
+            status: "not-added",
+            progress: null,
+            error: null,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+    });
+    await mount();
+
+    const sentence = screen.getByText(
+      "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+    );
+    expect(sentence.closest('[role="status"]')).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // Only Debian's Add: none for Ubuntu-24.04, neither disabled nor explained.
+    expect(screen.getAllByRole("button", { name: "Add" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    const row = screen.getByText("Ubuntu-24.04").closest(".settings-row");
+    expect(row).toBeTruthy();
+    expect(row?.querySelector("button")).toBeNull();
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it.each(["darwin", "linux", "win32"])(
     "Given no command on %s, WSL rows stay hidden",
     async (platform) => {
@@ -665,6 +726,7 @@ describe("the WSL command rows", () => {
           distros: [
             {
               name: "Ubuntu",
+              version: 2,
               status: "not-added",
               progress: null,
               error: null,

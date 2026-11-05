@@ -250,6 +250,7 @@ function messageOf(error: unknown) {
  * One WSL distro under the ajour command (#604): Add, its three phases, the
  * added command with the hint for a new terminal, or the reason an Add
  * failed, inline with Retry. Main serializes Adds, so each row runs alone.
+ * A WSL 1 distro has no Add, only how to convert it (#611).
  */
 function WslRow({
   distro,
@@ -268,6 +269,7 @@ function WslRow({
   // A Retry hides the reason it retries.
   const reason = adding ? null : (error ?? distro.error);
   let line = "Not added.";
+  if (distro.status === "unsupported") line = distro.reason ?? "";
   if (distro.status === "added")
     line = `ajour ${version ?? ""} · ~/.local/bin/ajour`;
   if (adding)
@@ -292,7 +294,7 @@ function WslRow({
         </span>
       }
     >
-      {distro.status !== "added" ? (
+      {distro.status !== "added" && distro.status !== "unsupported" ? (
         <Button
           variant="outline"
           disabled={disabled || adding}
