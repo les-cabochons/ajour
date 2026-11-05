@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     invoke("ajour:install-cli-command", ...traced(trace)),
   addCliCommandWsl: (options, trace) =>
     invoke("ajour:add-cli-command-wsl", options, ...traced(trace)),
+  removeCliCommandWsl: (options, trace) =>
+    invoke("ajour:remove-cli-command-wsl", options, ...traced(trace)),
   removeCliCommand: () => invoke("ajour:remove-cli-command"),
   onCliCommandChanged: (callback) => {
     const listener = (_event, state) => callback(state);

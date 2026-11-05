@@ -158,14 +158,18 @@ export type DesktopCliWslDistro =
       /** After an Add in this launch: open a new terminal, or fix the PATH. */
       hint?: string;
     }
+  /** Remove deleting `~/.local/bin/ajour` in the distro (#605). */
+  | { name: string; wslVersion: 2; status: "removing" }
   | {
       name: string;
       wslVersion: 2;
       status: "error";
-      /** Why the last Add failed, as a sentence. */
+      /** Why the last Add or Remove failed, as a sentence. */
       error: string;
-      /** Added before that Add: its link still works. */
+      /** In the record: its link still works. */
       added: boolean;
+      /** A Remove failed, so Retry removes; otherwise an Add did. */
+      operation?: "remove";
     };
 
 /**
@@ -201,6 +205,8 @@ export interface DesktopCliCommandState {
   error: string | null;
   /** Installed in this launch: a terminal opened before doesn't see it yet. */
   newlyInstalled?: boolean;
+  /** After Remove: the WSL distros' links it couldn't delete, as a sentence (#605). */
+  notice?: string;
 }
 
 /** The local log file's settings, state and folder, from the main process (ADR 0014). */
@@ -271,6 +277,11 @@ declare global {
         trace?: TraceCarrier,
       ) => Promise<DesktopCliCommandState>;
       addCliCommandWsl?: (
+        options: { distro: string },
+        trace?: TraceCarrier,
+      ) => Promise<DesktopCliCommandState>;
+      /** Removes the command from one WSL distro; main checks the name (#605). */
+      removeCliCommandWsl?: (
         options: { distro: string },
         trace?: TraceCarrier,
       ) => Promise<DesktopCliCommandState>;

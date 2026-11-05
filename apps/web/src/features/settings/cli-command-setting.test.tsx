@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopCliCommandState } from "@/lib/desktop-bridge";
@@ -758,6 +759,180 @@ describe("the WSL command rows", () => {
     expect(row).toBeTruthy();
     expect(row?.querySelector("button")).toBeNull();
     expect(add).not.toHaveBeenCalled();
+  });
+
+  const ADDED_UBUNTU: DesktopCliCommandState = {
+    ...INSTALLED,
+    wsl: {
+      version: VERSION,
+      distros: [{ name: "Ubuntu", wslVersion: 2, status: "added" }],
+    },
+  };
+  const NOT_ADDED_UBUNTU: DesktopCliCommandState = {
+    ...INSTALLED,
+    wsl: { distros: [{ name: "Ubuntu", wslVersion: 2, status: "not-added" }] },
+  };
+  const ubuntuRow = () =>
+    screen.getByText("Ubuntu").closest(".settings-row") as HTMLElement;
+  const rowLines = () =>
+    Array.from(ubuntuRow().querySelector('[role="status"]')!.children).map(
+      (line) => line.textContent,
+    );
+
+  /** Main's Remove for one distro, which the test ends. */
+  function removeWslCall() {
+    let finish!: {
+      resolve: (state: DesktopCliCommandState) => void;
+      reject: (error: Error) => void;
+    };
+    const remove = vi.fn(
+      (_options: { distro: string }) =>
+        new Promise<DesktopCliCommandState>((resolve, reject) => {
+          finish = { resolve, reject };
+        }),
+    );
+    return {
+      remove,
+      resolve: (state: DesktopCliCommandState) =>
+        act(async () => finish.resolve(state)),
+      reject: (error: Error) => act(async () => finish.reject(error)),
+    };
+  }
+
+  it("Given Ubuntu is added, Remove shows Removing ajour… and ends Not added, without a confirmation", async () => {
+    desktop(ADDED_UBUNTU);
+    const main = removeWslCall();
+    const add = vi.fn();
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+      removeCliCommandWsl: main.remove,
+    });
+    await mount();
+    expect(rowLines()).toEqual([`ajour ${VERSION} · ~/.local/bin/ajour`]);
+
+    fireEvent.click(
+      within(ubuntuRow()).getByRole("button", { name: "Remove" }),
+    );
+
+    expect(main.remove).toHaveBeenCalledWith({ distro: "Ubuntu" }, undefined);
+    expect(window.ajourDesktop!.removeCliCommand).not.toHaveBeenCalled();
+    expect(rowLines()).toEqual(["Removing ajour…"]);
+    expect(
+      within(ubuntuRow()).getByRole<HTMLButtonElement>("button", {
+        name: "Remove",
+      }).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await main.resolve(NOT_ADDED_UBUNTU);
+    expect(rowLines()).toEqual(["Not added."]);
+    expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
+    expect(add).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given main reports Ubuntu removing, its row says so with Remove disabled", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        version: VERSION,
+        distros: [{ name: "Ubuntu", wslVersion: 2, status: "removing" }],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      removeCliCommandWsl: vi.fn(),
+    });
+    await mount();
+
+    expect(rowLines()).toEqual(["Removing ajour…"]);
+    const control = ubuntuRow().querySelector("button")!;
+    expect([control.textContent, control.disabled]).toEqual(["Remove", true]);
+  });
+
+  it("Given Ubuntu's Remove failed, the row stays Added with the reason inline, and Retry removes", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        version: VERSION,
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            operation: "remove",
+            error:
+              "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+            added: true,
+          },
+        ],
+      },
+    });
+    const main = removeWslCall();
+    const add = vi.fn();
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+      removeCliCommandWsl: main.remove,
+    });
+    await mount();
+
+    expect(rowLines()).toEqual([`ajour ${VERSION} · ~/.local/bin/ajour`]);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(main.remove).toHaveBeenCalledWith({ distro: "Ubuntu" }, undefined);
+    expect(add).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(rowLines()).toEqual(["Removing ajour…"]);
+    await main.resolve(NOT_ADDED_UBUNTU);
+    expect(rowLines()).toEqual(["Not added."]);
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given main rejects Ubuntu's Remove without a sentence, the row says Ajour couldn't remove ajour from Ubuntu, with Retry", async () => {
+    desktop(ADDED_UBUNTU);
+    const main = removeWslCall();
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      removeCliCommandWsl: main.remove,
+    });
+    await mount();
+
+    fireEvent.click(
+      within(ubuntuRow()).getByRole("button", { name: "Remove" }),
+    );
+    await main.reject(new Error(""));
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour couldn't remove ajour from Ubuntu.",
+    );
+    expect(rowLines()).toEqual([`ajour ${VERSION} · ~/.local/bin/ajour`]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(main.remove).toHaveBeenCalledTimes(2);
+  });
+
+  it("Given removing the command left a link in Ubuntu, the command row names it inline", async () => {
+    const fake = desktop(ADDED_UBUNTU);
+    Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+    await mount();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]!);
+    await fake.finish({
+      ...NOT_INSTALLED,
+      notice:
+        "ajour was removed, but ~/.local/bin/ajour in Ubuntu couldn't be. It now points at nothing.",
+    });
+
+    expect(status()).toContain("Not installed.");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "ajour was removed, but ~/.local/bin/ajour in Ubuntu couldn't be. It now points at nothing.",
+    );
+    expect(screen.queryByText("Ubuntu")).toBeNull();
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 
   it.each(["darwin", "linux", "win32"])(

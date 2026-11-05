@@ -128,7 +128,8 @@ export function CliCommandSetting() {
   const development = state?.status === "unsupported";
   const installed = state?.status === "installed";
   const macos = desktop?.runtime?.platform === "darwin";
-  const reason = state?.error ?? refused;
+  // After Remove, `notice` names the WSL links it couldn't delete (#605).
+  const reason = state?.error ?? refused ?? state?.notice ?? null;
   const error =
     reason && state?.pending
       ? `ajour couldn't update to ${state.pending}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`
@@ -251,11 +252,13 @@ function wslStatusLine(
   distro: DesktopCliWslDistro,
   {
     adding,
+    removing,
     added,
     version,
-  }: { adding: boolean; added: boolean; version?: string },
+  }: { adding: boolean; removing: boolean; added: boolean; version?: string },
 ) {
   if (distro.status === "unsupported") return distro.reason;
+  if (removing) return "Removing ajour…";
   if (adding) {
     // Until main reports the Add, it starts as a download does.
     const phase = distro.status === "adding" ? distro.phase : "downloading";
@@ -268,11 +271,15 @@ function wslStatusLine(
   return "Not added.";
 }
 
+type WslOperation = "add" | "remove";
+
 /**
- * One WSL distro under the ajour command (#604): Add, its three phases, the
- * added command with the hint for a new terminal, or the reason an Add
- * failed, inline with Retry. A failed Add of an added distro keeps it
- * Added, since its link still works. Main serializes Adds, so each row runs
+ * One WSL distro under the ajour command (#604, #605): Add, its three
+ * phases, the added command with the hint for a new terminal and Remove,
+ * "Removing ajour…", or the reason an Add or Remove failed, inline with
+ * Retry, which repeats it. A failed Add of an added distro, or a failed
+ * Remove, keeps it Added, since its link still works. Remove asks for no
+ * confirmation: Add restores it. Main serializes them, so each row runs
  * alone. A WSL 1 distro has no Add, only how to convert it (#611).
  */
 function WslRow({
@@ -286,25 +293,81 @@ function WslRow({
   disabled: boolean;
   onChange: (state: DesktopCliCommandState) => void;
 }) {
-  const [starting, setStarting] = useState(false);
-  /** Why main rejected the last Add call. */
-  const [rejected, setRejected] = useState<string | null>(null);
-  const adding = starting || distro.status === "adding";
+  /** From the click until main answers. */
+  const [starting, setStarting] = useState<WslOperation | null>(null);
+  /** Why main rejected the last call, and which it was. */
+  const [rejected, setRejected] = useState<{
+    operation: WslOperation;
+    message: string;
+  } | null>(null);
+  const adding = starting === "add" || distro.status === "adding";
+  const removing = starting === "remove" || distro.status === "removing";
+  const busy = adding || removing;
   const added =
-    distro.status === "added" || (distro.status === "error" && distro.added);
+    distro.status === "added" ||
+    distro.status === "removing" ||
+    (distro.status === "error" && distro.added);
   // A Retry hides the reason it retries.
-  const reason = adding
+  const reason = busy
     ? null
-    : (rejected ?? (distro.status === "error" ? distro.error : null));
+    : (rejected?.message ?? (distro.status === "error" ? distro.error : null));
   const failed = distro.status === "error" || rejected !== null;
+  const failedOperation: WslOperation =
+    rejected?.operation ??
+    (distro.status === "error" && distro.operation === "remove"
+      ? "remove"
+      : "add");
+  /** What the row's button does: Retry repeats the operation that failed. */
+  const operation: WslOperation | null =
+    distro.status === "unsupported"
+      ? null
+      : adding
+        ? "add"
+        : removing
+          ? "remove"
+          : failed
+            ? failedOperation
+            : added
+              ? "remove"
+              : "add";
+
+  function run(next: WslOperation) {
+    const desktop = window.ajourDesktop;
+    const call =
+      next === "add" ? desktop?.addCliCommandWsl : desktop?.removeCliCommandWsl;
+    if (!call || busy) return;
+    setStarting(next);
+    setRejected(null);
+    call({ distro: distro.name }, traceCarrier())
+      .then(onChange, (failure: unknown) =>
+        setRejected({
+          operation: next,
+          message: messageOf(
+            failure,
+            next === "add"
+              ? `Ajour couldn't add ajour to ${distro.name}.`
+              : `Ajour couldn't remove ajour from ${distro.name}.`,
+          ),
+        }),
+      )
+      .finally(() => setStarting(null));
+  }
+
   return (
     <SettingRow
       label={distro.name}
       description={
         <span className="flex h-12 min-w-0 flex-col overflow-hidden">
           <span role="status">
-            <Line text={wslStatusLine(distro, { adding, added, version })} />
-            {distro.status === "added" && distro.hint ? (
+            <Line
+              text={wslStatusLine(distro, {
+                adding,
+                removing,
+                added,
+                version,
+              })}
+            />
+            {distro.status === "added" && distro.hint && !busy ? (
               <Line text={distro.hint} />
             ) : null}
           </span>
@@ -314,28 +377,13 @@ function WslRow({
         </span>
       }
     >
-      {distro.status !== "unsupported" && (!added || failed) ? (
+      {operation ? (
         <Button
           variant="outline"
-          disabled={disabled || adding}
-          onClick={() => {
-            if (!window.ajourDesktop?.addCliCommandWsl || adding) return;
-            setStarting(true);
-            setRejected(null);
-            window.ajourDesktop
-              .addCliCommandWsl({ distro: distro.name }, traceCarrier())
-              .then(onChange, (failure: unknown) =>
-                setRejected(
-                  messageOf(
-                    failure,
-                    `Ajour couldn't add ajour to ${distro.name}.`,
-                  ),
-                ),
-              )
-              .finally(() => setStarting(false));
-          }}
+          disabled={disabled || busy}
+          onClick={() => run(operation)}
         >
-          {failed ? "Retry" : "Add"}
+          {failed && !busy ? "Retry" : operation === "add" ? "Add" : "Remove"}
         </Button>
       ) : null}
     </SettingRow>

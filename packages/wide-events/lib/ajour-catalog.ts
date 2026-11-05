@@ -1776,6 +1776,11 @@ export const catalog = defineCatalog({
         ipc: ipcFields,
         cli_command: {
           result: operational<"removed" | "refused" | "failed">(),
+          /**
+           * With WSL distros added: how many of their links Remove couldn't
+           * delete (#605). Never their names.
+           */
+          wsl_links_left: operational<number>(),
         },
       },
     },
@@ -1807,6 +1812,20 @@ export const catalog = defineCatalog({
         ipc: ipcFields,
         cli_command: {
           result: operational<"installed" | "refused" | "failed">(),
+        },
+      },
+    },
+    /**
+     * Removing the ajour command from a WSL distro from Settings (#605): how
+     * it ended and why. Never the distro's name or a path.
+     */
+    "cli_command.wsl_remove": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "unknown_distro", "wsl_remove_failed"],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          result: operational<"removed" | "refused" | "failed">(),
         },
       },
     },

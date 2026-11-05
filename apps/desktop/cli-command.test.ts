@@ -45,10 +45,14 @@ type CliState = {
       progress?: number | null;
       error?: string;
       added?: boolean;
+      operation?: "remove";
       reason?: string;
       hint?: string;
     }[];
   };
+  /** After Remove: the WSL links it couldn't delete, as a sentence. */
+  notice?: string;
+  operation?: "remove";
   status:
     | "unsupported"
     | "not-installed"
@@ -69,6 +73,7 @@ type CliState = {
 type Controller = {
   state(): Promise<CliState>;
   addWsl(distro: string, options?: { unit?: unknown }): Promise<CliState>;
+  removeWsl(distro: string, options?: { unit?: unknown }): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
   remove(options?: { unit?: unknown }): Promise<CliState>;
   followAppVersion(): Promise<CliState>;
@@ -3161,6 +3166,364 @@ describe("adding the command to a WSL distro", () => {
     expect(json).not.toContain("Ubuntu");
     expect(json).not.toContain("/mnt/c");
     expect(json).not.toContain(root.replaceAll("\\", "\\\\"));
+  });
+});
+
+/** The command installed, then added to each of `added` among `distros`. */
+async function addedTo(
+  added: string[],
+  distros: Record<string, Partial<FakeDistro>> = Object.fromEntries(
+    added.map((name) => [name, {}]),
+  ),
+) {
+  await installedBefore(VERSION);
+  const wsl = fakeWsl(distros);
+  const { events, recorded } = recordingEvents();
+  const { controller, github } = controllerWith({
+    exec: wsl,
+    github: linuxRelease(),
+  });
+  await controller.state();
+  for (const name of added)
+    expect(distroRow(await controller.addWsl(name), name)?.status).toBe(
+      "added",
+    );
+  return { wsl, controller, github, events, recorded };
+}
+
+const linuxFolder = () => path.join(installDir, "linux");
+const recordNow = async () =>
+  existsSync(recordFile)
+    ? JSON.parse(await readFile(recordFile, "utf8"))
+    : null;
+const leftovers = async () =>
+  (await readdir(installDir)).filter((name) =>
+    /\.old-|\.staging-|\.pending-|\.tmp$/.test(name),
+  );
+
+describe("removing the command from a WSL distro", () => {
+  it("deletes the distro's link and keeps bin\\linux for the other distro", async () => {
+    const { wsl, controller } = await addedTo(["Ubuntu", "Debian"]);
+    const statuses: string[] = [];
+    controller.onChange((state) => {
+      const row = distroRow(state, "Ubuntu");
+      if (row) statuses.push(row.status);
+    });
+
+    const state = await controller.removeWsl("Ubuntu");
+
+    expect(statuses).toContain("removing");
+    expect(distroRow(state, "Ubuntu")).toEqual({
+      name: "Ubuntu",
+      wslVersion: 2,
+      status: "not-added",
+    });
+    expect(distroRow(state, "Debian")?.status).toBe("added");
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(wsl.distros.get("Debian")!.entry).toEqual({
+      link: expect.stringMatching(/\/linux\/ajour$/),
+    });
+    expect((await recordNow()).wsl).toMatchObject({
+      version: VERSION,
+      distros: ["Debian"],
+    });
+    expect(await filesUnder(linuxFolder())).toContain("ajour");
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("deletes bin\\linux with the last distro, and the record loses wsl", async () => {
+    const { wsl, controller } = await addedTo(["Ubuntu"]);
+
+    const state = await controller.removeWsl("Ubuntu");
+
+    expect(distroRow(state, "Ubuntu")?.status).toBe("not-added");
+    expect(state.wsl?.version).toBeUndefined();
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(existsSync(linuxFolder())).toBe(false);
+    const record = await recordNow();
+    expect(record.wsl).toBeUndefined();
+    expect(record.version).toBe(VERSION);
+    expect(existsSync(path.join(installDir, "ajour.exe"))).toBe(true);
+    expect(await leftovers()).toEqual([]);
+    // A later launch keeps it that way, and Add downloads the build again.
+    await controllerWith({ exec: wsl }).controller.reconcile();
+    expect(existsSync(linuxFolder())).toBe(false);
+    expect(distroRow(await controller.addWsl("Ubuntu"), "Ubuntu")?.status).toBe(
+      "added",
+    );
+    expect(await filesUnder(linuxFolder())).toContain("ajour");
+  });
+
+  it.each([
+    ["someone's file", { file: "my own build" }],
+    ["a link to another ajour", { link: "/opt/ajour/bin/ajour" }],
+  ])(
+    "leaves %s at ~/.local/bin/ajour, and the distro leaves the record",
+    async (_case, entry) => {
+      const { wsl, controller } = await addedTo(["Ubuntu"]);
+      wsl.distros.get("Ubuntu")!.entry = entry;
+
+      const state = await controller.removeWsl("Ubuntu");
+
+      expect(distroRow(state, "Ubuntu")?.status).toBe("not-added");
+      expect(wsl.distros.get("Ubuntu")!.entry).toEqual(entry);
+      expect((await recordNow()).wsl).toBeUndefined();
+    },
+  );
+
+  it("drops a distro WSL no longer has from the record without entering it", async () => {
+    const { wsl, controller } = await addedTo(["Ubuntu", "Debian"]);
+    // Unregistered since: WSL no longer lists it.
+    wsl.distros.delete("Ubuntu");
+    const entered = wsl.entered.length;
+
+    const state = await controller.removeWsl("Ubuntu");
+
+    expect(wsl.entered.slice(entered)).toEqual([]);
+    expect(distroRow(state, "Ubuntu")).toBeUndefined();
+    expect((await recordNow()).wsl.distros).toEqual(["Debian"]);
+    expect(await filesUnder(linuxFolder())).toContain("ajour");
+  });
+
+  it("keeps the distro Added, with the reason and its record, when its link can't be removed", async () => {
+    const { wsl, controller, events, recorded } = await addedTo(["Ubuntu"]);
+    wsl.distros.get("Ubuntu")!.failing = "sh";
+    const before = await wslSnapshot(wsl);
+
+    const state = await events.run(
+      "cli_command.wsl_remove",
+      { kind: "ipc", trigger: "user" },
+      (unit: unknown) => controller.removeWsl("Ubuntu", { unit }),
+    );
+
+    expect(distroRow(state, "Ubuntu")).toEqual({
+      name: "Ubuntu",
+      wslVersion: 2,
+      status: "error",
+      operation: "remove",
+      error:
+        "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+      added: true,
+    });
+    expect(await wslSnapshot(wsl)).toEqual(before);
+    const event = recorded.find(
+      (candidate) => candidate.name === "cli_command.wsl_remove",
+    )!;
+    expect([event.outcome, event.outcome_reason]).toEqual([
+      "error",
+      "wsl_remove_failed",
+    ]);
+    expect(event.cli_command).toEqual({ result: "failed" });
+    const json = JSON.stringify(event);
+    expect(json).not.toContain("Ubuntu");
+    expect(json).not.toContain("/mnt/c");
+    expect(json).not.toContain(root.replaceAll("\\", "\\\\"));
+
+    // Retry, once the distro starts again.
+    wsl.distros.get("Ubuntu")!.failing = undefined;
+    expect(
+      distroRow(await controller.removeWsl("Ubuntu"), "Ubuntu")?.status,
+    ).toBe("not-added");
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+  });
+
+  it("keeps the distro in the record when WSL can't list its distros", async () => {
+    const { wsl } = await addedTo(["Ubuntu"]);
+    const run = wsl.exec;
+    const { controller } = controllerWith({
+      exec: {
+        ...wsl,
+        exec: async (file: string, args: string[], options?: object) => {
+          if (args[0] === "--list") throw exited(1, "WSL is broken.");
+          return run(file, args, options);
+        },
+      },
+    });
+    const before = await wslSnapshot(wsl);
+
+    const state = await controller.removeWsl("Ubuntu");
+
+    expect(state.wsl).toBeUndefined();
+    expect(await wslSnapshot(wsl)).toEqual(before);
+    expect((await recordNow()).wsl.distros).toEqual(["Ubuntu"]);
+  });
+
+  it("refuses a distro that is neither in WSL's list nor in the record, entering none", async () => {
+    const { wsl, controller, events, recorded } = await addedTo(["Ubuntu"]);
+    const entered = wsl.entered.length;
+    const before = await wslSnapshot(wsl);
+
+    await expect(
+      events.run(
+        "cli_command.wsl_remove",
+        { kind: "ipc", trigger: "user" },
+        (unit: unknown) => controller.removeWsl("Ubuntu; rm -rf ~", { unit }),
+      ),
+    ).rejects.toThrow(
+      "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+    );
+
+    expect(wsl.entered.slice(entered)).toEqual([]);
+    expect(await wslSnapshot(wsl)).toEqual(before);
+    const event = recorded.find(
+      (candidate) => candidate.name === "cli_command.wsl_remove",
+    )!;
+    expect([event.outcome, event.outcome_reason]).toEqual([
+      "refused",
+      "unknown_distro",
+    ]);
+    expect(JSON.stringify(event)).not.toContain("rm -rf");
+  });
+
+  it("records a successful Remove on its event without the distro or a path", async () => {
+    const { controller, events, recorded } = await addedTo(["Ubuntu"]);
+
+    await events.run(
+      "cli_command.wsl_remove",
+      { kind: "ipc", trigger: "user" },
+      (unit: unknown) => controller.removeWsl("Ubuntu", { unit }),
+    );
+
+    const event = recorded.find(
+      (candidate) => candidate.name === "cli_command.wsl_remove",
+    )!;
+    expect(event.outcome).toBe("ok");
+    expect(event.cli_command).toEqual({ result: "removed" });
+    const json = JSON.stringify(event);
+    expect(json).not.toContain("Ubuntu");
+    expect(json).not.toContain("/mnt/c");
+    expect(json).not.toContain(root.replaceAll("\\", "\\\\"));
+  });
+
+  it("runs after an Add under way, never beside it", async () => {
+    await installedBefore(VERSION);
+    const wsl = fakeWsl({ Ubuntu: {} });
+    const { controller } = controllerWith({
+      exec: wsl,
+      github: linuxRelease(),
+    });
+    await controller.state();
+
+    const [added, removed] = await Promise.all([
+      controller.addWsl("Ubuntu"),
+      controller.removeWsl("Ubuntu"),
+    ]);
+
+    expect(distroRow(added, "Ubuntu")?.status).toBe("added");
+    expect(distroRow(removed, "Ubuntu")?.status).toBe("not-added");
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(existsSync(linuxFolder())).toBe(false);
+  });
+});
+
+describe("removing the command with WSL distros added", () => {
+  it("removes each recorded distro's link after the record and bin\\linux are gone", async () => {
+    const { wsl } = await addedTo(["Ubuntu", "Debian"]);
+    const run = wsl.exec;
+    /** Whether the record and bin\linux were still there at each unlink. */
+    const atUnlink: Array<{ record: boolean; linux: boolean }> = [];
+    const exec = {
+      ...wsl,
+      exec: async (file: string, args: string[], options?: object) => {
+        if (args[3] === "sh" && args.length === 10)
+          atUnlink.push({
+            record: existsSync(recordFile),
+            linux: existsSync(linuxFolder()),
+          });
+        return run(file, args, options);
+      },
+    };
+    const removing = controllerWith({ exec }).controller;
+
+    const state = await removing.remove();
+
+    expect(state.status).toBe("not-installed");
+    expect(state.notice).toBeUndefined();
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(wsl.distros.get("Debian")!.entry).toBeNull();
+    expect(atUnlink).toEqual([
+      { record: false, linux: false },
+      { record: false, linux: false },
+    ]);
+    expect(existsSync(installDir)).toBe(false);
+    expect(existsSync(recordFile)).toBe(false);
+  });
+
+  it("names a link it couldn't remove, and removes the others", async () => {
+    const { wsl, controller } = await addedTo(["Ubuntu", "Debian"]);
+    wsl.distros.get("Debian")!.failing = "sh";
+
+    const state = await controller.remove();
+
+    expect(state.status).toBe("not-installed");
+    expect(state.notice).toBe(
+      "ajour was removed, but ~/.local/bin/ajour in Debian couldn't be. It now points at nothing.",
+    );
+    expect(state.error).toBeNull();
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(wsl.distros.get("Debian")!.entry).not.toBeNull();
+    expect(existsSync(installDir)).toBe(false);
+    expect(existsSync(recordFile)).toBe(false);
+    // The next Install starts clean.
+    expect((await controller.install()).notice).toBeUndefined();
+  });
+
+  it("names every link when WSL can't list its distros", async () => {
+    const { wsl } = await addedTo(["Ubuntu", "Debian"]);
+    const run = wsl.exec;
+    const broken = controllerWith({
+      exec: {
+        ...wsl,
+        exec: async (file: string, args: string[], options?: object) => {
+          if (args[0] === "--list") throw exited(1, "WSL is broken.");
+          return run(file, args, options);
+        },
+      },
+    }).controller;
+
+    const state = await broken.remove();
+
+    expect(state.notice).toBe(
+      "ajour was removed, but ~/.local/bin/ajour in Ubuntu and Debian couldn't be. It now points at nothing.",
+    );
+  });
+
+  it("skips a recorded distro WSL no longer has, without entering or naming it", async () => {
+    const { wsl, controller } = await addedTo(["Ubuntu", "Debian"]);
+    wsl.distros.delete("Ubuntu");
+    const entered = wsl.entered.length;
+
+    const state = await controller.remove();
+
+    expect(state.notice).toBeUndefined();
+    expect(wsl.entered.slice(entered).map((run) => run.distro)).not.toContain(
+      "Ubuntu",
+    );
+    expect(wsl.distros.get("Debian")!.entry).toBeNull();
+  });
+
+  it("counts the links it couldn't remove on cli_command.remove, without naming a distro", async () => {
+    const { wsl, controller, events, recorded } = await addedTo([
+      "Ubuntu",
+      "Debian",
+    ]);
+    wsl.distros.get("Debian")!.failing = "sh";
+
+    await events.run(
+      "cli_command.remove",
+      { kind: "ipc", trigger: "user" },
+      (unit: unknown) => controller.remove({ unit }),
+    );
+
+    const event = recorded.find(
+      (candidate) => candidate.name === "cli_command.remove",
+    )!;
+    expect(event.outcome).toBe("ok");
+    expect(event.cli_command).toEqual({
+      result: "removed",
+      wsl_links_left: 1,
+    });
+    expect(JSON.stringify(event)).not.toContain("Debian");
   });
 });
 

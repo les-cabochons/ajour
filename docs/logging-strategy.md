@@ -937,6 +937,7 @@ channel to read the event each emits.
 | `cli_command.path_broadcast`         | job                                | main process                                     |
 | `cli_command.remove`                 | command, ipc                       | IPC channel                                      |
 | `cli_command.wsl_add`                | ipc                                | IPC channel                                      |
+| `cli_command.wsl_remove`             | ipc                                | IPC channel                                      |
 | `comment.delete`                     | job, request, plugin_operation     | route, plugin method, client call, renderer      |
 | `comment.edit`                       | command, request, plugin_operation | route, plugin method, client call                |
 | `comment.list`                       | command, request, plugin_operation | route, plugin method, client call, renderer      |
