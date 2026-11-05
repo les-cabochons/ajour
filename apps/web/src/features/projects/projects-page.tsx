@@ -59,11 +59,13 @@ import {
 } from "@/features/projects/project-task-options";
 import {
   getLocalProjectDisplayName,
+  type LocalAppState,
   type LocalProject,
   type LocalProjectTask,
   type LocalTimesheetEntry,
   type PinnedTaskSlot,
 } from "@/domain/local-state";
+import { isTaskNameLocked } from "@/domain/projects/project-transitions";
 import {
   PinnedSlotBadge,
   PinnedSlotDialog,
@@ -74,6 +76,11 @@ import {
   ProjectTitle,
 } from "@/features/projects/project-properties";
 import { SharedProjectMark } from "@/features/projects/project-team-ui";
+import {
+  getManagedProjectSourceLabel,
+  ManagedProjectMark,
+  ManagedProjectTitleMark,
+} from "@/features/projects/project-source-ui";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
   commitProjectTaskDraft,
@@ -293,6 +300,7 @@ function isProjectDragBlockedTarget(target: EventTarget | null) {
  */
 function ProjectsList({
   projects,
+  projectSources,
   archived,
   weekMsByProject,
   taskMetricsByProject,
@@ -307,6 +315,8 @@ function ProjectsList({
   onNewProject,
 }: {
   projects: LocalProject[];
+  /** The project source records, which name a managed project's source. */
+  projectSources: LocalAppState["projectSources"];
   archived: boolean;
   weekMsByProject: Map<string, number>;
   taskMetricsByProject: TaskMetricsByProject;
@@ -499,6 +509,14 @@ function ProjectsList({
                     </Link>
                     {project.code ? <Chip>{project.code}</Chip> : null}
                     {project.team ? <SharedProjectMark /> : null}
+                    {project.source ? (
+                      <ManagedProjectMark
+                        label={getManagedProjectSourceLabel(
+                          project,
+                          projectSources,
+                        )}
+                      />
+                    ) : null}
                   </td>
                   <td className="project-list-col-tasks">
                     <Value tone="muted">{activeTasks}</Value>
@@ -549,6 +567,7 @@ function ProjectsList({
 
 function ProjectDetail({
   project,
+  projectSources,
   metrics,
   taskMetrics,
   editingTaskId,
@@ -562,6 +581,8 @@ function ProjectDetail({
   taskPropertyPlugins,
 }: {
   project: LocalProject;
+  /** The project source records, which name a managed project's source. */
+  projectSources: LocalAppState["projectSources"];
   metrics: ProjectMetrics;
   taskMetrics: Map<string, ProjectMetrics>;
   /** The project's time entries, newest first. */
@@ -1111,6 +1132,12 @@ function ProjectDetail({
         />
         <ProjectTitle project={project} readOnly={isArchived} />
         {project.code ? <Chip>{project.code}</Chip> : null}
+        {project.source ? (
+          <ManagedProjectTitleMark
+            label={getManagedProjectSourceLabel(project, projectSources)}
+            syncedAt={project.source.syncedAt}
+          />
+        ) : null}
         {isArchived ? <Chip>Archived</Chip> : null}
       </ObjectContextMenu>
 
@@ -1378,6 +1405,7 @@ function ProjectDetail({
         </div>
         <ProjectPropertiesCard
           project={project}
+          projectSources={projectSources}
           isImporting={isImporting}
           onImport={openImportPicker}
           onArchive={() => onProjectAction(project, "archive")}
@@ -2093,6 +2121,16 @@ export function ProjectsPage() {
           .map((task) => task.name)}
         projectLocalOnly={taskEditorProject.localOnly}
         project={taskEditorProject}
+        nameLock={
+          taskEditorTask && isTaskNameLocked(taskEditorTask)
+            ? {
+                label: getManagedProjectSourceLabel(
+                  taskEditorProject,
+                  state.projectSources,
+                ),
+              }
+            : undefined
+        }
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}
@@ -2114,6 +2152,7 @@ export function ProjectsPage() {
           <ProjectDetail
             key={selectedProject._id}
             project={selectedProject}
+            projectSources={state.projectSources}
             metrics={
               metricsByProject.get(selectedProject._id) ?? {
                 durationMs: 0,
@@ -2176,6 +2215,7 @@ export function ProjectsPage() {
             />
             <ProjectsList
               projects={listProjects}
+              projectSources={state.projectSources}
               archived={isArchivePage}
               weekMsByProject={weekMsByProject}
               taskMetricsByProject={taskMetricsByProject}

@@ -17,6 +17,7 @@ import {
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
+import { LockHint } from "@/features/projects/project-source-ui";
 import type {
   ProjectTaskEditorFields,
   ProjectTaskEditorState,
@@ -54,6 +55,7 @@ export function ProjectTaskEditorForm({
   otherTaskNames = [],
   projectLocalOnly = false,
   project,
+  nameLock,
   onFieldsChange,
   onSave,
   onClose,
@@ -77,6 +79,11 @@ export function ProjectTaskEditorForm({
   projectLocalOnly?: boolean;
   /** The task's project, where Another task… can create the task it maps to. */
   project?: Pick<LocalProject, "_id" | "tasks" | "team">;
+  /**
+   * Present when the task's project source sets its name: the name reads
+   * as the source's, with a lock naming it by `label`.
+   */
+  nameLock?: { label: string | undefined };
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   onClose: () => void;
@@ -150,16 +157,20 @@ export function ProjectTaskEditorForm({
           <FieldLabel htmlFor="project-task-editor-name" className="sr-only">
             Name
           </FieldLabel>
-          <input
-            id="project-task-editor-name"
-            className="composer-title"
-            autoComplete="off"
-            value={fields.name}
-            placeholder="Task name"
-            aria-invalid={Boolean(nameError)}
-            onChange={(event) => onFieldsChange({ name: event.target.value })}
-            onKeyDown={saveOnEnter}
-          />
+          <span className="flex min-w-0 items-center gap-2">
+            <input
+              id="project-task-editor-name"
+              className="composer-title min-w-0"
+              autoComplete="off"
+              value={fields.name}
+              placeholder="Task name"
+              readOnly={Boolean(nameLock)}
+              aria-invalid={Boolean(nameError)}
+              onChange={(event) => onFieldsChange({ name: event.target.value })}
+              onKeyDown={saveOnEnter}
+            />
+            {nameLock ? <LockHint label={nameLock.label} /> : null}
+          </span>
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
         {/* Budget and adjustment are one sentence under the name, typed in

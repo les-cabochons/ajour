@@ -51,6 +51,8 @@ export function ProjectFormDialog({
   const [fields, setFields] = useState(() => createProjectFormFields(project));
   const values = getProjectFormValues(fields);
   const isCreate = !project;
+  // A managed project's source sets its full name and code (#506).
+  const sourceOwned = Boolean(project?.source);
 
   function update(patch: Partial<ProjectFormFields>) {
     setFields((current) => ({ ...current, ...patch }));
@@ -144,6 +146,7 @@ export function ProjectFormDialog({
                     autoFocus
                     autoComplete="off"
                     placeholder="Project name"
+                    readOnly={sourceOwned}
                     value={fields.name}
                     onChange={(event) =>
                       setFields((current) =>
@@ -181,6 +184,7 @@ export function ProjectFormDialog({
                   className="composer-estimate-input"
                   autoComplete="off"
                   placeholder="ATL"
+                  readOnly={sourceOwned}
                   value={fields.code}
                   onChange={(event) => update({ code: event.target.value })}
                 />
