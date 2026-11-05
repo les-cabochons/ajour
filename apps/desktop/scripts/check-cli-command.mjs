@@ -349,7 +349,7 @@ async function serveRelease() {
     const { tag, asset, bytes, digest, missing } = served;
     const linuxAsset = cliAssetName("linux", "x64", tag.slice(1));
     // `missing: "linux"` leaves only the Linux build off the release (#606).
-    const linuxPath = missing === "linux" ? null : linuxArchiveOf(tag.slice(1));
+    const linuxPath = missing === "none" ? linuxArchiveOf(tag.slice(1)) : null;
     const linuxBytes = linuxPath ? readFileSync(linuxPath) : null;
     const linuxReleasePage = `/les-cabochons/ajour/releases/download/${tag}/${linuxAsset}`;
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -360,7 +360,7 @@ async function serveRelease() {
         JSON.stringify({
           tag_name: tag,
           assets:
-            missing === true
+            missing === "all"
               ? []
               : [
                   ...(linuxBytes
@@ -405,10 +405,11 @@ async function serveRelease() {
     origin: `http://127.0.0.1:${server.address().port}`,
     requests,
     /**
-     * Serves `release`. `missing`: true leaves every asset off the release,
-     * "linux" only the Linux build.
+     * Serves `release`. `missing` names the assets left off it: `"none"`,
+     * `"all"`, or `"linux"`, only the Linux build.
+     * @param {"none" | "all" | "linux"} [missing]
      */
-    serve(release, bytes, missing = false) {
+    serve(release, bytes, missing = "none") {
       served = {
         ...release,
         missing,
@@ -702,7 +703,7 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
   const next = releaseOf(nextVersion);
   buildCliArchive(next);
   // B's release metadata is present but its assets are absent.
-  release.serve(next, readFileSync(next.archivePath), true);
+  release.serve(next, readFileSync(next.archivePath), "all");
   const app = await _electron.launch({
     args: [checkMain],
     cwd: desktopRoot,
@@ -743,7 +744,7 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
       "follow missing asset keeps version A working",
     );
     // With WSL, B's Linux build stays missing a while longer (#606).
-    release.serve(next, readFileSync(next.archivePath), wsl ? "linux" : false);
+    release.serve(next, readFileSync(next.archivePath), wsl ? "linux" : "none");
     await waitForState("installed");
     const printed = (await run(binary, ["-V"])).stdout.trim();
     expect(
