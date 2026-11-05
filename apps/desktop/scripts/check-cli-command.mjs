@@ -530,14 +530,8 @@ async function checkFollow(electronApp, env, release, version, binary) {
       removed,
     );
     const folder = env.AJOUR_CLI_INSTALL_DIR;
-    if (process.env.AJOUR_CLI_CHECK_WSL_DISTRO) {
-      expect(
-        !existsSync(path.join(folder, "ajour.exe")),
-        "Remove deletes the Windows command",
-      );
-      // #605 owns WSL removal. Until then cleanup removes only this check's Linux fixture.
-      await rm(path.join(folder, "linux"), { recursive: true, force: true });
-    } else expect(!existsSync(folder), "Remove deletes the install folder");
+    // With the Linux build for WSL, when the check added it.
+    expect(!existsSync(folder), "Remove deletes the install folder");
     expect(
       !existsSync(path.join(env.AJOUR_USER_DATA_PATH, "cli-command.json")),
       "Remove deletes the record",

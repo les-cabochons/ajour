@@ -1779,6 +1779,10 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * Adding the ajour command to a WSL distro from Settings (#604): how it
+     * ended and why. Never the distro's name or a path.
+     */
     "cli_command.wsl_add": {
       kinds: ["job", "ipc"],
       reasons: [

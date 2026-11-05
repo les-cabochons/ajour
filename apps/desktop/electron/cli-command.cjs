@@ -1,8 +1,10 @@
 const { createHash, randomUUID } = require("node:crypto");
 const path = require("node:path");
 const {
+  CliInstallRefusal,
   createReleaseAssetPipeline,
   MAX_DOWNLOAD_BYTES,
+  refusal,
 } = require("./cli-release-asset.cjs");
 const { tagForPackageVersion } = require("./update-check.cjs");
 const { codesignVerifyArgs } = require("./cli-signature.cjs");
@@ -36,20 +38,74 @@ function binaryName(platform) {
   return platform === "win32" ? "ajour.exe" : "ajour";
 }
 
-/** An install that stopped on purpose: its event ends `refused`. */
-class CliInstallRefusal extends Error {
-  constructor(reason, message) {
-    super(message);
-    this.reason = reason;
-  }
+/** How long a command in a WSL distro may take: the first boots WSL's VM. */
+const WSL_TIMEOUT_MS = 60_000;
+/** How long the list of WSL distros stays fresh. */
+const DISTRO_LIST_MS = 30_000;
+/** Docker Desktop's own distros, which no one types in. */
+const DOCKER_DISTRO = /^docker-desktop(?:-data)?$/i;
+/** The link step's exit status when `~/.local/bin/ajour` isn't Ajour's. */
+const FOREIGN_LINK = 17;
+
+// Scripts run in a distro as `sh -c SCRIPT sh VALUE…`: each value is an
+// argument ("$1"…), never pasted into the script. Each line is a whole
+// statement, so the lines join into one command-line argument.
+
+/**
+ * Links `~/.local/bin/ajour` to "$1". A link to "$1" already is left as it
+ * is; anything else at that name exits 17. A new link prints
+ * `created:<bin>:<local>`, 1 for each folder it made, so the link can be
+ * undone.
+ */
+const LINK_SCRIPT = [
+  'link="$HOME/.local/bin/ajour"',
+  'if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then exit 0; fi',
+  `if [ -e "$link" ] || [ -L "$link" ]; then exit ${FOREIGN_LINK}; fi`,
+  'if [ -d "$HOME/.local" ]; then madelocal=0; else madelocal=1; fi',
+  'if [ -d "$HOME/.local/bin" ]; then madebin=0; else madebin=1; fi',
+  'if mkdir -p "$HOME/.local/bin" && ln -s "$1" "$link"; then printf "created:%s:%s" "$madebin" "$madelocal"; exit 0; fi',
+  'if [ "$madebin" = 1 ]; then rmdir "$HOME/.local/bin" 2>/dev/null; fi',
+  'if [ "$madelocal" = 1 ]; then rmdir "$HOME/.local" 2>/dev/null; fi',
+  "exit 1",
+].join("; ");
+
+/** Undoes LINK_SCRIPT: removes the link to "$1", then the folders it made ("$2", "$3"). */
+const UNLINK_SCRIPT = [
+  'link="$HOME/.local/bin/ajour"',
+  'if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then rm -f -- "$link"; fi',
+  'if [ "$2" = 1 ]; then rmdir "$HOME/.local/bin" 2>/dev/null; fi',
+  'if [ "$3" = 1 ]; then rmdir "$HOME/.local" 2>/dev/null; fi',
+  "exit 0",
+].join("; ");
+
+/** The login shell's HOME and PATH, last, after anything its profile prints. */
+const LOGIN_PATH_SCRIPT = 'printf "\\n%s\\n%s\\n" "$HOME" "$PATH"';
+
+/** The distros `wsl.exe --list --quiet` printed, in UTF-8 or UTF-16LE. */
+function distroNamesOf(stdout) {
+  const bytes = Buffer.isBuffer(stdout)
+    ? stdout
+    : Buffer.from(String(stdout), "utf8");
+  // WSL answers in UTF-16LE unless it honours WSL_UTF8.
+  const text = bytes.includes(0)
+    ? bytes.toString("utf16le")
+    : bytes.toString("utf8");
+  return [
+    ...new Set(
+      text
+        .replace(/^﻿/, "")
+        .split(/\r?\n/)
+        .map((name) => name.trim())
+        .filter((name) => name && !DOCKER_DISTRO.test(name)),
+    ),
+  ];
 }
-const refusal = (reason, message) => new CliInstallRefusal(reason, message);
 
 /**
  * @param {{
  *   fetch: (url: string, init?: any) => Promise<any>,
  *   fs: typeof import("node:fs/promises"),
- *   exec: (file: string, args: string[], options?: { timeout?: number, env?: Record<string, string | undefined> }) => Promise<{ stdout: string | Buffer }>,
+ *   exec: (file: string, args: string[], options?: { timeout?: number, env?: Record<string, string | undefined>, encoding?: "buffer" }) => Promise<{ stdout: string | Buffer }>,
  *   platform: string,
  *   arch: string,
  *   appVersion: string,
@@ -123,9 +179,17 @@ function createCliCommandController({
   /** Aborts a download when Ajour quits; no install starts after. */
   const quitting = new AbortController();
 
+  // WSL distros (#604): x64 Windows only, as no linux-arm64 build ships.
+  const wslSupported =
+    !unsupportedReason && platform === "win32" && arch === "x64";
+  /** The distros WSL listed last, and when. Never read at launch. */
   let distroNames = [];
   let distroReadAt = -Infinity;
-  let distroRead;
+  let distroRead = null;
+  /**
+   * Per distro, an Add running (`adding`), its failure (`error`), or the hint
+   * of an Add that succeeded in this launch. "Added" itself is the record's.
+   */
   const wslStates = new Map();
   const wslExe = path.win32.join(
     env.SystemRoot || "C:\\Windows",
@@ -133,64 +197,46 @@ function createCliCommandController({
     "wsl.exe",
   );
 
-  async function listDistros() {
-    if (now() - distroReadAt < 30_000) return;
+  /** Reads WSL's distros, at most once per 30 seconds unless `fresh`. */
+  async function listDistros({ fresh = false } = {}) {
+    if (!fresh && now() - distroReadAt < DISTRO_LIST_MS) return;
     distroRead ??= (async () => {
       try {
         const { stdout } = await exec(wslExe, ["--list", "--quiet"], {
           timeout: VERSION_CHECK_TIMEOUT_MS,
           env: { ...env, WSL_UTF8: "1" },
+          encoding: "buffer",
         });
-        const bytes = Buffer.isBuffer(stdout)
-          ? stdout
-          : Buffer.from(
-              stdout,
-              String(stdout).includes("\0") ? "binary" : "utf8",
-            );
-        const text = bytes.includes(0)
-          ? bytes.toString("utf16le")
-          : bytes.toString("utf8");
-        distroNames = [
-          ...new Set(
-            text
-              .replace(/^\uFEFF/, "")
-              .split(/\r?\n/)
-              .map((name) => name.trim())
-              .filter(
-                (name) => name && !/^docker-desktop(?:-data)?$/i.test(name),
-              ),
-          ),
-        ];
+        distroNames = distroNamesOf(stdout);
       } catch {
+        // No WSL, or none it can list: no rows.
         distroNames = [];
       }
       distroReadAt = now();
-    })();
-    try {
-      await distroRead;
-    } finally {
+    })().finally(() => {
       distroRead = null;
-    }
+    });
+    await distroRead;
   }
 
-  async function wslFields(record) {
-    if (
-      platform !== "win32" ||
-      arch !== "x64" ||
-      !record ||
-      !distroNames.length
-    )
-      return {};
+  /** The `wsl` part of the state: one row per listed distro. */
+  function wslFields(record) {
+    if (!wslSupported || !record || !distroNames.length) return {};
     return {
       wsl: {
         version: record.wsl?.version,
-        distros: distroNames.map((name) => ({
-          name,
-          status: record.wsl?.distros?.includes(name) ? "added" : "not-added",
-          progress: null,
-          error: null,
-          ...wslStates.get(name),
-        })),
+        distros: distroNames.map((name) => {
+          const added = record.wsl?.distros?.includes(name) ?? false;
+          const live = wslStates.get(name);
+          if (live?.status) return { name, ...live };
+          return {
+            name,
+            status: added ? "added" : "not-added",
+            progress: null,
+            error: null,
+            ...(added && live?.hint ? { hint: live.hint } : {}),
+          };
+        }),
       },
     };
   }
@@ -257,7 +303,7 @@ function createCliCommandController({
     } catch (error) {
       return { status: "error", progress: null, error: error.message };
     }
-    const wsl = await wslFields(record);
+    const wsl = wslFields(record);
     if (transient) return { ...installedFields(record), ...transient, ...wsl };
     return record
       ? {
@@ -643,6 +689,9 @@ function createCliCommandController({
       newlyInstalled = !follow;
       missingAttempts = 0;
       transient = null;
+      // Settings shows the WSL rows with the installed command. A follow
+      // runs at launch, which never reads them.
+      if (!follow && wslSupported) await listDistros();
     } catch (error) {
       initialized = true;
       if (swapped && !committed) await reconcileDisk().catch(() => undefined);
@@ -697,11 +746,14 @@ function createCliCommandController({
       if (previous) {
         // Retain ownership evidence before deleting the commit. Recovery uses
         // the same pending-file cleanup as an interrupted install.
-        const digests = previous.digests ?? {};
+        const digests = { ...previous.digests };
         if (!previous.digests) {
           for (const name of [binary, "share"])
             digests[name] = await contentDigest(targetOf(name));
         }
+        // The Linux build for WSL goes with the command. Its links stay in
+        // their distros.
+        Object.assign(digests, previous.wsl?.digests);
         marker = targetOf(`.pending-${randomUUID()}.json`);
         await writeAtomically(marker, JSON.stringify({ digests }));
         await fs.rm(paths.recordFile, { force: true });
@@ -709,6 +761,7 @@ function createCliCommandController({
       await reconcileDisk(true);
       newlyInstalled = false;
       transient = null;
+      wslStates.clear();
       unit?.set({ cli_command: { result: "removed" } });
     } catch (error) {
       // Cancellation happens before any file cleanup. Restore the commit so
@@ -735,188 +788,235 @@ function createCliCommandController({
     return state;
   }
 
+  /**
+   * Runs `program` in `distro` with `args`, each passed to `wsl.exe` as an
+   * argument of its own, never pasted into a shell string.
+   */
+  async function inDistro(distro, program, args, timeout = WSL_TIMEOUT_MS) {
+    try {
+      const { stdout } = await exec(
+        wslExe,
+        ["-d", distro, "--exec", program, ...args],
+        { timeout, env },
+      );
+      return String(stdout);
+    } catch (error) {
+      throw Object.assign(
+        new Error(
+          `Ajour couldn't run commands in ${distro}. Check that it starts, then try again.`,
+        ),
+        { exitCode: error?.code },
+      );
+    }
+  }
+
+  /**
+   * Downloads and unpacks the Linux build into `bin\linux`, swapped in as
+   * the Windows files are: a pending marker first, the old build set aside.
+   * Until the record commits it, reconciliation takes it back out.
+   */
+  async function downloadLinux(id, staging, publish) {
+    const linuxAsset = `ajour-${appVersion}-linux-x64.tar.gz`;
+    const pipeline = createReleaseAssetPipeline({
+      fetch,
+      fs,
+      exec,
+      paths,
+      asset: linuxAsset,
+      binary: "ajour",
+      appVersion,
+      label: "Linux",
+      arch: "x64",
+      development,
+      releaseOrigin,
+      signal: quitting.signal,
+      onProgress: (percent) => void publish("downloading", percent),
+    });
+    const resolved = await pipeline.resolveAsset({});
+    const archive = path.join(staging, linuxAsset);
+    await pipeline.download(resolved, archive);
+    await publish("checking");
+    const unpacked = path.join(staging, "unpacked");
+    await pipeline.unpack(archive, unpacked);
+    // Releases store man/ and completions/ at the archive root.
+    const share = path.join(unpacked, "share");
+    await fs.mkdir(share, { recursive: true });
+    for (const name of ["man", "completions"]) {
+      if (await exists(path.join(unpacked, name)))
+        await fs.rename(path.join(unpacked, name), path.join(share, name));
+    }
+    const digests = { linux: await contentDigest(unpacked) };
+    stopIfQuitting();
+    await writeAtomically(
+      targetOf(`.pending-${id}.json`),
+      JSON.stringify({ digests }),
+    );
+    if (await exists(targetOf("linux")))
+      await fs.rename(targetOf("linux"), asideOf("linux", id));
+    await fs.rename(unpacked, targetOf("linux"));
+    return digests;
+  }
+
+  /**
+   * Adds the command to `distro` (#604): the Linux build in `bin\linux`,
+   * checked inside the distro, then `~/.local/bin/ajour` linked to it. The
+   * record commits it last; any failure before leaves the record, `bin\linux`
+   * and the distro as they were.
+   */
   async function runAddWsl(distro, unit) {
+    if (!wslSupported || quitting.signal.aborted) return settledState();
+    // The renderer passes a name; only one WSL lists now is used.
+    if (!distroNames.includes(distro)) await listDistros({ fresh: true });
+    if (!distroNames.includes(distro)) {
+      unit?.refuse("unknown_distro");
+      unit?.set({ cli_command: { result: "refused" } });
+      throw refusal(
+        "unknown_distro",
+        "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+      );
+    }
+    const id = randomUUID();
     let staging;
-    let target;
-    let created = false;
-    let createdFolder = false;
-    let createdLocal = false;
     let swapped = false;
     let committed = false;
-    const id = randomUUID();
+    /** The link this Add made, and the folders it made for it. */
+    let made = null;
     const publish = async (phase, progress = null) => {
       wslStates.set(distro, { status: "adding", phase, progress, error: null });
       emit(await settledState());
     };
-    const run = (program, args) =>
-      exec(wslExe, ["-d", distro, "--exec", program, ...args], {
-        timeout: VERSION_CHECK_TIMEOUT_MS,
-        env,
-      });
     try {
-      if (
-        unsupportedReason ||
-        platform !== "win32" ||
-        arch !== "x64" ||
-        quitting.signal.aborted
-      )
-        return settledState();
-      await listDistros();
-      if (!distroNames.includes(distro))
-        throw refusal("unknown_distro", "Not added.");
+      if (reconciliation) await reconciliation;
       await reconcileDisk();
+      initialized = true;
       const record = await readRecord();
-      if (!record) throw refusal("not_installed", "Not installed.");
-
+      if (!record)
+        throw refusal(
+          "not_installed",
+          "Install the ajour command first, then add it to WSL.",
+        );
       await publish("downloading", 0);
       let digests = record.wsl?.digests;
+      // A second distro, or the same one again, reuses this version's build.
       if (record.wsl?.version !== appVersion) {
         if (!record.wsl && (await exists(targetOf("linux"))))
           throw refusal(
             "foreign_command",
-            `There's already an ajour in ${paths.installDir} that Ajour didn't install. Remove it, then install again.`,
+            `There's already an ajour in ${targetOf("linux")} that Ajour didn't install. Remove it, then add again.`,
           );
         staging = targetOf(`.staging-${id}`);
         await fs.mkdir(staging);
-        const asset = `ajour-${appVersion}-linux-x64.tar.gz`;
-        const pipeline = createReleaseAssetPipeline({
-          fetch,
-          fs,
-          exec,
-          paths,
-          asset,
-          binary: "ajour",
-          appVersion,
-          label: "Linux",
-          arch: "x64",
-          development,
-          releaseOrigin,
-          signal: quitting.signal,
-          onProgress: (percent) => {
-            void publish("downloading", percent);
-          },
-        });
-        const resolved = await pipeline.resolveAsset({});
-        const archive = path.join(staging, asset);
-        await pipeline.download(resolved, archive);
-        await publish("checking");
-        const unpacked = path.join(staging, "unpacked");
-        await pipeline.unpack(archive, unpacked);
-        const share = path.join(unpacked, "share");
-        await fs.mkdir(share, { recursive: true });
-        for (const name of ["man", "completions"]) {
-          if (await exists(path.join(unpacked, name)))
-            await fs.rename(path.join(unpacked, name), path.join(share, name));
-        }
-        digests = { linux: await contentDigest(unpacked) };
-        await writeAtomically(
-          targetOf(`.pending-${id}.json`),
-          JSON.stringify({ digests }),
-        );
         swapped = true;
-        if (await exists(targetOf("linux")))
-          await fs.rename(targetOf("linux"), asideOf("linux", id));
-        await fs.rename(unpacked, targetOf("linux"));
+        digests = await downloadLinux(id, staging, publish);
       }
+
       await publish("checking");
-      target = String(
-        (await run("wslpath", ["-u", path.join(targetOf("linux"), "ajour")]))
-          .stdout,
+      const target = (
+        await inDistro(distro, "wslpath", [
+          "-u",
+          path.join(targetOf("linux"), "ajour"),
+        ])
       ).trim();
-      if (
-        !target.startsWith("/") ||
-        target.includes("\n") ||
-        target.includes("\0")
-      )
-        throw refusal(
-          "wrong_version",
-          "Ajour couldn't unpack the ajour archive.",
+      if (!target.startsWith("/") || /[\n\0]/.test(target))
+        throw new Error(
+          `Ajour couldn't find its folder in ${distro}. Check that WSL can reach your Windows drive.`,
         );
-      let output;
+      let printed;
       try {
-        output = String((await run(target, ["-V"])).stdout).trim();
+        printed = (
+          await inDistro(distro, target, ["-V"], VERSION_CHECK_TIMEOUT_MS)
+        ).trim();
       } catch {
         throw refusal(
           "wrong_version",
           "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't install it.",
         );
       }
-      if (output !== `ajour ${appVersion}`)
+      if (printed !== `ajour ${appVersion}`)
         throw refusal(
           "wrong_version",
-          `The downloaded ajour says "${output.slice(0, 80)}", not "ajour ${appVersion}", so Ajour didn't install it.`,
+          `The downloaded ajour says "${printed.slice(0, 80)}", not "ajour ${appVersion}", so Ajour didn't install it.`,
         );
+
       await publish("linking");
-      const script =
-        'link="$HOME/.local/bin/ajour"; if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then exit 0; fi; if [ -e "$link" ] || [ -L "$link" ]; then exit 17; fi; made=0; localmade=0; if [ ! -d "$HOME/.local" ]; then localmade=1; fi; if [ ! -d "$HOME/.local/bin" ]; then made=1; fi; if ! { mkdir -p "$HOME/.local/bin" && ln -s "$1" "$link"; }; then if [ "$made" = 1 ]; then rmdir "$HOME/.local/bin" 2>/dev/null; fi; if [ "$localmade" = 1 ]; then rmdir "$HOME/.local" 2>/dev/null; fi; exit 1; fi; printf "created:%s:%s" "$made" "$localmade"';
+      let linked;
       try {
-        const result = await run("sh", ["-c", script, "sh", target]);
-        created = String(result.stdout).startsWith("created");
-        createdFolder = String(result.stdout).split(":")[1] === "1";
-        createdLocal = String(result.stdout).split(":")[2] === "1";
+        linked = await inDistro(distro, "sh", [
+          "-c",
+          LINK_SCRIPT,
+          "sh",
+          target,
+        ]);
       } catch (error) {
-        if (error.code === 17)
+        if (error.exitCode === FOREIGN_LINK)
           throw refusal(
             "foreign_command",
             `Another ajour is at ~/.local/bin/ajour in ${distro}. Remove it, then add again.`,
           );
         throw error;
       }
-      const loginPath = String(
-        (await run("sh", ["-lc", 'printf "%s" "$HOME/.local/bin\n$PATH"']))
-          .stdout,
-      ).split("\n");
-      const onPath =
-        loginPath.length === 2
-          ? loginPath[1].split(":").includes(loginPath[0])
-          : loginPath[0].includes("/.local/bin");
-      if (
-        record.wsl?.version !== appVersion ||
-        !record.wsl?.distros.includes(distro)
+      const created = /^created:([01]):([01])$/.exec(linked.trim());
+      if (created) made = { target, bin: created[1], local: created[2] };
+
+      // Ubuntu and Debian's ~/.profile adds ~/.local/bin once it exists.
+      const [home, loginPath] = (
+        await inDistro(distro, "sh", ["-lc", LOGIN_PATH_SCRIPT])
       )
+        .split("\n")
+        .slice(-3, -1);
+      const onPath = (loginPath ?? "")
+        .split(":")
+        .includes(`${home}/.local/bin`);
+
+      const distros = record.wsl?.distros ?? [];
+      if (record.wsl?.version !== appVersion || !distros.includes(distro))
         await writeRecord({
           ...record,
           wsl: {
             version: appVersion,
             digests,
-            distros: [...new Set([...(record.wsl?.distros ?? []), distro])],
+            distros: [...new Set([...distros, distro])],
           },
         });
       committed = true;
       wslStates.set(distro, {
-        status: "added",
-        progress: null,
-        error: null,
         hint: onPath
           ? `Open a new ${distro} terminal to use it.`
           : `Add ~/.local/bin to your PATH in ${distro}.`,
       });
       unit?.set({ cli_command: { result: "installed" } });
     } catch (error) {
-      if (created && !committed) {
-        await run("sh", [
+      if (made && !committed) {
+        await inDistro(distro, "sh", [
           "-c",
-          'link="$HOME/.local/bin/ajour"; if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then rm -- "$link"; fi; if [ "$2" = 1 ]; then rmdir "$HOME/.local/bin"; fi; if [ "$3" = 1 ]; then rmdir "$HOME/.local"; fi',
+          UNLINK_SCRIPT,
           "sh",
-          target,
-          createdFolder ? "1" : "0",
-          createdLocal ? "1" : "0",
+          made.target,
+          made.bin,
+          made.local,
         ]).catch(() => undefined);
       }
+      const message = quitting.signal.aborted
+        ? "Ajour quit before ajour was added."
+        : error instanceof Error && error.message
+          ? error.message
+          : "Ajour couldn't add ajour to WSL.";
       wslStates.set(distro, {
         status: "error",
         progress: null,
-        error: error.message,
+        error: message,
       });
+      // Never the message: it names the distro, and a path holds the user name.
       if (error.reason) unit?.refuse(error.reason);
       else
-        unit?.fail(new Error("Ajour couldn't install ajour."), {
+        unit?.fail(new Error("Ajour couldn't add ajour to WSL."), {
           reason: "wsl_add_failed",
         });
       unit?.set({
         cli_command: { result: error.reason ? "refused" : "failed" },
       });
     } finally {
+      // Commits clean up their marker; a failure takes the build back out.
       if (swapped) await reconcileDisk().catch(() => undefined);
       if (staging) await removeQuietly(staging);
     }
@@ -964,12 +1064,18 @@ function createCliCommandController({
 
   return {
     followAppVersion,
-    /** @param {string} distro @param {{ unit?: any }} [options] */
+
+    /**
+     * Adds the command to the WSL distro `distro`, after the operation
+     * running. Rejects only for a distro WSL doesn't list.
+     * @param {string} distro
+     * @param {{ unit?: any }} [options] The event of the call that asked.
+     */
     addWsl(distro, { unit } = {}) {
       const before = running;
       return trackRunning(
         (async () => {
-          if (before) await before;
+          if (before) await before.catch(() => undefined);
           return runAddWsl(distro, unit);
         })(),
       );
@@ -993,13 +1099,9 @@ function createCliCommandController({
       );
     },
 
+    /** The state Settings shows. It reads WSL's distros, never at launch. */
     async state() {
-      if (
-        !unsupportedReason &&
-        platform === "win32" &&
-        arch === "x64" &&
-        (await readRecord())
-      )
+      if (wslSupported && (await readRecord().catch(() => null)))
         await listDistros();
       return await settledState();
     },

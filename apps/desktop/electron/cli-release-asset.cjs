@@ -1,16 +1,24 @@
 const { createHash } = require("node:crypto");
 const path = require("node:path");
 const { tagForPackageVersion } = require("./update-check.cjs");
+
+/**
+ * The release asset steps of the ajour command (#604): find the asset of the
+ * app's release on GitHub, download it within its published size, check its
+ * SHA-256 and unpack it. The Windows and macOS install and the Linux build
+ * for WSL take them with their asset's name and binary.
+ */
+
 const GITHUB_REPOSITORY = "les-cabochons/ajour";
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_ORIGIN = "https://github.com";
 const MAX_DOWNLOAD_BYTES = 120 * 1024 * 1024;
 const LOOKUP_TIMEOUT_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
-const VERSION_CHECK_TIMEOUT_MS = 10_000;
 const TAR_TIMEOUT_MS = 60_000;
 const DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/;
 const MAX_REDIRECTS = 5;
+
 /** An install that stopped on purpose: its event ends `refused`. */
 class CliInstallRefusal extends Error {
   constructor(reason, message) {
@@ -30,6 +38,23 @@ function escapesFolder(name) {
   );
 }
 
+/**
+ * @param {{
+ *   fetch: (url: string, init?: any) => Promise<any>,
+ *   fs: typeof import("node:fs/promises"),
+ *   exec: (file: string, args: string[], options?: { timeout?: number }) => Promise<{ stdout: string | Buffer }>,
+ *   paths: { tar: string },
+ *   asset: string,
+ *   binary: string,
+ *   appVersion: string,
+ *   label: string,
+ *   arch: string,
+ *   development?: boolean,
+ *   releaseOrigin?: string,
+ *   signal: AbortSignal,
+ *   onProgress?: (percent: number) => void,
+ * }} options
+ */
 function createReleaseAssetPipeline({
   fetch,
   fs,
@@ -46,7 +71,9 @@ function createReleaseAssetPipeline({
   onProgress = (_percent) => {},
 }) {
   const localOrigin =
-    development && releaseOrigin ? releaseOrigin.replace(/\/+$/, "") : null;
+    development && typeof releaseOrigin === "string" && releaseOrigin
+      ? releaseOrigin.replace(/\/+$/, "")
+      : null;
   const apiOrigin = localOrigin ?? GITHUB_API_ORIGIN;
   const downloadOrigin = localOrigin ?? GITHUB_ORIGIN;
   const tag = tagForPackageVersion(appVersion);
@@ -299,4 +326,9 @@ function createReleaseAssetPipeline({
 
   return { resolveAsset, download, unpack, sha256Of };
 }
-module.exports = { createReleaseAssetPipeline, MAX_DOWNLOAD_BYTES };
+module.exports = {
+  CliInstallRefusal,
+  createReleaseAssetPipeline,
+  MAX_DOWNLOAD_BYTES,
+  refusal,
+};

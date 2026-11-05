@@ -372,22 +372,13 @@ const cliCommand = createCliCommandController({
       execFile(
         file,
         args,
-        {
-          windowsHide: true,
-          maxBuffer: 4 * 1024 * 1024,
-          ...options,
-          ...(file.toLowerCase().endsWith("wsl.exe") && args[0] === "--list"
-            ? { encoding: "buffer" }
-            : {}),
-        },
+        { windowsHide: true, maxBuffer: 4 * 1024 * 1024, ...options },
+        // `encoding: "buffer"` keeps the bytes: WSL's list may be UTF-16LE.
         (error, stdout) =>
           error
             ? reject(error)
             : resolve({
-                stdout:
-                  file.toLowerCase().endsWith("wsl.exe") && args[0] === "--list"
-                    ? Buffer.from(stdout)
-                    : String(stdout),
+                stdout: Buffer.isBuffer(stdout) ? stdout : String(stdout),
               }),
       );
     }),
