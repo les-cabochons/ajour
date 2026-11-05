@@ -98,6 +98,26 @@ describe("project and task search", () => {
     ]);
   });
 
+  it("leaves out a managed project its source marks complete, as any archived project (#508)", () => {
+    const complete: LocalProject = {
+      ...createProject("project-globex", "Globex - Internal", "GLOBEX-INT", [
+        createTask("task-follow-up", "Weekly follow-up"),
+      ]),
+      status: "archived",
+      archivedBySource: true,
+      source: {
+        pluginId: "example-project-source",
+        connectionId: "planner",
+        remoteId: "GLOBEX-INT",
+        syncedAt: 1,
+      },
+    };
+
+    expect(findMatchingProjects([complete], "")).toEqual([]);
+    expect(findMatchingProjects([complete], "globex")).toEqual([]);
+    expect(findMatchingProjectTasks([complete], "weekly").matches).toEqual([]);
+  });
+
   it("filters tasks after drilling into a project", () => {
     expect(
       findMatchingTasksInProject(projects[0]!, "111").map((task) => task._id),

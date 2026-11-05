@@ -411,6 +411,8 @@ export interface LocalTimesheetImportDraft {
   potentialConflict: boolean;
   conflictEntryIds: string[];
   importedAt: number;
+  /** Why the row waits: its project source archived the project or task. */
+  refusal?: string;
 }
 
 /**

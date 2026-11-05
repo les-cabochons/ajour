@@ -6,8 +6,10 @@ import {
 import { TooltipButton } from "@/components/tooltip-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { showToast } from "@/components/ui/toast";
 import type { TimelogMismatch } from "@/domain/backlog/description-timelog";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { formatRestoreRefusal } from "@/domain/projects/project-transitions";
 import { localStore } from "@/lib/local-store";
 
 /**
@@ -15,7 +17,8 @@ import { localStore } from "@/lib/local-store";
  * differs from its description's timelog (#281). A missing project or task
  * shows an amber warning that asks, then creates or restores it; in a shared
  * project the team gets the task too. When both exist, a quiet button sets
- * them at once. Every change has Undo.
+ * them at once. Every change has Undo. A project or task its project source
+ * archived is not restored: the warning says why instead (#637).
  */
 export function TimelogButton({
   workItemId,
@@ -61,16 +64,19 @@ export function TimelogButton({
   }
 
   const question = describeMissing(mismatch);
+  const { refusal } = mismatch;
   return (
     <>
       <TooltipButton
-        label={question.label}
+        label={refusal ? `${question.refusedLabel} ${refusal}` : question.label}
         render={
           <Button
             variant="ghost"
             size="icon-sm"
             className="timelog-button shrink-0 text-[var(--warning)]"
-            onClick={() => setOpen(true)}
+            onClick={() =>
+              refusal ? showToast(formatRestoreRefusal(refusal)) : setOpen(true)
+            }
           />
         }
       >
@@ -99,6 +105,7 @@ function describeMissing(
     const verb = restores ? "Restore" : "Create";
     return {
       label: `${verb} project ${projectName}`,
+      refusedLabel: `Can't restore project ${projectName}.`,
       title: `${verb} project ${projectName}?`,
       body: restores
         ? `The description's timelog names ${projectName}, an archived project. Ajour restores it${taskName ? `, adds the task ${taskName} if it's missing,` : ""} and sets it on this backlog item.`
@@ -117,6 +124,7 @@ function describeMissing(
     label: restores
       ? `Restore task ${taskName}`
       : `Add task ${taskName} to ${projectName}`,
+    refusedLabel: `Can't restore task ${taskName}.`,
     title: restores
       ? `Restore task ${taskName} in ${projectName}?`
       : `Add task ${taskName} to ${projectName}?`,

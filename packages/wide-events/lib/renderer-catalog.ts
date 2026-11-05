@@ -493,7 +493,8 @@ export const rendererEvents = {
     },
   }),
   "project.unshare": command(projectId),
-  "task.create": command(changedTask),
+  /** Refused when the name is a task its project source closed (#637). */
+  "task.create": command(changedTask, { reasons: ["archived_by_source"] }),
   "task.update": command(changedTask),
   "task.archive": command(changedTask),
   /** Refused when the project source closed it or left it out (#505). */
@@ -651,7 +652,10 @@ export const rendererEvents = {
   }),
   "backlog_item.open": command(backlogItem),
   "backlog_item.change_source_state": command(backlogItem),
-  "backlog_item.apply_timelog": command(backlogItem),
+  /** Refused when the timelog names what a project source archived (#637). */
+  "backlog_item.apply_timelog": command(backlogItem, {
+    reasons: ["archived_by_source"],
+  }),
   "backlog_item.resolve_estimate": command({
     backlog_item: {
       id: operational(),

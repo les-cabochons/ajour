@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyDescriptionTimelogs,
   applyItemTimelog,
+  getItemTimelogRefusal,
   getTimelogMismatch,
 } from "@/domain/backlog/description-timelog";
 import type {
@@ -245,7 +246,7 @@ describe("applyDescriptionTimelogs", () => {
     expect(result.projects[0]?.tasks).toHaveLength(2);
     expect(result.workItems[0]?.taskId).toBe("design");
     expect(
-      getTimelogMismatch(result.projects, result.workItems[0]!),
+      getTimelogMismatch(result.projects, result.workItems[0]!, undefined),
     ).toBeNull();
 
     const spaced = write({ projects: [acme], workItems: [item()] }, (state) =>
@@ -258,7 +259,7 @@ describe("applyDescriptionTimelogs", () => {
     );
     expect(created.projects[0]?.tasks[2]?.name).toBe("07 Run");
     expect(
-      getTimelogMismatch(created.projects, created.workItems[0]!),
+      getTimelogMismatch(created.projects, created.workItems[0]!, undefined),
     ).toBeNull();
   });
 
@@ -521,6 +522,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ description: timelog("Beta", "Build") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-project",
@@ -531,6 +533,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [project({ _id: "beta", name: "Beta", status: "archived" })],
         item({ description: timelog("beta") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-project",
@@ -544,6 +547,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [shared],
         item({ description: timelog("Team site", "Deploy") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-task",
@@ -556,6 +560,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ projectId: "acme", description: timelog(undefined, "support") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-task",
@@ -572,6 +577,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ projectId: "acme", description: timelog("Acme", "Design") }),
+        undefined,
       ),
     ).toEqual({
       kind: "different",
@@ -588,6 +594,7 @@ describe("getTimelogMismatch", () => {
           taskId: "x",
           description: timelog("Acme"),
         }),
+        undefined,
       ),
     ).toEqual({ kind: "different", projectId: "acme", projectName: "Acme" });
   });
@@ -601,6 +608,7 @@ describe("getTimelogMismatch", () => {
           taskId: "design",
           description: timelog("Acme"),
         }),
+        undefined,
       ),
     ).toBeNull();
   });
@@ -614,15 +622,17 @@ describe("getTimelogMismatch", () => {
           taskId: "design",
           description: timelog("Acme", "Design"),
         }),
+        undefined,
       ),
     ).toBeNull();
     expect(
       getTimelogMismatch(
         [acme],
         item({ description: timelog(undefined, "Design") }),
+        undefined,
       ),
     ).toBeNull();
-    expect(getTimelogMismatch([acme], item())).toBeNull();
+    expect(getTimelogMismatch([acme], item(), undefined)).toBeNull();
   });
 });
 
@@ -727,5 +737,160 @@ describe("applyItemTimelog", () => {
 
     const plain = createState({ workItems: [item()] });
     expect(applyItemTimelog(plain, "item", createFactories())).toBe(plain);
+  });
+});
+
+describe("a timelog naming what a project source archived (#637)", () => {
+  const projectSources = {
+    planner: {
+      pluginId: "example-project-source",
+      label: "Example planner",
+      asOf: "2026-10-31T23:59:59.000Z",
+      syncedAt: 1,
+      held: [],
+    },
+  };
+  const source = {
+    pluginId: "example-project-source",
+    connectionId: "planner",
+    syncedAt: 1,
+  };
+  const globex = project({
+    _id: "globex",
+    name: "Globex - Internal",
+    status: "archived",
+    archivedBySource: true,
+    source: { ...source, remoteId: "GLOBEX-INT" },
+    tasks: [task("follow-up", "Weekly follow-up")],
+  });
+  const acmeManaged = project({
+    _id: "acme",
+    name: "Acme - Support",
+    source: { ...source, remoteId: "ACME-SUP" },
+    tasks: [
+      task("login", "Ticket #101 - Login"),
+      {
+        ...task("zone", "Ticket #099 - Time zone", "archived"),
+        archivedBySource: true as const,
+      },
+    ],
+  });
+
+  it("says why the project can't be restored, naming the source", () => {
+    expect(
+      getTimelogMismatch(
+        [globex],
+        item({ description: timelog("Globex - Internal") }),
+        projectSources,
+      ),
+    ).toEqual({
+      kind: "missing-project",
+      projectName: "Globex - Internal",
+      archivedProjectId: "globex",
+      refusal: "Example planner marks this project complete.",
+    });
+  });
+
+  it("says why the task can't be restored, naming the source", () => {
+    expect(
+      getTimelogMismatch(
+        [acmeManaged],
+        item({
+          projectId: "acme",
+          description: timelog(undefined, "Ticket #099 - Time zone"),
+        }),
+        projectSources,
+      ),
+    ).toMatchObject({
+      kind: "missing-task",
+      archivedTaskId: "zone",
+      refusal: "Example planner closed this task.",
+    });
+  });
+
+  it("leaves the project archived when the user applies it", () => {
+    const state = createState({
+      projects: [globex],
+      projectSources,
+      workItems: [item({ description: timelog("Globex - Internal") })],
+    });
+
+    expect(applyItemTimelog(state, "item", createFactories())).toBe(state);
+  });
+
+  it("leaves the task archived, when the user applies it or saves the description", () => {
+    const state = createState({
+      projects: [acmeManaged],
+      projectSources,
+      workItems: [
+        item({
+          projectId: "acme",
+          description: timelog(undefined, "Ticket #099 - Time zone"),
+        }),
+      ],
+    });
+    expect(applyItemTimelog(state, "item", createFactories())).toBe(state);
+
+    const { previous, next } = write(
+      { projects: [acmeManaged], projectSources, workItems: [item()] },
+      (before) =>
+        withDescription(
+          before,
+          timelog("Acme - Support", "Ticket #099 - Time zone"),
+        ),
+    );
+    const applied = applyDescriptionTimelogs(
+      previous.workItems,
+      next,
+      createFactories(),
+    );
+    expect(applied.projects).toEqual([acmeManaged]);
+    expect(applied.workItems[0]?.taskId).toBeUndefined();
+  });
+
+  const handArchived = project({
+    _id: "initech",
+    name: "Initech - Support",
+    status: "archived",
+    source: { ...source, remoteId: "INI-SUP" },
+    tasks: [
+      {
+        ...task("zone", "Ticket #099 - Time zone", "archived"),
+        archivedBySource: true as const,
+      },
+    ],
+  });
+
+  it("says why the task can't be restored when the user archived the project", () => {
+    expect(
+      getTimelogMismatch(
+        [handArchived],
+        item({
+          description: timelog("Initech - Support", "Ticket #099 - Time zone"),
+        }),
+        projectSources,
+      ),
+    ).toMatchObject({
+      kind: "missing-project",
+      archivedProjectId: "initech",
+      refusal: "Example planner closed this task.",
+    });
+  });
+
+  it("changes nothing when the project is restorable but its task is not", () => {
+    const state = createState({
+      projects: [handArchived],
+      projectSources,
+      workItems: [
+        item({
+          description: timelog("Initech - Support", "Ticket #099 - Time zone"),
+        }),
+      ],
+    });
+
+    expect(applyItemTimelog(state, "item", createFactories())).toBe(state);
+    expect(getItemTimelogRefusal(state, "item")).toBe(
+      "Example planner closed this task.",
+    );
   });
 });

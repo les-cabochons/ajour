@@ -122,6 +122,7 @@ import {
 import {
   applyDescriptionTimelogs,
   applyItemTimelog,
+  getItemTimelogRefusal,
 } from "@/domain/backlog/description-timelog";
 import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
@@ -252,6 +253,7 @@ import {
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
   updateProjectTask as applyUpdateProjectTask,
+  type CreateOrRestoreTaskGiven,
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
 import {
@@ -2083,13 +2085,14 @@ const store = {
    * Gives the project a task of this name from a task picker (#481): the
    * active task of that name, an archived one restored, or a new one. Returns
    * the task and what happened, with an undo token, null when the task
-   * already existed.
+   * already existed. An archived task its project source closed stays
+   * archived, and the result says why (#637).
    */
   createOrRestoreProjectTaskWithUndo(
     projectId: string,
     draft: LocalProjectTaskDraft,
   ) {
-    return updateStateWithUndoResult((state) => {
+    return updateStateWithUndoResult<CreateOrRestoreTaskGiven>((state) => {
       const given = createOrRestoreProjectTask(
         state.projects,
         projectId,
@@ -2098,7 +2101,15 @@ const store = {
           createId,
           now: Date.now,
         },
+        state.projectSources,
       );
+      if (given.outcome === "refused") {
+        refuseStoreCommand("archived_by_source");
+        return {
+          state,
+          result: { outcome: given.outcome, refusal: given.refusal },
+        };
+      }
       return {
         state:
           given.projects === state.projects
@@ -2912,6 +2923,12 @@ const store = {
    * Returns an undo token, or null when nothing changed.
    */
   applyTimelogWithUndo(workItemId: string) {
+    // What a project source archived stays archived, and the command ends
+    // refused so the log says why nothing changed.
+    if (getItemTimelogRefusal(readState(), workItemId)) {
+      refuseStoreCommand("archived_by_source");
+      return null;
+    }
     return updateStateWithUndo((state) =>
       applyItemTimelog(state, workItemId, {
         createId,

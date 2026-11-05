@@ -35,6 +35,22 @@ Feature: Managed projects from a project source
     Then the task menu's "Tasks" section lists "Ticket #101 - Login, Ticket #102 - Export"
     And only "Ticket #102 - Export" says "Not assigned" in the task menu
 
+  Scenario: A complete managed project shows its dates and when it ended, and the sidebar filters by client
+    Given I have a local project "Support (mine)" with the code "ACME-SUP"
+    And "Support (mine)" has the backlog item "Fix the login", beside "Loose note" in no project
+    And the example project source is connected
+    When I sync the example project source now
+    And I open the archived project "Globex - Internal"
+    Then the Dates row says "Feb 2 – Oct 31, 2025", locked by "Example planner"
+    And the card says "Ended on Oct 31, 2025"
+    And the card has no Client row
+    When I filter the sidebar to the client "Acme inc."
+    Then the sidebar lists only "Fix the login"
+    When I reload the app
+    Then the sidebar lists only "Fix the login"
+    When I filter the sidebar to all projects
+    Then the sidebar lists "Loose note"
+
   Scenario: Merge into… moves a local task's entries to a source task, under its name
     Given I have a local project "Support (mine)" with the code "ACME-SUP"
     And its task "Login fixes" has an entry "Fixed the redirect"

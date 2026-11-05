@@ -1,5 +1,5 @@
 // The snapshot the example planner serves: two projects, one over budget,
-// one complete, with tasks assigned and not. Tests assert against it.
+// one complete and ended, with tasks assigned and not. Tests assert against it.
 import type { ProjectSourceSnapshot } from "../../plugin-sdk/index.ts";
 
 /** The cursor that comes with the snapshot; sent back, it means "unchanged". */
@@ -66,6 +66,8 @@ export const fixtureSnapshot: ProjectSourceSnapshot = {
       code: "GLOBEX-INT",
       url: "https://planner.example/projects/GLOBEX-INT",
       complete: true,
+      startsOn: "2025-02-02",
+      endsOn: "2025-10-31",
       budget: {
         unit: "money",
         total: 20000,

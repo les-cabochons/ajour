@@ -64,8 +64,12 @@ export function BacklogItemProperties({
   const { description, projectId, taskId } = item;
   const timelogMismatch = useMemo(
     () =>
-      getTimelogMismatch(state.projects, { description, projectId, taskId }),
-    [state.projects, description, projectId, taskId],
+      getTimelogMismatch(
+        state.projects,
+        { description, projectId, taskId },
+        state.projectSources,
+      ),
+    [state.projects, state.projectSources, description, projectId, taskId],
   );
   const frontmatterFields = useFrontmatterFields(description);
   // One question for every frontmatter link in the card.

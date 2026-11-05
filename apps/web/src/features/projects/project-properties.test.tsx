@@ -6,7 +6,15 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { ProjectSourceSnapshot } from "@ajour/shared";
 import type { LocalProject } from "@/domain/local-state";
 import {
@@ -140,6 +148,63 @@ describe("a managed project's Properties card", () => {
       displayName: "Support",
       name: "Acme - Support",
     });
+  });
+});
+
+describe("a managed project's dates (#508)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 5, 12));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the source's dates as a locked row, the year only when it is not this year's", () => {
+    renderCard(syncedProject("ACME-SUP"));
+
+    const cell = row("Dates");
+    expect(within(cell).getByText("Jan 1 – Dec 31")).toBeTruthy();
+    expect(
+      within(cell).getByText("Locked. Example planner sets it."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Ended on/)).toBeNull();
+  });
+
+  it("shows a start alone, or an end alone, on its side of the dash", () => {
+    const startOnly = structuredClone(fixtureSnapshot);
+    delete startOnly.projects[0]!.endsOn;
+    renderCard(syncedProject("ACME-SUP", startOnly));
+    expect(within(row("Dates")).getByText("Jan 1 –")).toBeTruthy();
+    cleanup();
+
+    const endOnly = structuredClone(fixtureSnapshot);
+    delete endOnly.projects[0]!.startsOn;
+    endOnly.projects[0]!.endsOn = "2027-03-31";
+    renderCard(syncedProject("ACME-SUP", endOnly));
+    expect(within(row("Dates")).getByText("– Mar 31, 2027")).toBeTruthy();
+  });
+
+  it("says when a project past its end ended, in a muted line", () => {
+    renderCard(syncedProject("GLOBEX-INT"));
+
+    expect(within(row("Dates")).getByText("Feb 2 – Oct 31, 2025")).toBeTruthy();
+    const ended = screen.getByText("Ended on Oct 31, 2025");
+    expect(ended.className).toContain("text-muted-foreground");
+  });
+
+  it("hides the Dates and Client rows when the source gave none", () => {
+    const bare = structuredClone(fixtureSnapshot);
+    delete bare.projects[0]!.startsOn;
+    delete bare.projects[0]!.endsOn;
+    delete bare.projects[0]!.client;
+    renderCard(syncedProject("ACME-SUP", bare));
+
+    expect(screen.queryByText("Dates", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText("Client", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText(/^Ended on/)).toBeNull();
+    expect(row("Code").textContent).toContain("ACME-SUP");
   });
 });
 

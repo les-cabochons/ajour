@@ -18,6 +18,11 @@ export interface SidebarLayout {
   settledOpen: boolean;
   /** The project the work list is filtered to. Missing means all projects. */
   projectId?: string;
+  /**
+   * The client the work list is filtered to, in place of a project: the
+   * items of its managed projects. Missing means all projects.
+   */
+  client?: string;
 }
 
 export const SIDEBAR_LAYOUT_STORAGE_KEY = "ajour.sidebar-layout";
@@ -62,6 +67,10 @@ export function parseSidebarLayout(value: string | null): SidebarLayout {
       projectId:
         typeof parsed.projectId === "string" && parsed.projectId
           ? parsed.projectId
+          : undefined,
+      client:
+        typeof parsed.client === "string" && parsed.client
+          ? parsed.client
           : undefined,
     };
   } catch {

@@ -74,6 +74,7 @@ import {
   type PinnedTaskSlot,
 } from "@/domain/local-state";
 import {
+  formatRestoreRefusal,
   isManagedProject,
   isSourceTask,
 } from "@/domain/projects/project-transitions";
@@ -1540,7 +1541,7 @@ function ProjectDetail({
  */
 function restoreTask(projectId: string, taskId: string) {
   const refusal = localStore.unarchiveProjectTask(projectId, taskId);
-  if (refusal) showToast(`Can't restore. ${refusal}`);
+  if (refusal) showToast(formatRestoreRefusal(refusal));
 }
 
 function writeProjectTask(
@@ -2175,7 +2176,7 @@ export function ProjectsPage() {
           return;
         case "restore": {
           const refusal = localStore.unarchiveProject(project._id);
-          if (refusal) showToast(`Can't restore. ${refusal}`);
+          if (refusal) showToast(formatRestoreRefusal(refusal));
           return;
         }
       }
