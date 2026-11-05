@@ -464,6 +464,68 @@ svg { flex: none; }
 .nextlayer .t { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nextlayer > span:first-child { flex: 1; min-width: 0; }
 
+/* ---------- Layout D · Chat and quiet asks (#642, #643, #644) ---------- */
+.btn.on { background: var(--app-sidebar-active-bg); border-color: transparent; }
+.dwrap { position: relative; }
+/* Concern "more ›": one per concern, faint until the header is hovered. */
+.more { margin-left: 4px; color: var(--text-tertiary); opacity: .5; white-space: nowrap; }
+.chead:hover .more, .more:focus-visible { opacity: 1; }
+.more:hover { color: var(--foreground); }
+.cdetail { margin-top: 8px; padding: 1px 0 1px 10px; border-left: 2px solid var(--primary); font-size: var(--text-sm); line-height: 1.5; max-width: 680px; }
+.cdetail .asrc { margin-top: 4px; }
+.abody code { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--secondary); padding: 0 4px; border-radius: var(--radius-sm); }
+.skel { display: block; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--foreground) 6%, transparent); margin: 6px 0; }
+.awaitnote { font-size: var(--text-xs); color: var(--text-tertiary); }
+.asrc { font-size: var(--text-2xs); color: var(--text-tertiary); }
+.qlink { color: var(--text-secondary); }
+.qlink:hover { color: var(--foreground); text-decoration: underline; }
+.cite { color: var(--primary); font-family: var(--font-mono); font-size: var(--text-xs); }
+.cite:hover { text-decoration: underline; }
+/* Explain: inserted after the selected lines, with a soft accent tint. */
+.explain { margin: 2px 12px 8px 98px; padding: 8px 10px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--primary) 5%, var(--background)); font-family: var(--font-sans); font-size: var(--text-sm); line-height: 1.5; }
+.explain .alinks { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 6px; font-size: var(--text-xs); }
+.ln.xpl .code { background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.ln.sel .code, .ln.sel .no, .ln.flash .code { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.dvar .ln .no { cursor: pointer; }
+/* Selection toolbar: exists only while lines are selected. */
+.seltb { position: absolute; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-popup); font-size: var(--text-xs); }
+.seltb button { height: 24px; padding: 0 8px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.seltb button:hover { background: var(--hover-bg); }
+.seltb .kbd { min-width: 16px; height: 16px; color: var(--text-secondary); }
+.seltb .sep { width: 1px; height: 16px; background: var(--border); }
+/* Chat panel */
+.chat { width: 360px; flex: none; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); }
+.chat.full { position: absolute; inset: 0; z-index: 57; width: auto; border: 0; border-radius: 10px; }
+.chathead { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); font-size: var(--text-xs); color: var(--text-secondary); white-space: nowrap; }
+.chathead .ct { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chathead b { color: var(--foreground); font-weight: 500; }
+.chatlog { flex: 1; min-height: 0; overflow: auto; padding: 14px 14px 4px; }
+.cmsg { margin-bottom: 14px; }
+.cmsg.me { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cmsg.me .bub { background: var(--secondary); border-radius: var(--radius-lg); padding: 6px 10px; max-width: 88%; white-space: pre-wrap; }
+.cmsg.ai .abody { line-height: 1.5; }
+.ctx { font-family: var(--font-mono); }
+.ctx button { display: inline-grid; place-items: center; color: var(--text-tertiary); }
+.ctx button:hover { color: var(--foreground); }
+.actline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: -4px 0 14px; font-size: var(--text-xs); color: var(--text-secondary); }
+.actline.gone { color: var(--text-tertiary); }
+.chatfoot { flex: none; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.waitnote { display: flex; align-items: center; gap: 6px; margin: 0 2px 6px; font-size: var(--text-xs); color: var(--text-secondary); }
+.chatbox { border: 1px solid var(--field-border); border-radius: var(--radius-md); padding: 6px 6px 4px 8px; }
+.chatbox:focus-within { border-color: var(--ring); }
+.chatbox .chip { margin-bottom: 4px; }
+.chatbox textarea { width: 100%; border: 0; padding: 2px 0; min-height: 40px; resize: none; outline: none; background: transparent; line-height: 1.45; }
+.chatbox .crow { margin-top: 0; }
+/* Regroup popover */
+.rgpop { position: absolute; z-index: 60; width: 320px; max-width: calc(100% - 16px); background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-popup); padding: 10px; }
+.rgpop input { width: 100%; height: var(--control-height); margin-top: 6px; border: 1px solid var(--field-border); border-radius: var(--radius-sm); padding: 0 8px; font: inherit; color: inherit; background: var(--background); }
+.rgpop .crow { margin-top: 8px; }
+.dialog.sm { width: min(420px, 100%); }
+.dialog.sm p { color: var(--foreground); }
+.nctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.nctl button { height: 24px; padding: 0 8px; border-radius: 5px; border: 1px solid #d8cc93; background: #fff8d6; color: #3a3520; font-size: 12px; }
+.nctl button.on { background: #3a3520; color: #fffbea; border-color: #3a3520; }
+
 /* ---------- Narrow view (below 768px in Ajour) ---------- */
 .narrow { --page-gutter: 12px; }
 .narrow .topbar { padding-left: 8px; }
@@ -489,6 +551,8 @@ svg { flex: none; }
 .narrow .statusline { margin-top: 2px; }
 .narrow .stale { flex-wrap: wrap; white-space: normal; align-items: flex-start; }
 .narrow .stale .wi { margin-top: 1px; }
+.narrow .explain { margin-left: 12px; margin-right: 8px; }
+.narrow .seltb .kbd { display: none; }
 </style>
 </head>
 <body>
@@ -526,6 +590,8 @@ const P = {
   branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"/>',
   panel: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',
   warn: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.5v3M8 11.2v.1"/>',
+  send: '<path d="M8 13V3.5M4 7.5l4-4 4 4"/>',
+  chat: '<path d="M2.5 3.5h11v7h-6.5l-3 2.5v-2.5h-1.5z"/>',
 };
 const ic = (n, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -660,7 +726,7 @@ H("h14", "service", 22, 23, "InvoiceService.create", `
 -    invoiceEvents.emit("event", { type: "invoice.created", accountId: input.accountId, invoiceId: invoice.id });
 +    emitInvoiceEvent({ type: "invoice.created", accountId: input.accountId, invoiceId: invoice.id });
      return invoice;`);
-H("h15", "service", 40, 41, "InvoiceService.update", `
+H("h15", "service", 40, 40, "InvoiceService.update", `
      const invoice = await this.db.invoices.update(id, patch);
 +    const event = { type: "invoice.updated", accountId: invoice.accountId, invoiceId: id, changes: Object.keys(patch) } as const;
 +    emitInvoiceEvent(event);
@@ -836,7 +902,12 @@ const CONCERNS = {
     built: { title: "Tests", why: "Test files and test seams that exercise the concerns above (8 hunks in 3 files)." },
     agent: { title: "Tests for signing and the 410 stop", why: "Covers a changed body, a foreign secret, the 410 stop and a retried 503." } },
 };
-const ORDER = { built: ["c1", "c2", "c3", "c4", "c5"], agent: ["c4", "c2", "c1", "c3", "c5"] };
+/* Layout D's "Regroup…": tests sit with what they test, so the tests concern goes away. */
+CONCERNS.c4.regroup = { ...CONCERNS.c4.agent };
+CONCERNS.c2.regroup = { ...CONCERNS.c2.agent };
+CONCERNS.c1.regroup = { title: "Sign each payload, with its tests", why: "WebhookSigner, its config, and the signer tests next to it.", hunks: [...CONCERNS.c1.hunks, "h34", "h35", "h36", "h37"] };
+CONCERNS.c3.regroup = { title: "Retry failed deliveries, with the 410 tests", why: "deliver and the shared retry policy, the fetch test seam, and the delivery tests.", hunks: [...CONCERNS.c3.hunks, "h33", "h38", "h39", "h40"] };
+const ORDER = { built: ["c1", "c2", "c3", "c4", "c5"], agent: ["c4", "c2", "c1", "c3", "c5"], regroup: ["c4", "c2", "c1", "c3"] };
 const ALL_HUNKS = Object.values(HUNKS);
 const TOTAL_ADD = ALL_HUNKS.reduce((s, h) => s + h.add, 0);
 const TOTAL_DEL = ALL_HUNKS.reduce((s, h) => s + h.del, 0);
@@ -854,13 +925,13 @@ const COMMITS = [
   ["51d2e7b", "Deliver with the shared retry policy", "yesterday"],
   ["a8f3360", "Add the webhooks routes", "23 hours ago"],
   ["e27b8d4", "Guard deliveries behind webhooks.enabled", "10 hours ago"],
-  ["9f3c2e1", "Test signing and the 410 stop", "9 hours ago"],
+  ["a41c9e2", "Test signing and the 410 stop", "9 hours ago"],
 ];
 /* Layout D: pushes (GitHub) or iterations (Azure DevOps), and the version each hunk last changed in. */
 const VERSIONS = [
   { v: 1, when: "2 days ago", commits: ["3e1a9c2", "7b40d1e", "c09f5a8"] },
   { v: 2, when: "yesterday", commits: ["51d2e7b", "a8f3360"] },
-  { v: 3, when: "9 hours ago", commits: ["e27b8d4", "9f3c2e1"] },
+  { v: 3, when: "9 hours ago", commits: ["e27b8d4", "a41c9e2"] },
 ];
 const LATEST = 3;
 const HVER = {};
@@ -893,12 +964,24 @@ const S = {
   threads: [{ h: "h9", l: 1, status: "Active", comments: [
     { who: "Marcus Lee", ini: "ML", when: "9 hours ago", text: "If an endpoint is deleted while deliveries are still queued, do those rows stay forever?" },
     { who: "Samir Haddad", ini: "SH", when: "7 hours ago", text: "The 0042 cascade drops them with the endpoint. I'll add a test for it." },
+  ] }, { h: "h15", l: 1, status: "Active", comments: [
+    { who: "Marcus Lee", ini: "ML", when: "3 hours ago", text: "If update is retried, does this enqueue the delivery twice?" },
+    { id: "r1", who: "You", ini: "AT", me: true, chat: true, when: "4 minutes ago", text: "Not for a retry inside update: it queues once per call. A client that retries PATCH after a timeout would queue two deliveries, though, since nothing dedupes on the invoice and the change. An idempotency key on the delivery row would cover it." },
   ] }],
   nextDraft: 3, composer: null, composerText: "", summary: "", vote: "comment",
   dver: "v3", railOpen: false, stackOpen: false, stackPos: null, chord: null, finished: null, posted: [], dCur: null,
   myReview: [{ state: "Approved", ver: 1 }, { state: "Commented", ver: 2 }, null],
   dialog: null, menu: null, sheet: null, toast: null,
   concern: 1, file: 0, cPane: "nav", sideTab: "drafts", descOpen: false,
+  /* Layout D · chat and quiet asks */
+  chatOpen: false, chatText: "", chatCtx: null, chatWaiting: false, chatN: 2, askConsent: false, pendingAsk: null,
+  asks: {}, cache: {}, explains: [], sel: null, tap: null, rgPos: null, rgText: "Put tests with what they test", regroupBusy: false,
+  chat: [
+    { t: "me", ctx: { h: "h15", a: 1, b: 3 }, text: "Does this enqueue twice if update is retried, like Marcus asks?" },
+    { t: "ai", key: "chat:1" },
+    { t: "me", text: "Reply on his thread with the short version." },
+    { t: "act", kind: "reply", th: 1, cid: "r1", where: "service.ts:41" },
+  ],
 };
 const host = () => HOSTS[S.host];
 const order = () => ORDER[S.source].map((id) => ({ id, ...CONCERNS[id], ...CONCERNS[id][S.source] }));
@@ -922,6 +1005,7 @@ const kindChip = (c) => c.kind === "tests" ? `<span class="chip kind">Tests</spa
 function sourceLine() {
   if (S.agentBusy) return `<span class="source">${ic("spark", 14)} Claude Code is rewriting the guide…</span>`;
   const pub = S.host === "ado" && S.published ? ` · <span class="result">${ic("check", 12)} Published for Review Deck at ${S.published}</span>` : "";
+  if (S.source === "regroup") return `<span class="source">${ic("spark", 14)} Grouped by Claude Code · <button class="link" data-act="useBuilt">Built from the code</button>${pub}</span>`;
   return S.source === "agent"
     ? `<span class="source">${ic("spark", 14)} Titles and order by Claude Code · <button class="link" data-act="useBuilt">Use the built guide</button>${pub}</span>`
     : `<span class="source">Built from the code${pub}</span>`;
@@ -941,6 +1025,9 @@ function menuItems(id) {
     items.push(`<div class="sep"></div><button data-act="noop">${ic("ext", 14)} Open in ${host().name}</button>`);
     return items.join("");
   }
+  if (id === "dguide") {
+    return `<button data-act="regroupOpen" ${S.regroupBusy ? "disabled" : ""}>${ic("list", 14)} Regroup…</button>${S.host === "ado" ? `<button data-act="publish">${ic("upload", 14)} Publish guide</button>` : ""}<div class="sep"></div><button data-act="noop">${ic("ext", 14)} Open in ${host().name}</button>`;
+  }
   if (id === "stack") {
     return `<div class="mh">Stack · ${S.layer + 1} of ${STACK.length}</div>` + STACK.slice().reverse().map((p) => {
       const i = STACK.indexOf(p);
@@ -949,7 +1036,7 @@ function menuItems(id) {
   }
   if (id === "checks") {
     const cs = LAYER_D[S.layer].checks;
-    return `<div class="mh">Checks on head <span class="mono">9f3c2e1</span></div>` + (cs.length ? cs.map(([nm, st, d]) => `<button data-act="noop">${st === "ok" ? `<span class="okc">${ic("check", 14)}</span>` : `<span style="width:14px;display:grid;place-items:center"><span class="pend"></span></span>`}<span style="flex:1" class="mono">${nm}</span><span class="xs muted">${d}</span></button>`).join("") : `<div class="mh" style="padding-bottom:6px">No checks have run on a draft.</div>`)
+    return `<div class="mh">Checks on head <span class="mono">a41c9e2</span></div>` + (cs.length ? cs.map(([nm, st, d]) => `<button data-act="noop">${st === "ok" ? `<span class="okc">${ic("check", 14)}</span>` : `<span style="width:14px;display:grid;place-items:center"><span class="pend"></span></span>`}<span style="flex:1" class="mono">${nm}</span><span class="xs muted">${d}</span></button>`).join("") : `<div class="mh" style="padding-bottom:6px">No checks have run on a draft.</div>`)
       + `<div class="sep"></div><button data-act="noop">${ic("ext", 14)} Open checks in ${host().name}</button>`;
   }
   if (id === "approvals") {
@@ -1014,7 +1101,7 @@ function commentBlocks(hid, l) {
   }
   return out;
 }
-const cmHtml = (c) => `<div class="cm"><div class="cmh"><span class="avatar ${c.me ? "me" : ""}">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`;
+const cmHtml = (c) => `<div class="cm"><div class="cmh"><span class="avatar ${c.me ? "me" : ""}">${c.ini}</span><b>${c.who}</b> ${c.when}${c.chat ? ` <span class="faint">· from chat</span>` : ""}</div><p>${esc(c.text)}</p></div>`;
 function composerInner() {
   return `<textarea id="composer-ta" data-input="composer" placeholder="${S.composer.reply != null ? "Reply" : "Leave a comment"}" aria-label="Comment">${esc(S.composerText)}</textarea>
     <div class="crow"><span class="hint"><span class="kbd">Ctrl</span> <span class="kbd">Enter</span> adds it to your review</span><button class="ibtn sm" data-act="cancelCompose" aria-label="Cancel">${ic("x", 14)}</button></div>
@@ -1027,11 +1114,12 @@ function hunkHtml(hid, { path = true } = {}) {
   const [dir, name] = splitPath(h.file);
   const v = S.viewed.has(hid);
   const fl = floating();
+  const xs = S.variant === "D" ? S.explains.filter((x) => x.h === hid) : [];
   const lines = h.lines.map((l, i) => {
-    const cls = l.t === "+" ? "add" : l.t === "-" ? "del" : "";
+    const cls = (l.t === "+" ? "add" : l.t === "-" ? "del" : "") + (xs.some((x) => x.a <= i && i <= x.b) ? " xpl" : "");
     const comp = !fl && S.composer && S.composer.h === hid && S.composer.l === i ? " has-composer" : "";
     const ak = fl ? anchorKind(hid, i) : "";
-    return `<div class="ln ${cls}${comp}${ak ? " anch " + ak : ""}" data-line="${hid}:${i}"><span class="no">${l.o ?? ""}</span><span class="no">${l.n ?? ""}</span><span class="no one">${l.n ?? l.o}</span><button class="addc" data-act="compose" data-h="${hid}" data-l="${i}" aria-label="Comment on line ${l.n ?? l.o}">+</button><span class="sg">${l.t === " " ? "" : l.t === "-" ? "−" : "+"}</span><span class="code">${esc(l.s) || " "}</span></div>${fl ? "" : commentBlocks(hid, i)}`;
+    return `<div class="ln ${cls}${comp}${ak ? " anch " + ak : ""}" data-line="${hid}:${i}"><span class="no">${l.o ?? ""}</span><span class="no">${l.n ?? ""}</span><span class="no one">${l.n ?? l.o}</span><button class="addc" data-act="compose" data-h="${hid}" data-l="${i}" aria-label="Comment on line ${l.n ?? l.o}">+</button><span class="sg">${l.t === " " ? "" : l.t === "-" ? "−" : "+"}</span><span class="code">${esc(l.s) || " "}</span></div>${xs.filter((x) => x.b === i).map(explainHtml).join("")}${fl ? "" : commentBlocks(hid, i)}`;
   }).join("");
   const nT = S.threads.filter((t) => t.h === hid).length + S.drafts.filter((d) => d.h === hid && d.reply == null).length;
   return `<div class="hunk ${v ? "is-viewed" : ""}" id="hk-${hid}">
@@ -1088,8 +1176,8 @@ function descriptionHtml() {
 function timelineHtml() {
   return `<ul class="timeline">
     <li><span class="avatar">SH</span><span><b>Samir Haddad</b> opened this pull request · 2 days ago</span></li>
-    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> pushed ${COMMITS.length} commits · head <span class="val">9f3c2e1</span> · 9 hours ago</span></li>
-    <li class="th"><div class="xs muted" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic("comment", 12)}<button class="link mono" data-act="goto" data-v="hk-h9">${FILES.queue}:${lineNo("h9", 1)}</button></div>${S.threads.map((t, ti) => `<div class="thread" style="margin:0">${t.comments.map(cmHtml).join("")}<div class="tfoot"><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`).join("")}</li>
+    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> pushed ${COMMITS.length} commits · head <span class="val">a41c9e2</span> · 9 hours ago</span></li>
+    ${S.threads.map((t) => `<li class="th"><div class="xs muted" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic("comment", 12)}<button class="link mono" data-act="goto" data-v="hk-${t.h}">${HUNKS[t.h].file}:${lineNo(t.h, t.l)}</button></div><div class="thread" style="margin:0">${t.comments.map(cmHtml).join("")}<div class="tfoot"><span class="spacer"></span><span class="chip">${t.status}</span></div></div></li>`).join("")}
     <li><span class="avatar">ML</span><span><b>Marcus Lee</b> approved ${host().id(479)}, the layer below · 1 day ago</span></li>
     ${S.posted.map((t) => `<li class="th"><div class="thread" style="margin:0">${cmHtml({ who: "You", ini: "AT", me: true, when: "just now", text: t })}</div></li>`).join("")}
   </ul>`;
@@ -1101,7 +1189,7 @@ function propsHtml() {
     <dt></dt><dd><span class="avatar">ML</span> Marcus Lee <span class="faint xs">No vote</span></dd>
     <dt></dt><dd><span class="avatar me">AT</span> You <span class="faint xs">Reviewing</span></dd>
     <dt>Checks</dt><dd>${ic("check", 14)} 3 of 3 passed</dd>
-    <dt>Head</dt><dd><span class="val">9f3c2e1</span></dd>
+    <dt>Head</dt><dd><span class="val">a41c9e2</span></dd>
     <dt>Repository</dt><dd>${host().repo}</dd></dl>`;
 }
 
@@ -1217,7 +1305,8 @@ function variantC() {
 
 /* ================= Variant D · Guide with versions (B plus Graphite's ideas) ================= */
 // Floating comments need room beside the diff; below ~1100px the frame falls back to inline threads.
-function floating() { if (S.variant !== "D" || narrow()) return false; const f = document.getElementById("frame"); return !f || f.clientWidth >= 1100; }
+// With the chat open, comments go back inline.
+function floating() { if (S.variant !== "D" || narrow() || S.chatOpen) return false; const f = document.getElementById("frame"); return !f || f.clientWidth >= 1100; }
 const reviewedVer = () => (S.myReview[S.layer] || {}).ver || 0;
 const verLabel = () => (S.host === "ado" ? "Iteration" : "Push");
 function visibleHunks() {
@@ -1253,7 +1342,7 @@ function dHeader() {
     <button class="sl" data-act="menu" data-menu="checks">${checksSummary(S.layer)}</button><span class="dotsep">·</span>
     <button class="sl" data-act="menu" data-menu="approvals">${approvalsSummary(S.layer)}</button><span class="dotsep">·</span>
     <button class="sl" data-act="stack" title="Open the stack (S)">${mergeText(S.layer)}</button></div>`;
-  const meta = `<div class="meta"><span class="avatar">SH</span><b>Samir Haddad</b> wants to merge <span class="branch">${p.branch}</span> into <span class="branch">${p.base}</span> · opened 2 days ago · ${plural(p.files, "file")} · ${pm(p.add, p.del)} · ${plural(p.concerns, "concern")}</div>`;
+  const meta = `<div class="meta"><span class="avatar">SH</span><b>Samir Haddad</b> wants to merge <span class="branch">${p.branch}</span> into <span class="branch">${p.base}</span> · opened 2 days ago · ${plural(p.files, "file")} · ${pm(p.add, p.del)} · ${plural(S.layer === 1 ? order().length : p.concerns, "concern")}</div>`;
   const note = S.layer !== 1 ? `<div class="proto-note">Prototype: every layer shows ${host().id(482)}'s diff.</div>` : "";
   return `<div class="objhead">${n ? "" : `<button class="back" data-act="noop">${ic("back", 12)} Back to Deck</button>`}
     <h1 class="objtitle">${esc(p.title)} <span class="val">${host().id(p.n)}</span></h1>${status}${meta}${dStrip()}${staleLine()}${note}</div>`;
@@ -1329,7 +1418,7 @@ function dStream() {
       const nn = c.hunks.length, vw = viewedIn(c.hunks);
       const part = hs.length < nn ? `<span class="chip">${hs.length} of ${nn} ${S.dver === "since" ? "changed" : "in " + S.dver}</span>` : "";
       return `<section class="concern" id="cc-${c.id}" data-concern="${i}" data-sec="${k++}"><div class="chead"><span class="cn ${vw === nn ? "done" : ""}">${i + 1}</span>
-        <div class="ctext"><div class="ctitle">${esc(c.title)}${kindChip(c)}</div><div class="cwhy">${esc(c.why)}</div></div><div class="cside">${part}<span class="val faint">${vw}/${nn}</span></div></div>${hs.map((h) => hunkHtml(h)).join("")}</section>`;
+        <div class="ctext"><div class="ctitle">${esc(c.title)}${kindChip(c)}</div>${concernWhy(c)}</div><div class="cside">${part}<span class="val faint">${vw}/${nn}</span></div></div>${hs.map((h) => hunkHtml(h)).join("")}</section>`;
     }).join("");
     const sk = skipped.length ? `<div class="skipped"><span>${S.dver === "since" ? "Unchanged since your review:" : `Not in ${S.dver} yet:`}</span>${skipped.map(([c, i]) => `<span style="display:inline-flex;gap:4px;align-items:center"><span class="cn">${i + 1}</span>${esc(c.title)}</span>`).join("")}</div>` : "";
     return out + sk;
@@ -1429,9 +1518,10 @@ function variantD() {
   const crumbs = n
     ? `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur">${host().id(p.n)}</span>`
     : `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="cur">${host().id(p.n)}</span>`;
-  const actions = `${n ? "" : `${hostBtn()}<button class="ibtn" data-act="keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><span style="font-weight:600;font-size:14px">?</span></button>`}${dReviewBtn()}`;
+  const chatBtn = `<button class="btn ${S.chatOpen ? "on" : ""}" data-act="chat" aria-pressed="${S.chatOpen}" title="Chat (A)">${ic("chat", 14)} Chat</button>`;
+  const actions = `${n ? "" : `${hostBtn()}<button class="ibtn" data-act="keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><span style="font-weight:600;font-size:14px">?</span></button>`}${chatBtn}${dReviewBtn()}`;
   const desc = `<div class="section"><div class="sectionrow"><span class="sh">Description</span></div><div class="${S.descOpen ? "" : "clamp"}">${descriptionHtml()}</div><button class="link xs" data-act="descToggle">${S.descOpen ? "Show less" : "Show all"}</button></div>`;
-  const guideRow = `<div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">${S.view === "guide" ? "Guide" : "Files"}</span>${S.view === "guide" && !n ? sourceLine() : ""}<span class="spacer"></span>${S.view === "guide" ? guideActions(!n) : ""}${viewSeg()}</div>${S.view === "guide" && n ? `<div style="margin:-4px 0 10px">${sourceLine()}</div>` : ""}`;
+  const guideRow = `<div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">${S.view === "guide" ? "Guide" : "Files"}</span>${S.view === "guide" && !n ? dSourceLine() : ""}<span class="spacer"></span>${S.view === "guide" ? dGuideActions(n) : ""}${viewSeg()}</div>${S.view === "guide" && n ? `<div style="margin:-4px 0 10px">${dSourceLine()}</div>` : ""}`;
   const convo = `<div class="section" id="conversation"><div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">Conversation</span></div>${timelineHtml()}
     <div style="margin-top:12px"><textarea class="field" placeholder="Leave a general comment" data-input="general" aria-label="General comment"></textarea><div class="crow"><span class="spacer"></span><button class="btn" data-act="postGeneral">Comment now</button><button class="btn primary" data-act="saveGeneral">Add to review</button></div></div></div>`;
   const main = `<div class="dmain"><div class="section">${guideRow}${dStream()}</div>${convo}</div>`;
@@ -1439,7 +1529,190 @@ function variantD() {
   const grid = fl
     ? `<div class="dgrid ${S.railOpen ? "tree-open" : ""}" id="dgrid">${main}<div class="gutter" id="gutter" aria-label="Comments">${gutterCards()}</div>${tree}<svg class="conn" id="conn" aria-hidden="true"></svg></div>`
     : `<div class="dgrid inline ${S.railOpen ? "tree-open" : ""}" id="dgrid">${main}${tree}</div>`;
-  return { crumbs, actions, body: `<div class="scroll dvar" data-scroll="d" id="dscroll"><div class="dwrap">${dHeader()}${desc}${vbarHtml()}${grid}</div></div>` };
+  return { crumbs, actions, body: `<div class="scroll dvar" data-scroll="d" id="dscroll"><div class="dwrap">${dHeader()}${desc}${vbarHtml()}${grid}</div></div>${S.chatOpen && !n ? chatPanel(false) : ""}` };
+}
+
+/* ================= Layout D · Chat and quiet asks (#642 chat and asks, #643 sessions, #644 local clone) ================= */
+const HEAD = "a41c9e2";
+// Answers use a small markup: `code`, [[label|hunk:a-b]] for a citation, {{text}} for faint text.
+const DETAILS = {
+  c1: { clone: false, t: () => "`verify` recomputes the HMAC over the timestamp and the body, and compares in constant time after a length check, since `timingSafeEqual` throws on unequal lengths. Nothing checks the timestamp's age, so a captured payload can be replayed. Your draft on [[signer.ts:21|h3:0-0]] asks the same. `loadConfig` fails at start when `WEBHOOK_SECRET` is missing." },
+  c2: { clone: true, t: (id) => `\`update\` and \`markPaid\` queue one row per endpoint when \`webhooks.enabled\` is on, but \`create\` only emits, so \`invoice.created\` never reaches an endpoint. Rows wait in \`webhook_deliveries\` until the loop takes them, and the 0042 cascade drops them with their endpoint. ${id(485)} lists these rows on the admin page by \`endpoint_id\` and \`next_at\`, so the index serves it too.` },
+  c3: { clone: false, t: () => "`send` now takes a policy per call and defaults to the client's own, so existing callers keep their retries. `deliver` passes `WEBHOOK_POLICY`: six attempts from 2 s, and an immediate stop on 410. A 410 marks the delivery gone but leaves the endpoint registered, so the next invoice change queues it again. Your draft on [[deliver.ts:9|h22:3-3]] says so." },
+  c4: { clone: true, t: (id) => `\`POST /webhooks\` rejects URLs that aren't https and returns the secret once, in the 201 body. \`GET\` strips it. \`DEFAULT_SCOPES\` now grants \`webhooks:read\` to every new key. \`InvoiceService.get\` takes the account, which closes a read across accounts. ${id(485)}'s admin routes reuse \`webhooks:read\`, so they need no new scope.` },
+  c5: { clone: false, t: () => "The signer tests cover a changed body and a foreign secret, not an old timestamp. The delivery tests replace `HttpClient.fetch`, which is why it stops being private in [[client.ts:12|h33:0-0]]. Nothing tests `enqueueDelivery`, or the cascade Samir promises in the thread." },
+};
+const EXPLAIN = {
+  h15: { clone: false, t: () => "After `invoices.update` resolves, these lines build an `invoice.updated` event with the patched field names, emit it in process, and queue one delivery per endpoint when webhooks are on. Listeners run even with webhooks off. Nothing dedupes, so two calls with the same patch queue two deliveries." },
+  h16: { clone: false, t: () => "Same shape as `update`: `markPaid` now emits through `emitInvoiceEvent` and queues a delivery when webhooks are on. The direct `invoiceEvents.emit` call is gone, so every emit goes through one function." },
+  h9: { clone: true, t: (id) => `For each endpoint on the invoice's account, this inserts one \`webhook_deliveries\` row and returns how many it queued. The inserts run one after another without a transaction, so a failure halfway leaves some endpoints queued and others not. ${id(485)} reads these rows for the admin page.` },
+  h22: { clone: false, t: () => "The webhook policy allows six attempts, starting at 2 s and growing with `backoff`, and stops at once on 410 Gone. Other 4xx answers already stop in `shouldRetry`, which only retries 429 and 5xx." },
+  h23: { clone: false, t: () => "`deliver` signs the JSON payload with the endpoint's secret, posts it with the signature and timestamp headers, and sends it with the webhook policy. It returns delivered on 2xx, gone on 410 and failed otherwise. The caller records the result." },
+  h3: { clone: false, t: () => "`verify` recomputes the HMAC over `timestamp.body` and compares it in constant time. The length check comes first because `timingSafeEqual` throws on buffers of different lengths. The timestamp's age isn't checked." },
+  h18: { clone: false, t: () => "`stopOn` runs before the attempt count, so a policy can end retries for a status that would otherwise retry. The webhook policy uses it for 410." },
+  h24: { clone: false, t: () => "The loop takes up to 50 due rows, sends them all at once, and sleeps a second when nothing was due. `allSettled` keeps one failure from stopping the batch, and the abort signal ends the loop between batches." },
+};
+const SEED_ANSWER = () => "Not from a retry inside `update`. It awaits `invoices.update` once, then emits and queues once, in [[service.ts:41–43|h15:1-3]]. The retry in this layer is the HTTP one: `shouldRetry` in [[src/http/retry.ts:28|h18:0-0]] {{in your clone}} re-sends the same delivery row, so it never queues another. A client that retries `PATCH /invoices/:id` after a timeout does call `update` twice, though, and gets two rows, since nothing dedupes on the invoice and the change.";
+const REGROUP_ANSWER = () => "Moved the signer tests into “Sign each payload” and the delivery tests, with the `fetch` test seam, into “Retry failed deliveries”. Four concerns now, and none is only tests.";
+const FALLBACK_ANSWER = () => "{{Prototype: chat answers a question with lines attached, and “regroup …”. In Deck it answers from the diff, the threads, the guide and your clone.}}";
+const rangeLabel = (r) => { const a = lineNo(r.h, r.a), b = lineNo(r.h, r.b); return `${splitPath(HUNKS[r.h].file)[1]}:${a}${b !== a ? "–" + b : ""}`; };
+function explainText(r) {
+  const e = EXPLAIN[r.h];
+  if (e) return { text: e.t(host().id), clone: e.clone };
+  const h = HUNKS[r.h];
+  return { clone: false, text: `${r.b - r.a + 1 === 1 ? "This line" : "These lines"} ${h.del ? "change" : "add"} part of \`${h.fn || splitPath(h.file)[1]}\`. {{Prototype: written answers exist for service.ts, queue.ts, deliver.ts, signer.ts and retry.ts.}}` };
+}
+const tokens = (s) => s.split(/(\[\[[^\]]+\]\]|\{\{[^}]+\}\}|`[^`]+`|\s+)/).filter(Boolean);
+const fmt = (s) => esc(s)
+  .replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, (_, l, t) => `<button class="cite" data-act="cite" data-v="${t}">${l}</button>`)
+  .replace(/\{\{([^}]+)\}\}/g, '<span class="faint">$1</span>')
+  .replace(/`([^`]+)`/g, "<code>$1</code>");
+const plain = (s) => s.replace(/\[\[([^|\]]+)\|[^\]]+\]\]/g, "$1").replace(/\{\{([^}]+)\}\}/g, "$1").replace(/`/g, "");
+
+// One warm conversation: the chat and every uncached ask share it, one turn after another (#643).
+let turnQ = Promise.resolve();
+const whenFree = () => new Promise((r) => { const t = () => (S.chatWaiting ? setTimeout(t, 200) : r()); t(); });
+function ask(key, text, { clone = false, nocache = false, onDone } = {}) {
+  const toks = tokens(text), ck = key + "@" + HEAD;
+  if (!nocache && S.cache[ck]) { S.asks[key] = { status: "done", toks, n: toks.length, clone }; if (onDone) onDone(); return; }
+  const a = S.asks[key] = { status: "queued", toks, n: 0, clone };
+  turnQ = turnQ.then(whenFree).then(() => new Promise((res) => {
+    if (S.asks[key] !== a) return res();
+    a.status = "pend"; paintAsk(key);
+    // A warm session answers in 1.7 to 2.2 s: a quiet placeholder, then the answer streams in place.
+    setTimeout(() => {
+      if (S.asks[key] !== a) return res();
+      a.status = "stream";
+      const tick = () => {
+        if (S.asks[key] !== a) return res();
+        a.n = Math.min(toks.length, a.n + 4); paintAsk(key);
+        if (a.n < toks.length) { setTimeout(tick, 40); return; }
+        a.status = "done"; if (!nocache) S.cache[ck] = true;
+        if (onDone) onDone();
+        render(); res();
+      };
+      tick();
+    }, 1500);
+  }));
+}
+function askBody(key) {
+  const a = S.asks[key];
+  if (!a) return "";
+  if (a.status === "queued" || a.status === "pend") return a.status === "queued" && S.chatWaiting ? `<span class="awaitnote">Waiting for the timesheet task to finish</span>` : `<span class="skel" style="width:90%"></span><span class="skel" style="width:58%"></span>`;
+  return fmt(a.toks.slice(0, a.n).join(""));
+}
+// Streaming writes only the answer's own node; nothing else re-renders until it's done.
+function paintAsk(key) {
+  const log = document.getElementById("chatlog");
+  const stick = log && log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+  document.querySelectorAll(`[data-ask="${key}"] > .abody`).forEach((el) => { el.innerHTML = askBody(key); });
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+const srcLine = (clone) => `From the code at <span class="mono">${HEAD}</span>${clone ? `, and ${host().id(485)} in your clone` : ""}`;
+// Consent, once per repository, before the first ask sends anything.
+function gate(fn) { if (S.askConsent) { fn(); return; } S.pendingAsk = fn; S.dialog = "askConsent"; S.menu = null; S.rgPos = null; }
+
+function concernWhy(c) {
+  const key = `c:${c.id}:${S.source}`, a = S.asks[key];
+  const more = a ? "" : ` <button class="more" data-act="more" data-v="${c.id}" aria-label="More about this concern">more ›</button>`;
+  const det = a ? `<div class="cdetail" data-ask="${key}"><div class="abody">${askBody(key)}</div>${a.status === "done" ? `<div class="asrc">${srcLine(a.clone)} · <button class="qlink" data-act="lessDetail" data-v="${key}">Hide</button></div>` : ""}</div>` : "";
+  return `<div class="cwhy">${esc(c.why)}${more}</div>${det}`;
+}
+function explainHtml(x) {
+  const a = S.asks[x.key];
+  if (!a) return "";
+  const done = a.status === "done";
+  return `<div class="explain" data-ask="${x.key}"><div class="abody">${askBody(x.key)}</div><div class="alinks">${done ? `<button class="qlink" data-act="xChat" data-v="${x.key}">Continue in chat</button><span class="dotsep">·</span><button class="qlink" data-act="xComment" data-v="${x.key}">Turn into a comment</button><span class="dotsep">·</span>` : ""}<button class="qlink" data-act="xDismiss" data-v="${x.key}">Dismiss</button><span class="spacer"></span>${done ? `<span class="asrc">${srcLine(a.clone)}</span>` : ""}</div></div>`;
+}
+function startExplain(r) {
+  const key = `x:${r.h}:${r.a}-${r.b}`;
+  if (!S.explains.some((x) => x.key === key)) S.explains.push({ key, ...r });
+  if (S.asks[key]) return;
+  const { text, clone } = explainText(r);
+  ask(key, text, { clone });
+}
+const ctxChip = (r, removable) => `<span class="chip ctx">${removable ? "" : `<button class="cite" style="color:inherit" data-act="cite" data-v="${r.h}:${r.a}-${r.b}">`}${rangeLabel(r)}${removable ? ` <button data-act="chatCtxClear" aria-label="Remove the selection">${ic("x", 10)}</button>` : "</button>"}</span>`;
+function chatItem(m, i) {
+  if (m.t === "me") return `<div class="cmsg me">${m.ctx ? ctxChip(m.ctx) : ""}<div class="bub">${esc(m.text)}</div></div>`;
+  if (m.t === "ai") return `<div class="cmsg ai" data-ask="${m.key}"><div class="abody">${askBody(m.key)}</div></div>`;
+  if (m.kind === "reply") return m.gone ? `<div class="actline gone">Deleted the reply on ${m.where}</div>`
+    : `<div class="actline">${ic("check", 12)}<span>Replied on ${m.where}</span><span class="dotsep">·</span><button class="qlink" data-act="actView" data-v="${i}">View</button><span class="dotsep">·</span><button class="qlink" data-act="actDel" data-v="${i}">Delete</button></div>`;
+  if (m.kind === "regroup") return m.gone ? `<div class="actline gone">Went back to the guide built from the code</div>`
+    : `<div class="actline">${ic("check", 12)}<span>Regrouped the guide</span><span class="dotsep">·</span><button class="qlink" data-act="actView" data-v="${i}">View</button><span class="dotsep">·</span><button class="qlink" data-act="actDel" data-v="${i}">Undo</button></div>`;
+  return "";
+}
+function chatPanel(full) {
+  const id = host().id;
+  return `<aside class="chat ${full ? "full" : ""}" aria-label="Chat about ${id(pr().n)}"><div class="chathead"><span class="ct"><b>${id(pr().n)}</b> · Claude Code · PR + local clone</span><span class="spacer"></span><button class="ibtn sm" data-act="chat" aria-label="Close the chat" title="Close (A)">${ic("x", 14)}</button></div>
+    <div class="chatlog" id="chatlog" data-scroll="chat">${S.chat.map(chatItem).join("")}</div>
+    <div class="chatfoot">${S.chatWaiting ? `<div class="waitnote">${ic("time", 12)} Waiting for the timesheet task to finish</div>` : ""}
+      <div class="chatbox">${S.chatCtx ? ctxChip(S.chatCtx, true) : ""}<textarea id="chat-ta" data-input="chat" placeholder="Ask about this pull request…" aria-label="Ask about this pull request">${esc(S.chatText)}</textarea>
+        <div class="crow"><span class="hint">${full ? "" : `<span class="kbd">Enter</span> sends`}</span><button class="ibtn sm" data-act="chatSend" aria-label="Send">${ic("send", 14)}</button></div></div></div></aside>`;
+}
+function runRegroup(text) {
+  S.regroupBusy = true;
+  S.chat.push({ t: "me", text });
+  const key = "chat:" + S.chatN++;
+  S.chat.push({ t: "ai", key });
+  S._chatBottom = true;
+  ask(key, REGROUP_ANSWER(), { nocache: true, onDone: () => { S.regroupBusy = false; S.source = "regroup"; S.chat.push({ t: "act", kind: "regroup" }); S._chatBottom = true; if (!S.chatOpen) toast("Regrouped the guide · 4 concerns"); } });
+}
+function dGuideActions(n) {
+  const rg = `<button class="${n ? "" : "btn ghost qlink"}" data-act="regroupOpen" ${S.regroupBusy ? "disabled" : ""}>${n ? ic("list", 14) + " " : ""}Regroup…</button>`;
+  if (!n) return rg + (S.host === "ado" ? `<button class="btn" data-act="publish">${ic("upload", 14)} Publish guide</button>` : "");
+  return `<button class="ibtn" data-act="menu" data-menu="dguide" aria-label="Guide actions">${ic("more")}</button>`;
+}
+function dSourceLine() { return S.regroupBusy ? `<span class="source">Regrouping…</span>` : sourceLine(); }
+
+// The toolbar exists only while lines are selected: by dragging, or by tapping two line numbers.
+function syncSelTb() {
+  const old = document.getElementById("seltb"); if (old) old.remove();
+  document.querySelectorAll(".ln.sel").forEach((x) => x.classList.remove("sel"));
+  if (S.variant !== "D") return;
+  const mark = (h, a, b) => { for (let i = a; i <= b; i++) { const el = document.querySelector(`[data-line="${h}:${i}"]`); if (el) el.classList.add("sel"); } };
+  if (S.tap) { mark(S.tap.h, S.tap.l, S.tap.l); return; }
+  if (!S.sel) return;
+  const { h, a, b } = S.sel;
+  if (S.sel.via === "tap") mark(h, a, b);
+  const wrap = document.querySelector("#dscroll .dwrap"), last = document.querySelector(`[data-line="${h}:${b}"]`), hk = document.getElementById("hk-" + h);
+  if (!wrap || !last || !hk) return;
+  const wr = wrap.getBoundingClientRect(), lr = last.getBoundingClientRect(), hr = hk.getBoundingClientRect();
+  const tb = document.createElement("div");
+  tb.id = "seltb"; tb.className = "seltb"; tb.setAttribute("role", "toolbar"); tb.setAttribute("aria-label", "Selected lines " + rangeLabel(S.sel));
+  tb.innerHTML = `<button data-act="selExplain">Explain <span class="kbd">E</span></button><span class="sep"></span><button data-act="selComment">Comment <span class="kbd">C</span></button><button data-act="selAsk">Ask… <span class="kbd">A</span></button>`;
+  tb.style.left = Math.round(hr.left - wr.left + (narrow() ? 8 : 98)) + "px";
+  tb.style.top = Math.round(lr.bottom - wr.top + 4) + "px";
+  wrap.appendChild(tb);
+}
+function readSel() {
+  if (S.variant !== "D") return;
+  const s = getSelection();
+  if (!s || s.isCollapsed || !s.rangeCount) return;
+  const ln = (n) => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return e ? e.closest("#dscroll .ln") : null; };
+  const A = ln(s.anchorNode), B = ln(s.focusNode);
+  if (!A || !B) return;
+  const [ha, ia] = A.dataset.line.split(":"), [hb, ib] = B.dataset.line.split(":");
+  if (ha !== hb) return;
+  S.sel = { h: ha, a: Math.min(+ia, +ib), b: Math.max(+ia, +ib), via: "drag" }; S.tap = null;
+  syncSelTb();
+}
+function tapLine(el) {
+  const [h, i] = el.dataset.line.split(":");
+  if (S.tap && S.tap.h === h) { S.sel = { h, a: Math.min(S.tap.l, +i), b: Math.max(S.tap.l, +i), via: "tap" }; S.tap = null; }
+  else { S.tap = { h, l: +i }; S.sel = null; }
+  const s = getSelection(); if (s) s.removeAllRanges();
+  syncSelTb();
+}
+function clearSel() { S.sel = null; S.tap = null; const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); syncSelTb(); }
+function flashRange(v) {
+  const [h, r] = v.split(":"); const [a, b] = r.split("-").map(Number);
+  const first = document.querySelector(`[data-line="${h}:${a}"]`);
+  if (!first) { toast("Not in this version · pick v3"); render(); return; }
+  if (narrow() && S.chatOpen) { S.chatOpen = false; render(); }
+  const el = document.querySelector(`[data-line="${h}:${a}"]`);
+  el.scrollIntoView({ block: "center" });
+  const ls = []; for (let i = a; i <= b; i++) { const x = document.querySelector(`[data-line="${h}:${i}"]`); if (x) { x.classList.add("flash"); ls.push(x); } }
+  setTimeout(() => ls.forEach((x) => x.classList.remove("flash")), 1400);
 }
 
 /* ================= Shell ================= */
@@ -1465,8 +1738,10 @@ function overlays() {
       <p>To do that, Ajour sends this pull request's <b>changed lines and description</b> to <b>Anthropic</b>, through <b>Claude Code</b> on this computer.</p>
       <p class="xs">Ajour asks once for each repository. Change the agent or turn this off in Settings › Deck.</p>
       <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" data-act="consentYes">Send to Anthropic</button></div>`;
+    if (S.dialog === "askConsent") d = `<p id="ask-consent-text">Explanations and chat send the selected code, the concern's changes, and files the agent reads from your local clone of ${host().short} to Claude Code (Anthropic). Ask once for ${host().short}.</p>
+      <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="askAllow">Allow</button></div>`;
     if (S.dialog === "publish") d = `<h3>Publish this guide?</h3>
-      <p>Anyone in <b>Billing</b> who opens ${host().id(pr().n)} in Review Deck at head <span class="val">9f3c2e1</span> sees these ${order().length} concerns, ${S.source === "agent" ? "with Claude Code's titles" : "as built from the code"}. Publishing again replaces it.</p>
+      <p>Anyone in <b>Billing</b> who opens ${host().id(pr().n)} in Review Deck at head <span class="val">a41c9e2</span> sees these ${order().length} concerns, ${S.source === "built" ? "as built from the code" : S.source === "regroup" ? "as grouped by Claude Code" : "with Claude Code's titles"}. Publishing again replaces it.</p>
       <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" data-act="publishYes">Publish guide</button></div>`;
     if (S.dialog === "discard") d = `<h3>Discard ${plural(S.drafts.length, "draft comment")}?</h3><p>They were never sent to ${host().name}, so nothing else changes.</p>
       <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" style="background:var(--destructive)" data-act="discardYes">Discard</button></div>`;
@@ -1481,10 +1756,12 @@ function overlays() {
       d = `<h3>Keyboard shortcuts</h3><div class="keys">
         ${k("J")}<span>Next concern</span>${k("K")}<span>Previous concern</span>${k("F")}<span>Show or hide the guide tree</span>${k("S")}<span>Open the stack</span>
         ${k("R", "then", "C")}<span>Finish review: Comment</span>${k("R", "then", "N")}<span>Finish review: ${S.host === "ado" ? "Wait for author" : "Request changes"}</span>${k("R", "then", "A")}<span>Finish review: Approve</span>${k("R", "then", "Y")}<span>Quick approve, no dialog</span>
+        ${k("A")}<span>Chat, or ask about the selected lines</span>${k("E")}<span>Explain the selected lines</span>${k("C")}<span>Comment on the selected lines</span>
         ${k("Ctrl", "Enter")}<span>Add the comment to your review</span>${k("?")}<span>This sheet</span>${k("Esc")}<span>Close</span></div>
         <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Close</button></div>`;
     }
-    o += `<div class="scrim" data-act="scrim"><div class="dialog" role="dialog" aria-modal="true">${d}</div></div>`;
+    const sm = S.dialog === "askConsent";
+    o += `<div class="scrim" data-act="scrim"><div class="dialog ${sm ? "sm" : ""}" role="dialog" aria-modal="true" ${sm ? 'aria-labelledby="ask-consent-text"' : ""}>${d}</div></div>`;
   }
   if (S.stackOpen) {
     const head = `${ic("stack", 14)} Stack <span class="val faint">${S.layer + 1} of ${STACK.length}</span><span class="spacer"></span><button class="ibtn sm" data-act="close" aria-label="Close">${ic("x", 14)}</button>`;
@@ -1493,6 +1770,9 @@ function overlays() {
       : `<div class="catch" data-act="close"></div><div class="stackpop" role="dialog" aria-label="Stack" style="left:${S.stackPos.x}px;top:${S.stackPos.y}px"><div class="sphead">${head}</div>${stackPanel()}</div>`;
   }
   if (S.sheet === "dtree") o += `<div class="sheetscrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="Guide"><div class="sheethead">${S.view === "guide" ? "Guide" : "Files"} <span class="val faint" style="font-weight:400">${S.viewed.size} of ${ALL_HUNKS.length} viewed</span><span class="spacer"></span><button class="ibtn" data-act="close" aria-label="Close">${ic("x")}</button></div><div class="sheetbody">${treeRows(dItems(), true)}</div></div>`;
+  if (S.rgPos) o += `<div class="catch" data-act="close"></div><div class="rgpop" role="dialog" aria-label="Regroup the guide" style="left:${S.rgPos.x}px;top:${S.rgPos.y}px"><label class="sh" for="rg-in">How should the guide be grouped?</label><input id="rg-in" data-input="rg" value="${esc(S.rgText)}">
+    <div class="crow"><span class="hint">Also works in chat</span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="regroupGo">Regroup</button></div></div>`;
+  if (S.variant === "D" && S.chatOpen && narrow()) o += chatPanel(true);
   if (S.menu) o += `<div class="menu" role="menu" style="left:${S.menu.x}px;top:${S.menu.y}px">${menuItems(S.menu.id)}</div>`;
   if (S.chord) o += `<div class="chord" role="status"><span><span class="kbd">R</span>then</span><span><span class="kbd">C</span>Comment</span><span><span class="kbd">N</span>${S.host === "ado" ? "Wait for author" : "Request changes"}</span><span><span class="kbd">A</span>Approve</span><span><span class="kbd">Y</span>Quick approve</span></div>`;
   if (S.toast) o += `<div class="toast" role="status">${ic("check", 14)}${S.toast}</div>`;
@@ -1528,17 +1808,21 @@ const NOTES = {
     ["Narrow", "Panes become screens: navigator, then the concern with Previous and Next, then the review as a sheet from the Review button."],
     ["Trade-off", "The calmest diff and a steady J/K rhythm. But three panes are a second sidebar, the description is a tab away, and scanning across concerns means paging."],
     ["Performance", "Cheapest: only the open concern's hunks mount, so the DOM stays bounded on huge pull requests. A 900-hunk catch-all concern would still need windowing."]] },
-  D: { name: "D · Guide, versions", pitch: "B's one-column guide, plus Graphite's ideas: a versions bar, the stack in the page's flow, floating comments and a keyboard review.",
-    clickable: "Clickable: v1–v3 and Changes since your review, ▾ for each version's commits, stack chips and ‹ ›, Stack (or S), the status line's checks and approvals, the tree (or F) and its ticks, Viewed, “+” on a line, Comment now / Add to review (Ctrl+Enter), Reply, Finish review, R then C/N/A/Y, J/K, ? for the shortcut sheet, Ask an agent, Publish guide and Restack on Azure DevOps.", rows: [
+  D: { name: "D · Guide, versions", pitch: "B's one-column guide, plus Graphite's ideas (a versions bar, the stack in the page's flow, floating comments, a keyboard review), and now a chat panel and quiet asks (#642, #643, #644).",
+    clickable: "Clickable: v1–v3 and Changes since your review, ▾ for each version's commits, stack chips and ‹ ›, Stack (or S), checks and approvals, the tree (or F), Viewed, “+” on a line, Comment now / Add to review (Ctrl+Enter), Reply, Finish review, R then C/N/A/Y, J/K, ?, Publish guide and Restack on Azure DevOps. New: Chat (or A), a concern's “more ›”, selecting lines (drag, or tap two line numbers) then Explain E / Comment C / Ask… A, Continue in chat, Turn into a comment, Dismiss, citations, View / Delete on action lines, Regroup…, and sending in chat: a question with lines attached, or “regroup this so tests sit with what they test”. The seeded chat stands for an earlier turn; consent starts unasked so your first ask shows it.", rows: [
     ["Parts", "B's column: title, a one-line status (checks · approvals · merge order), the meta line, the stack strip, the clamped description, then a sticky versions bar over the guide and the conversation. No figures row and no contents list: the bar and the tree carry them."],
-    ["Versions", "v1 · v2 · v3 are pushes on GitHub and iterations on Azure DevOps; ▾ lists each one's commits, which gives commits a home. “Changes since your review · 7” narrows the guide to hunks changed since you reviewed v2 and folds untouched concerns into one line. The bar's second row always names the scope: this layer only, against #479."],
-    ["Stack", "In the page's flow, one line: main ← #479 ✓ ← #482 this ← #485 Draft, with status, your check (faded when a newer version exists) and ‹ ›. A quiet line warns that #479 changed since this layer was based on it; Azure DevOps links Restack in Review Deck, GitHub says it as text. S or Stack opens every layer with author, checks, lines and your review."],
-    ["Guide tree", "Collapsed, the right rail is a strip of concern ticks that fill as you mark hunks viewed; the ring is where you are. F opens titles, and the current concern lists its files. No surface, no border, only as tall as its content, so it doesn't read as a second sidebar."],
-    ["Comments", "At full width, threads, drafts and the composer float in a gutter beside their line, joined by a connector, and the line gets a mark on its right edge. Hover a card to light its line. At 420px, or a frame under 1,100px, they go back inline."],
-    ["Drafts and submit", "The composer offers Comment now or Add to review (Ctrl+Enter). The header button becomes Finish review · N. R then C, N or A opens it with that vote; R then Y approves at once. After sending: Next in stack: #485."],
-    ["Narrow", "The strip folds to Stack 2/3 ▾ with ‹ ›, and the stack opens as a bottom sheet. The bar keeps v1–v3 and Since review, and a tick bar opens the guide as a sheet. Comments go inline."],
-    ["Trade-off", "Keeps B's reading flow and fixes its gaps: commits live under versions, the stack is always visible, and a return visit is 7 hunks instead of 40. Costs a wider page (the gutter takes 272px) and more to learn (keys, two comment buttons)."],
-    ["Performance", "Floating cards cost one read pass and one write pass per change, scaled by comments, not hunks; with lazy-mounted hunks a card can only place once its hunk mounts. The since filter shrinks the DOM, but needs each version's changed hunks from the host, cached per version pair."]] },
+    ["Versions", "v1 · v2 · v3 are pushes on GitHub and iterations on Azure DevOps; ▾ lists each one's commits. “Changes since your review · 7” narrows the guide to hunks changed since you reviewed v2. The bar's second row always names the scope: this layer only, against #479."],
+    ["Stack", "In the page's flow: main ← #479 ✓ ← #482 this ← #485 Draft, with ‹ ›. A quiet line warns that #479 changed; Azure DevOps links Restack in Review Deck. S opens every layer."],
+    ["Guide tree", "Collapsed, a strip of concern ticks that fill as you mark hunks viewed. F opens titles, and the current concern lists its files."],
+    ["Comments", "At full width, threads, drafts and the composer float in a gutter beside their line, joined by a connector. At 420px, in a frame under 1,100px, or while the chat is open, they go back inline."],
+    ["Drafts and submit", "Comment now or Add to review (Ctrl+Enter). The header button becomes Finish review · N. R then C, N or A opens it with that vote; R then Y approves at once. After sending: Next in stack: #485."],
+    ["Chat", "Chat in the top bar (or A) opens a right-hand panel; at 420px it's a full-height sheet. Its header, “#482 · Claude Code · PR + local clone”, is the only place the provider is named. The agent may make any write you can, and each write shows as a line: “✓ Replied on service.ts:41 · View · Delete”. One turn runs at a time across Ajour, so a running timesheet task shows “Waiting for the timesheet task to finish” (toggle below)."],
+    ["Quiet asks", "Each concern's rationale ends in a faint “more ›”, clear only on hover. It opens a detail block in place: a quiet placeholder for about 1.5 s (a warm session answers in 1.7–2.2 s), then the text streams in. Selected lines get a tiny toolbar, Explain E · Comment C · Ask… A. Explain inserts a tinted answer under the lines with Continue in chat, Turn into a comment and Dismiss. Each answer ends with its source, “From the code at a41c9e2”, plus “and #485 in your clone” when it read the clone. Asking again shows the cached answer at once."],
+    ["Consent", "The first ask in billing-api opens one small dialog naming Claude Code (Anthropic) and the local clone. After Allow, nothing asks again in that repository. Reset it below to see it again."],
+    ["Regroup", "Regroup… on the guide header, or “regroup this so tests sit with what they test” in chat. The guide then reads “Grouped by Claude Code”, with “Built from the code” to go back. Either way the write lands in the chat as “Regrouped the guide · View · Undo”, because both use the one conversation. The prototype always moves the tests in with their code."],
+    ["Narrow", "The strip folds to Stack 2/3 ▾ with ‹ ›; the stack and the guide open as bottom sheets. Comments go inline. The chat is a full-height sheet, and tapping two line numbers selects a range."],
+    ["Trade-off", "Keeps B's reading flow and fixes its gaps; a return visit is 7 hunks instead of 40. Costs a wider page (the gutter takes 272px, the chat 360px), and more to learn."],
+    ["Performance", "Floating cards cost one read and one write pass per change, scaled by comments, not hunks. Asks add nothing per line at rest: one document listener reads the selection, the toolbar exists only while lines are selected, and “more ›” is one per concern. A streaming answer rewrites only its own node, and answers are cached per concern or line range and head commit."]] },
 };
 function renderChrome() {
   document.getElementById("proto").innerHTML = `<b>Deck review page · prototype</b>
@@ -1550,7 +1834,8 @@ function renderChrome() {
   const el = document.getElementById("notes");
   el.style.display = S.notes ? "" : "none";
   el.innerHTML = `<h2>${nt.name}: ${nt.pitch}</h2><dl class="cols">${nt.rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
-    <div style="margin-top:6px;color:#7a7150">${nt.clickable || `Clickable: Guide/A–Z, stack layers, Viewed, “+” on a line to add a draft, Reply, Delete, Review/Submit, Ask an agent (consent once per repository), Publish guide on Azure DevOps.`} Hunks are static.</div>`;
+    <div style="margin-top:6px;color:#7a7150">${nt.clickable || `Clickable: Guide/A–Z, stack layers, Viewed, “+” on a line to add a draft, Reply, Delete, Review/Submit, Ask an agent (consent once per repository), Publish guide on Azure DevOps.`} Hunks are static.</div>
+    ${S.variant === "D" ? `<div class="nctl"><b>States:</b><button class="${S.chatWaiting ? "on" : ""}" data-act="toggleWait" aria-pressed="${S.chatWaiting}">Timesheet task running: ${S.chatWaiting ? "on" : "off"}</button><button data-act="resetConsent">Reset consent for billing-api${S.askConsent ? "" : " (not given)"}</button><button data-act="clearCache">Clear cached answers (${Object.keys(S.cache).length})</button></div>` : ""}`;
 }
 
 /* ================= Render loop ================= */
@@ -1573,7 +1858,15 @@ function render() {
     layoutGutter(); ds.onscroll = trackD; trackD();
   }
   const ta = document.getElementById("composer-ta");
-  if (ta && document.activeElement !== ta) { ta.focus({ preventScroll: !!ds }); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  if (ta && document.activeElement !== ta && !S._focusChat) { ta.focus({ preventScroll: !!ds }); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  if (ds) syncSelTb();
+  const log = document.getElementById("chatlog");
+  if (log && (S._chatBottom || scrolls.chat == null)) log.scrollTop = log.scrollHeight;
+  S._chatBottom = false;
+  const focusId = S._focusChat ? "chat-ta" : S._focusRg ? "rg-in" : null;
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+  S._focusChat = S._focusRg = false;
+  wasFloating = floating();
   const bs = document.getElementById("bscroll");
   if (bs) { bs.onscroll = trackRail; trackRail(); }
 }
@@ -1599,7 +1892,7 @@ function runAgent() {
 
 /* ================= Actions ================= */
 const ACT = {
-  variant: (v) => { S.variant = v; S.menu = S.sheet = S.dialog = null; S.composer = null; S.stackOpen = false; },
+  variant: (v) => { S.variant = v; S.menu = S.sheet = S.dialog = null; S.composer = null; S.stackOpen = false; S.sel = S.tap = S.rgPos = null; if (v !== "D" && S.source === "regroup") S.source = "built"; },
   host: (v) => { S.host = v; },
   width: (v) => { S.width = v; S.menu = S.sheet = null; },
   notes: () => { S.notes = !S.notes; },
@@ -1677,7 +1970,7 @@ const ACT = {
   consentYes: () => { S.consent = true; runAgent(); return false; },
   useBuilt: () => { S.source = "built"; S.menu = null; S.concern = 0; },
   publish: () => { S.menu = null; S.dialog = "publish"; },
-  publishYes: () => { S.published = "head 9f3c2e1"; S.dialog = null; toast("Guide published for Review Deck readers"); },
+  publishYes: () => { S.published = "head a41c9e2"; S.dialog = null; toast("Guide published for Review Deck readers"); },
   menu: (_, el) => {
     const v = el.dataset.menu;
     if (S.menu && S.menu.id === v) { S.menu = null; return; }
@@ -1687,7 +1980,7 @@ const ACT = {
     S.menu = { id: v, x, y: r.bottom - fr.top + 4 };
   },
   sheet: (v) => { S.sheet = v; },
-  close: () => { S.dialog = null; S.sheet = null; S.menu = null; S.stackOpen = false; },
+  close: () => { S.dialog = null; S.sheet = null; S.menu = null; S.stackOpen = false; S.rgPos = null; S.pendingAsk = null; },
   scrim: (_, el, e) => { if (e.target === el) S.dialog = null; else return false; },
   pick: (v) => { if (S.view === "az") S.file = +v; else S.concern = +v; S.cPane = "concern"; resetCenter(); },
   stepPick: (v) => { const max = (S.view === "az" ? FILE_LIST.length : 5) - 1; if (S.view === "az") S.file = Math.max(0, Math.min(max, S.file + +v)); else S.concern = Math.max(0, Math.min(max, S.concern + +v)); resetCenter(); },
@@ -1703,11 +1996,72 @@ const ACT = {
     S._dj = ((S._dj ?? -1) + +v + ids.length) % ids.length; scrollToId(ids[S._dj]); return false;
   },
   descToggle: () => { S.descOpen = !S.descOpen; },
+  /* Layout D · chat and quiet asks */
+  chat: () => { S.chatOpen = !S.chatOpen; S.menu = null; if (S.chatOpen) { S._focusChat = true; S._chatBottom = true; } },
+  chatCtxClear: () => { S.chatCtx = null; S._focusChat = true; },
+  chatSend: () => {
+    const text = S.chatText.trim();
+    if (!text) return false;
+    gate(() => {
+      if (/regroup/i.test(text)) { S.chatText = ""; S.chatCtx = null; runRegroup(text); return; }
+      const ctx = S.chatCtx;
+      S.chat.push({ t: "me", text, ctx }); S.chatText = ""; S.chatCtx = null;
+      const key = "chat:" + S.chatN++, ans = ctx ? explainText(ctx) : { text: FALLBACK_ANSWER(), clone: false };
+      S.chat.push({ t: "ai", key }); S._chatBottom = true; S._focusChat = true;
+      ask(key, ans.text, { nocache: true });
+    });
+  },
+  askAllow: () => { S.askConsent = true; S.dialog = null; const f = S.pendingAsk; S.pendingAsk = null; if (f) f(); },
+  more: (v) => { gate(() => { const d = DETAILS[v]; ask(`c:${v}:${S.source}`, d.t(host().id), { clone: d.clone }); }); },
+  lessDetail: (v) => { delete S.asks[v]; },
+  selExplain: () => { const r = S.sel; clearSel(); if (r) gate(() => startExplain(r)); },
+  selComment: () => { const r = S.sel; clearSel(); if (r) { S.composer = { h: r.h, l: r.b }; S.composerText = ""; } },
+  selAsk: () => { const r = S.sel; clearSel(); if (r) { S.chatOpen = true; S.chatCtx = { h: r.h, a: r.a, b: r.b }; S._focusChat = true; S._chatBottom = true; } },
+  xDismiss: (v) => { delete S.asks[v]; S.explains = S.explains.filter((x) => x.key !== v); },
+  xChat: (v) => {
+    const x = S.explains.find((e) => e.key === v); if (!x) return;
+    const key = "chat:" + S.chatN++;
+    S.chat.push({ t: "me", text: "Explain", ctx: { h: x.h, a: x.a, b: x.b } }, { t: "ai", key });
+    S.asks[key] = { ...S.asks[v] };
+    S.chatOpen = true; S.chatCtx = { h: x.h, a: x.a, b: x.b }; S._focusChat = true; S._chatBottom = true;
+  },
+  xComment: (v) => {
+    const x = S.explains.find((e) => e.key === v), a = S.asks[v]; if (!x || !a) return;
+    S.composer = { h: x.h, l: x.b }; S.composerText = plain(a.toks.join(""));
+    delete S.asks[v]; S.explains = S.explains.filter((e) => e.key !== v);
+  },
+  cite: (v) => { flashRange(v); return false; },
+  actView: (v) => {
+    const m = S.chat[+v];
+    if (m.kind === "reply") { const t = S.threads[m.th]; flashRange(`${t.h}:${t.l}-${t.l}`); return false; }
+    if (narrow()) S.chatOpen = false;
+    render(); scrollToId("vbar-top"); return false;
+  },
+  actDel: (v) => {
+    const m = S.chat[+v];
+    if (m.kind === "reply") { const t = S.threads[m.th]; t.comments = t.comments.filter((c) => c.id !== m.cid); m.gone = true; toast(`Deleted the reply on ${host().name}`); }
+    if (m.kind === "regroup") { S.source = "built"; m.gone = true; }
+  },
+  regroupOpen: (_, el) => {
+    const fr = document.getElementById("frame").getBoundingClientRect(), r = el.getBoundingClientRect();
+    S.menu = null;
+    S.rgPos = { x: Math.max(8, Math.min(r.right - fr.left - 320, fr.width - 328)), y: r.bottom - fr.top + 4 };
+    S._focusRg = true;
+  },
+  regroupGo: () => { const text = S.rgText.trim() || "Regroup the guide"; S.rgPos = null; gate(() => runRegroup(text)); },
+  toggleWait: () => { S.chatWaiting = !S.chatWaiting; },
+  resetConsent: () => { S.askConsent = false; toast("Consent reset for billing-api"); },
+  clearCache: () => { S.cache = {}; toast("Cached answers cleared"); },
   noop: () => false,
 };
 function resetCenter() { const c = document.getElementById("cscroll"); if (c) c.scrollTop = 0; requestAnimationFrame(() => { const c2 = document.getElementById("cscroll"); if (c2) c2.scrollTop = 0; }); }
 
 document.addEventListener("click", (e) => {
+  if (S.variant === "D") {
+    const no = e.target.closest("#dscroll .ln .no");
+    if (no) { tapLine(no.closest(".ln")); return; }
+    if (((S.sel && S.sel.via === "tap") || S.tap) && !e.target.closest("#seltb")) { S.sel = null; S.tap = null; syncSelTb(); }
+  }
   const t = e.target.closest("[data-act]");
   if (!t) { if (S.menu && !e.target.closest(".menu")) { S.menu = null; render(); } return; }
   if (t.disabled) return;
@@ -1720,9 +2074,17 @@ document.addEventListener("input", (e) => {
   const k = e.target.dataset.input;
   if (k === "composer") S.composerText = e.target.value;
   if (k === "summary") S.summary = e.target.value;
+  if (k === "chat") S.chatText = e.target.value;
+  if (k === "rg") S.rgText = e.target.value;
 });
+// Selection: one listener for the whole page, never one per line.
+document.addEventListener("mousedown", (e) => { if (e.target.closest("#seltb")) e.preventDefault(); });
+document.addEventListener("mouseup", (e) => { if (S.variant === "D" && !e.target.closest("#seltb")) setTimeout(readSel, 0); });
+document.addEventListener("selectionchange", () => { if (S.sel && S.sel.via === "drag" && getSelection().isCollapsed) { S.sel = null; syncSelTb(); } });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { if (S.dialog || S.menu || S.sheet || S.stackOpen || S.chord) { S.dialog = S.menu = S.sheet = S.chord = null; S.stackOpen = false; } else if (S.composer) S.composer = null; else return; render(); return; }
+  if (e.key === "Escape") { if (S.dialog || S.menu || S.sheet || S.stackOpen || S.chord || S.rgPos) { S.dialog = S.menu = S.sheet = S.chord = S.rgPos = S.pendingAsk = null; S.stackOpen = false; } else if (S.sel || S.tap) { clearSel(); return; } else if (S.composer) S.composer = null; else if (S.chatOpen && S.variant === "D") S.chatOpen = false; else return; render(); return; }
+  if (e.target.id === "chat-ta" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ACT.chatSend(); render(); return; }
+  if (e.target.id === "rg-in" && e.key === "Enter") { e.preventDefault(); ACT.regroupGo(); render(); return; }
   if (e.target.closest("textarea, input")) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && S.composer) { ACT.saveDraft(); render(); }
     return;
@@ -1742,6 +2104,8 @@ function keyD(e) {
     render(); return;
   }
   if (e.key === "?") { S.dialog = "keys"; S.stackOpen = false; render(); return; }
+  if (S.sel && (k === "e" || k === "c" || k === "a")) { e.preventDefault(); ACT[{ e: "selExplain", c: "selComment", a: "selAsk" }[k]](); render(); return; }
+  if (k === "a") { e.preventDefault(); ACT.chat(); render(); return; }
   if (k === "j" || k === "k") { e.preventDefault(); stepSection(k === "j" ? 1 : -1); return; }
   if (k === "f") { if (narrow()) S.sheet = S.sheet === "dtree" ? null : "dtree"; else S.railOpen = !S.railOpen; render(); return; }
   if (k === "s") { toggleStack(); render(); return; }
@@ -1772,6 +2136,7 @@ addEventListener("resize", () => {
   if (["wide", "narrow"].includes(q.get("width"))) S.width = q.get("width");
   if (q.get("notes") === "0") S.notes = false;
 })();
+S.asks["chat:1"] = { status: "done", toks: tokens(SEED_ANSWER()), n: Infinity, clone: true };
 render();
 wasFloating = floating();
 if (document.fonts) document.fonts.ready.then(() => { if (S.variant === "D") layoutGutter(); });
