@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { placeFloatingComposer } from "@/lib/floating-composer";
 import {
   TimeEntryEditorForm,
   type NewTimeEntryValues,
@@ -112,6 +113,10 @@ export function TimeEntryModal({
         )}
         overlay={!floating}
         showCloseButton={false}
+        // Off the entry's row, so the row stays readable while it is edited.
+        ref={(popup: HTMLDivElement | null) => {
+          if (floating) placeFloatingComposer(popup, returnFocusTo);
+        }}
         finalFocus={
           floating
             ? () =>

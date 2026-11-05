@@ -133,14 +133,14 @@ export function snoozeBacklogItem(
 export function SnoozePickerHost() {
   const [target, setTarget] = useState<SnoozeTarget | null>(null);
   const [customDate, setCustomDate] = useState("");
-  const [customTime, setCustomTime] = useState("09:00");
+  const [customTime, setCustomTime] = useState("9:00");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const listener = (target: SnoozeTarget) => {
       setNow(Date.now());
       setCustomDate("");
-      setCustomTime("09:00");
+      setCustomTime("9:00");
       setTarget(target);
     };
     requestListener = listener;
@@ -246,7 +246,7 @@ export function SnoozePickerHost() {
                 className="composer-estimate-input"
                 inputMode="numeric"
                 autoComplete="off"
-                placeholder="09:00"
+                placeholder="9:00"
                 value={customTime}
                 onChange={(event) => setCustomTime(event.target.value)}
               />

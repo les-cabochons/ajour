@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { RiHashtag as CodeIcon } from "@remixicon/react";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -158,6 +159,7 @@ export function ProjectFormDialog({
             </Field>
             <div className="composer-chips pt-2">
               <div className="composer-chip composer-estimate">
+                <CodeIcon aria-hidden className="size-3.5 shrink-0" />
                 <label htmlFor="project-form-code">Code</label>
                 <input
                   id="project-form-code"

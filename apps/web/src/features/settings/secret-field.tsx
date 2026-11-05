@@ -222,15 +222,17 @@ export function SecretFieldInput({
               Expires on
             </label>
             <div className="connection-row-value">
-              <DateField
-                chip
-                id={`${inputId}-expiry`}
-                aria-label={`${field.label} expires on (optional)`}
-                value={binding.expiry}
-                disabled={blocked}
-                onChange={binding.onExpiryChange}
-                calendarLabel={`Pick when ${field.label} expires`}
-              />
+              <div className="composer-chips">
+                <DateField
+                  chip
+                  id={`${inputId}-expiry`}
+                  aria-label={`${field.label} expires on (optional)`}
+                  value={binding.expiry}
+                  disabled={blocked}
+                  onChange={binding.onExpiryChange}
+                  calendarLabel={`Pick when ${field.label} expires`}
+                />
+              </div>
               <FieldDescription>
                 A reminder only. Ajour keeps using it after this date.
               </FieldDescription>

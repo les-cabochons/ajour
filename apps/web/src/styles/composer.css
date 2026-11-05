@@ -437,3 +437,15 @@ body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
   opacity: 1;
   color: var(--text-tertiary);
 }
+
+/* A dialog opened from a floating composer, such as Create task from its
+   task chip, opens over that composer, offset a step, not across the
+   window from it (forms council round 11). */
+body:has([data-slot="dialog-content"].composer-floating)
+  [data-slot="dialog-content"].composer-nested {
+  top: 96px;
+  right: 40px;
+  left: auto;
+  translate: none;
+  transform: none;
+}

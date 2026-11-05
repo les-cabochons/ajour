@@ -2,6 +2,7 @@ import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
 import {
   RiCloseLine as X,
   RiMoneyDollarCircleLine as BillableIcon,
+  RiTimeLine as BudgetIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
@@ -153,6 +154,7 @@ export function ProjectTaskEditorForm({
             className="composer-chip composer-estimate"
             data-invalid={editor.budgetError ? "true" : undefined}
           >
+            <BudgetIcon aria-hidden className="size-3.5 shrink-0" />
             <label htmlFor="project-task-editor-budget">Budget</label>
             <input
               id="project-task-editor-budget"
@@ -170,6 +172,7 @@ export function ProjectTaskEditorForm({
             className="composer-chip composer-estimate"
             data-invalid={editor.adjustmentError ? "true" : undefined}
           >
+            <BudgetIcon aria-hidden className="size-3.5 shrink-0" />
             <label htmlFor="project-task-editor-adjustment">Adjustment</label>
             <input
               id="project-task-editor-adjustment"

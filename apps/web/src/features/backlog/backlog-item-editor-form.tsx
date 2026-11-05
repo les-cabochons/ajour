@@ -13,6 +13,7 @@ import {
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiArchiveLine as KeepIcon,
+  RiTimeLine as EstimateIcon,
   RiCloseLine as X,
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
@@ -620,6 +621,8 @@ export function BacklogItemEditorForm({
         className="composer-chip composer-estimate"
         data-invalid={error ? "true" : undefined}
       >
+        {/* Every chip leads with a mark: a clock for an estimate. */}
+        <EstimateIcon aria-hidden className="size-3.5 shrink-0" />
         <label htmlFor={`${idPrefix}-${key}`}>{label}</label>
         <input
           id={`${idPrefix}-${key}`}
