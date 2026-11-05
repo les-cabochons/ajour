@@ -61,7 +61,6 @@ function PluginFieldInput({
               id={field.id}
               checked={value === true}
               onCheckedChange={(checked) => onChange(checked)}
-              className="mt-1.5"
             />
           ) : field.type === "select" ? (
             <OptionSelect

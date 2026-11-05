@@ -80,7 +80,7 @@ export function NewBacklogItemDialogHost() {
       }}
     >
       <DialogContent
-        className="max-w-xl narrow:max-w-[calc(100%-1rem)]"
+        className="max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]"
         showCloseButton={false}
       >
         <BacklogItemEditorForm

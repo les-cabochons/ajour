@@ -153,7 +153,7 @@ export function PinnedSlotDialog({
           <Button
             type="button"
             variant="ghost"
-            className="sm:mr-auto"
+            className="mr-auto"
             disabled={!slot}
             onClick={() => choose(undefined)}
           >

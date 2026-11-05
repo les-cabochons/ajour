@@ -108,7 +108,7 @@ export function TimeEntryModal({
           small margin, at every width below the desktop breakpoint. */}
       <DialogContent
         className={cn(
-          "max-w-xl narrow:max-w-[calc(100%-1rem)]",
+          "max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]",
           floating && "composer-floating",
         )}
         overlay={!floating}

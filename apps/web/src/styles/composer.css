@@ -325,10 +325,24 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* A switch stays beside its label: under it, it floated alone. */
+  /* A switch stays beside its label and its help runs under both, at full
+     width: under the label, the switch floated alone; with its help in the
+     same column, the label was crushed (forms council rounds 17 and 18). */
   .connection-rows .connection-row:has([data-slot="switch"]) {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
+  }
+
+  .connection-rows
+    .connection-row:has([data-slot="switch"])
+    .connection-row-value {
+    display: contents;
+  }
+
+  .connection-rows
+    .connection-row:has([data-slot="switch"])
+    :is([data-slot="field-description"], .field-help) {
+    grid-column: 1 / -1;
   }
 }
 

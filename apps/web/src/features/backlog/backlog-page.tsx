@@ -1024,7 +1024,7 @@ export function BacklogPage() {
         >
           <DialogContent
             className={cn(
-              "max-w-xl narrow:max-w-[calc(100%-1rem)]",
+              "max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]",
               !narrow && "composer-floating",
             )}
             overlay={narrow}
