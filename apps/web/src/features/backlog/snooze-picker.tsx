@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import {
   Dialog,
   DialogContent,
@@ -19,16 +20,6 @@ import {
 import { getCachedPluginsOverview } from "@/lib/app-api";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
-
-/*
- * The calendar loads with the dialog, not with this module: actions and
- * rows import the snooze request from here and need none of it.
- */
-const DateField = lazy(() =>
-  import("@/components/ui/date-field").then((module) => ({
-    default: module.DateField,
-  })),
-);
 
 /**
  * Runs once the item is snoozed, telling whether the comment given went with
@@ -227,17 +218,15 @@ export function SnoozePickerHost() {
           {/* The custom time as chips, as the composers': the day, then
               the time typed in place (forms council round 7). */}
           <div className="composer-chips min-w-0 flex-1">
-            <Suspense fallback={<div className="min-w-0 flex-1" />}>
-              <div className="composer-date">
-                <DateField
-                  chip
-                  aria-label="Custom date"
-                  calendarLabel="Pick the day"
-                  value={customDate}
-                  onChange={setCustomDate}
-                />
-              </div>
-            </Suspense>
+            <div className="composer-date">
+              <DateField
+                chip
+                aria-label="Custom date"
+                calendarLabel="Pick the day"
+                value={customDate}
+                onChange={setCustomDate}
+              />
+            </div>
             <div className="composer-chip composer-estimate">
               <label htmlFor="snooze-custom-time">At</label>
               <input

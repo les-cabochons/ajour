@@ -20,6 +20,8 @@ vi.mock("@/domain/backlog/comments", async (importOriginal) => ({
 vi.mock("@/features/feedback/undo-toast", () => ({
   offerUndo: mocks.offerUndo,
 }));
+// The snooze request needs no calendar; each test reloads the module graph.
+vi.mock("@/components/ui/date-field", () => ({ DateField: () => null }));
 
 function installMockWindow() {
   const storage = new Map<string, string>();
