@@ -85,19 +85,24 @@ You can also add the folder in **Edit environment variables for your account**. 
 
 ## WSL
 
-On Windows, once the `ajour` command is installed, Settings › Terminal lists the WSL distros, leaving out `docker-desktop*`.
+With the `ajour` command installed from Ajour on Windows, **Settings › General › Terminal** lists your WSL distros under **ajour command**. Press **Add** next to a distro. Ajour downloads the Linux build of its own version into `%LOCALAPPDATA%\Ajourin\linux`, checks it inside that distro, and links `~/.local/bin/ajour` to it. Docker Desktop's distros aren't listed.
 
-**Add** makes the desktop app:
+Open a new terminal in that distro, then pair it once. Each distro keeps its own token:
 
-1. download the release's `linux-x64` archive with the same checks as the Windows install, into `%LOCALAPPDATA%\Ajour\bin\linux\`, next to `ajour.exe`
-2. check, inside that distro, that the binary prints the app's version for `-V`
-3. link `~/.local/bin/ajour` in that distro to the binary on `/mnt/c`
+```sh
+ajour connect
+ajour status
+```
 
-Add from Settings works on NAT and mirrored networking, then `ajour connect` once per distro.
+`ajour` in WSL reaches the Windows app through `ajour.exe`, so it works with WSL's default NAT networking and with mirrored networking alike. Nothing in `.wslconfig` changes.
 
-### Manual archive installation
+If Settings says to add `~/.local/bin` to your PATH, add it in your shell's profile, as in [Linux and macOS](#linux-and-macos). Ubuntu and Debian add it on their own once the folder exists. If something else is already at `~/.local/bin/ajour`, Ajour leaves it there and says so. Remove it, then press **Add** again.
 
-Run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution.
+Removing the `ajour` command deletes the Linux build too, and leaves each distro's `~/.local/bin/ajour` link pointing at nothing. Delete it there with `rm ~/.local/bin/ajour`.
+
+### Install the archive by hand
+
+Without Add, run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution.
 
 The CLI connects to the Windows app at `http://127.0.0.1:8787`. Use [mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) so WSL can reach that Windows loopback address. It requires Windows 11 22H2 or newer and a current WSL installation.
 
