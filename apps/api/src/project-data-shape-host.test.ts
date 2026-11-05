@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
+import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 import type {
   PluginInvocation,
   PluginRun,
@@ -433,10 +434,19 @@ describe("ProjectDataShapePluginManager", () => {
       await expect(api4.listPlugins()).resolves.toEqual([]);
     });
 
-    describe("a plugin id the plugin host already holds", () => {
-      async function managerBesidePluginHost(
-        hostFolder: (own: string) => string,
+    describe("beside a plugin host", () => {
+      /** A plugin host that holds `held` and admits what `admit` lets by. */
+      function pluginHost(
+        held: Map<string, string>,
+        admit: (pluginId: string) => void = () => undefined,
       ) {
+        return {
+          packageDirectories: async () => held,
+          admitPackageOperation: async (pluginId: string) => admit(pluginId),
+        };
+      }
+
+      it("reads only the folders the plugin host holds", async () => {
         const root = await tempDir();
         const pluginDirectory = await createPlugin(
           root,
@@ -444,31 +454,45 @@ describe("ProjectDataShapePluginManager", () => {
           undefined,
           API_4_MANIFEST,
         );
-        const created = new ProjectDataShapePluginManager({
+        const shape = new ProjectDataShapePluginManager({
           pluginDirectories: [pluginDirectory],
           runtime: new InProcessPluginRuntime(),
-          pluginHostPackages: async () =>
-            new Map([["workday-project-data", hostFolder(pluginDirectory)]]),
+          pluginHost: pluginHost(new Map()),
         });
-        managers.push(created);
-        return created;
-      }
-
-      it("refuses a data shape from another folder, and says why", async () => {
-        const other = await tempDir();
-        const shape = await managerBesidePluginHost(() => other);
+        managers.push(shape);
 
         await expect(shape.listPlugins()).resolves.toEqual([]);
         await expect(
           shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
         ).rejects.toThrow(
-          'Schema plugin "workday-project-data" shares its id with a plugin from another folder',
+          'Schema plugin "workday-project-data" is not available.',
         );
         expect(shape.activeOperationCount).toBe(0);
       });
 
-      it("keeps a package that is the plugin host's own folder", async () => {
-        const shape = await managerBesidePluginHost((own) => own);
+      it("lists and runs a package the plugin host admits, and neither once it refuses", async () => {
+        const root = await tempDir();
+        const pluginDirectory = await createPlugin(
+          root,
+          SHAPE_SOURCE,
+          undefined,
+          API_4_MANIFEST,
+        );
+        let refusal: string | undefined;
+        const { runtime, invocations } = recordingRuntime(
+          new InProcessPluginRuntime(),
+        );
+        const shape = new ProjectDataShapePluginManager({
+          runtime,
+          pluginHost: pluginHost(
+            new Map([["workday-project-data", pluginDirectory]]),
+            () => {
+              if (refusal)
+                throw new PluginOperationRefused(refusal, "plugin_off");
+            },
+          ),
+        });
+        managers.push(shape);
 
         await expect(shape.listPlugins()).resolves.toEqual([
           expect.objectContaining({ id: "workday-project-data" }),
@@ -476,6 +500,13 @@ describe("ProjectDataShapePluginManager", () => {
         await expect(
           shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
         ).resolves.toMatchObject({ datasets: [{ id: "projects" }] });
+
+        refusal = "Activate this plugin before running it.";
+        await expect(shape.listPlugins()).resolves.toEqual([]);
+        await expect(
+          shape.importProjects("workday-project-data", IMPORTED_SHEETS),
+        ).rejects.toThrow(refusal);
+        expect(invocations).toHaveLength(1);
       });
     });
 

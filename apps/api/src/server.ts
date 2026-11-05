@@ -1310,6 +1310,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
     events,
+    // A data shape import or export is an operation of its package too.
+    outsideOperations: () => projectDataShapePluginManager.activeOperationCount,
     pluginState: async (pluginId, runnable) => ({
       on: await pluginMayRun(storage, pluginId, runnable),
       settings: await storage.getPluginRuntimeSettings(pluginId),
@@ -1327,11 +1329,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       manifest,
       request,
     ) => {
-      const capability = capabilityOfMethod(method);
+      const dataShape =
+        method === "exportProjects" || method === "importProjects";
+      const capability = dataShape ? undefined : capabilityOfMethod(method);
       // Validating a connection serves no capability, but it runs the
       // plugin with the connection's credential: not before the user has
-      // allowed what the package reaches.
-      if (!capability && method !== "validateConnection") return;
+      // allowed what the package reaches. A data shape's import and export
+      // serve none either, and run its code the same way.
+      if (!capability && method !== "validateConnection" && !dataShape) return;
       const inactive = await inactiveCapability(
         storage,
         pluginId,
@@ -1362,7 +1367,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       (allowDevelopmentPlugins ? developmentPluginDirectories : []),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
-    pluginHostPackages: () => pluginManager.packageDirectories(),
+    pluginHost: pluginManager,
     events,
   });
   // "Always ready" plugins start with Ajour.
@@ -1749,13 +1754,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           (await pluginManager.listPlugins()).map((plugin) => plugin.id),
         );
         const cancelled = await Promise.allSettled(
-          unsignedPluginIds.map((pluginId) =>
-            pluginManager.cancelPluginOperations(
-              pluginId,
-              new Error("Unsigned plugins were deactivated."),
-              "plugin_off",
-            ),
-          ),
+          unsignedPluginIds.map(async (pluginId) => {
+            const deactivated = new Error("Unsigned plugins were deactivated.");
+            return (
+              (await pluginManager.cancelPluginOperations(
+                pluginId,
+                deactivated,
+                "plugin_off",
+              )) +
+              (await projectDataShapePluginManager.cancelOperations(
+                deactivated,
+                "plugin_off",
+                pluginId,
+              ))
+            );
+          }),
         );
         unit.set({
           activation: {
@@ -1957,11 +1970,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       await storage.setPluginEnabled(pluginId, payload.enabled);
       if (!payload.enabled) {
-        const cancelled = await pluginManager.cancelPluginOperations(
-          pluginId,
-          new Error(`Plugin "${pluginId}" was deactivated.`),
-          "plugin_off",
-        );
+        const deactivated = new Error(`Plugin "${pluginId}" was deactivated.`);
+        const cancelled =
+          (await pluginManager.cancelPluginOperations(
+            pluginId,
+            deactivated,
+            "plugin_off",
+          )) +
+          (await projectDataShapePluginManager.cancelOperations(
+            deactivated,
+            "plugin_off",
+            pluginId,
+          ));
         unit.set({ activation: { operations_cancelled: cancelled } });
       }
       await pluginManager.syncReadiness();
@@ -3995,6 +4015,11 @@ export async function uninstallPluginForServer(
   // Refused before the package goes: a vault that can't drop the plugin's
   // secrets would leave its data behind a package that is already gone.
   await runtime.storage.assertSecretsChangeable();
+  await runtime.projectDataShapePluginManager.cancelOperations(
+    new Error(`Plugin "${pluginId}" was uninstalled.`),
+    "uninstalled",
+    pluginId,
+  );
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   await runtime.storage.removePluginData(removedPlugin.id);
   await runtime.pluginManager.syncReadiness();

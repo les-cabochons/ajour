@@ -579,8 +579,10 @@ describe("plugin installation boundary", () => {
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
+      // The plugin host holds the folder, so its switch and consent apply.
+      developmentPluginDirectories: [pluginDirectory],
       projectDataShapePluginDirectories: [pluginDirectory],
-      allowDevelopmentPlugins: false,
+      allowDevelopmentPlugins: true,
     });
     servers.push(server);
 
@@ -681,7 +683,7 @@ describe("plugin installation boundary", () => {
     ).resolves.toEqual({ status: 200, body: { plugins: [] } });
   });
 
-  it("refuses a data shape that takes the id of a plugin from another folder", async () => {
+  it("does not run a data shape that takes the id of a plugin from another folder", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
@@ -716,7 +718,7 @@ describe("plugin installation boundary", () => {
       }),
     ).resolves.toMatchObject({
       status: 400,
-      body: { error: expect.stringContaining("shares its id") },
+      body: { error: expect.stringContaining("is not available") },
     });
   });
 
@@ -738,7 +740,7 @@ describe("plugin installation boundary", () => {
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [pluginDirectory],
+      developmentPluginDirectories: [pluginDirectory, shapeDirectory],
       projectDataShapePluginDirectories: [shapeDirectory],
       allowDevelopmentPlugins: true,
       pluginRuntime: {
@@ -3565,8 +3567,10 @@ describe("plugin errors that echo a secret", () => {
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
+      // The plugin host holds the folder, so its switch and consent apply.
+      developmentPluginDirectories: [pluginDirectory],
       projectDataShapePluginDirectories: [pluginDirectory],
-      allowDevelopmentPlugins: false,
+      allowDevelopmentPlugins: true,
     });
     servers.push(server);
 

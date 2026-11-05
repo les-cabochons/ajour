@@ -1,5 +1,3 @@
-import path from "node:path";
-import { realpath } from "node:fs/promises";
 import {
   PluginOperationRefused,
   PluginOperationLifetime,
@@ -33,17 +31,42 @@ import {
 } from "./project-data-shape-plugin.ts";
 import { isPluginApi4Manifest } from "../../../packages/shared/plugin-api-4.ts";
 
-interface ProjectDataShapeHostOptions {
-  pluginDirectories?: string[];
-  requestTimeoutMs?: number;
-  /** What runs plugin code. The standalone API has none, and runs no plugin. */
-  runtime?: PluginRuntime;
+/**
+ * The plugin host, as this host uses it. Data shape plugins are packages of
+ * the plugin host: it holds them, and decides whether one runs.
+ */
+export interface PluginHostPackages {
   /**
    * The folder of every package the plugin host holds, by plugin id. A
    * renderer and its storage are keyed by plugin id alone, so a data shape
    * may not take the id of a plugin host package from another folder.
    */
-  pluginHostPackages?: () => Promise<ReadonlyMap<string, string>>;
+  packageDirectories(): Promise<ReadonlyMap<string, string>>;
+  /**
+   * Throws a `PluginOperationRefused` when the plugin host would not run
+   * `method` of this package now: the plugin's switch, unsigned plugins,
+   * consent to what it reaches, a suspension, or a package change.
+   */
+  admitPackageOperation(
+    pluginId: string,
+    method: ProjectDataShapeMethod,
+  ): Promise<void>;
+}
+
+interface ProjectDataShapeHostOptions {
+  /**
+   * Folders the data shape host reads without a plugin host: the bare
+   * format-level host. With a `pluginHost`, only the packages it holds run.
+   */
+  pluginDirectories?: string[];
+  requestTimeoutMs?: number;
+  /** What runs plugin code. The standalone API has none, and runs no plugin. */
+  runtime?: PluginRuntime;
+  /**
+   * The plugin host whose packages this host lists and runs, on its terms.
+   * Without one, every readable package runs, as in this host's own tests.
+   */
+  pluginHost?: PluginHostPackages;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
 }
@@ -55,15 +78,6 @@ export const SCHEMA_OPERATION_EVENTS = {
   exportProjects: "project.export",
   importProjects: "project.import",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
-
-/** Whether two folders are one, links followed. */
-async function isSameDirectory(left: string, right: string) {
-  try {
-    return (await realpath(left)) === (await realpath(right));
-  } catch {
-    return path.resolve(left) === path.resolve(right);
-  }
-}
 
 function comparePlugins(
   left: ProjectDataShapePluginManifest,
@@ -78,16 +92,14 @@ function comparePlugins(
 export class ProjectDataShapePluginManager {
   private readonly pluginDirectories: string[];
   private readonly events?: ApiEvents;
-  private readonly pluginHostPackages?: () => Promise<
-    ReadonlyMap<string, string>
-  >;
+  private readonly pluginHost?: PluginHostPackages;
   private readonly runsPluginApi4: boolean;
   private readonly workers: PluginOperationLifetime<PluginMethod>;
 
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
-    this.pluginHostPackages = options.pluginHostPackages;
+    this.pluginHost = options.pluginHost;
     const runtime: PluginRuntime =
       options.runtime ?? new DesktopRequiredPluginRuntime();
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
@@ -106,9 +118,21 @@ export class ProjectDataShapePluginManager {
 
   async listPlugins(): Promise<ProjectDataShapePluginManifest[]> {
     this.workers.assertRunning();
-    return Array.from((await this.discoverPlugins()).plugins.values())
-      .map((plugin) => plugin.manifest)
-      .sort(comparePlugins);
+    const offered: ProjectDataShapePluginManifest[] = [];
+    for (const plugin of (await this.discoverPlugins()).plugins.values()) {
+      // Only what the plugin host would run: the others aren't offered.
+      try {
+        await this.pluginHost?.admitPackageOperation(
+          plugin.manifest.id,
+          "exportProjects",
+        );
+      } catch (error) {
+        if (error instanceof PluginOperationRefused) continue;
+        throw error;
+      }
+      offered.push(plugin.manifest);
+    }
+    return offered.sort(comparePlugins);
   }
 
   async exportProjects(
@@ -119,7 +143,7 @@ export class ProjectDataShapePluginManager {
       pluginId,
       "exportProjects",
       async (record) => {
-        const plugin = await this.getPlugin(pluginId, record);
+        const plugin = await this.getPlugin(pluginId, "exportProjects", record);
         if (!plugin.manifest.capabilities.projectDataShape.datasets) {
           throw new PluginOperationRefused(
             `Schema plugin "${pluginId}" only imports.`,
@@ -152,7 +176,7 @@ export class ProjectDataShapePluginManager {
       pluginId,
       "importProjects",
       async (record) => {
-        const plugin = await this.getPlugin(pluginId, record);
+        const plugin = await this.getPlugin(pluginId, "importProjects", record);
         let params: { sheets: ProjectDataShapeSheet[] };
         try {
           params = projectDataShapeImportRequestSchema.parse({ sheets });
@@ -182,9 +206,16 @@ export class ProjectDataShapePluginManager {
     await this.workers.shutdown();
   }
 
-  /** Cancels every running operation, for `reason`. Returns how many. */
-  async cancelOperations(error: Error, reason?: PluginCancelReason) {
-    return await this.workers.cancel(error, reason);
+  /**
+   * Cancels the running operations, of one plugin when `pluginId` is given,
+   * for `reason`. Returns how many.
+   */
+  async cancelOperations(
+    error: Error,
+    reason?: PluginCancelReason,
+    pluginId?: string,
+  ) {
+    return await this.workers.cancel(error, reason, pluginId);
   }
 
   private invocation(
@@ -204,58 +235,48 @@ export class ProjectDataShapePluginManager {
 
   private async discoverPlugins() {
     const plugins = new Map<string, ResolvedProjectDataShapePlugin>();
-    const refused = new Map<string, string>();
-    const hostPackages = await this.pluginHostPackages?.();
+    const hostPackages = await this.pluginHost?.packageDirectories();
     // Installed packages are plugins of every kind: only those that declare
-    // a data shape are listed, and the others are not invalid.
-    const installed = new Set(hostPackages?.values() ?? []);
-    const directories = new Set([...this.pluginDirectories, ...installed]);
+    // a data shape are listed, and the others are not invalid. With a plugin
+    // host, its packages are the only ones: a folder it doesn't hold has no
+    // switch or consent to check, so it isn't read. A renderer and its
+    // storage are keyed by plugin id, which the host keeps to one folder.
+    const held = new Set(hostPackages?.values() ?? []);
+    const directories = this.pluginHost
+      ? held
+      : new Set(this.pluginDirectories);
     for (const directory of directories) {
       try {
         const plugin: ResolvedProjectDataShapePlugin = {
           ...(await readProjectDataShapePlugin(directory)),
-          source: this.pluginDirectories.includes(directory)
-            ? "development"
-            : "installed",
+          source: this.isDevelopment(directory) ? "development" : "installed",
         };
-        const id = plugin.manifest.id;
-        const owner = hostPackages?.get(id);
-        if (
-          owner !== undefined &&
-          !(await isSameDirectory(owner, plugin.directory))
-        ) {
-          refused.set(
-            id,
-            `Schema plugin "${id}" shares its id with a plugin from another folder. Plugins keep their window and storage by id, so rename one of them.`,
-          );
-          plugins.delete(id);
-          this.events?.current()?.count("invalid_plugin");
-          continue;
-        }
-        plugins.set(id, plugin);
-        refused.delete(id);
+        plugins.set(plugin.manifest.id, plugin);
       } catch (error) {
-        if (
-          error instanceof NotAProjectDataShapeError &&
-          installed.has(directory) &&
-          !this.pluginDirectories.includes(directory)
-        ) {
+        if (error instanceof NotAProjectDataShapeError && held.has(directory)) {
           continue;
         }
         // Skipped, as an invalid plugin package is: the event counts it.
         this.events?.current()?.count("invalid_plugin");
       }
     }
-    return { plugins, refused };
+    return { plugins };
   }
 
-  private async getPlugin(pluginId: string, record: OperationRecord) {
-    const { plugins, refused } = await this.discoverPlugins();
+  private isDevelopment(directory: string) {
+    return this.pluginDirectories.includes(directory);
+  }
+
+  private async getPlugin(
+    pluginId: string,
+    method: PluginMethod,
+    record: OperationRecord,
+  ) {
+    const { plugins } = await this.discoverPlugins();
     const plugin = plugins.get(pluginId);
     if (!plugin) {
       throw new PluginOperationRefused(
-        refused.get(pluginId) ??
-          `Schema plugin "${pluginId}" is not available.`,
+        `Schema plugin "${pluginId}" is not available.`,
         "not_installed",
       );
     }
@@ -277,6 +298,9 @@ export class ProjectDataShapePluginManager {
         "not_supported",
       );
     }
+    // The plugin host's own checks, after the package is found and before
+    // anything runs, so a refusal has its event.
+    await this.pluginHost?.admitPackageOperation(pluginId, method);
     return plugin;
   }
 }

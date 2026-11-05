@@ -462,7 +462,7 @@ async function writePlugin(
     "export async function exportProjects(projects) { return { datasets: [{ id: 'projects', rows: projects.map((p) => ({ project: p.name })) }] }; }",
   );
   return {
-    developmentPluginDirectories: [directory],
+    developmentPluginDirectories: [directory, schema],
     allowDevelopmentPlugins: true,
     projectDataShapePluginDirectories: [schema],
   };

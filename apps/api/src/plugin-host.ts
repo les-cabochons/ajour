@@ -4,7 +4,11 @@ import {
   PluginOperationLifetime,
   type PluginCancelReason,
 } from "./plugin-operation-lifetime.ts";
-import { pluginMethodArguments, type PluginMethod } from "./plugin-methods.ts";
+import {
+  pluginMethodArguments,
+  type PluginMethod,
+  type ProjectDataShapeMethod,
+} from "./plugin-methods.ts";
 import type {
   PluginLifecycle,
   PluginRuntime,
@@ -146,7 +150,7 @@ interface PluginHostOptions {
    */
   operationGate?: (
     pluginId: string,
-    method: PluginMethod,
+    method: PluginMethod | ProjectDataShapeMethod,
     reaches: PluginAccessSummary,
     connectionId?: string,
     /** The manifest of the package that runs it. */
@@ -171,6 +175,12 @@ interface PluginHostOptions {
   ) => Promise<{ on: boolean; settings: PluginRuntimeSettings }>;
   /** The crash budget's clock. Tests move it. */
   now?: () => number;
+  /**
+   * How many operations another host runs from this host's packages, such as
+   * the data shape host's. A package change waits for them as for its own,
+   * so no folder is replaced under a run.
+   */
+  outsideOperations?: () => number;
 }
 
 /** What a suspended plugin's calls fail with, at once. */
@@ -350,6 +360,7 @@ export class PluginManager {
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
   private readonly pluginState?: PluginHostOptions["pluginState"];
+  private readonly outsideOperations?: () => number;
   private readonly stops: PluginStopBudget;
   /** The readiness syncs, one after another. */
   private readinessPromise: Promise<void> = Promise.resolve();
@@ -381,6 +392,7 @@ export class PluginManager {
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
     this.pluginState = options.pluginState;
+    this.outsideOperations = options.outsideOperations;
     this.stops = new PluginStopBudget(options.now);
     this.workers = new PluginOperationLifetime({
       name: "Plugin",
@@ -545,6 +557,39 @@ export class PluginManager {
   }
 
   /**
+   * Whether this host would run `method` of the package now, for the data
+   * shape host, which runs the packages this host holds: it throws the
+   * refusal this host would give, with the reason a call's event records.
+   * The checks are the ones a call passes here: the plugin runs on this
+   * computer, it isn't suspended, no package change is under way, and the
+   * activation gate holds (the plugin system, the plugin's switch, unsigned
+   * plugins, and consent to what the package reaches).
+   */
+  async admitPackageOperation(
+    pluginId: string,
+    method: ProjectDataShapeMethod,
+  ): Promise<void> {
+    this.refuseSuspended(pluginId);
+    const plugin = await this.getPlugin(pluginId);
+    this.refuseRuntimeOff();
+    // Discovery awaited, so shutdown or a package change may have started meanwhile.
+    this.assertCanInvoke();
+    if (!plugin.entrypointPath || !plugin.manifest.entrypoint) {
+      throw new PluginOperationRefused(
+        `Plugin "${pluginId}" runs no code.`,
+        "runs_no_code",
+      );
+    }
+    await this.operationGate?.(
+      pluginId,
+      method,
+      plugin.access.summary,
+      undefined,
+      plugin.manifest,
+    );
+  }
+
+  /**
    * `afterInstall` runs before the package change ends, while operations are
    * still refused, so activation state it saves applies before anything can
    * run the new package.
@@ -557,7 +602,10 @@ export class PluginManager {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
-      if (this.workers.activeOperationCount > 0) {
+      if (
+        this.workers.activeOperationCount + (this.outsideOperations?.() ?? 0) >
+        0
+      ) {
         // The desktop records the install as `busy` from this code.
         throw Object.assign(
           new Error(
@@ -941,13 +989,7 @@ export class PluginManager {
         pluginId,
         method,
         async (record) => {
-          // A plugin that keeps stopping runs nothing until it is turned back on.
-          if (this.stops.suspension(pluginId)) {
-            throw new PluginOperationRefused(
-              suspendedMessage(pluginId),
-              "suspended",
-            );
-          }
+          this.refuseSuspended(pluginId);
           const plugin = await this.getPlugin(pluginId);
           record.plugin({
             version: plugin.manifest.version,
@@ -967,12 +1009,7 @@ export class PluginManager {
               "not_supported",
             );
           }
-          const unavailable = this.runtime.unavailableReason?.();
-          if (unavailable)
-            throw new PluginOperationRefused(
-              `Plugins are turned off: this computer can't run them in a sandbox. ${unavailable}`,
-              "runtime_unavailable",
-            );
+          this.refuseRuntimeOff();
           requirement?.(plugin.manifest);
           // Discovery awaited, so shutdown or a package change may have started meanwhile.
           this.assertCanInvoke();
@@ -1174,6 +1211,24 @@ export class PluginManager {
         "does not write descriptions",
       ),
     );
+  }
+
+  /** A plugin that keeps stopping runs nothing until it is turned back on. */
+  private refuseSuspended(pluginId: string) {
+    if (this.stops.suspension(pluginId)) {
+      throw new PluginOperationRefused(suspendedMessage(pluginId), "suspended");
+    }
+  }
+
+  /** The runtime may run no plugin on this computer, such as without a sandbox. */
+  private refuseRuntimeOff() {
+    const unavailable = this.runtime.unavailableReason?.();
+    if (unavailable) {
+      throw new PluginOperationRefused(
+        `Plugins are turned off: this computer can't run them in a sandbox. ${unavailable}`,
+        "runtime_unavailable",
+      );
+    }
   }
 
   private assertCanInvoke() {

@@ -351,7 +351,7 @@ it("discovers an installed API 4 schema in packaged mode without a development d
   });
   const shapes = new ProjectDataShapePluginManager({
     runtime: new InProcessPluginRuntime(),
-    pluginHostPackages: () => plugins.packageDirectories(),
+    pluginHost: plugins,
   });
   try {
     expect(
