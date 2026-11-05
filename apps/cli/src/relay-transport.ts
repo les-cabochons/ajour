@@ -122,12 +122,20 @@ export async function transportFor(
 }
 
 export interface RelayProbes {
+  platform: NodeJS.Platform;
   env: Readonly<Record<string, string | undefined>>;
   executable(): Promise<string>;
   exists(file: string): Promise<boolean>;
 }
 
+/** WSL registers its interop handler under either name, depending on its version. */
+const WSL_INTEROP = [
+  "/proc/sys/fs/binfmt_misc/WSLInterop",
+  "/proc/sys/fs/binfmt_misc/WSLInterop-late",
+];
+
 export const processRelayProbes: RelayProbes = {
+  platform: process.platform,
   env: process.env,
   executable: () => realpath(process.execPath),
   exists: async (file) => existsSync(file),
@@ -137,12 +145,14 @@ export async function relayExecutable(
   url: string,
   probes: RelayProbes,
 ): Promise<string | undefined> {
+  if (probes.platform !== "linux") return;
   if (!["127.0.0.1", "localhost"].includes(new URL(url).hostname)) return;
-  if (
-    !probes.env.WSL_DISTRO_NAME &&
-    !(await probes.exists("/proc/sys/fs/binfmt_misc/WSLInterop"))
-  )
-    return;
+  if (!probes.env.WSL_DISTRO_NAME) {
+    const found = await Promise.all(
+      WSL_INTEROP.map((file) => probes.exists(file)),
+    );
+    if (!found.includes(true)) return;
+  }
   const executable = path.posix.join(
     path.posix.dirname(await probes.executable()),
     "..",

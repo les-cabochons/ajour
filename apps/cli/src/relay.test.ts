@@ -73,6 +73,7 @@ it("Given stdin closes, __relay exits and closes the TCP connection", async () =
 
 it("Given WSL and an installed sibling, only loopback URLs use the relay", async () => {
   const probes = {
+    platform: "linux" as const,
     env: { WSL_DISTRO_NAME: "Ubuntu" },
     executable: async () => "/opt/ajour/bin/linux/ajour",
     exists: async (file: string) => file === "/opt/ajour/bin/ajour.exe",
@@ -97,6 +98,30 @@ it("Given WSL and an installed sibling, only loopback URLs use the relay", async
       exists: async () => true,
     }),
   ).toBe("/opt/ajour/bin/ajour.exe");
+});
+
+it("Given WSL registered its interop late, as systemd distros may, the relay is still used", async () => {
+  const late = "/proc/sys/fs/binfmt_misc/WSLInterop-late";
+  expect(
+    await relayExecutable("http://127.0.0.1:8787", {
+      platform: "linux",
+      env: {},
+      executable: async () => "/opt/ajour/bin/linux/ajour",
+      exists: async (file) =>
+        file === late || file === "/opt/ajour/bin/ajour.exe",
+    }),
+  ).toBe("/opt/ajour/bin/ajour.exe");
+});
+
+it("Given ajour.exe itself, WSL's variables never make it relay", async () => {
+  expect(
+    await relayExecutable("http://127.0.0.1:8787", {
+      platform: "win32",
+      env: { WSL_DISTRO_NAME: "Ubuntu" },
+      executable: async () => "C:\\Ajour\\bin\\ajour.exe",
+      exists: async () => true,
+    }),
+  ).toBeUndefined();
 });
 
 it("Given a TCP server, __relay round-trips bytes and exits when the server closes", async () => {
