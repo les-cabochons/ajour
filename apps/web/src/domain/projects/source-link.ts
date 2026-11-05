@@ -3,6 +3,7 @@ import {
   projectSourceProjectSchema,
 } from "@ajour/shared";
 import type {
+  LocalProject,
   LocalProjectSource,
   LocalProjectSourceBudget,
   LocalProjectSourceLink,
@@ -15,6 +16,26 @@ import type {
  * the source doesn't know yet. Kept apart from source-sync.ts so project
  * normalization does not depend on the sync rules.
  */
+
+/** What the user calls the project's source, such as "Example planner". */
+export function getProjectSourceLabel(
+  project: Pick<LocalProject, "source">,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+): string | undefined {
+  const connectionId = project.source?.connectionId;
+  return connectionId ? projectSources?.[connectionId]?.label : undefined;
+}
+
+/**
+ * The words that name a source in a sentence: its label, or "its source" when
+ * the connection's label is not known. `atStart` capitalizes the fallback.
+ */
+export function sourceNameOf(
+  label: string | undefined,
+  atStart = false,
+): string {
+  return label ?? (atStart ? "Its source" : "its source");
+}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;

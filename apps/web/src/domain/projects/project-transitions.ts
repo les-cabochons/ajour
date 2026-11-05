@@ -19,10 +19,12 @@ import {
 import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
   normalizeArchiveMark,
+  getProjectSourceLabel,
   normalizeProjectSourceBudget,
   normalizeProjectSourceLink,
   normalizeSourceText,
   normalizeTaskSourceLink,
+  sourceNameOf,
 } from "@/domain/projects/source-link";
 import {
   normalizeProjectTeamLink,
@@ -181,16 +183,62 @@ export function addProject(
   };
 }
 
+/**
+ * The fields a managed project's source owns. The user can't change them in
+ * Ajour: every sync would put the source's value back (ADR 0016).
+ */
+const SOURCE_OWNED_PROJECT_FIELDS = [
+  "name",
+  "code",
+  "client",
+  "startsOn",
+  "endsOn",
+  "budget",
+] as const satisfies readonly (keyof LocalProject)[];
+
+/**
+ * Whether the project follows a project source. Its source owns the full
+ * name, code, client, dates and budget above, and each source task's name,
+ * status, billable and budget; the user's own fields stay editable.
+ */
+export function isManagedProject<T extends Pick<LocalProject, "source">>(
+  project: T,
+): project is T & { source: NonNullable<T["source"]> } {
+  return project.source !== undefined;
+}
+
+/**
+ * Whether the task is one its project source knows. Its name, status, billable
+ * and budget are the source's: every sync would put them back. Its adjustment,
+ * pin and Commits as stay the user's.
+ */
+export function isSourceTask(task: Pick<LocalProjectTask, "source">) {
+  return task.source !== undefined;
+}
+
+/** The patch without what the project's source owns, when it has one. */
+function withoutSourceOwnedFields(project: LocalProject, patch: ProjectPatch) {
+  if (!isManagedProject(project)) return patch;
+  const allowed = { ...patch };
+  for (const field of SOURCE_OWNED_PROJECT_FIELDS) delete allowed[field];
+  return allowed;
+}
+
+/**
+ * Changes a project. On a managed project, a change to a field its source
+ * owns is left out.
+ */
 export function updateProject(
   projects: LocalProject[],
   projectId: string,
-  patch: ProjectPatch,
+  requested: ProjectPatch,
 ) {
   return projects.map((project) => {
     if (project._id !== projectId) {
       return project;
     }
 
+    const patch = withoutSourceOwnedFields(project, requested);
     const nextProject = { ...project, ...patch };
     if (
       typeof patch.name === "string" &&
@@ -406,13 +454,16 @@ export function updateProjectTask(
             task._id === taskId
               ? {
                   ...task,
-                  name: patch.name ?? task.name,
+                  // A source task's name, billable and budget follow its source.
+                  name: isSourceTask(task)
+                    ? task.name
+                    : (patch.name ?? task.name),
                   billable:
-                    "billable" in patch
+                    "billable" in patch && !isSourceTask(task)
                       ? (patch.billable ?? true)
                       : (task.billable ?? true),
                   budgetMs:
-                    "budgetMs" in patch
+                    "budgetMs" in patch && !isSourceTask(task)
                       ? normalizeProjectTaskBudgetMs(patch.budgetMs)
                       : task.budgetMs,
                   adjustmentMs:
@@ -482,18 +533,6 @@ export interface RestoreResult {
   refusal?: string;
 }
 
-/** What the user calls a project's source, such as "Example planner". */
-function sourceLabelOf(
-  project: LocalProject,
-  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
-) {
-  const connectionId = project.source?.connectionId;
-  return (
-    (connectionId ? projectSources?.[connectionId]?.label : undefined) ??
-    "Its source"
-  );
-}
-
 /**
  * Why the user can't restore this project by hand: its project source
  * archived it, so the next sync would archive it again (#505).
@@ -503,10 +542,12 @@ export function getProjectRestoreRefusal(
   projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
 ): string | undefined {
   if (project.status !== "archived") return undefined;
-  const label = sourceLabelOf(project, projectSources);
-  if (project.archivedBySource) return `${label} marks this project complete.`;
+  const label = getProjectSourceLabel(project, projectSources);
+  if (project.archivedBySource) {
+    return `${sourceNameOf(label, true)} marks this project complete.`;
+  }
   if (project.archivedByMissingSync) {
-    return `This project is no longer in ${label}.`;
+    return `This project is no longer in ${sourceNameOf(label)}.`;
   }
   return undefined;
 }
@@ -518,9 +559,13 @@ export function getTaskRestoreRefusal(
   projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
 ): string | undefined {
   if (task.status !== "archived") return undefined;
-  const label = sourceLabelOf(project, projectSources);
-  if (task.archivedBySource) return `${label} closed this task.`;
-  if (task.archivedByMissingSync) return `This task is no longer in ${label}.`;
+  const label = getProjectSourceLabel(project, projectSources);
+  if (task.archivedBySource) {
+    return `${sourceNameOf(label, true)} closed this task.`;
+  }
+  if (task.archivedByMissingSync) {
+    return `This task is no longer in ${sourceNameOf(label)}.`;
+  }
   return undefined;
 }
 

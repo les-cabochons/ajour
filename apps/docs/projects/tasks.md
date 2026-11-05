@@ -46,6 +46,8 @@ Each row of the task list shows the task's shortcut, whether it is billable, and
 
 In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment, the shortcut, plugin properties and **Commits as** stay yours.
 
+In a [managed project](/projects/#managed-projects), a task its source knows shows its name with a lock: rename it in the source. Its budget and **Billable** are the source's too, with the same lock. Adjustment and **Commits as** stay yours.
+
 ## Pin a task
 
 Give the tasks you use every day a number from <kbd>1</kbd> to <kbd>0</kbd>. Choose **Assign shortcut…** in the task's actions, or press **Assign shortcut…** in its editor, and press a free number. A number already in use shows the task that holds it. Assigning it moves it to this task. **Clear shortcut** removes it.

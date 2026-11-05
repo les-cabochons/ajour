@@ -25,6 +25,7 @@ import {
   getLocalProjectDisplayName,
   type LocalProject,
 } from "@/domain/local-state";
+import { isManagedProject } from "@/domain/projects/project-transitions";
 import {
   getTaskNameField,
   PLUGIN_PROPERTY_MAX_LENGTH,
@@ -39,6 +40,10 @@ import {
   type ProjectFormFields,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
+import {
+  LockedValue,
+  OpenInSourceAction,
+} from "@/features/projects/project-source-ui";
 import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import {
   ProjectTeamAction,
@@ -324,18 +329,23 @@ function PluginPropertySection({
 
 /**
  * The project page's Properties card: full name, code, color and icon change
- * in place. Each active plugin that adds project properties gets a collapsed
- * section below them. Import tasks… and Archive or Restore sit at its
- * bottom, in place of the "…" menu the page had.
+ * in place. On a managed project, the full name, code and client are its
+ * source's, locked, and Open in <source> leads the actions. Each active
+ * plugin that adds project properties gets a collapsed section below them.
+ * Import tasks… and Archive or Restore sit at its bottom, in place of the
+ * "…" menu the page had.
  */
 export function ProjectPropertiesCard({
   project,
+  sourceLabel,
   isImporting,
   onImport,
   onArchive,
   onRestore,
 }: {
   project: LocalProject;
+  /** What the user calls the project's source, for a managed project. */
+  sourceLabel?: string;
   isImporting: boolean;
   /** Opens the Excel file picker. */
   onImport: () => void;
@@ -343,6 +353,8 @@ export function ProjectPropertiesCard({
   onRestore: () => void;
 }) {
   const isArchived = project.status === "archived";
+  const managed = isManagedProject(project);
+  const sourceUrl = project.source?.url;
   const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
   // The first plugin that commits tasks under a name, such as Workday, names
   // the Local only row.
@@ -382,35 +394,52 @@ export function ProjectPropertiesCard({
     <section className="project-properties-card" aria-label="Properties">
       <PropertyList>
         <PropertyRow label="Full name">
-          <InlineText
-            value={project.name}
-            label="Full name"
-            placeholder="Full name"
-            readOnly={isArchived}
-            onSave={(value) =>
-              patchProject(
-                project,
-                (fields) => setProjectFormName(fields, value),
-                "Project renamed",
-              )
-            }
-          />
+          {managed ? (
+            <LockedValue label={sourceLabel}>{project.name}</LockedValue>
+          ) : (
+            <InlineText
+              value={project.name}
+              label="Full name"
+              placeholder="Full name"
+              readOnly={isArchived}
+              onSave={(value) =>
+                patchProject(
+                  project,
+                  (fields) => setProjectFormName(fields, value),
+                  "Project renamed",
+                )
+              }
+            />
+          )}
         </PropertyRow>
         <PropertyRow label="Code">
-          <InlineText
-            value={project.code ?? ""}
-            label="Code"
-            placeholder="None"
-            readOnly={isArchived}
-            onSave={(value) =>
-              patchProject(
-                project,
-                (fields) => ({ ...fields, code: value }),
-                "Project code changed",
-              )
-            }
-          />
+          {managed ? (
+            <LockedValue label={sourceLabel} muted={!project.code}>
+              {project.code || "None"}
+            </LockedValue>
+          ) : (
+            <InlineText
+              value={project.code ?? ""}
+              label="Code"
+              placeholder="None"
+              readOnly={isArchived}
+              onSave={(value) =>
+                patchProject(
+                  project,
+                  (fields) => ({ ...fields, code: value }),
+                  "Project code changed",
+                )
+              }
+            />
+          )}
         </PropertyRow>
+        {managed ? (
+          <PropertyRow label="Client">
+            <LockedValue label={sourceLabel} muted={!project.client}>
+              {project.client || "None"}
+            </LockedValue>
+          </PropertyRow>
+        ) : null}
         <PropertyRow label="Color">
           {isArchived ? (
             <ColorSwatch color={project.color} />
@@ -509,14 +538,20 @@ export function ProjectPropertiesCard({
         />
       ))}
       <PropertyActions>
-        <PropertyAction
-          disabled={isArchived || isImporting}
-          title={isArchived ? "Restore the project first" : undefined}
-          onClick={onImport}
-        >
-          <Download aria-hidden="true" />
-          {isImporting ? "Importing tasks…" : "Import tasks…"}
-        </PropertyAction>
+        {sourceUrl ? (
+          <OpenInSourceAction url={sourceUrl} label={sourceLabel} />
+        ) : null}
+        {/* A managed project's tasks come from its source. */}
+        {managed ? null : (
+          <PropertyAction
+            disabled={isArchived || isImporting}
+            title={isArchived ? "Restore the project first" : undefined}
+            onClick={onImport}
+          >
+            <Download aria-hidden="true" />
+            {isImporting ? "Importing tasks…" : "Import tasks…"}
+          </PropertyAction>
+        )}
         <ProjectTeamAction
           project={project}
           teams={teams}

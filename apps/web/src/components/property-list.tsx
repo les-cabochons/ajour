@@ -64,6 +64,10 @@ export function PropertyActions({
   );
 }
 
+/** A property action's look, for a link that sits among the actions. */
+export const propertyActionClassName =
+  "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
+
 /**
  * A borderless action: a 16px icon beside a small label in the muted
  * color. Hover only brightens the text, Archive included.
@@ -77,10 +81,7 @@ export function PropertyAction({
     <button
       type={type}
       data-slot="property-action"
-      className={cn(
-        "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-        className,
-      )}
+      className={cn(propertyActionClassName, className)}
       {...props}
     />
   );

@@ -59,11 +59,20 @@ import {
 } from "@/features/projects/project-task-options";
 import {
   getLocalProjectDisplayName,
+  type LocalAppState,
   type LocalProject,
   type LocalProjectTask,
   type LocalTimesheetEntry,
   type PinnedTaskSlot,
 } from "@/domain/local-state";
+import {
+  isManagedProject,
+  isSourceTask,
+} from "@/domain/projects/project-transitions";
+import {
+  getProjectSourceLabel,
+  sourceNameOf,
+} from "@/domain/projects/source-link";
 import {
   PinnedSlotBadge,
   PinnedSlotDialog,
@@ -74,6 +83,10 @@ import {
   ProjectTitle,
 } from "@/features/projects/project-properties";
 import { SharedProjectMark } from "@/features/projects/project-team-ui";
+import {
+  ManagedProjectMark,
+  ManagedProjectTitleMark,
+} from "@/features/projects/project-source-ui";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
   commitProjectTaskDraft,
@@ -293,6 +306,7 @@ function isProjectDragBlockedTarget(target: EventTarget | null) {
  */
 function ProjectsList({
   projects,
+  projectSources,
   archived,
   weekMsByProject,
   taskMetricsByProject,
@@ -307,6 +321,8 @@ function ProjectsList({
   onNewProject,
 }: {
   projects: LocalProject[];
+  /** The project source records, which name a managed project's source. */
+  projectSources: LocalAppState["projectSources"];
   archived: boolean;
   weekMsByProject: Map<string, number>;
   taskMetricsByProject: TaskMetricsByProject;
@@ -499,6 +515,11 @@ function ProjectsList({
                     </Link>
                     {project.code ? <Chip>{project.code}</Chip> : null}
                     {project.team ? <SharedProjectMark /> : null}
+                    {isManagedProject(project) ? (
+                      <ManagedProjectMark
+                        label={getProjectSourceLabel(project, projectSources)}
+                      />
+                    ) : null}
                   </td>
                   <td className="project-list-col-tasks">
                     <Value tone="muted">{activeTasks}</Value>
@@ -549,6 +570,7 @@ function ProjectsList({
 
 function ProjectDetail({
   project,
+  projectSources,
   metrics,
   taskMetrics,
   editingTaskId,
@@ -562,6 +584,8 @@ function ProjectDetail({
   taskPropertyPlugins,
 }: {
   project: LocalProject;
+  /** The project source records, which name a managed project's source. */
+  projectSources: LocalAppState["projectSources"];
   metrics: ProjectMetrics;
   taskMetrics: Map<string, ProjectMetrics>;
   /** The project's time entries, newest first. */
@@ -599,6 +623,8 @@ function ProjectDetail({
     null,
   );
   const isArchived = project.status === "archived";
+  const managed = isManagedProject(project);
+  const sourceLabel = getProjectSourceLabel(project, projectSources);
   const projectActions = getProjectActions(project);
 
   const summary = taskSummary(project);
@@ -1111,6 +1137,12 @@ function ProjectDetail({
         />
         <ProjectTitle project={project} readOnly={isArchived} />
         {project.code ? <Chip>{project.code}</Chip> : null}
+        {managed ? (
+          <ManagedProjectTitleMark
+            label={sourceLabel}
+            syncedAt={project.source.syncedAt}
+          />
+        ) : null}
         {isArchived ? <Chip>Archived</Chip> : null}
       </ObjectContextMenu>
 
@@ -1274,10 +1306,12 @@ function ProjectDetail({
                         ? "Archived tasks will appear here."
                         : isArchived
                           ? "This archived project has no active tasks."
-                          : "Create a task, or import tasks from Excel."}
+                          : managed
+                            ? `${sourceNameOf(sourceLabel, true)} adds tasks when it syncs.`
+                            : "Create a task, or import tasks from Excel."}
                     </EmptyDescription>
                   </EmptyHeader>
-                  {!isArchived && !isArchivedTaskFilter ? (
+                  {!isArchived && !isArchivedTaskFilter && !managed ? (
                     <EmptyContent>
                       <Button
                         type="button"
@@ -1378,6 +1412,7 @@ function ProjectDetail({
         </div>
         <ProjectPropertiesCard
           project={project}
+          sourceLabel={sourceLabel}
           isImporting={isImporting}
           onImport={openImportPicker}
           onArchive={() => onProjectAction(project, "archive")}
@@ -2093,6 +2128,16 @@ export function ProjectsPage() {
           .map((task) => task.name)}
         projectLocalOnly={taskEditorProject.localOnly}
         project={taskEditorProject}
+        sourceLock={
+          taskEditorTask && isSourceTask(taskEditorTask)
+            ? {
+                label: getProjectSourceLabel(
+                  taskEditorProject,
+                  state.projectSources,
+                ),
+              }
+            : undefined
+        }
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}
@@ -2114,6 +2159,7 @@ export function ProjectsPage() {
           <ProjectDetail
             key={selectedProject._id}
             project={selectedProject}
+            projectSources={state.projectSources}
             metrics={
               metricsByProject.get(selectedProject._id) ?? {
                 durationMs: 0,
@@ -2176,6 +2222,7 @@ export function ProjectsPage() {
             />
             <ProjectsList
               projects={listProjects}
+              projectSources={state.projectSources}
               archived={isArchivePage}
               weekMsByProject={weekMsByProject}
               taskMetricsByProject={taskMetricsByProject}
@@ -2271,6 +2318,11 @@ export function ProjectsPage() {
       (projectModalState.mode === "create" || editedProject) ? (
         <ProjectFormDialog
           project={editedProject}
+          sourceLabel={
+            editedProject
+              ? getProjectSourceLabel(editedProject, state.projectSources)
+              : undefined
+          }
           onClose={closeProjectModal}
           onSubmit={handleProjectSubmit}
         />

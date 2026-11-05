@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useId, useState, type CSSProperties, type FormEvent } from "react";
 import {
   RiHashtag as CodeIcon,
   RiPencilLine as EditIcon,
@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import type { LocalProject } from "@/domain/local-state";
+import { isManagedProject } from "@/domain/projects/project-transitions";
+import { LockHint } from "@/features/projects/project-source-ui";
 import {
   createProjectFormFields,
   getProjectFormValues,
@@ -40,17 +42,23 @@ import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
  */
 export function ProjectFormDialog({
   project,
+  sourceLabel,
   onClose,
   onSubmit,
 }: {
   /** The project to edit, or undefined to create one. */
   project?: LocalProject;
+  /** What the user calls the project's source, when it is managed. */
+  sourceLabel?: string;
   onClose: () => void;
   onSubmit: (values: ProjectFormValues) => void;
 }) {
   const [fields, setFields] = useState(() => createProjectFormFields(project));
   const values = getProjectFormValues(fields);
   const isCreate = !project;
+  // A managed project's source sets its full name and code (#506).
+  const sourceOwned = project ? isManagedProject(project) : false;
+  const lockId = useId();
 
   function update(patch: Partial<ProjectFormFields>) {
     setFields((current) => ({ ...current, ...patch }));
@@ -138,19 +146,28 @@ export function ProjectFormDialog({
                   <FieldLabel htmlFor="project-form-name" className="sr-only">
                     Full name
                   </FieldLabel>
-                  <input
-                    id="project-form-name"
-                    className="composer-title"
-                    autoFocus
-                    autoComplete="off"
-                    placeholder="Project name"
-                    value={fields.name}
-                    onChange={(event) =>
-                      setFields((current) =>
-                        setProjectFormName(current, event.target.value),
-                      )
-                    }
-                  />
+                  <span className="flex min-w-0 items-center gap-2">
+                    <input
+                      id="project-form-name"
+                      className="composer-title"
+                      autoComplete="off"
+                      autoFocus={!sourceOwned}
+                      placeholder="Project name"
+                      readOnly={sourceOwned}
+                      aria-describedby={
+                        sourceOwned ? `${lockId}-name` : undefined
+                      }
+                      value={fields.name}
+                      onChange={(event) =>
+                        setFields((current) =>
+                          setProjectFormName(current, event.target.value),
+                        )
+                      }
+                    />
+                    {sourceOwned ? (
+                      <LockHint label={sourceLabel} id={`${lockId}-name`} />
+                    ) : null}
+                  </span>
                 </Field>
                 <Field>
                   <FieldLabel
@@ -162,6 +179,9 @@ export function ProjectFormDialog({
                   <input
                     id="project-form-display-name"
                     className="composer-subtitle"
+                    // A managed project's full name is read-only, so the
+                    // display name takes the focus.
+                    autoFocus={sourceOwned}
                     autoComplete="off"
                     placeholder="Add a short name for lists…"
                     value={fields.displayName}
@@ -181,9 +201,14 @@ export function ProjectFormDialog({
                   className="composer-estimate-input"
                   autoComplete="off"
                   placeholder="ATL"
+                  readOnly={sourceOwned}
+                  aria-describedby={sourceOwned ? `${lockId}-code` : undefined}
                   value={fields.code}
                   onChange={(event) => update({ code: event.target.value })}
                 />
+                {sourceOwned ? (
+                  <LockHint label={sourceLabel} id={`${lockId}-code`} />
+                ) : null}
               </div>
               <ColorField
                 id="project-form-color"

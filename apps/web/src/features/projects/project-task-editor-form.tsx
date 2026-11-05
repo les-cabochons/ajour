@@ -1,4 +1,10 @@
-import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type ElementType,
+  type KeyboardEvent,
+} from "react";
 import {
   RiCloseLine as X,
   RiMoneyDollarCircleLine as BillableIcon,
@@ -17,6 +23,7 @@ import {
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
+import { LockHint } from "@/features/projects/project-source-ui";
 import type {
   ProjectTaskEditorFields,
   ProjectTaskEditorState,
@@ -54,6 +61,7 @@ export function ProjectTaskEditorForm({
   otherTaskNames = [],
   projectLocalOnly = false,
   project,
+  sourceLock,
   onFieldsChange,
   onSave,
   onClose,
@@ -77,6 +85,12 @@ export function ProjectTaskEditorForm({
   projectLocalOnly?: boolean;
   /** The task's project, where Another task… can create the task it maps to. */
   project?: Pick<LocalProject, "_id" | "tasks" | "team">;
+  /**
+   * Present when the task's project source sets its name, budget and
+   * billable: they read as the source's, with a lock naming it by `label`.
+   * Adjustment, the pinned slot and Commits as stay the user's.
+   */
+  sourceLock?: { label: string | undefined };
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   onClose: () => void;
@@ -85,10 +99,13 @@ export function ProjectTaskEditorForm({
   className?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const lockId = useId();
   const nameError = showNameError || !editor.isNew ? editor.nameError : null;
 
   useEffect(() => {
-    rootRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    rootRef.current
+      ?.querySelector<HTMLInputElement>("input:not([readonly])")
+      ?.focus();
   }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -150,16 +167,23 @@ export function ProjectTaskEditorForm({
           <FieldLabel htmlFor="project-task-editor-name" className="sr-only">
             Name
           </FieldLabel>
-          <input
-            id="project-task-editor-name"
-            className="composer-title"
-            autoComplete="off"
-            value={fields.name}
-            placeholder="Task name"
-            aria-invalid={Boolean(nameError)}
-            onChange={(event) => onFieldsChange({ name: event.target.value })}
-            onKeyDown={saveOnEnter}
-          />
+          <span className="flex min-w-0 items-center gap-2">
+            <input
+              id="project-task-editor-name"
+              className="composer-title min-w-0"
+              autoComplete="off"
+              value={fields.name}
+              placeholder="Task name"
+              readOnly={Boolean(sourceLock)}
+              aria-describedby={sourceLock ? `${lockId}-name` : undefined}
+              aria-invalid={Boolean(nameError)}
+              onChange={(event) => onFieldsChange({ name: event.target.value })}
+              onKeyDown={saveOnEnter}
+            />
+            {sourceLock ? (
+              <LockHint label={sourceLock.label} id={`${lockId}-name`} />
+            ) : null}
+          </span>
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
         {/* Budget and adjustment are one sentence under the name, typed in
@@ -173,6 +197,13 @@ export function ProjectTaskEditorForm({
             format={formatBudgetFigure}
             invalid={Boolean(editor.budgetError)}
             onKeyDown={saveOnEnter}
+            readOnly={Boolean(sourceLock)}
+            describedBy={sourceLock ? `${lockId}-budget` : undefined}
+            trailing={
+              sourceLock ? (
+                <LockHint label={sourceLock.label} id={`${lockId}-budget`} />
+              ) : undefined
+            }
           />
           <InlineFigure
             id="project-task-editor-adjustment"
@@ -188,10 +219,18 @@ export function ProjectTaskEditorForm({
           <ToggleChip
             id="project-task-editor-billable"
             checked={fields.billable}
-            onCheckedChange={(billable) => onFieldsChange({ billable })}
+            onCheckedChange={(billable) => {
+              if (!sourceLock) onFieldsChange({ billable });
+            }}
+            aria-disabled={sourceLock ? true : undefined}
+            aria-describedby={sourceLock ? `${lockId}-billable` : undefined}
+            className={sourceLock ? "cursor-not-allowed opacity-70" : undefined}
             icon={<BillableIcon aria-hidden className="size-3.5" />}
           >
             Billable
+            {sourceLock ? (
+              <LockHint label={sourceLock.label} id={`${lockId}-billable`} />
+            ) : null}
           </ToggleChip>
           <PinnedSlotField
             taskName={fields.name}

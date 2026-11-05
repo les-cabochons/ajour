@@ -1,5 +1,9 @@
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
+import {
+  isTaskNotAssigned,
+  sortAssignedTasksFirst,
+} from "@/domain/projects/task-assignment";
 import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
 
 export const PROJECT_TASK_SEARCH_RESULT_LIMIT = 50;
@@ -132,6 +136,8 @@ export function findMatchingProjectTasks(
       (left, right) =>
         left.rank - right.rank ||
         left.projectIndex - right.projectIndex ||
+        Number(isTaskNotAssigned(left.match.task)) -
+          Number(isTaskNotAssigned(right.match.task)) ||
         left.taskIndex - right.taskIndex,
     );
 
@@ -149,10 +155,12 @@ export function findMatchingTasksInProject(
 ) {
   const terms = getSearchTerms(query);
 
-  return project.tasks.filter(
-    (task) =>
-      task.status === "active" &&
-      (terms.length === 0 || matchesAllTerms(getTaskSearchText(task), terms)),
+  return sortAssignedTasksFirst(
+    project.tasks.filter(
+      (task) =>
+        task.status === "active" &&
+        (terms.length === 0 || matchesAllTerms(getTaskSearchText(task), terms)),
+    ),
   );
 }
 

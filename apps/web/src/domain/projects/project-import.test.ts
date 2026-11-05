@@ -485,3 +485,65 @@ describe("Not known yet tasks at import", () => {
     });
   });
 });
+
+describe("a managed project's import", () => {
+  function managed() {
+    const factories = createFactories();
+    const project = factories.createProject({
+      name: "Acme - Support",
+      color: "#123456",
+      tasks: [{ name: "Login", budgetMs: 3_600_000 }],
+    });
+    project.tasks[0]!.source = { remoteId: "1001", assigned: true };
+    project.source = {
+      pluginId: "example-planner",
+      connectionId: "planner",
+      remoteId: "ACME",
+      syncedAt: 1,
+    };
+    return { factories, project };
+  }
+
+  it("refuses Import tasks…, which its source replaces", () => {
+    const { factories, project } = managed();
+
+    expect(() =>
+      importProjectTasks([project], project._id, ["Extra"], factories),
+    ).toThrow("takes its tasks from its source");
+  });
+
+  it("keeps a source task's status, billable and budget when a file names it", () => {
+    const { factories, project } = managed();
+
+    const operation = importProjectWorkbookRows(
+      [project],
+      [
+        {
+          project: "Acme - Support",
+          code: "OTHER",
+          color: "",
+          status: "active",
+          task: "Login",
+          taskStatus: "archived",
+          billable: "non_billable",
+          budgetHours: 9,
+          adjustmentHours: 1,
+        },
+      ],
+      factories,
+    );
+
+    expect(operation.projects[0]).toMatchObject({
+      name: "Acme - Support",
+      tasks: [
+        {
+          status: "active",
+          billable: true,
+          budgetMs: 3_600_000,
+          adjustmentMs: 3_600_000,
+        },
+      ],
+    });
+    expect(operation.projects[0]?.code).toBeUndefined();
+  });
+});

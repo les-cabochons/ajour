@@ -180,3 +180,71 @@ Then(
     await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
   },
 );
+
+Then("the title says {string}", async ({ page }, mark: string) => {
+  await expect(
+    page.locator(".project-detail-header").getByText(mark, { exact: true }),
+  ).toBeVisible();
+});
+
+Then(
+  "the Full name, Code and Client rows are locked by {string}",
+  async ({ page }, label: string) => {
+    const card = page.getByRole("region", { name: "Properties" });
+    for (const row of ["Full name", "Code", "Client"]) {
+      const value = card.locator("dt", { hasText: row }).locator("+ dd");
+      await expect(value.getByText(`Locked. ${label} sets it.`)).toBeAttached();
+      await expect(value.getByRole("button")).toHaveCount(0);
+    }
+    await expect(
+      card.getByRole("button", { name: /^Project color/ }),
+    ).toBeVisible();
+  },
+);
+
+Then(
+  "the link {string} opens {string}",
+  async ({ page }, name: string, url: string) => {
+    const link = page.getByRole("link", { name, exact: true });
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+  },
+);
+
+Then(
+  "the Projects list marks {string} as from {string}",
+  async ({ page }, name: string, label: string) => {
+    const row = page.locator("tr", {
+      has: page.getByRole("link", { name, exact: true }),
+    });
+    await expect(row.getByRole("img", { name: `From ${label}` })).toBeVisible();
+  },
+);
+
+Then(
+  "only {string} says {string} in the task menu",
+  async ({ page }, task: string, hint: string) => {
+    const rows = page.locator("[cmdk-item][data-task-id]");
+    await expect(rows.filter({ hasText: hint })).toHaveCount(1);
+    await expect(rows.filter({ hasText: hint })).toContainText(task);
+  },
+);
+
+Then(
+  "at 390px the title is whole and the {string} mark is cut first",
+  async ({ page }, mark: string) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    const header = page.locator(".project-detail-header");
+    const title = header.locator(".project-detail-title button");
+    const metrics = await title.evaluate((element) => ({
+      cut: element.scrollWidth - element.clientWidth > 1,
+    }));
+    expect(metrics.cut).toBe(false);
+    const group = header.getByRole("group", { name: mark });
+    const box = await group.boundingBox();
+    const headerBox = await header.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(
+      headerBox!.x + headerBox!.width + 1,
+    );
+  },
+);

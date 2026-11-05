@@ -8,7 +8,7 @@ Press <kbd>G</kbd> then <kbd>P</kbd>, or pick **Projects** in the sidebar's view
 
 ## The Projects list
 
-Each row shows the project, its number of active tasks, the time logged this week and how much of its budget is used. A shared project shows a team mark. **Active** and **Archived** at the top switch between the two lists.
+Each row shows the project, its number of active tasks, the time logged this week and how much of its budget is used. A shared project shows a team mark, and a [managed project](#managed-projects) a link mark. **Active** and **Archived** at the top switch between the two lists.
 
 Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active projects. Right-click a row, or press its **…** button, for **Edit**, **New task** and **Archive**.
 
@@ -52,3 +52,13 @@ Click the title to rename the display name.
 Choose **Archive** in the project's properties or its actions menu. An Undo toast follows. Its entries stay. Its page shows a notice and its fields are read-only. Find it under **Archived**, and press **Restore** to bring it back.
 
 Ajour never deletes a project, so your past entries always keep their project.
+
+## Managed projects
+
+A plugin with **Managed projects**, connected in **Settings › Plugins**, brings your projects and tasks from the system that holds them, such as your company's planning tool. Those projects are managed: their source keeps them up to date every 15 minutes, and Ajour never writes back to it.
+
+- **"From" and the source's name** sit next to the title, such as **From Example planner**. Rest the pointer on it to see when the project last synced.
+- **Full name**, **Code** and **Client** show a lock in the properties card: the source sets them, so they change there, not in Ajour. The display name, color, icon, favorites and pins stay yours.
+- **Open in** and the source's name, at the bottom of the card, opens the project in its source. It shows when the source gives the project a link.
+- A task the source knows keeps its source's name: the task editor shows it, its budget and **Billable** with a lock. The adjustment, **Commits as** and the shortcut stay yours. A managed project has no **Import tasks…**: its source adds the tasks.
+- In the task menu, the tasks the source assigns to you come first. The others say **Not assigned** and stay available.
