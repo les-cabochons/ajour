@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { placeFloatingComposer } from "@/lib/floating-composer";
+import { placeFloatingComposerFor } from "@/lib/floating-composer";
 import {
   Tooltip,
   TooltipContent,
@@ -2228,16 +2228,18 @@ export function ProjectsPage() {
             )}
             overlay={isNarrowView}
             showCloseButton={false}
-            // Off the edited task's row, so it stays readable.
+            // Off the edited task's row, so it stays readable; placed once
+            // per task, not on every keystroke, which renders this page.
             ref={(popup: HTMLDivElement | null) => {
+              if (isNarrowView) return;
               const taskId = visibleTaskEditor?.taskId;
-              if (!isNarrowView && taskId)
-                placeFloatingComposer(
-                  popup,
-                  document.querySelector(
-                    `main [data-task-id="${CSS.escape(taskId)}"]`,
-                  ),
-                );
+              placeFloatingComposerFor(popup, taskId ?? "new", () =>
+                taskId
+                  ? document.querySelector(
+                      `main [data-task-id="${CSS.escape(taskId)}"]`,
+                    )
+                  : null,
+              );
             }}
           >
             {taskEditorForm}
