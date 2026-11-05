@@ -8,6 +8,7 @@ import {
   getLocalProjectDisplayName,
   type LocalAppState,
   type LocalProject,
+  type LocalProjectSource,
   type LocalProjectTask,
   type LocalWorkItem,
 } from "@/domain/local-state";
@@ -16,6 +17,8 @@ import {
   createOrRestoreProjectTask,
   DEFAULT_PROJECT_COLOR,
   findProjectTaskByImportName,
+  getProjectRestoreRefusal,
+  getTaskRestoreRefusal,
   updateProject,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
@@ -26,7 +29,9 @@ import {
  * the project is missing or the task would change a shared project. Whenever
  * the item's project or task differs from the timelog, the properties offer
  * to apply it (`getTimelogMismatch`, `applyItemTimelog`). Both read the
- * timelog through `resolveTimelogTarget`, so they never disagree.
+ * timelog through `resolveTimelogTarget`, so they never disagree. Neither
+ * restores a project or task its project source archived (#637): the
+ * mismatch says why instead.
  */
 
 /** How the item's project and task differ from what its timelog names. */
@@ -38,6 +43,8 @@ export type TimelogMismatch =
       taskName?: string;
       /** An archived project of that name, which applying restores. */
       archivedProjectId?: string;
+      /** Why that archived project can't be restored: its source archived it. */
+      refusal?: string;
     }
   | {
       /** The project has no active task of the name. */
@@ -47,6 +54,8 @@ export type TimelogMismatch =
       taskName: string;
       /** An archived task of that name, which applying restores. */
       archivedTaskId?: string;
+      /** Why that archived task can't be restored: its source closed it. */
+      refusal?: string;
       /** The project is shared, so the team gets the task too. */
       shared: boolean;
     }
@@ -117,10 +126,14 @@ function resolveTimelogTarget(
   return { kind: "project", project, ...(task ? { task } : {}) };
 }
 
-/** How the item differs from its description's timelog, or null when it matches. */
+/**
+ * How the item differs from its description's timelog, or null when it
+ * matches. `projectSources` names the source in a refusal.
+ */
 export function getTimelogMismatch(
   projects: LocalProject[],
   workItem: Pick<LocalWorkItem, "description" | "projectId" | "taskId">,
+  projectSources?: Readonly<Record<string, LocalProjectSource>>,
 ): TimelogMismatch | null {
   const timelog = getDescriptionTimelog(workItem.description);
   const target = timelog
@@ -129,17 +142,24 @@ export function getTimelogMismatch(
   if (!timelog || !target) return null;
 
   if (target.kind === "no-project") {
+    const refusal = target.archived
+      ? getProjectRestoreRefusal(target.archived, projectSources)
+      : undefined;
     return {
       kind: "missing-project",
       projectName: timelog.project!,
       ...(timelog.task ? { taskName: timelog.task } : {}),
       ...(target.archived ? { archivedProjectId: target.archived._id } : {}),
+      ...(refusal ? { refusal } : {}),
     };
   }
 
   const { project, task } = target;
   const projectName = getLocalProjectDisplayName(project);
   if (timelog.task && task?.status !== "active") {
+    const refusal = task
+      ? getTaskRestoreRefusal(project, task, projectSources)
+      : undefined;
     return {
       kind: "missing-task",
       projectId: project._id,
@@ -147,6 +167,7 @@ export function getTimelogMismatch(
       taskName: timelog.task,
       ...(task ? { archivedTaskId: task._id } : {}),
       shared: Boolean(project.team),
+      ...(refusal ? { refusal } : {}),
     };
   }
 
@@ -193,6 +214,10 @@ function applyTimelog(
     if (!options.createProject) return state;
     let projectId: string;
     if (target.archived) {
+      // A project its source archived stays archived: the source decides.
+      if (getProjectRestoreRefusal(target.archived, state.projectSources)) {
+        return state;
+      }
       projectId = target.archived._id;
       projects = updateProject(projects, projectId, { status: "active" });
     } else {
@@ -230,7 +255,10 @@ function applyTimelog(
         projectId,
         { name: timelog.task },
         factories,
+        state.projectSources,
       );
+      // A task its source closed stays archived: the source decides.
+      if (given.outcome === "refused") return state;
       taskId = given.taskId;
       projects = given.projects;
     }

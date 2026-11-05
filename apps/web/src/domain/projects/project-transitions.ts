@@ -216,17 +216,27 @@ export function isSourceTask(task: Pick<LocalProjectTask, "source">) {
   return task.source !== undefined;
 }
 
-/** The patch without what the project's source owns, when it has one. */
+/**
+ * The patch without what the project's source owns, when it has one. A
+ * project its source archived stays archived: the source decides when it
+ * comes back (see `getProjectRestoreRefusal`).
+ */
 function withoutSourceOwnedFields(project: LocalProject, patch: ProjectPatch) {
-  if (!isManagedProject(project)) return patch;
+  const archivedBySource =
+    project.status === "archived" &&
+    Boolean(project.archivedBySource || project.archivedByMissingSync);
+  if (!isManagedProject(project) && !archivedBySource) return patch;
   const allowed = { ...patch };
-  for (const field of SOURCE_OWNED_PROJECT_FIELDS) delete allowed[field];
+  if (isManagedProject(project)) {
+    for (const field of SOURCE_OWNED_PROJECT_FIELDS) delete allowed[field];
+  }
+  if (archivedBySource && allowed.status === "active") delete allowed.status;
   return allowed;
 }
 
 /**
  * Changes a project. On a managed project, a change to a field its source
- * owns is left out.
+ * owns is left out, and so is a restore of a project its source archived.
  */
 export function updateProject(
   projects: LocalProject[],
@@ -338,23 +348,37 @@ export function findProjectTaskByImportName(
 /** What `createOrRestoreProjectTask` did. */
 export type CreateOrRestoreTaskOutcome = "existing" | "restored" | "created";
 
+/** What `createOrRestoreProjectTask` gives: the task, or why it can't. */
+export type CreateOrRestoreTaskResult =
+  | {
+      projects: LocalProject[];
+      taskId: string;
+      outcome: CreateOrRestoreTaskOutcome;
+    }
+  | {
+      projects: LocalProject[];
+      /** The archived task of the name is its project source's to restore. */
+      outcome: "refused";
+      /** Why, as a sentence for the user. */
+      refusal: string;
+    };
+
 /**
  * Gives the project a task of this name for a picker or a timelog (#481):
  * the active task of that name, an archived one restored, or a new task with
  * the name as typed, trimmed and with spaces collapsed. Matching the way
  * imports do means a later import of the same task updates this one instead
- * of adding a twin. Throws when the project is missing or the name is blank.
+ * of adding a twin. An archived task its project source closed or left out
+ * is refused, as its Restore is (#637). Throws when the project is missing
+ * or the name is blank.
  */
 export function createOrRestoreProjectTask(
   projects: LocalProject[],
   projectId: string,
   draft: LocalProjectTaskDraft,
   factories: ProjectFactories,
-): {
-  projects: LocalProject[];
-  taskId: string;
-  outcome: CreateOrRestoreTaskOutcome;
-} {
+  projectSources?: Readonly<Record<string, LocalProjectSource>>,
+): CreateOrRestoreTaskResult {
   const project = projects.find((candidate) => candidate._id === projectId);
   if (!project) throw new Error(`No project has the id ${projectId}.`);
   const name = formatTaskImportName(draft.name);
@@ -364,6 +388,10 @@ export function createOrRestoreProjectTask(
   if (found?.status === "active") {
     return { projects, taskId: found._id, outcome: "existing" };
   }
+  const refusal = found
+    ? getTaskRestoreRefusal(project, found, projectSources)
+    : undefined;
+  if (refusal) return { projects, outcome: "refused", refusal };
   if (found) {
     return {
       projects: setProjectTaskStatus(

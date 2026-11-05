@@ -493,7 +493,8 @@ export const rendererEvents = {
     },
   }),
   "project.unshare": command(projectId),
-  "task.create": command(changedTask),
+  /** Refused when the name is a task its project source closed (#637). */
+  "task.create": command(changedTask, { reasons: ["archived_by_source"] }),
   "task.update": command(changedTask),
   "task.archive": command(changedTask),
   /** Refused when the project source closed it or left it out (#505). */

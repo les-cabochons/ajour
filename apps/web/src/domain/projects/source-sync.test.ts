@@ -3,6 +3,7 @@ import type { ProjectSourceSnapshot } from "@ajour/shared";
 import { fixtureSnapshot } from "../../../../../packages/example/index.ts";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
+  createOrRestoreProjectTask,
   restoreProject,
   restoreProjectTask,
   setProjectTaskStatus,
@@ -596,6 +597,19 @@ describe("a hand restore of what the source archived", () => {
     });
   });
 
+  it("is refused through a plain status change too, so no path brings it back", () => {
+    const first = sync(stateWith([]));
+    const globex = projectNamed(first, "Globex - Internal");
+
+    const updated = updateProject(first.projects, globex._id, {
+      status: "active",
+    });
+
+    expect(updated.find((project) => project._id === globex._id)).toEqual(
+      globex,
+    );
+  });
+
   it("is refused for a project the source no longer has", () => {
     const first = sync(stateWith([]));
     const acmeId = projectNamed(first, "Acme - Support")._id;
@@ -651,6 +665,25 @@ describe("a hand restore of what the source archived", () => {
     ).toEqual({
       projects: gone.projects,
       refusal: "This task is no longer in Example planner.",
+    });
+  });
+
+  it("is refused when a picker names a task the source closed, with the reason", () => {
+    const first = sync(stateWith([]));
+    const acme = projectNamed(first, "Acme - Support");
+
+    const given = createOrRestoreProjectTask(
+      first.projects,
+      acme._id,
+      { name: "ticket #099 - time zone" },
+      createFactories(),
+      first.projectSources,
+    );
+
+    expect(given).toEqual({
+      projects: first.projects,
+      outcome: "refused",
+      refusal: "Example planner closed this task.",
     });
   });
 

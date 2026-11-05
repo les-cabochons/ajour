@@ -607,8 +607,10 @@ describe("creating a task from a picker", () => {
       { name: "08 old" },
       createFactories(),
     );
-    expect(given.outcome).toBe("restored");
-    expect(given.taskId).toBe("acme-task-2");
+    expect(given).toMatchObject({
+      outcome: "restored",
+      taskId: "acme-task-2",
+    });
     expect(given.projects[0]!.tasks).toHaveLength(2);
     expect(given.projects[0]!.tasks[1]).toMatchObject({
       status: "active",
@@ -623,7 +625,7 @@ describe("creating a task from a picker", () => {
       { name: "  07   Run ", commitAs: "waiting" },
       createFactories(),
     );
-    expect(given.outcome).toBe("created");
+    if (given.outcome !== "created") throw new Error(given.outcome);
     expect(given.projects[0]!.tasks[2]).toMatchObject({
       _id: given.taskId,
       name: "07 Run",
