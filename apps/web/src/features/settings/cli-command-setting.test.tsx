@@ -590,6 +590,7 @@ describe("the WSL command rows", () => {
             name: "Ubuntu",
             wslVersion: 2,
             status: "error",
+            operation: "add",
             error:
               "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
             added: false,
@@ -615,6 +616,7 @@ describe("the WSL command rows", () => {
             name: "Ubuntu",
             wslVersion: 2,
             status: "error",
+            operation: "add",
             error:
               "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
             added: true,
@@ -700,6 +702,7 @@ describe("the WSL command rows", () => {
             name: "Ubuntu",
             wslVersion: 2,
             status: "error",
+            operation: "add",
             error:
               "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
             added: false,

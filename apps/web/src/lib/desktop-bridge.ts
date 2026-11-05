@@ -168,8 +168,8 @@ export type DesktopCliWslDistro =
       error: string;
       /** In the record: its link still works. */
       added: boolean;
-      /** A Remove failed, so Retry removes; otherwise an Add did. */
-      operation?: "remove";
+      /** The operation that failed, which Retry repeats. */
+      operation: "add" | "remove";
     };
 
 /**

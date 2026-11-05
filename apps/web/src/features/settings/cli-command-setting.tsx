@@ -129,11 +129,11 @@ export function CliCommandSetting() {
   const installed = state?.status === "installed";
   const macos = desktop?.runtime?.platform === "darwin";
   // After Remove, `notice` names the WSL links it couldn't delete (#605).
-  const reason = state?.error ?? refused ?? state?.notice ?? null;
-  const error =
-    reason && state?.pending
-      ? `ajour couldn't update to ${state.pending}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`
-      : reason;
+  const errorOrNotice = state?.error ?? refused ?? state?.notice ?? null;
+  const alert =
+    errorOrNotice && state?.pending
+      ? `ajour couldn't update to ${state.pending}: ${errorOrNotice.replace(/\.$/, "")}. The installed version keeps working.`
+      : errorOrNotice;
 
   function remove() {
     if (installing || !desktop?.removeCliCommand) return;
@@ -187,8 +187,8 @@ export function CliCommandSetting() {
                   </>
                 ) : null}
               </span>
-              {error && !installing ? (
-                <Line role="alert" text={error} className="text-destructive" />
+              {alert && !installing ? (
+                <Line role="alert" text={alert} className="text-destructive" />
               ) : null}
             </span>
           }
@@ -247,19 +247,68 @@ function messageOf(
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+type WslOperation = "add" | "remove";
+
+/**
+ * What a distro row is doing: an Add or Remove running, from the click on;
+ * one that failed, which Retry repeats; or the distro, added or not.
+ */
+type WslRowMode =
+  | { kind: "unsupported" }
+  | { kind: "running"; operation: WslOperation }
+  | { kind: "failed"; operation: WslOperation; added: boolean }
+  | { kind: "idle"; added: boolean };
+
+function wslRowMode(
+  distro: DesktopCliWslDistro,
+  starting: WslOperation | null,
+  rejected: { operation: WslOperation } | null,
+): WslRowMode {
+  if (distro.status === "unsupported") return { kind: "unsupported" };
+  if (starting) return { kind: "running", operation: starting };
+  if (distro.status === "adding") return { kind: "running", operation: "add" };
+  if (distro.status === "removing")
+    return { kind: "running", operation: "remove" };
+  // A failed Add of an added distro, or a failed Remove, keeps its link.
+  const added =
+    distro.status === "added" || (distro.status === "error" && distro.added);
+  if (rejected) return { kind: "failed", operation: rejected.operation, added };
+  if (distro.status === "error")
+    return { kind: "failed", operation: distro.operation, added };
+  return { kind: "idle", added };
+}
+
+/** The row's button, if any: Retry repeats the operation that failed. */
+function wslButton(
+  mode: WslRowMode,
+): { operation: WslOperation; label: string } | null {
+  switch (mode.kind) {
+    case "unsupported":
+      return null;
+    case "failed":
+      return { operation: mode.operation, label: "Retry" };
+    case "running":
+      return {
+        operation: mode.operation,
+        label: mode.operation === "add" ? "Add" : "Remove",
+      };
+    case "idle":
+      return mode.added
+        ? { operation: "remove", label: "Remove" }
+        : { operation: "add", label: "Add" };
+  }
+}
+
 /** What a distro row's status line says. */
 function wslStatusLine(
   distro: DesktopCliWslDistro,
-  {
-    adding,
-    removing,
-    added,
-    version,
-  }: { adding: boolean; removing: boolean; added: boolean; version?: string },
+  mode: WslRowMode,
+  version?: string,
 ) {
   if (distro.status === "unsupported") return distro.reason;
-  if (removing) return "Removing ajour…";
-  if (adding) {
+  if (mode.kind === "running" && mode.operation === "remove")
+    return "Removing ajour…";
+  if (mode.kind === "running") {
     // Until main reports the Add, it starts as a download does.
     const phase = distro.status === "adding" ? distro.phase : "downloading";
     if (phase === "checking") return `Checking ajour in ${distro.name}…`;
@@ -267,11 +316,10 @@ function wslStatusLine(
     const progress = distro.status === "adding" ? distro.progress : null;
     return `Downloading ajour, ${progress ?? 0}%`;
   }
-  if (added) return `ajour ${version ?? ""} · ~/.local/bin/ajour`;
+  if (mode.kind !== "unsupported" && mode.added)
+    return `ajour ${version ?? ""} · ~/.local/bin/ajour`;
   return "Not added.";
 }
-
-type WslOperation = "add" | "remove";
 
 /**
  * One WSL distro under the ajour command (#604, #605): Add, its three
@@ -300,36 +348,13 @@ function WslRow({
     operation: WslOperation;
     message: string;
   } | null>(null);
-  const adding = starting === "add" || distro.status === "adding";
-  const removing = starting === "remove" || distro.status === "removing";
-  const busy = adding || removing;
-  const added =
-    distro.status === "added" ||
-    distro.status === "removing" ||
-    (distro.status === "error" && distro.added);
+  const mode = wslRowMode(distro, starting, rejected);
+  const busy = mode.kind === "running";
   // A Retry hides the reason it retries.
   const reason = busy
     ? null
     : (rejected?.message ?? (distro.status === "error" ? distro.error : null));
-  const failed = distro.status === "error" || rejected !== null;
-  const failedOperation: WslOperation =
-    rejected?.operation ??
-    (distro.status === "error" && distro.operation === "remove"
-      ? "remove"
-      : "add");
-  /** What the row's button does: Retry repeats the operation that failed. */
-  const operation: WslOperation | null =
-    distro.status === "unsupported"
-      ? null
-      : adding
-        ? "add"
-        : removing
-          ? "remove"
-          : failed
-            ? failedOperation
-            : added
-              ? "remove"
-              : "add";
+  const button = wslButton(mode);
 
   function run(next: WslOperation) {
     const desktop = window.ajourDesktop;
@@ -359,14 +384,7 @@ function WslRow({
       description={
         <span className="flex h-12 min-w-0 flex-col overflow-hidden">
           <span role="status">
-            <Line
-              text={wslStatusLine(distro, {
-                adding,
-                removing,
-                added,
-                version,
-              })}
-            />
+            <Line text={wslStatusLine(distro, mode, version)} />
             {distro.status === "added" && distro.hint && !busy ? (
               <Line text={distro.hint} />
             ) : null}
@@ -377,13 +395,13 @@ function WslRow({
         </span>
       }
     >
-      {operation ? (
+      {button ? (
         <Button
           variant="outline"
           disabled={disabled || busy}
-          onClick={() => run(operation)}
+          onClick={() => run(button.operation)}
         >
-          {failed && !busy ? "Retry" : operation === "add" ? "Add" : "Remove"}
+          {button.label}
         </Button>
       ) : null}
     </SettingRow>
