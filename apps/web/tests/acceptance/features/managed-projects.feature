@@ -19,6 +19,7 @@ Feature: Managed projects from a project source
     When I sync the example project source now
     And I open project "Support (mine)"
     Then the title says "From Example planner"
+    And at 390px the title is whole and the "From Example planner" mark is cut first
     And the Full name, Code and Client rows are locked by "Example planner"
     And the link "Open in Example planner" opens "https://planner.example/projects/ACME-SUP"
     When I open the Projects workspace

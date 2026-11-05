@@ -27,6 +27,8 @@ function InlineFigure({
   trailing,
   onKeyDown,
   inputMode = "decimal",
+  readOnly = false,
+  describedBy,
 }: {
   id: string;
   /** The word after the number, which names it: "remaining". */
@@ -41,6 +43,10 @@ function InlineFigure({
   trailing?: ReactNode;
   onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
   inputMode?: ComponentProps<"input">["inputMode"];
+  /** The number can be read and focused but not typed over. */
+  readOnly?: boolean;
+  /** The id of text that describes the number, such as why it is read-only. */
+  describedBy?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const shown = focused || !format ? value : (format(value) ?? value);
@@ -58,6 +64,8 @@ function InlineFigure({
         placeholder={placeholder}
         value={shown}
         aria-invalid={invalid}
+        aria-describedby={describedBy}
+        readOnly={readOnly}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onChange={(event) => onChange(event.target.value)}

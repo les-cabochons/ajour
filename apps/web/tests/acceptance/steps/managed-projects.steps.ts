@@ -193,9 +193,7 @@ Then(
     const card = page.getByRole("region", { name: "Properties" });
     for (const row of ["Full name", "Code", "Client"]) {
       const value = card.locator("dt", { hasText: row }).locator("+ dd");
-      await expect(
-        value.getByRole("img", { name: `Locked. ${label} sets it.` }),
-      ).toBeVisible();
+      await expect(value.getByText(`Locked. ${label} sets it.`)).toBeAttached();
       await expect(value.getByRole("button")).toHaveCount(0);
     }
     await expect(
@@ -229,5 +227,24 @@ Then(
     const rows = page.locator("[cmdk-item][data-task-id]");
     await expect(rows.filter({ hasText: hint })).toHaveCount(1);
     await expect(rows.filter({ hasText: hint })).toContainText(task);
+  },
+);
+
+Then(
+  "at 390px the title is whole and the {string} mark is cut first",
+  async ({ page }, mark: string) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    const header = page.locator(".project-detail-header");
+    const title = header.locator(".project-detail-title button");
+    const metrics = await title.evaluate((element) => ({
+      cut: element.scrollWidth - element.clientWidth > 1,
+    }));
+    expect(metrics.cut).toBe(false);
+    const group = header.getByRole("group", { name: mark });
+    const box = await group.boundingBox();
+    const headerBox = await header.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(
+      headerBox!.x + headerBox!.width + 1,
+    );
   },
 );

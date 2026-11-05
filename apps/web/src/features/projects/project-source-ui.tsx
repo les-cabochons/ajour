@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   RiExternalLinkLine as ExternalIcon,
   RiLinksLine as SourceIcon,
@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { syncAge } from "@/domain/backlog/sync-freshness";
-import type { LocalProject, LocalProjectSource } from "@/domain/local-state";
+import { sourceNameOf } from "@/domain/projects/source-link";
 
 /*
  * What a managed project shows of its project source (#506): the "From
@@ -20,21 +20,12 @@ import type { LocalProject, LocalProjectSource } from "@/domain/local-state";
  * snapshot gave, never a product name Ajour knows (ADR 0016).
  */
 
-/** What the user calls the project's source, such as "Example planner". */
-export function getManagedProjectSourceLabel(
-  project: Pick<LocalProject, "source">,
-  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
-): string | undefined {
-  const connectionId = project.source?.connectionId;
-  return connectionId ? projectSources?.[connectionId]?.label : undefined;
-}
-
 /** The mark on a managed project's list row. Like the shared mark, no tooltip. */
 export function ManagedProjectMark({ label }: { label: string | undefined }) {
   return (
     <span
       role="img"
-      aria-label={`From ${label ?? "its source"}`}
+      aria-label={`From ${sourceNameOf(label)}`}
       className="inline-flex shrink-0 text-muted-foreground [&_svg]:size-3.5"
     >
       <SourceIcon aria-hidden="true" />
@@ -42,14 +33,9 @@ export function ManagedProjectMark({ label }: { label: string | undefined }) {
   );
 }
 
-/** The time of the last sync, read when the tooltip opens. */
-function LastSync({ syncedAt }: { syncedAt: number }) {
-  return (
-    <>
-      Last sync {syncAge(syncedAt, Date.now())} (
-      {new Date(syncedAt).toLocaleString()})
-    </>
-  );
+/** The time of the last sync, as the tooltip and the mark's description say it. */
+function lastSyncText(syncedAt: number) {
+  return `Last sync ${syncAge(syncedAt, Date.now())} (${new Date(syncedAt).toLocaleString()})`;
 }
 
 /** "From <source>" by a managed project's title, its tooltip giving the last sync. */
@@ -60,26 +46,34 @@ export function ManagedProjectTitleMark({
   label: string | undefined;
   syncedAt: number;
 }) {
-  // The wrapper takes only the room the title and code leave, so a narrow
-  // header cuts the mark, never the title.
+  const descriptionId = useId();
+  const lastSync = lastSyncText(syncedAt);
+  // The wrapper gives way first when the header is narrow, so it cuts the
+  // mark, never the title, and a chip after it stays beside it.
   return (
-    <span className="flex min-w-0 grow basis-0">
+    <span className="flex min-w-0 shrink-[1000]">
       <Tooltip>
         <TooltipTrigger
           render={
             <span
               tabIndex={0}
-              className="inline-flex max-w-full min-w-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5"
+              role="group"
+              aria-label={`From ${sourceNameOf(label)}`}
+              aria-describedby={descriptionId}
+              className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3.5"
             />
           }
         >
           <SourceIcon aria-hidden="true" />
-          <span className="min-w-0 truncate">From {label ?? "its source"}</span>
+          <span aria-hidden="true" className="min-w-0 truncate">
+            From {sourceNameOf(label)}
+          </span>
         </TooltipTrigger>
-        <TooltipContent>
-          <LastSync syncedAt={syncedAt} />
-        </TooltipContent>
+        <TooltipContent>{lastSync}</TooltipContent>
       </Tooltip>
+      <span id={descriptionId} hidden>
+        {lastSync}
+      </span>
     </span>
   );
 }
@@ -108,30 +102,55 @@ export function LockedValue({
       >
         {children}
       </span>
+      {/* No id: the note reads inline, after the value, for a text value
+          that has no control to describe. */}
       <LockHint label={label} />
     </span>
   );
 }
 
-/** The lock after a field the project source sets. Its tooltip names the source. */
-export function LockHint({ label }: { label: string | undefined }) {
-  const hint = `Locked. ${label ?? "Its source"} sets it.`;
+/** What a locked field says about itself, naming the source. */
+export function lockedHintText(label: string | undefined) {
+  return `Locked. ${sourceNameOf(label, true)} sets it.`;
+}
+
+/**
+ * The lock after a field the project source sets. The icon is a hover
+ * tooltip only, so it adds no tab stop. A control the lock belongs to points
+ * `aria-describedby` at `id`, where the hint sits hidden; without an `id`
+ * the hint reads inline, after a text value.
+ */
+export function LockHint({
+  label,
+  id,
+}: {
+  label: string | undefined;
+  id?: string;
+}) {
+  const hint = lockedHintText(label);
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            tabIndex={0}
-            role="img"
-            aria-label={hint}
-            className="ml-auto inline-flex shrink-0 text-muted-foreground"
-          />
-        }
-      >
-        <LockIcon aria-hidden="true" className="size-3" />
-      </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
-    </Tooltip>
+    <>
+      {id ? (
+        <span id={id} hidden>
+          {hint}
+        </span>
+      ) : (
+        <span className="sr-only">{hint}</span>
+      )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              aria-hidden="true"
+              className="ml-auto inline-flex shrink-0 text-muted-foreground"
+            />
+          }
+        >
+          <LockIcon className="size-3" />
+        </TooltipTrigger>
+        <TooltipContent>{hint}</TooltipContent>
+      </Tooltip>
+    </>
   );
 }
 
@@ -152,7 +171,7 @@ export function OpenInSourceAction({
       className={propertyActionClassName}
     >
       <ExternalIcon aria-hidden="true" />
-      Open in {label ?? "its source"}
+      Open in {sourceNameOf(label)}
     </a>
   );
 }

@@ -5,6 +5,7 @@ import type {
   LocalProjectTaskDraft,
 } from "@/domain/local-state";
 import type { ProjectDataShapeImportProject } from "@ajour/shared";
+import { isManagedProject } from "@/domain/projects/project-transitions";
 import {
   durationHoursValueToMs,
   durationMsToHoursValue,
@@ -238,16 +239,22 @@ function mergeImportedTasks(
       continue;
     }
 
-    const status = importedTask.status ?? existingTask.status;
+    // A source task's status, billable and budget are its source's.
+    const fromSource = existingTask.source !== undefined;
+    const status = fromSource
+      ? existingTask.status
+      : (importedTask.status ?? existingTask.status);
     const budgetMs =
-      importedTask.budgetMs === undefined
+      fromSource || importedTask.budgetMs === undefined
         ? existingTask.budgetMs
         : normalizeProjectTaskBudgetMs(importedTask.budgetMs);
     const adjustmentMs =
       importedTask.adjustmentMs === undefined
         ? existingTask.adjustmentMs
         : normalizeProjectTaskAdjustmentMs(importedTask.adjustmentMs);
-    const billable = importedTask.billable ?? existingTask.billable ?? true;
+    const billable = fromSource
+      ? (existingTask.billable ?? true)
+      : (importedTask.billable ?? existingTask.billable ?? true);
 
     if (
       existingTask.status !== status ||
@@ -346,6 +353,11 @@ export function importProjectTasks(
   if (!project) {
     throw new Error("Project not found.");
   }
+  if (isManagedProject(project)) {
+    throw new Error(
+      "This project takes its tasks from its source, so Import tasks… is not available.",
+    );
+  }
 
   const existingTaskNames = new Set(
     project.tasks.map((task) => normalizeTaskImportName(task.name)),
@@ -434,6 +446,7 @@ export function importProjectWorkbookRows(
     }
 
     result.mergedProjectCount += 1;
+    const managed = isManagedProject(existingProject);
 
     const merged = mergeImportedTasks(existingProject, group.tasks, factories);
     const nextTasks = merged.tasks;
@@ -446,12 +459,17 @@ export function importProjectWorkbookRows(
     if (projectIndex >= 0) {
       nextProjects[projectIndex] = {
         ...existingProject,
-        name: group.projectName,
+        // A managed project's full name and code are its source's.
+        name: managed ? existingProject.name : group.projectName,
         displayName:
           existingProject.displayName === existingProject.name
-            ? group.projectName
+            ? managed
+              ? existingProject.name
+              : group.projectName
             : existingProject.displayName,
-        code: group.code ?? existingProject.code,
+        code: managed
+          ? existingProject.code
+          : (group.code ?? existingProject.code),
         color: group.color || existingProject.color,
         status: group.status ?? existingProject.status,
         tasks: nextTasks,

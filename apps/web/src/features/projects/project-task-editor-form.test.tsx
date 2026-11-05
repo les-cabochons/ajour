@@ -39,7 +39,7 @@ function renderEditor(sourceLabel?: string) {
       projectName="Acme - Support"
       taskId="task-1"
       taskPropertyPlugins={[workday]}
-      nameLock={sourceLabel ? { label: sourceLabel } : undefined}
+      sourceLock={sourceLabel ? { label: sourceLabel } : undefined}
       onFieldsChange={onFieldsChange}
       onSave={() => {}}
       onClose={() => {}}
@@ -52,15 +52,37 @@ describe("the task editor on a source task", () => {
   beforeAll(installDomShims);
   afterEach(cleanup);
 
-  it("shows the name as the source's, read-only, with Commits as still offered", () => {
-    renderEditor("Example planner");
+  function describedBy(element: HTMLElement) {
+    return document.getElementById(
+      element.getAttribute("aria-describedby") ?? "",
+    )?.textContent;
+  }
+
+  it("shows the name, budget and billable as the source's, with Adjustment and Commits as still the user's", () => {
+    const onFieldsChange = renderEditor("Example planner");
+    const hint = "Locked. Example planner sets it.";
 
     const name = screen.getByRole("textbox", { name: "Name" });
     expect(name).toHaveProperty("readOnly", true);
-    expect(
-      screen.getByLabelText("Locked. Example planner sets it."),
-    ).toBeTruthy();
+    expect(describedBy(name)).toBe(hint);
+
+    const budget = screen.getByRole("textbox", { name: "budget" });
+    expect(budget).toHaveProperty("readOnly", true);
+    expect(describedBy(budget)).toBe(hint);
+
+    const billable = screen.getByRole("checkbox", { name: "Billable" });
+    expect(billable.getAttribute("aria-disabled")).toBe("true");
+    expect(describedBy(billable)).toBe(hint);
+    fireEvent.click(billable);
+    expect(onFieldsChange).not.toHaveBeenCalled();
+
+    const adjustment = screen.getByRole("textbox", { name: "adjustment" });
+    expect(adjustment).toHaveProperty("readOnly", false);
+    fireEvent.change(adjustment, { target: { value: "1" } });
+    expect(onFieldsChange).toHaveBeenCalledWith({ adjustment: "1" });
     expect(screen.getByText("Commits as")).toBeTruthy();
+    // The locks add no tab stops of their own.
+    expect(document.querySelector("[role=img][tabindex]")).toBeNull();
   });
 
   it("leaves a local task's name editable", () => {
@@ -70,6 +92,10 @@ describe("the task editor on a source task", () => {
     expect(name).toHaveProperty("readOnly", false);
     fireEvent.change(name, { target: { value: "Login" } });
     expect(onFieldsChange).toHaveBeenCalledWith({ name: "Login" });
-    expect(screen.queryByLabelText(/^Locked/)).toBeNull();
+    expect(screen.queryByText(/^Locked/)).toBeNull();
+    expect(screen.getByRole("textbox", { name: "budget" })).toHaveProperty(
+      "readOnly",
+      false,
+    );
   });
 });

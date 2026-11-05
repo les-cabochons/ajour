@@ -65,7 +65,14 @@ import {
   type LocalTimesheetEntry,
   type PinnedTaskSlot,
 } from "@/domain/local-state";
-import { isTaskNameLocked } from "@/domain/projects/project-transitions";
+import {
+  isManagedProject,
+  isSourceTask,
+} from "@/domain/projects/project-transitions";
+import {
+  getProjectSourceLabel,
+  sourceNameOf,
+} from "@/domain/projects/source-link";
 import {
   PinnedSlotBadge,
   PinnedSlotDialog,
@@ -77,7 +84,6 @@ import {
 } from "@/features/projects/project-properties";
 import { SharedProjectMark } from "@/features/projects/project-team-ui";
 import {
-  getManagedProjectSourceLabel,
   ManagedProjectMark,
   ManagedProjectTitleMark,
 } from "@/features/projects/project-source-ui";
@@ -509,12 +515,9 @@ function ProjectsList({
                     </Link>
                     {project.code ? <Chip>{project.code}</Chip> : null}
                     {project.team ? <SharedProjectMark /> : null}
-                    {project.source ? (
+                    {isManagedProject(project) ? (
                       <ManagedProjectMark
-                        label={getManagedProjectSourceLabel(
-                          project,
-                          projectSources,
-                        )}
+                        label={getProjectSourceLabel(project, projectSources)}
                       />
                     ) : null}
                   </td>
@@ -620,6 +623,8 @@ function ProjectDetail({
     null,
   );
   const isArchived = project.status === "archived";
+  const managed = isManagedProject(project);
+  const sourceLabel = getProjectSourceLabel(project, projectSources);
   const projectActions = getProjectActions(project);
 
   const summary = taskSummary(project);
@@ -1132,9 +1137,9 @@ function ProjectDetail({
         />
         <ProjectTitle project={project} readOnly={isArchived} />
         {project.code ? <Chip>{project.code}</Chip> : null}
-        {project.source ? (
+        {managed ? (
           <ManagedProjectTitleMark
-            label={getManagedProjectSourceLabel(project, projectSources)}
+            label={sourceLabel}
             syncedAt={project.source.syncedAt}
           />
         ) : null}
@@ -1301,10 +1306,12 @@ function ProjectDetail({
                         ? "Archived tasks will appear here."
                         : isArchived
                           ? "This archived project has no active tasks."
-                          : "Create a task, or import tasks from Excel."}
+                          : managed
+                            ? `${sourceNameOf(sourceLabel, true)} adds tasks when it syncs.`
+                            : "Create a task, or import tasks from Excel."}
                     </EmptyDescription>
                   </EmptyHeader>
-                  {!isArchived && !isArchivedTaskFilter ? (
+                  {!isArchived && !isArchivedTaskFilter && !managed ? (
                     <EmptyContent>
                       <Button
                         type="button"
@@ -1405,7 +1412,7 @@ function ProjectDetail({
         </div>
         <ProjectPropertiesCard
           project={project}
-          projectSources={projectSources}
+          sourceLabel={sourceLabel}
           isImporting={isImporting}
           onImport={openImportPicker}
           onArchive={() => onProjectAction(project, "archive")}
@@ -2121,10 +2128,10 @@ export function ProjectsPage() {
           .map((task) => task.name)}
         projectLocalOnly={taskEditorProject.localOnly}
         project={taskEditorProject}
-        nameLock={
-          taskEditorTask && isTaskNameLocked(taskEditorTask)
+        sourceLock={
+          taskEditorTask && isSourceTask(taskEditorTask)
             ? {
-                label: getManagedProjectSourceLabel(
+                label: getProjectSourceLabel(
                   taskEditorProject,
                   state.projectSources,
                 ),
@@ -2311,6 +2318,11 @@ export function ProjectsPage() {
       (projectModalState.mode === "create" || editedProject) ? (
         <ProjectFormDialog
           project={editedProject}
+          sourceLabel={
+            editedProject
+              ? getProjectSourceLabel(editedProject, state.projectSources)
+              : undefined
+          }
           onClose={closeProjectModal}
           onSubmit={handleProjectSubmit}
         />

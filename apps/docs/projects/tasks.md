@@ -46,7 +46,7 @@ Each row of the task list shows the task's shortcut, whether it is billable, and
 
 In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment, the shortcut, plugin properties and **Commits as** stay yours.
 
-In a [managed project](/projects/#managed-projects), a task its source knows shows its name with a lock: rename it in the source. **Commits as** stays yours.
+In a [managed project](/projects/#managed-projects), a task its source knows shows its name with a lock: rename it in the source. Its budget and **Billable** are the source's too, with the same lock. Adjustment and **Commits as** stay yours.
 
 ## Pin a task
 

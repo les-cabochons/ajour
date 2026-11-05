@@ -718,6 +718,42 @@ describe("a managed project's locked fields", () => {
     });
   });
 
+  it("keeps a source task's billable and budget, and saves its adjustment", () => {
+    const project = createManagedProject();
+    const task = project.tasks[0]!;
+    task.source = { remoteId: "1001", assigned: true };
+    task.billable = true;
+    task.budgetMs = 3_600_000;
+
+    const [updated] = updateProjectTask([project], project._id, task._id, {
+      billable: false,
+      budgetMs: 7_200_000,
+      adjustmentMs: 1_800_000,
+    });
+
+    expect(updated?.tasks[0]).toMatchObject({
+      billable: true,
+      budgetMs: 3_600_000,
+      adjustmentMs: 1_800_000,
+    });
+  });
+
+  it("lets a managed project's local task change its billable and budget", () => {
+    const project = createManagedProject();
+
+    const [updated] = updateProjectTask(
+      [project],
+      project._id,
+      project.tasks[0]!._id,
+      { billable: false, budgetMs: 7_200_000 },
+    );
+
+    expect(updated?.tasks[0]).toMatchObject({
+      billable: false,
+      budgetMs: 7_200_000,
+    });
+  });
+
   it("lets a managed project's local task change its name", () => {
     const project = createManagedProject();
 

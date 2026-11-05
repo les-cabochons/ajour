@@ -24,7 +24,6 @@ import {
 import {
   getLocalProjectDisplayName,
   type LocalProject,
-  type LocalProjectSource,
 } from "@/domain/local-state";
 import { isManagedProject } from "@/domain/projects/project-transitions";
 import {
@@ -42,7 +41,6 @@ import {
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
 import {
-  getManagedProjectSourceLabel,
   LockedValue,
   OpenInSourceAction,
 } from "@/features/projects/project-source-ui";
@@ -339,15 +337,15 @@ function PluginPropertySection({
  */
 export function ProjectPropertiesCard({
   project,
-  projectSources,
+  sourceLabel,
   isImporting,
   onImport,
   onArchive,
   onRestore,
 }: {
   project: LocalProject;
-  /** The project source records, which name a managed project's source. */
-  projectSources?: Readonly<Record<string, LocalProjectSource>>;
+  /** What the user calls the project's source, for a managed project. */
+  sourceLabel?: string;
   isImporting: boolean;
   /** Opens the Excel file picker. */
   onImport: () => void;
@@ -356,7 +354,6 @@ export function ProjectPropertiesCard({
 }) {
   const isArchived = project.status === "archived";
   const managed = isManagedProject(project);
-  const sourceLabel = getManagedProjectSourceLabel(project, projectSources);
   const sourceUrl = project.source?.url;
   const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
   // The first plugin that commits tasks under a name, such as Workday, names
@@ -544,14 +541,17 @@ export function ProjectPropertiesCard({
         {sourceUrl ? (
           <OpenInSourceAction url={sourceUrl} label={sourceLabel} />
         ) : null}
-        <PropertyAction
-          disabled={isArchived || isImporting}
-          title={isArchived ? "Restore the project first" : undefined}
-          onClick={onImport}
-        >
-          <Download aria-hidden="true" />
-          {isImporting ? "Importing tasks…" : "Import tasks…"}
-        </PropertyAction>
+        {/* A managed project's tasks come from its source. */}
+        {managed ? null : (
+          <PropertyAction
+            disabled={isArchived || isImporting}
+            title={isArchived ? "Restore the project first" : undefined}
+            onClick={onImport}
+          >
+            <Download aria-hidden="true" />
+            {isImporting ? "Importing tasks…" : "Import tasks…"}
+          </PropertyAction>
+        )}
         <ProjectTeamAction
           project={project}
           teams={teams}

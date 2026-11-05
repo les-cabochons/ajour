@@ -60,5 +60,5 @@ A plugin with **Managed projects**, connected in **Settings › Plugins**, bring
 - **"From" and the source's name** sit next to the title, such as **From Example planner**. Rest the pointer on it to see when the project last synced.
 - **Full name**, **Code** and **Client** show a lock in the properties card: the source sets them, so they change there, not in Ajour. The display name, color, icon, favorites and pins stay yours.
 - **Open in** and the source's name, at the bottom of the card, opens the project in its source. It shows when the source gives the project a link.
-- A task the source knows keeps its source's name: the task editor shows it with a lock. **Commits as** and the shortcut stay yours.
+- A task the source knows keeps its source's name: the task editor shows it, its budget and **Billable** with a lock. The adjustment, **Commits as** and the shortcut stay yours. A managed project has no **Import tasks…**: its source adds the tasks.
 - In the task menu, the tasks the source assigns to you come first. The others say **Not assigned** and stay available.
