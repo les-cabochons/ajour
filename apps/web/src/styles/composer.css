@@ -375,6 +375,11 @@
   transform: none;
   box-shadow: var(--shadow-popup);
   border: 1px solid var(--border);
+  /* The dialog's duration-100 sets a transition duration, and the transition
+     property defaults to all: the top the card is placed at, below the day
+     strip or the row it edits, slid down from 64px. Its open animation is a
+     keyframe animation, which this leaves alone. */
+  transition-property: none;
 }
 
 /* Writing that can change says so: a faint tint on hover and a ring on

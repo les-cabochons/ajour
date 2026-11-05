@@ -191,6 +191,18 @@ Feature: Open the local time workspace
     When the window is 1800 pixels wide
     Then the entry composer still floats and the Week keeps its width
 
+  Scenario: A new entry's composer opens below the day strip, in place
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I open a new entry from the Day view while watching its composer
+    Then the entry composer opened below the day strip without sliding
+
+  Scenario: An entry's composer opens below its row, in place
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I double-click Monday's first entry while watching its composer
+    Then the entry composer opened below that entry without sliding
+
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
     When I open the Week Days view

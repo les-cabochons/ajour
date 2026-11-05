@@ -3279,6 +3279,85 @@ Then(
   },
 );
 
+/**
+ * Records the entry composer's top edge on every frame from now until it has
+ * settled, so a scenario can tell a card that opens in place from one that
+ * slides there.
+ */
+async function watchComposerFrames(page: Page) {
+  await page.evaluate(() => {
+    const frames: number[] = [];
+    (window as unknown as { composerFrames: number[] }).composerFrames = frames;
+    const started = performance.now();
+    const tick = () => {
+      const card = document.querySelector(".composer-floating");
+      if (card) frames.push(card.getBoundingClientRect().top);
+      if (performance.now() - started < 1500) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/**
+ * Waits for the composer to settle and checks it never moved on the way: its
+ * open animation scales it about its center from 95%, so its top edge may
+ * start up to 2.5% of its height lower, never higher.
+ */
+async function expectComposerOpenedInPlace(page: Page) {
+  const composer = page.getByRole("dialog", { name: /time entry$/ });
+  await expect(composer).toBeVisible();
+  await page.waitForTimeout(1600);
+  const frames = await page.evaluate(
+    () => (window as unknown as { composerFrames: number[] }).composerFrames,
+  );
+  const settled = (await composer.boundingBox())!;
+  expect(frames.length).toBeGreaterThan(0);
+  for (const top of frames) {
+    expect(top).toBeGreaterThanOrEqual(settled.y - 1);
+    expect(top).toBeLessThanOrEqual(settled.y + settled.height * 0.025 + 1);
+  }
+  return settled;
+}
+
+When(
+  "I open a new entry from the Day view while watching its composer",
+  async ({ page }) => {
+    await watchComposerFrames(page);
+    await page.getByRole("button", { name: "New entry" }).first().click();
+  },
+);
+
+When(
+  "I double-click Monday's first entry while watching its composer",
+  async ({ page }) => {
+    const row = page.locator("main [data-entry-id]").first();
+    await expect(row).toBeVisible();
+    await watchComposerFrames(page);
+    await row.dblclick();
+  },
+);
+
+Then(
+  "the entry composer opened below the day strip without sliding",
+  async ({ page }) => {
+    const strip = (await page.locator("main .day-strip").boundingBox())!;
+    const settled = await expectComposerOpenedInPlace(page);
+    expect(settled.y).toBeGreaterThanOrEqual(strip.y + strip.height);
+  },
+);
+
+Then(
+  "the entry composer opened below that entry without sliding",
+  async ({ page }) => {
+    const row = (await page
+      .locator("main [data-entry-id]")
+      .first()
+      .boundingBox())!;
+    const settled = await expectComposerOpenedInPlace(page);
+    expect(settled.y).toBeGreaterThanOrEqual(row.y + row.height);
+  },
+);
+
 Then("the Day view is visible", async ({ page }) => {
   await expect(page.locator(".day-strip")).toBeVisible();
   await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
