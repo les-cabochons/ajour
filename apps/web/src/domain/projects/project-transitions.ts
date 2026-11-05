@@ -181,16 +181,52 @@ export function addProject(
   };
 }
 
+/**
+ * The fields a managed project's source owns. The user can't change them in
+ * Ajour: every sync would put the source's value back (ADR 0016).
+ */
+const SOURCE_OWNED_PROJECT_FIELDS = [
+  "name",
+  "code",
+  "client",
+  "startsOn",
+  "endsOn",
+  "budget",
+] as const satisfies readonly (keyof LocalProject)[];
+
+/** Whether the project follows a project source, which locks its full name, code and client. */
+export function isManagedProject(project: Pick<LocalProject, "source">) {
+  return project.source !== undefined;
+}
+
+/** Whether the task's name follows its project source, so the user can't change it. */
+export function isTaskNameLocked(task: Pick<LocalProjectTask, "source">) {
+  return task.source !== undefined;
+}
+
+/** The patch without what the project's source owns, when it has one. */
+function withoutSourceOwnedFields(project: LocalProject, patch: ProjectPatch) {
+  if (!isManagedProject(project)) return patch;
+  const allowed = { ...patch };
+  for (const field of SOURCE_OWNED_PROJECT_FIELDS) delete allowed[field];
+  return allowed;
+}
+
+/**
+ * Changes a project. On a managed project, a change to a field its source
+ * owns is left out.
+ */
 export function updateProject(
   projects: LocalProject[],
   projectId: string,
-  patch: ProjectPatch,
+  requested: ProjectPatch,
 ) {
   return projects.map((project) => {
     if (project._id !== projectId) {
       return project;
     }
 
+    const patch = withoutSourceOwnedFields(project, requested);
     const nextProject = { ...project, ...patch };
     if (
       typeof patch.name === "string" &&
@@ -406,7 +442,10 @@ export function updateProjectTask(
             task._id === taskId
               ? {
                   ...task,
-                  name: patch.name ?? task.name,
+                  // A source task's name follows its source.
+                  name: isTaskNameLocked(task)
+                    ? task.name
+                    : (patch.name ?? task.name),
                   billable:
                     "billable" in patch
                       ? (patch.billable ?? true)

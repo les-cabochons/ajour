@@ -15,6 +15,7 @@ import {
   setProjectTaskFavorite,
   setProjectTaskPinnedSlot,
   setProjectTaskStatus,
+  updateProject,
   updateProjectTask,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
@@ -649,5 +650,84 @@ describe("creating a task from a picker", () => {
         createFactories(),
       ),
     ).toThrow("No project has the id gone.");
+  });
+});
+
+describe("a managed project's locked fields", () => {
+  function createManagedProject(): LocalProject {
+    return {
+      ...createFixtureProject("acme"),
+      name: "Acme - Support",
+      displayName: "Support",
+      code: "ACME-SUP",
+      client: "Acme inc.",
+      source: {
+        pluginId: "example-planner",
+        connectionId: "planner",
+        remoteId: "ACME-SUP",
+        syncedAt: 1_000,
+      },
+    };
+  }
+
+  it("keeps the full name, code and client its source gave, and saves the user's own fields", () => {
+    const project = createManagedProject();
+
+    const [updated] = updateProject([project], project._id, {
+      name: "Renamed",
+      code: "OTHER",
+      client: "Globex",
+      displayName: "My support",
+      color: "#abcdef",
+    });
+
+    expect(updated).toMatchObject({
+      name: "Acme - Support",
+      code: "ACME-SUP",
+      client: "Acme inc.",
+      displayName: "My support",
+      color: "#abcdef",
+    });
+  });
+
+  it("lets a local project change its full name and code", () => {
+    const project = createFixtureProject("local");
+
+    const [updated] = updateProject([project], project._id, {
+      name: "Renamed",
+      code: "NEW",
+    });
+
+    expect(updated).toMatchObject({ name: "Renamed", code: "NEW" });
+  });
+
+  it("keeps a source task's name, and saves what it commits as", () => {
+    const project = createManagedProject();
+    project.tasks[0]!.source = { remoteId: "1001", assigned: true };
+
+    const [updated] = updateProjectTask(
+      [project],
+      project._id,
+      project.tasks[0]!._id,
+      { name: "Renamed", commitAs: "local" },
+    );
+
+    expect(updated?.tasks[0]).toMatchObject({
+      name: "Task 1",
+      commitAs: "local",
+    });
+  });
+
+  it("lets a managed project's local task change its name", () => {
+    const project = createManagedProject();
+
+    const [updated] = updateProjectTask(
+      [project],
+      project._id,
+      project.tasks[0]!._id,
+      { name: "Renamed" },
+    );
+
+    expect(updated?.tasks[0]?.name).toBe("Renamed");
   });
 });
