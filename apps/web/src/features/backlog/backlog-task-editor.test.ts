@@ -9,7 +9,6 @@ import {
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
   parseEstimateInput,
-  sumSubitemEstimates,
   validateBacklogTaskEditor,
   type BacklogTaskEditorFields,
   type BacklogTaskEditorTarget,
@@ -331,42 +330,6 @@ describe("backlog task editor", () => {
           taskId: "task-1",
         }),
       });
-    });
-
-    it("offers a reset only for estimates that differ from the subitem total", () => {
-      const parent = createWorkItem({
-        originalEstimateHours: 8,
-        remainingEstimateHours: 4,
-        completedEstimateHours: undefined,
-      });
-      const subitems = [
-        createWorkItem({
-          _id: "child-1",
-          parentWorkItemId: parent._id,
-          originalEstimateHours: 5,
-          remainingEstimateHours: 2,
-          completedEstimateHours: undefined,
-        }),
-        createWorkItem({
-          _id: "child-2",
-          parentWorkItemId: parent._id,
-          originalEstimateHours: 3,
-          remainingEstimateHours: 1.5,
-          completedEstimateHours: undefined,
-        }),
-      ];
-      const target: BacklogTaskEditorTarget = {
-        kind: "edit",
-        workItem: parent,
-      };
-      const editor = evaluateBacklogTaskEditor(
-        createBacklogTaskEditorSeed(target),
-        target,
-        { subitemTotals: sumSubitemEstimates(subitems) },
-      );
-
-      expect(editor.estimateResets).toEqual({ remainingEstimateHours: "3.5" });
-      expect(editor.hasChanges).toBe(false);
     });
 
     it("offers synced priority and status resets only for synced items", () => {

@@ -50,7 +50,6 @@ export type BacklogEstimateFieldKey =
   (typeof BACKLOG_ESTIMATE_FIELD_KEYS)[number];
 
 /** The sum of a parent's subitem estimates. Missing estimates count as 0. */
-export type SubitemEstimateTotals = Record<BacklogEstimateFieldKey, number>;
 
 /** What a draft means right now: validation, changes, and the resets the form offers. */
 export interface BacklogTaskEditorState {
@@ -60,11 +59,6 @@ export interface BacklogTaskEditorState {
   isSynced: boolean;
   validation: BacklogTaskEditorValidation;
   hasChanges: boolean;
-  /**
-   * Field values for "Reset to subitem total", keyed by the estimates that differ from
-   * the total. Empty for items without subitems.
-   */
-  estimateResets: Partial<Record<BacklogEstimateFieldKey, string>>;
   /** The synced priority to restore, or `null` when there is nothing to reset. */
   priorityReset: string | null;
   /** The synced status to restore, or `null` when there is nothing to reset. */
@@ -190,26 +184,6 @@ export function createBacklogTaskEditorSeed(
     projectId: target.parent.projectId ?? "",
     taskId: target.parent.taskId ?? "",
   });
-}
-
-export function sumSubitemEstimates(
-  subitems: LocalWorkItem[],
-): SubitemEstimateTotals {
-  return subitems.reduce(
-    (totals, subitem) => ({
-      originalEstimateHours:
-        totals.originalEstimateHours + (subitem.originalEstimateHours ?? 0),
-      remainingEstimateHours:
-        totals.remainingEstimateHours + (subitem.remainingEstimateHours ?? 0),
-      completedEstimateHours:
-        totals.completedEstimateHours + (subitem.completedEstimateHours ?? 0),
-    }),
-    {
-      originalEstimateHours: 0,
-      remainingEstimateHours: 0,
-      completedEstimateHours: 0,
-    },
-  );
 }
 
 export function validateBacklogTaskEditor(
@@ -443,15 +417,11 @@ function hasSameFields(
   );
 }
 
-/**
- * Evaluates a draft against its target. `subitemTotals` is the sum of the item's
- * subitem estimates, or `null` when it has no subitems.
- */
+/** Evaluates a draft against its target. */
 export function evaluateBacklogTaskEditor(
   fields: BacklogTaskEditorFields,
   target: BacklogTaskEditorTarget,
   options: {
-    subitemTotals?: SubitemEstimateTotals | null;
     /** The description follows its source; the draft's copy is ignored. */
     descriptionReadOnly?: boolean;
     /** The item's fields when the draft started. */
@@ -485,17 +455,6 @@ export function evaluateBacklogTaskEditor(
         : options.descriptionLimit,
   });
 
-  const estimateResets: Partial<Record<BacklogEstimateFieldKey, string>> = {};
-  const subitemTotals = isSubitem ? null : options.subitemTotals;
-  if (subitemTotals) {
-    for (const key of BACKLOG_ESTIMATE_FIELD_KEYS) {
-      // An unparsable value differs from the total too, so the reset can fix it.
-      if ((parseEstimateInput(fields[key]) ?? 0) !== subitemTotals[key]) {
-        estimateResets[key] = formatEstimateInput(subitemTotals[key]);
-      }
-    }
-  }
-
   const syncedPriority = formatPriorityInput(original?.importedPriority);
   const syncedStatus = original?.importedWorkflowStateId ?? "";
 
@@ -510,7 +469,6 @@ export function evaluateBacklogTaskEditor(
         ? { ...createBacklogTaskEditorSeed(target), description: "" }
         : createBacklogTaskEditorSeed(target),
     ),
-    estimateResets,
     priorityReset:
       isSynced && !isSubitem && fields.priority.trim() !== syncedPriority
         ? syncedPriority

@@ -89,7 +89,9 @@ export function ProjectFormDialog({
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <DialogHeader className="gap-1">
-            <DialogTitle className="composer-kicker">
+            {/* The composer says what it makes by itself; its title only
+                names the dialog for assistive tech (forms council round 13). */}
+            <DialogTitle className="sr-only">
               {isCreate ? "New project" : "Edit project"}
             </DialogTitle>
           </DialogHeader>

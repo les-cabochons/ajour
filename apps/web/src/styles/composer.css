@@ -564,3 +564,33 @@ body:has([data-slot="dialog-content"].composer-floating)
   background: var(--popover);
   color: var(--foreground);
 }
+
+/* A project and its task as one pill (forms council round 13): two
+   segments joined by a hairline, the task reading as the project's. */
+.composer-chips .composer-chip-pair {
+  display: inline-flex;
+  align-items: center;
+}
+
+.composer-chip-pair
+  > .searchable-select:not(:last-child)
+  .searchable-select-input-group {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.composer-chip-pair
+  > .searchable-select
+  + .searchable-select
+  .searchable-select-input-group {
+  margin-inline-start: 1px;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+.composer-chip-pair
+  > .searchable-select
+  + .searchable-select
+  .searchable-select-input {
+  padding-inline-start: 8px;
+}

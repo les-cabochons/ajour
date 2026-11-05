@@ -12,11 +12,9 @@ import {
 } from "react";
 import {
   RiAlarmWarningLine as AlertTriangle,
-  RiArchiveLine as KeepIcon,
   RiCloseLine as X,
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
-  RiRefreshLine as RotateCcw,
   RiExpandDiagonalLine as OpenPageIcon,
 } from "@remixicon/react";
 import { ProjectIcon } from "@/lib/project-icons";
@@ -41,11 +39,6 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   getPriorityRefusal,
   isBacklogItemSnoozed,
@@ -79,7 +72,6 @@ import {
   evaluateBacklogTaskEditor,
   followChangedItem,
   parseEstimateInput,
-  sumSubitemEstimates,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
   type BacklogTaskEditorFields,
@@ -336,7 +328,6 @@ export function BacklogItemEditorForm({
     [workItem, workItems],
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
-    subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
     descriptionReadOnly: !descriptionEditable,
     base,
     descriptionLimit,
@@ -647,8 +638,6 @@ export function BacklogItemEditorForm({
         ];
   const estimateFigures = shownEstimateKeys.map((key) => {
     const error = validation[ESTIMATE_ERROR_KEYS[key]];
-    const resetValue = editor.estimateResets[key];
-    const label = ESTIMATE_LABELS[key];
     return (
       <InlineFigure
         key={key}
@@ -659,28 +648,6 @@ export function BacklogItemEditorForm({
         format={formatEstimateFigure}
         invalid={Boolean(error)}
         onKeyDown={saveOnEnter}
-        trailing={
-          resetValue !== undefined ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
-                    onClick={() => updateFields({ [key]: resetValue })}
-                  />
-                }
-              >
-                <RotateCcw />
-              </TooltipTrigger>
-              <TooltipContent>
-                Reset to subitem total ({resetValue})
-              </TooltipContent>
-            </Tooltip>
-          ) : null
-        }
       />
     );
   });
@@ -921,69 +888,55 @@ export function BacklogItemEditorForm({
             emptyMessage="No matching workflow states"
             ariaLabel="Workflow state"
           />
-          <SearchableSelect
-            value={fields.projectId}
-            options={projectOptions}
-            onChange={changeProject}
-            className="composer-chip"
-            popoverMinWidth={260}
-            placeholderIcon={
-              <ProjectChipIcon aria-hidden className="size-3.5" />
-            }
-            placeholder="Project"
-            clearLabel="No project"
-            emptyMessage="No matching projects"
-            ariaLabel="Project"
-          />
-          {/* The task waits for its project, as Linear hides what can't be
-              set yet. */}
-          {selectedProject ? (
+          {/* The project and its task are one pill, "Atlas platform /
+              Development", so the task reads as the project's (forms council
+              round 13). */}
+          <span className="composer-chip-pair">
             <SearchableSelect
-              value={fields.taskId}
-              options={taskOptions}
-              onChange={(taskId) => updateFields({ taskId })}
+              value={fields.projectId}
+              options={projectOptions}
+              onChange={changeProject}
               className="composer-chip"
               popoverMinWidth={260}
-              placeholder="Task"
-              clearLabel={fields.projectId ? "No task" : undefined}
-              emptyMessage={
-                fields.projectId ? "No matching tasks" : "Pick a project first"
+              placeholderIcon={
+                <ProjectChipIcon aria-hidden className="size-3.5" />
               }
-              ariaLabel="Task mapping"
-              disabled={!selectedProject}
-              create={
-                selectedProject
-                  ? {
-                      label: (text) =>
-                        describeCreateTaskRow(selectedProject, text),
-                      onCreate: (text) => createTask(selectedProject._id, text),
-                    }
-                  : undefined
-              }
+              placeholder="Project"
+              clearLabel="No project"
+              emptyMessage="No matching projects"
+              ariaLabel="Project"
             />
-          ) : null}
-          {editor.isSynced ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <ToggleChip
-                    id={`${idPrefix}-keep`}
-                    checked={fields.keepWhenMissingFromSync}
-                    onCheckedChange={(keepWhenMissingFromSync) =>
-                      updateFields({ keepWhenMissingFromSync })
-                    }
-                    icon={<KeepIcon aria-hidden className="size-3.5" />}
-                  />
+            {/* The task waits for its project, as Linear hides what can't be
+                set yet. */}
+            {selectedProject ? (
+              <SearchableSelect
+                value={fields.taskId}
+                options={taskOptions}
+                onChange={(taskId) => updateFields({ taskId })}
+                className="composer-chip"
+                popoverMinWidth={260}
+                placeholder="Task"
+                clearLabel={fields.projectId ? "No task" : undefined}
+                emptyMessage={
+                  fields.projectId
+                    ? "No matching tasks"
+                    : "Pick a project first"
                 }
-              >
-                Keep when missing
-              </TooltipTrigger>
-              <TooltipContent>
-                Don't archive this item when it disappears from the synced
-                source list.
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
+                ariaLabel="Task mapping"
+                disabled={!selectedProject}
+                create={
+                  selectedProject
+                    ? {
+                        label: (text) =>
+                          describeCreateTaskRow(selectedProject, text),
+                        onCreate: (text) =>
+                          createTask(selectedProject._id, text),
+                      }
+                    : undefined
+                }
+              />
+            ) : null}
+          </span>
         </section>
         {validation.priorityError ? (
           <span className="field-error">{validation.priorityError}</span>
