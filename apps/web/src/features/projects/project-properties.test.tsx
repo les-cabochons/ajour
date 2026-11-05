@@ -189,9 +189,7 @@ describe("a managed project's dates (#508)", () => {
   it("says when a project past its end ended, in a muted line", () => {
     renderCard(syncedProject("GLOBEX-INT"));
 
-    expect(
-      within(row("Dates")).getByText("Feb 2, 2025 – Oct 31, 2025"),
-    ).toBeTruthy();
+    expect(within(row("Dates")).getByText("Feb 2 – Oct 31, 2025")).toBeTruthy();
     const ended = screen.getByText("Ended on Oct 31, 2025");
     expect(ended.className).toContain("text-muted-foreground");
   });

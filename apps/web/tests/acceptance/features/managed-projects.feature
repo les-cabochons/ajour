@@ -41,7 +41,7 @@ Feature: Managed projects from a project source
     And the example project source is connected
     When I sync the example project source now
     And I open the archived project "Globex - Internal"
-    Then the Dates row says "Feb 2, 2025 – Oct 31, 2025", locked by "Example planner"
+    Then the Dates row says "Feb 2 – Oct 31, 2025", locked by "Example planner"
     And the card says "Ended on Oct 31, 2025"
     And the card has no Client row
     When I filter the sidebar to the client "Acme inc."
