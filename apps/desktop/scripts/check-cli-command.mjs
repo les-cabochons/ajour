@@ -139,6 +139,7 @@ const {
   pathWithFolder,
   checkPathRestoration,
 } = require("../electron/cli-path.cjs");
+const { codesignVerifyArgs } = require("../electron/cli-signature.cjs");
 const registry = createPowerShellRegistry();
 
 const samePath = (left, right) =>
@@ -838,6 +839,20 @@ async function macMain() {
       stdout,
     );
     await run("/usr/bin/codesign", ["--verify", "--strict", binary]);
+    // Releases are checked against the team requirement, which an ad-hoc
+    // build fails with exit 3. Any other exit means codesign couldn't read it.
+    const requirement = await run(
+      "/usr/bin/codesign",
+      codesignVerifyArgs(binary),
+    ).then(
+      () => 0,
+      (error) => error.code,
+    );
+    expect(
+      requirement === 3,
+      "codesign reads the release requirement and refuses the ad-hoc build",
+      requirement,
+    );
     await checkFollow(electronApp, env, release, version, LINK);
     electronApp = undefined;
   } finally {

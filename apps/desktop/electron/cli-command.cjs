@@ -1,6 +1,7 @@
 const { createHash, randomUUID } = require("node:crypto");
 const path = require("node:path");
 const { tagForPackageVersion } = require("./update-check.cjs");
+const { codesignVerifyArgs } = require("./cli-signature.cjs");
 
 /** The record commits an install. Reconciliation restores its content and PATH. */
 
@@ -744,19 +745,12 @@ function createCliCommandController({
       await unpack(archive, unpacked);
       if (platform === "darwin") {
         try {
+          const file = path.join(unpacked, binary);
           await exec(
             "/usr/bin/codesign",
-            [
-              "--verify",
-              "--strict",
-              ...(development && localOrigin && allowAdHocSignature
-                ? []
-                : [
-                    "-R",
-                    'anchor apple generic and certificate leaf[subject.OU] = "DDX8GJH69G"',
-                  ]),
-              path.join(unpacked, binary),
-            ],
+            development && localOrigin && allowAdHocSignature
+              ? ["--verify", "--strict", file]
+              : codesignVerifyArgs(file),
             { timeout: VERSION_CHECK_TIMEOUT_MS },
           );
         } catch {

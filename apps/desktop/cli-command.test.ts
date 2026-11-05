@@ -1620,8 +1620,10 @@ describe("macOS signature verification", () => {
       (call) => call.file === "/usr/bin/codesign",
     );
     expect(signature).toBeGreaterThan(-1);
-    expect(exec.calls[signature]!.args).toContain(
-      'anchor apple generic and certificate leaf[subject.OU] = "DDX8GJH69G"',
+    // codesign reads -R as a file path unless the text starts with "=".
+    const args = exec.calls[signature]!.args;
+    expect(args[args.indexOf("-R") + 1]).toBe(
+      '=anchor apple generic and certificate leaf[subject.OU] = "DDX8GJH69G"',
     );
     expect(signature).toBeLessThan(
       exec.calls.findIndex((call) => call.args[0] === "-V"),
