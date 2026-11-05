@@ -346,11 +346,13 @@ it("discovers an installed API 4 schema in packaged mode without a development d
     path.join(directory, "plugin.mjs"),
     "export async function exportProjects(projects) { return { datasets: [{id:'projects',rows:projects.map(project=>({name:project.name}))}] }; }",
   );
+  const runtime = new InProcessPluginRuntime();
   const plugins = new PluginManager({
     installedPluginDirectory: path.join(root, "plugins"),
+    runtime,
   });
   const shapes = new ProjectDataShapePluginManager({
-    runtime: new InProcessPluginRuntime(),
+    runtime,
     pluginHost: plugins,
   });
   try {

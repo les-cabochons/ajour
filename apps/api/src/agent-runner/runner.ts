@@ -100,7 +100,7 @@ interface RunnerPlugins {
       apiVersion: number;
       displayName: string;
       capabilities: {
-        // An API 4 task declares its MCP tools; an API 3 one declares none.
+        // A task declares its MCP tools.
         agentTask?: {
           tasks: (AgentTask & { tools?: readonly AgentTaskMcpTool[] })[];
         };
@@ -209,10 +209,7 @@ interface SessionEnding {
 /** A task as the runner sees it: what Settings shows, and what a run needs. */
 interface RunnerTask {
   status: AgentTaskStatus;
-  /**
-   * The data tools its run's MCP client is limited to. Without it, every
-   * tool, as for an API 3 task.
-   */
+  /** The data tools its run's MCP client is limited to. */
   tools?: readonly AgentTaskMcpTool[];
   /** Its settings marked secret, which never reach the agent. */
   secretSettings: readonly { id: string; label: string }[];
