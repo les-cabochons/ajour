@@ -267,7 +267,7 @@ Last updated: 2026-10-25
 - **New** is the accent `Chip`, after the title of an item that is new, or "New endpoints" on an item whose host is old. A new endpoint carries its own New chip in the disclosure.
 - **Activity** is a `text-sm` line under the description, worded by `describeLastUse` as on the Vault page. Refused requests (`data-access-refused`) and blocked attempts to connect directly (`data-access-blocked`) are each a warning-colored line with an icon.
 - **The consent panel**, `PluginAccessUpdatePanel`, is a warning `MessagePanel` (`data-access-update`) in the page header's notices: the title "Version N needs more access", a line saying it stays inactive and that connections and settings are kept, the access list of new items only, and the primary Button "Allow and activate". It is disabled while another plugin change runs.
-- **The model** (`describeAccess`) takes the overview's access view and, for an update, its difference. With `onlyNew` it lists only the new items with only their new endpoints, so the panel and the section say the same thing. `describeLegacyAccess` lists what a plugin API 3 plugin could do without limits; such a plugin never runs now, and its page says "This plugin needs an update".
+- **The model** (`describeAccess`) takes the overview's access view and, for an update, its difference. With `onlyNew` it lists only the new items with only their new endpoints, so the panel and the section say the same thing. A plugin API 3 package lists nothing: it never runs now, and its page says "This plugin needs an update".
 
 ### Connection access and held edits
 

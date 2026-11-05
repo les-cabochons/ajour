@@ -129,11 +129,17 @@ describe(
       return { bytes: await readFile(file), name: path.basename(file) };
     }
 
-    async function setup() {
+    /** `hold` keeps every operation running until `release()`. */
+    async function setup({ hold = false } = {}) {
       const root = await tempDir();
       const inProcess = new InProcessPluginRuntime();
       const started: string[] = [];
       let host: PluginRuntimeHost | undefined;
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let terminated = 0;
       const runtime: PluginRuntime = {
         runsPluginApi4: true,
         unavailableReason: () => undefined,
@@ -142,7 +148,15 @@ describe(
         },
         start: (invocation) => {
           started.push(`${invocation.pluginId}.${invocation.method}`);
-          return inProcess.start(invocation);
+          const run = inProcess.start(invocation);
+          if (!hold) return run;
+          return {
+            settled: held.then(() => run.settled),
+            terminate: () => {
+              terminated += 1;
+              return run.terminate();
+            },
+          };
         },
       };
       const clock = { now: 1_700_000_000_000 };
@@ -170,6 +184,8 @@ describe(
         server,
         started,
         request,
+        release: () => release(),
+        terminated: () => terminated,
         stop: (cause: "crashed" | "killed" | "memory") =>
           host!.recordStopped!(ID, cause, clock.now),
         install: async (value: unknown, enableAfterInstall = true) => {
@@ -313,6 +329,44 @@ describe(
       fixture.stop("memory");
 
       await expectRefused(fixture, /keeps stopping/);
+    });
+
+    it.each([
+      [
+        "turning the plugin off",
+        (fixture: Awaited<ReturnType<typeof setup>>) =>
+          fixture.request("POST", `/api/plugins/${ID}/activation`, {
+            enabled: false,
+          }),
+        /Plugin "workday-project-data" was deactivated/,
+      ],
+      [
+        "turning unsigned plugins off",
+        (fixture: Awaited<ReturnType<typeof setup>>) =>
+          fixture.request("POST", "/api/plugins/unsigned-activation", {
+            enabled: false,
+          }),
+        /Unsigned plugins were deactivated/,
+      ],
+    ])("cancels a running import on %s", async (_name, turnOff, message) => {
+      const fixture = await setup({ hold: true });
+      await fixture.install(manifest("1.0.0"));
+
+      const importing = fixture.request(
+        "POST",
+        `/api/project-data-shapes/${ID}/import`,
+        IMPORT_BODY,
+      );
+      while (fixture.started.length === 0) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect((await turnOff(fixture)).status).toBe(200);
+
+      const response = await importing;
+      expect(response.status).toBe(400);
+      expect((response.body as { error: string }).error).toMatch(message);
+      expect(fixture.terminated()).toBe(1);
+      fixture.release();
     });
 
     it("runs no import while an update replaces the plugin's folder, and an update waits for a running one", async () => {

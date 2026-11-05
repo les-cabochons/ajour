@@ -4,7 +4,8 @@
 // at a commit of the official source repository.
 //
 //   AJOUR_PLUGINS_CHECKOUT      a clone of les-cabochons/ajour-plugins
-//   AJOUR_PLUGINS_COMMIT        the commit to check (default: HEAD)
+//   AJOUR_PLUGINS_COMMIT        the commit to check (default: `releaseCommit`
+//                               of `sandbox-check/release-baseline.json`)
 //   AJOUR_PLUGINS_LEGACY_COMMIT the commit or tag whose `ajour.json` names the
 //                               packages users have installed today, at API 3
 //                               (default: `legacyCatalogCommit` of
@@ -50,10 +51,18 @@ const git = (...args) =>
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
   });
+// Both commits are pinned, so every run checks the same plugins whatever the
+// checkout's HEAD is.
+const baseline = JSON.parse(
+  await readFile(
+    path.join(desktopRoot, "sandbox-check/release-baseline.json"),
+    "utf8",
+  ),
+);
 const commit = git(
   "rev-parse",
   "--verify",
-  `${process.env.AJOUR_PLUGINS_COMMIT ?? "HEAD"}^{commit}`,
+  `${process.env.AJOUR_PLUGINS_COMMIT ?? baseline.releaseCommit}^{commit}`,
 ).trim();
 const root = await mkdtemp(path.join(os.tmpdir(), "ajour-plugin-release-"));
 try {
@@ -93,12 +102,6 @@ try {
 
   // What users have installed: the packages the previous release's
   // ajour.json lists at an older plugin API.
-  const baseline = JSON.parse(
-    await readFile(
-      path.join(desktopRoot, "sandbox-check/release-baseline.json"),
-      "utf8",
-    ),
-  );
   const legacyCommit = git(
     "rev-parse",
     "--verify",
@@ -130,8 +133,12 @@ try {
     legacyIds.push(entry.id);
   }
 
+  if (legacyIds.length === 0)
+    throw new Error(
+      `The ajour.json at ${legacyCommit} lists no API 3 package, so there is no upgrade to check. Set AJOUR_PLUGINS_LEGACY_COMMIT to the last release that still listed API 3.`,
+    );
   process.stdout.write(
-    `Checking six official plugins at ${commit} (upgrading from ${legacyIds.join(", ") || "no API 3 package"})\n`,
+    `Checking six official plugins at ${commit} (upgrading from ${legacyIds.join(", ")})\n`,
   );
   await mkdir(path.join(root, "user-data"));
   const env = {
