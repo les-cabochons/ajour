@@ -110,7 +110,9 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        // One row at every width, as the composers' footers: a phone
+        // stacked full-width buttons here (forms council round 17).
+        "flex flex-row flex-wrap justify-end gap-2",
         className,
       )}
       {...props}

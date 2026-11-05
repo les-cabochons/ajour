@@ -355,7 +355,11 @@ export function useTimeEntryActions({
       open={dateAction !== null}
       onOpenChange={(open) => !open && setDateAction(null)}
     >
-      <DialogContent className="w-auto gap-4">
+      {/* As wide as the calendar, never wider than the window. A width
+          from the content shrank, on a dialog centered from its left edge,
+          to half a phone's width and cut the calendar's last columns
+          (forms council round 17). */}
+      <DialogContent className="w-[min(20rem,calc(100%-2rem))] gap-4">
         <DialogHeader>
           <DialogTitle className="composer-kicker">
             {isMove ? `Move ${dialogSubject}` : `Duplicate ${dialogSubject}`}

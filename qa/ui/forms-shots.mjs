@@ -175,6 +175,29 @@ const shots = [
         .click();
     },
   },
+  // Whole pages, for the narrow layout above all.
+  { name: "page-backlog", run: (page) => go(page, "/backlog") },
+  {
+    name: "page-backlog-item",
+    full: true,
+    run: (page) => go(page, "/backlog/w2"),
+  },
+  {
+    name: "page-backlog-synced-item",
+    full: true,
+    run: (page) => go(page, "/backlog/w1"),
+  },
+  { name: "page-time-day", run: (page) => go(page, "/time/today") },
+  {
+    name: "page-time-week",
+    run: (page) => go(page, "/time/today?view=week"),
+  },
+  { name: "page-projects", run: (page) => go(page, "/projects") },
+  {
+    name: "page-project",
+    full: true,
+    run: (page) => go(page, "/projects/p-atlas"),
+  },
   {
     name: "backlog-settle",
     run: async (page) => {
@@ -623,7 +646,12 @@ async function ensureServer() {
 }
 
 async function capture(browser, shot, theme) {
-  const viewport = shot.viewport ?? { width: 1440, height: 900 };
+  // AJOUR_FORMS_VIEWPORT=390x844 captures every shot at that size, for
+  // the narrow (phone) layout.
+  const forced = process.env.AJOUR_FORMS_VIEWPORT?.match(/^(\d+)x(\d+)$/);
+  const viewport = forced
+    ? { width: Number(forced[1]), height: Number(forced[2]) }
+    : (shot.viewport ?? { width: 1440, height: 900 });
   const context = await browser.newContext({
     viewport,
     colorScheme: theme,

@@ -566,7 +566,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                     shares their baseline. */}
                 <Figure
                   label="Logged in Ajour"
-                  className="mb-[13px] border-l border-border pl-8"
+                  className="backlog-item-logged mb-[13px] border-l border-border pl-8"
                 >
                   {formatClockDuration(loggedMs)}
                 </Figure>

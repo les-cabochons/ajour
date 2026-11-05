@@ -108,8 +108,10 @@ export function PinnedSlotDialog({
             The key opens a new entry · Shift with the key starts it
           </DialogDescription>
         </DialogHeader>
+        {/* Five keys a row on wide windows, four on a phone, so a task
+            name keeps room (forms council round 17). */}
         <div
-          className="grid grid-cols-5 gap-2"
+          className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2"
           role="group"
           aria-label="Number keys"
         >

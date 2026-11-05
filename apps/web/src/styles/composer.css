@@ -324,6 +324,12 @@
   .connection-rows .connection-row {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* A switch stays beside its label: under it, it floated alone. */
+  .connection-rows .connection-row:has([data-slot="switch"]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
 }
 
 /* A toggle chip: off reads muted with the property's icon; on reads in the
@@ -614,4 +620,40 @@ body:has([data-slot="dialog-content"].composer-floating)
 
 .composer-root .composer-title {
   padding-inline-end: 5.5rem;
+}
+
+/* Touch screens (forms council round 17): no hover draws a connection
+   field, so each rests on a hairline and reads as one to tap; chips,
+   inline times and the composers' small buttons grow to 32px targets. */
+@media (hover: none) {
+  .connection-rows .inline-field {
+    border-bottom-color: var(--field-border);
+  }
+}
+
+@media (pointer: coarse) {
+  .composer-chips
+    :is(
+      [data-slot="select-trigger"],
+      .searchable-select-input-group,
+      .composer-estimate,
+      .composer-color,
+      .composer-task-chip,
+      .composer-pill,
+      .composer-date [data-slot="input"]
+    ) {
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .inline-figure-input {
+    padding-block: 6px;
+  }
+
+  .composer-root > .composer-actions [data-slot="button"],
+  [data-slot="dialog-close"],
+  .comment-action {
+    min-width: 32px;
+    min-height: 32px;
+  }
 }

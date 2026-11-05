@@ -1417,8 +1417,36 @@
     padding-bottom: 6rem;
   }
 
+  /* The page container gives the 16px gutter, as on the project page. */
   .backlog-item-page {
-    padding: 1rem 0.75rem 6rem;
+    padding: 0.25rem 0 6rem;
+  }
+
+  /* The back link says where the page sits; the breadcrumb row repeated it,
+     with a second h1 (narrow view audit, forms council round 17). */
+  .backlog-item-page[data-backlog-item-id] > .ajour-page-header-inline {
+    display: none;
+  }
+
+  /* The title takes the row, and the actions go under it, aligned with it:
+     beside it they squeezed it to a word per line. */
+  .backlog-item-page-header > .min-w-0 {
+    flex: 1 1 0;
+  }
+
+  .backlog-item-page-actions {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    margin-inline-start: calc(1rem + 0.75rem);
+  }
+
+  /* Logged time takes its own line under the estimates, with no hairline:
+     beside them it broke its label and sat off their baseline. */
+  .backlog-item-logged {
+    flex-basis: 100%;
+    margin-bottom: 0;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .backlog-item-page-columns {

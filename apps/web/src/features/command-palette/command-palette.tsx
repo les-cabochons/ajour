@@ -440,7 +440,7 @@ export function CommandPalette() {
             onValueChange={setQuery}
             placeholder={
               view.kind === "root"
-                ? "Search commands, projects, tasks and backlog items"
+                ? "Search commands, projects and items"
                 : "Filter actions"
             }
             aria-label="Search commands"
