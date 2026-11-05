@@ -60,23 +60,27 @@ export function ManagedProjectTitleMark({
   label: string | undefined;
   syncedAt: number;
 }) {
+  // The wrapper takes only the room the title and code leave, so a narrow
+  // header cuts the mark, never the title.
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            tabIndex={0}
-            className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5"
-          />
-        }
-      >
-        <SourceIcon aria-hidden="true" />
-        From {label ?? "its source"}
-      </TooltipTrigger>
-      <TooltipContent>
-        <LastSync syncedAt={syncedAt} />
-      </TooltipContent>
-    </Tooltip>
+    <span className="flex min-w-0 grow basis-0">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              tabIndex={0}
+              className="inline-flex max-w-full min-w-0 items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5"
+            />
+          }
+        >
+          <SourceIcon aria-hidden="true" />
+          <span className="min-w-0 truncate">From {label ?? "its source"}</span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <LastSync syncedAt={syncedAt} />
+        </TooltipContent>
+      </Tooltip>
+    </span>
   );
 }
 
