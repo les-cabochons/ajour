@@ -103,7 +103,7 @@ export function TimeEntryFields({
         onChange={(event) => onNoteChange(event.target.value)}
         onKeyDown={onNoteKeyDown}
         placeholder="Add a note…"
-        rows={2}
+        rows={1}
       />
       <section aria-label="Properties" className="composer-chips">
         <ProjectTaskPicker

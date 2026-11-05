@@ -98,10 +98,14 @@ export function PinnedSlotDialog({
         }}
       >
         <DialogHeader className="gap-1">
-          <DialogTitle>Assign shortcut</DialogTitle>
-          <DialogDescription>
-            Pick a number key for "{taskName}". The key opens a new entry for
-            it, and Shift with the key starts it.
+          {/* The composer header (forms council round 10): the verb as a
+              kicker, the task as the subject, the keys' meaning in one line. */}
+          <DialogTitle className="composer-kicker">Assign shortcut</DialogTitle>
+          <p className="truncate text-[15px] font-semibold text-foreground">
+            {taskName}
+          </p>
+          <DialogDescription className="text-xs">
+            The key opens a new entry · Shift with the key starts it
           </DialogDescription>
         </DialogHeader>
         <div
@@ -146,7 +150,8 @@ export function PinnedSlotDialog({
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
+            className="sm:mr-auto"
             disabled={!slot}
             onClick={() => choose(undefined)}
           >

@@ -60,6 +60,12 @@ function withSavedSecrets(overview) {
       .filter((field) => field.secret)
       .map((field) => field.id);
     for (const connection of group.connections ?? []) {
+      // A saved connection's form shows its own label and tenant.
+      connection.editableValues = {
+        label: connection.label,
+        tenantLabel: connection.tenantLabel,
+        ...connection.editableValues,
+      };
       connection.secretFields ??= secretIds.map((id) => ({
         id,
         state: "saved",

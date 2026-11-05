@@ -226,7 +226,7 @@
 
 .composer textarea.composer-note {
   width: 100%;
-  min-height: 2lh;
+  min-height: 1lh;
   resize: none;
   field-sizing: content;
   color: var(--foreground);
@@ -378,17 +378,9 @@
   box-shadow: 0 0 0 4px oklch(from var(--foreground) l c h / 4%);
 }
 
-.composer
-  :is(
-    .composer-title,
-    .composer-subtitle,
-    textarea.composer-note
-  ):focus-visible {
-  /* A text field matches focus-visible on every focus: a tint, not a ring,
-     so the title never turns back into a box. */
-  background: oklch(from var(--foreground) l c h / 5%);
-  box-shadow: 0 0 0 4px oklch(from var(--foreground) l c h / 5%);
-}
+/* Focused, a writing field shows its caret and nothing else, as Linear's:
+   a tint on focus turned the autofocused title back into a box (forms
+   council round 10). */
 
 /* A modal over a floating composer, such as Create task opened from its
    task chip, dims the composer too: one form is active at a time. */
@@ -413,4 +405,35 @@ body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
   [data-slot="input"]:is(:hover, :focus-visible) {
   border-color: var(--field-border);
   background: var(--field-bg);
+}
+
+/* An estimate-style chip: its label muted, its value in the foreground;
+   empty, the whole chip reads muted, as an empty chip names its property. */
+.composer-chips .composer-chip.composer-estimate {
+  color: var(--muted-foreground);
+}
+
+.composer-chips .composer-chip.composer-estimate .composer-estimate-input {
+  color: var(--foreground);
+}
+
+.composer-chips
+  .composer-chip.composer-estimate
+  .composer-estimate-input:placeholder-shown {
+  min-width: 0;
+  width: 0;
+  padding: 0;
+}
+
+.composer-chips
+  .composer-chip.composer-estimate:has(
+    .composer-estimate-input:placeholder-shown
+  ) {
+  padding-inline-end: 10px;
+}
+
+/* A select row shows its arrow at rest, faintly: it says "pick me". */
+.connection-rows [data-slot="select-trigger"].inline-field > svg:last-child {
+  opacity: 1;
+  color: var(--text-tertiary);
 }

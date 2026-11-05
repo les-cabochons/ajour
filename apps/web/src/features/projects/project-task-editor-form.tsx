@@ -159,7 +159,6 @@ export function ProjectTaskEditorForm({
               className="composer-estimate-input"
               autoComplete="off"
               value={fields.budget}
-              placeholder="–"
               aria-invalid={Boolean(editor.budgetError)}
               onChange={(event) =>
                 onFieldsChange({ budget: event.target.value })
@@ -177,7 +176,6 @@ export function ProjectTaskEditorForm({
               className="composer-estimate-input"
               autoComplete="off"
               value={fields.adjustment}
-              placeholder="–"
               aria-invalid={Boolean(editor.adjustmentError)}
               onChange={(event) =>
                 onFieldsChange({ adjustment: event.target.value })

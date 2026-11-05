@@ -339,6 +339,17 @@ export function useTimeEntryActions({
     dateAction && "entries" in dateAction ? dateAction.entries.length : 1;
   const dialogSubject =
     entryCount === 1 ? "time entry" : formatEntryCount(entryCount);
+  // The subject line names what moves, as Settle and Snooze name their item
+  // (forms council round 10): the entry's note, else how many.
+  const movedEntry =
+    dateAction && "entry" in dateAction
+      ? dateAction.entry
+      : dateAction && dateAction.entries.length === 1
+        ? dateAction.entries[0]
+        : undefined;
+  const dialogTitleLine =
+    movedEntry?.note?.trim() ||
+    (entryCount === 1 ? "This time entry" : formatEntryCount(entryCount));
   const dialogs = (
     <Dialog
       open={dateAction !== null}
@@ -349,8 +360,8 @@ export function useTimeEntryActions({
           <DialogTitle className="composer-kicker">
             {isMove ? `Move ${dialogSubject}` : `Duplicate ${dialogSubject}`}
           </DialogTitle>
-          <DialogDescription className="text-[15px] font-semibold text-foreground">
-            Pick the day it goes to
+          <DialogDescription className="truncate text-[15px] font-semibold text-foreground">
+            {dialogTitleLine}
           </DialogDescription>
         </DialogHeader>
         <Calendar

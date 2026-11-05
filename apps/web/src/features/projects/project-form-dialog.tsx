@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -57,6 +59,7 @@ export function ProjectFormDialog({
     }
   }
 
+  const narrow = useIsNarrowView();
   const iconLabel =
     fields.icon.kind === "upload"
       ? "Uploaded favicon"
@@ -68,10 +71,18 @@ export function ProjectFormDialog({
   return (
     <Dialog
       open
+      // Floating on a wide window, as every composer (forms council round 10).
+      modal={narrow}
       disablePointerDismissal
       onOpenChange={(open) => !open && onClose()}
     >
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto">
+      <DialogContent
+        className={cn(
+          "max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto",
+          !narrow && "composer-floating",
+        )}
+        overlay={narrow}
+      >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <DialogHeader className="gap-1">
             <DialogTitle className="composer-kicker">

@@ -601,10 +601,19 @@ export function BacklogItemEditorForm({
 
   // Each estimate is a chip with its value typed in place (forms council
   // round 6): "Original 8", "Remaining 5", "Completed 3".
-  const estimateChips = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
+  // A new item has nothing left or done yet: one "Estimate" chip, which sets
+  // the original; the other two show once the item exists (forms council
+  // round 10).
+  const shownEstimateKeys =
+    target.kind === "create"
+      ? BACKLOG_ESTIMATE_FIELD_KEYS.filter(
+          (key) => key === "originalEstimateHours",
+        )
+      : BACKLOG_ESTIMATE_FIELD_KEYS;
+  const estimateChips = shownEstimateKeys.map((key) => {
     const error = validation[ESTIMATE_ERROR_KEYS[key]];
     const resetValue = editor.estimateResets[key];
-    const label = ESTIMATE_LABELS[key];
+    const label = target.kind === "create" ? "Estimate" : ESTIMATE_LABELS[key];
     return (
       <div
         key={key}
@@ -619,7 +628,6 @@ export function BacklogItemEditorForm({
           autoComplete="off"
           value={fields[key]}
           onChange={(event) => updateFields({ [key]: event.target.value })}
-          placeholder="–"
           aria-invalid={Boolean(error)}
         />
         {resetValue !== undefined ? (

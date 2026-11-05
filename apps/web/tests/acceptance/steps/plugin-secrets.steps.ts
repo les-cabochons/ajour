@@ -615,11 +615,19 @@ Then("the connection row has no Error chip", async ({ page }) => {
 When(
   "I set the token's expiry date to {string}",
   async ({ page }, date: string) => {
+    // The reminder date is a chip; its typed date sits in the calendar's
+    // popover (forms council round 10).
     await page
-      .getByLabel("Personal access token expires on (optional)", {
+      .getByRole("button", {
+        name: /^Personal access token expires on \(optional\)/,
+      })
+      .click();
+    await page
+      .getByLabel("Pick when Personal access token expires, typed", {
         exact: true,
       })
       .fill(date);
+    await page.keyboard.press("Enter");
   },
 );
 

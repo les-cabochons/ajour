@@ -145,11 +145,18 @@ export function SecretFieldInput({
         <div className="flex gap-2">
           <Input
             id={inputId}
+            className={row ? "inline-field" : undefined}
             type="password"
             value={value}
             autoFocus={replacing}
             disabled={blocked}
-            placeholder={replacing ? "Paste the new value" : field.placeholder}
+            placeholder={
+              replacing
+                ? "Paste the new value"
+                : row && field.placeholder
+                  ? `e.g. ${field.placeholder}`
+                  : field.placeholder
+            }
             autoComplete="off"
             onChange={(event) => onChange(event.target.value)}
           />
@@ -216,9 +223,9 @@ export function SecretFieldInput({
             </label>
             <div className="connection-row-value">
               <DateField
+                chip
                 id={`${inputId}-expiry`}
                 aria-label={`${field.label} expires on (optional)`}
-                className="inline-field-date"
                 value={binding.expiry}
                 disabled={blocked}
                 onChange={binding.onExpiryChange}
