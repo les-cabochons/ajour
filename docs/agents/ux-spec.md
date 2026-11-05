@@ -197,7 +197,7 @@ Today's splits at 640px and 1023px go away.
 - The narrow titlebar names the page: the day on Time pages, the section elsewhere, such as "Backlog" (council round 6).
 - A segmented toggle for Time, Backlog and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - The titlebar holds the date, New entry (+), Start (▶), then the totals pill. Start turns into Stop while an entry runs.
-- While an entry runs, the totals pill shows its time instead of "Today". The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
+- While an entry runs, the totals pill shows its time, with seconds, instead of the day total. The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
 - Start opens the running entry's dialog too. A click outside it saves the draft and closes the dialog, and the entry keeps running. An invalid draft keeps the dialog open with its error. The other entry dialogs ignore outside clicks.
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
 - Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
@@ -1125,20 +1125,25 @@ on in release builds until the agent runner stops needing it (#415).
 
 On Windows x64, with the command installed, Terminal lists one SettingRow per usable WSL distro under "ajour command", inside the same AppPanel. No rows appear in a browser, outside Windows x64, without an installed command, or when WSL lists no usable distro. Docker Desktop's distros are excluded.
 
-| State     | Status line                                                                                                                              | Control                  |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Not added | "Not added."                                                                                                                             | Add                      |
-| Adding    | "Downloading ajour, 42%", then "Checking ajour in Ubuntu…", then "Linking ~/.local/bin/ajour…"                                           | Disabled                 |
-| Added     | "ajour <version> · ~/.local/bin/ajour". After Add, "Open a new Ubuntu terminal to use it." or "Add ~/.local/bin to your PATH in Ubuntu." | None until Remove (#605) |
-| Failed    | "Not added.", or the Added line for a distro already added, then the reason inline with role="alert"                                     | Retry                    |
-| WSL 1     | "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu 2"                                                                     | None                     |
+| State     | Status line                                                                                                                              | Control  |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Not added | "Not added."                                                                                                                             | Add      |
+| Adding    | "Downloading ajour, 42%", then "Checking ajour in Ubuntu…", then "Linking ~/.local/bin/ajour…"                                           | Disabled |
+| Added     | "ajour <version> · ~/.local/bin/ajour". After Add, "Open a new Ubuntu terminal to use it." or "Add ~/.local/bin to your PATH in Ubuntu." | Remove   |
+| Removing  | "Removing ajour…"                                                                                                                        | Disabled |
+| Failed    | "Not added.", or the Added line for a distro already added, then the reason inline with role="alert"                                     | Retry    |
+| WSL 1     | "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu 2"                                                                     | None     |
 
 The description has a fixed height and uses role="status". Add shows no toast or confirmation dialog. A foreign command is refused with "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again." A distro WSL no longer lists is refused inline with "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list." A distro that can't run commands shows "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again." A failure with no sentence of its own shows "Ajour couldn't add ajour to Ubuntu." Retry hides the previous reason while it runs. A failed Add of a distro already added leaves it Added: its version and `~/.local/bin/ajour` stay, its working link is untouched, and the reason shows below with Retry.
 
 Add needs WSL 2: the Linux `ajour` can't start in WSL 1 ([#611](https://github.com/les-cabochons/ajour/issues/611)). The list is read with `wsl.exe --list --verbose`, which gives each distro's version. A WSL 1 distro's row shows the WSL 1 sentence in its status line, not as an alert, and has no Add, neither disabled nor explained by a DisabledReason. If Add is asked for anyway, it is refused with the reason `wsl1_unsupported`: nothing is downloaded, nothing runs in the distro, and the record doesn't change. #611 lifts this once the Linux build starts in WSL 1.
 
-Removing the ajour command deletes `bin\linux` with it, without entering a distro, so a later Install starts clean.
+Remove on a distro ([#605](https://github.com/les-cabochons/ajour/issues/605)) has no confirmation dialog, because Add restores it. It deletes `~/.local/bin/ajour` only when it links to Ajour's Linux build, and leaves a foreign file or link alone. The distro then leaves the record. A distro WSL no longer lists is dropped from the record without running anything in it. When the last distro goes, `bin\linux` goes with it. A failed Remove keeps the row Added, with the reason inline and Retry, which removes again. A failure with no sentence of its own shows "Ajour couldn't remove ajour from Ubuntu."
+
+Removing the ajour command removes `bin\linux` with it, so a later Install starts clean. Then it removes each recorded distro's link, best effort, skipping a distro WSL no longer lists. The links go even when deleting `bin\linux` fails: the row shows that failure with Retry, which finishes deleting it. A link it couldn't remove is named inline on the "ajour command" row, which says "Not installed.": "ajour was removed, but ~/.local/bin/ajour in Ubuntu couldn't be. It now points at nothing."
+
+Uninstalling Ajour on Windows deletes `bin\linux` by its exact file list, with the Linux build's leftovers (`linux.old-<id>`, a `.staging-<id>` folder holding the Linux archive, `.pending-<id>.json`). It removes only empty folders, so a file of the user's keeps its folder. It doesn't enter distros, so their links are left pointing at nothing. Updating Ajour keeps it all.
 
 Add verifies the Linux release archive and its version inside the selected distro before committing its record. Failure restores the Linux build and any link created by the attempt. Other distros are never entered. Launch reconciliation repairs the Linux build from the record without entering any distro. The distro list is read only for Settings or an explicit Add and cached for 30 seconds.
 
-WSL removal and uninstaller cleanup are tracked by #605. Following the app version for Linux is tracked by #606.
+Following the app version for Linux is tracked by #606.

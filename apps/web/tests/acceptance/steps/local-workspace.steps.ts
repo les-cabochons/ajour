@@ -2788,7 +2788,7 @@ Then("no entry dialog is open", async ({ page }) => {
 });
 
 Then(
-  "the totals pill shows the running time instead of Today",
+  "the totals pill shows the running time instead of the day total",
   async ({ page }) => {
     const pill = narrowTotalsPill(page);
     await expect(pill).not.toContainText("Today");

@@ -384,7 +384,7 @@ Feature: Open the local time workspace
     When I type "Standup notes" in the running entry's note
     And I click outside the running entry's dialog
     Then no entry dialog is open
-    And the totals pill shows the running time instead of Today
+    And the totals pill shows the running time instead of the day total
     When I open the current timer from the totals popover
     Then the running entry's dialog still has "Standup notes"
     When I close the running entry's dialog with Escape

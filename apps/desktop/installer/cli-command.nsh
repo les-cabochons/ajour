@@ -50,8 +50,11 @@
   ${EndIf}
 !macroend
 
-!macro AjourPayload ROOT
-  Delete "${ROOT}\ajour.exe"
+; One build and its share tree: BINARY is ajour.exe for Windows' in bin, or
+; ajour for the Linux one for WSL in bin\linux (#605). Distros aren't
+; entered: their ~/.local/bin/ajour links stay, pointing at nothing.
+!macro AjourPayload ROOT BINARY
+  Delete "${ROOT}\${BINARY}"
   !insertmacro AjourSafeDirectory "${ROOT}\share"
     !insertmacro AjourArchiveDocs "${ROOT}\share"
     RMDir "${ROOT}\share"
@@ -88,17 +91,23 @@ Function un.AjourUuid
   uuidDone:
 FunctionEnd
 
-; Input $R5, output $R0. Accept only the controller's Windows ZIP names.
+; Input $R5, output $R0. Accept only the controller's Windows ZIP names and
+; its Linux archive name for WSL.
 Function un.AjourArchiveName
   StrCpy $R0 0
   StrCpy $0 $R5 6
   StrCmpS $0 "ajour-" 0 archiveDone
   StrCpy $0 $R5 "" -16
   StrCmpS $0 "-windows-x64.zip" archiveX64
+  StrCpy $0 $R5 "" -17
+  StrCmpS $0 "-linux-x64.tar.gz" archiveLinux
   StrCpy $0 $R5 "" -18
   StrCmpS $0 "-windows-arm64.zip" 0 archiveDone
   StrCpy $1 18
   Goto archiveVersion
+  archiveLinux:
+    StrCpy $1 17
+    Goto archiveVersion
   archiveX64:
     StrCpy $1 16
   archiveVersion:
@@ -201,7 +210,11 @@ Function un.RemoveAjourCommand
     ReadEnvStr $R2 "LOCALAPPDATA"
     !insertmacro AjourSafeDirectory "$R2\Ajour"
       !insertmacro AjourSafeDirectory "$8"
-        !insertmacro AjourPayload "$8"
+        !insertmacro AjourPayload "$8" "ajour.exe"
+        !insertmacro AjourSafeDirectory "$8\linux"
+          !insertmacro AjourPayload "$8\linux" "ajour"
+          RMDir "$8\linux"
+        ${EndIf}
         FindFirst $R3 $R4 "$8\*"
         leftovers:
           StrCmp $R4 "" leftoversDone
@@ -214,12 +227,23 @@ Function un.RemoveAjourCommand
             Goto nextLeftover
           checkShare:
             StrCpy $0 $R4 10
-            StrCmpS $0 "share.old-" 0 checkStaging
+            StrCmpS $0 "share.old-" 0 checkLinux
             StrCpy $R5 $R4 "" 10
             Call un.AjourUuid
             StrCmp $R0 1 0 nextLeftover
             !insertmacro AjourSafeDirectory "$8\$R4"
               !insertmacro AjourArchiveDocs "$8\$R4"
+              RMDir "$8\$R4"
+            ${EndIf}
+            Goto nextLeftover
+          checkLinux:
+            StrCpy $0 $R4 10
+            StrCmpS $0 "linux.old-" 0 checkStaging
+            StrCpy $R5 $R4 "" 10
+            Call un.AjourUuid
+            StrCmp $R0 1 0 nextLeftover
+            !insertmacro AjourSafeDirectory "$8\$R4"
+              !insertmacro AjourPayload "$8\$R4" "ajour"
               RMDir "$8\$R4"
             ${EndIf}
             Goto nextLeftover
@@ -230,9 +254,12 @@ Function un.RemoveAjourCommand
             Call un.AjourUuid
             StrCmp $R0 1 0 nextLeftover
             !insertmacro AjourSafeDirectory "$8\$R4"
-              !insertmacro AjourPayload "$8\$R4"
+              !insertmacro AjourPayload "$8\$R4" "ajour.exe"
               !insertmacro AjourSafeDirectory "$8\$R4\unpacked"
-                !insertmacro AjourPayload "$8\$R4\unpacked"
+                ; Windows' build or the Linux one, its docs moved into
+                ; share or not yet.
+                Delete "$8\$R4\unpacked\ajour"
+                !insertmacro AjourPayload "$8\$R4\unpacked" "ajour.exe"
                 !insertmacro AjourArchiveDocs "$8\$R4\unpacked"
                 RMDir "$8\$R4\unpacked"
               ${EndIf}

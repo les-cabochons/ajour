@@ -74,10 +74,14 @@ const LINK_SCRIPT = [
   "exit 1",
 ].join("; ");
 
-/** Undoes LINK_SCRIPT: removes the link to "$1", then the folders it made ("$2", "$3"). */
+/**
+ * Removes `~/.local/bin/ajour` only while it links to "$1", then the folders
+ * an Add made ("$2", "$3"; 0 on Remove). Anything else there stays. A link
+ * that can't be removed exits 1.
+ */
 const UNLINK_SCRIPT = [
   'link="$HOME/.local/bin/ajour"',
-  'if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then rm -f -- "$link"; fi',
+  'if [ -L "$link" ] && [ "$(readlink "$link")" = "$1" ]; then rm -f -- "$link" || exit 1; fi',
   'if [ "$2" = 1 ]; then rmdir "$HOME/.local/bin" 2>/dev/null; fi',
   'if [ "$3" = 1 ]; then rmdir "$HOME/.local" 2>/dev/null; fi',
   "exit 0",
@@ -90,6 +94,17 @@ const LOGIN_PATH_SCRIPT = 'printf "\\n%s\\n%s\\n" "$HOME" "$PATH"';
 function wsl1Sentence(distro) {
   return `WSL 1 isn't supported. Convert it with: wsl --set-version ${distro} 2`;
 }
+
+/** What Remove says about the WSL links it couldn't delete (#605). */
+function linksLeftSentence(distros) {
+  const names = new Intl.ListFormat("en", { type: "conjunction" }).format(
+    distros,
+  );
+  return `ajour was removed, but ~/.local/bin/ajour in ${names} couldn't be. It now points at nothing.`;
+}
+
+const UNKNOWN_DISTRO =
+  "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.";
 
 /**
  * The distros `wsl.exe --list --verbose` printed, in UTF-8 or UTF-16LE: a
@@ -174,6 +189,8 @@ function createCliCommandController({
   let transient = null;
   /** Set after an install in this launch, for "Open a new terminal". */
   let newlyInstalled = false;
+  /** After a Remove, the WSL links it couldn't delete, as a sentence. */
+  let removalNotice = null;
   let running = null;
   let following = false;
   let retryTimer;
@@ -195,13 +212,18 @@ function createCliCommandController({
   // WSL distros (#604): x64 Windows only, as no linux-arm64 build ships.
   const wslSupported =
     !unsupportedReason && platform === "win32" && arch === "x64";
-  /** The distros WSL listed last, with their versions, and when. Never read at launch. */
-  let listedDistros = [];
+  /**
+   * WSL's last list: its distros with their versions, or `ok: false` when
+   * it failed (no WSL, or one that can't list). Never read at launch.
+   * @type {{ ok: false } | { ok: true, distros: ReturnType<typeof distrosOf> }}
+   */
+  let distroList = { ok: true, distros: [] };
   let distroReadAt = -Infinity;
   let distroRead = null;
   /**
-   * Per distro, an Add running (`adding`), its failure (`error`), or the hint
-   * of an Add that succeeded in this launch. "Added" itself is the record's.
+   * Per distro, an Add or Remove running (`adding`, `removing`), its failure
+   * (`error`, with the `operation` that failed), or the hint of an
+   * Add that succeeded in this launch. "Added" itself is the record's.
    */
   const wslStates = new Map();
   const wslExe = path.win32.join(
@@ -220,16 +242,34 @@ function createCliCommandController({
           env: { ...env, WSL_UTF8: "1" },
           encoding: "buffer",
         });
-        listedDistros = distrosOf(stdout);
+        distroList = { ok: true, distros: distrosOf(stdout) };
       } catch {
         // No WSL, or none it can list: no rows.
-        listedDistros = [];
+        distroList = { ok: false };
       }
       distroReadAt = now();
     })().finally(() => {
       distroRead = null;
     });
     await distroRead;
+  }
+
+  /** `distro` as WSL listed it last, or undefined. */
+  function listedDistro(distro) {
+    return distroList.ok
+      ? distroList.distros.find(({ name }) => name === distro)
+      : undefined;
+  }
+
+  /**
+   * What Remove does in a recorded `distro`, from WSL's last list (#605):
+   * `unlink` a listed one; `keep` the link when the list failed, since it
+   * may still be there; `skip` one WSL no longer lists, as it's gone.
+   * @returns {"unlink" | "keep" | "skip"}
+   */
+  function removalIn(distro) {
+    if (!distroList.ok) return "keep";
+    return listedDistro(distro) ? "unlink" : "skip";
   }
 
   /**
@@ -255,8 +295,17 @@ function createCliCommandController({
         phase: live.phase,
         progress: live.progress,
       };
+    if (live?.status === "removing")
+      return { name, wslVersion, status: "removing" };
     if (live?.status === "error")
-      return { name, wslVersion, status: "error", error: live.error, added };
+      return {
+        name,
+        wslVersion,
+        status: "error",
+        error: live.error,
+        added,
+        operation: live.operation,
+      };
     if (!added) return { name, wslVersion, status: "not-added" };
     return {
       name,
@@ -268,11 +317,17 @@ function createCliCommandController({
 
   /** The `wsl` part of the state: one row per listed distro. */
   function wslFields(record) {
-    if (!wslSupported || !record || !listedDistros.length) return {};
+    if (
+      !wslSupported ||
+      !record ||
+      !distroList.ok ||
+      !distroList.distros.length
+    )
+      return {};
     return {
       wsl: {
         version: record.wsl?.version,
-        distros: listedDistros.map((distro) => distroRow(record, distro)),
+        distros: distroList.distros.map((distro) => distroRow(record, distro)),
       },
     };
   }
@@ -350,7 +405,12 @@ function createCliCommandController({
           error: null,
           ...(newlyInstalled ? { newlyInstalled: true } : {}),
         }
-      : { status: "not-installed", progress: null, error: null };
+      : {
+          status: "not-installed",
+          progress: null,
+          error: null,
+          ...(removalNotice ? { notice: removalNotice } : {}),
+        };
   }
 
   function publishInstalling(phase, progress = null) {
@@ -654,6 +714,7 @@ function createCliCommandController({
     let swapped = false;
     let committed = false;
     let linkAdded = false;
+    removalNotice = null;
     try {
       if (reconciliation) await reconciliation;
       await reconcileDisk(platform === "darwin" && interactive);
@@ -789,6 +850,8 @@ function createCliCommandController({
   async function runRemove(unit) {
     let previous;
     let marker;
+    /** `wsl_links_left`, once the recorded distros' links were tried. */
+    let wslReport = {};
     try {
       if (reconciliation) await reconciliation;
       transient = { status: "removing", progress: null, error: null };
@@ -802,18 +865,35 @@ function createCliCommandController({
           for (const name of [binary, "share"])
             digests[name] = await contentDigest(targetOf(name));
         }
-        // The Linux build for WSL goes with the command. Its links stay in
-        // their distros.
+        // The Linux build for WSL goes with the command. Its links go after,
+        // once nothing of the command is left for them to point at.
         Object.assign(digests, previous.wsl?.digests);
         marker = targetOf(`.pending-${randomUUID()}.json`);
         await writeAtomically(marker, JSON.stringify({ digests }));
         await fs.rm(paths.recordFile, { force: true });
       }
-      await reconcileDisk(true);
+      let cleanup;
+      try {
+        await reconcileDisk(true);
+      } catch (error) {
+        cleanup = error;
+      }
+      // The deleted record commits the removal, and nothing on disk names
+      // the distros after it: their links go now, even when reconcile
+      // failed, which Retry repeats from disk. A cancelled prompt restores
+      // the record, so its links stay.
+      if (cleanup?.reason === "admin_cancelled") throw cleanup;
+      const recorded = previous?.wsl?.distros ?? [];
+      if (recorded.length) {
+        const left = await unlinkAll(recorded);
+        removalNotice = left.length ? linksLeftSentence(left) : null;
+        wslReport = { wsl_links_left: left.length };
+      }
+      if (cleanup) throw cleanup;
       newlyInstalled = false;
       transient = null;
       wslStates.clear();
-      unit?.set({ cli_command: { result: "removed" } });
+      unit?.set({ cli_command: { result: "removed", ...wslReport } });
     } catch (error) {
       // Cancellation happens before any file cleanup. Restore the commit so
       // a later launch cannot silently finish a cancelled user action.
@@ -824,7 +904,10 @@ function createCliCommandController({
       if (error.reason) unit?.refuse(error.reason);
       else unit?.fail(error, { reason: "remove_failed" });
       unit?.set({
-        cli_command: { result: error.reason ? "refused" : "failed" },
+        cli_command: {
+          result: error.reason ? "refused" : "failed",
+          ...wslReport,
+        },
       });
       transient = {
         status: "error",
@@ -859,6 +942,49 @@ function createCliCommandController({
         { exitCode: error?.code, timedOut: Boolean(error?.killed) },
       );
     }
+  }
+
+  /**
+   * The Linux build's path inside `distro`, from `wslpath -u`: the mount
+   * root can be `/mnt/c`, `/c` or custom. The file needn't exist.
+   */
+  async function linuxTargetIn(distro) {
+    const target = (
+      await inDistro(distro, "wslpath", [
+        "-u",
+        path.join(targetOf(LINUX_ENTRY), binaryName("linux")),
+      ])
+    ).trim();
+    if (!target.startsWith("/") || /[\n\0]/.test(target))
+      throw new Error(
+        `Ajour couldn't find its folder in ${distro}. Check that WSL can reach your Windows drive.`,
+      );
+    return target;
+  }
+
+  /** Removes `~/.local/bin/ajour` from `distro` while it links to our build. */
+  async function unlinkFrom(distro) {
+    const target = await linuxTargetIn(distro);
+    await inDistro(distro, "sh", ["-c", UNLINK_SCRIPT, "sh", target, "0", "0"]);
+  }
+
+  /**
+   * For removing the command (#605): each recorded distro's link, best
+   * effort, once the record and `bin\linux` are gone. A distro WSL no longer
+   * lists has no link left and is skipped. Returns the distros whose link
+   * may remain.
+   */
+  async function unlinkAll(distros) {
+    if (!wslSupported) return [...distros];
+    await listDistros({ fresh: true });
+    const left = [];
+    for (const distro of distros) {
+      const removal = removalIn(distro);
+      if (removal === "keep") left.push(distro);
+      else if (removal === "unlink")
+        await unlinkFrom(distro).catch(() => left.push(distro));
+    }
+    return left;
   }
 
   /**
@@ -897,8 +1023,8 @@ function createCliCommandController({
     return digests;
   }
 
-  /** Ends the WSL Add's event `refused`, with `reason`. */
-  function refuseWslAdd(unit, reason) {
+  /** Ends a WSL Add's or Remove's event `refused`, with `reason`. */
+  function refuseWsl(unit, reason) {
     unit?.refuse(reason);
     unit?.set({ cli_command: { result: "refused" } });
   }
@@ -912,19 +1038,16 @@ function createCliCommandController({
   async function runAddWsl(distro, unit) {
     if (!wslSupported || quitting.signal.aborted) return settledState();
     // The renderer passes a name; only one WSL lists now is used.
-    const listed = () => listedDistros.find(({ name }) => name === distro);
-    if (!listed()) await listDistros({ fresh: true });
-    if (!listed()) {
-      refuseWslAdd(unit, "unknown_distro");
-      throw refusal(
-        "unknown_distro",
-        "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
-      );
+    if (!listedDistro(distro)) await listDistros({ fresh: true });
+    const listed = listedDistro(distro);
+    if (!listed) {
+      refuseWsl(unit, "unknown_distro");
+      throw refusal("unknown_distro", UNKNOWN_DISTRO);
     }
     // The Linux ajour can't start in WSL 1 (#611): nothing is downloaded or
     // run, and the row keeps its sentence. Not thrown: it names the distro.
-    if (listed().wslVersion === 1) {
-      refuseWslAdd(unit, "wsl1_unsupported");
+    if (listed.wslVersion === 1) {
+      refuseWsl(unit, "wsl1_unsupported");
       return settledState();
     }
     const id = randomUUID();
@@ -962,16 +1085,7 @@ function createCliCommandController({
       }
 
       await publish("checking");
-      const target = (
-        await inDistro(distro, "wslpath", [
-          "-u",
-          path.join(targetOf(LINUX_ENTRY), binaryName("linux")),
-        ])
-      ).trim();
-      if (!target.startsWith("/") || /[\n\0]/.test(target))
-        throw new Error(
-          `Ajour couldn't find its folder in ${distro}. Check that WSL can reach your Windows drive.`,
-        );
+      const target = await linuxTargetIn(distro);
       let printed;
       try {
         printed = (
@@ -1054,9 +1168,13 @@ function createCliCommandController({
         : error instanceof Error && error.message
           ? error.message
           : `Ajour couldn't add ajour to ${distro}.`;
-      wslStates.set(distro, { status: "error", error: message });
+      wslStates.set(distro, {
+        status: "error",
+        operation: "add",
+        error: message,
+      });
       // Never the message: it names the distro, and a path holds the user name.
-      if (error.reason) refuseWslAdd(unit, error.reason);
+      if (error.reason) refuseWsl(unit, error.reason);
       else {
         unit?.fail(new Error("Ajour couldn't add ajour to WSL."), {
           reason: "wsl_add_failed",
@@ -1067,6 +1185,79 @@ function createCliCommandController({
       // Commits clean up their marker; a failure takes the build back out.
       if (swapped) await reconcileDisk().catch(() => undefined);
       if (staging) await removeQuietly(staging);
+    }
+    const state = await settledState();
+    emit(state);
+    return state;
+  }
+
+  /**
+   * Removes the command from `distro` (#605): `~/.local/bin/ajour` only
+   * while it links to our build, then the distro leaves the record, which
+   * commits it. A distro WSL no longer lists is dropped without entering
+   * it. With the last distro, the record loses `wsl` and reconcile deletes
+   * `bin\linux`.
+   */
+  async function runRemoveWsl(distro, unit) {
+    if (!wslSupported || quitting.signal.aborted) return settledState();
+    // The cached list may be 30 seconds old.
+    await listDistros({ fresh: true });
+    const removal = removalIn(distro);
+    const recorded = (await readRecord().catch(() => null))?.wsl?.distros;
+    // The renderer passes a name: only one WSL lists or the record holds is used.
+    if (removal !== "unlink" && !recorded?.includes(distro)) {
+      refuseWsl(unit, "unknown_distro");
+      throw refusal("unknown_distro", UNKNOWN_DISTRO);
+    }
+    try {
+      wslStates.set(distro, { status: "removing" });
+      emit(await settledState());
+      if (reconciliation) await reconciliation;
+      await reconcileDisk();
+      initialized = true;
+      const record = await readRecord();
+      if (record?.wsl?.distros?.includes(distro)) {
+        if (removal === "unlink") await unlinkFrom(distro);
+        else if (removal === "keep")
+          throw new Error(
+            `Ajour couldn't run commands in ${distro}. Check that it starts, then try again.`,
+          );
+        const others = record.wsl.distros.filter((name) => name !== distro);
+        if (others.length) {
+          await writeRecord({
+            ...record,
+            wsl: { ...record.wsl, distros: others },
+          });
+        } else {
+          // The record lets go of bin\linux; reconcile, finding it named
+          // with its content by the marker, deletes it.
+          await writePendingMarker(randomUUID(), {
+            [LINUX_ENTRY]: record.wsl.digests?.[LINUX_ENTRY],
+          });
+          const { wsl: _last, ...withoutWsl } = record;
+          await writeRecord(withoutWsl);
+          await reconcileDisk();
+        }
+      }
+      wslStates.delete(distro);
+      unit?.set({ cli_command: { result: "removed" } });
+    } catch (error) {
+      wslStates.set(distro, {
+        status: "error",
+        operation: "remove",
+        error:
+          error instanceof Error && error.message
+            ? error.message
+            : `Ajour couldn't remove ajour from ${distro}.`,
+      });
+      // Never the message: it names the distro, and a path holds the user name.
+      if (error.reason) refuseWsl(unit, error.reason);
+      else {
+        unit?.fail(new Error("Ajour couldn't remove ajour from WSL."), {
+          reason: "wsl_remove_failed",
+        });
+        unit?.set({ cli_command: { result: "failed" } });
+      }
     }
     const state = await settledState();
     emit(state);
@@ -1126,6 +1317,22 @@ function createCliCommandController({
         (async () => {
           if (before) await before.catch(() => undefined);
           return runAddWsl(distro, unit);
+        })(),
+      );
+    },
+
+    /**
+     * Removes the command from the WSL distro `distro`, after the operation
+     * running. Rejects only for a distro neither WSL nor the record has.
+     * @param {string} distro
+     * @param {{ unit?: any }} [options] The event of the call that asked.
+     */
+    removeWsl(distro, { unit } = {}) {
+      const before = running;
+      return trackRunning(
+        (async () => {
+          if (before) await before.catch(() => undefined);
+          return runRemoveWsl(distro, unit);
         })(),
       );
     },

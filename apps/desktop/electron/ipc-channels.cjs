@@ -50,6 +50,10 @@ const IPC_CHANNELS = {
   // The ajour command (cli-command.cjs, #568). Main pushes each change on
   // `ajour:cli-command-changed`, which, like every push, needs no entry.
   "ajour:add-cli-command-wsl": { event: "cli_command.wsl_add", mode: "invoke" },
+  "ajour:remove-cli-command-wsl": {
+    event: "cli_command.wsl_remove",
+    mode: "invoke",
+  },
   "ajour:get-cli-command": { event: "cli_command.get_state", mode: "invoke" },
   "ajour:remove-cli-command": { event: "cli_command.remove", mode: "invoke" },
   "ajour:install-cli-command": {

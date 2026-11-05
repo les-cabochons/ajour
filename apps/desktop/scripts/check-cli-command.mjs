@@ -36,9 +36,12 @@
 // and nothing else is entered. The check writes ~/.local/bin/ajour there, so
 // name a throwaway distro, never your own. CI names a disposable WSL 1 Ubuntu,
 // where the Linux ajour can't start (#611): the check proves that Add is
-// refused and changes nothing. On a WSL 2 distro it runs Add end to end: a
-// new login shell runs `ajour -V` and `ajour status` through the relay, then
-// Add refuses a foreign ~/.local/bin/ajour. That path needs the Linux archive
+// refused and that Remove, on a distro never added, changes nothing. On a
+// WSL 2 distro it runs Add end to end: a new login shell runs `ajour -V` and
+// `ajour status` through the relay, then Add refuses a foreign
+// ~/.local/bin/ajour. It ends with Remove on the distro (#605), which deletes
+// the link and bin\linux, then adds again and removes the command, which
+// deletes the link too. That path needs the Linux archive
 // of the app's version, 0.0.1 unless AJOUR_CLI_CHECK_VERSION says otherwise.
 // To run it locally, from PowerShell:
 //
@@ -533,6 +536,68 @@ async function checkWsl(page, version, baseUrl, { events, installDir }) {
     "-c",
     'test "$(cat "$HOME/.local/bin/ajour")" = foreign && rm "$HOME/.local/bin/ajour"',
   ]);
+
+  // Remove on the distro (#605): the link goes, and with the last distro,
+  // bin\linux too.
+  const linkState = async () =>
+    (
+      await inWsl("sh", [
+        "-c",
+        'link="$HOME/.local/bin/ajour"; if [ -L "$link" ]; then printf "link:%s" "$(readlink "$link")"; elif [ -e "$link" ]; then echo file; else echo absent; fi',
+      ])
+    ).stdout.trim();
+  const rowOf = (state) =>
+    state.wsl?.distros.find((row) => row.name === distro);
+  const addWsl = () =>
+    page.evaluate(
+      (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
+      distro,
+    );
+  expect(
+    rowOf(await addWsl())?.status === "added" &&
+      (await linkState()).endsWith("/linux/ajour"),
+    "Add again links Ubuntu's ~/.local/bin/ajour",
+  );
+  const removed = await page.evaluate(
+    (distro) => window.ajourDesktop.removeCliCommandWsl({ distro }),
+    distro,
+  );
+  expect(
+    rowOf(removed)?.status === "not-added",
+    "Remove on Ubuntu ends Not added",
+    rowOf(removed),
+  );
+  expect(
+    (await linkState()) === "absent",
+    "Remove on Ubuntu deletes ~/.local/bin/ajour",
+  );
+  expect(
+    !existsSync(path.join(installDir, "linux")),
+    "Remove on the last distro deletes bin\\linux",
+  );
+  const removal = await eventNamed(events, "cli_command.wsl_remove");
+  expect(
+    removal?.outcome === "ok" && !JSON.stringify(removal).includes(distro),
+    "Remove emits cli_command.wsl_remove, ok, without the distro's name",
+    removal,
+  );
+  // Added again, for removing the command to remove (checkFollow).
+  expect(
+    rowOf(await addWsl())?.status === "added" &&
+      (await linkState()).endsWith("/linux/ajour"),
+    "Add after Remove links Ubuntu's ~/.local/bin/ajour again",
+  );
+  return { distro, linkState };
+}
+
+/** The first event `name` main printed, waiting up to 5 seconds for it. */
+async function eventNamed(events, name) {
+  for (const deadline = Date.now() + 5_000; Date.now() < deadline;) {
+    const event = events.find((candidate) => candidate.name === name);
+    if (event) return event;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return undefined;
 }
 
 /**
@@ -584,16 +649,34 @@ async function checkWsl1Refusal(
     "Add refuses a WSL 1 Ubuntu with wsl1_unsupported",
     { row, event },
   );
+  // Remove through the real channel (#605): Ubuntu was never added, so it
+  // has nothing to remove. Removing an added distro runs on WSL 2, locally.
+  const removed = await page.evaluate(
+    (distro) => window.ajourDesktop.removeCliCommandWsl({ distro }),
+    distro,
+  );
+  const removal = await eventNamed(events, "cli_command.wsl_remove");
+  expect(
+    removed.wsl?.distros.find((candidate) => candidate.name === distro)
+      ?.status === "unsupported" &&
+      removal?.outcome === "ok" &&
+      !JSON.stringify(removal).includes(distro),
+    "Remove on a WSL 1 Ubuntu that was never added changes nothing",
+    { removal },
+  );
   const after = { localBin: await localBin(), linux: existsSync(linux) };
   expect(
     JSON.stringify(after) === JSON.stringify(before) && !after.linux,
-    "the refusal leaves ~/.local/bin and bin\\linux untouched",
+    "the refusal and Remove leave ~/.local/bin and bin\\linux untouched",
     { before, after },
   );
 }
 
-/** Restart version A as B, first without B's asset, then publish it. */
-async function checkFollow(electronApp, env, release, version, binary) {
+/**
+ * Restart version A as B, first without B's asset, then publish it. Then
+ * remove the command, with the distro checkWsl added, when it added one.
+ */
+async function checkFollow(electronApp, env, release, version, binary, wsl) {
   await electronApp.close();
   const nextVersion = "0.0.2";
   if (version === nextVersion)
@@ -656,13 +739,18 @@ async function checkFollow(electronApp, env, release, version, binary) {
       window.ajourDesktop.removeCliCommand(),
     );
     expect(
-      removed.status === "not-installed",
+      removed.status === "not-installed" && !removed.notice,
       "Remove ends Not installed",
       removed,
     );
     const folder = env.AJOUR_CLI_INSTALL_DIR;
     // With the Linux build for WSL, when the check added it.
     expect(!existsSync(folder), "Remove deletes the install folder");
+    if (wsl)
+      expect(
+        (await wsl.linkState()) === "absent",
+        "Removing the command deletes ~/.local/bin/ajour in Ubuntu",
+      );
     expect(
       !existsSync(path.join(env.AJOUR_USER_DATA_PATH, "cli-command.json")),
       "Remove deletes the record",
@@ -896,7 +984,7 @@ async function main() {
         cli_command: event.cli_command,
       })),
     );
-    await checkWsl(page, appVersion, `http://127.0.0.1:${port}`, {
+    const wsl = await checkWsl(page, appVersion, `http://127.0.0.1:${port}`, {
       events,
       installDir,
     });
@@ -906,6 +994,7 @@ async function main() {
       release,
       appVersion,
       path.join(installDir, "ajour.exe"),
+      wsl,
     );
     electronApp = undefined;
   } catch (error) {
