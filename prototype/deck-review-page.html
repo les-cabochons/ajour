@@ -344,6 +344,126 @@ svg { flex: none; }
 .toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 70; background: var(--foreground); color: var(--background); border-radius: var(--radius-md); padding: 8px 12px; font-size: var(--text-xs); box-shadow: var(--shadow-popup); display: flex; gap: 6px; align-items: center; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
 .narrow .toast { bottom: 120px; }
 
+/* ---------- Variant D · Guide with versions ---------- */
+.dwrap { padding: 0 var(--page-gutter) 40px; max-width: 1340px; }
+.dwrap .objhead { padding: 20px 0 0; }
+.statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 2px; margin: 0 0 6px -4px; font-size: var(--text-xs); color: var(--text-secondary); }
+.statusline > .chip { margin: 0 4px; }
+.statusline .sl { height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 4px; border-radius: var(--radius-sm); white-space: nowrap; }
+.statusline .sl:hover { background: var(--hover-bg); color: var(--foreground); }
+.dotsep { color: var(--text-tertiary); }
+.pend { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--warning); flex: none; display: inline-block; }
+.okc { color: var(--success); display: inline-flex; }
+.dstrip { display: flex; align-items: center; gap: 4px; margin-top: 12px; height: 28px; font-size: var(--text-xs); min-width: 0; white-space: nowrap; }
+.dstrip .lbl { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 6px 0 4px; margin-left: -4px; border-radius: var(--radius-sm); color: var(--text-secondary); font-weight: 500; flex: none; }
+.dstrip .lbl:hover { background: var(--hover-bg); color: var(--foreground); }
+.dstrip .arr { color: var(--text-tertiary); flex: none; padding: 0 1px; }
+.dlay { height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--foreground); flex: none; }
+.dlay:hover { background: var(--hover-bg); }
+.dlay.on { border-color: var(--primary); background: var(--indigo-muted); }
+.dlay.base { border-style: dashed; color: var(--text-secondary); cursor: default; }
+.dlay.base:hover { background: none; }
+.dlay .st { color: var(--text-secondary); }
+.dlay .rv { display: inline-flex; color: var(--foreground); }
+.dlay .rv.old { color: var(--text-tertiary); }
+.stale { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); min-width: 0; white-space: nowrap; }
+.stale .wi { color: var(--warning); flex: none; display: inline-flex; }
+.stale .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.stale .link { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.vbar { position: sticky; top: 0; z-index: 5; background: var(--background); border-bottom: 1px solid var(--border); margin-top: 20px; padding: 8px 0 7px; }
+.vrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vrow > .lab { font-size: var(--text-xs); color: var(--text-secondary); font-weight: 500; flex: none; }
+.vseg button { padding: 0 8px; gap: 4px; }
+.vseg .since { margin-left: 5px; position: relative; }
+.vseg .since::before { content: ""; position: absolute; left: -4px; top: 5px; bottom: 5px; width: 1px; background: var(--field-border); }
+.vseg .n { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 0 5px; border-radius: 4px; background: var(--background); color: var(--foreground); }
+.vseg .since.on .n { background: var(--indigo-muted); color: var(--primary); }
+.vseg .mk { display: inline-flex; color: var(--text-tertiary); }
+.scope { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--text-xs); color: var(--text-secondary); min-width: 0; white-space: nowrap; }
+.scope .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.scope b { color: var(--foreground); font-weight: 500; }
+.scope .val { flex: none; }
+.tickbtn { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--radius-md); border: 1px solid var(--border); font-weight: 500; flex: none; }
+.tickbtn:hover { background: var(--hover-bg); }
+.hticks { display: inline-flex; gap: 2px; align-items: center; }
+.hticks .bar { height: 4px; }
+.dgrid { display: grid; grid-template-columns: minmax(0, 1fr) 272px 24px; column-gap: 20px; position: relative; }
+.dgrid.tree-open { grid-template-columns: minmax(0, 1fr) 272px 212px; }
+.dgrid.inline { grid-template-columns: minmax(0, 1fr) 24px; }
+.dgrid.inline.tree-open { grid-template-columns: minmax(0, 1fr) 212px; }
+.dmain { min-width: 0; padding-top: 16px; }
+.dvar .concern { scroll-margin-top: 88px; }
+.dvar .hunk { scroll-margin-top: 92px; }
+.dvar .section:first-child { margin-top: 0; }
+.skipped { font-size: var(--text-xs); color: var(--text-secondary); padding: 10px 0; border-top: 1px solid var(--border-row); display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+.skipped .cn { width: 18px; height: 18px; font-size: 10px; }
+.empty { padding: 28px 0; color: var(--text-secondary); text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: 24px; }
+.gutter { position: relative; min-width: 0; z-index: 1; }
+.fcard { position: absolute; left: 0; right: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); font-size: var(--text-sm); }
+.fcard.draft { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.fcard.comp { border-color: var(--primary); padding: 8px; }
+.fcard.hot { border-color: var(--primary); }
+.fcard .cm p { margin-left: 0; }
+.fcard .tfoot { padding: 4px 8px; }
+.fcard textarea, .composer.d textarea { width: 100%; border: 0; padding: 2px; min-height: 60px; outline: none; resize: none; background: transparent; line-height: 1.45; }
+.crow .hint { flex: 1; min-width: 0; font-size: var(--text-xs); color: var(--text-secondary); }
+.kbd { font-family: var(--font-mono); font-size: var(--text-2xs); min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--field-border); display: inline-grid; place-items: center; background: var(--background); color: var(--foreground); line-height: 1; }
+.conn { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 0; }
+.conn path { fill: none; stroke: var(--text-tertiary); stroke-width: 1.25; }
+.conn path.dr { stroke: color-mix(in srgb, var(--primary) 70%, var(--border)); }
+.conn path.hot { stroke: var(--primary); stroke-width: 1.5; }
+.ln.anch { box-shadow: inset -3px 0 var(--text-tertiary); }
+.ln.anch.dr { box-shadow: inset -3px 0 var(--primary); }
+.ln.hot .code { background: color-mix(in srgb, var(--primary) 9%, transparent); }
+.mtree { position: sticky; top: 96px; align-self: start; padding-top: 16px; min-width: 0; }
+.mtree.closed { display: flex; flex-direction: column; align-items: center; }
+.ticks { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 6px; }
+.tick { width: 24px; display: grid; place-items: center; padding: 3px 0; border-radius: 4px; }
+.tick:hover:not(:disabled) { background: var(--hover-bg); }
+.tick:disabled { opacity: .35; }
+.bar { display: inline-block; position: relative; overflow: hidden; border-radius: 2px; background: var(--field-border); flex: none; }
+.tick .bar, .mt-row .bar { width: 4px; }
+.bar i { position: absolute; left: 0; top: 0; background: var(--foreground); opacity: .7; }
+.tick .bar i, .mt-row .bar i { width: 100%; }
+.hticks .bar i { height: 100%; }
+.tick.cur .bar, .mt-item.cur .mt-row .bar, .hticks .bar.cur { box-shadow: 0 0 0 1.5px var(--background), 0 0 0 3px var(--primary); }
+.mt-prog { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-top: 8px; writing-mode: vertical-rl; }
+.mt-head { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 0 0 6px; margin-bottom: 4px; }
+.mt-row { width: 100%; display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; border-radius: var(--radius-md); font-size: var(--text-xs); color: var(--text-secondary); }
+.mt-row:hover:not(:disabled) { background: var(--hover-bg); }
+.mt-row:disabled { opacity: .45; }
+.mt-row .bar { margin-top: 1px; height: 14px !important; }
+.mt-row .t { flex: 1; min-width: 0; line-height: 1.35; }
+.mt-item.cur > .mt-row { color: var(--foreground); }
+.mt-files { display: none; padding: 0 0 4px 30px; }
+.mt-item.cur .mt-files, .mt-item.open .mt-files { display: block; }
+.mt-file { display: block; width: 100%; height: 22px; padding: 0 6px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-file:hover { background: var(--hover-bg); color: var(--foreground); }
+.catch { position: absolute; inset: 0; z-index: 58; }
+.stackpop { position: absolute; z-index: 60; width: 560px; max-width: calc(100% - 16px); background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-popup); padding: 4px; }
+.sphead { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px 0 10px; font-weight: 600; }
+.sphead .xs { font-weight: 400; }
+.sprow { display: flex; gap: 10px; width: 100%; padding: 8px 10px; border-radius: var(--radius-md); align-items: flex-start; }
+.sprow:hover:not(.base) { background: var(--hover-bg); }
+.sprow.on { background: var(--app-sidebar-active-bg); }
+.sprow .id { width: 38px; flex: none; color: var(--text-secondary); padding-top: 1px; }
+.sprow .main { flex: 1; min-width: 0; display: block; }
+.sprow .t { display: flex; gap: 6px; align-items: center; font-weight: 500; min-width: 0; }
+.sprow .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sprow .s { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 3px; font-size: var(--text-xs); color: var(--text-secondary); }
+.sprow .s.w { color: var(--foreground); }
+.sprow .s.w .wi { color: var(--warning); display: inline-flex; }
+.spfoot { font-size: var(--text-xs); color: var(--text-secondary); padding: 8px 10px 6px; border-top: 1px solid var(--border-row); margin-top: 2px; }
+.chord { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 70; background: var(--foreground); color: var(--background); border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-xs); box-shadow: var(--shadow-popup); display: flex; gap: 12px; align-items: center; white-space: nowrap; }
+.chord .kbd { background: rgb(255 255 255 / 16%); border-color: transparent; color: inherit; margin-right: 4px; }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; align-items: center; margin: 12px 0 16px; font-size: var(--text-sm); }
+.keys .k { display: flex; gap: 3px; align-items: center; color: var(--text-secondary); font-size: var(--text-xs); }
+.nextlayer { width: 100%; display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; margin: 6px 0 14px; }
+.nextlayer:hover { background: var(--hover-bg); }
+.nextlayer .k { display: block; font-size: var(--text-xs); color: var(--text-secondary); }
+.nextlayer .t { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nextlayer > span:first-child { flex: 1; min-width: 0; }
+
 /* ---------- Narrow view (below 768px in Ajour) ---------- */
 .narrow { --page-gutter: 12px; }
 .narrow .topbar { padding-left: 8px; }
@@ -361,6 +481,14 @@ svg { flex: none; }
 .narrow .pane.center { padding: 16px 12px 24px; }
 .narrow .draftbar .hide-narrow, .narrow .hide-narrow { display: none; }
 .narrow .hfn, .narrow .hpath .dir { display: none; }
+.narrow .dgrid { grid-template-columns: minmax(0, 1fr); }
+.narrow .vrow > .lab { display: none; }
+.narrow .vseg button { padding: 0 7px; }
+.narrow .dvar .concern { scroll-margin-top: 84px; }
+.narrow .dvar .hunk { scroll-margin-top: 88px; }
+.narrow .statusline { margin-top: 2px; }
+.narrow .stale { flex-wrap: wrap; white-space: normal; align-items: flex-start; }
+.narrow .stale .wi { margin-top: 1px; }
 </style>
 </head>
 <body>
@@ -397,6 +525,7 @@ const P = {
   plus: '<path d="M8 3v10M3 8h10"/>',
   branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"/>',
   panel: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',
+  warn: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.5v3M8 11.2v.1"/>',
 };
 const ic = (n, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -724,7 +853,26 @@ const COMMITS = [
   ["c09f5a8", "Queue deliveries on invoice changes", "yesterday"],
   ["51d2e7b", "Deliver with the shared retry policy", "yesterday"],
   ["a8f3360", "Add the webhooks routes", "23 hours ago"],
+  ["e27b8d4", "Guard deliveries behind webhooks.enabled", "10 hours ago"],
   ["9f3c2e1", "Test signing and the 410 stop", "9 hours ago"],
+];
+/* Layout D: pushes (GitHub) or iterations (Azure DevOps), and the version each hunk last changed in. */
+const VERSIONS = [
+  { v: 1, when: "2 days ago", commits: ["3e1a9c2", "7b40d1e", "c09f5a8"] },
+  { v: 2, when: "yesterday", commits: ["51d2e7b", "a8f3360"] },
+  { v: 3, when: "9 hours ago", commits: ["e27b8d4", "9f3c2e1"] },
+];
+const LATEST = 3;
+const HVER = {};
+Object.keys(HUNKS).forEach((h) => { HVER[h] = 1; });
+["h17", "h18", "h19", "h20", "h21", "h24", "h25", "h26", "h27", "h28", "h29", "h30", "h31", "h32"].forEach((h) => { HVER[h] = 2; });
+["h15", "h16", "h22", "h23", "h33", "h39", "h40"].forEach((h) => { HVER[h] = 3; });
+const LAYER_D = [
+  { latest: 2, checks: [["build", "ok", "1m 12s"], ["lint", "ok", "22s"], ["test", "ok", "3m 40s"]],
+    approvals: [["ML", "Marcus Lee", "Approved"], ["JR", "Jordan Rivera", "Approved"]] },
+  { latest: 3, checks: [["build", "ok", "1m 30s"], ["lint", "ok", "20s"], ["test", "pending", "running · 4 min"], ["e2e", "pending", "queued"]],
+    approvals: [["ML", "Marcus Lee", "Approved"], ["JR", "Jordan Rivera", "Required · no vote yet"]] },
+  { latest: 1, checks: [], approvals: [] },
 ];
 const HOSTS = {
   github: { name: "GitHub", id: (n) => "#" + n, repo: "northwind/billing-api", short: "billing-api",
@@ -747,6 +895,8 @@ const S = {
     { who: "Samir Haddad", ini: "SH", when: "7 hours ago", text: "The 0042 cascade drops them with the endpoint. I'll add a test for it." },
   ] }],
   nextDraft: 3, composer: null, composerText: "", summary: "", vote: "comment",
+  dver: "v3", railOpen: false, stackOpen: false, stackPos: null, chord: null, finished: null, posted: [], dCur: null,
+  myReview: [{ state: "Approved", ver: 1 }, { state: "Commented", ver: 2 }, null],
   dialog: null, menu: null, sheet: null, toast: null,
   concern: 1, file: 0, cPane: "nav", sideTab: "drafts", descOpen: false,
 };
@@ -797,6 +947,21 @@ function menuItems(id) {
       return `<button data-act="layer" data-v="${i}">${i === S.layer ? ic("check", 14) : `<span style="width:14px"></span>`}<span class="val">${host().id(p.n)}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.title)}</span></button>`;
     }).join("") + `<div class="sep"></div><div class="mh">Base · <span class="mono">main</span></div>`;
   }
+  if (id === "checks") {
+    const cs = LAYER_D[S.layer].checks;
+    return `<div class="mh">Checks on head <span class="mono">9f3c2e1</span></div>` + (cs.length ? cs.map(([nm, st, d]) => `<button data-act="noop">${st === "ok" ? `<span class="okc">${ic("check", 14)}</span>` : `<span style="width:14px;display:grid;place-items:center"><span class="pend"></span></span>`}<span style="flex:1" class="mono">${nm}</span><span class="xs muted">${d}</span></button>`).join("") : `<div class="mh" style="padding-bottom:6px">No checks have run on a draft.</div>`)
+      + `<div class="sep"></div><button data-act="noop">${ic("ext", 14)} Open checks in ${host().name}</button>`;
+  }
+  if (id === "approvals") {
+    const rows = LAYER_D[S.layer].approvals.map(([ini, nm, st]) => `<button data-act="noop"><span class="avatar">${ini}</span><span style="flex:1">${nm}</span><span class="xs muted">${st}</span></button>`);
+    const m = S.myReview[S.layer];
+    rows.push(`<button data-act="noop"><span class="avatar me">AT</span><span style="flex:1">You</span><span class="xs muted">${m ? `${m.state} on v${m.ver}` : "Not reviewed"}</span></button>`);
+    return `<div class="mh">Reviewers</div>` + rows.join("");
+  }
+  if (id === "versions") {
+    const r = reviewedVer();
+    return `<div class="mh">${S.host === "ado" ? "Iterations" : "Pushes"} and their commits</div>` + VERSIONS.slice().reverse().map((v) => `<button data-act="dver" data-v="v${v.v}" style="align-items:flex-start"><span class="val" style="width:20px;padding-top:1px">v${v.v}</span><span style="flex:1;min-width:0"><span style="display:block">${plural(v.commits.length, "commit")} · ${v.when}${r === v.v ? ` <span class="xs muted">· you reviewed this</span>` : ""}</span>${v.commits.map((sha) => `<span class="xs muted" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="val">${sha}</span> ${esc(COMMITS.find((c) => c[0] === sha)[1])}</span>`).join("")}</span></button>`).join("");
+  }
   return "";
 }
 
@@ -838,16 +1003,22 @@ function commentBlocks(hid, l) {
   S.threads.forEach((t, ti) => {
     if (t.h !== hid || t.l !== l) return;
     const replies = S.drafts.filter((d) => d.reply === ti);
-    out += `<div class="thread">${t.comments.map((c) => `<div class="cm"><div class="cmh"><span class="avatar">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`).join("")}
+    out += `<div class="thread">${t.comments.map(cmHtml).join("")}
       ${replies.map((d) => draftCm(d)).join("")}
       <div class="tfoot"><button class="btn sm" data-act="reply" data-v="${ti}" data-h="${hid}" data-l="${l}">Reply</button><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`;
   });
   S.drafts.filter((d) => d.h === hid && d.l === l && d.reply == null).forEach((d) => { out += `<div class="thread draft">${draftCm(d)}</div>`; });
   if (S.composer && S.composer.h === hid && S.composer.l === l) {
-    out += `<div class="composer"><textarea id="composer-ta" data-input="composer" placeholder="${S.composer.reply != null ? "Reply" : "Leave a comment"}" aria-label="Comment">${esc(S.composerText)}</textarea>
+    out += S.variant === "D" ? `<div class="composer d">${composerInner()}</div>` : `<div class="composer"><textarea id="composer-ta" data-input="composer" placeholder="${S.composer.reply != null ? "Reply" : "Leave a comment"}" aria-label="Comment">${esc(S.composerText)}</textarea>
       <div class="crow"><span class="xs muted">Kept in your draft review until you submit.</span><button class="btn ghost" data-act="cancelCompose">Cancel</button><button class="btn primary" data-act="saveDraft">Add to draft review</button></div></div>`;
   }
   return out;
+}
+const cmHtml = (c) => `<div class="cm"><div class="cmh"><span class="avatar ${c.me ? "me" : ""}">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`;
+function composerInner() {
+  return `<textarea id="composer-ta" data-input="composer" placeholder="${S.composer.reply != null ? "Reply" : "Leave a comment"}" aria-label="Comment">${esc(S.composerText)}</textarea>
+    <div class="crow"><span class="hint"><span class="kbd">Ctrl</span> <span class="kbd">Enter</span> adds it to your review</span><button class="ibtn sm" data-act="cancelCompose" aria-label="Cancel">${ic("x", 14)}</button></div>
+    <div class="crow"><span class="spacer"></span><button class="btn" data-act="postNow">Comment now</button><button class="btn primary" data-act="saveDraft">Add to review</button></div>`;
 }
 const draftCm = (d) => `<div class="cm"><div class="cmh"><span class="avatar me">AT</span><b>You</b><span class="chip accent">Draft</span><span class="acts"><button class="btn sm ghost" data-act="delDraft" data-v="${d.id}">Delete</button></span></div><p>${esc(d.text)}</p></div>`;
 
@@ -855,14 +1026,17 @@ function hunkHtml(hid, { path = true } = {}) {
   const h = HUNKS[hid];
   const [dir, name] = splitPath(h.file);
   const v = S.viewed.has(hid);
+  const fl = floating();
   const lines = h.lines.map((l, i) => {
     const cls = l.t === "+" ? "add" : l.t === "-" ? "del" : "";
-    const comp = S.composer && S.composer.h === hid && S.composer.l === i ? " has-composer" : "";
-    return `<div class="ln ${cls}${comp}"><span class="no">${l.o ?? ""}</span><span class="no">${l.n ?? ""}</span><span class="no one">${l.n ?? l.o}</span><button class="addc" data-act="compose" data-h="${hid}" data-l="${i}" aria-label="Comment on line ${l.n ?? l.o}">+</button><span class="sg">${l.t === " " ? "" : l.t === "-" ? "−" : "+"}</span><span class="code">${esc(l.s) || " "}</span></div>${commentBlocks(hid, i)}`;
+    const comp = !fl && S.composer && S.composer.h === hid && S.composer.l === i ? " has-composer" : "";
+    const ak = fl ? anchorKind(hid, i) : "";
+    return `<div class="ln ${cls}${comp}${ak ? " anch " + ak : ""}" data-line="${hid}:${i}"><span class="no">${l.o ?? ""}</span><span class="no">${l.n ?? ""}</span><span class="no one">${l.n ?? l.o}</span><button class="addc" data-act="compose" data-h="${hid}" data-l="${i}" aria-label="Comment on line ${l.n ?? l.o}">+</button><span class="sg">${l.t === " " ? "" : l.t === "-" ? "−" : "+"}</span><span class="code">${esc(l.s) || " "}</span></div>${fl ? "" : commentBlocks(hid, i)}`;
   }).join("");
   const nT = S.threads.filter((t) => t.h === hid).length + S.drafts.filter((d) => d.h === hid && d.reply == null).length;
   return `<div class="hunk ${v ? "is-viewed" : ""}" id="hk-${hid}">
     <div class="hhead">${path ? `<span class="hpath"><span class="dir">${dir}</span>${name}</span>${NEW_FILES.has(h.file) && h.n === 1 ? `<span class="chip">New</span>` : ""}` : ""}
+      ${S.variant === "D" && reviewedVer() && HVER[hid] > reviewedVer() ? `<span class="chip" title="Changed since you reviewed v${reviewedVer()}">Changed in v${HVER[hid]}</span>` : ""}
       <span class="hfn">${h.header}${h.fn ? " " + esc(h.fn) : ""}</span><span class="spacer"></span>
       ${nT ? `<span class="faint xs" style="display:inline-flex;gap:3px;align-items:center">${ic("comment", 12)}${nT}</span>` : ""}
       ${pm(h.add, h.del)}
@@ -914,9 +1088,10 @@ function descriptionHtml() {
 function timelineHtml() {
   return `<ul class="timeline">
     <li><span class="avatar">SH</span><span><b>Samir Haddad</b> opened this pull request · 2 days ago</span></li>
-    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> pushed 6 commits · head <span class="val">9f3c2e1</span> · 9 hours ago</span></li>
-    <li class="th"><div class="xs muted" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic("comment", 12)}<button class="link mono" data-act="goto" data-v="hk-h9">${FILES.queue}:${lineNo("h9", 1)}</button></div>${S.threads.map((t, ti) => `<div class="thread" style="margin:0">${t.comments.map((c) => `<div class="cm"><div class="cmh"><span class="avatar">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`).join("")}<div class="tfoot"><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`).join("")}</li>
+    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> pushed ${COMMITS.length} commits · head <span class="val">9f3c2e1</span> · 9 hours ago</span></li>
+    <li class="th"><div class="xs muted" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic("comment", 12)}<button class="link mono" data-act="goto" data-v="hk-h9">${FILES.queue}:${lineNo("h9", 1)}</button></div>${S.threads.map((t, ti) => `<div class="thread" style="margin:0">${t.comments.map(cmHtml).join("")}<div class="tfoot"><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`).join("")}</li>
     <li><span class="avatar">ML</span><span><b>Marcus Lee</b> approved ${host().id(479)}, the layer below · 1 day ago</span></li>
+    ${S.posted.map((t) => `<li class="th"><div class="thread" style="margin:0">${cmHtml({ who: "You", ini: "AT", me: true, when: "just now", text: t })}</div></li>`).join("")}
   </ul>`;
 }
 function propsHtml() {
@@ -935,7 +1110,7 @@ function draftLoc(d) { return d.h ? `${HUNKS[d.h].file}:${lineNo(d.h, d.l)}` : "
 function submitForm({ inDialog }) {
   const list = S.drafts.length ? `<ul class="dlist">${S.drafts.map((d) => `<li><span class="avatar me">AT</span><span class="txt"><button class="loc val link" data-act="goto" data-v="hk-${d.h}">${draftLoc(d)}</button>${d.reply != null ? `<span class="faint xs">Reply · </span>` : ""}${esc(d.text)}</span><button class="ibtn sm" data-act="delDraft" data-v="${d.id}" aria-label="Delete draft">${ic("x", 14)}</button></li>`).join("")}</ul>`
     : `<p class="muted xs" style="margin:8px 0 12px">No draft comments. You can still submit a vote with a summary.</p>`;
-  return `${inDialog ? `<h3>Submit review</h3><p>${plural(S.drafts.length, "draft comment")} on ${host().id(pr().n)} go to ${host().name} together.</p>` : `<div class="sh">Draft review · ${plural(S.drafts.length, "comment")}</div>`}
+  return `${inDialog ? `<h3>${S.variant === "D" ? "Finish review" : "Submit review"}</h3><p>${plural(S.drafts.length, "draft comment")} on ${host().id(pr().n)} go to ${host().name} together.</p>` : `<div class="sh">Draft review · ${plural(S.drafts.length, "comment")}</div>`}
     ${list}
     <textarea class="field" data-input="summary" placeholder="Leave a summary (optional)" aria-label="Summary">${esc(S.summary)}</textarea>
     <div class="votes" role="radiogroup">${host().votes.map(([v, l, d]) => `<button class="vote ${S.vote === v ? "on" : ""}" role="radio" aria-checked="${S.vote === v}" data-act="vote" data-v="${v}"><span class="radio"></span><span><span>${l}</span><span class="d">${d}</span></span></button>`).join("")}</div>
@@ -951,7 +1126,7 @@ function variantA() {
     ? `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur">${host().id(pr().n)}</span>`
     : `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="cur">${host().id(pr().n)}</span>`;
   const actions = `${n ? "" : hostBtn()}${reviewBtn()}`;
-  const tabs = `<div class="tabs" role="tablist">${[["overview", "Overview", ""], ["files", "Files", 14], ["commits", "Commits", 6]].map(([v, l, c]) => `<button role="tab" class="${S.tab === v ? "on" : ""}" data-act="tab" data-v="${v}">${l}${c ? ` <span class="chip">${c}</span>` : ""}</button>`).join("")}</div>`;
+  const tabs = `<div class="tabs" role="tablist">${[["overview", "Overview", ""], ["files", "Files", 14], ["commits", "Commits", COMMITS.length]].map(([v, l, c]) => `<button role="tab" class="${S.tab === v ? "on" : ""}" data-act="tab" data-v="${v}">${l}${c ? ` <span class="chip">${c}</span>` : ""}</button>`).join("")}</div>`;
   let body = "";
   if (S.tab === "overview") {
     body = `<div style="display:grid;grid-template-columns:${n ? "1fr" : "minmax(0,1fr) 300px"};gap:32px;padding:20px var(--page-gutter) 60px">
@@ -1040,6 +1215,233 @@ function variantC() {
   return { crumbs, actions, body: `<div style="flex:1;min-height:0;display:flex;flex-direction:column;width:100%"><main class="scroll pane center" data-scroll="c" id="cscroll">${center}</main>${bottom}</div>${sheet}` };
 }
 
+/* ================= Variant D · Guide with versions (B plus Graphite's ideas) ================= */
+// Floating comments need room beside the diff; below ~1100px the frame falls back to inline threads.
+function floating() { if (S.variant !== "D" || narrow()) return false; const f = document.getElementById("frame"); return !f || f.clientWidth >= 1100; }
+const reviewedVer = () => (S.myReview[S.layer] || {}).ver || 0;
+const verLabel = () => (S.host === "ado" ? "Iteration" : "Push");
+function visibleHunks() {
+  if (S.dver === "since") { const r = reviewedVer(); return ALL_HUNKS.filter((h) => HVER[h.id] > r); }
+  const v = +S.dver.slice(1); return ALL_HUNKS.filter((h) => HVER[h.id] <= v);
+}
+const visSet = () => new Set(visibleHunks().map((h) => h.id));
+function anchorKind(hid, i) {
+  if (S.composer && S.composer.reply == null && S.composer.h === hid && S.composer.l === i) return "dr";
+  if (S.drafts.some((d) => d.h === hid && d.l === i && d.reply == null)) return "dr";
+  if (S.threads.some((t) => t.h === hid && t.l === i)) return S.composer && S.composer.h === hid && S.composer.l === i ? "dr" : "th";
+  return "";
+}
+const myText = (i) => { const m = S.myReview[i]; if (!m) return "Not reviewed by you"; return `You: ${m.state.toLowerCase()} on v${m.ver}`; };
+function checksSummary(i) {
+  const cs = LAYER_D[i].checks;
+  if (!cs.length) return `<span class="faint">No checks yet</span>`;
+  const pend = cs.filter((c) => c[1] === "pending").length;
+  return pend ? `<span class="pend"></span>${plural(pend, "check")} pending` : `<span class="okc">${ic("check", 12)}</span>${plural(cs.length, "check")} passed`;
+}
+function approvalsSummary(i) {
+  const n = LAYER_D[i].approvals.filter((a) => a[2] === "Approved").length + (S.myReview[i] && /approve/i.test(S.myReview[i].state) ? 1 : 0);
+  return n ? `<span class="okc">${ic("check", 12)}</span>${plural(n, "approval")}` : `<span class="faint">No approvals yet</span>`;
+}
+const mergeText = (i) => i === 0 ? "Merges first, into main" : `Merges after ${host().id(STACK[i - 1].n)}`;
+
+function dReviewBtn() {
+  return `<button class="btn primary" data-act="openSubmit">${ic("comment", 14)} ${S.drafts.length ? `Finish review · ${S.drafts.length}` : "Review"}</button>`;
+}
+function dHeader() {
+  const p = pr(), n = narrow();
+  const status = `<div class="statusline"><span class="chip ${p.state === "Active" ? "accent" : ""}">${p.state}</span>
+    <button class="sl" data-act="menu" data-menu="checks">${checksSummary(S.layer)}</button><span class="dotsep">·</span>
+    <button class="sl" data-act="menu" data-menu="approvals">${approvalsSummary(S.layer)}</button><span class="dotsep">·</span>
+    <button class="sl" data-act="stack" title="Open the stack (S)">${mergeText(S.layer)}</button></div>`;
+  const meta = `<div class="meta"><span class="avatar">SH</span><b>Samir Haddad</b> wants to merge <span class="branch">${p.branch}</span> into <span class="branch">${p.base}</span> · opened 2 days ago · ${plural(p.files, "file")} · ${pm(p.add, p.del)} · ${plural(p.concerns, "concern")}</div>`;
+  const note = S.layer !== 1 ? `<div class="proto-note">Prototype: every layer shows ${host().id(482)}'s diff.</div>` : "";
+  return `<div class="objhead">${n ? "" : `<button class="back" data-act="noop">${ic("back", 12)} Back to Deck</button>`}
+    <h1 class="objtitle">${esc(p.title)} <span class="val">${host().id(p.n)}</span></h1>${status}${meta}${dStrip()}${staleLine()}${note}</div>`;
+}
+function dStrip() {
+  const id = host().id;
+  const arrows = `<button class="ibtn sm" data-act="layerStep" data-v="-1" ${S.layer === 0 ? "disabled" : ""} aria-label="Previous layer" title="${S.layer > 0 ? "Previous layer: " + id(STACK[S.layer - 1].n) : "Bottom of the stack"}">${ic("left", 14)}</button><button class="ibtn sm" data-act="layerStep" data-v="1" ${S.layer === STACK.length - 1 ? "disabled" : ""} aria-label="Next layer" title="${S.layer < STACK.length - 1 ? "Next layer: " + id(STACK[S.layer + 1].n) : "Top of the stack"}">${ic("right", 14)}</button>`;
+  if (narrow()) {
+    return `<div class="dstrip" id="stackstrip"><button class="dlay" data-act="stack" aria-label="Open the stack">${ic("stack", 12)} Stack ${S.layer + 1}/${STACK.length} ${ic("down", 12)}</button><span class="spacer"></span>${arrows}</div>`;
+  }
+  const chips = STACK.map((q, i) => {
+    const m = S.myReview[i];
+    const old = m && m.ver < LAYER_D[i].latest;
+    const rv = m ? `<span class="rv ${old ? "old" : ""}" title="You ${m.state.toLowerCase()} v${m.ver}${old ? `; v${LAYER_D[i].latest} is newer` : ""}">${ic("check", 12)}</span>` : "";
+    return `<button class="dlay ${i === S.layer ? "on" : ""}" data-act="layer" data-v="${i}" title="${esc(q.title)}"><span class="val">${id(q.n)}</span>${i === S.layer ? `<span class="faint">this</span>` : ""}<span class="st">${q.state}</span>${rv}</button>`;
+  });
+  return `<div class="dstrip" id="stackstrip"><button class="lbl" data-act="stack" title="Open the stack (S)">${ic("stack", 14)} Stack <span class="val faint">${S.layer + 1} of ${STACK.length}</span></button><span class="arr">·</span>
+    <span class="dlay base"><span class="val">main</span></span>${chips.map((c) => `<span class="arr">←</span>${c}`).join("")}<span style="width:8px"></span>${arrows}</div>`;
+}
+function staleLine() {
+  if (S.layer !== 1) return "";
+  const id = host().id;
+  return `<div class="stale"><span class="wi">${ic("warn", 13)}</span><span class="t">${id(479)} changed since this was based on it · 1 new commit, 3 hours ago</span>${S.host === "ado" ? `<button class="link xs" data-act="restack">Restack in Review Deck ${ic("ext", 12)}</button>` : ""}</div>`;
+}
+function dItems() {
+  const vis = visSet();
+  if (S.view === "guide") return order().map((c, i) => ({ key: "cc-" + c.id, n: i + 1, title: c.title, hunks: c.hunks, vis: c.hunks.filter((h) => vis.has(h)), files: filesOf(c.hunks) }));
+  return FILE_LIST.map((f) => { const hs = fileHunks(f).map((h) => h.id); return { key: "ff-" + f.replace(/\W/g, "_"), n: null, title: splitPath(f)[1], hunks: hs, vis: hs.filter((h) => vis.has(h)), files: [] }; });
+}
+function tickBar(it, horiz) {
+  const f = Math.round((viewedIn(it.hunks) / it.hunks.length) * 100);
+  const len = Math.round((horiz ? 4 : 6) + it.hunks.length * (horiz ? 1.1 : 2.4));
+  const dim = horiz ? "width" : "height";
+  return `<span class="bar" data-tick="${it.key}" style="${dim}:${len}px"><i style="${dim}:${f}%"></i></span>`;
+}
+function treeRows(items, all) {
+  return items.map((it) => `<div class="mt-item ${all ? "open" : ""}" data-tick="${it.key}"><button class="mt-row" data-act="goto" data-v="${it.key}" ${it.vis.length ? "" : "disabled"} title="${it.vis.length ? "" : "Nothing to show in this version"}">${tickBar(it)}${it.n ? `<span class="val faint">${it.n}</span>` : ""}<span class="t">${esc(it.title)}</span><span class="val faint">${viewedIn(it.hunks)}/${it.hunks.length}</span></button>${it.files.length ? `<div class="mt-files">${it.files.map((f) => { const hs = it.vis.filter((h) => HUNKS[h].file === f); return hs.length ? `<button class="mt-file" data-act="goto" data-v="hk-${hs[0]}">${splitPath(f)[1]}</button>` : ""; }).join("")}</div>` : ""}</div>`).join("");
+}
+function mtreeHtml() {
+  const items = dItems();
+  if (!S.railOpen) {
+    return `<aside class="mtree closed" aria-label="Guide tree"><button class="ibtn sm" data-act="tree" aria-expanded="false" aria-label="Show the guide tree" title="Show the guide tree (F)">${ic("panel", 14)}</button>
+      <div class="ticks">${items.map((it) => `<button class="tick" data-tick="${it.key}" data-act="goto" data-v="${it.key}" ${it.vis.length ? "" : "disabled"} title="${it.n ? it.n + ". " : ""}${esc(it.title)} · ${viewedIn(it.hunks)} of ${it.hunks.length} viewed" aria-label="${esc(it.title)}">${tickBar(it)}</button>`).join("")}</div>
+      <div class="mt-prog">${S.viewed.size}/${ALL_HUNKS.length}</div></aside>`;
+  }
+  return `<aside class="mtree" aria-label="Guide tree"><div class="mt-head"><span class="sh">${S.view === "guide" ? "Guide" : "Files"}</span><span class="val faint">${S.viewed.size}/${ALL_HUNKS.length}</span><span class="spacer"></span><button class="ibtn sm" data-act="tree" aria-expanded="true" aria-label="Hide the guide tree" title="Hide the guide tree (F)">${ic("panel", 14)}</button></div>${treeRows(items, false)}</aside>`;
+}
+function vbarHtml() {
+  const n = narrow(), r = reviewedVer(), id = host().id;
+  const sinceN = ALL_HUNKS.filter((h) => HVER[h.id] > r).length;
+  const vb = VERSIONS.map((v) => `<button class="${S.dver === "v" + v.v ? "on" : ""}" data-act="dver" data-v="v${v.v}" aria-pressed="${S.dver === "v" + v.v}" title="${verLabel()} ${v.v} · ${plural(v.commits.length, "commit")} · ${v.when}${r === v.v ? " · you reviewed this one" : ""}">v${v.v}${r === v.v ? `<span class="mk">${ic("check", 10)}</span>` : ""}</button>`).join("");
+  const since = `<button class="since ${S.dver === "since" ? "on" : ""}" data-act="dver" data-v="since" aria-pressed="${S.dver === "since"}" ${r ? "" : "disabled"} title="${r ? `Only hunks changed since you reviewed v${r}` : "You haven't reviewed this layer yet"}">${n ? "Since review" : "Changes since your review"}<span class="n">${r ? sinceN : "–"}</span></button>`;
+  const ticks = n ? `<button class="tickbtn" data-act="sheet" data-v="dtree" aria-label="Open the guide"><span class="hticks">${dItems().map((it) => tickBar(it, true)).join("")}</span></button>` : "";
+  const below = S.layer > 0 ? STACK[S.layer - 1] : null;
+  const against = below ? `<b>${id(below.n)}</b> (<span class="mono">${below.branch}</span>)` : `<b class="mono">main</b>`;
+  const vis = visibleHunks().length;
+  const right = S.dver === "since"
+    ? (n ? `${vis}/${ALL_HUNKS.length} hunks` : `${vis} of ${ALL_HUNKS.length} hunks changed since your review of v${r}`)
+    : `${S.dver}${n ? "" : ` · ${plural(vis, "hunk")}`}${S.dver !== "v" + LATEST && !n ? " · prototype shows latest text" : ""}`;
+  return `<div id="vbar-top"></div><div class="vbar"><div class="vrow"><span class="lab">${S.host === "ado" ? "Iterations" : "Pushes"}</span><div class="seg vseg" role="group" aria-label="${S.host === "ado" ? "Iterations" : "Pushes"}">${vb}${since}</div>
+      <button class="ibtn sm" data-act="menu" data-menu="versions" aria-label="${S.host === "ado" ? "Iterations" : "Pushes"} and their commits" title="Commits in each ${verLabel().toLowerCase()}">${ic("down", 14)}</button><span class="spacer"></span>${ticks}</div>
+    <div class="scope">${ic("stack", 12)}<span class="t">${n ? "This layer only, against " : "Changes in this layer only, against "}${against}</span><span class="spacer"></span><span class="val faint">${right}</span></div></div>`;
+}
+function dStream() {
+  const vis = visSet();
+  if (!vis.size) return `<div class="empty">Nothing changed since your review of v${reviewedVer()}. <button class="link" data-act="dver" data-v="v${LATEST}">Show all of v${LATEST}</button></div>`;
+  if (S.view === "guide") {
+    const skipped = [];
+    let k = 0;
+    const out = order().map((c, i) => {
+      const hs = c.hunks.filter((h) => vis.has(h));
+      if (!hs.length) { skipped.push([c, i]); return ""; }
+      const nn = c.hunks.length, vw = viewedIn(c.hunks);
+      const part = hs.length < nn ? `<span class="chip">${hs.length} of ${nn} ${S.dver === "since" ? "changed" : "in " + S.dver}</span>` : "";
+      return `<section class="concern" id="cc-${c.id}" data-concern="${i}" data-sec="${k++}"><div class="chead"><span class="cn ${vw === nn ? "done" : ""}">${i + 1}</span>
+        <div class="ctext"><div class="ctitle">${esc(c.title)}${kindChip(c)}</div><div class="cwhy">${esc(c.why)}</div></div><div class="cside">${part}<span class="val faint">${vw}/${nn}</span></div></div>${hs.map((h) => hunkHtml(h)).join("")}</section>`;
+    }).join("");
+    const sk = skipped.length ? `<div class="skipped"><span>${S.dver === "since" ? "Unchanged since your review:" : `Not in ${S.dver} yet:`}</span>${skipped.map(([c, i]) => `<span style="display:inline-flex;gap:4px;align-items:center"><span class="cn">${i + 1}</span>${esc(c.title)}</span>`).join("")}</div>` : "";
+    return out + sk;
+  }
+  let k = 0;
+  return FILE_LIST.map((f) => {
+    const hs = fileHunks(f).filter((h) => vis.has(h.id));
+    if (!hs.length) return "";
+    const [dir, name] = splitPath(f);
+    return `<section class="concern" id="ff-${f.replace(/\W/g, "_")}" data-sec="${k++}"><div class="filehead"><span><span class="faint">${dir}</span>${name}</span>${NEW_FILES.has(f) ? `<span class="chip">New</span>` : ""}<span class="spacer"></span>${pm(hs.reduce((s, h) => s + h.add, 0), hs.reduce((s, h) => s + h.del, 0))}</div>${hs.map((h) => hunkHtml(h.id, { path: false })).join("")}</section>`;
+  }).join("");
+}
+function gutterCards() {
+  const vis = visSet();
+  const cards = [];
+  S.threads.forEach((t, ti) => {
+    if (!vis.has(t.h)) return;
+    const replies = S.drafts.filter((d) => d.reply === ti).map(draftCm).join("");
+    const rc = S.composer && S.composer.reply === ti;
+    cards.push(`<div class="fcard ${rc ? "comp" : ""}" data-anchor="${t.h}:${t.l}" data-kind="${rc ? "dr" : "th"}">${t.comments.map(cmHtml).join("")}${replies}${rc ? composerInner() : `<div class="tfoot"><button class="btn sm" data-act="reply" data-v="${ti}" data-h="${t.h}" data-l="${t.l}">Reply</button><span class="spacer"></span><span class="chip">${t.status}</span></div>`}</div>`);
+  });
+  S.drafts.filter((d) => d.h && d.reply == null && vis.has(d.h)).forEach((d) => cards.push(`<div class="fcard draft" data-anchor="${d.h}:${d.l}" data-kind="dr">${draftCm(d)}</div>`));
+  if (S.composer && S.composer.reply == null && vis.has(S.composer.h)) cards.push(`<div class="fcard comp" data-anchor="${S.composer.h}:${S.composer.l}" data-kind="dr">${composerInner()}</div>`);
+  return cards.join("");
+}
+// One read pass, then one write pass. Cost scales with the number of comments, not hunks.
+function layoutGutter() {
+  const grid = document.getElementById("dgrid"), gut = document.getElementById("gutter"), svg = document.getElementById("conn");
+  if (!grid || !gut || !svg) return;
+  const gr = grid.getBoundingClientRect();
+  const gl = gut.getBoundingClientRect().left - gr.left;
+  const items = [...gut.querySelectorAll(".fcard")].map((c) => {
+    const key = c.dataset.anchor, hk = document.getElementById("hk-" + key.split(":")[0]);
+    if (!hk) return { c, hide: true };
+    let el = grid.querySelector(`[data-line="${key}"]`);
+    if (!el || !el.getClientRects().length) el = hk.querySelector(".hhead");
+    const r = el.getBoundingClientRect();
+    return { c, key, kind: c.dataset.kind, y: r.top - gr.top + r.height / 2, x1: hk.getBoundingClientRect().right - gr.left, h: c.offsetHeight };
+  }).sort((a, b) => (a.y || 0) - (b.y || 0));
+  let floor = 0;
+  const paths = [];
+  items.forEach((it) => {
+    if (it.hide) { it.c.style.display = "none"; return; }
+    const top = Math.max(Math.round(it.y - 14), floor);
+    floor = top + it.h + 8;
+    it.c.style.top = top + "px";
+    paths.push(`<path data-anchor="${it.key}" class="${it.kind}" d="M${it.x1} ${it.y} H${it.x1 + 10} V${top + 14} H${gl}"/>`);
+  });
+  svg.innerHTML = paths.join("");
+}
+function trackD() {
+  const ds = document.getElementById("dscroll"); if (!ds) return;
+  const vb = ds.querySelector(".vbar");
+  const line = (vb ? vb.getBoundingClientRect().bottom : ds.getBoundingClientRect().top) + 24;
+  const secs = [...ds.querySelectorAll("[data-sec]")];
+  let cur = secs[0];
+  secs.forEach((s) => { if (s.getBoundingClientRect().top <= line) cur = s; });
+  const key = cur ? cur.id : null;
+  if (key === S.dCur) return;
+  S.dCur = key;
+  document.querySelectorAll("[data-tick]").forEach((b) => b.classList.toggle("cur", b.dataset.tick === key));
+}
+function stepSection(d) {
+  const ds = document.getElementById("dscroll"); if (!ds) return;
+  const line = ds.querySelector(".vbar").getBoundingClientRect().bottom + 12;
+  const secs = [...ds.querySelectorAll("[data-sec]")];
+  let cur = -1;
+  secs.forEach((s, i) => { if (s.getBoundingClientRect().top <= line) cur = i; });
+  const t = secs[Math.max(0, Math.min(secs.length - 1, cur + d))];
+  if (t) t.scrollIntoView({ block: "start" });
+}
+function toggleStack() {
+  S.stackOpen = !S.stackOpen; S.menu = null;
+  if (!S.stackOpen || narrow()) return;
+  const fr = document.getElementById("frame").getBoundingClientRect();
+  const lbl = document.querySelector("#stackstrip .lbl");
+  const r = lbl ? lbl.getBoundingClientRect() : null;
+  const x = r ? r.left - fr.left : 240;
+  const y = r && r.bottom > fr.top + 56 ? r.bottom - fr.top + 4 : 56;
+  S.stackPos = { x: Math.max(8, Math.min(x, fr.width - 568)), y };
+}
+function stackPanel() {
+  const id = host().id;
+  const rows = STACK.slice().reverse().map((q) => {
+    const i = STACK.indexOf(q);
+    const stale = i === 0 && S.layer === 1 ? `<span class="s w"><span class="wi">${ic("warn", 12)}</span>1 new commit since ${id(482)} was based on it${S.host === "ado" ? ` · <span class="link" data-act="restack">Restack in Review Deck</span>` : ""}</span>` : "";
+    return `<button class="sprow ${i === S.layer ? "on" : ""}" data-act="layer" data-v="${i}"><span class="id val">${id(q.n)}</span><span class="main">
+      <span class="t"><span class="tt">${esc(q.title)}</span>${i === S.layer ? `<span class="chip accent">This layer</span>` : ""}</span>
+      <span class="s"><span>Samir Haddad</span><span class="dotsep">·</span><span style="display:inline-flex;gap:4px;align-items:center">${checksSummary(i)}</span><span class="dotsep">·</span>${pm(q.add, q.del)}<span class="dotsep">·</span><span>${myText(i)}</span></span>${stale}</span>
+      <span class="chip">${q.state}</span></button>`;
+  }).join("");
+  return `${rows}<div class="sprow base"><span class="id val">main</span><span class="main"><span class="s" style="margin:0">Base branch</span></span></div>
+    <div class="spfoot">Merges bottom up: ${STACK.map((q) => id(q.n)).join(", then ")}. Each layer's diff is against the one below it.</div>`;
+}
+function variantD() {
+  const n = narrow(), p = pr(), fl = floating();
+  const crumbs = n
+    ? `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur">${host().id(p.n)}</span>`
+    : `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="cur">${host().id(p.n)}</span>`;
+  const actions = `${n ? "" : `${hostBtn()}<button class="ibtn" data-act="keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><span style="font-weight:600;font-size:14px">?</span></button>`}${dReviewBtn()}`;
+  const desc = `<div class="section"><div class="sectionrow"><span class="sh">Description</span></div><div class="${S.descOpen ? "" : "clamp"}">${descriptionHtml()}</div><button class="link xs" data-act="descToggle">${S.descOpen ? "Show less" : "Show all"}</button></div>`;
+  const guideRow = `<div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">${S.view === "guide" ? "Guide" : "Files"}</span>${S.view === "guide" && !n ? sourceLine() : ""}<span class="spacer"></span>${S.view === "guide" ? guideActions(!n) : ""}${viewSeg()}</div>${S.view === "guide" && n ? `<div style="margin:-4px 0 10px">${sourceLine()}</div>` : ""}`;
+  const convo = `<div class="section" id="conversation"><div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">Conversation</span></div>${timelineHtml()}
+    <div style="margin-top:12px"><textarea class="field" placeholder="Leave a general comment" data-input="general" aria-label="General comment"></textarea><div class="crow"><span class="spacer"></span><button class="btn" data-act="postGeneral">Comment now</button><button class="btn primary" data-act="saveGeneral">Add to review</button></div></div></div>`;
+  const main = `<div class="dmain"><div class="section">${guideRow}${dStream()}</div>${convo}</div>`;
+  const tree = n ? "" : mtreeHtml();
+  const grid = fl
+    ? `<div class="dgrid ${S.railOpen ? "tree-open" : ""}" id="dgrid">${main}<div class="gutter" id="gutter" aria-label="Comments">${gutterCards()}</div>${tree}<svg class="conn" id="conn" aria-hidden="true"></svg></div>`
+    : `<div class="dgrid inline ${S.railOpen ? "tree-open" : ""}" id="dgrid">${main}${tree}</div>`;
+  return { crumbs, actions, body: `<div class="scroll dvar" data-scroll="d" id="dscroll"><div class="dwrap">${dHeader()}${desc}${vbarHtml()}${grid}</div></div>` };
+}
+
 /* ================= Shell ================= */
 function shell(v) {
   const n = narrow();
@@ -1068,9 +1470,31 @@ function overlays() {
       <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" data-act="publishYes">Publish guide</button></div>`;
     if (S.dialog === "discard") d = `<h3>Discard ${plural(S.drafts.length, "draft comment")}?</h3><p>They were never sent to ${host().name}, so nothing else changes.</p>
       <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" style="background:var(--destructive)" data-act="discardYes">Discard</button></div>`;
+    if (S.dialog === "finished") {
+      const f = S.finished, nx = STACK[S.layer + 1];
+      d = `<h3>Review sent</h3><p><b>${f.vote}</b> · ${plural(f.n, "comment")} on ${host().id(pr().n)} went to ${host().name}.</p>
+        ${nx ? `<button class="nextlayer" data-act="layer" data-v="${S.layer + 1}"><span><span class="k">Next in stack</span><span class="t">${host().id(nx.n)} ${esc(nx.title)}</span></span><span class="chip">${nx.state}</span>${ic("right", 14)}</button>` : `<p class="xs">This is the top of the stack.</p>`}
+        <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Stay on ${host().id(pr().n)}</button></div>`;
+    }
+    if (S.dialog === "keys") {
+      const k = (...ks) => `<span class="k">${ks.map((x) => x === "then" ? "then" : `<span class="kbd">${x}</span>`).join(" ")}</span>`;
+      d = `<h3>Keyboard shortcuts</h3><div class="keys">
+        ${k("J")}<span>Next concern</span>${k("K")}<span>Previous concern</span>${k("F")}<span>Show or hide the guide tree</span>${k("S")}<span>Open the stack</span>
+        ${k("R", "then", "C")}<span>Finish review: Comment</span>${k("R", "then", "N")}<span>Finish review: ${S.host === "ado" ? "Wait for author" : "Request changes"}</span>${k("R", "then", "A")}<span>Finish review: Approve</span>${k("R", "then", "Y")}<span>Quick approve, no dialog</span>
+        ${k("Ctrl", "Enter")}<span>Add the comment to your review</span>${k("?")}<span>This sheet</span>${k("Esc")}<span>Close</span></div>
+        <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Close</button></div>`;
+    }
     o += `<div class="scrim" data-act="scrim"><div class="dialog" role="dialog" aria-modal="true">${d}</div></div>`;
   }
+  if (S.stackOpen) {
+    const head = `${ic("stack", 14)} Stack <span class="val faint">${S.layer + 1} of ${STACK.length}</span><span class="spacer"></span><button class="ibtn sm" data-act="close" aria-label="Close">${ic("x", 14)}</button>`;
+    o += narrow()
+      ? `<div class="sheetscrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="Stack"><div class="sheethead">${head}</div><div class="sheetbody">${stackPanel()}</div></div>`
+      : `<div class="catch" data-act="close"></div><div class="stackpop" role="dialog" aria-label="Stack" style="left:${S.stackPos.x}px;top:${S.stackPos.y}px"><div class="sphead">${head}</div>${stackPanel()}</div>`;
+  }
+  if (S.sheet === "dtree") o += `<div class="sheetscrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="Guide"><div class="sheethead">${S.view === "guide" ? "Guide" : "Files"} <span class="val faint" style="font-weight:400">${S.viewed.size} of ${ALL_HUNKS.length} viewed</span><span class="spacer"></span><button class="ibtn" data-act="close" aria-label="Close">${ic("x")}</button></div><div class="sheetbody">${treeRows(dItems(), true)}</div></div>`;
   if (S.menu) o += `<div class="menu" role="menu" style="left:${S.menu.x}px;top:${S.menu.y}px">${menuItems(S.menu.id)}</div>`;
+  if (S.chord) o += `<div class="chord" role="status"><span><span class="kbd">R</span>then</span><span><span class="kbd">C</span>Comment</span><span><span class="kbd">N</span>${S.host === "ado" ? "Wait for author" : "Request changes"}</span><span><span class="kbd">A</span>Approve</span><span><span class="kbd">Y</span>Quick approve</span></div>`;
   if (S.toast) o += `<div class="toast" role="status">${ic("check", 14)}${S.toast}</div>`;
   return o;
 }
@@ -1104,10 +1528,21 @@ const NOTES = {
     ["Narrow", "Panes become screens: navigator, then the concern with Previous and Next, then the review as a sheet from the Review button."],
     ["Trade-off", "The calmest diff and a steady J/K rhythm. But three panes are a second sidebar, the description is a tab away, and scanning across concerns means paging."],
     ["Performance", "Cheapest: only the open concern's hunks mount, so the DOM stays bounded on huge pull requests. A 900-hunk catch-all concern would still need windowing."]] },
+  D: { name: "D · Guide, versions", pitch: "B's one-column guide, plus Graphite's ideas: a versions bar, the stack in the page's flow, floating comments and a keyboard review.",
+    clickable: "Clickable: v1–v3 and Changes since your review, ▾ for each version's commits, stack chips and ‹ ›, Stack (or S), the status line's checks and approvals, the tree (or F) and its ticks, Viewed, “+” on a line, Comment now / Add to review (Ctrl+Enter), Reply, Finish review, R then C/N/A/Y, J/K, ? for the shortcut sheet, Ask an agent, Publish guide and Restack on Azure DevOps.", rows: [
+    ["Parts", "B's column: title, a one-line status (checks · approvals · merge order), the meta line, the stack strip, the clamped description, then a sticky versions bar over the guide and the conversation. No figures row and no contents list: the bar and the tree carry them."],
+    ["Versions", "v1 · v2 · v3 are pushes on GitHub and iterations on Azure DevOps; ▾ lists each one's commits, which gives commits a home. “Changes since your review · 7” narrows the guide to hunks changed since you reviewed v2 and folds untouched concerns into one line. The bar's second row always names the scope: this layer only, against #479."],
+    ["Stack", "In the page's flow, one line: main ← #479 ✓ ← #482 this ← #485 Draft, with status, your check (faded when a newer version exists) and ‹ ›. A quiet line warns that #479 changed since this layer was based on it; Azure DevOps links Restack in Review Deck, GitHub says it as text. S or Stack opens every layer with author, checks, lines and your review."],
+    ["Guide tree", "Collapsed, the right rail is a strip of concern ticks that fill as you mark hunks viewed; the ring is where you are. F opens titles, and the current concern lists its files. No surface, no border, only as tall as its content, so it doesn't read as a second sidebar."],
+    ["Comments", "At full width, threads, drafts and the composer float in a gutter beside their line, joined by a connector, and the line gets a mark on its right edge. Hover a card to light its line. At 420px, or a frame under 1,100px, they go back inline."],
+    ["Drafts and submit", "The composer offers Comment now or Add to review (Ctrl+Enter). The header button becomes Finish review · N. R then C, N or A opens it with that vote; R then Y approves at once. After sending: Next in stack: #485."],
+    ["Narrow", "The strip folds to Stack 2/3 ▾ with ‹ ›, and the stack opens as a bottom sheet. The bar keeps v1–v3 and Since review, and a tick bar opens the guide as a sheet. Comments go inline."],
+    ["Trade-off", "Keeps B's reading flow and fixes its gaps: commits live under versions, the stack is always visible, and a return visit is 7 hunks instead of 40. Costs a wider page (the gutter takes 272px) and more to learn (keys, two comment buttons)."],
+    ["Performance", "Floating cards cost one read pass and one write pass per change, scaled by comments, not hunks; with lazy-mounted hunks a card can only place once its hunk mounts. The since filter shrinks the DOM, but needs each version's changed hunks from the host, cached per version pair."]] },
 };
 function renderChrome() {
   document.getElementById("proto").innerHTML = `<b>Deck review page · prototype</b>
-    <span class="grp"><span class="lab">Layout</span><span class="pseg">${["A", "B", "C"].map((v) => `<button class="${S.variant === v ? "on" : ""}" data-act="variant" data-v="${v}">${NOTES[v].name}</button>`).join("")}</span></span>
+    <span class="grp"><span class="lab">Layout</span><span class="pseg">${["A", "B", "C", "D"].map((v) => `<button class="${S.variant === v ? "on" : ""}" data-act="variant" data-v="${v}">${NOTES[v].name}</button>`).join("")}</span></span>
     <span class="grp"><span class="lab">Host</span><span class="pseg">${[["github", "GitHub"], ["ado", "Azure DevOps"]].map(([v, l]) => `<button class="${S.host === v ? "on" : ""}" data-act="host" data-v="${v}">${l}</button>`).join("")}</span></span>
     <span class="grp"><span class="lab">Width</span><span class="pseg">${[["wide", "Wide"], ["narrow", "420px"]].map(([v, l]) => `<button class="${S.width === v ? "on" : ""}" data-act="width" data-v="${v}">${l}</button>`).join("")}</span></span>
     <button class="notes-btn" data-act="notes">${S.notes ? "Hide notes" : "Show notes"}</button>`;
@@ -1115,7 +1550,7 @@ function renderChrome() {
   const el = document.getElementById("notes");
   el.style.display = S.notes ? "" : "none";
   el.innerHTML = `<h2>${nt.name}: ${nt.pitch}</h2><dl class="cols">${nt.rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
-    <div style="margin-top:6px;color:#7a7150">Clickable: Guide/A–Z, stack layers, Viewed, “+” on a line to add a draft, Reply, Delete, Review/Submit, Ask an agent (consent once per repository), Publish guide on Azure DevOps. Hunks are static.</div>`;
+    <div style="margin-top:6px;color:#7a7150">${nt.clickable || `Clickable: Guide/A–Z, stack layers, Viewed, “+” on a line to add a draft, Reply, Delete, Review/Submit, Ask an agent (consent once per repository), Publish guide on Azure DevOps.`} Hunks are static.</div>`;
 }
 
 /* ================= Render loop ================= */
@@ -1127,12 +1562,18 @@ function render() {
   const stage = document.getElementById("stage");
   stage.classList.toggle("is-narrow", narrow());
   frame.className = "frame" + (narrow() ? " narrow" : "");
-  const v = { A: variantA, B: variantB, C: variantC }[S.variant]();
+  const v = { A: variantA, B: variantB, C: variantC, D: variantD }[S.variant]();
   frame.innerHTML = shell(v);
+  hotKey = null; S.dCur = null;
   document.documentElement.style.setProperty("--stage-h", frame.clientHeight + "px");
   frame.querySelectorAll("[data-scroll]").forEach((el) => { if (scrolls[el.dataset.scroll] != null) el.scrollTop = scrolls[el.dataset.scroll]; });
+  const ds = document.getElementById("dscroll");
+  if (ds) {
+    if (S._resetScroll) { ds.scrollTop = 0; S._resetScroll = false; }
+    layoutGutter(); ds.onscroll = trackD; trackD();
+  }
   const ta = document.getElementById("composer-ta");
-  if (ta && document.activeElement !== ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  if (ta && document.activeElement !== ta) { ta.focus({ preventScroll: !!ds }); ta.setSelectionRange(ta.value.length, ta.value.length); }
   const bs = document.getElementById("bscroll");
   if (bs) { bs.onscroll = trackRail; trackRail(); }
 }
@@ -1158,14 +1599,14 @@ function runAgent() {
 
 /* ================= Actions ================= */
 const ACT = {
-  variant: (v) => { S.variant = v; S.menu = S.sheet = S.dialog = null; S.composer = null; },
+  variant: (v) => { S.variant = v; S.menu = S.sheet = S.dialog = null; S.composer = null; S.stackOpen = false; },
   host: (v) => { S.host = v; },
   width: (v) => { S.width = v; S.menu = S.sheet = null; },
   notes: () => { S.notes = !S.notes; },
   tab: (v) => { S.tab = v; },
   view: (v) => { S.view = v; S.menu = null; },
-  layer: (v) => { S.layer = +v; S.menu = null; toast(`Opened ${host().id(STACK[S.layer].n)}, layer ${S.layer + 1} of ${STACK.length}`); },
-  layerStep: (v) => { S.layer = Math.max(0, Math.min(STACK.length - 1, S.layer + +v)); },
+  layer: (v) => { S.layer = +v; S.menu = null; S.stackOpen = false; S.dialog = null; S._resetScroll = true; toast(`Opened ${host().id(STACK[S.layer].n)}, layer ${S.layer + 1} of ${STACK.length}`); },
+  layerStep: (v) => { S.layer = Math.max(0, Math.min(STACK.length - 1, S.layer + +v)); S._resetScroll = true; if (S.variant === "D") toast(`Opened ${host().id(STACK[S.layer].n)}, layer ${S.layer + 1} of ${STACK.length}`); },
   goto: (v) => {
     S.sheet = null; S.menu = null;
     if (S.variant === "C") {
@@ -1194,6 +1635,30 @@ const ACT = {
     if (!text) return;
     S.drafts.push({ id: S.nextDraft++, h: null, l: null, text }); toast("Added to your draft review");
   },
+  postGeneral: () => {
+    const ta = document.querySelector('[data-input="general"]'); const text = ta && ta.value.trim();
+    if (!text) return;
+    S.posted.push(text); toast(`Posted to ${host().name}`);
+  },
+  postNow: () => {
+    const text = S.composerText.trim();
+    if (!text) return;
+    const c = { who: "You", ini: "AT", me: true, when: "just now", text };
+    if (S.composer.reply != null) S.threads[S.composer.reply].comments.push(c);
+    else S.threads.push({ h: S.composer.h, l: S.composer.l, status: "Active", comments: [c] });
+    S.composer = null; S.composerText = "";
+    toast(`Posted to ${host().name}`);
+  },
+  dver: (v) => {
+    S.dver = v; S.menu = null; render();
+    const ds = document.getElementById("dscroll"), top = document.getElementById("vbar-top");
+    if (ds && top && ds.scrollTop > top.offsetTop) { ds.scrollTop = top.offsetTop; trackD(); }
+    return false;
+  },
+  tree: () => { S.railOpen = !S.railOpen; },
+  stack: () => { toggleStack(); },
+  keys: () => { S.dialog = "keys"; },
+  restack: () => { S.stackOpen = false; toast("Opens Review Deck to restack · out of scope in Deck"); },
   delDraft: (v) => { S.drafts = S.drafts.filter((d) => d.id !== +v); },
   openSubmit: () => {
     if (S.variant === "C") { S.sideTab = "drafts"; if (narrow()) S.cPane = "side"; return; }
@@ -1203,6 +1668,7 @@ const ACT = {
   submit: () => {
     const n = S.drafts.length; const vote = host().votes.find((x) => x[0] === S.vote)[1];
     S.drafts = []; S.summary = ""; S.dialog = null; if (S.variant === "C" && narrow()) S.cPane = "concern";
+    if (S.variant === "D") { S.myReview[S.layer] = { state: vote, ver: LAYER_D[S.layer].latest }; S.finished = { vote, n }; S.dialog = "finished"; return; }
     toast(`Review submitted to ${host().name} · ${plural(n, "comment")} · ${vote}`);
   },
   discard: () => { S.dialog = "discard"; },
@@ -1221,7 +1687,7 @@ const ACT = {
     S.menu = { id: v, x, y: r.bottom - fr.top + 4 };
   },
   sheet: (v) => { S.sheet = v; },
-  close: () => { S.dialog = null; S.sheet = null; S.menu = null; },
+  close: () => { S.dialog = null; S.sheet = null; S.menu = null; S.stackOpen = false; },
   scrim: (_, el, e) => { if (e.target === el) S.dialog = null; else return false; },
   pick: (v) => { if (S.view === "az") S.file = +v; else S.concern = +v; S.cPane = "concern"; resetCenter(); },
   stepPick: (v) => { const max = (S.view === "az" ? FILE_LIST.length : 5) - 1; if (S.view === "az") S.file = Math.max(0, Math.min(max, S.file + +v)); else S.concern = Math.max(0, Math.min(max, S.concern + +v)); resetCenter(); },
@@ -1256,15 +1722,59 @@ document.addEventListener("input", (e) => {
   if (k === "summary") S.summary = e.target.value;
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { if (S.dialog || S.menu || S.sheet) { S.dialog = S.menu = S.sheet = null; } else if (S.composer) S.composer = null; else return; render(); return; }
+  if (e.key === "Escape") { if (S.dialog || S.menu || S.sheet || S.stackOpen || S.chord) { S.dialog = S.menu = S.sheet = S.chord = null; S.stackOpen = false; } else if (S.composer) S.composer = null; else return; render(); return; }
   if (e.target.closest("textarea, input")) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && S.composer) { ACT.saveDraft(); render(); }
     return;
   }
   if (S.variant === "C" && (e.key === "j" || e.key === "k")) { ACT.stepPick(e.key === "j" ? 1 : -1); render(); }
+  if (S.variant === "D") keyD(e);
 });
-addEventListener("resize", () => document.documentElement.style.setProperty("--stage-h", document.getElementById("frame").clientHeight + "px"));
+let chordTimer;
+function keyD(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey || S.dialog) return;
+  const k = e.key.toLowerCase();
+  if (S.chord) {
+    clearTimeout(chordTimer); S.chord = null; e.preventDefault();
+    const votes = { c: "comment", n: S.host === "ado" ? "wait" : "changes", a: "approve" };
+    if (votes[k]) { S.vote = votes[k]; S.dialog = "submit"; }
+    else if (k === "y") { S.vote = "approve"; ACT.submit(); }
+    render(); return;
+  }
+  if (e.key === "?") { S.dialog = "keys"; S.stackOpen = false; render(); return; }
+  if (k === "j" || k === "k") { e.preventDefault(); stepSection(k === "j" ? 1 : -1); return; }
+  if (k === "f") { if (narrow()) S.sheet = S.sheet === "dtree" ? null : "dtree"; else S.railOpen = !S.railOpen; render(); return; }
+  if (k === "s") { toggleStack(); render(); return; }
+  if (k === "r") { S.chord = "r"; S.stackOpen = false; S.menu = null; chordTimer = setTimeout(() => { S.chord = null; render(); }, 2500); render(); }
+}
+let hotKey = null;
+document.addEventListener("mouseover", (e) => {
+  if (S.variant !== "D" || !document.getElementById("gutter")) return;
+  const c = e.target.closest(".fcard, .ln.anch");
+  const k = c ? c.dataset.anchor || c.dataset.line : null;
+  if (k === hotKey) return;
+  hotKey = k;
+  document.querySelectorAll(".hot").forEach((x) => x.classList.remove("hot"));
+  if (k) document.querySelectorAll(`[data-anchor="${k}"], [data-line="${k}"]`).forEach((x) => x.classList.add("hot"));
+});
+let wasFloating = null;
+addEventListener("resize", () => {
+  document.documentElement.style.setProperty("--stage-h", document.getElementById("frame").clientHeight + "px");
+  if (S.variant !== "D") return;
+  if (floating() !== wasFloating) render(); else layoutGutter();
+  wasFloating = floating();
+});
+// Deep link for reviews and headless checks: #layout=D&host=ado&width=narrow
+(() => {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (["A", "B", "C", "D"].includes(q.get("layout"))) S.variant = q.get("layout");
+  if (["github", "ado"].includes(q.get("host"))) S.host = q.get("host");
+  if (["wide", "narrow"].includes(q.get("width"))) S.width = q.get("width");
+  if (q.get("notes") === "0") S.notes = false;
+})();
 render();
+wasFloating = floating();
+if (document.fonts) document.fonts.ready.then(() => { if (S.variant === "D") layoutGutter(); });
 </script>
 </body>
 </html>
