@@ -177,9 +177,9 @@ export const RECONCILIATION_TOLERANCE_MS = 60_000;
  * Whether what the user committed on the project matches what the source
  * has for them, task by task. It compares the committed copies the source
  * could have, sent before `asOf` and not as local time, with each task's
- * `myHours`. A task without `myHours` is unknown, not zero: it is left out of
- * the comparison and of both totals. With `me.hoursSince`, only copies dated
- * from that day count. Null when the source can't give the user's hours.
+ * `myHours`. A task without `myHours`, or one that left the source, is
+ * unknown, not zero: it is left out of the comparison and of both totals.
+ * With `me.hoursSince`, only copies dated from that day count. Null when the source can't give the user's hours.
  */
 export function reconciliation(
   project: Pick<LocalProject, "_id" | "tasks">,
@@ -217,7 +217,11 @@ export function reconciliation(
   for (const task of project.tasks) {
     const committed = committedByTask.get(task._id);
     committedByTask.delete(task._id);
-    const myHours = task.source?.myHours;
+    // A task that left the source keeps the hours of the report before, so
+    // its hours are unknown now, like a task the source gives none for.
+    const myHours = task.archivedByMissingSync
+      ? undefined
+      : task.source?.myHours;
     if (myHours === undefined) continue;
     const taskSourceMs = Math.round(myHours * HOUR_MS);
     sourceMs += taskSourceMs;

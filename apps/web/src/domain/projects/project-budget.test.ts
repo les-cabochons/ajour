@@ -377,6 +377,32 @@ describe("reconciliation", () => {
     });
   });
 
+  it("treats the hours a task kept from an earlier snapshot, once it left the source, as unknown", () => {
+    const entries = [
+      entry({ commit: committed(BEFORE, { durationMs: 5.25 * HOUR }) }),
+    ];
+    // Export left the source; its myHours are from the report before.
+    const gone = {
+      ...managed,
+      tasks: managed.tasks.map((task) =>
+        task._id === "export"
+          ? {
+              ...task,
+              status: "archived" as const,
+              archivedByMissingSync: true as const,
+              source: { remoteId: "1002", assigned: false, myHours: 5 },
+            }
+          : task,
+      ),
+    };
+
+    expect(reconciliation(gone, entries, me, AS_OF)).toMatchObject({
+      sourceMs: 5.25 * HOUR,
+      differenceMs: 0,
+      tasks: [],
+    });
+  });
+
   it("shows time committed on tasks the project no longer has as one row", () => {
     const entries = [
       entry({ commit: committed(BEFORE, { durationMs: 5.25 * HOUR }) }),
