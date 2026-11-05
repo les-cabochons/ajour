@@ -8,83 +8,103 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
-const version =
-  process.env.RELEASE_TAG?.replace(/^v/, "") ||
-  JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
-if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/.test(version))
-  throw new Error("Invalid release version");
-const os = { win32: "windows", darwin: "macos", linux: "linux" }[
-  process.platform
-];
-const name = `ajour-${version}-${os}-${process.arch}`;
-const stage = path.join(root, "out", name);
-await rm(stage, { recursive: true, force: true });
-await mkdir(stage, { recursive: true });
-await cp(
-  path.join(root, "out", process.platform === "win32" ? "ajour.exe" : "ajour"),
-  path.join(stage, process.platform === "win32" ? "ajour.exe" : "ajour"),
-);
-// The CLI package build owns dist/man, including its man1 directory (#557).
-try {
-  await readdir(path.join(root, "dist/man"));
-  await cp(path.join(root, "dist/man"), path.join(stage, "man"), {
-    recursive: true,
-  });
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
+/**
+ * The binary's name in a platform's archive. It's the only entry that
+ * differs between platforms, so the Windows uninstaller's list for the
+ * Linux build in bin\linux derives from it (#605).
+ * @param {NodeJS.Platform} platform
+ */
+export function binaryName(platform) {
+  return platform === "win32" ? "ajour.exe" : "ajour";
 }
-const binary = path.join(
-  stage,
-  process.platform === "win32" ? "ajour.exe" : "ajour",
-);
-if (process.platform !== "win32" && (await stat(binary)).mode & 0o022) {
-  throw new Error(
-    `${binary} is writable by group or others. Build it with sea.mjs.`,
+
+async function archive() {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const version =
+    process.env.RELEASE_TAG?.replace(/^v/, "") ||
+    JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/.test(version))
+    throw new Error("Invalid release version");
+  const os = { win32: "windows", darwin: "macos", linux: "linux" }[
+    process.platform
+  ];
+  const name = `ajour-${version}-${os}-${process.arch}`;
+  const stage = path.join(root, "out", name);
+  await rm(stage, { recursive: true, force: true });
+  await mkdir(stage, { recursive: true });
+  await cp(
+    path.join(root, "out", binaryName(process.platform)),
+    path.join(stage, binaryName(process.platform)),
   );
-}
-for (const [shell, filename] of [
-  ["bash", "ajour.bash"],
-  ["zsh", "_ajour"],
-  ["fish", "ajour.fish"],
-]) {
-  let output;
+  // The CLI package build owns dist/man, including its man1 directory (#557).
   try {
-    output = execFileSync(binary, ["completion", shell], {
-      encoding: "utf8",
-      env: { ...process.env, AJOUR_URL: "", AJOUR_TOKEN: "" },
+    await readdir(path.join(root, "dist/man"));
+    await cp(path.join(root, "dist/man"), path.join(stage, "man"), {
+      recursive: true,
     });
   } catch (error) {
-    // Older CLI versions do not have completion yet. Other errors must fail packaging.
-    if (
-      error.status === 2 &&
-      /Unknown command "completion"|Unsupported shell|Unknown shell|completion takes /.test(
-        String(error.stderr),
-      )
-    ) {
-      process.stdout.write(`Skipping unsupported completion shell: ${shell}\n`);
-      continue;
-    }
-    throw error;
+    if (error.code !== "ENOENT") throw error;
   }
-  await mkdir(path.join(stage, "completions"), { recursive: true });
-  await writeFile(path.join(stage, "completions", filename), output);
+  const binary = path.join(stage, binaryName(process.platform));
+  if (process.platform !== "win32" && (await stat(binary)).mode & 0o022) {
+    throw new Error(
+      `${binary} is writable by group or others. Build it with sea.mjs.`,
+    );
+  }
+  for (const [shell, filename] of [
+    ["bash", "ajour.bash"],
+    ["zsh", "_ajour"],
+    ["fish", "ajour.fish"],
+  ]) {
+    let output;
+    try {
+      output = execFileSync(binary, ["completion", shell], {
+        encoding: "utf8",
+        env: { ...process.env, AJOUR_URL: "", AJOUR_TOKEN: "" },
+      });
+    } catch (error) {
+      // Older CLI versions do not have completion yet. Other errors must fail packaging.
+      if (
+        error.status === 2 &&
+        /Unknown command "completion"|Unsupported shell|Unknown shell|completion takes /.test(
+          String(error.stderr),
+        )
+      ) {
+        process.stdout.write(
+          `Skipping unsupported completion shell: ${shell}\n`,
+        );
+        continue;
+      }
+      throw error;
+    }
+    await mkdir(path.join(stage, "completions"), { recursive: true });
+    await writeFile(path.join(stage, "completions", filename), output);
+  }
+  const artifacts = path.join(root, "out/archives");
+  await mkdir(artifacts, { recursive: true });
+  if (process.platform === "win32") {
+    execFileSync(
+      "tar",
+      ["-a", "-cf", path.join(artifacts, `${name}.zip`), "-C", stage, "."],
+      { stdio: "inherit" },
+    );
+  } else {
+    execFileSync(
+      "tar",
+      ["-czf", path.join(artifacts, `${name}.tar.gz`), "-C", stage, "."],
+      { stdio: "inherit" },
+    );
+  }
 }
-const artifacts = path.join(root, "out/archives");
-await mkdir(artifacts, { recursive: true });
-if (process.platform === "win32") {
-  execFileSync(
-    "tar",
-    ["-a", "-cf", path.join(artifacts, `${name}.zip`), "-C", stage, "."],
-    { stdio: "inherit" },
-  );
-} else {
-  execFileSync(
-    "tar",
-    ["-czf", path.join(artifacts, `${name}.tar.gz`), "-C", stage, "."],
-    { stdio: "inherit" },
-  );
-}
+
+// Run as a script. Imported, it only names the binary. Node runs the main
+// module from its real path, so a symlinked folder (macOS's /var) matches.
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  await archive();

@@ -22,7 +22,7 @@ On Linux, install from the archive below.
 
 Press **Remove** in Settings to take the command off your PATH and delete its install folder. There is no confirmation dialog. The row says "Removing ajour…", then "Not installed." Errors appear inline with **Retry**. Your CLI connection token and Undo state stay on your computer. On macOS, removal may ask for your password. Cancelling leaves everything installed.
 
-Uninstalling Ajour on Windows removes the command too, but not yet the Linux build for [WSL](#wsl) in `%LOCALAPPDATA%\Ajour\bin\linux` ([#605](https://github.com/les-cabochons/ajour/issues/605)). Press **Remove** before uninstalling to delete both. An app update keeps the command. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
+Uninstalling Ajour on Windows removes the command too, with the Linux build for [WSL](#wsl) in `%LOCALAPPDATA%\Ajour\bin\linux`. It doesn't enter your WSL distros, so each `~/.local/bin/ajour` link that **Add** made is left pointing at nothing. Press **Remove** in Settings before uninstalling to delete those links too, or delete one later in that distro with `rm ~/.local/bin/ajour`. An app update keeps the command. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
 
 ## Download
 
@@ -104,7 +104,7 @@ ajour status
 
 If Settings says to add `~/.local/bin` to your PATH, add it in your shell's profile, as in [Linux and macOS](#linux-and-macos). Ubuntu and Debian add it on their own once the folder exists. If something else is already at `~/.local/bin/ajour`, Ajour leaves it there and says so. Remove it, then press **Add** again.
 
-Removing the `ajour` command deletes the Linux build too, and leaves each distro's `~/.local/bin/ajour` link pointing at nothing. Delete it there with `rm ~/.local/bin/ajour`.
+Press **Remove** next to a distro to delete its `~/.local/bin/ajour` link. There is no confirmation dialog: **Add** puts it back. Ajour deletes the link only when it points at Ajour's Linux build, and leaves anything else there alone. Removing it from the last distro deletes the Linux build too. Removing the `ajour` command removes it from every distro it was added to. If a distro doesn't start, Settings says "ajour was removed, but ~/.local/bin/ajour in Ubuntu couldn't be. It now points at nothing." Delete it there with `rm ~/.local/bin/ajour`.
 
 ## Check it
 

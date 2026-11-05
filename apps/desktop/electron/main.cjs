@@ -711,6 +711,14 @@ ipc.handle("ajour:add-cli-command-wsl", async (event, options) => {
   );
 });
 
+ipc.handle("ajour:remove-cli-command-wsl", async (event, options) => {
+  assertActiveDesktopWindow(event, "remove the ajour command from WSL");
+  return await cliCommand.removeWsl(
+    typeof options?.distro === "string" ? options.distro : "",
+    { unit: events.current() },
+  );
+});
+
 ipc.handle("ajour:remove-cli-command", async (event) => {
   assertActiveDesktopWindow(event, "remove the ajour command");
   return await cliCommand.remove({ unit: events.current() });
