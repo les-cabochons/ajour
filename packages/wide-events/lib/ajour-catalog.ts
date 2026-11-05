@@ -1729,6 +1729,39 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** The installed command follows the app version at launch (#570). */
+    "cli_command.follow": {
+      kinds: ["job"],
+      reasons: [
+        "follow_failed",
+        "invalid_signature",
+        "development_build",
+        "unsupported_platform",
+        "missing_release",
+        "missing_asset",
+        "missing_digest",
+        "too_large",
+        "url_not_allowed",
+        "redirect_off_https",
+        "digest_mismatch",
+        "escaping_entry",
+        "invalid_archive",
+        "wrong_version",
+      ],
+      fields: {
+        cli_command: {
+          version: operational(),
+          platform: operational(),
+          arch: operational(),
+          result: operational<"installed" | "refused" | "failed" | "joined">(),
+          /** The asset's size, from GitHub. */
+          download_bytes: operational<number>(),
+          download_ms: operational<number>(),
+          /** False when the folder was on the PATH already. */
+          path_added: operational<boolean>(),
+        },
+      },
+    },
     /**
      * Telling running programs the user Path changed, after Ajour wrote it
      * for the ajour command (#568). A failure leaves the install in place:

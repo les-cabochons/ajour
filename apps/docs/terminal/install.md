@@ -16,6 +16,8 @@ On macOS, Ajour uses `~/Library/Application Support/Ajour/bin/` and links `/usr/
 
 If the link goes missing, Ajour repairs it at launch only when no password is needed. Otherwise Settings shows the reason and **Retry**, which can ask for your password.
 
+The command updates with Ajour. After an app update, Ajour downloads and checks the matching command in the background. If the download fails, the installed version keeps working and Settings shows the reason with **Retry**.
+
 On Linux, install from the archive below.
 
 ## Download

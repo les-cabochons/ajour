@@ -70,6 +70,8 @@ function escapesFolder(name) {
  *   development: boolean,
  *   releaseOrigin?: string,
  *   allowAdHocSignature?: boolean,
+ *   events?: { start(name: string, options: any): any },
+ *   followRetryMs?: number,
  *   paths: { installDir: string, recordFile: string, tar: string },
  *   link: {
  *     add(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean }>,
@@ -90,6 +92,8 @@ function createCliCommandController({
   releaseOrigin,
   paths,
   link,
+  events,
+  followRetryMs,
   allowAdHocSignature = false,
   now = Date.now,
   env = process.env,
@@ -118,6 +122,18 @@ function createCliCommandController({
   /** Set after an install in this launch, for "Open a new terminal". */
   let newlyInstalled = false;
   let running = null;
+  let following = false;
+  let retryTimer;
+  let missingAttempts = 0;
+  const retryDelay = (first) =>
+    development &&
+    localOrigin &&
+    Number.isFinite(followRetryMs) &&
+    followRetryMs > 0
+      ? followRetryMs
+      : first
+        ? 5 * 60_000
+        : 60 * 60_000;
   let reconciliation = null;
   let initialized = false;
   /** Aborts a download when Ajour quits; no install starts after. */
@@ -198,7 +214,13 @@ function createCliCommandController({
   }
 
   function publishInstalling(phase, progress = null) {
-    transient = { status: "installing", phase, progress, error: null };
+    transient = {
+      status: "installing",
+      phase,
+      progress,
+      error: null,
+      ...(following ? { pending: appVersion } : {}),
+    };
     emit({ ...transient });
   }
 
@@ -673,7 +695,7 @@ function createCliCommandController({
     }
   }
 
-  async function runInstall(unit) {
+  async function runInstall(unit, follow = false, interactive = !follow) {
     const report = { platform, arch, version: appVersion };
     const started = now();
     const id = randomUUID();
@@ -683,7 +705,7 @@ function createCliCommandController({
     let linkAdded = false;
     try {
       if (reconciliation) await reconciliation;
-      await reconcileDisk(platform === "darwin");
+      await reconcileDisk(platform === "darwin" && interactive);
       initialized = true;
       // Retry repairs an existing commit without another download or swap.
       if (
@@ -771,8 +793,7 @@ function createCliCommandController({
         await fs.rename(path.join(unpacked, name), targetOf(name));
       }
       if (platform === "darwin")
-        linkAdded = (await link.add(paths.installDir, { interactive: true }))
-          .added;
+        linkAdded = (await link.add(paths.installDir, { interactive })).added;
       await writeRecord({
         version: appVersion,
         binaryPath: targetOf(binary),
@@ -783,7 +804,8 @@ function createCliCommandController({
       const { added } = await reconcileDisk();
       report.path_added = added || linkAdded;
       report.result = "installed";
-      newlyInstalled = true;
+      newlyInstalled = !follow;
+      missingAttempts = 0;
       transient = null;
     } catch (error) {
       initialized = true;
@@ -798,9 +820,28 @@ function createCliCommandController({
       if (error.reason) {
         unit?.refuse(error.reason);
       } else {
-        unit?.fail(error);
+        unit?.fail(error, follow ? { reason: "follow_failed" } : undefined);
       }
-      transient = { status: "error", progress: null, error: message };
+      transient = {
+        status: "error",
+        progress: null,
+        error: message,
+        ...(follow ? { pending: appVersion } : {}),
+      };
+      if (
+        follow &&
+        error.reason === "missing_asset" &&
+        !quitting.signal.aborted
+      ) {
+        retryTimer = setTimeout(
+          () => {
+            retryTimer = undefined;
+            void followAppVersion().catch(() => undefined);
+          },
+          retryDelay(missingAttempts++ === 0),
+        );
+        retryTimer.unref?.();
+      }
     } finally {
       unit?.set({ cli_command: report });
     }
@@ -809,7 +850,38 @@ function createCliCommandController({
     return state;
   }
 
+  /** Follows only an existing install, through the same checks, without a prompt. */
+  function followAppVersion(interactive = false) {
+    if (unsupportedReason || quitting.signal.aborted) return settledState();
+    if (running) return running;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    following = true;
+    running = (async () => {
+      if (!initialized) await reconcileState();
+      const record = await readRecord();
+      if (!record || (record.version === appVersion && !transient?.pending))
+        return settledState();
+      const unit = events?.start("cli_command.follow", {
+        kind: "job",
+        trigger: "system",
+        detached: true,
+      });
+      try {
+        return await runInstall(unit, true, interactive);
+      } finally {
+        unit?.end();
+      }
+    })().finally(() => {
+      running = null;
+      following = false;
+    });
+    return running;
+  }
+
   return {
+    followAppVersion,
+
     async state() {
       return await settledState();
     },
@@ -824,6 +896,9 @@ function createCliCommandController({
         return settledState();
       }
       if (quitting.signal.aborted) return settledState();
+      if (transient?.pending) return followAppVersion(true);
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
       if (running) {
         unit?.set({ cli_command: { result: "joined" } });
         return running;
@@ -849,6 +924,8 @@ function createCliCommandController({
      */
     async stop(timeoutMs = STOP_TIMEOUT_MS) {
       quitting.abort();
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
       const settling = running ?? reconciliation;
       if (!settling) return;
       let timer;
