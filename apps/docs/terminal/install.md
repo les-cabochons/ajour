@@ -22,7 +22,7 @@ On Linux, install from the archive below.
 
 Press **Remove** in Settings to take the command off your PATH and delete its install folder. There is no confirmation dialog. The row says "Removing ajour…", then "Not installed." Errors appear inline with **Retry**. Your CLI connection token and Undo state stay on your computer. On macOS, removal may ask for your password. Cancelling leaves everything installed.
 
-Uninstalling Ajour on Windows removes the command too. An app update keeps it. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
+Uninstalling Ajour on Windows removes the command too, but not yet the Linux build for [WSL](#wsl) in `%LOCALAPPDATA%\Ajour\bin\linux` ([#605](https://github.com/les-cabochons/ajour/issues/605)). Press **Remove** before uninstalling to delete both. An app update keeps the command. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
 
 ## Download
 
@@ -83,36 +83,28 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 You can also add the folder in **Edit environment variables for your account**. `ajour` works in PowerShell, Command Prompt and Git Bash.
 
-## WSL 2
+## WSL
 
-Run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution.
+With the `ajour` command installed from Ajour on Windows, **Settings › General › Terminal** lists your WSL distros under **ajour command**. Press **Add** next to a distro. Ajour downloads the Linux build of its own version into `%LOCALAPPDATA%\Ajour\bin\linux`, checks it inside that distro, and links `~/.local/bin/ajour` to it. Docker Desktop's distros aren't listed.
 
-The CLI connects to the Windows app at `http://127.0.0.1:8787`. Use [mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) so WSL can reach that Windows loopback address. It requires Windows 11 22H2 or newer and a current WSL installation.
+Add needs WSL 2. The Linux `ajour` can't start in WSL 1 yet ([#611](https://github.com/les-cabochons/ajour/issues/611)), so a WSL 1 distro shows "WSL 1 isn't supported." with no **Add**. To use it, convert the distro to WSL 2 in **Windows PowerShell**, replacing `Ubuntu` with its name, then reopen Settings:
 
-1. In Windows, open `%USERPROFILE%\.wslconfig`, or create it if it does not exist. Add the following setting. If the file already has a `[wsl2]` section, add or update `networkingMode` in that section and keep the other settings:
+```powershell
+wsl --set-version Ubuntu 2
+```
 
-   ```ini
-   [wsl2]
-   networkingMode=mirrored
-   ```
+Open a new terminal in that distro, then pair it once. Each distro keeps its own token:
 
-2. Save your work in every WSL distribution, then run this in **Windows PowerShell**. It stops all running WSL distributions:
+```sh
+ajour connect
+ajour status
+```
 
-   ```powershell
-   wsl --shutdown
-   ```
+`ajour` in WSL reaches the Windows app through `ajour.exe`, so it works whatever WSL's networking mode is, with nothing to set up. A Linux `ajour` installed by hand from the archive doesn't do that, so use **Add**.
 
-3. Reopen your WSL terminal. In the Windows Ajour app, open **Settings › MCP**, turn on **Allow agents**, and add a client named `WSL terminal`. Copy the token shown once.
-4. In **WSL**, pair the CLI and check the connection:
+If Settings says to add `~/.local/bin` to your PATH, add it in your shell's profile, as in [Linux and macOS](#linux-and-macos). Ubuntu and Debian add it on their own once the folder exists. If something else is already at `~/.local/bin/ajour`, Ajour leaves it there and says so. Remove it, then press **Add** again.
 
-   ```sh
-   ajour connect
-   ajour status
-   ```
-
-Paste the token when `ajour connect` asks for it. WSL saves its own token under `$XDG_CONFIG_HOME/ajour/token`, or `~/.config/ajour/token` by default. Leave `AJOUR_URL` unset to use `http://127.0.0.1:8787`.
-
-If Ajour is out of reach, check that the Windows app is running, **Allow agents** is on, and WSL restarted after the networking change. WSL 2's default NAT mode cannot reach Ajour through the Windows host IP because Ajour listens on loopback. Changing `AJOUR_URL` to that IP alone does not fix the connection.
+Removing the `ajour` command deletes the Linux build too, and leaves each distro's `~/.local/bin/ajour` link pointing at nothing. Delete it there with `rm ~/.local/bin/ajour`.
 
 ## Check it
 
