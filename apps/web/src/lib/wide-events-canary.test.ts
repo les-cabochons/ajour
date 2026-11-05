@@ -24,7 +24,7 @@ import {
  * marker: notes, titles, descriptions, comment bodies, names, URLs, paths and
  * secrets, from the user, from a source tool through its plugin and from an
  * agent. Representative flows then run through the renderer's store, its jobs
- * and its local API client, into the real local API and its plugin worker.
+ * and its local API client, into the real local API and its plugin runtime.
  * No event of any runtime may hold the marker, in a key or a value, except
  * the error message of a `plugin_operation` or `request` event, which ADR 0011
  * lets keep what a plugin echoes (see MARKER_ALLOWED_IN). A plugin that echoes the connection's secret or URL in
@@ -84,20 +84,23 @@ const canaryPlugin: TestPlugin = {
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
 const person = { id: "person-" + MARKER, displayName: "Ana " + MARKER, email: MARKER + "@example.test" };
-function check(connection) {
+async function check(connection) {
   const { siteUrl } = connection.config;
   if (connection.config.token !== undefined) {
     throw new Error("The plugin received a credential.");
   }
   if (connection.label.endsWith("-revoked")) {
-    throw new Error("The tracker refused " + connection.label + " at " + siteUrl + "/rest/api");
+    // The tracker's answer echoes the credential it was sent, which the
+    // plugin never held: it comes back through the broker, scrubbed.
+    const response = await ajour.http({ connectionId: connection.id, method: "GET", path: "/" });
+    throw new Error("The tracker refused " + connection.label + " at " + siteUrl + "/rest/api: " + await response.text());
   }
 }
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
-  check(connection);
+  await check(connection);
   if (connection.label.endsWith("-garbled")) {
     return { items: [{ title: "Garbled " + MARKER, sourceId: MARKER }] };
   }
@@ -117,23 +120,23 @@ export async function syncConnection(connection) {
   };
 }
 export async function listSettleStates(connection) {
-  check(connection);
+  await check(connection);
   return { states: [{ name: "Done " + MARKER, category: "Done " + MARKER, done: true }] };
 }
 export async function writeSettle(connection, request) {
-  check(connection);
+  await check(connection);
   return { state: request.state, stateCategory: "Done " + MARKER, stateDone: true };
 }
 export async function readDescription(connection) {
-  check(connection);
+  await check(connection);
   return { description: { text: "Description " + MARKER } };
 }
 export async function writeDescription(connection, request) {
-  check(connection);
+  await check(connection);
   return { outcome: "written", description: { text: request.text } };
 }
 export async function listItemComments(connection) {
-  check(connection);
+  await check(connection);
   return {
     viewer: person,
     comments: [{ id: "comment-" + MARKER, author: person, body: "Body " + MARKER, createdAt: "2026-10-13T10:00:00Z" }],
@@ -141,7 +144,7 @@ export async function listItemComments(connection) {
   };
 }
 export async function postItemComment(connection, request) {
-  check(connection);
+  await check(connection);
   if (request.body.includes("refuse me")) {
     throw new Error("Could not post to " + connection.config.siteUrl);
   }
@@ -151,23 +154,23 @@ export async function postItemComment(connection, request) {
   return { comment: { id: "comment-" + MARKER + "-2", author: person, body: request.body, createdAt: "2026-10-17T10:00:00Z" } };
 }
 export async function editItemComment(connection, request) {
-  check(connection);
+  await check(connection);
   return { comment: { id: request.commentId, author: person, body: request.body, createdAt: "2026-10-17T10:00:00Z", updatedAt: "2026-10-17T11:00:00Z" } };
 }
 export async function deleteItemComment(connection) {
-  check(connection);
+  await check(connection);
   return {};
 }
 export async function setItemCommentReaction(connection, request) {
-  check(connection);
+  await check(connection);
   return { reactions: [{ reaction: request.reaction, count: 1, viewerReacted: true }] };
 }
 export async function searchItemPeople(connection, request) {
-  check(connection);
+  await check(connection);
   return { people: [{ ...person, displayName: person.displayName + request.query }] };
 }
 export async function listCalendarEvents(connection, request) {
-  check(connection);
+  await check(connection);
   const day = Date.parse(request.from + "T00:00:00Z");
   return {
     events: [{
@@ -190,7 +193,7 @@ function summary(number) {
   };
 }
 export async function syncPullRequests(connection) {
-  check(connection);
+  await check(connection);
   return {
     viewer: user, instanceUrl: "https://git.example.test",
     pullRequests: [{
@@ -202,14 +205,14 @@ export async function syncPullRequests(connection) {
   };
 }
 export async function getPullRequestContent(connection) {
-  check(connection);
+  await check(connection);
   return {
     headSha: "sha7", baseSha: "base7",
     files: [{ path: CHANGED_PATH, status: "modified", additions: 1, deletions: 0, patch: "+ Patch " + MARKER, binary: false }],
   };
 }
 export async function getFileContent(connection, request) {
-  check(connection);
+  await check(connection);
   if (request.sha === "missing") {
     throw new Error("Cannot read " + request.path + " in " + request.repository);
   }
@@ -219,7 +222,7 @@ export async function getFileContent(connection, request) {
   return { kind: "text", content: "File " + MARKER };
 }
 export async function getPullRequestConversation(connection) {
-  check(connection);
+  await check(connection);
   return {
     description: "Description " + MARKER,
     timeline: [
@@ -234,41 +237,41 @@ export async function getPullRequestConversation(connection) {
   };
 }
 export async function browsePullRequests(connection) {
-  check(connection);
+  await check(connection);
   return { items: [summary(7)] };
 }
 export async function submitReview(connection, request) {
-  check(connection);
+  await check(connection);
   if (request.body && request.body.includes("refuse")) {
     throw new Error("Review rejected: " + request.body + " with " + connection.config.siteUrl);
   }
   return { reviewId: "review-" + MARKER };
 }
 export async function postComment(connection, request) {
-  check(connection);
+  await check(connection);
   if (request.body.includes("refuse")) {
     throw new Error("Cannot comment on " + request.repository + "#" + request.number);
   }
   return { commentId: "comment-" + MARKER };
 }
 export async function replyToThread(connection) {
-  check(connection);
+  await check(connection);
   return { commentId: "reply-" + MARKER };
 }
 export async function setThreadResolved(connection, request) {
-  check(connection);
+  await check(connection);
   return { resolved: request.resolved };
 }
 export async function setFileViewed(connection, request) {
-  check(connection);
+  await check(connection);
   return { viewed: request.viewed };
 }
 export async function updatePullRequest(connection, request) {
-  check(connection);
+  await check(connection);
   return { title: request.title ?? "Title " + MARKER, draft: false };
 }
 export async function mergePullRequest(connection) {
-  check(connection);
+  await check(connection);
   return { mergeCommitSha: "merge-" + MARKER };
 }
 `,
@@ -1131,9 +1134,10 @@ describe("the privacy canary", () => {
         event.outcome_reason === "plugin_error",
     );
     // The scrubbed message stays: it says what failed, without the secret
-    // or the URL.
+    // or the URL. The tracker's answer echoed the credential it was sent, and
+    // the broker handed it back as [secret].
     expect(pluginFailure?.error?.message).toBe(
-      `The tracker refused Work ${MARKER}-revoked at [url]`,
+      `The tracker refused Work ${MARKER}-revoked at [url]: {"error":"Bad credentials: Bearer [secret]"}`,
     );
     // What a plugin echoes stays too, and is the only place the marker may be.
     const messages = (name: string) =>

@@ -15,6 +15,10 @@ import {
 import { WINDOW_TOKEN_HEADER } from "../../../api/src/window-token.ts";
 import { MemorySecretVault } from "../../../api/src/test-support/memory-secret-vault.ts";
 import { InProcessPluginRuntime } from "../../../api/src/test-support/in-process-plugin-runtime.ts";
+import type {
+  BrokerResolver,
+  BrokerTransport,
+} from "../../../api/src/credential-broker.ts";
 
 /*
  * The real local API, started on a free port with a temporary state file
@@ -44,6 +48,34 @@ export const fetchAsTheApp: typeof fetch = (input, init) => {
     headers.set(WINDOW_TOKEN_HEADER, WINDOW_TOKEN);
   }
   return nodeFetch(input, { ...init, headers });
+};
+
+/** A public documentation address: the fixture services all live here. */
+const PUBLIC_ADDRESS = "93.184.216.34";
+
+/**
+ * The fixture network a test plugin's requests go through, past the real
+ * broker. Every service refuses the request and echoes the credential it was
+ * sent in its answer, as a careless service does, so a plugin that puts the
+ * answer in an error carries the secret out. The broker scrubs the answer;
+ * the events must stay clean either way.
+ */
+export const echoingTransport: BrokerTransport = {
+  send: async (request) => ({
+    status: 401,
+    headers: { "content-type": "application/json" },
+    body: new TextEncoder().encode(
+      JSON.stringify({
+        error: `Bad credentials: ${request.headers.authorization ?? ""}`,
+      }),
+    ),
+    remoteAddress: PUBLIC_ADDRESS,
+  }),
+};
+
+/** Every host resolves to a public address. */
+const publicResolver: BrokerResolver = {
+  resolve: async () => ({ addresses: [PUBLIC_ADDRESS] }),
 };
 
 /** The `jira` plugin's code. */
@@ -140,6 +172,8 @@ export async function startLocalApi({
     developmentPluginDirectories: [await writePlugin(root, plugin)],
     allowDevelopmentPlugins: true,
     pluginRuntime: new InProcessPluginRuntime(),
+    brokerTransport: echoingTransport,
+    brokerResolver: publicResolver,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
     windowToken: WINDOW_TOKEN,
