@@ -1814,7 +1814,10 @@ Then("the Priority select names each level, uncut", async ({ page }) => {
   for (const level of ["Urgent", "High", "Medium", "Low", "No priority"]) {
     await select.click();
     await page.getByRole("option", { name: level, exact: true }).click();
-    await expect(select).toContainText(level);
+    // No priority leaves the chip empty, so it names its field instead.
+    await expect(select).toContainText(
+      level === "No priority" ? "Priority" : level,
+    );
     const value = select.locator("[data-slot=select-value]");
     expect(await value.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,

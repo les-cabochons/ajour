@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BacklogPerson } from "@ajour/shared";
-import { RiArrowDownSLine } from "@remixicon/react";
+import { RiArrowDownSLine, RiUserLine as PersonIcon } from "@remixicon/react";
+import { cn } from "@/lib/utils";
 import {
   Command,
   CommandGroup,
@@ -33,6 +34,11 @@ export interface PersonComboboxProps {
   search: (query: string) => Promise<BacklogPerson[]>;
   disabled?: boolean;
   "aria-label"?: string;
+  /**
+   * A composer chip: the person, or the person icon and "Assignee" while no
+   * one is picked, with no chevron (forms council round 19).
+   */
+  chip?: boolean;
 }
 
 interface Results {
@@ -53,6 +59,7 @@ export function PersonCombobox({
   search,
   disabled = false,
   "aria-label": ariaLabel,
+  chip = false,
 }: PersonComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -121,9 +128,30 @@ export function PersonCombobox({
         role="combobox"
         disabled={disabled}
         aria-label={ariaLabel}
-        className="flex h-[var(--control-height-lg)] w-full items-center justify-between gap-1.5 rounded-[var(--field-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-2.5 py-1 text-[length:var(--control-font-size)] leading-[var(--control-line-height)] whitespace-nowrap outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
+        className={cn(
+          chip
+            ? "composer-pill disabled:opacity-50"
+            : "flex h-[var(--control-height-lg)] w-full items-center justify-between gap-1.5 rounded-[var(--field-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-2.5 py-1 text-[length:var(--control-font-size)] leading-[var(--control-line-height)] whitespace-nowrap outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50",
+        )}
       >
-        {value ? (
+        {chip ? (
+          value ? (
+            <>
+              <PersonInitials name={value.displayName} />
+              <span className="truncate">{value.displayName}</span>
+            </>
+          ) : (
+            <>
+              <PersonIcon
+                aria-hidden
+                className="size-3.5 text-muted-foreground"
+              />
+              <span data-placeholder="">
+                {value === null ? "Unassigned" : "Assignee"}
+              </span>
+            </>
+          )
+        ) : value ? (
           <span className="flex min-w-0 items-center gap-1.5">
             <PersonInitials name={value.displayName} />
             <span className="truncate">{value.displayName}</span>
@@ -133,14 +161,19 @@ export function PersonCombobox({
             {value === null ? "Unassigned" : "Keep assignee"}
           </span>
         )}
-        <RiArrowDownSLine
-          aria-hidden="true"
-          className="pointer-events-none size-4 shrink-0 text-muted-foreground"
-        />
+        {chip ? null : (
+          <RiArrowDownSLine
+            aria-hidden="true"
+            className="pointer-events-none size-4 shrink-0 text-muted-foreground"
+          />
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-(--anchor-width) min-w-64 gap-0 rounded-lg p-0"
+        className={cn(
+          "min-w-64 gap-0 rounded-lg p-0",
+          !chip && "w-(--anchor-width)",
+        )}
       >
         <Command
           className="rounded-none bg-transparent p-0"

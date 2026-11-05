@@ -496,6 +496,7 @@ export function SettleDialogHost() {
                 label="Priority"
                 size="sm"
                 iconLabel
+                emptyNamesField
                 className="composer-chip"
                 disabled={pending}
                 value={priority}
@@ -514,6 +515,20 @@ export function SettleDialogHost() {
                   })),
                 ]}
               />
+              {/* Who has it after the settle, a chip beside State and
+                  Priority (forms council round 19). */}
+              {searchAssignees && currentItem ? (
+                <PersonCombobox
+                  id="settle-assignee"
+                  chip
+                  aria-label="Assignee"
+                  disabled={pending}
+                  value={assignee}
+                  current={currentItem.assignee}
+                  onChange={setAssignee}
+                  search={searchAssignees}
+                />
+              ) : null}
               {asksSubitems ? (
                 <Tooltip>
                   <TooltipTrigger
@@ -558,21 +573,6 @@ export function SettleDialogHost() {
               <FieldError>
                 This plugin cannot clear its source priority. Choose a priority.
               </FieldError>
-            ) : null}
-            {searchAssignees && currentItem ? (
-              <Field>
-                <FieldLabel htmlFor="settle-assignee">Assignee</FieldLabel>
-                <FieldContent>
-                  <PersonCombobox
-                    id="settle-assignee"
-                    disabled={pending}
-                    value={assignee}
-                    current={currentItem.assignee}
-                    onChange={setAssignee}
-                    search={searchAssignees}
-                  />
-                </FieldContent>
-              </Field>
             ) : null}
             {commentSource && currentItem ? (
               <Field>

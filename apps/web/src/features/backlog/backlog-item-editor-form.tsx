@@ -845,6 +845,7 @@ export function BacklogItemEditorForm({
               label="Priority"
               size="sm"
               iconLabel
+              emptyNamesField
               className="composer-chip"
               value={fields.priority}
               onChange={(priority) => updateFields({ priority })}

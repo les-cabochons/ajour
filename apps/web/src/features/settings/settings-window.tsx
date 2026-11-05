@@ -63,6 +63,14 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
         overlayClassName="settings-window-backdrop"
         showCloseButton={false}
         aria-label="Settings"
+        // Focus starts on the open page's row, so one row reads as selected:
+        // the first link took it, and General kept a ring while another page
+        // was open (forms council round 19).
+        initialFocus={() =>
+          document.querySelector<HTMLElement>(
+            ".settings-window-nav-link[data-active]",
+          )
+        }
       >
         <nav className="settings-window-nav" aria-label="Settings sections">
           <div className="settings-window-nav-groups">
