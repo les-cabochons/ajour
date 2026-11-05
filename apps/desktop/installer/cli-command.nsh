@@ -1,5 +1,84 @@
 !include "LogicLib.nsh"
 
+; Each directory must exist, be a directory and not be a reparse point.
+; The caller closes this LogicLib If so guards can nest.
+!macro AjourSafeDirectory DIR
+  System::Call 'kernel32::GetFileAttributesW(w "${DIR}") i .r9'
+  IntOp $9 $9 & 0x410
+  ${If} $9 = 0x10
+!macroend
+
+; Checked against the release archive layout by installer-cli-command.test.ts.
+!macro AjourArchiveDocs ROOT
+  !insertmacro AjourSafeDirectory "${ROOT}\man"
+    !insertmacro AjourSafeDirectory "${ROOT}\man\man1"
+      Delete "${ROOT}\man\man1\ajour-add.1"
+      Delete "${ROOT}\man\man1\ajour.1"
+      Delete "${ROOT}\man\man1\ajour-completion.1"
+      Delete "${ROOT}\man\man1\ajour-connect.1"
+      Delete "${ROOT}\man\man1\ajour-continue.1"
+      Delete "${ROOT}\man\man1\ajour-discard.1"
+      Delete "${ROOT}\man\man1\ajour-dup.1"
+      Delete "${ROOT}\man\man1\ajour-edit.1"
+      Delete "${ROOT}\man\man1\ajour-help.1"
+      Delete "${ROOT}\man\man1\ajour-log.1"
+      Delete "${ROOT}\man\man1\ajour-move.1"
+      Delete "${ROOT}\man\man1\ajour-projects.1"
+      Delete "${ROOT}\man\man1\ajour-rm.1"
+      Delete "${ROOT}\man\man1\ajour-start.1"
+      Delete "${ROOT}\man\man1\ajour-status.1"
+      Delete "${ROOT}\man\man1\ajour-stop.1"
+      Delete "${ROOT}\man\man1\ajour-undo.1"
+      RMDir "${ROOT}\man\man1"
+    ${EndIf}
+    RMDir "${ROOT}\man"
+  ${EndIf}
+  !insertmacro AjourSafeDirectory "${ROOT}\completions"
+    Delete "${ROOT}\completions\ajour.bash"
+    Delete "${ROOT}\completions\_ajour"
+    Delete "${ROOT}\completions\ajour.fish"
+    RMDir "${ROOT}\completions"
+  ${EndIf}
+!macroend
+
+!macro AjourPayload ROOT
+  Delete "${ROOT}\ajour.exe"
+  !insertmacro AjourSafeDirectory "${ROOT}\share"
+    !insertmacro AjourArchiveDocs "${ROOT}\share"
+    RMDir "${ROOT}\share"
+  ${EndIf}
+!macroend
+
+; Input $R5, output $R0. The controller uses lowercase hex 8-4-4-4-12.
+Function un.AjourUuid
+  StrCpy $R0 0
+  StrLen $0 $R5
+  StrCmp $0 36 0 uuidDone
+  StrCpy $1 0
+  uuidLoop:
+    StrCpy $2 $R5 1 $1
+    ${If} $1 = 8
+    ${OrIf} $1 = 13
+    ${OrIf} $1 = 18
+    ${OrIf} $1 = 23
+      StrCmpS $2 "-" 0 uuidDone
+    ${Else}
+      StrCpy $3 0
+      uuidHex:
+        StrCpy $4 "0123456789abcdef" 1 $3
+        StrCmpS $4 "" uuidDone
+        StrCmpS $2 $4 uuidNext
+        IntOp $3 $3 + 1
+        Goto uuidHex
+    ${EndIf}
+    uuidNext:
+      IntOp $1 $1 + 1
+      IntCmp $1 36 uuidValid uuidLoop uuidDone
+  uuidValid:
+    StrCpy $R0 1
+  uuidDone:
+FunctionEnd
+
 ; Only the ordinary uninstall removes the optional CLI. An update keeps it.
 !macro customUnInstall
   ${IfNot} ${isUpdated}
@@ -20,19 +99,14 @@ Function un.RemoveAjourCommand
   Push $9
   Push $R0
   Push $R1
+  Push $R2
+  Push $R3
+  Push $R4
+  Push $R5
   ReadEnvStr $8 "LOCALAPPDATA"
   StrCmp $8 "" done
-  ; Refuse a redirected parent as well as a redirected bin folder.
-  System::Call 'kernel32::GetFileAttributesW(w "$8\Ajour") i .r9'
-  IntOp $9 $9 & 0x400
-  StrCmp $9 0 0 done
   StrCpy $8 "$8\Ajour\bin"
-  ; A binary with our name is the minimum ownership evidence. Never recurse
-  ; outside this fixed folder, and never delete the CLI's connection/Undo data.
-  IfFileExists "$8\ajour.exe" 0 done
-  System::Call 'kernel32::GetFileAttributesW(w r8) i .r9'
-  IntOp $9 $9 & 0x400
-  StrCmp $9 0 0 done
+  ; Registry cleanup must also run when the executable is missing.
 
   System::Call 'advapi32::RegOpenKeyExW(p 0x80000001, w "Environment", i 0, i 0x20019, *p .r0) i .r9'
   StrCmp $9 0 0 deleteFolder
@@ -87,8 +161,78 @@ Function un.RemoveAjourCommand
     IfErrors deleteFolder
     SendMessage 0xffff 0x001A 0 "STR:Environment" /TIMEOUT=5000
   deleteFolder:
-    RMDir /r "$8"
+    ReadEnvStr $R2 "LOCALAPPDATA"
+    !insertmacro AjourSafeDirectory "$R2\Ajour"
+      !insertmacro AjourSafeDirectory "$8"
+        !insertmacro AjourPayload "$8"
+        FindFirst $R3 $R4 "$8\*"
+        leftovers:
+          StrCmp $R4 "" leftoversDone
+          StrCpy $0 $R4 14
+          StrCmpS $0 "ajour.exe.old-" 0 checkShare
+            StrCpy $R5 $R4 "" 14
+            Call un.AjourUuid
+            StrCmp $R0 1 0 nextLeftover
+            Delete "$8\$R4"
+            Goto nextLeftover
+          checkShare:
+            StrCpy $0 $R4 10
+            StrCmpS $0 "share.old-" 0 checkStaging
+            StrCpy $R5 $R4 "" 10
+            Call un.AjourUuid
+            StrCmp $R0 1 0 nextLeftover
+            !insertmacro AjourSafeDirectory "$8\$R4"
+              !insertmacro AjourArchiveDocs "$8\$R4"
+              RMDir "$8\$R4"
+            ${EndIf}
+            Goto nextLeftover
+          checkStaging:
+            StrCpy $0 $R4 9
+            StrCmpS $0 ".staging-" 0 checkPending
+            StrCpy $R5 $R4 "" 9
+            Call un.AjourUuid
+            StrCmp $R0 1 0 nextLeftover
+            !insertmacro AjourSafeDirectory "$8\$R4"
+              !insertmacro AjourPayload "$8\$R4"
+              !insertmacro AjourSafeDirectory "$8\$R4\unpacked"
+                !insertmacro AjourPayload "$8\$R4\unpacked"
+                !insertmacro AjourArchiveDocs "$8\$R4\unpacked"
+                RMDir "$8\$R4\unpacked"
+              ${EndIf}
+              ; Unknown archive names and all other entries stay untouched.
+              RMDir "$8\$R4"
+            ${EndIf}
+            Goto nextLeftover
+          checkPending:
+            StrCpy $0 $R4 9
+            StrCmpS $0 ".pending-" 0 nextLeftover
+            StrCpy $R5 $R4 36 9
+            StrCpy $0 $R4 "" 45
+            StrCmpS $0 ".json" pendingUuid
+            StrCmpS $0 ".json.tmp" 0 nextLeftover
+          pendingUuid:
+            Call un.AjourUuid
+            StrCmp $R0 1 0 nextLeftover
+            Delete "$8\$R4"
+          nextLeftover:
+            FindNext $R3 $R4
+            Goto leftovers
+        leftoversDone:
+        FindClose $R3
+        RMDir "$8"
+      ${EndIf}
+    ${EndIf}
+    ReadEnvStr $R2 "APPDATA"
+    StrCmp $R2 "" done
+    !insertmacro AjourSafeDirectory "$R2\Ajour"
+      Delete "$R2\Ajour\cli-command.json"
+      Delete "$R2\Ajour\cli-command.json.tmp"
+    ${EndIf}
   done:
+  Pop $R5
+  Pop $R4
+  Pop $R3
+  Pop $R2
   Pop $R1
   Pop $R0
   Pop $9

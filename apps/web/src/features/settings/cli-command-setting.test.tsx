@@ -67,10 +67,16 @@ function desktop(initial: DesktopCliCommandState | Error = NOT_INSTALLED) {
         finishInstall = { resolve, reject };
       }),
   );
+  const removeCliCommand = vi.fn(
+    () =>
+      new Promise<DesktopCliCommandState>((resolve, reject) => {
+        finishInstall = { resolve, reject };
+      }),
+  );
   window.ajourDesktop = {
     getCliCommand,
     installCliCommand,
-    removeCliCommand: installCliCommand,
+    removeCliCommand,
     onCliCommandChanged: (
       callback: (state: DesktopCliCommandState) => void,
     ) => {
@@ -81,6 +87,7 @@ function desktop(initial: DesktopCliCommandState | Error = NOT_INSTALLED) {
   return {
     getCliCommand,
     installCliCommand,
+    removeCliCommand,
     unsubscribe,
     push: (state: DesktopCliCommandState) => act(() => push!(state)),
     finish: (state: DesktopCliCommandState) =>
@@ -464,7 +471,8 @@ it("Remove returns the fixed-height row to Not installed without confirmation", 
   await mount();
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   expect(status()).toContain("Removing ajour…");
-  expect(fake.installCliCommand).toHaveBeenCalledWith();
+  expect(fake.removeCliCommand).toHaveBeenCalledWith();
+  expect(fake.installCliCommand).not.toHaveBeenCalled();
   await fake.finish(NOT_INSTALLED);
   expect(status()).toContain("Not installed.");
   expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
@@ -482,7 +490,8 @@ it("retries a failed Remove inline and keeps its status and alert roles", async 
   await mount();
   expect(screen.getByRole("alert").textContent).toBe("Removal failed.");
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  expect(fake.installCliCommand).toHaveBeenCalledWith();
+  expect(fake.removeCliCommand).toHaveBeenCalledWith();
+  expect(fake.installCliCommand).not.toHaveBeenCalled();
   expect(status()).toContain("Removing ajour…");
   await fake.finish(NOT_INSTALLED);
   expect(screen.queryByRole("alert")).toBeNull();
