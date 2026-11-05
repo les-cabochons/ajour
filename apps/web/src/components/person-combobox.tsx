@@ -142,7 +142,10 @@ export function PersonCombobox({
             </>
           ) : (
             <>
-              <PersonIcon aria-hidden className="size-3.5" />
+              <PersonIcon
+                aria-hidden
+                className="size-3.5 text-muted-foreground"
+              />
               <span data-placeholder="">
                 {value === null ? "Unassigned" : "Assignee"}
               </span>
