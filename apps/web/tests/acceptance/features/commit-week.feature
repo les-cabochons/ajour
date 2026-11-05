@@ -103,7 +103,7 @@ Feature: Commit the week
     Then the titlebar totals read "3:00"
     And the totals popover has no Commit button
     When I open today's Day list
-    Then the titlebar totals read "Today 0:00"
+    Then the titlebar totals read "0:00"
 
   Scenario: Ask to commit once the week reaches its target
     Given I have a committed week of entries

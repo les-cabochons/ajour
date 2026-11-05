@@ -2,6 +2,7 @@ import type {
   ActivityBlockRecord,
   ActivitySegmentRecord,
   AssignmentSource,
+  BacklogPerson,
   BucketEvidenceItem,
   CaptureSettings,
   BacklogSource,
@@ -566,6 +567,18 @@ export interface LocalWorkItem {
   /** The imported priority when the item was settled, to notice changes made in the source since. */
   settledImportedPriority?: PriorityLevel;
   /**
+   * Who the source assigns the item to, from a plugin with `connector.assign`:
+   * null when no one has it, absent when the plugin doesn't say. The id is
+   * the plugin's own. See ADR 0017.
+   */
+  assignee?: BacklogPerson | null;
+  /**
+   * The assignee's id when the item was settled, or null when it had none, to
+   * notice a reassignment in the source since. Absent when the settle didn't
+   * know the assignee, which then never returns the item.
+   */
+  settledAssigneeId?: string | null;
+  /**
    * A settle's change waiting to be written to the source tool. It is sent when
    * the Undo toast closes, or at the next launch. See ADR 0001.
    */
@@ -599,6 +612,7 @@ export type LocalWorkItemMoveSnapshot = Pick<
   | "settledWithParentId"
   | "settledSourceStatusKey"
   | "settledImportedPriority"
+  | "settledAssigneeId"
   | "returnedAt"
   | "snoozedUntil"
 >;
@@ -608,6 +622,11 @@ export interface LocalPendingSourceWrite {
   readyAt?: number;
   state?: string;
   priority?: PriorityLevel;
+  /**
+   * The person a settle assigns the item to, or null to unassign it. Only its
+   * id is sent; the name shows in Sync review.
+   */
+  assignee?: BacklogPerson | null;
   /**
    * When the connection refused the write because editing work items was
    * off. A held write stays, with the item as the user left it, and goes
@@ -628,6 +647,8 @@ export interface LocalPendingSourceWrite {
     sourceStatusLabel?: string;
     importedPriority?: PriorityLevel;
     priority?: PriorityLevel;
+    /** The item's assignee, put back when a write that assigns fails. */
+    assignee?: BacklogPerson | null;
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;
@@ -648,6 +669,7 @@ export interface LocalPendingSourceWrite {
       | "archivedSourceStatusKey"
       | "settledSourceStatusKey"
       | "settledImportedPriority"
+      | "settledAssigneeId"
       | "workflowStateIdBeforeClose"
       | "settledWithParentId"
       | "returnedAt"

@@ -26,6 +26,7 @@ import { painter, shouldColor, type ColorMode } from "./format/style.ts";
 import { processIo, type CliIo } from "./io.ts";
 
 import { version } from "./resources.ts";
+import { relay } from "./relay.ts";
 
 declare const AJOUR_BUNDLED: boolean;
 
@@ -188,6 +189,7 @@ export const COMMANDS: Record<string, Command> = {
 export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   let ctx: Context | undefined;
   try {
+    if (argv[0] === "__relay") return relay(argv.slice(1));
     if (argv[0] === "__task-candidates")
       return argv.length === 1 ? taskCandidates(io) : 0;
     if (argv[0] === "__complete")

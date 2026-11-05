@@ -366,6 +366,13 @@ export async function writeSettle(connection, request) {
   if (request.sourceId === 'BAD-1') return { priority: 'Secret priority' };
   return { state: request.state };
 }
+export async function searchAssignees(connection, request) {
+  const people = [
+    { id: 'private-person-1', displayName: 'Private Person One', email: 'private@example.test' },
+    { id: 'private-person-2', displayName: 'Private Person Two' },
+  ];
+  return { people: request.query ? people.slice(0, 1) : people };
+}
 export async function syncPullRequests() {
   return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };
 }
@@ -375,13 +382,16 @@ export async function syncTeamProjects(connection, request) {
 }
 `;
 
-async function writePlugin(root: string) {
-  const directory = path.join(root, "plugins", "jira");
+async function writePlugin(
+  root: string,
+  { id = "jira", assign = false }: { id?: string; assign?: boolean } = {},
+) {
+  const directory = path.join(root, "plugins", id);
   await mkdir(directory, { recursive: true });
   await writeFile(
     path.join(directory, "plugin.json"),
     JSON.stringify({
-      id: "jira",
+      id,
       version: "1.0.0",
       apiVersion: 3,
       displayName: "Jira",
@@ -389,7 +399,7 @@ async function writePlugin(root: string) {
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
       capabilities: {
-        connector: { settle: true },
+        connector: { settle: true, assign },
         codeHost: {},
         team: { apiVersion: 1 },
       },
@@ -478,17 +488,25 @@ async function lastRequest(events: AjourEvent[], name: string) {
 }
 
 describe("route events", () => {
-  async function connectedApi() {
-    const api = await startTestApi(writePlugin);
-    const saved = await call(api.port, "/api/plugins/jira/connections", {
-      values: {
-        label: "Work",
-        tenantLabel: "Acme",
-        autoSync: false,
-        autoSyncIntervalMinutes: 15,
-        token: TOKEN,
+  async function connectedApi(
+    options: { id?: string; assign?: boolean } = {},
+    access?: string[],
+  ) {
+    const api = await startTestApi((root) => writePlugin(root, options));
+    const saved = await call(
+      api.port,
+      `/api/plugins/${options.id ?? "jira"}/connections`,
+      {
+        ...(access === undefined ? {} : { access }),
+        values: {
+          label: "Work",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          token: TOKEN,
+        },
       },
-    });
+    );
     expect(saved.status).toBe(200);
     return { ...api, connectionId: saved.body.connection.id as string };
   }
@@ -569,7 +587,11 @@ describe("route events", () => {
     expect(writes).toEqual([
       expect.objectContaining({
         outcome: "ok",
-        source_write: { state_sent: true, priority_sent: false },
+        source_write: {
+          state_sent: true,
+          priority_sent: false,
+          assignee_sent: false,
+        },
       }),
       expect.objectContaining({
         outcome: "error",
@@ -579,6 +601,137 @@ describe("route events", () => {
     expect(JSON.stringify(events)).not.toContain(TOKEN);
     expect(JSON.stringify(events)).not.toContain("FAIL-1");
   });
+
+  it.each([
+    { query: "", queried: false, result_count: 2 },
+    { query: "private-search-text", queried: true, result_count: 1 },
+  ])(
+    "records assignee search counts with queried=$queried and no people or query text",
+    async ({ query, queried, result_count }) => {
+      const { port, events, connectionId } = await connectedApi({
+        assign: true,
+      });
+      const result = await call(
+        port,
+        `/api/plugins/jira/connections/${connectionId}/assignees`,
+        {
+          sourceId: "ENG-1",
+          query,
+          limit: 20,
+        },
+      );
+      expect(result.status).toBe(200);
+      expect(await lastRequest(events, "assignee.search")).toMatchObject({
+        name: "assignee.search",
+        kind: "request",
+        outcome: "ok",
+        assignee: { queried, result_count },
+      });
+      const recorded = JSON.stringify(events);
+      for (const content of [
+        "ENG-1",
+        "private-search-text",
+        "private-person-1",
+        "private-person-2",
+        "Private Person One",
+        "Private Person Two",
+        "private@example.test",
+      ]) {
+        expect(recorded).not.toContain(content);
+      }
+    },
+  );
+
+  it("records an assignee search refused without assign", async () => {
+    const { port, events, connectionId } = await connectedApi();
+    const result = await call(
+      port,
+      `/api/plugins/jira/connections/${connectionId}/assignees`,
+      {
+        sourceId: "ENG-1",
+        query: "private-search-text",
+        limit: 20,
+      },
+    );
+    expect(result.status).toBe(409);
+    expect(await lastRequest(events, "assignee.search")).toMatchObject({
+      name: "assignee.search",
+      kind: "request",
+      outcome: "refused",
+      outcome_reason: "not_supported",
+    });
+    expect(JSON.stringify(events)).not.toContain("private-search-text");
+    expect(JSON.stringify(events)).not.toContain("ENG-1");
+  });
+
+  it("records a typed assignee search refused with people search off while an empty query runs", async () => {
+    const { port, events, connectionId } = await connectedApi(
+      { id: "azure_devops", assign: true },
+      [],
+    );
+    const base = `/api/plugins/azure_devops/connections/${connectionId}/assignees`;
+    expect(
+      (await call(port, base, { sourceId: "ENG-1", query: "", limit: 20 }))
+        .status,
+    ).toBe(200);
+    expect(await lastRequest(events, "assignee.search")).toMatchObject({
+      name: "assignee.search",
+      kind: "request",
+      outcome: "ok",
+      assignee: { queried: false, result_count: 2 },
+    });
+    expect(
+      (
+        await call(port, base, {
+          sourceId: "ENG-1",
+          query: "private-search-text",
+          limit: 20,
+        })
+      ).status,
+    ).toBe(403);
+    expect(await lastRequest(events, "assignee.search")).toMatchObject({
+      name: "assignee.search",
+      kind: "request",
+      outcome: "refused",
+      outcome_reason: "access_off",
+      assignee: { queried: true },
+    });
+    expect(JSON.stringify(events)).not.toContain("private-search-text");
+    expect(JSON.stringify(events)).not.toContain("private-person-1");
+  });
+
+  it.each(["private-person-1", null])(
+    "records assignee_sent for a settle with assignee %s without its id",
+    async (assignee) => {
+      const { port, events, connectionId } = await connectedApi({
+        assign: true,
+      });
+      expect(
+        (
+          await call(
+            port,
+            `/api/plugins/jira/connections/${connectionId}/settle`,
+            {
+              sourceId: "ENG-1",
+              assignee,
+            },
+          )
+        ).status,
+      ).toBe(200);
+      expect(await lastRequest(events, "backlog.write_source")).toMatchObject({
+        name: "backlog.write_source",
+        kind: "request",
+        outcome: "ok",
+        source_write: {
+          state_sent: false,
+          priority_sent: false,
+          assignee_sent: true,
+        },
+      });
+      expect(JSON.stringify(events)).not.toContain("private-person-1");
+      expect(JSON.stringify(events)).not.toContain("ENG-1");
+    },
+  );
 
   it("records a plugin result that breaks its contract without what it held", async () => {
     const { port, events, connectionId } = await connectedApi();

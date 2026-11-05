@@ -77,6 +77,9 @@ function HeldEditDetail({
         write?.priority !== undefined
           ? `Priority ${getPriorityLevelName(write.priority)}`
           : undefined,
+        write?.assignee !== undefined
+          ? `Assignee → ${write.assignee?.displayName ?? "Unassigned"}`
+          : undefined,
       ].filter(Boolean);
       return (
         <p className="text-xs text-muted-foreground">

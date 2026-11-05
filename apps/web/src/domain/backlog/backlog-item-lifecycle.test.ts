@@ -537,6 +537,136 @@ describe("settling with a change to the source", () => {
   );
 });
 
+describe("settling with a new assignee", () => {
+  const alex = { id: "alex@contoso.com", displayName: "Alex Trépanier" };
+  const ana = { id: "ana@contoso.com", displayName: "Ana Silva" };
+  const bo = { id: "bo@contoso.com", displayName: "Bo Chen" };
+  const state = () =>
+    createState({
+      workItems: [
+        synced("a", { importedPriority: 2, priority: 2, assignee: alex }),
+        synced("sub", {
+          parentSourceId: "source-a",
+          hierarchyLevel: 1,
+          assignee: bo,
+        }),
+      ],
+    });
+
+  it("shows the new assignee at once and writes it alone, leaving carried subitems theirs", () => {
+    const next = settleBacklogItem(
+      state(),
+      "a",
+      factories,
+      { assignee: ana },
+      { includeSubitems: true },
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      status: "settled",
+      assignee: ana,
+      settledAssigneeId: "ana@contoso.com",
+      pendingSourceWrite: { assignee: ana, previous: { assignee: alex } },
+    });
+    expect(find(next, "a")?.pendingSourceWrite?.state).toBeUndefined();
+    expect(find(next, "sub")).toMatchObject({
+      status: "settled",
+      assignee: bo,
+      settledAssigneeId: "bo@contoso.com",
+    });
+    expect(find(next, "sub")?.pendingSourceWrite).toBeUndefined();
+  });
+
+  it("writes nothing for the current assignee, and null to unassign", () => {
+    const same = settleBacklogItem(state(), "a", factories, {
+      assignee: { ...alex },
+    });
+    expect(find(same, "a")?.status).toBe("settled");
+    expect(find(same, "a")?.pendingSourceWrite).toBeUndefined();
+
+    const unassigned = settleBacklogItem(state(), "a", factories, {
+      assignee: null,
+    });
+    expect(find(unassigned, "a")).toMatchObject({
+      assignee: null,
+      settledAssigneeId: null,
+      pendingSourceWrite: { assignee: null, previous: { assignee: alex } },
+    });
+  });
+
+  it("puts the previous assignee back when the write fails, after a restart too", () => {
+    const settled = settleBacklogItem(state(), "a", factories, {
+      state: { name: "Waiting", done: false },
+      assignee: ana,
+    });
+    const reloaded: LocalAppState = JSON.parse(JSON.stringify(settled));
+
+    for (const before of [settled, reloaded]) {
+      expect(find(failSourceWrite(before, "a"), "a")).toMatchObject({
+        status: "active",
+        assignee: alex,
+        sourceStatusLabel: "Active",
+        settledAssigneeId: undefined,
+      });
+    }
+  });
+
+  it("keeps a waiting assignee in the write when the priority changes, and a held one stays held", () => {
+    const settled = settleBacklogItem(state(), "a", factories, {
+      assignee: ana,
+    });
+    const changed = changeBacklogItemPriority(settled, "a", 1, {
+      writesToSource: true,
+      now: 2_000,
+    });
+    expect(find(changed, "a")?.pendingSourceWrite).toMatchObject({
+      priority: 1,
+      assignee: ana,
+      previous: { assignee: alex, importedPriority: 2 },
+    });
+
+    const held = changeBacklogItemPriority(
+      holdSourceWrite(settled, "a", 1_500),
+      "a",
+      1,
+      { writesToSource: true, now: 2_000 },
+    );
+    expect(find(held, "a")?.pendingSourceWrite).toMatchObject({
+      priority: 1,
+      assignee: ana,
+      heldAt: 1_500,
+    });
+  });
+
+  it("keeps a waiting assignee when the item moves to another source state", () => {
+    const settled = settleBacklogItem(state(), "a", factories, {
+      assignee: ana,
+    });
+
+    expect(
+      find(changeBacklogItemSourceState(settled, "a", "Resolved", 2_000), "a")
+        ?.pendingSourceWrite,
+    ).toMatchObject({ state: "Resolved", assignee: ana });
+  });
+
+  it("recovers to the assignee a sent write landed when the newer write fails", () => {
+    const sent = settleBacklogItem(state(), "a", factories, {
+      assignee: ana,
+    });
+    const newer = changeBacklogItemPriority(sent, "a", 1, {
+      writesToSource: true,
+      now: 2_000,
+    });
+    const landed = completeSourceWrite(newer, "a", sent.workItems);
+
+    expect(find(landed, "a")?.pendingSourceWrite).toMatchObject({
+      priority: 1,
+      previous: { assignee: ana },
+    });
+    expect(find(failSourceWrite(landed, "a"), "a")?.assignee).toEqual(ana);
+  });
+});
+
 describe("sending a settle's write", () => {
   it.each([false, true])(
     "restores No state after persisting a settle mapped to Done=%s",
@@ -1964,4 +2094,25 @@ describe("changing a backlog item's priority", () => {
       pendingSourceWrite: { state: "Resolved", priority: 3 },
     });
   });
+});
+
+describe("settled assignee baseline", () => {
+  it.each([
+    { assignee: { id: "ana", displayName: "Ana" }, expected: "ana" },
+    { assignee: null, expected: null },
+    { assignee: undefined, expected: undefined },
+  ])(
+    "records the known assignee at settle and clears it at unsettle: %j",
+    ({ assignee, expected }) => {
+      const settled = settleBacklogItem(
+        createState({ workItems: [synced("a", { assignee })] }),
+        "a",
+        factories,
+      );
+      expect(find(settled, "a")?.settledAssigneeId).toBe(expected);
+      expect(
+        find(unsettleBacklogItem(settled, "a"), "a")?.settledAssigneeId,
+      ).toBeUndefined();
+    },
+  );
 });

@@ -53,6 +53,7 @@ export type PluginManifest = {
             | { maxLength?: number | undefined; write?: boolean | undefined }
             | undefined;
           settle?: boolean | undefined;
+          assign?: boolean | undefined;
         }
       | undefined;
     codeHost?: {} | undefined;
@@ -426,6 +427,10 @@ export type BacklogSyncResult = {
     stateCategory?: string | undefined;
     stateDone?: boolean | undefined;
     assignedTo?: string | undefined;
+    assignee?:
+      | { displayName: string; id: string; email?: string | undefined }
+      | null
+      | undefined;
     priority?: "urgent" | "high" | "medium" | "low" | undefined;
     parentSourceId?: string | undefined;
     parentTitle?: string | undefined;
@@ -500,6 +505,7 @@ export type SettleStatesResult = {
 export type SettleWriteRequest = {
   sourceId: string;
   state?: string | undefined;
+  assignee?: string | null | undefined;
   priority?: "urgent" | "high" | "medium" | "low" | undefined;
 };
 
@@ -508,6 +514,17 @@ export type SettleWriteResult = {
   stateCategory?: string | undefined;
   stateDone?: boolean | undefined;
   priority?: "urgent" | "high" | "medium" | "low" | undefined;
+};
+
+/** Needs `connector.assign`. Ids are your own: the ones `writeSettle` takes. */
+export type SearchAssigneesRequest = {
+  sourceId: string;
+  limit: number;
+  query: string;
+};
+
+export type SearchAssigneesResult = {
+  people: { displayName: string; id: string; email?: string | undefined }[];
 };
 
 export type ReadDescriptionRequest = { sourceId: string };

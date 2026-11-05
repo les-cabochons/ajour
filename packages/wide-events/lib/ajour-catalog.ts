@@ -847,9 +847,9 @@ export const catalog = defineCatalog({
       },
     },
     /**
-     * A settle's state or priority, written to the source after the Undo
-     * window. The renderer's job starts its own trace and joins the settle
-     * that caused it by the settle ID (#310).
+     * A settle's state, priority or assignee, written to the source after the
+     * Undo window. The renderer's job starts its own trace and joins the
+     * settle that caused it by the settle ID (#310).
      */
     "backlog.write_source": {
       kinds: ["job", "request", "plugin_operation"],
@@ -861,6 +861,8 @@ export const catalog = defineCatalog({
         source_write: {
           state_sent: operational<boolean>(),
           priority_sent: operational<boolean>(),
+          /** Whether the write assigns or unassigns the item. Never who. */
+          assignee_sent: operational<boolean>(),
           /** In the renderer: from the end of the Undo window until the send. */
           delay_ms: operational<number>(),
           /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
@@ -886,6 +888,20 @@ export const catalog = defineCatalog({
         description: {
           length: operational<number>(),
           allowed_loss_count: operational<number>(),
+        },
+      },
+    },
+    /** The people a settle can assign an item to. Never their names. */
+    "assignee.search": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        assignee: {
+          /** Whether a name was typed, which may search the organisation. */
+          queried: operational<boolean>(),
+          result_count: operational<number>(),
         },
       },
     },
@@ -1669,6 +1685,98 @@ export const catalog = defineCatalog({
       fields: {
         ipc: ipcFields,
         theme: { value: operational<"system" | "dark" | "light">() },
+      },
+    },
+    /** The ajour command's state, for Settings › General › Terminal (#568). */
+    "cli_command.get_state": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
+    /**
+     * Installing the ajour command from Settings (#568): the version, where
+     * it stopped and why. Never a path, which holds the user name.
+     */
+    "cli_command.install": {
+      kinds: ["command", "ipc"],
+      reasons: [
+        "foreign_sender",
+        "development_build",
+        "unsupported_platform",
+        "missing_release",
+        "missing_asset",
+        "missing_digest",
+        "too_large",
+        "url_not_allowed",
+        "redirect_off_https",
+        "digest_mismatch",
+        "escaping_entry",
+        "invalid_archive",
+        "wrong_version",
+      ],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          version: operational(),
+          platform: operational(),
+          arch: operational(),
+          result: operational<"installed" | "refused" | "failed" | "joined">(),
+          /** The asset's size, from GitHub. */
+          download_bytes: operational<number>(),
+          download_ms: operational<number>(),
+          /** False when the folder was on the PATH already. */
+          path_added: operational<boolean>(),
+        },
+      },
+    },
+    /** The installed command follows the app version at launch (#570). */
+    "cli_command.follow": {
+      kinds: ["job"],
+      reasons: [
+        "follow_failed",
+        "invalid_signature",
+        "development_build",
+        "unsupported_platform",
+        "missing_release",
+        "missing_asset",
+        "missing_digest",
+        "too_large",
+        "url_not_allowed",
+        "redirect_off_https",
+        "digest_mismatch",
+        "escaping_entry",
+        "invalid_archive",
+        "wrong_version",
+      ],
+      fields: {
+        cli_command: {
+          version: operational(),
+          platform: operational(),
+          arch: operational(),
+          result: operational<"installed" | "refused" | "failed" | "joined">(),
+          /** The asset's size, from GitHub. */
+          download_bytes: operational<number>(),
+          download_ms: operational<number>(),
+          /** False when the folder was on the PATH already. */
+          path_added: operational<boolean>(),
+        },
+      },
+    },
+    /**
+     * Telling running programs the user Path changed, after Ajour wrote it
+     * for the ajour command (#568). A failure leaves the install in place:
+     * new terminals started from Explorer see the Path after the next
+     * sign-in.
+     */
+    "cli_command.path_broadcast": { kinds: ["job"], fields: {} },
+    "cli_command.remove": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender", "admin_cancelled", "remove_failed"],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          result: operational<"removed" | "refused" | "failed">(),
+        },
       },
     },
     /** Whether closing the window keeps Ajour running (#534). */

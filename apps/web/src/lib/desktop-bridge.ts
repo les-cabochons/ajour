@@ -128,6 +128,39 @@ export interface DesktopWindowSettings {
   keepRunning: boolean;
 }
 
+/**
+ * The ajour command, as main's controller reports it
+ * (`apps/desktop/electron/cli-command.cjs`, #568). The renderer only reads
+ * it and asks for an install: it never passes a path or a URL.
+ */
+export interface DesktopCliCommandState {
+  operation?: "remove";
+  /** Version being followed, also after a failed update. */
+  pending?: string;
+  status:
+    | "unsupported"
+    | "not-installed"
+    | "installing"
+    | "installed"
+    | "removing"
+    | "error";
+  /** Why it can't install here: a development build, or a system without it yet. */
+  reason?: "development_build" | "unsupported_platform";
+  /** The installed version, also while a new install runs or after one failed. */
+  version?: string;
+  binaryPath?: string;
+  /** Where it is installed: the folder on the PATH on Windows. */
+  location?: string;
+  /** The step an install is on. */
+  phase?: "downloading" | "checking" | "linking";
+  /** The download's percent while `downloading`. */
+  progress: number | null;
+  /** Why the last install failed, as a sentence. */
+  error: string | null;
+  /** Installed in this launch: a terminal opened before doesn't see it yet. */
+  newlyInstalled?: boolean;
+}
+
 /** The local log file's settings, state and folder, from the main process (ADR 0014). */
 export type DesktopLogsStatus = LocalLogStatus & { settings: LocalLogSettings };
 
@@ -189,6 +222,15 @@ declare global {
       /** Runs `callback` with each action the tray menu asks for. */
       onTrayAction?: (
         callback: (action: DesktopTrayAction) => void,
+      ) => () => void;
+      getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
+      /** Installs the ajour command of the app's own version, and resolves with how it ended. */
+      installCliCommand?: (
+        trace?: TraceCarrier,
+      ) => Promise<DesktopCliCommandState>;
+      removeCliCommand?: () => Promise<DesktopCliCommandState>;
+      onCliCommandChanged?: (
+        callback: (state: DesktopCliCommandState) => void,
       ) => () => void;
       checkForUpdates?: (
         track: UpdateTrack,

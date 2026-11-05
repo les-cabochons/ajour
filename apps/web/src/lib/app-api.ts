@@ -19,6 +19,8 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogSearchAssigneesRequestSchema,
+  backlogSearchAssigneesResultSchema,
   backlogReadDescriptionRequestSchema,
   backlogReadDescriptionResultSchema,
   backlogWriteDescriptionRequestSchema,
@@ -1457,7 +1459,28 @@ export function listBacklogSettleStates(
   );
 }
 
-/** Writes a settle's changed state and priority to the source. */
+/**
+ * The people a settle can assign the item to. An empty query lists its
+ * likely assignees; a typed one may search the organisation, which needs
+ * the connection's people search.
+ */
+export function searchBacklogAssignees(
+  pluginId: string,
+  connectionId: string,
+  request: { sourceId: string; query: string; limit: number },
+) {
+  return appApiRequest(
+    "searchBacklogAssignees",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/assignees`,
+    {
+      method: "POST",
+      body: JSON.stringify(backlogSearchAssigneesRequestSchema.parse(request)),
+    },
+    backlogSearchAssigneesResultSchema,
+  );
+}
+
+/** Writes a settle's changed state, priority and assignee to the source. */
 export function writeBacklogSettle(
   pluginId: string,
   connectionId: string,

@@ -259,3 +259,28 @@ describe("getCompletedEstimateShare", () => {
     expect(getCompletedEstimateShare({ originalEstimateHours: 3 })).toBe(0);
   });
 });
+
+describe("getCompletedEstimateShare", () => {
+  it("is the completed estimate over the original", () => {
+    expect(
+      getCompletedEstimateShare({
+        originalEstimateHours: 8,
+        completedEstimateHours: 3,
+      }),
+    ).toBe(0.375);
+  });
+
+  it("stays within the bar when completed outgrows the original", () => {
+    expect(
+      getCompletedEstimateShare({
+        originalEstimateHours: 2,
+        completedEstimateHours: 3,
+      }),
+    ).toBe(1);
+  });
+
+  it("is empty without an original or a completed estimate", () => {
+    expect(getCompletedEstimateShare({ completedEstimateHours: 3 })).toBe(0);
+    expect(getCompletedEstimateShare({ originalEstimateHours: 3 })).toBe(0);
+  });
+});

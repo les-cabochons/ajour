@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import type { BacklogSettleState } from "@ajour/shared";
+import { useEffect, useMemo, useState } from "react";
+import type { BacklogPerson, BacklogSettleState } from "@ajour/shared";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { PersonCombobox } from "@/components/person-combobox";
 import { Button } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/toggle-chip";
 import { RiNodeTree as SubitemsIcon } from "@remixicon/react";
@@ -32,7 +33,11 @@ import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
-import { commentSourceOf } from "@/domain/backlog/comments";
+import {
+  assigneeSourceOf,
+  type AssigneeSource,
+} from "@/domain/backlog/assignees";
+import { commentSourceOf, itemPeopleMatching } from "@/domain/backlog/comments";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
@@ -48,11 +53,13 @@ import {
   buildSettleChange,
   groupSettleStates,
   isSettleStateDraftValid,
+  settleToastTitle,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   getCachedPluginsOverview,
   listBacklogSettleStates,
+  searchBacklogAssignees,
 } from "@/lib/app-api";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
@@ -181,7 +188,12 @@ export async function settleBacklogItemWithUndo(
     (unit, token) => {
       unit.set({ backlog_item: { behavior } });
       if (!token) return;
-      commentQueued = afterSettle(workItem, token, comment).commentQueued;
+      commentQueued = afterSettle(
+        workItem,
+        token,
+        comment,
+        change?.assignee,
+      ).commentQueued;
       unit.set({
         comment: {
           queued: commentQueued,
@@ -194,7 +206,12 @@ export async function settleBacklogItemWithUndo(
 }
 
 /** Queues the settle's comment, and offers its Undo. */
-function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
+function afterSettle(
+  workItem: LocalWorkItem,
+  token: string,
+  comment?: string,
+  assignee?: BacklogPerson | null,
+) {
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
@@ -217,14 +234,11 @@ function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
   }
   const commented = Boolean(body && commentSource);
   offerUndo(token, {
-    title:
-      settled?.status === "archived"
-        ? commented
-          ? "Commented and archived"
-          : "Backlog item archived"
-        : commented
-          ? "Commented and settled"
-          : "Backlog item settled",
+    title: settleToastTitle({
+      archived: settled?.status === "archived",
+      commented,
+      assignee,
+    }),
     subject: "backlog item",
     onWindowClosed:
       settled?.pendingSourceWrite || commentSource
@@ -246,9 +260,29 @@ type StatesLoad =
   | { status: "failed"; message: string };
 
 /**
- * The settle dialog: a state picker grouped by state category and a priority,
- * both starting at the item's current values. Settling with nothing changed
- * stays local. Mounted once in the app shell.
+ * The people a settle can assign the item to. With people search off, a
+ * typed name filters the likely assignees instead of searching the
+ * organisation, as the @ suggestions do.
+ */
+function assigneeSearch(source: AssigneeSource) {
+  const search = async (query: string) =>
+    (
+      await searchBacklogAssignees(source.pluginId, source.connectionId, {
+        sourceId: source.sourceId,
+        query,
+        limit: 20,
+      })
+    ).people;
+  return source.peopleSearchOff
+    ? async (query: string) => itemPeopleMatching(await search(""), query)
+    : search;
+}
+
+/**
+ * The settle dialog: a state picker grouped by state category, a priority
+ * and, for a plugin that assigns, an assignee, all starting at the item's
+ * current values. Settling with nothing changed stays local. Mounted once in
+ * the app shell.
  */
 export function SettleDialogHost() {
   const state = useLocalState();
@@ -256,6 +290,8 @@ export function SettleDialogHost() {
   const [load, setLoad] = useState<StatesLoad>({ status: "loading" });
   const [stateName, setStateName] = useState("");
   const [priority, setPriority] = useState("");
+  // Undefined keeps the assignee: the item's, or none known yet.
+  const [assignee, setAssignee] = useState<BacklogPerson | null | undefined>();
   const [comment, setComment] = useState("");
   // Set when the comment editor opened the dialog with its draft.
   const [onSettled, setOnSettled] = useState<OnSettled | undefined>();
@@ -280,6 +316,7 @@ export function SettleDialogHost() {
           prefill?.priority ?? item.importedPriority ?? item.priority,
         ),
       );
+      setAssignee(item.assignee);
       setComment(request?.comment ?? "");
       setIncludeSubitems(true);
       setOnSettled(() => request?.onSettled);
@@ -327,11 +364,32 @@ export function SettleDialogHost() {
     currentItem?.sourceStatusLabel,
   );
   const sourceHasPriority = currentItem?.importedPriority !== undefined;
+  // Only an item whose plugin assigns offers an assignee.
+  const assigneeSource = currentItem
+    ? assigneeSourceOf(currentItem, getCachedPluginsOverview())
+    : undefined;
+  // One search per item, so the field doesn't search again on each render.
+  const { pluginId, connectionId, sourceId, peopleSearchOff } =
+    assigneeSource ?? {};
+  const searchAssignees = useMemo(
+    () =>
+      pluginId && connectionId && sourceId
+        ? assigneeSearch({ pluginId, connectionId, sourceId, peopleSearchOff })
+        : undefined,
+    [pluginId, connectionId, sourceId, peopleSearchOff],
+  );
   const change = currentItem
-    ? buildSettleChange(states, stateName, priority, {
-        sourceStatusLabel: currentItem.sourceStatusLabel,
-        importedPriority: currentItem.importedPriority,
-      })
+    ? buildSettleChange(
+        states,
+        stateName,
+        priority,
+        {
+          sourceStatusLabel: currentItem.sourceStatusLabel,
+          importedPriority: currentItem.importedPriority,
+          assignee: currentItem.assignee,
+        },
+        assigneeSource ? assignee : undefined,
+      )
     : null;
   const archives = Boolean(
     currentItem &&
@@ -500,6 +558,21 @@ export function SettleDialogHost() {
               <FieldError>
                 This plugin cannot clear its source priority. Choose a priority.
               </FieldError>
+            ) : null}
+            {searchAssignees && currentItem ? (
+              <Field>
+                <FieldLabel htmlFor="settle-assignee">Assignee</FieldLabel>
+                <FieldContent>
+                  <PersonCombobox
+                    id="settle-assignee"
+                    disabled={pending}
+                    value={assignee}
+                    current={currentItem.assignee}
+                    onChange={setAssignee}
+                    search={searchAssignees}
+                  />
+                </FieldContent>
+              </Field>
             ) : null}
             {commentSource && currentItem ? (
               <Field>

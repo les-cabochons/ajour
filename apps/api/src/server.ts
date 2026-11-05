@@ -38,6 +38,8 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogSearchAssigneesRequestSchema,
+  backlogSearchAssigneesResultSchema,
   backlogReadDescriptionRequestSchema,
   backlogReadDescriptionResultSchema,
   backlogWriteDescriptionRequestSchema,
@@ -350,6 +352,8 @@ interface AppApiRuntime {
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
 const MAX_JSON_BODY_BYTES = 16 * 1024 * 1024;
+/** The refusal of an assignee search or write by a plugin without `assign`. */
+const ASSIGNEES_UNSUPPORTED = "This plugin does not support assignees.";
 
 function materializeAutoSyncCandidates(
   items: BacklogImportCandidateInput[],
@@ -450,6 +454,21 @@ function redactFieldUpdateMessages(
   }));
 }
 
+/**
+ * A plugin with `connector.assign` leaves `assignee` out for an unassigned
+ * item, which Ajour records as null. An item from any other plugin carries
+ * none, so Ajour never takes a guess for the plugin's id (ADR 0017).
+ */
+function withAssignees(
+  plugin: PluginManifest,
+  items: BacklogImportCandidateInput[],
+): BacklogImportCandidateInput[] {
+  const assigns = Boolean(plugin.capabilities.connector?.assign);
+  return items.map(({ assignee, ...item }) =>
+    assigns ? { ...item, assignee: assignee ?? null } : item,
+  );
+}
+
 /** Done items go back as `doneItems` so Ajour archives them, never to review. */
 function splitDoneItems(items: BacklogImportCandidateInput[]) {
   return {
@@ -461,6 +480,7 @@ function splitDoneItems(items: BacklogImportCandidateInput[]) {
         connectionId: item.connectionId,
         sourceId: item.sourceId,
         state: item.state,
+        ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
         ...(item.description ? { description: item.description } : {}),
       })),
   };
@@ -2403,8 +2423,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         source_write: {
           state_sent: writeRequest.state !== undefined,
           priority_sent: writeRequest.priority !== undefined,
+          assignee_sent: writeRequest.assignee !== undefined,
         },
       });
+      // The id came from the plugin's own sync or search, so a plugin that
+      // never sent one can't take it back.
+      if (
+        writeRequest.assignee !== undefined &&
+        !target.plugin.capabilities.connector?.assign
+      ) {
+        unit.refuse("not_supported");
+        writeJson(response, 409, { error: ASSIGNEES_UNSUPPORTED });
+        return;
+      }
       if (
         refuseAccessOff(
           response,
@@ -2424,6 +2455,57 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           target.call.admit,
         );
         writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
+      } catch (error) {
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
+      }
+    },
+
+    assigneeSearch: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "assigning",
+        (plugin) => Boolean(plugin.capabilities.connector?.assign),
+        ASSIGNEES_UNSUPPORTED,
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const searchRequest = await readRequest(
+        request,
+        backlogSearchAssigneesRequestSchema,
+      );
+      unit.set({ assignee: { queried: searchRequest.query !== "" } });
+      // An empty query reads the item's own people, which reading the backlog
+      // covers. A typed name may search the organisation.
+      if (
+        refuseAccessOff(
+          response,
+          unit,
+          target.plugin,
+          target.connection,
+          "searchAssignees",
+          searchRequest,
+        )
+      ) {
+        return;
+      }
+      try {
+        const result = backlogSearchAssigneesResultSchema.parse(
+          await pluginManager.searchAssignees(
+            target.pluginId,
+            pluginConnection(target.connection),
+            searchRequest,
+            target.call.admit,
+          ),
+        );
+        unit.set({ assignee: { result_count: result.people.length } });
+        writeJson(response, 200, result);
       } catch (error) {
         await failPluginCall(
           response,
@@ -2639,6 +2721,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           admit,
           payload.sourceId ? { sourceIds: [payload.sourceId] } : undefined,
         );
+        fetched.items = withAssignees(plugin, fetched.items);
         // Older plugins can ignore the optional scope. The host still applies
         // only the requested item and never treats an absent item as fresh.
         if (payload.sourceId) {
@@ -3322,7 +3405,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       params,
       unit,
     }: RouteContext<
-      "settleStateList" | "settleWrite" | "descriptionRead" | "descriptionWrite"
+      | "settleStateList"
+      | "settleWrite"
+      | "assigneeSearch"
+      | "descriptionRead"
+      | "descriptionWrite"
     >,
     action: string,
     supported: (plugin: PluginManifest) => boolean,

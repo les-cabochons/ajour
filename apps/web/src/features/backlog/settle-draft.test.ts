@@ -3,6 +3,7 @@ import {
   buildSettleChange,
   findSettleState,
   groupSettleStates,
+  settleToastTitle,
 } from "@/features/backlog/settle-draft";
 
 const states = [
@@ -84,5 +85,50 @@ describe("settle dialog fields", () => {
       state: { name: "Active", done: false },
       priority: undefined,
     });
+  });
+
+  it.each([
+    [false, false, undefined, "Backlog item settled"],
+    [true, false, undefined, "Backlog item archived"],
+    [false, true, undefined, "Commented and settled"],
+    [true, true, undefined, "Commented and archived"],
+    [false, false, "Ana Silva", "Assigned to Ana Silva and settled"],
+    [true, false, "Ana Silva", "Assigned to Ana Silva and archived"],
+    [false, true, "Ana Silva", "Commented, assigned to Ana Silva and settled"],
+    [false, false, null, "Unassigned and settled"],
+    [false, true, null, "Commented, unassigned and settled"],
+  ] as const)(
+    "names what the settle did: archived %s, commented %s, assigned to %s",
+    (archived, commented, assignee, title) => {
+      expect(
+        settleToastTitle({
+          archived,
+          commented,
+          assignee:
+            typeof assignee === "string"
+              ? { id: "ana", displayName: assignee }
+              : assignee,
+        }),
+      ).toBe(title);
+    },
+  );
+
+  it("adds a picked assignee only when it isn't the item's", () => {
+    const alex = { id: "alex@contoso.com", displayName: "Alex Trépanier" };
+    const ana = { id: "ana@contoso.com", displayName: "Ana Silva" };
+    const assigneeOf = (
+      current: { assignee?: typeof alex | null },
+      picked: typeof alex | null | undefined,
+    ) => buildSettleChange(states, "Active", "", current, picked)?.assignee;
+
+    expect(assigneeOf({ assignee: alex }, ana)).toEqual(ana);
+    expect(assigneeOf({ assignee: alex }, null)).toBeNull();
+    expect(assigneeOf({ assignee: alex }, { ...alex })).toBeUndefined();
+    expect(assigneeOf({ assignee: null }, null)).toBeUndefined();
+    // Kept as it is, whoever has it.
+    expect(assigneeOf({ assignee: alex }, undefined)).toBeUndefined();
+    // Not known yet: whoever the user picks is written.
+    expect(assigneeOf({}, ana)).toEqual(ana);
+    expect(assigneeOf({}, null)).toBeNull();
   });
 });

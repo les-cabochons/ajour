@@ -886,6 +886,7 @@ channel to read the event each emits.
 | `app.quit`                           | lifecycle                          | main process                                     |
 | `app.runtime_info`                   | ipc                                | IPC channel                                      |
 | `app.second_launch`                  | lifecycle                          | main process                                     |
+| `assignee.search`                    | command, request, plugin_operation | route, plugin method, client call                |
 | `backlog.apply_updates`              | command                            | store command                                    |
 | `backlog.archive_done`               | command                            | store command                                    |
 | `backlog.sort`                       | command                            | store command                                    |
@@ -930,6 +931,11 @@ channel to read the event each emits.
 | `catalog.inspect_source`             | ipc                                | IPC channel                                      |
 | `catalog.refresh`                    | job                                | main process                                     |
 | `catalog.remove_source`              | command, ipc                       | IPC channel                                      |
+| `cli_command.follow`                 | job                                | main process                                     |
+| `cli_command.get_state`              | ipc                                | IPC channel                                      |
+| `cli_command.install`                | command, ipc                       | IPC channel                                      |
+| `cli_command.path_broadcast`         | job                                | main process                                     |
+| `cli_command.remove`                 | command, ipc                       | IPC channel                                      |
 | `comment.delete`                     | job, request, plugin_operation     | route, plugin method, client call, renderer      |
 | `comment.edit`                       | command, request, plugin_operation | route, plugin method, client call                |
 | `comment.list`                       | command, request, plugin_operation | route, plugin method, client call, renderer      |

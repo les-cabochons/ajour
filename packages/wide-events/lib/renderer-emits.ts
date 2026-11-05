@@ -57,6 +57,7 @@ export const APP_API_CLIENT = {
   runTeamSyncRound: "team.sync",
   syncBacklogConnection: "backlog.sync",
   listBacklogSettleStates: "source_state.list",
+  searchBacklogAssignees: "assignee.search",
   writeBacklogSettle: "backlog.write_source",
   readBacklogDescription: "description.read",
   writeBacklogDescription: "description.write",

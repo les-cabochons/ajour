@@ -1,4 +1,9 @@
 import os from "node:os";
+import {
+  processRelayProbes,
+  transportFor,
+  type RelayTransport,
+} from "./relay-transport.ts";
 
 /**
  * What a command may touch outside itself. `processIo` is the real process;
@@ -6,6 +11,7 @@ import os from "node:os";
  * chosen terminal and captured output.
  */
 export interface CliIo {
+  transport?(url: string): Promise<RelayTransport | undefined>;
   stdout: OutputStream;
   stderr: OutputStream;
   env: Readonly<Record<string, string | undefined>>;
@@ -33,6 +39,7 @@ export function processIo(): CliIo {
   let quit = false;
   let release: (() => void) | undefined;
   return {
+    transport: (url) => transportFor(url, processRelayProbes),
     stdout: {
       write: (text) => void process.stdout.write(text),
       isTTY: process.stdout.isTTY === true,

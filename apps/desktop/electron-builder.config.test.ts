@@ -165,3 +165,16 @@ describe("desktop electron-builder config", () => {
     expect(config.publish[0].channel).toBe("nightly");
   });
 });
+
+it("wires the update-aware CLI uninstall include into NSIS", () => {
+  const config = loadBuilderConfig();
+  expect(config.nsis.include).toBe(
+    path.resolve(__dirname, "installer/cli-command.nsh"),
+  );
+  const script = readFileSync(config.nsis.include, "utf8");
+  expect(script).toContain("!macro customUnInstall");
+  expect(script).toContain("${isUpdated}");
+  expect(script).toContain("WriteRegExpandStr HKCU");
+  expect(script).toContain("WriteRegStr HKCU");
+  expect(script).toContain("/TIMEOUT=5000");
+});

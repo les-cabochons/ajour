@@ -318,6 +318,11 @@ export const pluginCapabilitiesObjectSchema = z.object({
   connector: z
     .object({
       settle: z.boolean().optional(),
+      /**
+       * Assignees: each synced item's assignee, `searchAssignees`, and an
+       * assignee on the settle write. See ADR 0017.
+       */
+      assign: z.boolean().optional(),
       /** Comments on synced items. See ADR 0008. */
       comments: backlogCommentsCapabilitySchema.optional(),
       /** Two-way descriptions. See ADR 0009. */
@@ -1195,6 +1200,13 @@ export const backlogImportCandidateInputSchema = z.object({
    */
   stateDone: z.boolean().optional(),
   assignedTo: z.string().trim().max(240).optional(),
+  /**
+   * Who the item is assigned to, from a plugin with `connector.assign`. The
+   * plugin leaves it out, or sends null, for an unassigned item, and Ajour's
+   * API records null; an item from a plugin without `assign` has none. The
+   * id is the plugin's own: the one its settle write takes.
+   */
+  assignee: backlogPersonSchema.nullable().optional(),
   priority: backlogPriorityLevelSchema.optional(),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
@@ -1272,16 +1284,22 @@ export type BacklogSettleStatesResult = z.infer<
 /**
  * Writes a settle to one backlog item. Only changed fields are sent. The
  * plugin turns the priority level into a value of its source priority field.
+ * `assignee`, only sent to a plugin with `connector.assign`, is an id from
+ * its sync or `searchAssignees`; `null` unassigns the item.
  */
 export const backlogSettleWriteRequestSchema = z
   .object({
     sourceId: z.string().trim().min(1).max(400),
     state: z.string().trim().min(1).max(120).optional(),
     priority: backlogPriorityLevelSchema.optional(),
+    assignee: backlogPersonSchema.shape.id.nullable().optional(),
   })
   .refine(
-    (request) => request.state !== undefined || request.priority !== undefined,
-    "A settle write needs a state, a priority or both.",
+    (request) =>
+      request.state !== undefined ||
+      request.priority !== undefined ||
+      request.assignee !== undefined,
+    "A settle write needs a state, a priority or an assignee.",
   );
 export type BacklogSettleWriteRequest = z.infer<
   typeof backlogSettleWriteRequestSchema
@@ -1298,12 +1316,35 @@ export type BacklogSettleWriteResult = z.infer<
   typeof backlogSettleWriteResultSchema
 >;
 
+/**
+ * The people a backlog item can be assigned to, for the settle dialog. Needs
+ * `connector.assign`. An empty query asks for the item's likely assignees,
+ * such as the people on it and those recently active in its project.
+ */
+export const backlogSearchAssigneesRequestSchema = z.object({
+  sourceId: z.string().trim().min(1).max(400),
+  query: z.string().trim().max(100),
+  limit: z.number().int().min(1).max(20),
+});
+export type BacklogSearchAssigneesRequest = z.infer<
+  typeof backlogSearchAssigneesRequestSchema
+>;
+
+export const backlogSearchAssigneesResultSchema = z.object({
+  /** In the id space of the settle write's `assignee`. */
+  people: z.array(backlogPersonSchema).max(20),
+});
+export type BacklogSearchAssigneesResult = z.infer<
+  typeof backlogSearchAssigneesResultSchema
+>;
+
 /** A synced backlog item that reached a done category in its source. */
 export const backlogDoneWorkItemSchema = z.object({
   source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),
   sourceId: z.string().trim().min(1).max(400),
   state: z.string().trim().max(120).optional(),
+  assignee: backlogPersonSchema.nullable().optional(),
   /** The item's description, which syncs whether or not the item stays open. */
   description: backlogSyncedDescriptionSchema.optional(),
 });

@@ -1212,6 +1212,50 @@
     flex-shrink: 0;
   }
 
+  /* One row (council round 11): Filter, the status, which truncates, the
+     unmapped count, then Display. */
+  .backlog-workspace-filterbar {
+    flex-wrap: nowrap;
+  }
+
+  .backlog-workspace-status {
+    display: flex;
+    flex: 1;
+    order: 1;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .backlog-narrow-display {
+    order: 2;
+  }
+
+  .backlog-unmapped-words {
+    display: none;
+  }
+
+  .backlog-workspace-status:empty {
+    display: none;
+  }
+
+  .backlog-workspace-status .backlog-refresh {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .backlog-workspace-status .backlog-refresh > span[role="status"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .backlog-workspace-status .backlog-unmapped {
+    flex-shrink: 0;
+  }
+
   /* Two lines (#512): the title, then the project, the item's markers and
      its source state. The content and properties containers step aside
      (display: contents), so their own children take the row's grid tracks;

@@ -1,6 +1,6 @@
 # Backlog API
 
-A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state and priority back when the user settles or moves an item, and show an item's comments. This page is the reference for plugin API version 3. The backlog capability is declared under the `connector` key until plugin API 4.
+A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state, priority and assignee back when the user settles or moves an item, and show an item's comments. This page is the reference for plugin API version 3. The backlog capability is declared under the `connector` key until plugin API 4.
 
 ## Functions
 
@@ -12,6 +12,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `syncConnection`         | `capabilities.connector`                    | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
 | `listSettleStates`       | `capabilities.connector.settle`             | The settle dialog opens for one of your items.                                                                                         |
 | `writeSettle`            | `capabilities.connector.settle`             | A settle or move is due, after the Undo toast closes.                                                                                  |
+| `searchAssignees`        | `capabilities.connector.assign`             | The settle dialog's Assignee field opens, and each name the user types in it.                                                          |
 | `readDescription`        | `capabilities.connector.description`        | The user opens the description editor, and before each save of the description.                                                        |
 | `writeDescription`       | `capabilities.connector.description.write`  | The user saves an edited description, or picks Keep mine in Sync review.                                                               |
 | `listItemComments`       | `capabilities.connector.comments`           | The user opens one of your items, and again for each "Show earlier comments".                                                          |
@@ -41,6 +42,11 @@ export async function writeSettle(
   connection: PluginConnection,
   request: BacklogSettleWriteRequest,
 ): Promise<BacklogSettleWriteResult>;
+
+export async function searchAssignees(
+  connection: PluginConnection,
+  request: BacklogSearchAssigneesRequest,
+): Promise<BacklogSearchAssigneesResult>;
 
 export async function readDescription(
   connection: PluginConnection,
@@ -166,13 +172,27 @@ Return the states an item can move to, for the settle dialog. Ajour passes the i
 
 ## writeSettle
 
-Ajour sends only what changed: `state`, `priority`, or both. Write them, then return the item's values in the tool after the write. Ajour stores them as the item's source values.
+Ajour sends only what changed: `state`, `priority`, `assignee`, or several of them. Write them, then return the item's values in the tool after the write. Ajour stores them as the item's source values.
+
+With `connector.assign`, `assignee` is the id of a person from your sync or `searchAssignees`, and `null` unassigns the item. See [Assignees](#assignees).
 
 Ajour sends the write once the Undo toast closes, about 8 seconds after the user acts, or at the next launch if Ajour quit first. If you throw, Ajour restores the item's previous values and shows your message until the user dismisses it.
 
 ::: tip Check the target
 `sourceId` comes from your own sync, but treat it as input. Before you send a credential to a URL built from it, check that it points at the connection's site. The Azure DevOps plugin refuses work item URLs outside the configured organization.
 :::
+
+## Assignees
+
+Declare `capabilities.connector.assign` when your tool lets the user reassign an item. The settle dialog then shows an Assignee field, which starts on the item's assignee, and Ajour sends the person the user picks with the settle.
+
+- **Sync.** Return each item's `assignee`: an id, a display name and an email when you know it. Leave it out, or send `null`, for an unassigned item. Keep `assignedTo` for older Ajour versions. Ajour brings a settled item back when a sync shows another assignee than the one it had when it was settled.
+- **`searchAssignees`.** Ajour calls it when the field opens, with an empty `query`: return the people most likely to take the item, such as the people on it and those recently active in its project. It calls it again for each name the user types: search everyone the item can be assigned to. Return at most `limit` people.
+- **`writeSettle`.** `assignee` is an id you returned. Assign the item to that person, or unassign it for `null`.
+
+The ids are yours, and Ajour only hands them back. Use the id your write takes, which may not be your mention id: Azure DevOps mentions use the identity id, while its assigned-to field takes the unique name.
+
+When a connection declares access choices, a typed `query` needs the one that lists `searchAssignees`, as people search does. Without it, Ajour lists the empty query's people and filters them by the typed name itself.
 
 ## readDescription
 
@@ -316,6 +336,8 @@ export interface BacklogImportCandidateInput {
   stateDone?: boolean;
   /** Up to 240 characters. */
   assignedTo?: string;
+  /** With `connector.assign`. Leave it out, or `null`, for an unassigned item. */
+  assignee?: BacklogPerson | null;
   priority?: BacklogPriorityLevel;
   /** Hours, 0 or more. */
   originalEstimateHours?: number;
@@ -419,6 +441,21 @@ export interface BacklogSettleWriteRequest {
   sourceId: string;
   state?: string;
   priority?: BacklogPriorityLevel;
+  /** With `connector.assign`: a person's id, or `null` to unassign. */
+  assignee?: string | null;
+}
+
+export interface BacklogSearchAssigneesRequest {
+  sourceId: string;
+  /** What the user typed; empty when the field opens. */
+  query: string;
+  /** 1 to 20. */
+  limit: number;
+}
+
+export interface BacklogSearchAssigneesResult {
+  /** In the id space of the settle write's `assignee`. */
+  people: BacklogPerson[];
 }
 
 export interface BacklogReadDescriptionRequest {
@@ -465,11 +502,15 @@ export type BacklogReaction =
   | "rocket"
   | "eyes";
 
-/** A person in the tool, in the same id space as comment authors. */
+/**
+ * A person in the tool. A comment's author and a mention use the comments' id
+ * space; an assignee uses the settle write's.
+ */
 export interface BacklogPerson {
+  /** Up to 400 characters. */
   id: string;
   displayName: string;
-  /** Shown under the name in the @ suggestions. */
+  /** Shown under the name in the @ suggestions and the Assignee field. */
   email?: string;
 }
 

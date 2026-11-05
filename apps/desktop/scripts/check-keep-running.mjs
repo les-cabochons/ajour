@@ -419,9 +419,15 @@ async function main() {
       "CLI start leaves the window hidden",
     );
     await trayClick("Open Ajour");
+    // MCP's start_timer showed the same title. The toasts that replaced it
+    // close with an animation, which doesn't run while the window is hidden,
+    // so that toast can still be closing when the window shows again. Take
+    // the open toast, the one Ctrl+Z would undo: not closing, not limited.
     const undoToast = page
       .getByText("Lifecycle check: Started an entry", { exact: true })
-      .locator("../..");
+      .locator(
+        "xpath=ancestor::*[3][not(@data-ending-style) and not(@data-limited)]",
+      );
     await undoToast
       .getByRole("button", { name: "Undo", exact: true })
       .waitFor({ timeout: STEP_TIMEOUT_MS });
