@@ -11,6 +11,7 @@ import {
 } from "@/domain/projects/project-transitions";
 import {
   answerSourceWaitingTasks,
+  confirmProjectSourceUnchanged,
   disconnectProjectSource,
   findHeldSourceMatch,
   resolveHeldSourceProject,
@@ -900,6 +901,28 @@ describe("the Not known yet question", () => {
 
     expect(answered.matchedCount).toBe(0);
     expect(answered.projects).toBe(synced.projects);
+  });
+});
+
+describe("the connection's sync time", () => {
+  it("is the time the local API answered, after a snapshot or a no-change answer", () => {
+    const synced = syncProjectSource(
+      stateWith([]),
+      CONNECTION,
+      snapshot(),
+      createFactories(),
+      { syncedAt: 7_000 },
+    );
+    expect(synced.projectSources.c1!.syncedAt).toBe(7_000);
+
+    const confirmed = confirmProjectSourceUnchanged(synced, "c1", 9_000);
+    expect(confirmed.projectSources.c1).toEqual({
+      ...synced.projectSources.c1,
+      syncedAt: 9_000,
+    });
+    expect(confirmed.projects).toBe(synced.projects);
+    // Nothing to confirm for a connection the web holds nothing from.
+    expect(confirmProjectSourceUnchanged(synced, "c2", 9_000)).toBe(synced);
   });
 });
 

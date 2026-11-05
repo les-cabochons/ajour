@@ -11,7 +11,7 @@ import {
   syncProjectSource,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
-import { exclusively } from "@/lib/team-sync";
+import { exclusively } from "@/lib/window-lock";
 import { wideEvents } from "@/lib/wide-events";
 
 /*
@@ -41,26 +41,32 @@ export type ProjectSourceSyncOutcome =
 
 const runningSyncs = new Map<string, Promise<ProjectSourceSyncOutcome>>();
 
-/** Whether the local API still has the connection with Managed projects on. */
-async function isConnectionActive(pluginId: string, connectionId: string) {
+/**
+ * The connection, when the local API has it with Managed projects on, read
+ * from a fresh overview.
+ */
+async function activeConnection(pluginId: string, connectionId: string) {
   const overview = await getPluginsOverview();
-  if (overview.pluginsEnabled === false) return false;
+  if (overview.pluginsEnabled === false) return undefined;
   const group = overview.connectionGroups.find(
     (entry) => entry.plugin.id === pluginId,
   );
-  return Boolean(
-    group &&
-    isCapabilityActive(group, "projectSource") &&
-    group.connections.some((entry) => entry.id === connectionId),
-  );
+  if (!group || !isCapabilityActive(group, "projectSource")) return undefined;
+  return group.connections.find((entry) => entry.id === connectionId);
 }
 
 /**
  * Syncs one project source connection, as one `project_source.sync` job: its
- * local API call and the store command that applies the answer count on
+ * local API calls and the store command that applies the answer count on
  * it. A manual and a scheduled call share one run, and other windows wait
- * for it. When the web holds nothing from the connection yet, it asks for
- * the whole snapshot, so an "unchanged" answer can't leave it empty.
+ * for it.
+ *
+ * The local API keeps the cursor, and moves it before the web applies the
+ * answer. So the web asks for the whole snapshot when it holds nothing from
+ * the connection, or when its last applied sync is older than the
+ * connection's last sync: an answer it discarded, or whose apply threw,
+ * would otherwise leave it behind for good. Another capability's sync of
+ * the same connection also moves that time, and costs one whole read.
  */
 export function syncProjectSourceConnection(
   pluginId: string,
@@ -76,7 +82,20 @@ export function syncProjectSourceConnection(
     job: Unit<AjourCatalog, "project_source.sync">,
   ): Promise<ProjectSourceSyncOutcome> => {
     const generation = connectionGeneration(pluginId, connectionId);
-    const fresh = !localStore.snapshot().projectSources?.[connectionId];
+    const summary = await job.enter(() =>
+      activeConnection(pluginId, connectionId),
+    );
+    if (!summary) {
+      job.refuse("connection_not_found");
+      throw new Error(
+        "This project source connection is gone, or Managed projects is off.",
+      );
+    }
+    const record = localStore.snapshot().projectSources?.[connectionId];
+    const fresh =
+      !record ||
+      (summary.lastSyncAt !== undefined &&
+        record.syncedAt < summary.lastSyncAt);
     job.set({
       plugin: { id: pluginId },
       connection: { id: connectionId },
@@ -91,12 +110,13 @@ export function syncProjectSourceConnection(
         fresh,
       }),
     );
-    if ("unchanged" in answer) {
-      job.set({ project_source_sync: { unchanged: true } });
-      return { kind: "unchanged" };
-    }
-    // Saved again or removed while the snapshot was on its way, here or in
-    // another window: the answer may be for another account.
+    // The time the next sync compares with the connection's last sync.
+    const syncedAt = answer.connection.lastSyncAt ?? Date.now();
+    // The answer may be for another account: the connection was saved again
+    // or removed in this window while the snapshot was on its way, or it was
+    // removed, or Managed projects turned off, in any window. A save in
+    // another window after the local API answered goes unnoticed; the API
+    // refuses one made while the plugin ran.
     const discard = (reason: "connection_changed" | "connection_gone") => {
       job.set({ project_source_sync: { discarded: reason } }).end("noop");
       return { kind: "discarded" } as const;
@@ -104,13 +124,24 @@ export function syncProjectSourceConnection(
     if (connectionGeneration(pluginId, connectionId) !== generation) {
       return discard("connection_changed");
     }
-    if (!(await job.enter(() => isConnectionActive(pluginId, connectionId)))) {
+    if ("unchanged" in answer) {
+      job.set({ project_source_sync: { unchanged: true } });
+      job.enter(() =>
+        localStore.confirmProjectSourceUnchanged(
+          { pluginId, connectionId },
+          syncedAt,
+        ),
+      );
+      return { kind: "unchanged" };
+    }
+    if (!(await job.enter(() => activeConnection(pluginId, connectionId)))) {
       return discard("connection_gone");
     }
     const result = job.enter(() =>
       localStore.applyProjectSourceSync(
         { pluginId, connectionId },
         answer.snapshot,
+        syncedAt,
       ),
     );
     const { waitingQuestions, ...counts } = result;

@@ -261,6 +261,7 @@ import {
 import { normalizeProjectSources } from "@/domain/projects/source-link";
 import {
   answerSourceWaitingTasks as applyAnswerSourceWaitingTasks,
+  confirmProjectSourceUnchanged,
   disconnectProjectSource,
   resolveHeldSourceProject,
   syncProjectSource,
@@ -1852,6 +1853,7 @@ const store = {
   applyProjectSourceSync(
     connection: ProjectSourceConnectionRef,
     snapshot: ProjectSourceSnapshot,
+    syncedAt: number,
   ): ProjectSourceSyncResult {
     return updateStateWithResult<ProjectSourceSyncResult>((state) => {
       const next = syncProjectSource(
@@ -1859,8 +1861,27 @@ const store = {
         connection,
         snapshot,
         { createId, now: Date.now },
+        { syncedAt },
       );
       return { state: withSourceSyncState(state, next), result: next.result };
+    });
+  },
+  /**
+   * A project source had nothing new: the connection keeps the local API's
+   * new sync time, so the next sync trusts its cursor.
+   */
+  confirmProjectSourceUnchanged(
+    connection: ProjectSourceConnectionRef,
+    syncedAt: number,
+  ) {
+    updateState((state) => {
+      const before = sourceSyncStateOf(state);
+      const next = confirmProjectSourceUnchanged(
+        before,
+        connection.connectionId,
+        syncedAt,
+      );
+      return next === before ? state : withSourceSyncState(state, next);
     });
   },
   /** The user's answer for a held source project, from Sync review. No Undo. */
@@ -3590,6 +3611,14 @@ export const STORE_COMMANDS = {
   },
   removeConnectionTeamData: "connection.delete",
   applyProjectSourceSync: {
+    name: "project_source.apply_sync",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([connection]) => connection.pluginId },
+      connection: { id: ([connection]) => connection.connectionId },
+    },
+  },
+  confirmProjectSourceUnchanged: {
     name: "project_source.apply_sync",
     trigger: "system",
     fields: {

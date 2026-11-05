@@ -57,6 +57,9 @@ afterEach(async () => {
   await api.stop();
 });
 
+/** Lets the clock move, so the API's next sync time is a later one. */
+const pause = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 async function load() {
   const sink = createRecordingSink<AjourEvent>();
   (await import("@/lib/wide-events")).replaceEventSink(sink);
@@ -126,7 +129,8 @@ describe("a project source sync", () => {
         archived_count: 1,
         held_count: 0,
       },
-      counts: expect.objectContaining({ api_call_count: 2 }),
+      // The overview before and after the read, and the read.
+      counts: expect.objectContaining({ api_call_count: 3 }),
     });
     // The store command folds into the job: no event of its own.
     expect(
@@ -170,6 +174,100 @@ describe("a project source sync", () => {
 
     expect(outcome).toMatchObject({ kind: "applied", counts: { created: 2 } });
     expect(managed()).toHaveLength(2);
+  });
+
+  it("trusts the API's cursor while each answer applies", async () => {
+    const { sync, connectionId, localStore, appApi, recorded } = await load();
+    await sync();
+    const overview = await appApi.getPluginsOverview();
+    const lastSyncAt = overview.connectionGroups
+      .flatMap((group) => group.connections)
+      .find((entry) => entry.id === connectionId)!.lastSyncAt;
+
+    // The web's clock is the API's answer: the scheduler and the next
+    // sync compare the same times.
+    expect(localStore.snapshot().projectSources?.[connectionId]?.syncedAt).toBe(
+      lastSyncAt,
+    );
+    await pause();
+    expect(await sync("schedule")).toEqual({ kind: "unchanged" });
+    await pause();
+    expect(await sync("schedule")).toEqual({ kind: "unchanged" });
+    expect(
+      recorded
+        .filter(
+          (event) =>
+            event.name === "project_source.sync" && event.kind === "job",
+        )
+        .map((event) => event.project_source_sync?.fresh),
+    ).toEqual([true, false, false]);
+  });
+
+  it("reads all of the snapshot again after an answer the web never applied", async () => {
+    const { sync, connectionId, appApi, recorded } = await load();
+    await sync();
+    await pause();
+    // The API keeps the new cursor, but this answer never reaches the
+    // projects: discarded, or its apply threw.
+    await appApi.syncProjectSource(PLUGIN, connectionId, { trigger: "auto" });
+    await pause();
+
+    const outcome = await sync("schedule");
+
+    expect(outcome).toMatchObject({ kind: "applied" });
+    expect(recorded.at(-1)).toMatchObject({
+      name: "project_source.sync",
+      kind: "job",
+      project_source_sync: { fresh: true, unchanged: false },
+    });
+  });
+
+  it("discards an answer for a connection that went while it was on its way, as a noop", async () => {
+    const { sync, connectionId, localStore, recorded } = await load();
+    // Removed from another window: this window's local store never hears.
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const response = await fetchAsTheApp(url, init);
+      if (String(url).endsWith("/sync-projects")) {
+        await fetchAsTheApp(
+          `${api.baseUrl}/api/plugins/${PLUGIN}/connections/${connectionId}`,
+          { method: "DELETE" },
+        );
+      }
+      return response;
+    });
+
+    expect(await sync()).toEqual({ kind: "discarded" });
+
+    expect(localStore.snapshot().projects.some((p) => p.source)).toBe(false);
+    expect(
+      localStore.snapshot().projectSources?.[connectionId],
+    ).toBeUndefined();
+    expect(recorded.at(-1)).toMatchObject({
+      name: "project_source.sync",
+      kind: "job",
+      outcome: "noop",
+      project_source_sync: { discarded: "connection_gone" },
+    });
+    expect(recorded.at(-1)).not.toHaveProperty("outcome_reason");
+  });
+
+  it("records a failed sync, and applies nothing", async () => {
+    const { sync, connectionId, localStore, recorded } = await load();
+    await fetchAsTheApp(
+      `${api.baseUrl}/api/plugins/${PLUGIN}/connections/${connectionId}`,
+      { method: "DELETE" },
+    );
+
+    await expect(sync()).rejects.toThrow();
+
+    expect(localStore.snapshot().projects.some((p) => p.source)).toBe(false);
+    expect(recorded.at(-1)).toMatchObject({
+      name: "project_source.sync",
+      kind: "job",
+      outcome: "refused",
+      outcome_reason: "connection_not_found",
+      error: { type: expect.any(String) },
+    });
   });
 
   it("turns the managed projects into local ones when the connection is removed", async () => {

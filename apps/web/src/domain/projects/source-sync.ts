@@ -356,7 +356,7 @@ function connectionRecord(
   snapshot: ProjectSourceSnapshot,
   connection: ProjectSourceConnectionRef,
   held: ProjectSourceProject[],
-  now: number,
+  syncedAt: number,
 ): LocalProjectSource {
   return {
     pluginId: connection.pluginId,
@@ -364,7 +364,7 @@ function connectionRecord(
     ...(snapshot.source.url ? { url: snapshot.source.url } : {}),
     asOf: snapshot.asOf,
     ...(snapshot.me ? { me: snapshot.me } : {}),
-    syncedAt: now,
+    syncedAt,
     held,
   };
 }
@@ -392,13 +392,16 @@ function createManagedProject(
 
 /**
  * Syncs one snapshot into the workspace's projects, and keeps what the
- * connection needs between syncs.
+ * connection needs between syncs. `syncedAt` is the connection's last sync
+ * time as the local API answered it, so a later sync can tell whether it
+ * missed an answer; it defaults to now.
  */
 export function syncProjectSource(
   state: ProjectSourceSyncState,
   connection: ProjectSourceConnectionRef,
   snapshot: ProjectSourceSnapshot,
   factories: ProjectFactories,
+  options: { syncedAt?: number } = {},
 ): ProjectSourceSyncState & { result: ProjectSourceSyncResult } {
   const now = factories.now();
   const projects = [...state.projects];
@@ -522,10 +525,30 @@ export function syncProjectSource(
         snapshot,
         connection,
         held,
-        now,
+        options.syncedAt ?? now,
       ),
     },
     result,
+  };
+}
+
+/**
+ * The source had nothing new: the projects stay, and the connection keeps
+ * the local API's new sync time, so the next sync trusts its cursor.
+ */
+export function confirmProjectSourceUnchanged(
+  state: ProjectSourceSyncState,
+  connectionId: string,
+  syncedAt: number,
+): ProjectSourceSyncState {
+  const record = state.projectSources[connectionId];
+  if (!record || record.syncedAt === syncedAt) return state;
+  return {
+    ...state,
+    projectSources: {
+      ...state.projectSources,
+      [connectionId]: { ...record, syncedAt },
+    },
   };
 }
 
