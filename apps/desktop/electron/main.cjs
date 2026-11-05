@@ -1347,16 +1347,21 @@ function getContextMenuIcon(icon) {
 /**
  * Shows the edit menu on a right-click that no object menu claimed. Object
  * menus cancel the page's contextmenu event, so Electron only reports the
- * right-clicks they leave alone.
+ * right-clicks they leave alone. `copySelection` copies selected text outside
+ * a field; the main window's page needs it to skip its own copy listeners.
  */
-function showEditContextMenu(window, params) {
+function showEditContextMenu(
+  window,
+  params,
+  copySelection = () => window.webContents.send("ajour:copy-selection"),
+) {
   const { webContents } = window;
   const template = buildEditContextMenuTemplate(params, {
     replaceMisspelling: (word) => webContents.replaceMisspelling(word),
     addToDictionary: (word) =>
       webContents.session.addWordToSpellCheckerDictionary(word),
     copyText: (text) => clipboard.writeText(text),
-    copySelection: () => webContents.send("ajour:copy-selection"),
+    copySelection,
   });
   if (template.length > 0) {
     Menu.buildFromTemplate(template).popup({
@@ -2200,6 +2205,11 @@ async function createMainWindow(trigger = "launch") {
     child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     child.webContents.on("will-navigate", (event) => event.preventDefault());
     child.webContents.on("will-redirect", (event) => event.preventDefault());
+    // The panel's fields get the main window's edit menu. Its document has
+    // none of the page's copy listeners, so Copy is the browser's own.
+    child.webContents.on("context-menu", (_event, params) => {
+      showEditContextMenu(child, params, () => child.webContents.copy());
+    });
   });
 
   window.on("session-end", recordSessionEnd);
