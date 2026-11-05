@@ -594,3 +594,24 @@ body:has([data-slot="dialog-content"].composer-floating)
   .searchable-select-input {
   padding-inline-start: 8px;
 }
+
+/* A composer's ⋯, expand and × sit in its top right corner, out of the
+   flow, so it starts with what the user writes (forms council round 15).
+   The title keeps clear of them. */
+.composer-root {
+  position: relative;
+}
+
+.composer-root > .composer-actions {
+  position: absolute;
+  z-index: 1;
+  top: -8px;
+  right: -8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer-root .composer-title {
+  padding-inline-end: 5.5rem;
+}

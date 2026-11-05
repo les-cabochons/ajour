@@ -165,7 +165,7 @@ function CreateTaskForm({
 
   return (
     <DialogContent className="composer-nested max-w-md gap-4">
-      <DialogHeader className="gap-1">
+      <DialogHeader className="sr-only">
         <DialogTitle className="sr-only">Create task</DialogTitle>
         <DialogDescription className="sr-only">
           Name the task and pick its project.

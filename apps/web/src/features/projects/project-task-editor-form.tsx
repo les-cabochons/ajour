@@ -116,27 +116,32 @@ export function ProjectTaskEditorForm({
   return (
     <div
       ref={rootRef}
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("composer-root flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {/* No "New task" line: the project it belongs to opens the
+      <header className="flex min-w-0 flex-col gap-0.5 pe-20">
+        {/* No "New task" line: the project it belongs to opens the
               composer (forms council round 15). */}
-          <Title className="sr-only">
-            {editor.isNew ? "New task" : "Edit task"}
-          </Title>
-          <span className="truncate text-xs text-muted-foreground">
-            {projectName}
-          </span>
-        </div>
-        <TooltipButton
-          label="Close"
-          render={<Button variant="ghost" size="icon" onClick={onClose} />}
-        >
-          <X />
-        </TooltipButton>
+        <Title className="sr-only">
+          {editor.isNew ? "New task" : "Edit task"}
+        </Title>
+        <span className="truncate text-xs text-muted-foreground">
+          {projectName}
+        </span>
       </header>
+      <TooltipButton
+        label="Close"
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="composer-actions"
+            onClick={onClose}
+          />
+        }
+      >
+        <X />
+      </TooltipButton>
 
       {/* A composer, as the backlog editor's: the name to write in, then
           the task's properties as chips (forms council round 6). */}

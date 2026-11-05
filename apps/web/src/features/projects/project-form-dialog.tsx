@@ -88,7 +88,7 @@ export function ProjectFormDialog({
         overlay={narrow}
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <DialogHeader className="gap-1">
+          <DialogHeader className="sr-only">
             {/* The composer says what it makes by itself; its title only
                 names the dialog for assistive tech (forms council round 13). */}
             <DialogTitle className="sr-only">

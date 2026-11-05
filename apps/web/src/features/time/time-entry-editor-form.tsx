@@ -411,42 +411,44 @@ export function TimeEntryEditorForm({
   return (
     <div
       ref={rootRef}
-      className={cn("time-entry-editor flex flex-col gap-5", className)}
+      className={cn(
+        "time-entry-editor composer-root flex flex-col gap-5",
+        className,
+      )}
       data-mode={target.kind}
       onKeyDown={handleKeyDown}
     >
-      <div className="flex h-7 items-center justify-between gap-2">
-        {/* No "New time entry" line: the hours open the composer. The
-            title stays for assistive tech, naming the dialog (forms council
-            round 15). */}
-        <Title className="sr-only">
-          {target.kind === "create" ? "New time entry" : "Edit time entry"}
-        </Title>
-        <div className="ml-auto flex items-center">
-          {actionTarget ? (
-            <ObjectActionsButton
-              actions={entryActions.getActions(actionTarget, {
-                isEditing: true,
-                invalidDraftReason:
-                  lockReason || editor.canSave
-                    ? undefined
-                    : "Enter a valid duration first",
-              })}
-              onAction={(actionId) =>
-                withEventAttribution({ surface: editorSurface }, () =>
-                  handleAction(actionId),
-                )
-              }
-              label="Entry actions"
-            />
-          ) : null}
-          <TooltipButton
-            label="Close"
-            render={<Button variant="ghost" size="icon" onClick={onClose} />}
-          >
-            <X />
-          </TooltipButton>
-        </div>
+      {/* No "New time entry" line: the hours open the composer. The title
+          stays for assistive tech, naming the dialog, and ⋯ and × sit in the
+          corner, so the composer starts with what the user writes (forms
+          council round 15). */}
+      <Title className="sr-only">
+        {target.kind === "create" ? "New time entry" : "Edit time entry"}
+      </Title>
+      <div className="composer-actions">
+        {actionTarget ? (
+          <ObjectActionsButton
+            actions={entryActions.getActions(actionTarget, {
+              isEditing: true,
+              invalidDraftReason:
+                lockReason || editor.canSave
+                  ? undefined
+                  : "Enter a valid duration first",
+            })}
+            onAction={(actionId) =>
+              withEventAttribution({ surface: editorSurface }, () =>
+                handleAction(actionId),
+              )
+            }
+            label="Entry actions"
+          />
+        ) : null}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+        >
+          <X />
+        </TooltipButton>
       </div>
 
       {/* Only the status sits above the hours: the chips below already

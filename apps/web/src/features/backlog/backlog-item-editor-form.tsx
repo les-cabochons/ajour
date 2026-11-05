@@ -663,19 +663,62 @@ export function BacklogItemEditorForm({
   return (
     <div
       ref={rootRef}
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("composer-root flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      {/* With no kicker, the title sits closer to the ticket line. */}
-      <header className={cn("flex items-start justify-between gap-2", "-mb-2")}>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {/* No "New backlog item" or "Edit backlog item" line: the
-              composer says what it is by itself, and an existing item opens
-              on its ticket line. The title stays for assistive tech, naming
-              the dialog (forms council rounds 13 and 15). */}
-          <Title className="sr-only">
-            {getEditorTitle(target, editor.isSubitem)}
-          </Title>
+      {/* No "New backlog item" or "Edit backlog item" line: the
+          composer says what it is by itself, and an existing item opens
+          on its ticket line. The title stays for assistive tech, naming
+          the dialog (forms council rounds 13 and 15). */}
+      <Title className="sr-only">
+        {getEditorTitle(target, editor.isSubitem)}
+      </Title>
+      {/* ⋯, the expand button and × sit in the corner, so the composer
+          starts with its ticket line or its title (forms council round 15). */}
+      <div className="composer-actions">
+        {onOpenPage ? (
+          <TooltipButton
+            label="Open as page"
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onOpenPage}
+              />
+            }
+          >
+            <OpenPageIcon />
+          </TooltipButton>
+        ) : null}
+        {workItem ? (
+          <ObjectActionsButton
+            actions={getBacklogItemActions(workItem, {
+              isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
+              isSubitem: editor.isSubitem,
+              isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
+              subitemCount: subitems.length,
+              isEditing: true,
+              settleOpensDialog: settleOpensDialog(workItem),
+              otherSourceStateCount: getOtherSourceStates(workItem).length,
+            })}
+            onAction={(actionId) =>
+              withEventAttribution({ surface: editorSurface }, () =>
+                handleAction(actionId),
+              )
+            }
+            label={`Actions for ${workItem.title}`}
+          />
+        ) : null}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+        >
+          <X />
+        </TooltipButton>
+      </div>
+      {parent || sourceMetaLabel ? (
+        <header className="-mb-2 flex min-w-0 flex-col gap-0.5 pe-28">
           {parent ? (
             <span className="truncate text-xs text-muted-foreground">
               Under {parent.title}
@@ -697,52 +740,8 @@ export function BacklogItemEditorForm({
               </span>
             )
           ) : null}
-        </div>
-        <div className="flex items-center gap-1">
-          {onOpenPage ? (
-            <TooltipButton
-              label="Open as page"
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={onOpenPage}
-                />
-              }
-            >
-              <OpenPageIcon />
-            </TooltipButton>
-          ) : null}
-          {workItem ? (
-            <ObjectActionsButton
-              actions={getBacklogItemActions(workItem, {
-                isRunning: Boolean(
-                  findWorkItemTimer(state.timers, workItem._id),
-                ),
-                isSubitem: editor.isSubitem,
-                isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
-                subitemCount: subitems.length,
-                isEditing: true,
-                settleOpensDialog: settleOpensDialog(workItem),
-                otherSourceStateCount: getOtherSourceStates(workItem).length,
-              })}
-              onAction={(actionId) =>
-                withEventAttribution({ surface: editorSurface }, () =>
-                  handleAction(actionId),
-                )
-              }
-              label={`Actions for ${workItem.title}`}
-            />
-          ) : null}
-          <TooltipButton
-            label="Close"
-            render={<Button variant="ghost" size="icon" onClick={onClose} />}
-          >
-            <X />
-          </TooltipButton>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       {workItem && hasWorkItemEstimateSyncIssue(workItem) ? (
         <p className="flex items-center gap-2 text-xs text-amber-300">
