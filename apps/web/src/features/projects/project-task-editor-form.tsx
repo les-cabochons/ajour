@@ -1,11 +1,19 @@
 import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
-import { RiCloseLine as X, RiSaveLine as Save } from "@remixicon/react";
+import {
+  RiCloseLine as X,
+  RiMoneyDollarCircleLine as BillableIcon,
+} from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/toggle-chip";
+import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { formatDurationHoursInput } from "@/domain/time/duration";
+import {
+  formatCompactDuration,
+  formatDurationHoursInput,
+  parseHoursInput,
+} from "@/domain/time/duration";
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
@@ -15,6 +23,16 @@ import type {
 } from "@/features/projects/project-task-editor";
 import { TaskPropertyFields } from "@/features/projects/task-property-fields";
 import { cn } from "@/lib/utils";
+
+/** Typed hours as figures show them ("120h", "-1h30"), or null if they aren't. */
+function formatBudgetFigure(value: string) {
+  const text = value.trim();
+  const negative = text.startsWith("-");
+  const ms = parseHoursInput(text.replace(/^[-+]/, ""));
+  return ms === null
+    ? null
+    : `${negative ? "-" : ""}${formatCompactDuration(ms)}`;
+}
 
 /**
  * The form for creating and editing a task: name, billable, budget, adjustment,
@@ -98,31 +116,44 @@ export function ProjectTaskEditorForm({
   return (
     <div
       ref={rootRef}
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("composer-root flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-sm font-semibold">
-            {editor.isNew ? "New task" : "Edit task"}
-          </Title>
-          <span className="truncate text-xs text-muted-foreground">
-            {projectName}
-          </span>
-        </div>
-        <TooltipButton
-          label="Close"
-          render={<Button variant="ghost" size="icon" onClick={onClose} />}
-        >
-          <X />
-        </TooltipButton>
+      <header className="flex min-w-0 flex-col gap-0.5 pe-20">
+        {/* No "New task" line: the project it belongs to opens the
+              composer (forms council round 15). */}
+        <Title className="sr-only">
+          {editor.isNew ? "New task" : "Edit task"}
+        </Title>
+        <span className="truncate text-xs text-muted-foreground">
+          {projectName}
+        </span>
       </header>
+      <TooltipButton
+        label="Close"
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="composer-actions"
+            onClick={onClose}
+          />
+        }
+      >
+        <X />
+      </TooltipButton>
 
-      <FieldGroup className="gap-4">
+      {/* A composer, as the backlog editor's: the name to write in, then
+          the task's properties as chips (forms council round 6). */}
+      <FieldGroup className="composer gap-3">
         <Field data-invalid={Boolean(nameError)}>
-          <FieldLabel htmlFor="project-task-editor-name">Name</FieldLabel>
-          <Input
+          <FieldLabel htmlFor="project-task-editor-name" className="sr-only">
+            Name
+          </FieldLabel>
+          <input
             id="project-task-editor-name"
+            className="composer-title"
+            autoComplete="off"
             value={fields.name}
             placeholder="Task name"
             aria-invalid={Boolean(nameError)}
@@ -131,60 +162,52 @@ export function ProjectTaskEditorForm({
           />
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
-        <Field orientation="horizontal">
-          <Checkbox
+        {/* Budget and adjustment are one sentence under the name, typed in
+            place, as a backlog item's estimates (forms council round 13). */}
+        <InlineFigures aria-label="Budget">
+          <InlineFigure
+            id="project-task-editor-budget"
+            label="budget"
+            value={fields.budget}
+            onChange={(budget) => onFieldsChange({ budget })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.budgetError)}
+            onKeyDown={saveOnEnter}
+          />
+          <InlineFigure
+            id="project-task-editor-adjustment"
+            label="adjustment"
+            value={fields.adjustment}
+            onChange={(adjustment) => onFieldsChange({ adjustment })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.adjustmentError)}
+            onKeyDown={saveOnEnter}
+          />
+        </InlineFigures>
+        <div className="composer-chips" role="group" aria-label="Properties">
+          <ToggleChip
             id="project-task-editor-billable"
             checked={fields.billable}
-            onCheckedChange={(checked) => onFieldsChange({ billable: checked })}
-          />
-          <FieldLabel htmlFor="project-task-editor-billable">
+            onCheckedChange={(billable) => onFieldsChange({ billable })}
+            icon={<BillableIcon aria-hidden className="size-3.5" />}
+          >
             Billable
-          </FieldLabel>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field data-invalid={Boolean(editor.budgetError)}>
-            <FieldLabel htmlFor="project-task-editor-budget">Budget</FieldLabel>
-            <Input
-              id="project-task-editor-budget"
-              className="font-mono"
-              value={fields.budget}
-              placeholder="Optional"
-              aria-invalid={Boolean(editor.budgetError)}
-              onChange={(event) =>
-                onFieldsChange({ budget: event.target.value })
-              }
-              onKeyDown={saveOnEnter}
-            />
-            {editor.budgetError ? (
-              <span className="field-error">{editor.budgetError}</span>
-            ) : null}
-          </Field>
-          <Field data-invalid={Boolean(editor.adjustmentError)}>
-            <FieldLabel htmlFor="project-task-editor-adjustment">
-              Adjustment
-            </FieldLabel>
-            <Input
-              id="project-task-editor-adjustment"
-              className="font-mono"
-              value={fields.adjustment}
-              placeholder="Optional"
-              aria-invalid={Boolean(editor.adjustmentError)}
-              onChange={(event) =>
-                onFieldsChange({ adjustment: event.target.value })
-              }
-              onKeyDown={saveOnEnter}
-            />
-            {editor.adjustmentError ? (
-              <span className="field-error">{editor.adjustmentError}</span>
-            ) : null}
-          </Field>
+          </ToggleChip>
+          <PinnedSlotField
+            taskName={fields.name}
+            taskId={taskId}
+            slot={fields.pinnedSlot}
+            onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
+          />
         </div>
-        <PinnedSlotField
-          taskName={fields.name}
-          taskId={taskId}
-          slot={fields.pinnedSlot}
-          onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
-        />
+        {editor.budgetError ? (
+          <span className="field-error">Budget: {editor.budgetError}</span>
+        ) : null}
+        {editor.adjustmentError ? (
+          <span className="field-error">
+            Adjustment: {editor.adjustmentError}
+          </span>
+        ) : null}
         <TaskPropertyFields
           plugins={taskPropertyPlugins}
           taskName={fields.name}
@@ -212,14 +235,8 @@ export function ProjectTaskEditorForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          type="button"
-
-          disabled={!editor.canSave}
-          onClick={onSave}
-        >
-          <Save data-icon="inline-start" />
-          Save
+        <Button type="button" disabled={!editor.canSave} onClick={onSave}>
+          {editor.isNew ? "Create task" : "Save"}
         </Button>
       </footer>
     </div>

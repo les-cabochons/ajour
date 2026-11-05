@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { FieldHelp } from "./field-help";
 import { DateField } from "@/components/ui/date-field";
 import {
   Field,
@@ -64,11 +65,14 @@ export function SecretFieldInput({
   value,
   onChange,
   binding,
+  row = false,
 }: {
   field: PluginField;
   value: string;
   onChange: (value: string) => void;
   binding: SecretFieldBinding;
+  /** A connection form's settings rows: the secret and its expiry as rows. */
+  row?: boolean;
 }) {
   const [replacing, setReplacing] = useState(binding.startReplacing === true);
   const cancelled = useRef(false);
@@ -89,93 +93,167 @@ export function SecretFieldInput({
     document.getElementById(replaceId)?.focus();
   }, [replacing, replaceId]);
 
-  return (
-    <Field className="desktop:col-span-2">
-      <FieldLabel htmlFor={showInput ? inputId : undefined}>
-        {field.label}
-      </FieldLabel>
-      <FieldContent>
-        {existing ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip tone={state.tone} data-secret-state={state.kind}>
-              {state.label}
-            </Chip>
-            {hasSecret ? (
-              <span className="text-xs text-[var(--text-tertiary)]">
-                {describeLastUse(summary.lastUsedAt, now)}
-              </span>
-            ) : null}
-            <span className="flex-1" />
-            {hasSecret && !replacing ? (
-              <>
-                <Button
-                  id={replaceId}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={blocked || binding.busy}
-                  // The name starts with the visible text, so voice control can say it.
-                  aria-label={`${replaceText} ${field.label}`}
-                  onClick={() => setReplacing(true)}
-                >
-                  {replaceText}
-                </Button>
-                {binding.onRemove ? (
-                  <RemoveSecretButton
-                    label={field.label}
-                    effect={binding.removeEffect}
-                    disabled={blocked || binding.busy}
-                    onRemove={() => {
-                      binding.onRemove?.();
-                      // Remove takes its button away: focus goes to the input
-                      // the field shows once nothing is saved.
-                      focusWhenPresent(inputId);
-                    }}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        ) : null}
-        {showInput ? (
-          <div className="flex gap-2">
-            <Input
-              id={inputId}
-              type="password"
-              value={value}
-              autoFocus={replacing}
-              disabled={blocked}
-              placeholder={
-                replacing ? "Paste the new value" : field.placeholder
-              }
-              autoComplete="off"
-              onChange={(event) => onChange(event.target.value)}
-            />
-            {replacing ? (
+  const stateLine = (
+    <>
+      {existing ? (
+        <>
+          <Chip tone={state.tone} data-secret-state={state.kind}>
+            {state.label}
+          </Chip>
+          {hasSecret ? (
+            <span className="text-xs text-[var(--text-tertiary)]">
+              {describeLastUse(summary.lastUsedAt, now)}
+            </span>
+          ) : null}
+          <span className="flex-1" />
+          {hasSecret && !replacing ? (
+            <>
               <Button
+                id={replaceId}
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  onChange("");
-                  cancelled.current = true;
-                  setReplacing(false);
-                }}
+                size="sm"
+                variant="ghost"
+                disabled={blocked || binding.busy}
+                // The name starts with the visible text, so voice control can say it.
+                aria-label={`${replaceText} ${field.label}`}
+                onClick={() => setReplacing(true)}
               >
-                Cancel
+                {replaceText}
               </Button>
+              {binding.onRemove ? (
+                <RemoveSecretButton
+                  label={field.label}
+                  effect={binding.removeEffect}
+                  disabled={blocked || binding.busy}
+                  onRemove={() => {
+                    binding.onRemove?.();
+                    // Remove takes its button away: focus goes to the input
+                    // the field shows once nothing is saved.
+                    focusWhenPresent(inputId);
+                  }}
+                />
+              ) : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </>
+  );
+  const inputAndHelp = (
+    <>
+      {showInput ? (
+        <div className="flex gap-2">
+          <Input
+            id={inputId}
+            className={row ? "inline-field" : undefined}
+            type="password"
+            value={value}
+            autoFocus={replacing}
+            disabled={blocked}
+            placeholder={
+              replacing
+                ? "Paste the new value"
+                : row && field.placeholder
+                  ? `e.g. ${field.placeholder}`
+                  : field.placeholder
+            }
+            autoComplete="off"
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {replacing ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onChange("");
+                cancelled.current = true;
+                setReplacing(false);
+              }}
+            >
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {blocked ? (
+        <FieldDescription>{binding.blockedReason}</FieldDescription>
+      ) : (
+        // What Ajour does with the secret speaks of the controls in view:
+        // Replace and Remove only once a secret is saved.
+        <FieldHelp
+          text={`${field.helpText ? `${field.helpText} ` : ""}${
+            hasSecret && !replacing
+              ? `Ajour never shows a saved secret. Replace pastes a new one, and Remove ${field.required ? "pauses the connection until one is added" : "deletes it"}.`
+              : "Ajour keeps it encrypted on this computer and never shows it again."
+          }`}
+        />
+      )}
+    </>
+  );
+
+  if (row) {
+    // The connection form's rows (forms council round 9): the secret's
+    // label on the left, its state, actions or input on the right; the
+    // reminder date a row of its own.
+    return (
+      <>
+        <div className="connection-row" data-slot="field">
+          <FieldLabel
+            htmlFor={showInput ? inputId : undefined}
+            className="connection-row-label"
+          >
+            {field.label}
+          </FieldLabel>
+          <div className="connection-row-value">
+            {existing ? (
+              <div className="flex min-h-8 flex-wrap items-center gap-2">
+                {stateLine}
+              </div>
             ) : null}
+            {inputAndHelp}
+          </div>
+        </div>
+        {showExpiry ? (
+          <div className="connection-row">
+            <label
+              htmlFor={`${inputId}-expiry`}
+              className="connection-row-label"
+            >
+              Expires on
+            </label>
+            <div className="connection-row-value">
+              <div className="composer-chips">
+                <DateField
+                  chip
+                  id={`${inputId}-expiry`}
+                  aria-label={`${field.label} expires on (optional)`}
+                  value={binding.expiry}
+                  disabled={blocked}
+                  onChange={binding.onExpiryChange}
+                  calendarLabel={`Pick when ${field.label} expires`}
+                />
+              </div>
+              <FieldDescription>
+                A reminder only. Ajour keeps using it after this date.
+              </FieldDescription>
+            </div>
           </div>
         ) : null}
-        {blocked ? (
-          <FieldDescription>{binding.blockedReason}</FieldDescription>
-        ) : (
-          <FieldDescription>
-            {field.helpText ? `${field.helpText} ` : ""}
-            {existing
-              ? `Ajour never shows a saved secret. Replace pastes a new one, and Remove ${field.required ? "pauses the connection until one is added" : "deletes it"}.`
-              : "Ajour keeps it encrypted on this computer and never shows it again."}
-          </FieldDescription>
-        )}
+      </>
+    );
+  }
+
+  return (
+    <Field>
+      {/* The label, the saved state and its actions share one line. */}
+      <div className="flex min-h-7 flex-wrap items-center gap-2">
+        <FieldLabel htmlFor={showInput ? inputId : undefined}>
+          {field.label}
+        </FieldLabel>
+        {stateLine}
+      </div>
+      <FieldContent>
+        {inputAndHelp}
         {showExpiry ? (
           <div className="flex max-w-xs flex-col gap-1 pt-2">
             <label

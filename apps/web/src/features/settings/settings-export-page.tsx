@@ -191,7 +191,7 @@ export function SettingsExportPage() {
   }
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">Export time entries</h2>
         <p className="settings-section-desc">

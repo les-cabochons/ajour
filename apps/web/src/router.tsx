@@ -5,12 +5,33 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
 } from "@tanstack/react-router";
 import { parseSyncReviewSearch } from "@/features/backlog/sync-conflicts";
 import {
   parsePluginDetailSearch,
   replaceTargetOf,
 } from "@/features/settings/plugin-detail-search";
+import {
+  getLastAppLocation,
+  settingsLocationOf,
+  settingsWindowRedirect,
+} from "@/features/settings/settings-location";
+import {
+  SettingsAgentsPage,
+  SettingsBacklogPage,
+  SettingsCalendarPage,
+  SettingsDebugPage,
+  SettingsGeneralPage,
+  SettingsMcpPage,
+  SettingsPluginsPage,
+  SettingsProjectsPage,
+  SettingsSyncReviewPage,
+  SettingsTimeEntriesPage,
+  SettingsVaultPage,
+  SettingsWorkflowPage,
+} from "@/features/settings/settings-pages";
+import { isNarrowView } from "@/lib/use-narrow-view";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
@@ -67,86 +88,6 @@ const SettingsIndex = lazy(
     return { default: module.SettingsIndex };
   }),
 );
-const SettingsGeneralPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-general-page");
-    return { default: module.SettingsGeneralPage };
-  }),
-);
-const SettingsPluginsPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-plugins-page");
-    return { default: module.SettingsPluginsPage };
-  }),
-);
-const SettingsVaultPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-vault-page");
-    return { default: module.SettingsVaultPage };
-  }),
-);
-const SettingsMcpPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-mcp-page");
-    return { default: module.SettingsMcpPage };
-  }),
-);
-const SettingsAgentsPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-agents-page");
-    return { default: module.SettingsAgentsPage };
-  }),
-);
-
-const SettingsBacklogPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-backlog-page");
-    return { default: module.SettingsBacklogPage };
-  }),
-);
-const SettingsCalendarPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-calendar-page");
-    return { default: module.SettingsCalendarPage };
-  }),
-);
-const SettingsWorkflowPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-workflow-page");
-    return { default: module.SettingsWorkflowPage };
-  }),
-);
-const SettingsProjectsPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-projects-page");
-    return { default: module.SettingsProjectsPage };
-  }),
-);
-const SettingsTimeEntriesPage = lazy(
-  trackPageChunk(async () => {
-    const module = await import("@/features/settings/settings-export-page");
-    return { default: module.SettingsExportPage };
-  }),
-);
-const SettingsSyncReviewPage = lazy(
-  trackPageChunk(async () => {
-    const module =
-      await import("@/features/settings/settings-import-review-page");
-    return { default: module.SettingsImportReviewPage };
-  }),
-);
-// Debug exists only in development builds, so production omits its chunk.
-const SettingsDebugPage = import.meta.env.DEV
-  ? lazy(
-      trackPageChunk(async () => {
-        const module = await import("@/features/settings/settings-debug-page");
-        return { default: module.SettingsDebugPage };
-      }),
-    )
-  : null;
-
-// Not in the acceptance run (`--mode test`): its corner button sits over the
-// narrow view's navigation toggle and takes the clicks meant for it.
 const RouterDevtools =
   import.meta.env.DEV && import.meta.env.MODE !== "test"
     ? lazy(async () => {
@@ -299,6 +240,26 @@ const backlogItemRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
+  // In wide windows Settings is a window over the last page outside it
+  // (`SettingsWindow`): the route becomes that page's location with the
+  // window open, shown as this route through a mask. The narrow view keeps
+  // these routes as pages.
+  beforeLoad: ({ location }) => {
+    if (isNarrowView()) return;
+    const window = settingsWindowRedirect(
+      getLastAppLocation(),
+      settingsLocationOf(
+        location.pathname,
+        location.search as Record<string, unknown>,
+      ),
+    );
+    throw redirect({
+      to: window.to as never,
+      search: window.search as never,
+      mask: window.mask as never,
+      replace: true,
+    });
+  },
   component: () => (
     <RouteSuspense>
       <SettingsLayout />
@@ -441,11 +402,14 @@ const settingsDebugRoutes = SettingsDebugPage
       createRoute({
         getParentRoute: () => settingsRoute,
         path: "/debug",
-        component: () => (
-          <RouteSuspense>
-            <SettingsDebugPage />
-          </RouteSuspense>
-        ),
+        component: () => {
+          if (!SettingsDebugPage) return null;
+          return (
+            <RouteSuspense>
+              <SettingsDebugPage />
+            </RouteSuspense>
+          );
+        },
       }),
     ]
   : [];

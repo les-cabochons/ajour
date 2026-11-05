@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PluginManifest } from "@ajour/shared";
 import {
+  groupConnectionFields,
+  sectionConnectionBlocks,
   arePluginFormValuesEqual,
   areExpiryDraftsEqual,
   areExpiryDraftsValid,
@@ -385,5 +387,133 @@ describe("connectionSaveBlock", () => {
       reason: "system_off",
       hint: "Enable the plugin system to save a connection.",
     });
+  });
+});
+
+describe("groupConnectionFields", () => {
+  const priority = (level: string) => ({
+    id: `priority${level}`,
+    label: `${level} priority values`,
+    type: "text" as const,
+    secret: false,
+    required: false,
+    helpText: `Priority field values that mean ${level}. Enter one number such as "1". Leave empty to give this level no values.`,
+  });
+
+  it("puts fields that say the same after their own name in one row", () => {
+    const blocks = groupConnectionFields([
+      {
+        id: "label",
+        label: "Connection label",
+        type: "text",
+        secret: false,
+        required: false,
+      },
+      priority("Urgent"),
+      priority("High"),
+      priority("Medium"),
+      priority("Low"),
+      {
+        id: "remaining",
+        label: "Remaining field",
+        type: "text",
+        secret: false,
+        required: false,
+      },
+    ]);
+    expect(blocks.map((block) => block.kind)).toEqual([
+      "field",
+      "row",
+      "field",
+    ]);
+    expect(blocks[1]).toMatchObject({
+      legend: "Priority values",
+      help: 'Enter one number such as "1". Leave empty to give this level no values.',
+      fields: [
+        { label: "Urgent" },
+        { label: "High" },
+        { label: "Medium" },
+        { label: "Low" },
+      ],
+    });
+  });
+
+  it("leaves fields alone when their help or labels differ", () => {
+    const blocks = groupConnectionFields([
+      {
+        id: "a",
+        label: "Site URL",
+        type: "text",
+        secret: false,
+        required: false,
+        helpText: "The site. Use https.",
+      },
+      {
+        id: "b",
+        label: "Email",
+        type: "text",
+        secret: false,
+        required: false,
+        helpText: "The login. Use https.",
+      },
+      {
+        id: "c",
+        label: "Token",
+        type: "text",
+        secret: true,
+        required: false,
+        helpText: "Its token. Use https.",
+      },
+    ]);
+    expect(blocks.every((block) => block.kind === "field")).toBe(true);
+  });
+});
+
+describe("sectionConnectionBlocks", () => {
+  const field = (
+    id: string,
+    label: string,
+    extra: { secret?: boolean; type?: "text" | "checkbox" | "select" } = {},
+  ) => ({
+    id,
+    label,
+    type: extra.type ?? ("text" as const),
+    secret: extra.secret ?? false,
+    required: false,
+  });
+
+  it("puts where and who first, then what syncs, then the field mapping", () => {
+    const sections = sectionConnectionBlocks(
+      groupConnectionFields([
+        field("label", "Connection label"),
+        field("url", "Site URL"),
+        field("token", "API token", { secret: true }),
+        field("scope", "Import scope", { type: "select" }),
+        field("remaining", "Remaining field"),
+        field("autoSync", "Auto sync to backlog", { type: "checkbox" }),
+      ]),
+    );
+    expect(
+      sections.map((section) => [
+        section.title,
+        section.blocks.map((block) =>
+          block.kind === "field" ? block.field.id : "row",
+        ),
+      ]),
+    ).toEqual([
+      ["Connection", ["label", "url", "token"]],
+      ["Sync", ["scope", "autoSync"]],
+      ["Field mapping", ["remaining"]],
+    ]);
+  });
+
+  it("leaves a form without a secret in one section", () => {
+    const sections = sectionConnectionBlocks(
+      groupConnectionFields([
+        field("label", "Connection label"),
+        field("url", "Calendar address"),
+      ]),
+    );
+    expect(sections.map((section) => section.title)).toEqual(["Sync"]);
   });
 });

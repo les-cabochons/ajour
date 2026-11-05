@@ -15,7 +15,7 @@ describe("formatProjectTaskConsumedBadge", () => {
         trackedMs: 60 * 60 * 1000,
         adjustmentMs: 30 * 60 * 1000,
       }),
-    ).toBe("02:00 | 01:30");
+    ).toBe("2:00 | 1:30");
   });
 
   it("shows only tracked plus adjustment when there is no budget", () => {
@@ -24,7 +24,7 @@ describe("formatProjectTaskConsumedBadge", () => {
         trackedMs: 60 * 60 * 1000,
         adjustmentMs: -30 * 60 * 1000,
       }),
-    ).toBe("00:30");
+    ).toBe("0:30");
   });
 });
 

@@ -280,7 +280,7 @@ export function SettingsGeneralPage() {
             {/* The unit sits in the field, so the value reads alone
                 (council round 12); the range it allows today sits under it,
                 from the user's own targets (council round 21). */}
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col items-start gap-1 desktop:items-end">
               <div className="relative w-20">
                 <Input
                   id="pace-tolerance"
@@ -317,7 +317,7 @@ export function SettingsGeneralPage() {
                   id="pace-range"
                   // Names the period, so the range never reads as today's
                   // hours alone (council round 22).
-                  className="max-w-36 text-right text-xs text-[var(--text-secondary)] tabular-nums"
+                  className="max-w-36 text-left text-xs text-[var(--text-secondary)] tabular-nums desktop:text-right"
                 >
                   Week through today: {formatClockDuration(paceRange.lowMs)}–
                   {formatClockDuration(paceRange.highMs)}

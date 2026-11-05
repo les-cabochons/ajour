@@ -8,17 +8,25 @@ import {
   type ElementType,
   type KeyboardEvent,
   type Ref,
+  type CSSProperties,
 } from "react";
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiCloseLine as X,
-  RiRefreshLine as RotateCcw,
-  RiSaveLine as Save,
+  RiFolderLine as ProjectChipIcon,
+  RiLoader5Line as StateIcon,
+  RiExpandDiagonalLine as OpenPageIcon,
 } from "@remixicon/react";
+import { ProjectIcon } from "@/lib/project-icons";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/toggle-chip";
+import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
+import { formatHours } from "@/features/backlog/backlog-estimates";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
@@ -27,13 +35,10 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import {
   getPriorityRefusal,
   isBacklogItemSnoozed,
@@ -54,7 +59,11 @@ import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
-import { OptionSelect } from "@/components/ui/option-select";
+import {
+  OptionSelect,
+  type SelectOption,
+  type SelectOptionGroup,
+} from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
@@ -62,7 +71,7 @@ import {
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
   followChangedItem,
-  sumSubitemEstimates,
+  parseEstimateInput,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
   type BacklogTaskEditorFields,
@@ -120,6 +129,24 @@ const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
   completedEstimateHours: "Completed",
 };
 
+/** A typed estimate as figures show it ("8h", "2h30"), or null if it isn't one. */
+function formatEstimateFigure(value: string) {
+  const hours = parseEstimateInput(value);
+  return typeof hours === "number" ? formatHours(hours) : null;
+}
+
+/** Longer than the composer shows whole: over six lines, or 480 characters. */
+function isLongDescription(text: string) {
+  return text.split("\n").length > 6 || text.length > 480;
+}
+
+/** The word after each estimate in the composer's sentence. */
+const ESTIMATE_WORDS: Record<BacklogEstimateFieldKey, string> = {
+  remainingEstimateHours: "remaining",
+  completedEstimateHours: "completed",
+  originalEstimateHours: "estimated",
+};
+
 const ESTIMATE_ERROR_KEYS = {
   originalEstimateHours: "originalEstimateError",
   remainingEstimateHours: "remainingEstimateError",
@@ -173,6 +200,7 @@ export function BacklogItemEditorForm({
   surface = "editor",
   initialFields,
   onFieldsChange,
+  onOpenPage,
 }: {
   target: BacklogTaskEditorTarget;
   onClose: () => void;
@@ -190,6 +218,11 @@ export function BacklogItemEditorForm({
   initialFields?: BacklogTaskEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: BacklogTaskEditorFields) => void;
+  /**
+   * Opens the item's page, from the expand button in the header. Given, a
+   * long description shows its first lines (forms council rounds 12 and 13).
+   */
+  onOpenPage?: () => void;
 }) {
   const editorSurface = surface;
   // Unique per mounted form: the sidebar's New backlog item dialog can open
@@ -295,7 +328,6 @@ export function BacklogItemEditorForm({
     [workItem, workItems],
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
-    subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
     descriptionReadOnly: !descriptionEditable,
     base,
     descriptionLimit,
@@ -309,9 +341,15 @@ export function BacklogItemEditorForm({
     () =>
       projects.map((project) => ({
         value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
+        // A chip shows the project's mark and name; its code still finds it.
+        label: getLocalProjectDisplayName(project),
+        icon: (
+          <ProjectIcon
+            icon={project.icon}
+            color={project.color}
+            className="size-3.5 shrink-0"
+          />
+        ),
         keywords: [
           project.name,
           getLocalProjectDisplayName(project),
@@ -334,10 +372,23 @@ export function BacklogItemEditorForm({
   const selectedProject = projects.find(
     (project) => project._id === fields.projectId,
   );
-  const statusOptions = useMemo(
-    () => buildWorkflowStateOptions(state.workflowStates),
-    [state.workflowStates],
-  );
+  const statusOptions = useMemo(() => {
+    const fills = getWorkflowStateFills(state.workflowStates);
+    return buildWorkflowStateOptions(state.workflowStates).map((option) => {
+      const workflowState = state.workflowStates.find(
+        (candidate) => candidate._id === option.value,
+      );
+      return {
+        ...option,
+        icon: (
+          <span
+            className="backlog-state-dot"
+            style={stateDotStyle(workflowState?.color, fills.get(option.value))}
+          />
+        ),
+      };
+    });
+  }, [state.workflowStates]);
 
   useImperativeHandle(ref, () => ({
     commitBeforeSwitch: () => commit("switch"),
@@ -561,21 +612,113 @@ export function BacklogItemEditorForm({
     save();
   }
 
+  // The title's error waits for the title itself, or a save: a draft that
+  // opens with a group's state or project preset is not yet wrong.
   const titleError =
-    showErrors || editor.hasChanges ? validation.titleError : null;
+    showErrors || fields.title !== base.title ? validation.titleError : null;
   const sourceMetaLabel = workItem ? getSourceMetaLabel(workItem) : "";
+  // Judged on the saved text, so typing never moves the cut.
+  const clampDescription =
+    Boolean(onOpenPage) &&
+    target.kind === "edit" &&
+    isLongDescription(
+      descriptionEditable ? base.description : (currentDescription ?? ""),
+    );
+
+  // The estimates are one sentence under the title, typed in place: "5h
+  // remaining · 3h completed · 8h estimated" (forms council round 13). A
+  // new item has nothing left or done yet: "estimated" alone, the original.
+  const shownEstimateKeys: BacklogEstimateFieldKey[] =
+    target.kind === "create"
+      ? ["originalEstimateHours"]
+      : [
+          "remainingEstimateHours",
+          "completedEstimateHours",
+          "originalEstimateHours",
+        ];
+  const estimateFigures = shownEstimateKeys.map((key) => {
+    const error = validation[ESTIMATE_ERROR_KEYS[key]];
+    return (
+      <InlineFigure
+        key={key}
+        id={`${idPrefix}-${key}`}
+        label={ESTIMATE_WORDS[key]}
+        value={fields[key]}
+        onChange={(value) => updateFields({ [key]: value })}
+        format={formatEstimateFigure}
+        invalid={Boolean(error)}
+        onKeyDown={saveOnEnter}
+      />
+    );
+  });
+  const estimateErrors = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
+    const error = validation[ESTIMATE_ERROR_KEYS[key]];
+    return error ? (
+      <span key={key} className="field-error">
+        {ESTIMATE_LABELS[key]}: {error}
+      </span>
+    ) : null;
+  });
 
   return (
     <div
       ref={rootRef}
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("composer-root flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-sm font-semibold">
-            {getEditorTitle(target, editor.isSubitem)}
-          </Title>
+      {/* No "New backlog item" or "Edit backlog item" line: the
+          composer says what it is by itself, and an existing item opens
+          on its ticket line. The title stays for assistive tech, naming
+          the dialog (forms council rounds 13 and 15). */}
+      <Title className="sr-only">
+        {getEditorTitle(target, editor.isSubitem)}
+      </Title>
+      {/* ⋯, the expand button and × sit in the corner, so the composer
+          starts with its ticket line or its title (forms council round 15). */}
+      <div className="composer-actions">
+        {onOpenPage ? (
+          <TooltipButton
+            label="Open as page"
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onOpenPage}
+              />
+            }
+          >
+            <OpenPageIcon />
+          </TooltipButton>
+        ) : null}
+        {workItem ? (
+          <ObjectActionsButton
+            actions={getBacklogItemActions(workItem, {
+              isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
+              isSubitem: editor.isSubitem,
+              isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
+              subitemCount: subitems.length,
+              isEditing: true,
+              settleOpensDialog: settleOpensDialog(workItem),
+              otherSourceStateCount: getOtherSourceStates(workItem).length,
+            })}
+            onAction={(actionId) =>
+              withEventAttribution({ surface: editorSurface }, () =>
+                handleAction(actionId),
+              )
+            }
+            label={`Actions for ${workItem.title}`}
+          />
+        ) : null}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+        >
+          <X />
+        </TooltipButton>
+      </div>
+      {parent || sourceMetaLabel ? (
+        <header className="-mb-2 flex min-w-0 flex-col gap-0.5 pe-28">
           {parent ? (
             <span className="truncate text-xs text-muted-foreground">
               Under {parent.title}
@@ -597,37 +740,8 @@ export function BacklogItemEditorForm({
               </span>
             )
           ) : null}
-        </div>
-        <div className="flex items-center gap-1">
-          {workItem ? (
-            <ObjectActionsButton
-              actions={getBacklogItemActions(workItem, {
-                isRunning: Boolean(
-                  findWorkItemTimer(state.timers, workItem._id),
-                ),
-                isSubitem: editor.isSubitem,
-                isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
-                subitemCount: subitems.length,
-                isEditing: true,
-                settleOpensDialog: settleOpensDialog(workItem),
-                otherSourceStateCount: getOtherSourceStates(workItem).length,
-              })}
-              onAction={(actionId) =>
-                withEventAttribution({ surface: editorSurface }, () =>
-                  handleAction(actionId),
-                )
-              }
-              label={`Actions for ${workItem.title}`}
-            />
-          ) : null}
-          <TooltipButton
-            label="Close"
-            render={<Button variant="ghost" size="icon" onClick={onClose} />}
-          >
-            <X />
-          </TooltipButton>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       {workItem && hasWorkItemEstimateSyncIssue(workItem) ? (
         <p className="flex items-center gap-2 text-xs text-amber-300">
@@ -636,18 +750,23 @@ export function BacklogItemEditorForm({
         </p>
       ) : null}
 
-      <FieldGroup className="gap-4">
+      {/* A composer, as Linear's: the title and description are text to
+          write in, not boxes, and the properties are chips that say their
+          value (forms council round 6). */}
+      <FieldGroup className="composer gap-3">
         <Field data-invalid={Boolean(titleError)}>
-          <FieldLabel htmlFor={`${idPrefix}-title`}>
+          <FieldLabel htmlFor={`${idPrefix}-title`} className="sr-only">
             {editor.isSubitem ? "Subitem" : "Item"}
           </FieldLabel>
-          <Input
+          <input
             ref={titleInputRef}
             id={`${idPrefix}-title`}
+            className="composer-title"
             value={fields.title}
             onChange={(event) => updateFields({ title: event.target.value })}
             onKeyDown={saveOnEnter}
-            placeholder={editor.isSubitem ? "Subitem name" : "Item name"}
+            placeholder={editor.isSubitem ? "Subitem title" : "Item title"}
+            autoComplete="off"
             aria-invalid={Boolean(titleError)}
           />
           {titleError ? (
@@ -655,136 +774,31 @@ export function BacklogItemEditorForm({
           ) : null}
         </Field>
 
-        <div
-          className={cn(
-            "grid gap-3",
-            !editor.isSubitem && "grid-cols-[5rem_minmax(0,1fr)]",
-          )}
+        <InlineFigures aria-label="Estimates">{estimateFigures}</InlineFigures>
+
+        {/* The writing comes first: the name, then its description, then
+            the properties (forms council round 3). */}
+        {/* A long description scrolls inside its editor, so the properties
+            and the buttons stay in reach. With a page to open, it shows its
+            first lines; the header's expand button opens the page (forms
+            council rounds 12 and 13); typing in it lifts the cut. */}
+        <Field
+          className="composer-description"
+          data-clamped={clampDescription ? "" : undefined}
+          style={{ "--markdown-editor-max-height": "14rem" } as CSSProperties}
         >
-          {!editor.isSubitem ? (
-            <Field data-invalid={Boolean(validation.priorityError)}>
-              <FieldLabel htmlFor={`${idPrefix}-priority`}>Priority</FieldLabel>
-              {/* The 5rem column fits an icon, not "No priority" or
-                  "Medium", so the select shows the level's icon. */}
-              <OptionSelect
-                id={`${idPrefix}-priority`}
-                size="default"
-                iconValue
-                value={fields.priority}
-                onChange={(priority) => updateFields({ priority })}
-                invalid={Boolean(validation.priorityError)}
-                options={[
-                  {
-                    value: "",
-                    label: NO_PRIORITY_NAME,
-                    disabledReason: noPriorityRefusal,
-                    icon: <PriorityIcon priority={undefined} decorative />,
-                  },
-                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
-                    value: String(level),
-                    label: name,
-                    icon: <PriorityIcon priority={level} decorative />,
-                  })),
-                ]}
-              />
-            </Field>
-          ) : null}
-          <Field>
-            <FieldLabel>Workflow state</FieldLabel>
-            <SearchableSelect
-              value={fields.workflowStateId}
-              options={statusOptions}
-              onChange={(workflowStateId) => updateFields({ workflowStateId })}
-              placeholder="No state"
-              clearLabel="No state"
-              emptyMessage="No matching workflow states"
-              ariaLabel="Workflow state"
-            />
-          </Field>
-        </div>
-        {validation.priorityError ? (
-          <span className="field-error -mt-2">{validation.priorityError}</span>
-        ) : null}
-        {editor.priorityReset !== null || editor.statusReset !== null ? (
-          <div className="-mt-2 flex flex-wrap gap-2">
-            {editor.priorityReset !== null ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  updateFields({ priority: editor.priorityReset ?? "" })
-                }
-              >
-                Reset priority to synced
-              </Button>
-            ) : null}
-            {editor.statusReset !== null ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  updateFields({ workflowStateId: editor.statusReset ?? "" })
-                }
-              >
-                Reset state to synced
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        <Field>
-          <FieldLabel>Project</FieldLabel>
-          <SearchableSelect
-            value={fields.projectId}
-            options={projectOptions}
-            onChange={changeProject}
-            placeholder="No project"
-            clearLabel="No project"
-            emptyMessage="No matching projects"
-            ariaLabel="Project"
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Task mapping</FieldLabel>
-          <SearchableSelect
-            value={fields.taskId}
-            options={taskOptions}
-            onChange={(taskId) => updateFields({ taskId })}
-            placeholder={
-              fields.projectId ? "Select task" : "Pick a project first"
-            }
-            clearLabel={fields.projectId ? "No task" : undefined}
-            emptyMessage={
-              fields.projectId ? "No matching tasks" : "Pick a project first"
-            }
-            ariaLabel="Task mapping"
-            disabled={!selectedProject}
-            create={
-              selectedProject
-                ? {
-                    label: (text) =>
-                      describeCreateTaskRow(selectedProject, text),
-                    onCreate: (text) => createTask(selectedProject._id, text),
-                  }
-                : undefined
-            }
-          />
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor={`${idPrefix}-description`}>
+          <FieldLabel htmlFor={`${idPrefix}-description`} className="sr-only">
             Description
           </FieldLabel>
           {descriptionEditable ? (
             <MarkdownEditor
               id={`${idPrefix}-description`}
               aria-label="Description"
+              className="composer-body"
               value={fields.description}
               onChange={(description) => updateFields({ description })}
-              placeholder="Markdown supported (optional)"
-              minLines={4}
+              placeholder="Add description…"
+              minLines={1}
             />
           ) : null}
           {descriptionEditable && currentItem ? (
@@ -805,7 +819,10 @@ export function BacklogItemEditorForm({
             </>
           ) : null}
           {descriptionEditable ? null : (
-            <div id={`${idPrefix}-description`}>
+            <div
+              id={`${idPrefix}-description`}
+              className="composer-description-text"
+            >
               {currentDescription ? (
                 <DescriptionText body={currentDescription} />
               ) : (
@@ -821,93 +838,157 @@ export function BacklogItemEditorForm({
           )}
         </Field>
 
-        <div className="grid grid-cols-3 gap-3">
-          {BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
-            const error = validation[ESTIMATE_ERROR_KEYS[key]];
-            const resetValue = editor.estimateResets[key];
-            const label = ESTIMATE_LABELS[key];
-            return (
-              <Field key={key} data-invalid={Boolean(error)}>
-                <FieldLabel htmlFor={`${idPrefix}-${key}`}>{label}</FieldLabel>
-                <div className="relative">
-                  <Input
-                    id={`${idPrefix}-${key}`}
-                    className={cn(
-                      "font-mono",
-                      resetValue !== undefined && "pr-8",
-                    )}
-                    inputMode="decimal"
-                    value={fields[key]}
-                    onChange={(event) =>
-                      updateFields({ [key]: event.target.value })
-                    }
-                    placeholder="0"
-                    aria-invalid={Boolean(error)}
-                  />
-                  {resetValue !== undefined ? (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="absolute top-1/2 right-1 -translate-y-1/2"
-                            aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
-                            onClick={() => updateFields({ [key]: resetValue })}
-                          />
-                        }
-                      >
-                        <RotateCcw />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Reset to subitem total ({resetValue})
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                </div>
-                {error ? <span className="field-error">{error}</span> : null}
-              </Field>
-            );
-          })}
-        </div>
-
-        {editor.isSynced ? (
-          <Field orientation="horizontal">
-            <Checkbox
-              id={`${idPrefix}-keep`}
-              checked={fields.keepWhenMissingFromSync}
-              onCheckedChange={(keepWhenMissingFromSync) =>
-                updateFields({ keepWhenMissingFromSync })
-              }
+        <section aria-label="Properties" className="composer-chips">
+          {!editor.isSubitem ? (
+            <OptionSelect
+              id={`${idPrefix}-priority`}
+              label="Priority"
+              size="sm"
+              iconLabel
+              emptyNamesField
+              className="composer-chip"
+              value={fields.priority}
+              onChange={(priority) => updateFields({ priority })}
+              invalid={Boolean(validation.priorityError)}
+              {...withSyncedFirst(
+                [
+                  {
+                    value: "",
+                    label: NO_PRIORITY_NAME,
+                    disabledReason: noPriorityRefusal,
+                    icon: <PriorityIcon priority={undefined} decorative />,
+                  },
+                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                    value: String(level),
+                    label: name,
+                    icon: <PriorityIcon priority={level} decorative />,
+                  })),
+                ],
+                editor.priorityReset,
+                "Other levels",
+              )}
             />
-            <FieldContent>
-              <FieldLabel htmlFor={`${idPrefix}-keep`}>
-                Keep when missing from sync
-              </FieldLabel>
-              <FieldDescription className="text-xs">
-                Do not archive this item when it disappears from the synced
-                source list.
-              </FieldDescription>
-            </FieldContent>
-          </Field>
+          ) : null}
+          <SearchableSelect
+            value={fields.workflowStateId}
+            options={syncedStateFirst(statusOptions, editor.statusReset)}
+            onChange={(workflowStateId) => updateFields({ workflowStateId })}
+            className="composer-chip"
+            popoverMinWidth={240}
+            placeholderIcon={<StateIcon aria-hidden className="size-3.5" />}
+            placeholder="State"
+            clearLabel="No state"
+            emptyMessage="No matching workflow states"
+            ariaLabel="Workflow state"
+          />
+          {/* The project and its task are one pill, "Atlas platform /
+              Development", so the task reads as the project's (forms council
+              round 13). */}
+          <span className="composer-chip-pair">
+            <SearchableSelect
+              value={fields.projectId}
+              options={projectOptions}
+              onChange={changeProject}
+              className="composer-chip"
+              popoverMinWidth={260}
+              placeholderIcon={
+                <ProjectChipIcon aria-hidden className="size-3.5" />
+              }
+              placeholder="Project"
+              clearLabel="No project"
+              emptyMessage="No matching projects"
+              ariaLabel="Project"
+            />
+            {/* The task waits for its project, as Linear hides what can't be
+                set yet. */}
+            {selectedProject ? (
+              <SearchableSelect
+                value={fields.taskId}
+                options={taskOptions}
+                onChange={(taskId) => updateFields({ taskId })}
+                className="composer-chip"
+                popoverMinWidth={260}
+                placeholder="Task"
+                clearLabel={fields.projectId ? "No task" : undefined}
+                emptyMessage={
+                  fields.projectId
+                    ? "No matching tasks"
+                    : "Pick a project first"
+                }
+                ariaLabel="Task mapping"
+                disabled={!selectedProject}
+                create={
+                  selectedProject
+                    ? {
+                        label: (text) =>
+                          describeCreateTaskRow(selectedProject, text),
+                        onCreate: (text) =>
+                          createTask(selectedProject._id, text),
+                      }
+                    : undefined
+                }
+              />
+            ) : null}
+          </span>
+        </section>
+        {validation.priorityError ? (
+          <span className="field-error">{validation.priorityError}</span>
         ) : null}
+        {estimateErrors}
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          type="button"
-
-          disabled={!validation.canSave}
-          onClick={save}
-        >
-          <Save data-icon="inline-start" />
-          Save
+        <Button type="button" disabled={!validation.canSave} onClick={save}>
+          {/* A new record's button names what it makes (forms council round 3). */}
+          {target.kind === "create"
+            ? editor.isSubitem
+              ? "Create subitem"
+              : "Create item"
+            : "Save"}
         </Button>
       </footer>
     </div>
   );
+}
+
+/**
+ * A synced item's picker lists the source's value first, under "Synced", so
+ * going back to it is a pick in the menu, not a button under the field
+ * (forms council round 5). Without a synced value, the options stay as they
+ * are.
+ */
+function withSyncedFirst<T extends string>(
+  options: SelectOption<T>[],
+  synced: string | null,
+  otherLabel: string,
+): { options?: SelectOption<T>[]; groups?: SelectOptionGroup<T>[] } {
+  const match = options.find((option) => option.value === synced);
+  if (synced === null || !match) return { options };
+  return {
+    groups: [
+      { label: "Synced", options: [match] },
+      {
+        label: otherLabel,
+        options: options.filter((option) => option !== match),
+      },
+    ],
+  };
+}
+
+/** The workflow states with the synced one first, under "Synced". */
+function syncedStateFirst(
+  options: SearchableSelectOption[],
+  synced: string | null,
+): SearchableSelectOption[] {
+  const match = options.find((option) => option.value === synced);
+  if (synced === null || !match) return options;
+  return [
+    { ...match, group: "Synced" },
+    ...options
+      .filter((option) => option !== match)
+      .map((option) => ({ ...option, group: option.group ?? "Other states" })),
+  ];
 }

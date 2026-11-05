@@ -99,14 +99,17 @@ export function WorkflowSourceMapping({
       {groups.map((connection) => (
         <section key={connection.key} className="backlog-settings-source-group">
           <div className="backlog-settings-source-header">
-            {connection.tenantLabel ? (
+            <h3 className="backlog-settings-source-title">
+              {connection.connectionLabel}
+            </h3>
+            {/* The tenant, under the label, and only when it says more. */}
+            {connection.tenantLabel &&
+            connection.tenantLabel.trim().toLowerCase() !==
+              connection.connectionLabel.trim().toLowerCase() ? (
               <div className="backlog-settings-source-kicker">
                 {connection.tenantLabel}
               </div>
             ) : null}
-            <h3 className="backlog-settings-source-title">
-              {connection.connectionLabel}
-            </h3>
           </div>
 
           {connection.projects
@@ -255,9 +258,6 @@ function SourceProjectMapping({
           </p>
         ) : (
           <div className="flex flex-col gap-3 desktop:gap-1.5">
-            <div className="text-[12px] text-muted-foreground">
-              Items in this source state show in
-            </div>
             {project.states.map((sourceState) => {
               const effective = getEffectiveMapping(
                 state.workflowStateMappings,
@@ -299,7 +299,7 @@ function SourceProjectMapping({
                             },
                           ]
                         : []),
-                      { value: "", label: "No state (not mapped)" },
+                      { value: "", label: "Not mapped" },
                       ...state.workflowStates.map((workflowState) => ({
                         value: workflowState._id,
                         label: workflowState.name,

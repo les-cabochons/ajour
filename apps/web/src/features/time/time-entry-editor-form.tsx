@@ -10,7 +10,6 @@ import {
 import {
   RiCloseLine as X,
   RiPlayFill as Play,
-  RiSaveLine as Save,
   RiStopLine as Stop,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
@@ -132,8 +131,8 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * so keys, buttons and save rules stay the same everywhere.
  *
  * Laid out like the backlog peek: the form's title, "…" and × on top, then the task
- * as a heading with status, project and date chips, then Start (Switch while another
- * entry runs, Continue on a saved entry, Stop on the running entry), the property rows
+ * as a heading with status, project and date chips, then Start (which also stops another
+ * running entry), Continue on a saved entry, or Stop on the running entry, the property rows
  * and the note. Footer: Cancel · Save. Save: the Save button, Enter in Hours or Note,
  * or Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press
  * Start. Escape, Cancel or × discard the draft. Save on the running entry keeps it
@@ -405,109 +404,68 @@ export function TimeEntryEditorForm({
     submit();
   }
 
+  // Start reads Start even while another entry runs: people know it takes
+  // over, where "Switch" left them guessing (forms council round 12).
+  const hoursHint = START_OR_ENTER_HOURS_HINT;
+
   return (
     <div
       ref={rootRef}
-      className={cn("time-entry-editor flex flex-col gap-5", className)}
+      className={cn(
+        "time-entry-editor composer-root flex flex-col gap-5",
+        className,
+      )}
+      data-mode={target.kind}
       onKeyDown={handleKeyDown}
     >
-      <div className="flex h-7 items-center justify-between gap-2">
-        <Title className="truncate text-xs font-normal text-muted-foreground">
-          {target.kind === "create" ? "New time entry" : "Edit time entry"}
-        </Title>
-        <div className="flex items-center">
-          {actionTarget ? (
-            <ObjectActionsButton
-              actions={entryActions.getActions(actionTarget, {
-                isEditing: true,
-                invalidDraftReason:
-                  lockReason || editor.canSave
-                    ? undefined
-                    : "Enter a valid duration first",
-              })}
-              onAction={(actionId) =>
-                withEventAttribution({ surface: editorSurface }, () =>
-                  handleAction(actionId),
-                )
-              }
-              label="Entry actions"
-            />
-          ) : null}
-          <TooltipButton
-            label="Close"
-            render={<Button variant="ghost" size="icon" onClick={onClose} />}
-          >
-            <X />
-          </TooltipButton>
-        </div>
-      </div>
-
-      <header className="flex min-w-0 flex-col gap-1">
-        <p
-          className={cn(
-            "text-lg leading-6 font-semibold",
-            !selectedTask && "text-muted-foreground",
-          )}
-        >
-          {selectedTask?.name ?? (selectedProject ? "No task" : "No project")}
-        </p>
-        <div className="time-entry-editor-meta">
-          {runningTimer ? (
-            <Chip tone="success">Running</Chip>
-          ) : lockReason ? (
-            <WeekLockChip />
-          ) : entry && isTimesheetEntryCommitted(entry) ? (
-            <Chip>Committed</Chip>
-          ) : null}
-          {selectedProject ? (
-            <Chip color={selectedProject.color}>
-              {getLocalProjectDisplayName(selectedProject)}
-            </Chip>
-          ) : null}
-          <span>
-            {formatEntryDate(
-              runningTimer ? runningTimer.localDate : fields.localDate,
-            )}
-          </span>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {runningTimer ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={stop}
-          >
-            <Stop data-icon="inline-start" />
-            Stop
-          </Button>
-        ) : entry ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={continueEntry}
-          >
-            <Play data-icon="inline-start" />
-            Continue
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.durationMs === null}
-            onClick={start}
-          >
-            <Play data-icon="inline-start" />
-            {isAnotherEntryRunning ? "Switch" : "Start"}
-          </Button>
-        )}
-        {startsToday ? (
-          <span className="text-xs text-muted-foreground">Starts today</span>
+      {/* No "New time entry" line: the hours open the composer. The title
+          stays for assistive tech, naming the dialog, and ⋯ and × sit in the
+          corner, so the composer starts with what the user writes (forms
+          council round 15). */}
+      <Title className="sr-only">
+        {target.kind === "create" ? "New time entry" : "Edit time entry"}
+      </Title>
+      <div className="composer-actions">
+        {actionTarget ? (
+          <ObjectActionsButton
+            actions={entryActions.getActions(actionTarget, {
+              isEditing: true,
+              invalidDraftReason:
+                lockReason || editor.canSave
+                  ? undefined
+                  : "Enter a valid duration first",
+            })}
+            onAction={(actionId) =>
+              withEventAttribution({ surface: editorSurface }, () =>
+                handleAction(actionId),
+              )
+            }
+            label="Entry actions"
+          />
         ) : null}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+        >
+          <X />
+        </TooltipButton>
       </div>
+
+      {/* Only the status sits above the hours: the chips below already
+          name the task and the date (forms council round 7). */}
+      {runningTimer ? (
+        <header className="time-entry-editor-meta">
+          <Chip tone="success">Running</Chip>
+        </header>
+      ) : lockReason ? (
+        <header className="time-entry-editor-meta">
+          <WeekLockChip />
+        </header>
+      ) : entry && isTimesheetEntryCommitted(entry) ? (
+        <header className="time-entry-editor-meta">
+          <Chip>Committed</Chip>
+        </header>
+      ) : null}
 
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
       <fieldset
@@ -521,8 +479,12 @@ export function TimeEntryEditorForm({
           taskId={fields.taskId}
           note={fields.note}
           durationHours={fields.durationHours}
-          durationError={editor.durationError ?? commitError}
-          durationHint={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : null}
+          durationError={
+            editor.durationError === START_OR_ENTER_HOURS_HINT
+              ? hoursHint
+              : (editor.durationError ?? commitError)
+          }
+          durationHint={editor.isTimerMode ? hoursHint : null}
           localDate={runningTimer ? undefined : fields.localDate}
           dateError={editor.dateError}
           onProjectTaskChange={(selection) =>
@@ -539,18 +501,57 @@ export function TimeEntryEditorForm({
         />
       </fieldset>
 
-      <footer className="flex items-center justify-end gap-2 border-t pt-3">
+      <footer className="flex items-center justify-end gap-2 pt-1">
+        {/* The entry's own verb opens the footer, at its start: Stop for the
+            running entry, Continue for a saved one, Start for a new
+            one (forms council round 7). */}
+        <span className="mr-auto flex items-center gap-2">
+          {runningTimer ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={stop}
+            >
+              <Stop data-icon="inline-start" />
+              Stop
+            </Button>
+          ) : entry ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={continueEntry}
+            >
+              <Play data-icon="inline-start" />
+              Continue
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.durationMs === null}
+              onClick={start}
+            >
+              <Play data-icon="inline-start" />
+              Start
+            </Button>
+          )}
+          {startsToday ? (
+            <span className="text-xs text-muted-foreground">Starts today</span>
+          ) : null}
+        </span>
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button
           type="button"
           disabled={!editor.canSave}
-          title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
+          title={editor.isTimerMode ? hoursHint : undefined}
           onClick={save}
         >
-          <Save data-icon="inline-start" />
-          Save
+          {/* A new record's button names what it makes, as every form's. */}
+          {target.kind === "create" ? "Create entry" : "Save"}
         </Button>
       </footer>
       {entryActions.dialogs}

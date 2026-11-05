@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useOpenSettings } from "@/features/settings/settings-link";
 import { getBacklogItemActions } from "@/domain/actions/object-actions";
 import {
   getDirectChildWorkItems,
@@ -136,11 +137,13 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
   );
   useShortcut("go.backlog", () => void navigate({ to: "/backlog" }), "app");
   useShortcut("go.projects", () => void navigate({ to: "/projects" }), "app");
-  // /settings is the pages list in the narrow view. Wide windows open General
-  // directly rather than through the /settings redirect, which could land
-  // after a quick Back to app and return to Settings.
+  // /settings is the pages list in the narrow view. Wide windows open the
+  // settings window on General, over the current page.
+  const openSettingsWindow = useOpenSettings();
   const openSettings = () =>
-    void navigate({ to: isNarrowView() ? "/settings" : "/settings/general" });
+    isNarrowView()
+      ? void navigate({ to: "/settings" })
+      : void openSettingsWindow("general");
   useShortcut("go.settings", openSettings, "app");
   useShortcut("app.settings", openSettings, "app");
 }

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  SettingsLink,
+  useOpenSettings,
+} from "@/features/settings/settings-link";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
   RiDownloadLine as Download,
-  RiPencilLine as Pencil,
+  RiMoreLine as More,
   RiRefreshLine as RefreshCw,
   RiUpload2Line as Upload,
 } from "@remixicon/react";
@@ -25,6 +29,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { DisabledReason } from "@/components/disabled-reason";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -284,9 +295,8 @@ function PluginCatalogRow({
 
   return (
     <div className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-[var(--hover-bg)]">
-      <Link
-        to="/settings/plugins/$pluginId"
-        params={{ pluginId: catalog.id }}
+      <SettingsLink
+        page={`plugins/${catalog.id}`}
         replace
         className="flex min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
         aria-label={`View ${catalog.title}`}
@@ -300,9 +310,11 @@ function PluginCatalogRow({
             <span className="min-w-0 text-sm font-medium break-words text-foreground">
               {catalog.title}
             </span>
-            <Badge variant={installed ? "secondary" : "outline"}>
-              {statusLabel}
-            </Badge>
+            {/* An installed plugin's switch says it all; the others say
+                what they are, quietly (forms council round 6). */}
+            {installed && !unavailableReason ? null : (
+              <Badge variant="secondary">{statusLabel}</Badge>
+            )}
             {signed ? null : <UnsignedBadge />}
           </span>
           <span className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
@@ -316,7 +328,7 @@ function PluginCatalogRow({
               : null}
           </span>
         </span>
-      </Link>
+      </SettingsLink>
       {unavailableReason && offersUpdate ? (
         update
       ) : pluginGroup ? (
@@ -411,14 +423,14 @@ function PluginsHeader({
       <section className="settings-section">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
-            <p className="settings-section-desc mt-1">
+            <p className="settings-section-desc">
               Discover extensions, download the ones you need, then activate and
               configure them locally.
             </p>
           </div>
           {canInstall ? (
             <Button
+              variant="outline"
               disabled={isMutating || !allowUnsignedInstalls}
               title={
                 allowUnsignedInstalls
@@ -532,14 +544,14 @@ function PluginsHeader({
 
 function AllPluginsLink() {
   return (
-    <Link
-      to="/settings/plugins"
+    <SettingsLink
+      page="plugins"
       replace
       className="inline-flex w-fit items-center gap-1.5 rounded-[var(--control-radius)] text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
     >
       <ArrowLeft className="size-4" />
       All plugins
-    </Link>
+    </SettingsLink>
   );
 }
 
@@ -584,7 +596,9 @@ function PluginDetailHeader({
         </div>
         {action ? <div className="w-full desktop:w-auto">{action}</div> : null}
       </div>
-      <div className="flex flex-wrap gap-2">{badges}</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {badges}
+      </div>
       {children}
     </section>
   );
@@ -600,6 +614,7 @@ export function SettingsPluginsPage({
 }) {
   const state = useLocalState();
   const navigate = useNavigate();
+  const openSettings = useOpenSettings();
   const heldEdits = useHeldEdits();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
@@ -625,6 +640,13 @@ export function SettingsPluginsPage({
     useState<PluginCatalogFilter>("all");
   const [formState, setFormState] = useState<PluginFormState | null>(null);
   const formInstances = useRef(0);
+  /** The connection whose removal waits for the user's confirmation. */
+  const [removing, setRemoving] = useState<{
+    pluginId: string;
+    connectionId: string;
+    label: string;
+    description: string;
+  } | null>(null);
   /** The team connection whose picker is open. */
   const [teamPicker, setTeamPicker] = useState<{
     pluginId: string;
@@ -764,9 +786,9 @@ export function SettingsPluginsPage({
     if (!completed) return;
     setFormState(null);
     if (heldForReview) {
-      void navigate({
-        to: "/settings/sync-review",
-        search: { held: heldForReview } as never,
+      void openSettings({
+        page: "sync-review",
+        search: { held: heldForReview },
       });
       return;
     }
@@ -882,6 +904,63 @@ export function SettingsPluginsPage({
       />
     );
 
+    // The form takes the place of the connection it edits, so the page
+    // never shows that connection twice.
+    const editedConnection = group.connections.find(
+      (connection) => connection.id === groupFormState?.editingConnectionId,
+    );
+    const connectionForm = groupFormState ? (
+      <PluginConnectionForm
+        group={group}
+        form={groupFormState}
+        setForm={setFormState}
+        connection={editedConnection}
+        vault={overview?.vault}
+        isMutating={isMutatingPlugin}
+        saveHint={saveBlock?.hint}
+        heldCount={
+          groupFormState.editingConnectionId
+            ? heldEditCount(
+                heldEdits,
+                group.plugin.id,
+                groupFormState.editingConnectionId,
+              )
+            : 0
+        }
+        now={Date.now()}
+        status={
+          editedConnection ? (
+            <>
+              <ConnectionStatusChip
+                group={group}
+                connection={editedConnection}
+                pluginsEnabled={overview?.pluginsEnabled !== false}
+              />
+              <div className="basis-full empty:hidden">
+                <ConnectionStatusNote
+                  group={group}
+                  connection={editedConnection}
+                  pluginsEnabled={overview?.pluginsEnabled !== false}
+                />
+              </div>
+            </>
+          ) : undefined
+        }
+        onCancel={() => setFormState(null)}
+        onSave={() => void handleSave()}
+        onRemoveSecret={(fieldId) =>
+          groupFormState.editingConnectionId
+            ? void workflow.execute({
+                type: "removeSecrets",
+                pluginId: group.plugin.id,
+                connectionId: groupFormState.editingConnectionId,
+                fieldIds: [fieldId],
+              })
+            : undefined
+        }
+      />
+    ) : null;
+
     return (
       <>
         <PluginDetailHeader
@@ -936,28 +1015,23 @@ export function SettingsPluginsPage({
           }
           badges={
             <>
-              <Badge variant="secondary">
-                {unavailableReason ? "Unavailable" : "Installed"}
-              </Badge>
-              <Badge variant={group.enabled ? "secondary" : "outline"}>
-                {group.enabled ? "Active" : "Inactive"}
-              </Badge>
-              {signed ? null : <UnsignedBadge />}
-              <Badge variant="outline">Version {group.plugin.version}</Badge>
-              {offersUpdate && !unavailableReason ? (
-                <Badge variant="outline">
-                  Version {entry.version} available
-                </Badge>
+              {unavailableReason ? (
+                <Badge variant="secondary">Unavailable</Badge>
               ) : null}
-              <Badge variant="outline">
+              {signed ? null : <UnsignedBadge />}
+              {/* The switch says Active; the facts read as one quiet line. */}
+              <span>
+                Version {group.plugin.version}
+                {offersUpdate && !unavailableReason
+                  ? ` · ${entry.version} available`
+                  : ""}
+                {" · "}
                 {group.connections.length} connection
                 {group.connections.length === 1 ? "" : "s"}
-              </Badge>
-              {pluginHasBacklog(group.plugin) ? (
-                <Badge variant="outline">
-                  {importedCountsByPlugin[group.plugin.id] ?? 0} backlog items
-                </Badge>
-              ) : null}
+                {pluginHasBacklog(group.plugin)
+                  ? ` · ${importedCountsByPlugin[group.plugin.id] ?? 0} backlog items`
+                  : ""}
+              </span>
             </>
           }
         >
@@ -982,26 +1056,7 @@ export function SettingsPluginsPage({
             }
           />
           {renderMessages()}
-          <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
-
-        {unavailableReason || group.missing ? null : (
-          <PluginAccessSection group={group} now={Date.now()} />
-        )}
-
-        <section className="settings-section">
-          <h2 className="settings-section-title">Features</h2>
-          <PluginCapabilityList entry={entry} />
-        </section>
-
-        <section className="settings-section">
-          <h2 className="settings-section-title">Information</h2>
-          <PluginInfoList
-            entry={entry}
-            version={group.plugin.version}
-            installed={group.plugin}
-          />
-        </section>
 
         {overview?.pluginsEnabled === false ? (
           <MessagePanel tone="warning">
@@ -1045,6 +1100,9 @@ export function SettingsPluginsPage({
                 </p>
               </div>
               <Button
+                // Opening a form is not finishing one: outline, as every
+                // button that opens a form or adds a row (forms council round 3).
+                variant="outline"
                 disabled={
                   isMutatingPlugin ||
                   overview?.pluginsEnabled === false ||
@@ -1057,42 +1115,9 @@ export function SettingsPluginsPage({
               </Button>
             </div>
 
-            {groupFormState ? (
-              <PluginConnectionForm
-                group={group}
-                form={groupFormState}
-                setForm={setFormState}
-                connection={group.connections.find(
-                  (connection) =>
-                    connection.id === groupFormState.editingConnectionId,
-                )}
-                vault={overview?.vault}
-                isMutating={isMutatingPlugin}
-                saveHint={saveBlock?.hint}
-                heldCount={
-                  groupFormState.editingConnectionId
-                    ? heldEditCount(
-                        heldEdits,
-                        group.plugin.id,
-                        groupFormState.editingConnectionId,
-                      )
-                    : 0
-                }
-                now={Date.now()}
-                onCancel={() => setFormState(null)}
-                onSave={() => void handleSave()}
-                onRemoveSecret={(fieldId) =>
-                  groupFormState.editingConnectionId
-                    ? void workflow.execute({
-                        type: "removeSecrets",
-                        pluginId: group.plugin.id,
-                        connectionId: groupFormState.editingConnectionId,
-                        fieldIds: [fieldId],
-                      })
-                    : undefined
-                }
-              />
-            ) : null}
+            {groupFormState && !groupFormState.editingConnectionId
+              ? connectionForm
+              : null}
 
             {group.connections.length === 0 ? (
               <EmptyListText title="No connections yet">
@@ -1101,211 +1126,254 @@ export function SettingsPluginsPage({
               </EmptyListText>
             ) : (
               <div className="flex flex-col gap-6">
-                {group.connections.map((connection) => (
-                  <div
-                    key={connection.id}
-                    className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between desktop:gap-8"
-                  >
-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
-                          {connection.label}
-                        </h3>
-                        <ConnectionStatusChip
+                {group.connections.map((connection) =>
+                  connection.id === groupFormState?.editingConnectionId ? (
+                    <div key={connection.id}>{connectionForm}</div>
+                  ) : (
+                    <div
+                      key={connection.id}
+                      className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between desktop:gap-8"
+                    >
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
+                            {connection.label}
+                          </h3>
+                          <ConnectionStatusChip
+                            group={group}
+                            connection={connection}
+                            pluginsEnabled={overview?.pluginsEnabled !== false}
+                          />
+                          <Badge variant="outline">
+                            {syncModeLabel(group, connection)}
+                          </Badge>
+                          {agentAccessLabel(group, connection) ? (
+                            <Badge variant="outline">
+                              {agentAccessLabel(group, connection)}
+                            </Badge>
+                          ) : null}
+                          <ConnectionAccessBadge
+                            group={group}
+                            connection={connection}
+                          />
+                        </div>
+                        {/* A tenant named like its connection says nothing new. */}
+                        {connection.tenantLabel.trim().toLowerCase() !==
+                        connection.label.trim().toLowerCase() ? (
+                          <p className="text-[13px] break-words text-muted-foreground">
+                            {connection.tenantLabel}
+                          </p>
+                        ) : null}
+                        {!connection.autoSync &&
+                        pluginHasBacklog(group.plugin) ? (
+                          <p className="text-xs text-[var(--text-tertiary)]">
+                            {connection.pendingImportCount} staged ·{" "}
+                            {connection.selectedImportCount} selected
+                          </p>
+                        ) : null}
+                        {pluginHasTeam(group.plugin) ? (
+                          <HeldArrivalsLine
+                            count={
+                              state.teamConnections?.[connection.id]
+                                ?.heldArrivals.length ?? 0
+                            }
+                          />
+                        ) : null}
+                        <HeldEditsLine
+                          count={heldEditCount(
+                            heldEdits,
+                            group.plugin.id,
+                            connection.id,
+                          )}
+                          editing={connectionEdits(group, connection)}
+                          connectionId={connection.id}
+                        />
+                        <ConnectionStatusNote
                           group={group}
                           connection={connection}
                           pluginsEnabled={overview?.pluginsEnabled !== false}
                         />
-                        <Badge variant="outline">
-                          {syncModeLabel(group, connection)}
-                        </Badge>
-                        {agentAccessLabel(group, connection) ? (
-                          <Badge variant="outline">
-                            {agentAccessLabel(group, connection)}
-                          </Badge>
-                        ) : null}
-                        <ConnectionAccessBadge
-                          group={group}
-                          connection={connection}
-                        />
                       </div>
-                      <p className="text-[13px] break-words text-muted-foreground">
-                        {connection.tenantLabel}
-                      </p>
-                      {!connection.autoSync &&
-                      pluginHasBacklog(group.plugin) ? (
-                        <p className="text-xs text-[var(--text-tertiary)]">
-                          {connection.pendingImportCount} staged ·{" "}
-                          {connection.selectedImportCount} selected
-                        </p>
-                      ) : null}
-                      {pluginHasTeam(group.plugin) ? (
-                        <HeldArrivalsLine
-                          count={
-                            state.teamConnections?.[connection.id]?.heldArrivals
-                              .length ?? 0
-                          }
-                        />
-                      ) : null}
-                      <HeldEditsLine
-                        count={heldEditCount(
-                          heldEdits,
-                          group.plugin.id,
-                          connection.id,
-                        )}
-                        editing={connectionEdits(group, connection)}
-                        connectionId={connection.id}
-                      />
-                      <ConnectionStatusNote
-                        group={group}
-                        connection={connection}
-                        pluginsEnabled={overview?.pluginsEnabled !== false}
-                      />
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        disabled={
-                          isMutatingPlugin || Boolean(unavailableReason)
-                        }
-                        onClick={() => handleEdit(group.plugin, connection)}
-                      >
-                        <Pencil data-icon="inline-start" />
-                        Edit
-                      </Button>
-                      {pluginHasBacklog(group.plugin) ? (
+                      <div className="flex shrink-0 items-center gap-2">
                         <Button
                           variant="outline"
                           disabled={
-                            isMutatingPlugin ||
-                            overview?.pluginsEnabled === false ||
-                            !isCapabilityActive(group, "connector") ||
-                            Boolean(connection.paused)
+                            isMutatingPlugin || Boolean(unavailableReason)
                           }
-                          onClick={() =>
-                            void workflow.execute({
-                              type: "sync",
-                              pluginId: group.plugin.id,
-                              connectionId: connection.id,
-                            })
-                          }
+                          onClick={() => handleEdit(group.plugin, connection)}
                         >
-                          <RefreshCw data-icon="inline-start" />
-                          Sync
+                          Edit
                         </Button>
-                      ) : null}
-                      {pluginHasTeam(group.plugin) ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            disabled={
-                              isMutatingPlugin ||
-                              overview?.pluginsEnabled === false ||
-                              !isCapabilityActive(group, "team") ||
-                              Boolean(connection.paused)
-                            }
-                            onClick={() =>
-                              void workflow.execute({
-                                type: "teamSync",
-                                pluginId: group.plugin.id,
-                                connectionId: connection.id,
-                              })
-                            }
-                          >
-                            <RefreshCw data-icon="inline-start" />
-                            {pluginHasBacklog(group.plugin)
-                              ? "Sync projects"
-                              : "Sync"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            disabled={
-                              isMutatingPlugin ||
-                              !isCapabilityActive(group, "team")
-                            }
-                            onClick={() =>
-                              setTeamPicker({
-                                pluginId: group.plugin.id,
-                                connectionId: connection.id,
-                                teamName: connection.tenantLabel,
-                              })
-                            }
-                          >
-                            Choose projects
-                          </Button>
-                        </>
-                      ) : null}
-                      {group.plugin.capabilities.codeHost ||
-                      group.plugin.capabilities.calendar ||
-                      group.plugin.capabilities.team ||
-                      // Its held changes go with it: the user confirms that.
-                      heldEditCount(heldEdits, group.plugin.id, connection.id) >
-                        0 ? (
-                        <AlertDialog>
-                          <AlertDialogTrigger
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
                             render={
                               <Button
-                                variant="destructive"
-                                disabled={isMutatingPlugin}
-                              >
-                                <Trash2 data-icon="inline-start" />
-                                Remove
-                              </Button>
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`More actions for ${connection.label}`}
+                              />
                             }
-                          />
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Remove {connection.label}?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {describeConnectionRemoval(
-                                  group.plugin,
-                                  connection.id,
-                                  state,
-                                  heldEditCount(
-                                    heldEdits,
-                                    group.plugin.id,
-                                    connection.id,
-                                  ),
-                                )}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                variant="destructive"
+                          >
+                            <More />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-44">
+                            {pluginHasBacklog(group.plugin) ? (
+                              <DropdownMenuItem
+                                disabled={
+                                  isMutatingPlugin ||
+                                  overview?.pluginsEnabled === false ||
+                                  !isCapabilityActive(group, "connector") ||
+                                  Boolean(connection.paused)
+                                }
                                 onClick={() =>
+                                  void workflow.execute({
+                                    type: "sync",
+                                    pluginId: group.plugin.id,
+                                    connectionId: connection.id,
+                                  })
+                                }
+                              >
+                                Sync now
+                              </DropdownMenuItem>
+                            ) : null}
+                            {pluginHasTeam(group.plugin) ? (
+                              <>
+                                <DropdownMenuItem
+                                  disabled={
+                                    isMutatingPlugin ||
+                                    overview?.pluginsEnabled === false ||
+                                    !isCapabilityActive(group, "team") ||
+                                    Boolean(connection.paused)
+                                  }
+                                  onClick={() =>
+                                    void workflow.execute({
+                                      type: "teamSync",
+                                      pluginId: group.plugin.id,
+                                      connectionId: connection.id,
+                                    })
+                                  }
+                                >
+                                  {pluginHasBacklog(group.plugin)
+                                    ? "Sync projects"
+                                    : "Sync now"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  disabled={
+                                    isMutatingPlugin ||
+                                    !isCapabilityActive(group, "team")
+                                  }
+                                  onClick={() =>
+                                    setTeamPicker({
+                                      pluginId: group.plugin.id,
+                                      connectionId: connection.id,
+                                      teamName: connection.tenantLabel,
+                                    })
+                                  }
+                                >
+                                  Choose projects
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
+                            {pluginHasBacklog(group.plugin) ||
+                            pluginHasTeam(group.plugin) ? (
+                              <DropdownMenuSeparator />
+                            ) : null}
+                            <DropdownMenuItem
+                              variant="destructive"
+                              disabled={isMutatingPlugin}
+                              onClick={() => {
+                                const held = heldEditCount(
+                                  heldEdits,
+                                  group.plugin.id,
+                                  connection.id,
+                                );
+                                // Records go with it, or held changes: the
+                                // user confirms that first.
+                                if (
+                                  group.plugin.capabilities.codeHost ||
+                                  group.plugin.capabilities.calendar ||
+                                  group.plugin.capabilities.team ||
+                                  held > 0
+                                ) {
+                                  setRemoving({
+                                    pluginId: group.plugin.id,
+                                    connectionId: connection.id,
+                                    label: connection.label,
+                                    description: describeConnectionRemoval(
+                                      group.plugin,
+                                      connection.id,
+                                      state,
+                                      held,
+                                    ),
+                                  });
+                                } else {
                                   void handleDelete(
                                     group.plugin.id,
                                     connection.id,
-                                  )
+                                  );
                                 }
-                              >
-                                Remove connection
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      ) : (
-                        <Button
-                          variant="destructive"
-                          disabled={isMutatingPlugin}
-                          onClick={() =>
-                            void handleDelete(group.plugin.id, connection.id)
-                          }
-                        >
-                          <Trash2 data-icon="inline-start" />
-                          Remove
-                        </Button>
-                      )}
+                              }}
+                            >
+                              Remove
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             )}
           </section>
         ) : null}
+
+        {unavailableReason || group.missing ? null : (
+          <PluginAccessSection group={group} now={Date.now()} />
+        )}
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Features</h2>
+          <PluginCapabilityList entry={entry} />
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Information</h2>
+          <PluginInfoList
+            entry={entry}
+            version={group.plugin.version}
+            installed={group.plugin}
+          />
+        </section>
+
+        <AlertDialog
+          open={removing?.pluginId === group.plugin.id}
+          onOpenChange={(open) => {
+            if (!open) setRemoving(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove {removing?.label}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {removing?.description}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  if (removing) {
+                    void handleDelete(removing.pluginId, removing.connectionId);
+                  }
+                  setRemoving(null);
+                }}
+              >
+                Remove connection
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {teamPicker && teamPicker.pluginId === group.plugin.id ? (
           <TeamPickerDialog
@@ -1417,7 +1485,7 @@ export function SettingsPluginsPage({
             installed ? (
               <Button
                 variant="outline"
-                render={<Link to="/settings/projects" replace />}
+                render={<SettingsLink page="projects" replace />}
               >
                 Use in Projects
               </Button>
@@ -1524,7 +1592,7 @@ export function SettingsPluginsPage({
 
   if (pluginId) {
     return (
-      <div className="settings-sections">
+      <div className="settings-sections settings-measure">
         {selectedDisplayEntry?.pluginGroup ? (
           renderPluginDetail(
             selectedDisplayEntry.catalog,
@@ -1556,7 +1624,7 @@ export function SettingsPluginsPage({
 
   if (pluginApiMissing) {
     return (
-      <div className="settings-sections">
+      <div className="settings-sections settings-measure">
         <section className="settings-section">
           <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
           {renderMessages()}
@@ -1566,7 +1634,7 @@ export function SettingsPluginsPage({
   }
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <PluginsHeader
         canInstall={canInstallPlugins}
         isMutating={isMutatingPlugin}

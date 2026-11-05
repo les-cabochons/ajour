@@ -242,8 +242,12 @@ Then(
     await expect(dock).toBeVisible();
     await expect(dock).toContainText(projectName);
     await expect(dock).toContainText(taskName);
+    // The dock's own Stop: the Time page's running row, which loads after
+    // the dock, has one too.
     await expect(
-      page.getByRole("button", { name: "Stop", exact: true }),
+      page
+        .getByRole("region", { name: "Running entry" })
+        .getByRole("button", { name: "Stop", exact: true }),
     ).toBeVisible();
   },
 );

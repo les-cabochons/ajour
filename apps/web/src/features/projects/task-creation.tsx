@@ -287,7 +287,7 @@ function TaskCommitsAsDialog({
         />
       </Field>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button type="button" onClick={save} disabled={!task}>

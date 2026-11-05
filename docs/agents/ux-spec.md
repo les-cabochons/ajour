@@ -126,7 +126,7 @@ The app is not in production. The rename ships with no migration code, no redire
 
 ### Settings navigation
 
-Each nav label matches its page title. Old routes are removed, not redirected.
+Each nav label matches its page title. Old routes are removed, not redirected. In wide windows a `/settings/...` route opens the settings window over the last page outside Settings (see App shell); in the narrow view it is a page.
 
 The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pull requests also appears under Work in the narrow view, and Calendar only while a calendar plugin is on.
 
@@ -157,19 +157,19 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens a blank backlog item editor in a dialog over the current page, which keeps its open editor and draft; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right. It shows a sync icon that checks for updates, and an up arrow only when an update is ready to install.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens a blank backlog item editor in a dialog over the current page, which keeps its open editor and draft. On the Backlog page with no editor open, it opens the page's own side panel instead, as the page's New item does: a job done on its own page has one place (forms council round 4). Time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right. It shows a sync icon that checks for updates, and an up arrow only when an update is ready to install.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. The sidebar stays beside the page at every desktop width, down to the narrow view. It never opens over the page.
-- Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open, that column shows the app sidebar's timer card under Back to app, the one form of the timer beside a sidebar (council round 25), and the titlebar shows no Show sidebar button. The timer dock floats only while the app sidebar is hidden.
+- Settings opens as a window over the page, as in T3 Code: the page stays where it was, blurred and dimmed behind the window, and Esc, Close or the browser's Back returns to it with nothing moved, its search state included, such as the Week view or the entry open in the side panel. The window is 1120 by 760 at most, 40px clear of the window's edges in a smaller one. Its left column, 232px, lists the settings pages under their App, Work and Data groups and ends with the app sidebar's timer card, the one form of the timer beside a sidebar (council round 25); its running entry and its "+" open their editor in the card's own popover, inside the window, never in the page's side panel behind it, and the timer dock never floats while the window is open. The open page sits at the right under a "Settings / Page" header with Close, where the page's name is the one heading. Switching pages, and any link to a settings page followed while the window is open, replaces the history entry, so Back closes the window in one step. The browser shows `/settings/...` while the window is open, so links, bookmarks and the acceptance URLs read as before. The app sidebar stays as it was behind the window, and Cmd/Ctrl+B waits. In the narrow view Settings stays a page.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
 - The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 
 ### Timer dock
 
 - While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1h05 left" or "25m over", next to the project code and task.
-- Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
+- Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it; on the Time pages it opens the side panel instead, as the page's New entry and N do (forms council round 4). New entry… with a note or a backlog link keeps the popover there too, since the panel's address carries only the project and task.
 - With nothing running, the dock shows New entry (+), Start (▶) and today's total on one line. Start begins an empty entry and opens its editor; the dock does not suggest a backlog item.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
 - While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
@@ -227,18 +227,18 @@ Creating and editing a time entry always use the same form:
 
 - Header: the title ("New time entry" or "Edit time entry"), the entry's date, the "…" action menu for saved entries, and × to close.
 - Fields: Project / task, Note, Hours, Date (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`). See the Running entries section for Date and empty Hours.
-- Footer: Cancel · Start (Switch while another entry runs, Continue on a saved entry, Stop on the running entry) · Save.
+- Footer: Cancel · Start (Continue on a saved entry, Stop on the running entry) · Save. Start also stops another running entry.
 
 The Day view's inline new row and the titlebar's own create form go away. What an empty Hours field means belongs to [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 
 ### Hosts
 
-| Where                                                                     | Host                                                                                |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Day and Week views (rows, Days cards, Grid cells, "+ New entry", "+ Add") | Side panel docked on the right. The day or week stays visible.                      |
-| Titlebar "+", on any page                                                 | Popover anchored to the "+". Adding an entry never requires going to the Time page. |
-| New entry… on tasks and backlog items                                     | The same popover, anchored to the row or menu that opened it.                       |
-| Narrow view, everywhere                                                   | Full-width dialog.                                                                  |
+| Where                                                                     | Host                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Day and Week views (rows, Days cards, Grid cells, "+ New entry", "+ Add") | Floating composer: a card at the top right, with no backdrop and no dock (forms council round 8). The page keeps its width and stays live: another row opens in it, keys and menus work, and leaving saves a valid draft first. Only Escape, Cancel or × close it. Focus goes back to where it was. |
+| Titlebar "+", on any page                                                 | Popover anchored to the "+". Adding an entry never requires going to the Time page.                                                                                                                                                                                                                 |
+| New entry… on tasks and backlog items                                     | The same popover, anchored to the row or menu that opened it.                                                                                                                                                                                                                                       |
+| Narrow view, everywhere                                                   | Full-width dialog.                                                                                                                                                                                                                                                                                  |
 
 The form is the same in every host. Only its container changes.
 
@@ -306,7 +306,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 
 ### Editing
 
-- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it. The narrow view uses the full-width dialog.
+- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it, except on the Time pages, where it opens the side panel as the row does (forms council round 5). The narrow view uses the full-width dialog.
 - The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
 - Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
 - Discard happens at once and shows the Undo toast (see Feedback).
@@ -316,7 +316,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 - In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
 - With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
 - A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
-- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The timer dock and the rows show the switch; no message appears.
+- Starting while another entry runs saves the running one and switches, without a prompt. The button still reads Start. The timer dock and the rows show the switch; no message appears.
 - Start entry on tasks and backlog items starts on today, as it does now.
 
 ### Date field
@@ -325,7 +325,7 @@ The form gets a Date field after Hours. It defaults to the open day in Day, the 
 
 ### Labels
 
-Buttons read Start, Switch and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
+Buttons read Start, Continue and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
 
 ## Week view
 
@@ -633,12 +633,13 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Peek
 
-- Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
+- A click selects a row or card, as in a file explorer (forms council round 8): Cmd or Ctrl+click adds or removes it, Shift+click selects a range in reading order, and Escape clears the selection. A double click, or Enter, opens the item page. Space toggles the peek on the focused row; it follows the focused item until Escape or × closes it. In the narrow view a tap opens the item page.
+- A right-click on a row of a selection of several shows the actions every selected item offers (Settle, Unsettle, Unsnooze, Pin, Unpin, Restore, Archive, Delete), named with the count ("Settle 3 items"), and runs the chosen one on each. Dragging a selected row into another group moves the whole selection there, as one drag moves one item.
 - The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, the item page's snoozed, settled, archived or returned notice, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the description and the subitems.
 - The peek has no "…" menu. The row's context menu and the item page carry the other actions.
 - Dragging the peek's left edge resizes it, like every side panel: 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. Each page keeps its own panel width, per device: Backlog (peek and editor), the backlog item page, Time, Projects and Agents.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
-- Edit turns the peek into the backlog item editor in the same slot, with its explicit Save. Saving or discarding goes back to the peek.
+- Edit opens the backlog item editor as the floating composer, with its explicit Save; the peek closes behind it. Creating an item, a subitem or a task opens the same floating composer on its page (forms council round 8). It opens on the item's ticket line, then its title, then its estimates as one sentence typed in place, "5h remaining · 3h completed · 8h estimated" ("estimated" alone for a new item), then its description. The expand button beside ⋯ and × saves the draft and opens the item page; a long description, over six lines or 480 characters, shows its first lines until the user types in it (forms council rounds 12 and 13).
 - Enter, a double-click or Open page opens the backlog item page.
 - The narrow view has no peek: a tap opens the item page.
 
@@ -653,7 +654,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Closing a parent
 
-- Moving a parent into a done state, or settling it, while it has open subitems asks "Also close its 3 subitems?" (or "settle"), with Include subitems, Only this item, and "Remember my choice".
+- Moving a parent into a done state, or settling it, while it has open subitems asks "Also close its 3 subitems?" (or "settle"), with Include subitems, Only this item, and "Remember my choice". The settle dialog asks in its own form instead, with a checkbox "Also settle its 3 open subitems", on by default, listing them, so no second dialog stacks on it and changing the answer keeps the draft (forms council round 5).
 - Settings > Backlog holds the choice: Ask (the default), Include them, or Leave them.
 - Included synced subitems are written through their own source project's mapping. Subitems already settled or archived are left alone.
 - Reopening the parent brings back the subitems that closed with it.
@@ -672,7 +673,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Editing
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
-- The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
+- The form holds title, workflow state, priority, project and task mapping, description, and the estimates. It is the quick editor: Missing from sync and the rest stay on the item page (forms council round 13). Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
 - "New backlog item" on the Backlog page opens a blank form. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
 - Start entry shows at rest on desktop list rows, and stays in the "…" menu and in the peek. Entries start on today.
@@ -881,7 +882,7 @@ Settle means the user has nothing left to do on the item for now.
 - Settling stops and saves the running entry on the item. Undo restores the entry as it was, still running from its original start.
 - A plugin without the settle capability settles its items locally, with no write.
 - Settling a parent with open subitems asks whether to include them, as in Closing a parent under Backlog. Undo restores them together. Settling a synced subitem writes that subitem through its own source project's mapping.
-- When the item's plugin assigns ([#561](https://github.com/les-cabochons/ajour/issues/561), ADR 0017), an **Assignee** field sits between Priority and Comment. It starts on whoever has the item, from the last sync, or reads "Keep assignee" until a sync of the plugin has said. It opens a list: Unassigned, who has the item, then the people the plugin suggests, each with initials, name and email. Typing a name searches the people the item can be assigned to; with people search off on the connection, it filters the suggestions instead, as @ mentions do. While a search runs, the list keeps its last answer and says "Searching…"; a name that finds no one says "No one found". Picking someone else, or Unassigned, writes the assignee with the settle; picking who has it writes nothing, and changing only the assignee is a valid settle. The item shows the new assignee at once; Undo, or a failed write, puts the previous one back. The toast names it: "Assigned to Ana Silva and settled", "Unassigned and settled", or "Commented, assigned to Ana Silva and settled". Only the settled item is reassigned: subitems the settle carries keep theirs. A held write lists the assignee in Sync review. Settle rules don't set an assignee, and Shift+E opens the dialog on the item's assignee.
+- When the item's plugin assigns ([#561](https://github.com/les-cabochons/ajour/issues/561), ADR 0017), an **Assignee** chip follows the Priority chip (forms council round 19). It starts on whoever has the item, from the last sync, or reads "Assignee" until a sync of the plugin has said. It opens a list: Unassigned, who has the item, then the people the plugin suggests, each with initials, name and email. Typing a name searches the people the item can be assigned to; with people search off on the connection, it filters the suggestions instead, as @ mentions do. While a search runs, the list keeps its last answer and says "Searching…"; a name that finds no one says "No one found". Picking someone else, or Unassigned, writes the assignee with the settle; picking who has it writes nothing, and changing only the assignee is a valid settle. The item shows the new assignee at once; Undo, or a failed write, puts the previous one back. The toast names it: "Assigned to Ana Silva and settled", "Unassigned and settled", or "Commented, assigned to Ana Silva and settled". Only the settled item is reassigned: subitems the settle carries keep theirs. A held write lists the assignee in Sync review. Settle rules don't set an assignee, and Shift+E opens the dialog on the item's assignee.
 - Priority changes outside Settle write to the source too, as described under Priority in Backlog. A settle keeps a priority write still waiting, so one write sends both.
 
 ### Unsettle and restore
@@ -946,7 +947,7 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 
 - The project list keeps its search field and an "Archived" entry at the bottom. Wide windows show it next to the app sidebar. The narrow view shows it inside Settings.
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
-- Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
+- Editing a task uses the floating composer, with the same Save and Escape rules as entries. It holds the name, then budget and adjustment as one sentence typed in place ("120h budget · 0h adjustment"), then billable and the pinned slot as chips. The inline task editor that saved on outside click goes away.
 - The project page's properties show what edits: Full name and Code end in a pencil, Color and Icon in a picker chevron, at the value column's edge; an archived project shows none (council round 10).
 - The backlog item page's lead figure is Remaining, at 28px, first, then Completed and Original, and the bar under them fills with Completed over Original, the spent part, as every figure bar does (product owner, council rounds 23, 25 and 28); the bar sits under the three, and every value shares one baseline, Logged in Ajour's too (council rounds 14 and 16). A synced item's refresh control sits in the Source property, beside the source it refreshes (council round 16).
 - With task budgets, the project page's figures read This week, the page's one 28px figure, All time, then Budget used, Budget left and Task budgets as a group with the bar, filled with Budget used, under them only (council rounds 11 and 25), and one secondary line, "Budget figures count the active tasks that have a budget.", so Budget used never reads as All time (council round 4). Budget used reads in the text color like the other figures, amber or red only when it warns. "Budget figures count the active tasks that have a budget." is the Task budgets label's tooltip. A task row with a budget leads with its hours logged and follows with "of 120:00" in secondary ink (council rounds 21 and 26), and a pinned task's keycap shows the chord that starts it, "⇧1" on macOS and "Shift+1" elsewhere, right after the task's name (council rounds 16 and 19). The task list has no heading under its tab; its Active and Archived filter sits on the tab row's right, and a task row shows a chip only for Non-billable, Billable being the default (council round 5).
@@ -1119,3 +1120,25 @@ judged by the address that answered after it was sent, so a name that rebinds in
 between is refused only afterwards. Software running as the same user can still
 reach what that user's keychain holds, and the Electron `runAsNode` fuse stays
 on in release builds until the agent runner stops needing it (#415).
+
+### Adding the ajour command to WSL
+
+On Windows x64, with the command installed, Terminal lists one SettingRow per usable WSL distro under "ajour command", inside the same AppPanel. No rows appear in a browser, outside Windows x64, without an installed command, or when WSL lists no usable distro. Docker Desktop's distros are excluded.
+
+| State     | Status line                                                                                                                              | Control                  |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Not added | "Not added."                                                                                                                             | Add                      |
+| Adding    | "Downloading ajour, 42%", then "Checking ajour in Ubuntu…", then "Linking ~/.local/bin/ajour…"                                           | Disabled                 |
+| Added     | "ajour <version> · ~/.local/bin/ajour". After Add, "Open a new Ubuntu terminal to use it." or "Add ~/.local/bin to your PATH in Ubuntu." | None until Remove (#605) |
+| Failed    | "Not added.", or the Added line for a distro already added, then the reason inline with role="alert"                                     | Retry                    |
+| WSL 1     | "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu 2"                                                                     | None                     |
+
+The description has a fixed height and uses role="status". Add shows no toast or confirmation dialog. A foreign command is refused with "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again." A distro WSL no longer lists is refused inline with "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list." A distro that can't run commands shows "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again." A failure with no sentence of its own shows "Ajour couldn't add ajour to Ubuntu." Retry hides the previous reason while it runs. A failed Add of a distro already added leaves it Added: its version and `~/.local/bin/ajour` stay, its working link is untouched, and the reason shows below with Retry.
+
+Add needs WSL 2: the Linux `ajour` can't start in WSL 1 ([#611](https://github.com/les-cabochons/ajour/issues/611)). The list is read with `wsl.exe --list --verbose`, which gives each distro's version. A WSL 1 distro's row shows the WSL 1 sentence in its status line, not as an alert, and has no Add, neither disabled nor explained by a DisabledReason. If Add is asked for anyway, it is refused with the reason `wsl1_unsupported`: nothing is downloaded, nothing runs in the distro, and the record doesn't change. #611 lifts this once the Linux build starts in WSL 1.
+
+Removing the ajour command deletes `bin\linux` with it, without entering a distro, so a later Install starts clean.
+
+Add verifies the Linux release archive and its version inside the selected distro before committing its record. Failure restores the Linux build and any link created by the attempt. Other distros are never entered. Launch reconciliation repairs the Linux build from the record without entering any distro. The distro list is read only for Settings or an explicit Add and cached for 30 seconds.
+
+WSL removal and uninstaller cleanup are tracked by #605. Following the app version for Linux is tracked by #606.

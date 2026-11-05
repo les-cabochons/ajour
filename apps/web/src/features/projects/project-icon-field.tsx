@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type {
   LocalProjectIcon,
   ProjectIconName,
@@ -97,21 +98,8 @@ export function ProjectIconField({
 
   return (
     <div className="project-icon-field">
-      <div className="project-icon-field-copy">
-        <span className="project-icon-field-label">Project icon</span>
-        <p className="project-icon-field-hint">
-          Pick a preset or upload a favicon-sized icon. Uploaded icons can use
-          the project color or keep their native colors.
-        </p>
-      </div>
-
       <div className="project-icon-field-toolbar">
-        <div className="project-icon-preview">
-          <ProjectIcon icon={icon} color={color} className="size-5" />
-          <span className="project-icon-preview-label">
-            {icon.kind === "upload" ? "Uploaded favicon" : "Preset"}
-          </span>
-        </div>
+        <span className="project-icon-field-label">Project icon</span>
 
         <input
           id="project-form-icon-upload"
@@ -125,34 +113,26 @@ export function ProjectIconField({
         />
         <Button
           type="button"
-          variant={icon.kind === "upload" ? "default" : "outline"}
-
+          size="sm"
+          variant="ghost"
           disabled={isProcessingUpload}
           onClick={handleUploadPickerOpen}
         >
           {isProcessingUpload ? "Preparing icon" : "Upload favicon"}
         </Button>
-        <Button
-          type="button"
-          variant={
-            icon.kind === "upload" && icon.colorMode === "native"
-              ? "default"
-              : "outline"
-          }
-
-          disabled={icon.kind !== "upload"}
-          onClick={() => {
-            if (icon.kind === "upload") {
-              onChange({
-                ...icon,
-                colorMode: icon.colorMode === "native" ? "tinted" : "native",
-              });
-            }
-          }}
-        >
-          Keep native colors
-        </Button>
       </div>
+      {/* Only an uploaded icon has colors of its own to keep. */}
+      {icon.kind === "upload" ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={icon.colorMode === "native"}
+            onCheckedChange={(checked) =>
+              onChange({ ...icon, colorMode: checked ? "native" : "tinted" })
+            }
+          />
+          Keep the favicon's own colors
+        </label>
+      ) : null}
 
       <div className="project-icon-preset-grid" role="list">
         {PROJECT_ICON_PRESETS.map((preset) => {

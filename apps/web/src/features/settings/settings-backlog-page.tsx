@@ -17,7 +17,7 @@ export function SettingsBacklogPage() {
   const state = useLocalState();
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">Subitems</h2>
         <p className="settings-section-desc">

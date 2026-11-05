@@ -516,7 +516,7 @@
   }
 
   .project-detail {
-    padding: 1rem;
+    padding: 1rem var(--page-gutter);
   }
 
   .project-detail-columns {

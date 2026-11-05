@@ -218,12 +218,11 @@
     gap: 0.125rem;
   }
 
+  /* The tenant line: no uppercase tracked labels (ui-rules). */
   .backlog-settings-source-kicker {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-tertiary);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
   }
 
   .backlog-settings-source-title {
@@ -309,20 +308,7 @@
   }
 }
 
-/* Outside the layer: the settings list beside the app sidebar and the
-   narrow settings list override their sidebar utilities. */
-.ajour-settings-navigation [data-sidebar="content"] {
-  gap: 0.75rem;
-  padding-top: 0.5rem;
-}
-
-.ajour-settings-navigation-label {
-  height: 1.5rem;
-  font-size: var(--text-2xs);
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-
+/* Outside the layer: the narrow settings list. */
 .settings-narrow-nav {
   display: flex;
   flex-direction: column;
@@ -376,4 +362,158 @@
   height: 1.125rem;
   flex-shrink: 0;
   color: var(--text-tertiary);
+}
+
+/* Settings in wide windows: a window over the page, as in T3 Code. The
+   page behind stays where it was, blurred and dimmed. This is the one
+   backdrop blur in the app (ui-rules); a reduced-transparency setting
+   turns it off. */
+.settings-window-backdrop {
+  background: var(--overlay-scrim);
+  backdrop-filter: blur(var(--overlay-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-blur));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .settings-window-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+[data-slot="dialog-content"].settings-window {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  width: min(1120px, calc(100vw - 80px));
+  max-width: none;
+  height: min(760px, calc(100dvh - 80px));
+  max-height: none;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popup);
+}
+
+.settings-window-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface-tint);
+}
+
+.settings-window-nav-groups {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  padding: 0.875rem 0.625rem 0.5rem;
+  overflow-y: auto;
+}
+
+.settings-window-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.settings-window-nav-label {
+  padding: 0 0.5rem 0.25rem;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.settings-window-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--control-height);
+  padding: 0 0.5rem;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.settings-window-nav-link svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.settings-window-nav-link:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.settings-window-nav-link[data-active] {
+  background: var(--surface-high);
+  color: var(--text);
+}
+
+.settings-window-nav-link:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.settings-window-nav-foot {
+  flex-shrink: 0;
+  padding-bottom: 0.25rem;
+}
+
+.settings-window-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings-window-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  height: 48px;
+  padding: 0 0.75rem 0 var(--page-gutter);
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-window-crumb {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.settings-window-crumb-separator {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
+
+.settings-window-title {
+  min-width: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-window-close {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+
+.settings-window-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The window keeps the pages' 24px gutter and 672px measure. */
+.settings-window .settings-content {
+  padding: 1.5rem var(--page-gutter) 2.5rem;
 }

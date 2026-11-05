@@ -1665,7 +1665,7 @@
     column-gap: 0.375rem;
     row-gap: 1px;
     height: 52px;
-    padding-left: 0.75rem;
+    padding-left: var(--page-gutter);
     /* Line 2 runs on under the trailing cell, which only uses line 1. */
     margin-right: -7.5rem;
   }
@@ -1780,7 +1780,7 @@
   .time-entry-trailing {
     width: 7.5rem;
     padding-top: 5px;
-    padding-right: 0.75rem;
+    padding-right: var(--page-gutter);
     vertical-align: top;
   }
 
@@ -1798,45 +1798,72 @@
     margin-block: -4px;
   }
 
+  /* Rows and their dividers run to the window's edges; text keeps the
+     page gutter. */
   .commit-page {
-    padding: 0.25rem 0.75rem 6rem;
+    padding: 0.25rem var(--page-gutter) 6rem;
   }
-}
 
-/* The entry editor's property rows read as values, like the backlog peek's:
-   the task picker, Hours and Date show their field only on hover and focus,
-   and an invalid value keeps its red border. Unlayered, so they win over the
-   fields' utility classes. */
-.time-entry-fields dd :is(.time-entry-task-picker, [data-slot="input"]) {
-  height: var(--control-height);
-  padding-inline-start: 0.625rem;
-  border-color: transparent;
-  background: transparent;
-}
+  .commit-change,
+  .submit-line {
+    margin-inline: calc(-1 * var(--page-gutter));
+    padding-inline: var(--page-gutter);
+  }
 
-.time-entry-fields
-  dd
-  :is(.time-entry-task-picker, [data-slot="input"]):is(
-    :hover,
-    :focus,
-    [data-popup-open]
-  ) {
-  border-color: var(--field-border);
-  background: var(--field-bg);
-}
+  .calendar-day-section-header,
+  .calendar-day-section-footer,
+  .calendar-day-section-error {
+    padding-inline: var(--page-gutter);
+  }
 
-.time-entry-fields dd [data-slot="input"][aria-invalid="true"] {
-  border-color: var(--destructive);
-}
+  /* A meeting suggestion takes two lines on a phone (forms council round
+     17): its time, title and duration, then the project, Add, × and ⋯.
+     The desktop's seven columns ran ~500px wide, hid the title and pushed
+     Add off-screen. */
+  .calendar-suggestion-row {
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      "time title title title duration"
+      "picker picker add dismiss more";
+    row-gap: 0.375rem;
+    height: auto;
+    padding: 0.5rem var(--page-gutter);
+  }
 
-/* Each field shifts left by its border and padding, so every value's text
-   lines up with the rows' start. Date shifts its wrapper, which holds the
-   calendar button. */
-.time-entry-fields dd > .time-entry-task-picker,
-.time-entry-fields dd > div > [data-slot="input"],
-.time-entry-fields dd > div > .relative {
-  width: calc(100% + 0.625rem + 1px);
-  margin-inline-start: calc(-0.625rem - 1px);
+  .calendar-suggestion-time {
+    grid-area: time;
+  }
+
+  .calendar-suggestion-title {
+    grid-area: title;
+  }
+
+  .calendar-suggestion-row > :nth-child(3) {
+    grid-area: picker;
+    justify-self: start;
+    max-width: 100%;
+  }
+
+  .calendar-suggestion-duration {
+    grid-area: duration;
+  }
+
+  .calendar-suggestion-row > :nth-child(5) {
+    grid-area: add;
+  }
+
+  .calendar-suggestion-row > :nth-child(6) {
+    grid-area: dismiss;
+  }
+
+  .calendar-suggestion-row > .object-actions-button {
+    grid-area: more;
+  }
+
+  /* Nothing on the Time page scrolls it sideways. */
+  .time-page-stack {
+    overflow-x: clip;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1956,6 +1983,13 @@
     width: 24px;
     height: 24px;
     color: var(--text-secondary);
+  }
+
+  @media (pointer: coarse) {
+    .calendar-suggestion-row .object-actions-button {
+      width: 32px;
+      height: 32px;
+    }
   }
 
   .calendar-day-section-footer {

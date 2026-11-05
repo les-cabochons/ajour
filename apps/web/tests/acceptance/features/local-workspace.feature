@@ -33,7 +33,7 @@ Feature: Open the local time workspace
     Then the timer dock opens the running entry
     And the window title shows the running entry
     When I open Settings from the desktop sidebar
-    Then Settings shows the running entry under Back to app
+    Then Settings shows the running entry in its window
     When I go back to the app from Settings
     And I hide the app sidebar with its button
     Then the running entry floats at the bottom left
@@ -183,13 +183,13 @@ Feature: Open the local time workspace
     And I double-click the text of Monday's capacity card
     Then no entry editor is open
 
-  Scenario: The entry panel floats over a narrow Time page and docks on a wide one
+  Scenario: The entry composer floats over the Week at every width
     Given I have a week of saved entries
     When the window is 1280 pixels wide
     And I open the Week Days view
     Then opening Monday's "API" card floats the entry panel over the Week
     When the window is 1800 pixels wide
-    Then the entry panel sits beside the Week and narrows it
+    Then the entry composer still floats and the Week keeps its width
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
@@ -272,14 +272,16 @@ Feature: Open the local time workspace
     And the Week Grid entry draft still has invalid hours
     And the "Code review" cell on Monday shows "1:00"
 
-  Scenario: Open Settings in place of the app sidebar
+  Scenario: Open Settings as a window over the app
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
     And I open Settings from the desktop sidebar
-    Then the Settings pages replace the app sidebar
+    Then Settings opens as a window over the app
+    And the page stays mounted behind the window
     When I open Plugins from the Settings navigation
     And I go back to the app from Settings
-    Then the Time workspace is visible
+    Then the same page is back
+    And the Time workspace is visible
 
   Scenario: Keep the running entry's draft across the narrow breakpoint
     Given I have no saved Ajour workspace
@@ -319,7 +321,7 @@ Feature: Open the local time workspace
     And I press New backlog item in the sidebar header
     Then the New backlog item dialog opens over the open entry
     When I cancel the New backlog item dialog
-    Then the open entry still shows "02:00" hours with the note
+    Then the open entry still shows "2:00" hours with the note
 
   Scenario: Create a backlog item from the sidebar header while the Backlog page creates one
     Given I have no saved Ajour workspace
@@ -347,7 +349,7 @@ Feature: Open the local time workspace
   Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly
-    Then the Settings pages replace the app sidebar
+    Then Settings opens as a window over the app
 
   Scenario: Open the Projects list beside primary navigation
     Given I have projects with searchable tasks
@@ -387,7 +389,7 @@ Feature: Open the local time workspace
     Then the running entry's dialog still has "Standup notes"
     When I close the running entry's dialog with Escape
     And I press Stop in the narrow titlebar
-    Then the totals pill shows Today again
+    Then the totals pill shows the day total again
 
   Scenario: Start a task from the command palette
     Given I have projects with searchable tasks
@@ -433,7 +435,7 @@ Feature: Open the local time workspace
     And I assign key "3" to task "222 000"
     Then key "3" is saved on task "222 000" only
     When I press the "Digit3" key
-    Then a new entry opens for "[AAA] aaa xyz · 222 000"
+    Then a new entry opens for "aaa xyz · 222 000"
     When I press the "Escape" key
     Then the new entry form is closed
     When I press the "Shift+Digit3" key
@@ -560,7 +562,7 @@ Feature: Open the local time workspace
     When I open "More recent tasks" in the task menu
     Then the task menu lists "333 000, 222 000, 111 000, 222 000"
     When I open "111 000" in the task menu
-    Then the picker shows "[AAA] aaa xyz · 111 000"
+    Then the picker shows "aaa xyz · 111 000"
 
   Scenario: See a task's whole name and details in the task menu card
     Given I used four searchable tasks lately, the second of them starred

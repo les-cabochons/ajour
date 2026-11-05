@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { placeFloatingComposer } from "@/lib/floating-composer";
 import {
   Tooltip,
   TooltipContent,
@@ -11,6 +12,7 @@ import {
   RiMoreLine as More,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { MessagePanel } from "@/components/app-surface";
 import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
@@ -2084,7 +2086,7 @@ export function ProjectsPage() {
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}
-        titleAs={isNarrowView ? DialogTitle : undefined}
+        titleAs={DialogTitle}
       />
     ) : null;
 
@@ -2145,7 +2147,7 @@ export function ProjectsPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
-                        render={<Link to="/settings/projects" />}
+                        render={<SettingsLink page="projects" />}
                       >
                         Import and export…
                       </DropdownMenuItem>
@@ -2209,23 +2211,35 @@ export function ProjectsPage() {
         </div>
       ) : null}
 
-      {taskEditorForm && !isNarrowView ? (
-        <SidePanel
-          contentKey={visibleTaskEditor?.taskId ?? "new"}
-          widthKey="projects"
-          className="project-task-side-panel"
-          aria-label="Task editor"
-        >
-          {taskEditorForm}
-        </SidePanel>
-      ) : null}
-      {taskEditorForm && isNarrowView ? (
+      {/* The task composer opens as a dialog at every width: no side
+          panel for a form (forms council round 8). */}
+      {taskEditorForm ? (
         <Dialog
           open
+          // Floating on a wide window: the project stays live behind it.
+          modal={isNarrowView}
           disablePointerDismissal
           onOpenChange={(open) => !open && setTaskEditor(null)}
         >
-          <DialogContent className="max-w-xl" showCloseButton={false}>
+          <DialogContent
+            className={cn(
+              "max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]",
+              !isNarrowView && "composer-floating",
+            )}
+            overlay={isNarrowView}
+            showCloseButton={false}
+            // Off the edited task's row, so it stays readable.
+            ref={(popup: HTMLDivElement | null) => {
+              const taskId = visibleTaskEditor?.taskId;
+              if (!isNarrowView && taskId)
+                placeFloatingComposer(
+                  popup,
+                  document.querySelector(
+                    `main [data-task-id="${CSS.escape(taskId)}"]`,
+                  ),
+                );
+            }}
+          >
             {taskEditorForm}
           </DialogContent>
         </Dialog>

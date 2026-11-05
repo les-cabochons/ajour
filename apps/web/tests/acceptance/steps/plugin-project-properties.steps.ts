@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
+
 const { Given, When, Then } = createBdd();
 const cors = { "access-control-allow-origin": "*" };
 
@@ -73,12 +76,12 @@ When(
   "I map task {string} to the Workday task {string} and save",
   async ({ page }, task: string, workdayTask: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
     await editor.getByRole("combobox", { name: "Workday task" }).click();
     await page.getByRole("option", { name: workdayTask, exact: true }).click();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -119,7 +122,7 @@ async function mapToNewWorkdayTask(
   close: "Save" | "Cancel",
 ) {
   await page.getByText(task, { exact: true }).click();
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await editor.getByRole("combobox", { name: "Commits as" }).click();
   await page.getByRole("option", { name: "Another task…" }).click();
   const picker = editor.getByRole("combobox", { name: "Workday task" });
@@ -143,7 +146,7 @@ When(
   async ({ page }, task: string) => {
     await page.getByText(task, { exact: true }).first().click();
     await expect(
-      page.getByRole("complementary", { name: "Task editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) task$/ }),
     ).toBeVisible();
   },
 );
@@ -151,12 +154,12 @@ When(
 Then(
   "the open task editor has Commits as {string}",
   async ({ page }, choice: string) => {
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await expect(
       editor.getByRole("combobox", { name: "Commits as" }),
     ).toHaveText(choice);
     await expect(
-      editor.getByRole("button", { name: "Save", exact: true }),
+      editor.getByRole("button", { name: SAVE_OR_CREATE }),
     ).toBeDisabled();
   },
 );
@@ -176,7 +179,7 @@ When(
   "I map task {string} to a new Workday task {string} and save",
   async ({ page }, task: string, workdayTask: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
     const picker = editor.getByRole("combobox", { name: "Workday task" });
@@ -187,7 +190,7 @@ When(
     ).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(picker).toHaveValue(workdayTask);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -207,10 +210,10 @@ When(
   "I set task {string} to commit as {string} and save",
   async ({ page }, task: string, choice: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: choice, exact: true }).click();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -219,16 +222,16 @@ When(
   "I choose Another task… for task {string} without picking one",
   async ({ page }, task: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
   },
 );
 
 Then("Save is disabled and says {string}", async ({ page }, error: string) => {
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(
-    editor.getByRole("button", { name: "Save", exact: true }),
+    editor.getByRole("button", { name: SAVE_OR_CREATE }),
   ).toBeDisabled();
   await expect(editor.getByText(error)).toBeVisible();
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -279,7 +282,7 @@ Then(
   "task {string} says its project is local only",
   async ({ page }, task: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await expect(
       editor.getByText(
         "The project is local only, so this task is never committed.",
@@ -294,7 +297,7 @@ Then(
 
 Then("task {string} offers Commits as", async ({ page }, task: string) => {
   await page.getByText(task, { exact: true }).click();
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(
     editor.getByRole("combobox", { name: "Commits as" }),
   ).toBeVisible();

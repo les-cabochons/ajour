@@ -122,7 +122,7 @@ const reactionNames: Record<BacklogReaction, string> = {
 };
 
 const commentActionClassName =
-  "hover:bg-foreground/10 aria-expanded:bg-foreground/20 active:bg-foreground/20 dark:hover:bg-foreground/10 dark:aria-expanded:bg-foreground/20 dark:active:bg-foreground/20";
+  "comment-action hover:bg-foreground/10 aria-expanded:bg-foreground/20 active:bg-foreground/20 dark:hover:bg-foreground/10 dark:aria-expanded:bg-foreground/20 dark:active:bg-foreground/20";
 
 /** The newest page of a thread, and when it was fetched. */
 type FirstPage = { at: number; result: BacklogListItemCommentsResult };

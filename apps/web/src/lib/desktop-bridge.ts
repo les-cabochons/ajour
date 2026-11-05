@@ -129,11 +129,53 @@ export interface DesktopWindowSettings {
 }
 
 /**
+ * One WSL distro under the ajour command (#604). Main lists them on
+ * Windows x64, with the command installed; the renderer passes back only a
+ * distro's name. `wslVersion` is the WSL it runs on, not ajour's version.
+ */
+export type DesktopCliWslDistro =
+  | {
+      name: string;
+      wslVersion: 1;
+      /** The Linux ajour can't start in WSL 1 (#611): no Add. */
+      status: "unsupported";
+      /** How to convert it to WSL 2. */
+      reason: string;
+    }
+  | { name: string; wslVersion: 2; status: "not-added" }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "adding";
+      phase: "downloading" | "checking" | "linking";
+      /** The download's percent while `downloading`. */
+      progress: number | null;
+    }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "added";
+      /** After an Add in this launch: open a new terminal, or fix the PATH. */
+      hint?: string;
+    }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "error";
+      /** Why the last Add failed, as a sentence. */
+      error: string;
+      /** Added before that Add: its link still works. */
+      added: boolean;
+    };
+
+/**
  * The ajour command, as main's controller reports it
  * (`apps/desktop/electron/cli-command.cjs`, #568). The renderer only reads
  * it and asks for an install: it never passes a path or a URL.
  */
 export interface DesktopCliCommandState {
+  /** The WSL distros, when there is any to add the command to. */
+  wsl?: { version?: string; distros: DesktopCliWslDistro[] };
   operation?: "remove";
   /** Version being followed, also after a failed update. */
   pending?: string;
@@ -226,6 +268,10 @@ declare global {
       getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
       /** Installs the ajour command of the app's own version, and resolves with how it ended. */
       installCliCommand?: (
+        trace?: TraceCarrier,
+      ) => Promise<DesktopCliCommandState>;
+      addCliCommandWsl?: (
+        options: { distro: string },
         trace?: TraceCarrier,
       ) => Promise<DesktopCliCommandState>;
       removeCliCommand?: () => Promise<DesktopCliCommandState>;

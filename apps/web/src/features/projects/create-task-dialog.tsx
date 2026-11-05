@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { RiFolderLine as EmptyProjectIcon } from "@remixicon/react";
+import { ProjectIcon } from "@/lib/project-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -110,6 +112,13 @@ function CreateTaskForm({
     const option = (project: LocalProject) => ({
       value: project._id,
       label: getLocalProjectDisplayName(project),
+      icon: (
+        <ProjectIcon
+          icon={project.icon}
+          color={project.color}
+          className="size-3.5 shrink-0"
+        />
+      ),
     });
     const recent = recentIds.flatMap((id) => {
       const project = activeProjects.find((item) => item._id === id);
@@ -155,9 +164,9 @@ function CreateTaskForm({
   }
 
   return (
-    <DialogContent className="max-w-md gap-4">
-      <DialogHeader className="gap-1">
-        <DialogTitle>Create task</DialogTitle>
+    <DialogContent className="composer-nested max-w-md gap-4">
+      <DialogHeader className="sr-only">
+        <DialogTitle className="sr-only">Create task</DialogTitle>
         <DialogDescription className="sr-only">
           Name the task and pick its project.
         </DialogDescription>
@@ -168,51 +177,69 @@ function CreateTaskForm({
           submit();
         }}
       >
-        <FieldGroup className="gap-4">
+        {/* The task composer: its name to write in, then its project and
+            what it commits as as chips (forms council round 7). */}
+        <FieldGroup className="composer gap-3">
           <Field>
-            <FieldLabel htmlFor="create-task-name">Name</FieldLabel>
-            <Input
+            <FieldLabel htmlFor="create-task-name" className="sr-only">
+              Name
+            </FieldLabel>
+            <input
               id="create-task-name"
+              className="composer-title"
+              autoComplete="off"
+              placeholder="Task name"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          <Field>
-            <FieldLabel htmlFor="create-task-project">Project</FieldLabel>
+          <div className="composer-chips" role="group" aria-label="Properties">
             <OptionSelect
               id="create-task-project"
-              size="default"
+              label="Project"
+              size="sm"
+              iconLabel
+              className="composer-chip"
               value={projectId}
-              options={[{ value: "", label: "Pick a project", disabled: true }]}
+              options={[
+                {
+                  value: "",
+                  label: "Project",
+                  disabled: true,
+                  icon: (
+                    <EmptyProjectIcon
+                      aria-hidden
+                      className="size-3.5 text-muted-foreground"
+                    />
+                  ),
+                },
+              ]}
               groups={projectGroups}
               onChange={setProjectId}
             />
-          </Field>
-          {project?.team && !found ? (
-            <p className="text-xs text-muted-foreground">
-              {getLocalProjectDisplayName(project)} is shared, so your team gets
-              the task too.
-            </p>
-          ) : null}
-          {showsCommitsAs ? (
-            <Field>
-              <FieldLabel htmlFor="create-task-commits-as">
-                Commits as
-              </FieldLabel>
+            {showsCommitsAs ? (
               <OptionSelect
                 id="create-task-commits-as"
-                size="default"
+                label="Commits as"
+                size="sm"
+                className="composer-chip"
                 value={choice}
                 options={COMMITS_AS_OPTIONS.filter(
                   (option) => option.value !== "another",
                 )}
                 onChange={setChoice}
               />
-            </Field>
+            ) : null}
+          </div>
+          {project?.team && !found ? (
+            <p className="text-xs text-muted-foreground">
+              {getLocalProjectDisplayName(project)} is shared, so your team gets
+              the task too.
+            </p>
           ) : null}
         </FieldGroup>
         <DialogFooter className="mt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="submit" disabled={!project || !trimmed}>

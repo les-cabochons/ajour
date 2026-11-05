@@ -1,6 +1,9 @@
 import { expect, type Page, type Route } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
+
 const { Given, When, Then } = createBdd();
 const apiUrl = "http://127.0.0.1:8787";
 const cors = { "access-control-allow-origin": "*" };
@@ -612,11 +615,19 @@ Then("the connection row has no Error chip", async ({ page }) => {
 When(
   "I set the token's expiry date to {string}",
   async ({ page }, date: string) => {
+    // The reminder date is a chip; its typed date sits in the calendar's
+    // popover (forms council round 10).
     await page
-      .getByLabel("Personal access token expires on (optional)", {
+      .getByRole("button", {
+        name: /^Personal access token expires on \(optional\)/,
+      })
+      .click();
+    await page
+      .getByLabel("Pick when Personal access token expires, typed", {
         exact: true,
       })
       .fill(date);
+    await page.keyboard.press("Enter");
   },
 );
 
@@ -809,7 +820,8 @@ Then(
     await expect(input).toBeVisible();
     await expect(input).toHaveAttribute("type", "password");
     await expect(input).toHaveValue("");
-    await expect(page.getByText("Edit Azure DevOps connection")).toBeVisible();
+    // The form stands in for the connection's row, under its label.
+    await expect(page.getByRole("heading", { name: /^Edit / })).toBeVisible();
   },
 );
 
@@ -897,7 +909,7 @@ When("I replace the API key with {string}", async ({ page }, token: string) => {
 });
 
 When("I save the task settings", async ({ page }) => {
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   await expect.poll(() => mock.agentSaves.length).toBe(1);
 });
 
@@ -952,6 +964,7 @@ Then("focus is on the token input", async ({ page }) => {
   await expect(page.locator("#secret-token")).toBeFocused();
 });
 
-Then("focus is on the Vault heading", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Vault" })).toBeFocused();
+Then("focus is on the Vault page", async ({ page }) => {
+  // The page's lead line, under the top bar's title.
+  await expect(page.locator("#vault-heading")).toBeFocused();
 });

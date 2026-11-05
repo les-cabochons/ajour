@@ -498,3 +498,286 @@ it("retries a failed Remove inline and keeps its status and alert roles", async 
   cleanup();
   delete window.ajourDesktop;
 });
+
+describe("the WSL command rows", () => {
+  beforeEach(() => {
+    installDomShims();
+    mocks.error.mockClear();
+    mocks.success.mockClear();
+  });
+  afterEach(() => {
+    cleanup();
+    delete window.ajourDesktop;
+  });
+  it("Given an installed Windows command, Ubuntu can be added from its Settings row", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "not-added",
+          },
+        ],
+      },
+    });
+    const add = vi.fn(async () => ({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2 as const,
+            status: "added" as const,
+            hint: "Open a new Ubuntu terminal to use it.",
+          },
+        ],
+      },
+    }));
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+    });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await act(async () => {});
+    expect(add).toHaveBeenCalledWith({ distro: "Ubuntu" }, undefined);
+    expect(
+      screen.getByText("Open a new Ubuntu terminal to use it."),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["downloading", "Downloading ajour, 42%"],
+    ["checking", "Checking ajour in Ubuntu…"],
+    ["linking", "Linking ~/.local/bin/ajour…"],
+  ] as const)(
+    "Given Ubuntu is adding during %s, Settings shows its phase with a disabled control",
+    async (phase, sentence) => {
+      desktop({
+        ...INSTALLED,
+        wsl: {
+          distros: [
+            {
+              name: "Ubuntu",
+              wslVersion: 2,
+              status: "adding",
+              phase,
+              progress: 42,
+            },
+          ],
+        },
+      });
+      Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+      await mount();
+      expect(
+        screen.getByText(sentence).closest('[role="status"]'),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
+      ).toBe(true);
+    },
+  );
+
+  it("Given Ubuntu Add failed, Settings shows an inline alert and Retry without a toast", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            error:
+              "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+            added: false,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+    await mount();
+    expect(screen.getByRole("alert").textContent).toContain("Another ajour");
+    expect(screen.getByText("Not added.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given adding an added Ubuntu again failed, its row stays Added with the reason and Retry", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        version: VERSION,
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            error:
+              "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+            added: true,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+    await mount();
+
+    expect(
+      screen
+        .getByText(`ajour ${VERSION} · ~/.local/bin/ajour`)
+        .closest('[role="status"]'),
+    ).toBeTruthy();
+    expect(screen.queryByText("Not added.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("Given main rejects Ubuntu's Add without a sentence, the row says Ajour couldn't add ajour to Ubuntu", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [{ name: "Ubuntu", wslVersion: 2, status: "not-added" }],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(() => Promise.reject(new Error(""))),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await act(async () => {});
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour couldn't add ajour to Ubuntu.",
+    );
+  });
+
+  it("Given main rejects Ubuntu's Add, its reason shows in Ubuntu's row with Retry, never in a toast", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "not-added",
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(async () => {
+        throw new Error(
+          "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+        );
+      }),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await act(async () => {});
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given Ubuntu's Add failed, Retry clears the old reason while it runs", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            error:
+              "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+            added: false,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(() => new Promise(() => {})),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => {});
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Downloading ajour, 0%")).toBeTruthy();
+  });
+
+  it("Given a WSL 1 distro, its row says how to convert it and offers no Add", async () => {
+    const add = vi.fn();
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [
+          {
+            name: "Ubuntu-24.04",
+            wslVersion: 1,
+            status: "unsupported",
+            reason:
+              "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+          },
+          {
+            name: "Debian",
+            wslVersion: 2,
+            status: "not-added",
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+    });
+    await mount();
+
+    const sentence = screen.getByText(
+      "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
+    );
+    expect(sentence.closest('[role="status"]')).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // Only Debian's Add: none for Ubuntu-24.04, neither disabled nor explained.
+    expect(screen.getAllByRole("button", { name: "Add" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    const row = screen.getByText("Ubuntu-24.04").closest(".settings-row");
+    expect(row).toBeTruthy();
+    expect(row?.querySelector("button")).toBeNull();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it.each(["darwin", "linux", "win32"])(
+    "Given no command on %s, WSL rows stay hidden",
+    async (platform) => {
+      desktop({
+        ...NOT_INSTALLED,
+        wsl: {
+          distros: [
+            {
+              name: "Ubuntu",
+              wslVersion: 2,
+              status: "not-added",
+            },
+          ],
+        },
+      });
+      Object.assign(window.ajourDesktop!, { runtime: { platform } });
+      await mount();
+      expect(screen.queryByText("Ubuntu")).toBeNull();
+    },
+  );
+});

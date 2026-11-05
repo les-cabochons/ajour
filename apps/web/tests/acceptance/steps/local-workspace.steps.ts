@@ -2,6 +2,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import { viewSwitcher } from "../../fixtures/sidebar";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
+
 const { Given, When, Then } = createBdd();
 
 Given("I have a parent editor close fixture", async ({ page }) => {
@@ -49,18 +52,18 @@ Given("I have a parent editor close fixture", async ({ page }) => {
   // The item page edits in place; the editor panel lives on the Backlog page.
   await page.goto("/backlog?action=edit&target=editor-parent");
   await expect(
-    page.getByRole("complementary", { name: "Backlog item editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toBeVisible();
 });
 When("I save its editor workflow as Done", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByRole("combobox", { name: "Workflow state", exact: true })
     .click();
   await page.getByRole("option", { name: "Done", exact: true }).click();
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 Given("the parent has a running entry", async ({ page }) => {
   await page.evaluate(async () => {
@@ -125,8 +128,8 @@ Then(
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole("complementary", {
-        name: "Backlog item editor",
+      page.getByRole("dialog", {
+        name: /^(New|Edit) (backlog item|subitem)$/,
         includeHidden: true,
       }),
     ).toHaveCount(1);
@@ -162,11 +165,11 @@ When("I cancel the parent editor close prompt", async ({ page }) => {
   await page.keyboard.press("Escape");
 });
 When("I change the parent draft title and description", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
-    .getByPlaceholder("Item name", { exact: true })
+    .getByPlaceholder("Item title", { exact: true })
     .fill("Unsaved parent title");
   await editor
     .getByRole("textbox", { name: "Description", exact: true })
@@ -196,12 +199,12 @@ When(
 Then(
   "the parent editor retains every mixed-field draft without saving it",
   async ({ page }) => {
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(editor).toBeVisible();
     await expect(
-      editor.getByPlaceholder("Item name", { exact: true }),
+      editor.getByPlaceholder("Item title", { exact: true }),
     ).toHaveValue("Unsaved parent title");
     await expect(
       editor.getByRole("textbox", { name: "Description", exact: true }),
@@ -224,13 +227,13 @@ Then(
 );
 When("I cancel the parent editor draft", async ({ page }) => {
   await page
-    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
 });
 Then("the parent title and description remain unchanged", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Backlog item editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
   const parent = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
@@ -247,8 +250,8 @@ Then("the parent title and description remain unchanged", async ({ page }) => {
 Then(
   "the parent editor retains its Done draft and the item remains active",
   async ({ page }) => {
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(editor).toBeVisible();
     await expect(
@@ -274,7 +277,7 @@ Then(
   "the editor closes after the parent and child reach Done",
   async ({ page }) => {
     await expect(
-      page.getByRole("complementary", { name: "Backlog item editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
     ).toHaveCount(0);
     await expect
       .poll(() =>
@@ -613,21 +616,30 @@ Then("the timer dock opens the running entry", async ({ page }) => {
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("region", { name: "Running entry" });
   await expect(dock).toContainText("Untitled entry");
+  // On the Time page the running entry opens in the side panel.
+  const editor = runningEditor(page);
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+    editor.getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
 });
 
 Then("the window title shows the running entry", async ({ page }) => {
   await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
 });
 
-// Settings shows the sidebar's own timer card, not the floating dock
-// (council round 25).
-Then("Settings shows the running entry under Back to app", async ({ page }) => {
-  const settings = page.getByRole("navigation", {
+/** The settings window: the dialog that holds the settings pages list. */
+function settingsWindow(page: Page) {
+  return page.getByRole("dialog").filter({
+    has: page.getByRole("navigation", { name: "Settings sections" }),
+  });
+}
+
+// The settings window shows the sidebar's own timer card, not the floating
+// dock (council round 25).
+Then("Settings shows the running entry in its window", async ({ page }) => {
+  const settings = settingsWindow(page).getByRole("navigation", {
     name: "Settings sections",
   });
   await expect(
@@ -675,9 +687,16 @@ When("I start an empty entry from the floating dock", async ({ page }) => {
 
 Then("the floating dock opens the running entry", async ({ page }) => {
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+    runningEditor(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
 });
+
+/** The running entry's editor: the dock's popover, or the Time page's panel. */
+function runningEditor(page: Page) {
+  return page
+    .getByRole("dialog")
+    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
+}
 
 When("I reload the app", async ({ page }) => {
   await page.reload();
@@ -699,7 +718,7 @@ When("I press the {string} key", async ({ page }, key: string) => {
 When("I type {string} in the entry note", async ({ page }, text: string) => {
   // Typing key by key sends the keydown events that shortcuts listen for.
   await page
-    .getByRole("complementary", { name: "Time entry editor" })
+    .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
     .getByLabel("Note")
     .pressSequentially(text);
 });
@@ -730,12 +749,38 @@ When("I open Settings directly", async ({ page }) => {
   await page.goto("/settings");
 });
 
+/**
+ * Marks the Time page's own root before Settings opens. The mark lives on
+ * the DOM node, so it survives only while the page component stays mounted;
+ * the shell's main element around the route would survive a remount.
+ */
+const PAGE_MARK = "data-page-before-settings";
+const PAGE_ROOT = "main .time-page-stack";
+
 When("I open Settings from the desktop sidebar", async ({ page }) => {
+  // The page's code may still be loading after a goto.
+  await page.locator(PAGE_ROOT).first().waitFor();
+  await page.evaluate(
+    ([root, mark]) => document.querySelector(root)?.setAttribute(mark, ""),
+    [PAGE_ROOT, PAGE_MARK] as const,
+  );
   const settingsLink = page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Settings" });
   await settingsLink.focus();
   await settingsLink.press("Enter");
+});
+
+// The window opens over the page, which keeps its state: the same main
+// element is still there, not a remount.
+Then("the page stays mounted behind the window", async ({ page }) => {
+  await expect(settingsWindow(page)).toBeVisible();
+  await expect(page.locator(`${PAGE_ROOT}[${PAGE_MARK}]`)).toHaveCount(1);
+});
+
+Then("the same page is back", async ({ page }) => {
+  await expect(settingsWindow(page)).toHaveCount(0);
+  await expect(page.locator(`${PAGE_ROOT}[${PAGE_MARK}]`)).toHaveCount(1);
 });
 
 When("I open Plugins from the Settings navigation", async ({ page }) => {
@@ -761,7 +806,7 @@ When(
   "I rename task {string} to {string} and press Escape",
   async ({ page }, task: string, name: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
     await editor.getByRole("textbox", { name: "Name" }).press("Escape");
     await expect(editor).toBeHidden();
@@ -772,9 +817,9 @@ When(
   "I rename task {string} to {string} and save",
   async ({ page }, task: string, name: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -834,7 +879,7 @@ When("I add a task from the New task row", async ({ page }) => {
 });
 
 Then("the task editor opens for a new task", async ({ page }) => {
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(editor.getByText("New task", { exact: true })).toBeVisible();
   await expect(editor.getByRole("textbox", { name: "Name" })).toBeFocused();
 });
@@ -990,7 +1035,7 @@ When(
   "I set key {string} in the panel of task {string} and save",
   async ({ page }, key: string, task: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("button", { name: /^Shortcut/ }).click();
     await page
       .getByRole("dialog", { name: "Assign shortcut" })
@@ -998,7 +1043,7 @@ When(
       .click();
     // The panel's draft holds the slot until Save.
     expect(await readPinnedSlots(page)).toEqual([]);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -1072,7 +1117,7 @@ When(
   "I press {string} on the entry editor's Cancel button",
   async ({ page }, key: string) => {
     const cancel = page
-      .getByRole("complementary", { name: "Time entry editor" })
+      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
       .getByRole("button", { name: "Cancel" });
     await cancel.focus();
     await cancel.press(key);
@@ -1080,9 +1125,7 @@ When(
 );
 
 Then("the entry editor has no project or task", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Time entry editor",
-  });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
   await expect(editor).toBeVisible();
   await expect(
     editor.getByRole("button", { name: "Project or task" }),
@@ -1156,7 +1199,7 @@ Then(
 When("I start a fresh timer from the Time page", async ({ page }) => {
   await page.goto("/time/today?entry=new");
   const switchTimer = page.getByRole("button", {
-    name: "Switch",
+    name: "Start",
     exact: true,
   });
   await expect(switchTimer).toBeEnabled();
@@ -1184,7 +1227,7 @@ When(
   "I change its hours to {string} and save",
   async ({ page }, hours: string) => {
     await page.getByRole("textbox", { name: "Hours" }).fill(hours);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   },
 );
 
@@ -1219,7 +1262,7 @@ When(
 
 Then("Save waits for hours or Start", async ({ page }) => {
   await expect(
-    page.getByRole("button", { name: "Save", exact: true }),
+    page.getByRole("button", { name: SAVE_OR_CREATE }),
   ).toBeDisabled();
   await expect(page.getByText("Enter hours, or press Start")).toBeVisible();
   await expect(
@@ -1515,12 +1558,12 @@ When("I select the matching project and task", async ({ page }) => {
 Then("the combined project and task are selected", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Project or task" }),
-  ).toContainText("[AAA] aaa xyz · 222 000");
+  ).toContainText("aaa xyz · 222 000");
 });
 
 When("I save one hour to the selected project and task", async ({ page }) => {
   await page.getByRole("textbox", { name: "Hours" }).fill("01:00");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 
 Then(
@@ -1535,14 +1578,14 @@ Then(
 
 Then("the entry editor is open", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Time entry editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
   ).toBeVisible();
 });
 
 Then("the entry note reads {string}", async ({ page }, text: string) => {
   await expect(
     page
-      .getByRole("complementary", { name: "Time entry editor" })
+      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
       .getByLabel("Note"),
   ).toHaveValue(text);
   // "?" typed in the note must not open the shortcut overlay.
@@ -1743,32 +1786,42 @@ Then("the app sidebar is expanded beside the page", async ({ page }) => {
   expect(pageBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
 });
 
-Then("the Settings pages replace the app sidebar", async ({ page }) => {
-  const settingsNavigation = page.getByRole("navigation", {
+Then("Settings opens as a window over the app", async ({ page }) => {
+  const window = settingsWindow(page);
+  await expect(window).toBeVisible();
+  const settingsNavigation = window.getByRole("navigation", {
     name: "Settings sections",
   });
-  await expect(
-    page.getByRole("navigation", { name: "Primary navigation" }),
-  ).toHaveCount(0);
-  await expect(settingsNavigation).toBeVisible();
   await expect(
     settingsNavigation.getByRole("link", { name: "General" }),
   ).toHaveAttribute("aria-current", "page");
   await expect(
-    settingsNavigation.getByRole("button", { name: "Back to app" }),
+    window.getByRole("heading", { level: 1, name: "General" }),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("button", { name: "Close settings" }),
   ).toBeVisible();
   // The narrow view's back arrow does not show in wide windows.
   await expect(
     page.getByRole("button", { name: "Back", exact: true }),
   ).toHaveCount(0);
 
+  // Centered over the page, clear of the viewport's edges, 1120 by 760 at
+  // most.
   const [box, viewport] = await Promise.all([
-    settingsNavigation.boundingBox(),
-    page.evaluate(() => ({ height: window.innerHeight })),
+    window.boundingBox(),
+    page.evaluate(() => ({
+      width: globalThis.innerWidth,
+      height: globalThis.innerHeight,
+    })),
   ]);
-  expect(box?.x).toBe(0);
-  expect(box?.y).toBe(0);
-  expect(box?.height).toBe(viewport.height);
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeLessThanOrEqual(1120);
+  expect(box!.height).toBeLessThanOrEqual(760);
+  expect(box!.x).toBeGreaterThan(0);
+  expect(box!.y).toBeGreaterThan(0);
+  expect(Math.abs(box!.x * 2 + box!.width - viewport.width)).toBeLessThan(4);
+  expect(Math.abs(box!.y * 2 + box!.height - viewport.height)).toBeLessThan(4);
 });
 
 When(
@@ -1819,7 +1872,11 @@ When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
 
 /** The dialog that the sidebar's "+" opens over the current page. */
 function newBacklogItemDialog(page: Page) {
-  return page.getByRole("dialog", { name: "New backlog item", exact: true });
+  // The sidebar's dialog, not the Backlog page's floating composer of the
+  // same name.
+  return page
+    .getByRole("dialog", { name: "New backlog item", exact: true })
+    .and(page.locator(":not(.composer-floating)"));
 }
 
 /** The "+" beside Search and the project filter, at the top of the sidebar. */
@@ -1834,12 +1891,17 @@ When(
   "I create the backlog item {string} from the sidebar header",
   async ({ page }, title: string) => {
     await pressNewBacklogItem(page);
+    // On the Backlog page with no editor open, the "+" opens the page's own
+    // panel; anywhere else it opens the dialog over the page.
     const dialog = newBacklogItemDialog(page);
-    await dialog
-      .getByRole("textbox", { name: "Item", exact: true })
-      .fill(title);
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(dialog).toBeHidden();
+    const panel = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
+    });
+    await dialog.or(panel).first().waitFor();
+    const form = (await dialog.isVisible()) ? dialog : panel;
+    await form.getByRole("textbox", { name: "Item", exact: true }).fill(title);
+    await form.getByRole("button", { name: SAVE_OR_CREATE }).click();
+    await expect(form).toBeHidden();
   },
 );
 
@@ -1853,7 +1915,7 @@ When("I start a new backlog item on the Backlog page", async ({ page }) => {
 Then("the Backlog page's new item editor is still open", async ({ page }) => {
   await expect(
     page
-      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
       .getByRole("textbox", { name: "Item", exact: true }),
   ).toBeVisible();
 });
@@ -1881,7 +1943,9 @@ Then(
   "the New backlog item dialog opens over the open entry",
   async ({ page }) => {
     await expect(
-      newBacklogItemDialog(page).getByPlaceholder("Item name", { exact: true }),
+      newBacklogItemDialog(page).getByPlaceholder("Item title", {
+        exact: true,
+      }),
     ).toBeFocused();
     await expect(page).toHaveURL(/\/time\/2026-10-05\?[^/]*entry=mon-dev-1/);
   },
@@ -1946,14 +2010,24 @@ When("I open the running entry from the timer dock", async ({ page }) => {
     .click();
 });
 
+/**
+ * Every open entry editor: the dock's popover, or on the Time page its side
+ * panel, where the dock's + and running entry open (forms council rounds 4
+ * and 5).
+ */
+const entryEditors = (page: Page) =>
+  page
+    .locator('[data-slot="popover-content"]')
+    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
+
 Then("only the new entry's editor is open", async ({ page }) => {
-  const editors = page.locator('[data-slot="popover-content"]');
+  const editors = entryEditors(page);
   await expect(editors).toHaveCount(1);
   await expect(editors).toContainText("New time entry");
 });
 
 Then("only the running entry's editor is open", async ({ page }) => {
-  const editors = page.locator('[data-slot="popover-content"]');
+  const editors = entryEditors(page);
   await expect(editors).toHaveCount(1);
   await expect(editors).toContainText("Running");
 });
@@ -1972,10 +2046,10 @@ Then(
 );
 
 When("I go back to the app from Settings", async ({ page }) => {
-  await page
-    .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("button", { name: "Back to app" })
+  await settingsWindow(page)
+    .getByRole("button", { name: "Close settings" })
     .click();
+  await expect(settingsWindow(page)).toHaveCount(0);
   await expect(
     page.getByRole("navigation", { name: "Primary navigation" }),
   ).toBeVisible();
@@ -2370,7 +2444,7 @@ When(
         .dblclick();
     }
     await page.getByLabel("Note", { exact: true }).fill("Changed note");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   },
 );
 
@@ -2727,8 +2801,11 @@ When("I open the current timer from the totals popover", async ({ page }) => {
   await page.getByRole("button", { name: "Edit the current timer" }).click();
 });
 
-Then("the totals pill shows Today again", async ({ page }) => {
-  await expect(narrowTotalsPill(page)).toContainText("Today");
+// The pill reads the day total alone since #612: the title says Today.
+Then("the totals pill shows the day total again", async ({ page }) => {
+  const pill = narrowTotalsPill(page);
+  await expect(pill).not.toContainText(/\d+:\d{2}:\d{2}/);
+  await expect(pill).toContainText(/\d+:\d{2}/);
 });
 
 function narrowPrimaryNavigation(page: Page) {
@@ -2917,7 +2994,7 @@ Then(
   async ({ page }, note: string) => {
     await expect(
       page
-        .getByRole("complementary", { name: "Time entry editor" })
+        .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
         .getByLabel("Note"),
     ).toHaveValue(note);
   },
@@ -3096,15 +3173,15 @@ When("I double-click {word}'s header", async ({ page }, day: string) => {
 When(
   "I save the new entry with note {string} and hours {string}",
   async ({ page }, note: string, hours: string) => {
-    const editor = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
     await expect(editor).toContainText("New time entry");
     await editor.getByRole("textbox", { name: "Note", exact: true }).fill(note);
     await editor
       .getByRole("textbox", { name: "Hours", exact: true })
       .fill(hours);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toHaveCount(0);
   },
 );
@@ -3112,8 +3189,8 @@ When(
 Then(
   "the side panel opens a new entry on {string}",
   async ({ page }, localDate: string) => {
-    const editor = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
     await expect(editor).toContainText("New time entry");
     await expect(page).toHaveURL(
@@ -3158,7 +3235,7 @@ When(
 
 Then("no entry editor is open", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Time entry editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
   ).toHaveCount(0);
   await expect(page).not.toHaveURL(/entry=new/);
 });
@@ -3173,9 +3250,7 @@ Then(
     const week = page.getByRole("region", { name: "Week" });
     const before = await week.boundingBox();
     await daysCard(page, day, text).dblclick();
-    const panel = page.getByRole("complementary", {
-      name: "Time entry editor",
-    });
+    const panel = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
     await expect(panel).toBeVisible();
     const after = await week.boundingBox();
     const panelBox = await panel.boundingBox();
@@ -3187,21 +3262,20 @@ Then(
 );
 
 Then(
-  "the entry panel sits beside the Week and narrows it",
+  "the entry composer still floats and the Week keeps its width",
   async ({ page }) => {
+    // No dock: the composer is a card over the page, which keeps its width
+    // and stays live (forms council round 8).
     const week = page.getByRole("region", { name: "Week" });
-    const panel = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const composer = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
-    await expect
-      .poll(async () => {
-        const weekBox = await week.boundingBox();
-        const panelBox = await panel.boundingBox();
-        return weekBox && panelBox
-          ? panelBox.x - (weekBox.x + weekBox.width)
-          : null;
-      })
-      .toBeGreaterThanOrEqual(0);
+    await expect(composer).toBeVisible();
+    await expect(composer).toHaveClass(/composer-floating/);
+    const weekBox = await week.boundingBox();
+    const composerBox = await composer.boundingBox();
+    expect(weekBox && composerBox).toBeTruthy();
+    expect(weekBox!.x + weekBox!.width).toBeGreaterThan(composerBox!.x);
   },
 );
 

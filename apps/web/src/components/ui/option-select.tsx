@@ -58,6 +58,9 @@ export function OptionSelect<T extends string>({
   invalid,
   size = "sm",
   iconValue = false,
+  iconLabel = false,
+  emptyNamesField = false,
+  prefix,
   className,
 }: {
   id?: string;
@@ -71,6 +74,16 @@ export function OptionSelect<T extends string>({
   size?: "sm" | "default";
   /** Shows the chosen option's icon in the trigger instead of its label. */
   iconValue?: boolean;
+  /** Shows the chosen option's icon before its label, as a composer chip does. */
+  iconLabel?: boolean;
+  /** Names the property in the trigger before its value: "State · Active". */
+  prefix?: ReactNode;
+  /**
+   * With `iconLabel`, an empty value names the field in muted text, as an
+   * empty composer chip does: "Priority", not "No priority" (forms council
+   * round 19).
+   */
+  emptyNamesField?: boolean;
   className?: string;
 }) {
   const all = [...(options ?? []), ...(groups ?? []).flatMap((g) => g.options)];
@@ -128,8 +141,27 @@ export function OptionSelect<T extends string>({
           />
           <TooltipContent>{chosen.label}</TooltipContent>
         </Tooltip>
+      ) : iconLabel && chosen ? (
+        trigger(
+          <>
+            {prefix}
+            <SelectValue>
+              {chosen.icon}
+              {emptyNamesField && value === "" && label ? (
+                <span data-placeholder="">{label}</span>
+              ) : (
+                chosen.label
+              )}
+            </SelectValue>
+          </>,
+        )
       ) : (
-        trigger(<SelectValue />)
+        trigger(
+          <>
+            {prefix}
+            <SelectValue />
+          </>,
+        )
       )}
       <SelectContent>
         {options?.map(renderItem)}
