@@ -4,6 +4,7 @@ import type {
   LocalProject,
   LocalProjectTask,
   LocalTimesheetEntry,
+  LocalWorkItem,
 } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
@@ -341,13 +342,14 @@ describe("mergeTask", () => {
       favoritedAt: 50,
       source: { remoteId: "t1", group: "Build", assigned: true },
     });
-    // Archived by the user now: the source no longer brings it back.
+    // Still archived by the source: a hand Restore stays refused.
     expect(taskOf(after, "old")).toEqual({
       _id: "old",
       name: "Design",
       status: "archived",
       createdAt: 10,
       archivedAt: 800,
+      archivedByMissingSync: true,
       pinnedSlot: "3",
       favoritedAt: 40,
       source: { remoteId: "t0", group: "Build", assigned: true },
@@ -364,7 +366,7 @@ describe("mergeTask", () => {
     {
       why: "a target in another project",
       into: "elsewhere",
-      reason: "missing",
+      reason: "other_project",
     },
     { why: "the same task", into: "local", reason: "same_task" },
     { why: "an archived target", into: "closed", reason: "archived_target" },
@@ -482,6 +484,102 @@ describe("mergeTask", () => {
     expect(undone.state.projects).toEqual(before.projects);
     expect(undone.state.timesheetEntries).toEqual(before.timesheetEntries);
     expect(undone.state.timers).toEqual(before.timers);
+  });
+
+  it("keeps the source's archive flags on a task it already archived, so a hand Restore is still refused", () => {
+    const before = state({
+      projects: [
+        managedProject({
+          tasks: [
+            task("local", {
+              name: "Design",
+              status: "archived",
+              archivedAt: 500,
+              archivedByMissingSync: true,
+              source: { remoteId: "t0", group: "Build", assigned: true },
+            }),
+            task("closed", {
+              name: "Closed",
+              status: "archived",
+              archivedAt: 600,
+              archivedBySource: true,
+            }),
+            task("source", { name: "Design reviews" }),
+          ],
+        }),
+      ],
+      timesheetEntries: [entry("e1"), entry("e2", { taskId: "closed" })],
+    });
+
+    const first = mergeTask(before, "p1", "local", "source", factories);
+    const second = mergeTask(first.state, "p1", "closed", "source", factories);
+
+    expect(taskOf(second.state, "local")).toMatchObject({
+      status: "archived",
+      archivedAt: 500,
+      archivedByMissingSync: true,
+    });
+    expect(taskOf(second.state, "closed")).toMatchObject({
+      status: "archived",
+      archivedAt: 600,
+      archivedBySource: true,
+    });
+  });
+
+  it("archives an active task as by hand, with no source flag", () => {
+    const { state: after } = mergeTask(
+      state(),
+      "p1",
+      "local",
+      "source",
+      factories,
+    );
+
+    const merged = taskOf(after, "local");
+    expect(merged.status).toBe("archived");
+    expect(merged.archivedByMissingSync).toBeUndefined();
+    expect(merged.archivedBySource).toBeUndefined();
+  });
+
+  it("moves the backlog items on the task, and counts them; Undo puts them back", () => {
+    const item = (
+      id: string,
+      overrides: Partial<LocalWorkItem>,
+    ): LocalWorkItem =>
+      ({
+        _id: id,
+        title: id,
+        status: "active",
+        source: "manual",
+        createdAt: 1,
+        ...overrides,
+      }) as LocalWorkItem;
+    const before = state({
+      workItems: [
+        item("w1", { projectId: "p1", taskId: "local" }),
+        item("w2", { projectId: "p1", taskId: "other" }),
+        item("w3", { projectId: "p1", taskId: "local", status: "archived" }),
+        item("w4", { projectId: "p2", taskId: "local" }),
+      ],
+    });
+
+    const { state: after, result } = mergeTask(
+      before,
+      "p1",
+      "local",
+      "source",
+      factories,
+    );
+
+    expect(after.workItems.map((w) => [w._id, w.taskId])).toEqual([
+      ["w1", "source"],
+      ["w2", "other"],
+      ["w3", "source"],
+      ["w4", "local"],
+    ]);
+    expect(result).toMatchObject({ movedWorkItemCount: 2 });
+    const undone = restoreUndo(after, captureUndo(before, after)!);
+    expect(undone.state.workItems).toEqual(before.workItems);
   });
 
   it("keeps when the entries were last used, so recent tasks don't change", () => {

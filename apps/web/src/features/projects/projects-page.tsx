@@ -114,6 +114,7 @@ import {
   useTaskMergeSuggestionRows,
 } from "@/features/projects/task-merge-ui";
 import { showToast } from "@/components/ui/toast";
+import { isDateLocked } from "@/domain/time/locked-weeks";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
 import {
@@ -984,7 +985,11 @@ function ProjectDetail({
   }
 
   const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
-  const mergeSuggestions = useTaskMergeSuggestionRows(project, entries);
+  const mergeSuggestions = useTaskMergeSuggestionRows(
+    project,
+    entries,
+    projectSources,
+  );
 
   function renderTaskRow(task: LocalProjectTask, index: number) {
     const taskActions = getTaskActions(project, task);
@@ -2186,11 +2191,18 @@ export function ProjectsPage() {
       />
     ) : null;
 
-  const selectedEntries = selectedProject
-    ? state.timesheetEntries
-        .filter((entry) => entry.projectId === selectedProject._id)
-        .sort((a, b) => b.localDate.localeCompare(a.localDate))
-    : [];
+  // Memoized: a new array on every render would recompute the merge
+  // suggestions on every store write.
+  const entriesProjectId = selectedProject?._id;
+  const selectedEntries = useMemo(
+    () =>
+      entriesProjectId
+        ? state.timesheetEntries
+            .filter((entry) => entry.projectId === entriesProjectId)
+            .sort((a, b) => b.localDate.localeCompare(a.localDate))
+        : [],
+    [state.timesheetEntries, entriesProjectId],
+  );
   const listProjects = isArchivePage ? archivedProjects : activeProjects;
   // Read from the state each render, so the picker shows the task as it is.
   const mergeProject = mergeRequest
@@ -2198,6 +2210,20 @@ export function ProjectsPage() {
     : undefined;
   const mergeTask = mergeProject?.tasks.find(
     (task) => task._id === mergeRequest?.taskId,
+  );
+  // The entries that move: those of submitted weeks stay on the task.
+  const mergeEntryCount = useMemo(
+    () =>
+      mergeRequest
+        ? state.timesheetEntries.filter(
+            (entry) =>
+              entry.projectId === mergeRequest.projectId &&
+              entry.taskId === mergeRequest.taskId &&
+              !isDateLocked(state, entry.localDate),
+          ).length
+        : 0,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the locks are read from the state
+    [state.timesheetEntries, state.lockedWeeks, mergeRequest],
   );
 
   return (
@@ -2372,13 +2398,7 @@ export function ProjectsPage() {
         <MergeTaskDialog
           project={mergeProject}
           task={mergeTask}
-          entryCount={
-            state.timesheetEntries.filter(
-              (entry) =>
-                entry.projectId === mergeProject._id &&
-                entry.taskId === mergeTask._id,
-            ).length
-          }
+          entryCount={mergeEntryCount}
           onClose={() => setMergeRequest(null)}
         />
       ) : null}

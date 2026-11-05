@@ -1,3 +1,6 @@
+import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
+import { getCommitTarget } from "@/domain/projects/commit-target";
+
 /**
  * Action sets for user-facing objects, from the action model in docs/agents/ux-spec.md.
  *
@@ -439,8 +442,13 @@ export type TaskActionId =
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
-  project: { status: ArchiveStatus; source?: unknown },
-  task: { status: ArchiveStatus; favoritedAt?: number },
+  project: Pick<LocalProject, "source" | "localOnly"> & {
+    status: ArchiveStatus;
+  },
+  task: Pick<LocalProjectTask, "commitAs"> & {
+    status: ArchiveStatus;
+    favoritedAt?: number;
+  },
 ): ObjectAction<TaskActionId>[] {
   const projectReason =
     project.status === "archived" ? RESTORE_PROJECT_FIRST : undefined;
@@ -469,7 +477,9 @@ export function getTaskActions(
       disabledReason: workReason,
     },
     favoriteAction(task.favoritedAt, "edit", workReason),
-    ...(project.source
+    // Time on a Local only task never reaches the source, so it has nothing
+    // to merge into.
+    ...(project.source && getCommitTarget(project, task) !== "local"
       ? [
           {
             id: "merge-into" as const,

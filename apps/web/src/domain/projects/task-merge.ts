@@ -4,6 +4,7 @@ import type {
   LocalProjectTask,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
+import { updateWorkItem } from "@/domain/backlog/work-item-transitions";
 import { getCommitTarget } from "@/domain/projects/commit-target";
 import { setProjectTaskStatus } from "@/domain/projects/project-transitions";
 import { normalizeTaskImportName } from "@/domain/projects/task-import";
@@ -21,12 +22,14 @@ import {
 
 /**
  * Why a merge can't happen: `missing` when either task is not in the project,
+ * `other_project` when the target belongs to another project,
  * `local_only_target` when the target's time never reaches the timesheet
  * tool, so the merged entries would leave it.
  */
 export type TaskMergeRefusal =
   | "not_managed"
   | "missing"
+  | "other_project"
   | "same_task"
   | "archived_target"
   | "local_only_target";
@@ -42,6 +45,8 @@ export type TaskMerged = {
   /** Committed entries whose copy the merge marked stale. */
   staleEntryCount: number;
   movedTimerCount: number;
+  /** Backlog items mapped to the merged task, now mapped to the target. */
+  movedWorkItemCount: number;
   /** The target had no pin, and took the merged task's. */
   movedPin: boolean;
   /** The target had no star, and took the merged task's. */
@@ -59,7 +64,14 @@ export function getTaskMergeRefusal(
   if (project && !project.source) return "not_managed";
   const from = project?.tasks.find((task) => task._id === fromTaskId);
   const into = project?.tasks.find((task) => task._id === intoTaskId);
-  if (!project || !from || !into) return "missing";
+  if (!project || !from) return "missing";
+  if (!into) {
+    return projects.some((other) =>
+      other.tasks.some((task) => task._id === intoTaskId),
+    )
+      ? "other_project"
+      : "missing";
+  }
   if (from === into) return "same_task";
   if (into.status !== "active") return "archived_target";
   if (getCommitTarget(project, into) === "local") return "local_only_target";
@@ -143,22 +155,44 @@ export function mergeTask(
     fromTaskId,
     intoTaskId,
   );
-  const projects = setProjectTaskStatus(
-    personal.projects,
-    projectId,
-    fromTaskId,
-    "archived",
-    factories.now,
-  );
+  // The source's own archive flag stays on a task it already archived, so a
+  // hand Restore is still refused. An active task is archived as by hand.
+  const wasActive =
+    personal.projects
+      .find((candidate) => candidate._id === projectId)
+      ?.tasks.find((candidate) => candidate._id === fromTaskId)?.status ===
+    "active";
+  const projects = wasActive
+    ? setProjectTaskStatus(
+        personal.projects,
+        projectId,
+        fromTaskId,
+        "archived",
+        factories.now,
+      )
+    : personal.projects;
+
+  // Backlog items on the task follow it, so new time from them lands on the
+  // target, not on an archived task.
+  const movedItemIds = next.workItems
+    .filter(
+      (item) => item.projectId === projectId && item.taskId === fromTaskId,
+    )
+    .map((item) => item._id);
+  const workItems = movedItemIds.reduce(
+    (current, id) => updateWorkItem(current, id, { taskId: intoTaskId }),
+    next,
+  ).workItems;
 
   return {
-    state: { ...next, projects, timers },
+    state: { ...next, projects, timers, workItems },
     result: {
       kind: "merged",
       movedEntryCount: moving.length,
       keptEntryCount: onTask.length - moving.length,
       staleEntryCount,
       movedTimerCount,
+      movedWorkItemCount: movedItemIds.length,
       movedPin: personal.movedPin,
       movedFavorite: personal.movedFavorite,
     },
@@ -317,7 +351,14 @@ export function findTaskMergeSuggestions(
   for (const task of project.tasks) {
     if (!sends(task)) continue;
     let kind: TaskMergeSuggestion["kind"];
-    let candidates: LocalProjectTask[];
+    // Each candidate's closeness is computed once, for the filter and the sort.
+    const scored = (pool: LocalProjectTask[]) =>
+      pool.map((target, order) => ({
+        target,
+        order,
+        closeness: taskNameCloseness(task.name, target.name),
+      }));
+    let ranked: ReturnType<typeof scored>;
     if (
       task.status === "archived" &&
       task.archivedByMissingSync &&
@@ -327,26 +368,22 @@ export function findTaskMergeSuggestions(
       const group = task.source.group;
       const leftAt = task.archivedAt ?? 0;
       kind = "renamed";
-      candidates = targets.filter(
-        (target) =>
-          target.source?.group === group && target.createdAt >= leftAt,
+      ranked = scored(
+        targets.filter(
+          (target) =>
+            target.source?.group === group && target.createdAt >= leftAt,
+        ),
       );
     } else if (task.status === "active" && !task.source) {
       kind = "lookalike";
-      candidates = targets.filter(
-        (target) =>
-          taskNameCloseness(task.name, target.name) >= LOOKALIKE_CLOSENESS,
+      ranked = scored(targets).filter(
+        ({ closeness }) => closeness >= LOOKALIKE_CLOSENESS,
       );
     } else {
       continue;
     }
 
-    const best = candidates
-      .map((target, order) => ({
-        target,
-        order,
-        closeness: taskNameCloseness(task.name, target.name),
-      }))
+    const best = ranked
       .sort(
         (left, right) =>
           right.closeness - left.closeness || left.order - right.order,

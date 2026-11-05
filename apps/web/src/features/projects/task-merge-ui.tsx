@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -18,11 +18,16 @@ import {
 import { showToast } from "@/components/ui/toast";
 import { formatEntryCount } from "@/domain/actions/object-actions";
 import type {
+  LocalAppState,
   LocalProject,
   LocalProjectTask,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
 import { getCommitTarget } from "@/domain/projects/commit-target";
+import {
+  getProjectSourceLabel,
+  sourceNameOf,
+} from "@/domain/projects/source-link";
 import {
   findTaskMergeSuggestions,
   type TaskMerged,
@@ -46,6 +51,7 @@ import { withEventAttribution } from "@/lib/wide-events";
 const REFUSALS: Record<TaskMergeRefusal, string> = {
   not_managed: "Only the tasks of a managed project merge.",
   missing: "One of the tasks is gone.",
+  other_project: "That task belongs to another project.",
   same_task: "Pick another task.",
   archived_target: "That task is archived.",
   local_only_target:
@@ -182,18 +188,6 @@ export interface TaskMergeSuggestionRowModel extends TaskMergeSuggestion {
   text: string;
 }
 
-function useSourceLabel(project: LocalProject) {
-  const connectionId = project.source?.connectionId;
-  return useSyncExternalStore(
-    localStore.subscribe,
-    () =>
-      connectionId
-        ? localStore.snapshot().projectSources?.[connectionId]?.label
-        : undefined,
-    () => undefined,
-  );
-}
-
 /**
  * The project's merge suggestions, by the task row each sits under, without
  * the pairs dismissed on this device. Only the active tasks list carries them.
@@ -201,16 +195,23 @@ function useSourceLabel(project: LocalProject) {
 export function useTaskMergeSuggestionRows(
   project: LocalProject,
   entries: readonly LocalTimesheetEntry[],
+  projectSources: LocalAppState["projectSources"],
 ): Map<string, TaskMergeSuggestionRowModel[]> {
   const dismissed = useTaskMergeDismissals();
-  const sourceLabel = useSourceLabel(project) ?? "its source";
+  const sourceLabel = sourceNameOf(
+    getProjectSourceLabel(project, projectSources),
+  );
 
   return useMemo(() => {
     const rows = new Map<string, TaskMergeSuggestionRowModel[]>();
     const nameOf = (taskId: string) =>
       project.tasks.find((task) => task._id === taskId)?.name ?? "";
-    const entryCountOf = (taskId: string) =>
-      entries.filter((entry) => entry.taskId === taskId).length;
+    const entryCounts = new Map<string, number>();
+    for (const entry of entries) {
+      if (entry.taskId) {
+        entryCounts.set(entry.taskId, (entryCounts.get(entry.taskId) ?? 0) + 1);
+      }
+    }
     for (const suggestion of findTaskMergeSuggestions(
       project,
       entries,
@@ -222,7 +223,7 @@ export function useTaskMergeSuggestionRows(
         suggestion.kind === "renamed"
           ? suggestion.intoTaskId
           : suggestion.fromTaskId;
-      const count = entryCountOf(suggestion.fromTaskId);
+      const count = entryCounts.get(suggestion.fromTaskId) ?? 0;
       const text =
         suggestion.kind === "renamed"
           ? `Renamed from “${nameOf(suggestion.fromTaskId)}”? Its ${formatEntryCount(count)} can move here.`

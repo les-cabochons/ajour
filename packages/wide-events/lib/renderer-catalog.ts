@@ -514,6 +514,7 @@ export const rendererEvents = {
         kept_entry_count: operational<number>(),
         stale_entry_count: operational<number>(),
         moved_timer_count: operational<number>(),
+        moved_work_item_count: operational<number>(),
         moved_pin: operational<boolean>(),
         moved_favorite: operational<boolean>(),
       },
@@ -522,6 +523,7 @@ export const rendererEvents = {
       reasons: [
         "not_managed",
         "missing",
+        "other_project",
         "same_task",
         "archived_target",
         "local_only_target",

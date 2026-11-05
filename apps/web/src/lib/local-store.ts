@@ -2362,7 +2362,7 @@ const store = {
     projectId: string,
     fromTaskId: string,
     intoTaskId: string,
-    _options: { suggestion?: TaskMergeSuggestion["kind"] } = {},
+    options: { suggestion?: TaskMergeSuggestion["kind"] } = {},
   ): { result: TaskMergeResult; undoToken: string | null } {
     return updateStateWithUndoResult((state) => {
       const merged = applyMergeTask(state, projectId, fromTaskId, intoTaskId, {
@@ -3782,6 +3782,8 @@ export const STORE_COMMANDS = {
           result.kind === "merged" ? result.staleEntryCount : undefined,
         moved_timer_count: ({ result }) =>
           result.kind === "merged" ? result.movedTimerCount : undefined,
+        moved_work_item_count: ({ result }) =>
+          result.kind === "merged" ? result.movedWorkItemCount : undefined,
         moved_pin: ({ result }) =>
           result.kind === "merged" ? result.movedPin : undefined,
         moved_favorite: ({ result }) =>

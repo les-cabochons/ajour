@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { createDeviceQueue } from "@/lib/device-queue";
 
 /**
  * Merge suggestions the user answered "Not the same" (#507), per device. They
@@ -20,17 +21,12 @@ function keyOf(projectId: string, pair: TaskMergePair) {
   return `${projectId}:${pair.fromTaskId}:${pair.intoTaskId}`;
 }
 
+const queue = createDeviceQueue(TASK_MERGE_DISMISSALS_STORAGE_KEY, (value) =>
+  typeof value === "string" ? value : undefined,
+);
+
 /** Broken values are dropped. */
-export function parseTaskMergeDismissals(value: string | null): string[] {
-  try {
-    const parsed: unknown = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((key): key is string => typeof key === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
+export const parseTaskMergeDismissals = queue.parse;
 
 /** Adds a pair as the newest answer, keeping at most `limit`. */
 export function withTaskMergeDismissal(
@@ -44,29 +40,19 @@ export function withTaskMergeDismissal(
 }
 
 export function isTaskMergeDismissed(
-  dismissed: readonly string[],
+  dismissed: ReadonlySet<string>,
   projectId: string,
   pair: TaskMergePair,
 ) {
-  return dismissed.includes(keyOf(projectId, pair));
+  return dismissed.has(keyOf(projectId, pair));
 }
 
-function read(): string[] {
-  try {
-    return parseTaskMergeDismissals(
-      window.localStorage.getItem(TASK_MERGE_DISMISSALS_STORAGE_KEY),
-    );
-  } catch {
-    // Storage can be unavailable under restrictive privacy settings.
-    return [];
-  }
-}
-
-let current: string[] | undefined;
+let current: ReadonlySet<string> | undefined;
 const listeners = new Set<() => void>();
 
-function getDismissals() {
-  current ??= read();
+/** The pairs dismissed on this device. */
+export function getTaskMergeDismissals(): ReadonlySet<string> {
+  current ??= new Set(queue.read());
   return current;
 }
 
@@ -75,15 +61,13 @@ export function dismissTaskMergeSuggestion(
   projectId: string,
   pair: TaskMergePair,
 ) {
-  current = withTaskMergeDismissal(getDismissals(), projectId, pair);
-  try {
-    window.localStorage.setItem(
-      TASK_MERGE_DISMISSALS_STORAGE_KEY,
-      JSON.stringify(current),
-    );
-  } catch {
-    // The answer then lasts until the window reloads.
-  }
+  const next = withTaskMergeDismissal(
+    [...getTaskMergeDismissals()],
+    projectId,
+    pair,
+  );
+  queue.write(next);
+  current = new Set(next);
   listeners.forEach((listener) => listener());
 }
 
@@ -94,9 +78,9 @@ function subscribe(listener: () => void) {
   };
 }
 
-const NONE: string[] = [];
+const NONE: ReadonlySet<string> = new Set();
 
 /** The pairs dismissed on this device, shared by every Projects page. */
-export function useTaskMergeDismissals(): readonly string[] {
-  return useSyncExternalStore(subscribe, getDismissals, () => NONE);
+export function useTaskMergeDismissals(): ReadonlySet<string> {
+  return useSyncExternalStore(subscribe, getTaskMergeDismissals, () => NONE);
 }

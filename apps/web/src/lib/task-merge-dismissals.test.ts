@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isTaskMergeDismissed,
   parseTaskMergeDismissals,
@@ -9,7 +9,7 @@ describe("task merge dismissals", () => {
   const pair = { fromTaskId: "local", intoTaskId: "source" };
 
   it("remembers a pair the user said is not the same, in its project", () => {
-    const dismissed = withTaskMergeDismissal([], "acme", pair);
+    const dismissed = new Set(withTaskMergeDismissal([], "acme", pair));
 
     expect(isTaskMergeDismissed(dismissed, "acme", pair)).toBe(true);
     expect(isTaskMergeDismissed(dismissed, "globex", pair)).toBe(false);
@@ -43,5 +43,32 @@ describe("task merge dismissals", () => {
         2,
       ),
     ).toEqual(["acme:c:d", "acme:a:b"]);
+  });
+
+  describe("on this device", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("keeps an answer for the session while storage refuses it", async () => {
+      vi.resetModules();
+      vi.stubGlobal("window", {
+        localStorage: {
+          getItem: () => null,
+          setItem: () => {
+            throw new Error("QuotaExceededError");
+          },
+        },
+      });
+      const dismissals = await import("@/lib/task-merge-dismissals");
+
+      dismissals.dismissTaskMergeSuggestion("acme", pair);
+
+      expect(
+        dismissals.isTaskMergeDismissed(
+          dismissals.getTaskMergeDismissals(),
+          "acme",
+          pair,
+        ),
+      ).toBe(true);
+    });
   });
 });

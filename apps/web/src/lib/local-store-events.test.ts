@@ -404,6 +404,17 @@ describe("store command events", () => {
             ],
           },
         ],
+        workItems: [
+          {
+            _id: "w1",
+            title: "Backlog item",
+            status: "active",
+            source: "manual",
+            projectId: "acme",
+            taskId: "local",
+            createdAt: 1,
+          },
+        ],
         timesheetEntries: [
           {
             _id: "e1",
@@ -434,6 +445,7 @@ describe("store command events", () => {
       taskId: "source",
       label: "Design reviews",
     });
+    expect(localStore.snapshot().workItems[0]!.taskId).toBe("source");
     expect(sink.events).toMatchObject([
       {
         name: "task.merge",
@@ -457,6 +469,7 @@ describe("store command events", () => {
           kept_entry_count: 0,
           stale_entry_count: 0,
           moved_timer_count: 0,
+          moved_work_item_count: 1,
         },
         store: { undo_offered: true },
       },
@@ -470,6 +483,7 @@ describe("store command events", () => {
       taskId: "local",
     });
     expect(localStore.snapshot().projects[0]!.tasks[0]!.status).toBe("active");
+    expect(localStore.snapshot().workItems[0]!.taskId).toBe("local");
   });
 
   it("records why an Undo was refused: expired, or changed since", async () => {
