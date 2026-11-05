@@ -261,23 +261,12 @@ Given(
       ({ name, note }) => {
         if (sessionStorage.getItem("managed-projects-task")) return;
         sessionStorage.setItem("managed-projects-task", "true");
-
-Given(
-  "I logged {int} hours on its task {string} on {word}",
-  async ({ page }, hours: number, task: string, localDate: string) => {
-    await page.addInitScript(
-      ({ hours, task, localDate }) => {
-        if (sessionStorage.getItem("managed-projects-entry")) return;
-        sessionStorage.setItem("managed-projects-entry", "true");
         const state = JSON.parse(
           localStorage.getItem("ajour.local-state.v2") ?? "{}",
         );
         state.projects[0].tasks.push({
           _id: "local-task",
           name,
-
-          _id: "login",
-          name: task,
           status: "active",
           createdAt: 1,
         });
@@ -290,13 +279,6 @@ Given(
             label: name,
             note,
             durationMs: 3_600_000,
-
-            _id: "entry-login",
-            localDate,
-            projectId: state.projects[0]._id,
-            taskId: "login",
-            label: "",
-            durationMs: hours * 3_600_000,
             sourceBlockIds: [],
             committedAt: 1,
           },
@@ -304,8 +286,6 @@ Given(
         localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
       },
       { name, note },
-
-      { hours, task, localDate },
     );
   },
 );
@@ -365,6 +345,41 @@ Then("no merge suggestion shows", async ({ page }) => {
   await expect(page.getByRole("tab", { name: /^Tasks/ })).toBeVisible();
   await expect(page.locator("[data-task-merge-suggestion]")).toHaveCount(0);
 });
+
+Given(
+  "I logged {int} hours on its task {string} on {word}",
+  async ({ page }, hours: number, task: string, localDate: string) => {
+    await page.addInitScript(
+      ({ hours, task, localDate }) => {
+        if (sessionStorage.getItem("managed-projects-entry")) return;
+        sessionStorage.setItem("managed-projects-entry", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.projects[0].tasks.push({
+          _id: "login",
+          name: task,
+          status: "active",
+          createdAt: 1,
+        });
+        state.timesheetEntries = [
+          {
+            _id: "entry-login",
+            localDate,
+            projectId: state.projects[0]._id,
+            taskId: "login",
+            label: "",
+            durationMs: hours * 3_600_000,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ];
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { hours, task, localDate },
+    );
+  },
+);
 
 When(
   "the source counts the commit, but only {int} hour of it for me",
