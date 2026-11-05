@@ -37,13 +37,14 @@ function normalizeSearchText(value: string) {
     .toLowerCase();
 }
 
-/** Whether the project is an active managed project of `client`. */
-function isActiveProjectOf(project: LocalProject, client: string) {
-  return (
-    project.status === "active" &&
-    project.source !== undefined &&
-    project.client === client
-  );
+/** Whether the project is active and a project source manages it. */
+function isActiveManagedProject(project: LocalProject) {
+  return project.status === "active" && project.source !== undefined;
+}
+
+/** The project's client, trimmed like other names are compared. */
+function clientOf(project: LocalProject) {
+  return project.client?.trim() || undefined;
 }
 
 /**
@@ -53,11 +54,24 @@ function isActiveProjectOf(project: LocalProject, client: string) {
 export function getSidebarClients(projects: readonly LocalProject[]) {
   const clients = new Set<string>();
   for (const project of projects) {
-    if (project.client && isActiveProjectOf(project, project.client)) {
-      clients.add(project.client);
-    }
+    const client = clientOf(project);
+    if (client && isActiveManagedProject(project)) clients.add(client);
   }
   return [...clients].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The picked client while an active managed project still has it, else
+ * undefined: a client that went away filters nothing.
+ */
+export function getPickedSidebarClient(
+  projects: readonly LocalProject[],
+  client: string | undefined,
+) {
+  const wanted = client?.trim();
+  return wanted && getSidebarClients(projects).includes(wanted)
+    ? wanted
+    : undefined;
 }
 
 /**
@@ -90,16 +104,21 @@ export function createSidebarMatcher(
   )
     ? filter.projectId
     : undefined;
-  const clientProjectIds =
-    projectId === undefined && filter.client
-      ? new Set(
-          projects
-            .filter((project) => isActiveProjectOf(project, filter.client!))
-            .map((project) => project._id),
-        )
+  const client =
+    projectId === undefined
+      ? getPickedSidebarClient(projects, filter.client)
       : undefined;
-  const clientPicked =
-    clientProjectIds !== undefined && clientProjectIds.size > 0;
+  const clientProjectIds = client
+    ? new Set(
+        projects
+          .filter(
+            (project) =>
+              isActiveManagedProject(project) && clientOf(project) === client,
+          )
+          .map((project) => project._id),
+      )
+    : undefined;
+  const clientPicked = clientProjectIds !== undefined;
   const matchesTerms = (text: string) =>
     terms.every((term) => text.includes(term));
 

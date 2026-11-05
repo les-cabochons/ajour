@@ -246,7 +246,7 @@ describe("applyDescriptionTimelogs", () => {
     expect(result.projects[0]?.tasks).toHaveLength(2);
     expect(result.workItems[0]?.taskId).toBe("design");
     expect(
-      getTimelogMismatch(result.projects, result.workItems[0]!),
+      getTimelogMismatch(result.projects, result.workItems[0]!, undefined),
     ).toBeNull();
 
     const spaced = write({ projects: [acme], workItems: [item()] }, (state) =>
@@ -259,7 +259,7 @@ describe("applyDescriptionTimelogs", () => {
     );
     expect(created.projects[0]?.tasks[2]?.name).toBe("07 Run");
     expect(
-      getTimelogMismatch(created.projects, created.workItems[0]!),
+      getTimelogMismatch(created.projects, created.workItems[0]!, undefined),
     ).toBeNull();
   });
 
@@ -522,6 +522,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ description: timelog("Beta", "Build") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-project",
@@ -532,6 +533,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [project({ _id: "beta", name: "Beta", status: "archived" })],
         item({ description: timelog("beta") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-project",
@@ -545,6 +547,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [shared],
         item({ description: timelog("Team site", "Deploy") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-task",
@@ -557,6 +560,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ projectId: "acme", description: timelog(undefined, "support") }),
+        undefined,
       ),
     ).toEqual({
       kind: "missing-task",
@@ -573,6 +577,7 @@ describe("getTimelogMismatch", () => {
       getTimelogMismatch(
         [acme],
         item({ projectId: "acme", description: timelog("Acme", "Design") }),
+        undefined,
       ),
     ).toEqual({
       kind: "different",
@@ -589,6 +594,7 @@ describe("getTimelogMismatch", () => {
           taskId: "x",
           description: timelog("Acme"),
         }),
+        undefined,
       ),
     ).toEqual({ kind: "different", projectId: "acme", projectName: "Acme" });
   });
@@ -602,6 +608,7 @@ describe("getTimelogMismatch", () => {
           taskId: "design",
           description: timelog("Acme"),
         }),
+        undefined,
       ),
     ).toBeNull();
   });
@@ -615,15 +622,17 @@ describe("getTimelogMismatch", () => {
           taskId: "design",
           description: timelog("Acme", "Design"),
         }),
+        undefined,
       ),
     ).toBeNull();
     expect(
       getTimelogMismatch(
         [acme],
         item({ description: timelog(undefined, "Design") }),
+        undefined,
       ),
     ).toBeNull();
-    expect(getTimelogMismatch([acme], item())).toBeNull();
+    expect(getTimelogMismatch([acme], item(), undefined)).toBeNull();
   });
 });
 

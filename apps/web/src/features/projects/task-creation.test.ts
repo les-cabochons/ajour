@@ -112,4 +112,31 @@ describe("a picker naming a task its project source closed (#637)", () => {
     expect(onCreated).not.toHaveBeenCalled();
     expect(localStore.snapshot().projects).toBe(before);
   });
+
+  it("still shows the toast when the store refuses after the first check", async () => {
+    showToast.mockClear();
+    const acme = localStore.snapshot().projects[0]!;
+    const spy = vi
+      .spyOn(localStore, "createOrRestoreProjectTaskWithUndo")
+      .mockReturnValue({
+        result: {
+          outcome: "refused",
+          refusal: "Example planner closed this task.",
+        },
+        undoToken: null,
+      });
+    const onCreated = vi.fn();
+
+    await createTaskFromPicker({
+      projectId: acme._id,
+      name: "A brand new task",
+      onCreated,
+    });
+    spy.mockRestore();
+
+    expect(showToast).toHaveBeenCalledWith(
+      "Can't restore. Example planner closed this task.",
+    );
+    expect(onCreated).not.toHaveBeenCalled();
+  });
 });

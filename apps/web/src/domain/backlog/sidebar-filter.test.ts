@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LocalProject } from "@/domain/local-state";
 import {
   createSidebarMatcher,
+  getPickedSidebarClient,
   getSidebarClients,
 } from "@/domain/backlog/sidebar-filter";
 
@@ -176,5 +177,49 @@ describe("the client filter (#508)", () => {
       expect(matcher.active).toBe(false);
       expect(matcher.workItem({ title: "A", projectId: "ajour" })).toBe(true);
     }
+  });
+
+  describe("a client's spelling", () => {
+    const spaced = [
+      project({
+        _id: "a",
+        client: "Acme",
+        source: {
+          pluginId: "p",
+          connectionId: "c",
+          remoteId: "A",
+          syncedAt: 1,
+        },
+      }),
+      project({
+        _id: "b",
+        client: "Acme ",
+        source: {
+          pluginId: "p",
+          connectionId: "c",
+          remoteId: "B",
+          syncedAt: 1,
+        },
+      }),
+    ];
+
+    it("offers 'Acme' and 'Acme ' as one client", () => {
+      expect(getSidebarClients(spaced)).toEqual(["Acme"]);
+    });
+
+    it("keeps the items of both spellings when the client is picked", () => {
+      const matcher = createSidebarMatcher(
+        { query: "", client: "Acme" },
+        spaced,
+      );
+      expect(matcher.workItem({ title: "x", projectId: "a" })).toBe(true);
+      expect(matcher.workItem({ title: "x", projectId: "b" })).toBe(true);
+    });
+
+    it("names the picked client only while a project still has it", () => {
+      expect(getPickedSidebarClient(spaced, "Acme ")).toBe("Acme");
+      expect(getPickedSidebarClient(spaced, "Gone")).toBeUndefined();
+      expect(getPickedSidebarClient(spaced, undefined)).toBeUndefined();
+    });
   });
 });

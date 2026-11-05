@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { showToast } from "@/components/ui/toast";
 import type { TimelogMismatch } from "@/domain/backlog/description-timelog";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { formatRestoreRefusal } from "@/domain/projects/project-transitions";
 import { localStore } from "@/lib/local-store";
 
 /**
@@ -74,7 +75,7 @@ export function TimelogButton({
             size="icon-sm"
             className="timelog-button shrink-0 text-[var(--warning)]"
             onClick={() =>
-              refusal ? showToast(`Can't restore. ${refusal}`) : setOpen(true)
+              refusal ? showToast(formatRestoreRefusal(refusal)) : setOpen(true)
             }
           />
         }

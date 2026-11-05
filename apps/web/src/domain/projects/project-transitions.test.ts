@@ -592,6 +592,7 @@ describe("creating a task from a picker", () => {
       "acme",
       { name: " 05  BUÏLD " },
       createFactories(),
+      undefined,
     );
     expect(given).toEqual({
       projects,
@@ -606,6 +607,7 @@ describe("creating a task from a picker", () => {
       "acme",
       { name: "08 old" },
       createFactories(),
+      undefined,
     );
     expect(given).toMatchObject({
       outcome: "restored",
@@ -624,6 +626,7 @@ describe("creating a task from a picker", () => {
       "acme",
       { name: "  07   Run ", commitAs: "waiting" },
       createFactories(),
+      undefined,
     );
     if (given.outcome !== "created") throw new Error(given.outcome);
     expect(given.projects[0]!.tasks[2]).toMatchObject({
@@ -642,6 +645,7 @@ describe("creating a task from a picker", () => {
         "acme",
         { name: "  " },
         createFactories(),
+        undefined,
       ),
     ).toThrow("Enter a task name.");
     expect(() =>
@@ -650,6 +654,7 @@ describe("creating a task from a picker", () => {
         "gone",
         { name: "x" },
         createFactories(),
+        undefined,
       ),
     ).toThrow("No project has the id gone.");
   });

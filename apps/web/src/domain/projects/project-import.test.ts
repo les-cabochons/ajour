@@ -310,6 +310,7 @@ describe("a task created from a picker, then imported", () => {
       project._id,
       { name: "  07   Run ", commitAs: "waiting" },
       { createId: (prefix) => `${prefix}-created`, now: () => 1 },
+      undefined,
     );
     expect(created.projects[0]!.tasks[0]).toMatchObject({
       _id: "task-created",

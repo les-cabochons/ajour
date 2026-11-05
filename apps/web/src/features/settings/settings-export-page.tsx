@@ -393,6 +393,11 @@ export function SettingsExportPage() {
                         {formatDraftHours(draft.durationMs)} hours
                         {draft.note ? ` · ${draft.note}` : ""}
                       </div>
+                      {draft.refusal ? (
+                        <div className="text-[13px] break-words text-[var(--danger-light)]">
+                          Can't add. {draft.refusal}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex shrink-0 gap-2">

@@ -28,6 +28,7 @@ import {
 } from "@/domain/projects/plugin-properties";
 import {
   findProjectTaskByImportName,
+  formatRestoreRefusal,
   getTaskRestoreRefusal,
 } from "@/domain/projects/project-transitions";
 import { formatTaskImportName } from "@/domain/projects/task-import";
@@ -171,7 +172,7 @@ export async function createTaskFromPicker({
     ? getTaskRestoreRefusal(project, found, snapshot.projectSources)
     : undefined;
   if (refusal) {
-    showToast(`Can't restore. ${refusal}`);
+    showToast(formatRestoreRefusal(refusal));
     return;
   }
 
@@ -191,6 +192,7 @@ export async function createTaskFromPicker({
   const draft = { name, ...(commitAs ? { commitAs } : {}) };
   let taskId: string | undefined;
   let undoToken: string | null;
+  let refusedLater: string | undefined;
   if (oneUndo) {
     const grouped = localStore.runWithUndo(() => {
       const { result } = localStore.createOrRestoreProjectTaskWithUndo(
@@ -200,6 +202,9 @@ export async function createTaskFromPicker({
       if (result.outcome !== "refused") onCreated(result.taskId);
       return result;
     });
+    if (grouped.result.outcome === "refused") {
+      refusedLater = grouped.result.refusal;
+    }
     taskId =
       grouped.result.outcome === "refused" ? undefined : grouped.result.taskId;
     undoToken = grouped.undoToken;
@@ -208,12 +213,19 @@ export async function createTaskFromPicker({
       projectId,
       draft,
     );
+    if (created.result.outcome === "refused") {
+      refusedLater = created.result.refusal;
+    }
     taskId =
       created.result.outcome === "refused" ? undefined : created.result.taskId;
     undoToken = created.undoToken;
     if (taskId) onCreated(taskId);
   }
   // The store refuses what its source archived after the check above.
+  if (refusedLater) {
+    showToast(formatRestoreRefusal(refusedLater));
+    return;
+  }
   if (!taskId || !undoToken) return;
   const token = undoToken;
 

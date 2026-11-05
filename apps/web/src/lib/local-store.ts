@@ -253,7 +253,7 @@ import {
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
   updateProjectTask as applyUpdateProjectTask,
-  type CreateOrRestoreTaskOutcome,
+  type CreateOrRestoreTaskGiven,
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
 import {
@@ -2092,10 +2092,7 @@ const store = {
     projectId: string,
     draft: LocalProjectTaskDraft,
   ) {
-    return updateStateWithUndoResult<
-      | { outcome: "refused"; refusal: string }
-      | { outcome: CreateOrRestoreTaskOutcome; taskId: string }
-    >((state) => {
+    return updateStateWithUndoResult<CreateOrRestoreTaskGiven>((state) => {
       const given = createOrRestoreProjectTask(
         state.projects,
         projectId,

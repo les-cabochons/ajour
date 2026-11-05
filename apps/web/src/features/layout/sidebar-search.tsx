@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   RiBuilding2Line as ClientIcon,
   RiCloseLine as CloseIcon,
@@ -35,7 +35,10 @@ import {
   type BacklogSortMode,
   type LocalProject,
 } from "@/domain/local-state";
-import { getSidebarClients } from "@/domain/backlog/sidebar-filter";
+import {
+  getPickedSidebarClient,
+  getSidebarClients,
+} from "@/domain/backlog/sidebar-filter";
 import { ProjectIcon } from "@/lib/project-icons";
 import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
@@ -180,12 +183,13 @@ export function SidebarFilterMenu({
   const [open, setOpen] = useState(false);
   const active = projects.filter((project) => project.status === "active");
   const picked = active.find((project) => project._id === projectId);
-  // Built only while the menu is open, so a closed menu costs nothing.
-  const clients = open ? getSidebarClients(projects) : [];
-  const pickedClient =
-    !picked && client && getSidebarClients(projects).includes(client)
-      ? client
-      : undefined;
+  // Built once per change of the projects, for the trigger's label and the
+  // menu's list alike.
+  const clients = useMemo(() => getSidebarClients(projects), [projects]);
+  const pickedClient = useMemo(
+    () => (picked ? undefined : getPickedSidebarClient(projects, client)),
+    [picked, projects, client],
+  );
 
   function pick(next: { projectId?: string; client?: string }) {
     onChange(next);

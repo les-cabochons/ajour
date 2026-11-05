@@ -133,7 +133,7 @@ function resolveTimelogTarget(
 export function getTimelogMismatch(
   projects: LocalProject[],
   workItem: Pick<LocalWorkItem, "description" | "projectId" | "taskId">,
-  projectSources?: Readonly<Record<string, LocalProjectSource>>,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
 ): TimelogMismatch | null {
   const timelog = getDescriptionTimelog(workItem.description);
   const target = timelog

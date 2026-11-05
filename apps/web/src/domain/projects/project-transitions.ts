@@ -217,20 +217,22 @@ export function isSourceTask(task: Pick<LocalProjectTask, "source">) {
 }
 
 /**
- * The patch without what the project's source owns, when it has one. A
- * project its source archived stays archived: the source decides when it
- * comes back (see `getProjectRestoreRefusal`).
+ * The patch without what the project's source decides: the fields it owns,
+ * and a restore of a project it archived (see `getProjectRestoreRefusal`).
  */
-function withoutSourceOwnedFields(project: LocalProject, patch: ProjectPatch) {
-  const archivedBySource =
-    project.status === "archived" &&
-    Boolean(project.archivedBySource || project.archivedByMissingSync);
-  if (!isManagedProject(project) && !archivedBySource) return patch;
+function withoutSourceDecidedChanges(
+  project: LocalProject,
+  patch: ProjectPatch,
+) {
+  const restoreRefused =
+    patch.status === "active" &&
+    getProjectRestoreRefusal(project, undefined) !== undefined;
+  if (!isManagedProject(project) && !restoreRefused) return patch;
   const allowed = { ...patch };
   if (isManagedProject(project)) {
     for (const field of SOURCE_OWNED_PROJECT_FIELDS) delete allowed[field];
   }
-  if (archivedBySource && allowed.status === "active") delete allowed.status;
+  if (restoreRefused) delete allowed.status;
   return allowed;
 }
 
@@ -248,7 +250,7 @@ export function updateProject(
       return project;
     }
 
-    const patch = withoutSourceOwnedFields(project, requested);
+    const patch = withoutSourceDecidedChanges(project, requested);
     const nextProject = { ...project, ...patch };
     if (
       typeof patch.name === "string" &&
@@ -377,7 +379,7 @@ export function createOrRestoreProjectTask(
   projectId: string,
   draft: LocalProjectTaskDraft,
   factories: ProjectFactories,
-  projectSources?: Readonly<Record<string, LocalProjectSource>>,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
 ): CreateOrRestoreTaskResult {
   const project = projects.find((candidate) => candidate._id === projectId);
   if (!project) throw new Error(`No project has the id ${projectId}.`);
@@ -578,6 +580,19 @@ export function getProjectRestoreRefusal(
     return `This project is no longer in ${sourceNameOf(label)}.`;
   }
   return undefined;
+}
+
+/** What a store command gives of a `CreateOrRestoreTaskResult`: no projects. */
+export type CreateOrRestoreTaskGiven =
+  CreateOrRestoreTaskResult extends infer Result
+    ? Result extends unknown
+      ? Omit<Result, "projects">
+      : never
+    : never;
+
+/** The toast text for a refused restore, from a restore refusal. */
+export function formatRestoreRefusal(refusal: string) {
+  return `Can't restore. ${refusal}`;
 }
 
 /** Why the user can't restore this task by hand: its source archived it. */
