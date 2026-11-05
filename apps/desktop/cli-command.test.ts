@@ -32,6 +32,14 @@ import { recordingEvents } from "./recording-events.ts";
 const require = createRequire(import.meta.url);
 
 type CliState = {
+  wsl?: {
+    distros: {
+      name: string;
+      status: string;
+      error: string | null;
+      hint?: string;
+    }[];
+  };
   status:
     | "unsupported"
     | "not-installed"
@@ -51,6 +59,7 @@ type CliState = {
 };
 type Controller = {
   state(): Promise<CliState>;
+  addWsl(distro: string): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
   remove(options?: { unit?: unknown }): Promise<CliState>;
   followAppVersion(): Promise<CliState>;
@@ -255,6 +264,7 @@ function fakeExec({
     _options?: { timeout?: number },
   ) => {
     calls.push({ file, args });
+    if (file.endsWith("wsl.exe")) throw new Error("WSL is not installed.");
     if (file === TAR) {
       // `-tf ARCHIVE` lists it, `-xf ARCHIVE -C FOLDER` unpacks it.
       const archive = JSON.parse(await readFile(args[1]!, "utf8")) as Archive;
@@ -2385,4 +2395,249 @@ it("cancels a pending follow retry on Remove", async () => {
     await controller.stop();
     vi.useRealTimers();
   }
+});
+
+describe("adding the command to WSL", () => {
+  it("Given an installed command, state lists usable distros in UTF-16LE without entering them", async () => {
+    await installedBefore(VERSION);
+    const base = fakeExec();
+    const exec = {
+      ...base,
+      exec: async (file: string, args: string[]) => {
+        if (file.endsWith("wsl.exe")) {
+          expect(args).toEqual(["--list", "--quiet"]);
+          return {
+            stdout: Buffer.from(
+              "Ubuntu\r\nDebian\r\ndocker-desktop\r\ndocker-desktop-data\r\n",
+              "utf16le",
+            ).toString("binary"),
+          };
+        }
+        return base.exec(file, args);
+      },
+    };
+    const { controller } = controllerWith({ exec });
+    await controller.reconcile();
+    expect((await controller.state()).wsl?.distros).toEqual([
+      { name: "Ubuntu", status: "not-added", progress: null, error: null },
+      { name: "Debian", status: "not-added", progress: null, error: null },
+    ]);
+  });
+});
+
+it("Given the Linux release asset, the shared pipeline verifies and unpacks ajour", async () => {
+  const {
+    createReleaseAssetPipeline,
+  } = require("./electron/cli-release-asset.cjs");
+  const asset = `ajour-${VERSION}-linux-x64.tar.gz`;
+  const archive = { "./ajour": `binary ${VERSION}` };
+  const github = fakeGithub({
+    archive,
+    asset: {
+      name: asset,
+      browser_download_url: DOWNLOAD.replace(ASSET, asset),
+    },
+  });
+  const pipeline = createReleaseAssetPipeline({
+    fetch: github.fetch,
+    fs,
+    exec: fakeExec().exec,
+    paths: { tar: TAR },
+    asset,
+    binary: "ajour",
+    appVersion: VERSION,
+    label: "Linux",
+    arch: "x64",
+    signal: new AbortController().signal,
+  });
+  const resolved = await pipeline.resolveAsset({});
+  const file = path.join(root, asset);
+  await pipeline.download(resolved, file);
+  await pipeline.unpack(file, path.join(root, "unpacked"));
+  expect(await readFile(path.join(root, "unpacked", "ajour"), "utf8")).toBe(
+    `binary ${VERSION}`,
+  );
+});
+
+it("Given Ubuntu and Debian, Add verifies Linux in Ubuntu and reuses it for Debian", async () => {
+  await installedBefore(VERSION);
+  const asset = `ajour-${VERSION}-linux-x64.tar.gz`;
+  const github = fakeGithub({
+    archive: { "./ajour": `binary ${VERSION}`, "./man/ajour.1": "manual" },
+    asset: {
+      name: asset,
+      browser_download_url: DOWNLOAD.replace(ASSET, asset),
+    },
+  });
+  const base = fakeExec();
+  const links = new Map<string, string>();
+  const exec = {
+    ...base,
+    exec: async (file: string, args: string[]) => {
+      if (!file.endsWith("wsl.exe")) return base.exec(file, args);
+      if (args[0] === "--list") return { stdout: "Ubuntu\nDebian\n" };
+      const distro = args[1];
+      const program = args[3];
+      if (program === "wslpath")
+        return { stdout: "/mnt/c/Ajour/bin/linux/ajour\n" };
+      if (args[4] === "-V") return { stdout: `ajour ${VERSION}\n` };
+      if (args[4] === "-lc")
+        return { stdout: "/home/test/.local/bin:/usr/bin" };
+      links.set(distro, args[7]);
+      return { stdout: "created" };
+    },
+  };
+  const { controller } = controllerWith({ github, exec });
+  await controller.state();
+  expect((await controller.addWsl("Ubuntu")).wsl?.distros[0]).toMatchObject({
+    status: "added",
+    hint: "Open a new Ubuntu terminal to use it.",
+  });
+  await controller.addWsl("Debian");
+  await controller.addWsl("Ubuntu");
+  expect(github.requests.filter((url) => url === ASSET_HOST)).toHaveLength(1);
+  expect(links.get("Ubuntu")).toBe("/mnt/c/Ajour/bin/linux/ajour");
+  const restarted = controllerWith({ exec }).controller;
+  await restarted.reconcile();
+  expect(
+    (await restarted.state()).wsl?.distros.map((row) => row.status),
+  ).toEqual(["added", "added"]);
+});
+
+it("Given a failed login PATH check after linking, Add restores the distro and Linux build", async () => {
+  await installedBefore(VERSION);
+  const previous = await readFile(recordFile, "utf8");
+  const asset = `ajour-${VERSION}-linux-x64.tar.gz`;
+  const github = fakeGithub({
+    archive: { "./ajour": `binary ${VERSION}` },
+    asset: {
+      name: asset,
+      browser_download_url: DOWNLOAD.replace(ASSET, asset),
+    },
+  });
+  const base = fakeExec();
+  let linked = false;
+  const exec = {
+    ...base,
+    exec: async (file: string, args: string[]) => {
+      if (!file.endsWith("wsl.exe")) return base.exec(file, args);
+      if (args[0] === "--list") return { stdout: "Ubuntu\n" };
+      if (args[3] === "wslpath")
+        return { stdout: "/mnt/c/Ajour/bin/linux/ajour" };
+      if (args[4] === "-V") return { stdout: `ajour ${VERSION}` };
+      if (args[4] === "-lc") throw new Error("PATH check failed");
+      if (args[5].includes("rm --")) linked = false;
+      else linked = true;
+      return { stdout: "created:1" };
+    },
+  };
+  const { controller } = controllerWith({ github, exec });
+  await controller.state();
+  expect((await controller.addWsl("Ubuntu")).wsl?.distros[0]).toMatchObject({
+    status: "error",
+    error: "PATH check failed",
+  });
+  expect(linked).toBe(false);
+  expect(await readFile(recordFile, "utf8")).toBe(previous);
+  expect(existsSync(path.join(installDir, "linux"))).toBe(false);
+});
+
+it("Given a previously added distro whose link was replaced, Add refuses the foreign command", async () => {
+  await installedBefore(VERSION);
+  const asset = `ajour-${VERSION}-linux-x64.tar.gz`;
+  const github = fakeGithub({
+    archive: { "./ajour": `binary ${VERSION}` },
+    asset: {
+      name: asset,
+      browser_download_url: DOWNLOAD.replace(ASSET, asset),
+    },
+  });
+  const base = fakeExec();
+  let foreign = false;
+  const exec = {
+    ...base,
+    exec: async (file: string, args: string[]) => {
+      if (!file.endsWith("wsl.exe")) return base.exec(file, args);
+      if (args[0] === "--list") return { stdout: "Ubuntu" };
+      if (args[3] === "wslpath")
+        return { stdout: "/mnt/c/Ajour/bin/linux/ajour" };
+      if (args[4] === "-V") return { stdout: `ajour ${VERSION}` };
+      if (args[4] === "-lc")
+        return { stdout: "/home/test/.local/bin\n/usr/bin" };
+      if (foreign) throw Object.assign(new Error("foreign"), { code: 17 });
+      return { stdout: "created:0" };
+    },
+  };
+  const { controller } = controllerWith({ github, exec });
+  await controller.state();
+  await controller.addWsl("Ubuntu");
+  const record = await readFile(recordFile, "utf8");
+  foreign = true;
+  expect((await controller.addWsl("Ubuntu")).wsl?.distros[0]?.error).toBe(
+    "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+  );
+  expect(await readFile(recordFile, "utf8")).toBe(record);
+});
+
+it.each(["digest", "version", "foreign", "unknown"])(
+  "Given a %s refusal, Add preserves the committed record and Linux folder",
+  async (reason) => {
+    await installedBefore(VERSION);
+    const previous = await readFile(recordFile, "utf8");
+    const asset = `ajour-${VERSION}-linux-x64.tar.gz`;
+    const github = fakeGithub({
+      archive: { "./ajour": `binary ${VERSION}` },
+      asset: {
+        name: asset,
+        browser_download_url: DOWNLOAD.replace(ASSET, asset),
+        ...(reason === "digest" ? { digest: `sha256:${"0".repeat(64)}` } : {}),
+      },
+    });
+    const base = fakeExec();
+    let entered = false;
+    const exec = {
+      ...base,
+      exec: async (file: string, args: string[]) => {
+        if (!file.endsWith("wsl.exe")) return base.exec(file, args);
+        if (args[0] === "--list") return { stdout: "Ubuntu" };
+        entered = true;
+        if (args[3] === "wslpath")
+          return { stdout: "/mnt/c/Ajour/bin/linux/ajour" };
+        if (args[4] === "-V")
+          return {
+            stdout: reason === "version" ? "ajour 0.0.0" : `ajour ${VERSION}`,
+          };
+        throw Object.assign(new Error("foreign"), { code: 17 });
+      },
+    };
+    const { controller } = controllerWith({ github, exec });
+    await controller.state();
+    const state = await controller.addWsl(
+      reason === "unknown" ? "Not Ubuntu" : "Ubuntu",
+    );
+    if (reason !== "unknown")
+      expect(state.wsl?.distros[0]?.status).toBe("error");
+    if (reason === "unknown" || reason === "digest")
+      expect(entered).toBe(false);
+    expect(await readFile(recordFile, "utf8")).toBe(previous);
+    expect(existsSync(path.join(installDir, "linux"))).toBe(false);
+  },
+);
+
+it("Given cached UTF-8 distros, repeated state reads and reconcile never enter a distro", async () => {
+  await installedBefore(VERSION);
+  const base = fakeExec();
+  const list = vi.fn(async (_file: string, args: string[]) => {
+    expect(args).toEqual(["--list", "--quiet"]);
+    return { stdout: "Ubuntu\r\nDebian\r\ndocker-desktop\r\n" };
+  });
+  const { controller } = controllerWith({ exec: { ...base, exec: list } });
+  await controller.reconcile();
+  expect(list).not.toHaveBeenCalled();
+  expect(
+    (await controller.state()).wsl?.distros.map((row) => row.name),
+  ).toEqual(["Ubuntu", "Debian"]);
+  await controller.state();
+  await controller.reconcile();
+  expect(list).toHaveBeenCalledTimes(1);
 });

@@ -372,9 +372,23 @@ const cliCommand = createCliCommandController({
       execFile(
         file,
         args,
-        { windowsHide: true, maxBuffer: 4 * 1024 * 1024, ...options },
+        {
+          windowsHide: true,
+          maxBuffer: 4 * 1024 * 1024,
+          ...options,
+          ...(file.toLowerCase().endsWith("wsl.exe") && args[0] === "--list"
+            ? { encoding: "buffer" }
+            : {}),
+        },
         (error, stdout) =>
-          error ? reject(error) : resolve({ stdout: String(stdout) }),
+          error
+            ? reject(error)
+            : resolve({
+                stdout:
+                  file.toLowerCase().endsWith("wsl.exe") && args[0] === "--list"
+                    ? Buffer.from(stdout)
+                    : String(stdout),
+              }),
       );
     }),
   platform: process.platform,
@@ -696,6 +710,14 @@ ipc.handle("ajour:get-cli-command", async (event) => {
 ipc.handle("ajour:install-cli-command", async (event) => {
   assertActiveDesktopWindow(event, "install the ajour command");
   return await cliCommand.install({ unit: events.current() });
+});
+
+ipc.handle("ajour:add-cli-command-wsl", async (event, options) => {
+  assertActiveDesktopWindow(event, "add the ajour command to WSL");
+  return await cliCommand.addWsl(
+    typeof options?.distro === "string" ? options.distro : "",
+    { unit: events.current() },
+  );
 });
 
 ipc.handle("ajour:remove-cli-command", async (event) => {

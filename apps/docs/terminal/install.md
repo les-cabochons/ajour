@@ -83,7 +83,19 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 
 You can also add the folder in **Edit environment variables for your account**. `ajour` works in PowerShell, Command Prompt and Git Bash.
 
-## WSL 2
+## WSL
+
+On Windows, once the `ajour` command is installed, Settings › Terminal lists the WSL distros, leaving out `docker-desktop*`.
+
+**Add** makes the desktop app:
+
+1. download the release's `linux-x64` archive with the same checks as the Windows install, into `%LOCALAPPDATA%\Ajour\bin\linux\`, next to `ajour.exe`
+2. check, inside that distro, that the binary prints the app's version for `-V`
+3. link `~/.local/bin/ajour` in that distro to the binary on `/mnt/c`
+
+Add from Settings works on NAT and mirrored networking, then `ajour connect` once per distro.
+
+### Manual archive installation
 
 Run the Linux CLI inside WSL and keep the Windows Ajour app running. Follow the [Linux installation steps](#linux-and-macos) in your WSL terminal, using the `linux-x64` archive from the same release as the Windows app. This archive requires an x64 distribution.
 

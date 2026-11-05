@@ -133,7 +133,16 @@ export interface DesktopWindowSettings {
  * (`apps/desktop/electron/cli-command.cjs`, #568). The renderer only reads
  * it and asks for an install: it never passes a path or a URL.
  */
+export interface DesktopCliWslDistro {
+  name: string;
+  status: "not-added" | "adding" | "added" | "removing" | "error";
+  phase?: "downloading" | "checking" | "linking";
+  progress: number | null;
+  error: string | null;
+  hint?: string;
+}
 export interface DesktopCliCommandState {
+  wsl?: { version?: string; distros: DesktopCliWslDistro[] };
   operation?: "remove";
   /** Version being followed, also after a failed update. */
   pending?: string;
@@ -226,6 +235,10 @@ declare global {
       getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
       /** Installs the ajour command of the app's own version, and resolves with how it ended. */
       installCliCommand?: (
+        trace?: TraceCarrier,
+      ) => Promise<DesktopCliCommandState>;
+      addCliCommandWsl?: (
+        options: { distro: string },
         trace?: TraceCarrier,
       ) => Promise<DesktopCliCommandState>;
       removeCliCommand?: () => Promise<DesktopCliCommandState>;

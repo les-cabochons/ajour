@@ -43,10 +43,37 @@ permissions:
   contents: read
 
 jobs:
+  linux-cli:
+    name: Linux CLI for WSL check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - name: Build the check versions
+        shell: bash
+        run: |
+          for version in 0.0.1 0.0.2; do
+            for script in bundle sea archive; do
+              RELEASE_TAG="v$version" node "apps/cli/scripts/$script.mjs"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-command-linux
+          path: apps/cli/out/archives/*linux-x64.tar.gz
+
   check:
+    needs: linux-cli
     name: Desktop lifecycle (${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       # The check runs Electron, so download its binary.
       ELECTRON_SKIP_BINARY_DOWNLOAD: ""
@@ -111,6 +138,32 @@ jobs:
       - name: Prepare writable command directory on macOS
         if: runner.os == 'macOS'
         run: sudo mkdir -p /usr/local/bin && sudo chown "$(id -u):$(id -g)" /usr/local/bin
+
+      - name: Download Linux CLI archives
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-command-linux
+          path: apps/cli/out/archives
+
+      - name: Install disposable WSL1 Ubuntu
+        if: runner.os == 'Windows'
+        uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: 1
+          set-as-default: 'false'
+          wsl-shell-user: ajour-check
+
+      - name: Configure WSL check
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          wsl.exe -d Ubuntu-24.04 -u root --exec sh -c 'printf "[user]\ndefault=ajour-check\n" > /etc/wsl.conf'
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure the disposable Ubuntu user." }
+          wsl.exe --terminate Ubuntu-24.04
+          "AJOUR_CLI_CHECK_WSL_DISTRO=Ubuntu-24.04" >> $env:GITHUB_ENV
+          "AJOUR_CLI_CHECK_LINUX_ARCHIVES=$env:GITHUB_WORKSPACE\apps\cli\out\archives" >> $env:GITHUB_ENV
 
       - name: Run the ajour command install check
         # It reuses the renderer the lifecycle check built, and builds the

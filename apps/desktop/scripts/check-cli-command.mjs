@@ -308,6 +308,16 @@ async function serveRelease() {
       return;
     }
     const { tag, asset, bytes, digest, missing } = served;
+    const linuxAsset = `ajour-${tag.slice(1)}-linux-x64.tar.gz`;
+    const linuxPath = path.join(
+      process.env.AJOUR_CLI_CHECK_LINUX_ARCHIVES || "",
+      linuxAsset,
+    );
+    const linuxBytes =
+      process.env.AJOUR_CLI_CHECK_LINUX_ARCHIVES && existsSync(linuxPath)
+        ? readFileSync(linuxPath)
+        : null;
+    const linuxReleasePage = `/les-cabochons/ajour/releases/download/${tag}/${linuxAsset}`;
     const origin = `http://127.0.0.1:${server.address().port}`;
     const releasePage = `/les-cabochons/ajour/releases/download/${tag}/${asset}`;
     if (request.url === `/repos/les-cabochons/ajour/releases/tags/${tag}`) {
@@ -318,6 +328,16 @@ async function serveRelease() {
           assets: missing
             ? []
             : [
+                ...(linuxBytes
+                  ? [
+                      {
+                        name: linuxAsset,
+                        size: linuxBytes.length,
+                        digest: `sha256:${createHash("sha256").update(linuxBytes).digest("hex")}`,
+                        browser_download_url: `${origin}${linuxReleasePage}`,
+                      },
+                    ]
+                  : []),
                 {
                   name: asset,
                   size: bytes.byteLength,
@@ -327,6 +347,9 @@ async function serveRelease() {
               ],
         }),
       );
+    } else if (linuxBytes && request.url === linuxReleasePage) {
+      response.writeHead(200, { "Content-Length": linuxBytes.length });
+      response.end(linuxBytes);
     } else if (request.url === releasePage) {
       // GitHub redirects a download to its asset host.
       response.writeHead(302, { Location: `${origin}/assets/${asset}` });
@@ -356,6 +379,86 @@ async function serveRelease() {
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/** CI opts into its disposable Ubuntu; local runs never enter a user's distro. */
+async function checkWsl(page, version, baseUrl) {
+  const distro = process.env.AJOUR_CLI_CHECK_WSL_DISTRO;
+  if (!distro) {
+    process.stdout.write(
+      "SKIP WSL: no disposable distro configured. The user's Ubuntu and .wslconfig are untouched.\n",
+    );
+    return;
+  }
+  if (process.env.CI !== "true")
+    throw new Error("WSL check requires CI's disposable distro.");
+  const wsl = path.join(systemRoot, "System32", "wsl.exe");
+  const inWsl = (program, args) =>
+    run(wsl, ["-d", distro, "--exec", program, ...args], {
+      timeout: 60_000,
+      windowsHide: true,
+    }).catch(() => {
+      throw new Error("The WSL check command failed.");
+    });
+  await page.evaluate(() => window.ajourDesktop.getCliCommand());
+  const added = await page.evaluate(
+    (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
+    distro,
+  );
+  expect(
+    added.wsl?.distros.find((row) => row.name === distro)?.status === "added",
+    "Add installs the Linux command in Ubuntu",
+    added,
+  );
+  const printed = await inWsl("bash", ["-lc", "ajour -V"]);
+  expect(
+    printed.stdout.trim() === `ajour ${version}`,
+    "a new Ubuntu login shell runs ajour -V",
+  );
+  const token = await page.evaluate(async (api) => {
+    const post = async (route, body) => {
+      const response = await fetch(`${api}${route}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(`MCP setup failed: ${response.status}`);
+      return response.json();
+    };
+    await post("/api/mcp/settings", { enabled: true });
+    return (await post("/api/mcp/clients", { name: "WSL check" })).token;
+  }, baseUrl);
+  if (!token) throw new Error("No WSL check token.");
+  // The token is a short-lived fixture. Passing it as an argument avoids shell interpolation.
+  const status = await inWsl("bash", [
+    "-lc",
+    'export AJOUR_URL="$1" AJOUR_TOKEN="$2"; ajour status',
+    "sh",
+    baseUrl,
+    token,
+  ]);
+  expect(
+    status.stdout.trim().length > 0,
+    "ajour status reaches the real app through the relay",
+  );
+  await inWsl("sh", [
+    "-c",
+    'rm "$HOME/.local/bin/ajour"; printf foreign > "$HOME/.local/bin/ajour"',
+  ]);
+  // Re-Add must still refuse a foreign replacement of a recorded link.
+  const refused = await page.evaluate(
+    (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
+    distro,
+  );
+  expect(
+    refused.wsl?.distros.find((row) => row.name === distro)?.error ===
+      `Another ajour is at ~/.local/bin/ajour in ${distro}. Remove it, then add again.`,
+    "Add refuses a foreign Ubuntu command",
+  );
+  await inWsl("sh", [
+    "-c",
+    'test "$(cat "$HOME/.local/bin/ajour")" = foreign && rm "$HOME/.local/bin/ajour"',
+  ]);
 }
 
 /** Restart version A as B, first without B's asset, then publish it. */
@@ -427,7 +530,14 @@ async function checkFollow(electronApp, env, release, version, binary) {
       removed,
     );
     const folder = env.AJOUR_CLI_INSTALL_DIR;
-    expect(!existsSync(folder), "Remove deletes the install folder");
+    if (process.env.AJOUR_CLI_CHECK_WSL_DISTRO) {
+      expect(
+        !existsSync(path.join(folder, "ajour.exe")),
+        "Remove deletes the Windows command",
+      );
+      // #605 owns WSL removal. Until then cleanup removes only this check's Linux fixture.
+      await rm(path.join(folder, "linux"), { recursive: true, force: true });
+    } else expect(!existsSync(folder), "Remove deletes the install folder");
     expect(
       !existsSync(path.join(env.AJOUR_USER_DATA_PATH, "cli-command.json")),
       "Remove deletes the record",
@@ -497,6 +607,7 @@ async function main() {
     AJOUR_CLI_RELEASE_ORIGIN: release.origin,
     AJOUR_CLI_INSTALL_DIR: installDir,
     AJOUR_WIDE_EVENTS: "console",
+    AJOUR_CLI_CHECK_VERSION: process.env.AJOUR_CLI_CHECK_VERSION || "0.0.1",
   };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.AJOUR_DESKTOP_RENDERER_URL;
@@ -660,6 +771,7 @@ async function main() {
         cli_command: event.cli_command,
       })),
     );
+    await checkWsl(page, appVersion, `http://127.0.0.1:${port}`);
     await checkFollow(
       electronApp,
       env,

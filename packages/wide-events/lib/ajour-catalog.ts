@@ -1779,6 +1779,32 @@ export const catalog = defineCatalog({
         },
       },
     },
+    "cli_command.wsl_add": {
+      kinds: ["job", "ipc"],
+      reasons: [
+        "foreign_sender",
+        "unknown_distro",
+        "not_installed",
+        "foreign_command",
+        "wrong_version",
+        "missing_release",
+        "missing_asset",
+        "missing_digest",
+        "too_large",
+        "url_not_allowed",
+        "redirect_off_https",
+        "digest_mismatch",
+        "escaping_entry",
+        "invalid_archive",
+        "wsl_add_failed",
+      ],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          result: operational<"installed" | "refused" | "failed">(),
+        },
+      },
+    },
     /** Whether closing the window keeps Ajour running (#534). */
     "window.get_settings": {
       kinds: ["ipc"],

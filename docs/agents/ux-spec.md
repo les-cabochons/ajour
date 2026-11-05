@@ -1081,3 +1081,20 @@ A failed or slow lookup produces no error or candidates.
 Commits as names. It uses a table on a terminal and TSV in a pipe.
 `--format table|tsv|csv|json` selects output, and `--json` returns the
 unchanged `list_projects` response.
+
+### Adding the ajour command to WSL
+
+On Windows x64, with the command installed, Terminal lists one SettingRow per usable WSL distro under "ajour command", inside the same AppPanel. No rows appear in a browser, outside Windows x64, without an installed command, or when WSL lists no usable distro. Docker Desktop's distros are excluded.
+
+| State     | Status line                                                                                                                              | Control                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Not added | "Not added."                                                                                                                             | Add                     |
+| Adding    | "Downloading ajour, 42%", then "Checking ajour in Ubuntu…", then "Linking ~/.local/bin/ajour…"                                           | Disabled                |
+| Added     | "ajour <version> · ~/.local/bin/ajour". After Add, "Open a new Ubuntu terminal to use it." or "Add ~/.local/bin to your PATH in Ubuntu." | Removal follows in #605 |
+| Failed    | The reason inline with role="alert"                                                                                                      | Retry                   |
+
+The description has a fixed height and uses role="status". Add shows no toast or confirmation dialog. A foreign command is refused with "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again."
+
+Add verifies the Linux release archive and its version inside the selected distro before committing its record. Failure restores the Linux build and any link created by the attempt. Other distros are never entered. Launch reconciliation repairs the Linux build from the record without entering any distro. The distro list is read only for Settings or an explicit Add and cached for 30 seconds.
+
+WSL removal and uninstaller cleanup are tracked by #605. Following the app version for Linux is tracked by #606.

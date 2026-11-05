@@ -219,6 +219,19 @@ export function CliCommandSetting() {
             </DisabledReason>
           )}
         </SettingRow>
+        {desktop?.runtime?.platform === "win32" &&
+        state?.version &&
+        state.status !== "removing"
+          ? state.wsl?.distros.map((distro) => (
+              <WslRow
+                key={distro.name}
+                distro={distro}
+                version={state.wsl?.version}
+                disabled={installing}
+                onChange={setState}
+              />
+            ))
+          : null}
       </AppPanel>
     </section>
   );
@@ -228,4 +241,70 @@ function messageOf(error: unknown) {
   return error instanceof Error && error.message
     ? error.message
     : "Ajour couldn't install the ajour command.";
+}
+
+function WslRow({
+  distro,
+  version,
+  disabled,
+  onChange,
+}: {
+  distro: import("@/lib/desktop-bridge").DesktopCliWslDistro;
+  version?: string;
+  disabled: boolean;
+  onChange: (state: DesktopCliCommandState) => void;
+}) {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const adding = starting || distro.status === "adding";
+  let line = "Not added.";
+  if (distro.status === "added")
+    line = `ajour ${version ?? ""} · ~/.local/bin/ajour`;
+  if (adding)
+    line =
+      distro.phase === "checking"
+        ? `Checking ajour in ${distro.name}…`
+        : distro.phase === "linking"
+          ? "Linking ~/.local/bin/ajour…"
+          : `Downloading ajour, ${distro.progress ?? 0}%`;
+  return (
+    <SettingRow
+      label={distro.name}
+      description={
+        <span className="flex h-12 min-w-0 flex-col overflow-hidden">
+          <span role="status">
+            <Line text={line} />
+            {distro.hint ? <Line text={distro.hint} /> : null}
+          </span>
+          {distro.error || error ? (
+            <Line
+              role="alert"
+              text={distro.error ?? error!}
+              className="text-destructive"
+            />
+          ) : null}
+        </span>
+      }
+    >
+      {distro.status !== "added" ? (
+        <Button
+          variant="outline"
+          disabled={disabled || adding}
+          onClick={() => {
+            if (!window.ajourDesktop?.addCliCommandWsl || adding) return;
+            setStarting(true);
+            setError(null);
+            window.ajourDesktop
+              .addCliCommandWsl({ distro: distro.name }, traceCarrier())
+              .then(onChange, (failure: unknown) =>
+                setError(messageOf(failure)),
+              )
+              .finally(() => setStarting(false));
+          }}
+        >
+          {distro.status === "error" || error ? "Retry" : "Add"}
+        </Button>
+      ) : null}
+    </SettingRow>
+  );
 }
