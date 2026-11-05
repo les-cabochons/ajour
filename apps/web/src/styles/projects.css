@@ -222,16 +222,53 @@
     gap: 2.5rem;
   }
 
-  /* The page's one card, like the backlog item page's Properties. */
-  .project-properties-card {
+  /* The side column: a managed project's Budget card, then Properties. */
+  .project-side-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-self: start;
+    min-width: 0;
+  }
+
+  /* The side cards, like the backlog item page's Properties. */
+  .project-properties-card,
+  .project-budget-card {
     display: flex;
     flex-direction: column;
     gap: 0.875rem;
-    align-self: start;
     padding: 0.875rem 1rem 1rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     background: var(--surface-tint);
+  }
+
+  /* The source's hours for the user against what they committed. */
+  .project-budget-note {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+
+  .project-budget-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.75rem 0 0;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-sm);
+    list-style: none;
+  }
+
+  .project-budget-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+    min-height: 28px;
+    border-bottom: 1px solid var(--border-row);
   }
 
   /* Text that turns into a field on click: the title and the card's names. */

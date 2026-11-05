@@ -40,6 +40,7 @@ describe("normalizeProject for a managed project", () => {
         unit: "hours",
         total: 40,
         consumed: 31.5,
+        since: "2026-01-01",
         asOf: "2026-10-31T23:59:59.000Z",
       },
       status: "archived",
@@ -116,7 +117,11 @@ describe("normalizeProjectSources", () => {
       label: "Example planner",
       url: "https://planner.example",
       asOf: "2026-10-31T23:59:59.000Z",
-      me: { hoursAvailable: false, hoursNote: "Link your account." },
+      me: {
+        hoursAvailable: false,
+        hoursNote: "Link your account.",
+        hoursSince: "2026-10-01",
+      },
       syncedAt: 9,
       held: [fixtureSnapshot.projects[0], { remoteId: "broken" }],
     };

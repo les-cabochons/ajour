@@ -37,6 +37,7 @@ Click a project to open its page.
 - **The figures** show time this week and all time. For budgeted tasks, they add the budget, the time used and what remains. Without a budget, they show the number of active tasks.
 - **Tasks** lists the project's tasks. See [Tasks](/projects/tasks).
 - **Time entries** lists every entry on the project, by day. Click one to open its day.
+- **The Budget card**, on a project that comes from a project source, shows the source's budget. See [The Budget card](#the-budget-card).
 - **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place. Each change saves on <kbd>Enter</kbd> or when you leave the field, with Undo. <kbd>Esc</kbd> cancels. A shared project also shows its **Team**. See [Shared projects](/projects/shared-projects).
 
 The bottom of the card has **Import tasks…**, **Share with team** when a team plugin is connected, or **Stop sharing** for a shared project, and **Archive**.
@@ -46,6 +47,23 @@ Plugins can add their own section to the properties card, such as **Workday** wi
 When a plugin commits tasks, such as [Workday (agent)](/plugins/workday-agent), the card has a row named after it, such as **Workday**, set to **Commits**. Choose **Local only** for a project that never goes to your timesheet tool, such as a personal one. An Undo toast follows. Its time stays in Ajour, and its tasks show no **Commits as** choice. The choice stays yours in a shared project.
 
 Click the title to rename the display name.
+
+## The Budget card
+
+A project that comes from a project source, such as your planning tool, has a **Budget** card above its properties. The source's hours come from a report that lags your own entries, so the card shows its figures with the time they are from, and adds what the source can't have yet:
+
+| Line                | What it is                                                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Budget**          | The project's hours, from the source.                                                                                                                                                                     |
+| **Consumed**        | The hours the source counts, as of the time under it.                                                                                                                                                     |
+| **Not counted yet** | Your time on the project the source can't have yet: entries you haven't committed, or committed after that time. An entry you changed since its commit counts only the difference, which can be negative. |
+| **≈ Remaining**     | An estimate: the source's remaining hours less Not counted yet.                                                                                                                                           |
+
+When the budget is in money, the card shows only the source's status, such as **Over budget**.
+
+When the source knows your own hours, a line under the figures says how many it has for you, and how many you committed before its time. When they differ, press **See the …** to list, task by task, the source's hours next to the entries you committed. An entry missing there usually means a commit never reached your timesheet tool. When the source can't give your hours, the line says why, in its own words.
+
+On such a project, each task's row shows the source's hours for you against the task's budget.
 
 ## Archive a project
 

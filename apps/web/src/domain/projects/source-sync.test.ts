@@ -200,11 +200,29 @@ describe("syncProjectSource", () => {
       label: "Example planner",
       url: "https://planner.example",
       asOf: "2026-10-31T23:59:59.000Z",
-      me: { hoursAvailable: true },
+      me: { hoursAvailable: true, hoursSince: "2026-10-01" },
       syncedAt: 5_000,
       held: [],
     });
     expect(next.result).toMatchObject({ created: 2, archived: 1, linked: 0 });
+  });
+
+  it("keeps the budget's period and the period of the user's hours", () => {
+    const next = sync(
+      stateWith([]),
+      snapshot((copy) => {
+        copy.me = { hoursAvailable: true, hoursSince: "2026-10-01" };
+        copy.projects[0]!.budget!.since = "2026-01-01";
+      }),
+    );
+
+    expect(projectNamed(next, "Acme - Support").budget?.since).toBe(
+      "2026-01-01",
+    );
+    expect(next.projectSources.c1!.me).toEqual({
+      hoursAvailable: true,
+      hoursSince: "2026-10-01",
+    });
   });
 
   it("holds a project that only matches by name for review, and keeps it current", () => {

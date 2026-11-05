@@ -6,8 +6,8 @@ import {
 } from "../../../../../packages/example/index.ts";
 
 /*
- * Managed projects (#505): the example project source's fixture, served
- * through a mocked local API, synced from Settings.
+ * Managed projects (#505, #509): the example project source's fixture,
+ * served through a mocked local API, synced from Settings.
  */
 
 const { Given, When, Then } = createBdd();
@@ -345,3 +345,89 @@ Then("no merge suggestion shows", async ({ page }) => {
   await expect(page.getByRole("tab", { name: /^Tasks/ })).toBeVisible();
   await expect(page.locator("[data-task-merge-suggestion]")).toHaveCount(0);
 });
+
+Given(
+  "I logged {int} hours on its task {string} on {word}",
+  async ({ page }, hours: number, task: string, localDate: string) => {
+    await page.addInitScript(
+      ({ hours, task, localDate }) => {
+        if (sessionStorage.getItem("managed-projects-entry")) return;
+        sessionStorage.setItem("managed-projects-entry", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.projects[0].tasks.push({
+          _id: "login",
+          name: task,
+          status: "active",
+          createdAt: 1,
+        });
+        state.timesheetEntries = [
+          {
+            _id: "entry-login",
+            localDate,
+            projectId: state.projects[0]._id,
+            taskId: "login",
+            label: "",
+            durationMs: hours * 3_600_000,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ];
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { hours, task, localDate },
+    );
+  },
+);
+
+When(
+  "the source counts the commit, but only {int} hour of it for me",
+  async ({ page }, hours: number) => {
+    const snapshot = snapshots.get(page)!;
+    // The source's figures are from after the commit: it consumed the two
+    // hours, but has only one of them for the user.
+    snapshot.asOf = new Date().toISOString();
+    const acme = snapshot.projects.find(
+      (project) => project.remoteId === "ACME-SUP",
+    )!;
+    acme.budget = { ...acme.budget!, consumed: 33.5, remaining: 6.5 };
+    for (const task of acme.tasks) {
+      if (task.name === "Ticket #101 - Login") task.myHours = hours;
+      else delete task.myHours;
+    }
+  },
+);
+
+/** A figure's value on the budget card, by its label. */
+function budgetFigure(page: Page, label: string) {
+  return page
+    .getByRole("region", { name: "Budget" })
+    .locator("dt", { hasText: label })
+    .locator("xpath=following-sibling::dd[1]");
+}
+
+Then(
+  "the budget card reads {string} Not counted yet and {string} Remaining",
+  async ({ page }, notCounted: string, remaining: string) => {
+    await expect(budgetFigure(page, "Not counted yet")).toHaveText(notCounted);
+    await expect(budgetFigure(page, "≈ Remaining")).toHaveText(
+      new RegExp(`^${remaining}Estimate`),
+    );
+  },
+);
+
+Then("the budget card says {string}", async ({ page }, text: string) => {
+  await expect(page.getByRole("region", { name: "Budget" })).toContainText(
+    text,
+  );
+});
+
+Then(
+  "the committed entries show {string} with {string}",
+  async ({ page }, task: string, committed: string) => {
+    const list = page.getByRole("list", { name: "Tasks that differ" });
+    await expect(list).toContainText(task);
+    await expect(list).toContainText(committed);
+  },
+);

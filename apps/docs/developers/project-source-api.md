@@ -27,10 +27,10 @@ The cursor is yours. Ajour never reads it: it keeps the last one per connection 
 
 - **The source.** `source.label` is what Ajour calls it, 1 to 80 characters. `source.url` is its home.
 - **`asOf`.** When the source's figures are from, as an ISO date-time. A source usually learns its hours from a report that lags the user's entries, so Ajour uses `asOf` to tell lag from a conflict.
-- **`me`.** Whether the source can give the user's own hours. When `hoursAvailable` is false, `hoursNote` is your sentence on why, such as "Link your account in Planner to compare your hours.", and Ajour shows it instead of comparing nothing.
+- **`me`.** Whether the source can give the user's own hours. When `hoursAvailable` is false, `hoursNote` is your sentence on why, such as "Link your account in Planner to compare your hours.", and Ajour shows it instead of comparing nothing. When the tasks' `myHours` cover a period, such as the current month, `hoursSince` is its first day, `YYYY-MM-DD`: Ajour compares only the user's entries from that day. Without it, Ajour compares all of them.
 - **Projects.** Every project of the user, assigned tasks or not, at most 200. `remoteId` is stable across renames. `code` is what Ajour links an existing local project by, without asking. `complete` archives the project in Ajour. `url` is where "Open in <source>" goes, as an absolute https address. `client`, `startsOn` and `endsOn` are optional; dates are `YYYY-MM-DD`.
 - **Tasks.** Every task of the project, the ones not assigned to the user included, at most 10,000 across the snapshot. `group` is how the source groups them, such as a phase. `assigned` says whether the source assigns the task to the user, and `myHours` their hours on it when the source knows them.
-- **Budget.** The source writes every figure, as of `asOf`. `unit` is `hours` or `money`. `remaining` may be negative; `status` says whether that is `over`.
+- **Budget.** The source writes every figure, as of `asOf`. `unit` is `hours` or `money`. `remaining` may be negative; `status` says whether that is `over`. When the budget covers a period, `since` is the first day `consumed` covers, `YYYY-MM-DD`: Ajour counts the user's entries from that day only. Without it, Ajour counts all of them. Ajour shows the figures of an hours budget only; for a money budget it shows `status` alone.
 
 Ajour checks every snapshot before it applies any of it, and refuses one that leaves out a required field, repeats a remote id, or goes over the bounds, naming the field.
 
@@ -41,6 +41,7 @@ Ajour checks every snapshot before it applies any of it, and refuses one that le
 - A task matches by `remoteId`, then by name among the project's tasks the source doesn't know yet.
 - `complete: true` archives the project, and `complete: false` restores it if Ajour archived it for that. A `closed` task is archived the same way. A project or task left out of the snapshot is archived, never deleted, and comes back when it returns. The user can't restore what the source archived, so your snapshot decides when it comes back.
 - A project shared with a team is never linked to a source: a project with its code or name is added beside it.
+- The project's budget card shows your figures with `asOf`, adds **Not counted yet**, the user's time you can't have yet (entries not committed, or committed after `asOf`), and estimates what remains from the two. When `me.hoursAvailable` is true, it compares each task's `myHours` with what the user committed on it before `asOf`, and says when they differ. A task's row shows its `estimateHours` and `myHours`.
 
 ## Types
 
@@ -49,7 +50,12 @@ interface ProjectSourceSnapshot {
   source: { label: string; url?: string };
   /** When the source's hours are from. */
   asOf: string;
-  me?: { hoursAvailable: boolean; hoursNote?: string };
+  me?: {
+    hoursAvailable: boolean;
+    hoursNote?: string;
+    /** The first day `myHours` cover, YYYY-MM-DD. */
+    hoursSince?: string;
+  };
   /** At most 200. */
   projects: ProjectSourceProject[];
 }
@@ -91,6 +97,8 @@ interface ProjectSourceBudget {
   /** May be negative. */
   remaining?: number;
   status?: "ok" | "warning" | "over" | "unknown";
+  /** The first day `consumed` covers, YYYY-MM-DD. */
+  since?: string;
 }
 ```
 

@@ -120,6 +120,19 @@ describe("the project source snapshot", () => {
     expect(projectSourceSnapshotSchema.parse(snapshot).me).toEqual(snapshot.me);
   });
 
+  it("says from which day the consumed figures and the user's hours count", () => {
+    const snapshot = {
+      ...fullSnapshot(),
+      me: { hoursAvailable: true, hoursSince: "2026-10-01" },
+    };
+    snapshot.projects[0]!.budget!.since = "2026-01-01";
+
+    const parsed = projectSourceSnapshotSchema.parse(snapshot);
+
+    expect(parsed.me?.hoursSince).toBe("2026-10-01");
+    expect(parsed.projects[0]!.budget?.since).toBe("2026-01-01");
+  });
+
   it.each([
     [
       "a task without a name",
@@ -169,6 +182,20 @@ describe("the project source snapshot", () => {
         s.projects[0]!.endsOn = "2026-02-30";
       },
       "projects.0.endsOn",
+    ],
+    [
+      "a budget period that starts on a day that does not exist",
+      (s: ProjectSourceSnapshot) => {
+        s.projects[0]!.budget!.since = "2026-02-30";
+      },
+      "projects.0.budget.since",
+    ],
+    [
+      "hours counted since a date-time instead of a day",
+      (s: ProjectSourceSnapshot) => {
+        s.me = { hoursAvailable: true, hoursSince: "2026-10-01T00:00:00Z" };
+      },
+      "me.hoursSince",
     ],
     [
       "an asOf that isn't a date-time",
