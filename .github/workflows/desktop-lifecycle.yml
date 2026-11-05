@@ -13,7 +13,8 @@ name: Desktop lifecycle
 # the ajour command, built in the job with the app's version, from a local
 # fake release. Windows checks the user Path in a fresh PowerShell. macOS
 # checks the signed binary through /usr/local/bin/ajour and refuses a foreign file.
-# On Windows it also checks that Add to a WSL 1 distro is refused (#611).
+# On Windows it also checks that Add to a WSL 1 distro is refused (#611), and
+# that Remove on a distro never added changes nothing (#605).
 #
 # Windows and macOS, the systems the desktop app ships on. The `Tests`
 # workflow calls this one for pull requests that can change the desktop app,
@@ -115,7 +116,8 @@ jobs:
 
       # GitHub's Windows runners only run WSL 1, where the Linux ajour can't
       # start (#611): the check proves Add's refusal there, which needs no
-      # Linux build. The WSL 2 Add path runs locally (see the script's
+      # Linux build, and calls Remove through the real channel. The WSL 2
+      # path, Add and both removals (#605), runs locally (see the script's
       # header); #611 brings the Linux build back here.
       - name: Install disposable WSL1 Ubuntu (WSL 1 path, Add refused)
         if: runner.os == 'Windows'
