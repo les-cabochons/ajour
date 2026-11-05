@@ -226,7 +226,7 @@ Creating and editing a time entry always use the same form:
 
 - Header: the title ("New time entry" or "Edit time entry"), the entry's date, the "…" action menu for saved entries, and × to close.
 - Fields: Project / task, Note, Hours, Date (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`). See the Running entries section for Date and empty Hours.
-- Footer: Cancel · Start (Switch while another entry runs, Continue on a saved entry, Stop on the running entry) · Save.
+- Footer: Cancel · Start (Continue on a saved entry, Stop on the running entry) · Save. Start also stops another running entry.
 
 The Day view's inline new row and the titlebar's own create form go away. What an empty Hours field means belongs to [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 
@@ -315,7 +315,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 - In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
 - With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
 - A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
-- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The timer dock and the rows show the switch; no message appears.
+- Starting while another entry runs saves the running one and switches, without a prompt. The button still reads Start. The timer dock and the rows show the switch; no message appears.
 - Start entry on tasks and backlog items starts on today, as it does now.
 
 ### Date field
@@ -324,7 +324,7 @@ The form gets a Date field after Hours. It defaults to the open day in Day, the 
 
 ### Labels
 
-Buttons read Start, Switch and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
+Buttons read Start, Continue and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
 
 ## Week view
 
@@ -638,7 +638,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - The peek has no "…" menu. The row's context menu and the item page carry the other actions.
 - Dragging the peek's left edge resizes it, like every side panel: 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. Each page keeps its own panel width, per device: Backlog (peek and editor), the backlog item page, Time, Projects and Agents.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
-- Edit opens the backlog item editor as the floating composer, with its explicit Save; the peek closes behind it. Creating an item, a subitem or a task opens the same floating composer on its page (forms council round 8).
+- Edit opens the backlog item editor as the floating composer, with its explicit Save; the peek closes behind it. Creating an item, a subitem or a task opens the same floating composer on its page (forms council round 8). Its estimates are figures under the chips, Remaining, Completed and Original as on the item page, or one Estimate for a new item. A long description, over six lines or 480 characters, shows its first lines, and "Show more" saves the draft and opens the item page (forms council round 12).
 - Enter, a double-click or Open page opens the backlog item page.
 - The narrow view has no peek: a tap opens the item page.
 
@@ -916,7 +916,7 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 
 - The project list keeps its search field and an "Archived" entry at the bottom. Wide windows show it next to the app sidebar. The narrow view shows it inside Settings.
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
-- Editing a task uses the floating composer, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
+- Editing a task uses the floating composer, with the same Save and Escape rules as entries. It holds name, billable and the pinned slot as chips, then budget and adjustment as figures typed in place. The inline task editor that saved on outside click goes away.
 - The project page's properties show what edits: Full name and Code end in a pencil, Color and Icon in a picker chevron, at the value column's edge; an archived project shows none (council round 10).
 - The backlog item page's lead figure is Remaining, at 28px, first, then Completed and Original, and the bar under them fills with Completed over Original, the spent part, as every figure bar does (product owner, council rounds 23, 25 and 28); the bar sits under the three, and every value shares one baseline, Logged in Ajour's too (council rounds 14 and 16). A synced item's refresh control sits in the Source property, beside the source it refreshes (council round 16).
 - With task budgets, the project page's figures read This week, the page's one 28px figure, All time, then Budget used, Budget left and Task budgets as a group with the bar, filled with Budget used, under them only (council rounds 11 and 25), and one secondary line, "Budget figures count the active tasks that have a budget.", so Budget used never reads as All time (council round 4). Budget used reads in the text color like the other figures, amber or red only when it warns. "Budget figures count the active tasks that have a budget." is the Task budgets label's tooltip. A task row with a budget leads with its hours logged and follows with "of 120:00" in secondary ink (council rounds 21 and 26), and a pinned task's keycap shows the chord that starts it, "⇧1" on macOS and "Shift+1" elsewhere, right after the task's name (council rounds 16 and 19). The task list has no heading under its tab; its Active and Archived filter sits on the tab row's right, and a task row shows a chip only for Non-billable, Billable being the default (council round 5).

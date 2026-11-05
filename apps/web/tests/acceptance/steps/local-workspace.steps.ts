@@ -1166,7 +1166,7 @@ Then(
 When("I start a fresh timer from the Time page", async ({ page }) => {
   await page.goto("/time/today?entry=new");
   const switchTimer = page.getByRole("button", {
-    name: "Switch",
+    name: "Start",
     exact: true,
   });
   await expect(switchTimer).toBeEnabled();

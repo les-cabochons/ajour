@@ -193,14 +193,6 @@
   color: var(--text-tertiary);
 }
 
-/* The icon tile above a composer's title, tinted like Linear's. */
-.composer .composer-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--hover-bg);
-}
-
 .composer-chips .composer-color {
   padding: 0 10px;
 }
@@ -448,4 +440,114 @@ body:has([data-slot="dialog-content"].composer-floating)
   left: auto;
   translate: none;
   transform: none;
+}
+
+/* Editable figures (forms council round 12): times leave the chips and read
+   as the item page's figures, the label over the number. The number sits in
+   a soft well, so it reads as something to click; hover brightens and edges
+   it, focus rings it. */
+.figure-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.figure-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.figure-field-label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.figure-field-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.figure-field-well {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: oklch(from var(--foreground) l c h / 5%);
+  cursor: text;
+}
+
+.figure-field-well:hover {
+  border-color: var(--field-border);
+  background: oklch(from var(--foreground) l c h / 9%);
+}
+
+.figure-field-well:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px oklch(from var(--ring) l c h / 25%);
+}
+
+.figure-field[data-invalid="true"] .figure-field-well {
+  border-color: var(--destructive);
+}
+
+.figure-field-input {
+  width: auto;
+  min-width: 3ch;
+  max-width: 10ch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  field-sizing: content;
+  outline: none;
+}
+
+.figure-field-input::placeholder {
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* A long description in an edit composer (forms council round 12): its
+   first lines, fading out, and "Show more" opens the item's page. Typing in
+   it lifts the cut back to the editor's own scroll. */
+.composer-description[data-clamped]:not(:focus-within) {
+  --markdown-editor-max-height: 7.5rem;
+}
+
+.composer-description[data-clamped]:not(:focus-within) .composer-body,
+.composer-description[data-clamped] .composer-description-text {
+  max-height: 7.5rem;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+
+.composer-show-more {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.composer-show-more:hover {
+  color: var(--foreground);
+}
+
+.composer-show-more:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

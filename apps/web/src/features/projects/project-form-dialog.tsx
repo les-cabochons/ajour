@@ -91,36 +91,10 @@ export function ProjectFormDialog({
             </DialogTitle>
           </DialogHeader>
 
-          {/* A composer, as Linear's new project: the icon, then the name
-              and short name to write in, then the code and color as chips
-              (forms council round 6). */}
+          {/* A composer, as Linear's new project: the name and short name
+              to write in, then the code, color and icon as chips (forms
+              council rounds 6 and 12). */}
           <FieldGroup className="composer gap-2">
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="composer-icon"
-                    aria-label={`Project icon: ${iconLabel}`}
-                  />
-                }
-              >
-                <ProjectIcon
-                  icon={fields.icon}
-                  color={fields.color}
-                  className="size-4"
-                />
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-80">
-                <ProjectIconField
-                  icon={fields.icon}
-                  color={fields.color}
-                  onChange={(icon) => update({ icon })}
-                />
-              </PopoverContent>
-            </Popover>
             <Field>
               <FieldLabel htmlFor="project-form-name" className="sr-only">
                 Full name
@@ -178,6 +152,31 @@ export function ProjectFormDialog({
                 onChange={(color) => update({ color })}
                 trailing={<span>Color</span>}
               />
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="composer-pill"
+                      aria-label={`Project icon: ${iconLabel}`}
+                    />
+                  }
+                >
+                  <ProjectIcon
+                    icon={fields.icon}
+                    color={fields.color}
+                    className="size-3.5"
+                  />
+                  <span>Icon</span>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80">
+                  <ProjectIconField
+                    icon={fields.icon}
+                    color={fields.color}
+                    onChange={(icon) => update({ icon })}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </FieldGroup>
 

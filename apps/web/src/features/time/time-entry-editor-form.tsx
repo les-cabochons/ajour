@@ -131,8 +131,8 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * so keys, buttons and save rules stay the same everywhere.
  *
  * Laid out like the backlog peek: the form's title, "…" and × on top, then the task
- * as a heading with status, project and date chips, then Start (Switch while another
- * entry runs, Continue on a saved entry, Stop on the running entry), the property rows
+ * as a heading with status, project and date chips, then Start (which also stops another
+ * running entry), Continue on a saved entry, or Stop on the running entry, the property rows
  * and the note. Footer: Cancel · Save. Save: the Save button, Enter in Hours or Note,
  * or Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press
  * Start. Escape, Cancel or × discard the draft. Save on the running entry keeps it
@@ -404,9 +404,9 @@ export function TimeEntryEditorForm({
     submit();
   }
 
-  // The hint names the button in view: Switch while another entry runs.
-  const startVerb = isAnotherEntryRunning ? "Switch" : "Start";
-  const hoursHint = START_OR_ENTER_HOURS_HINT.replace("Start", startVerb);
+  // Start reads Start even while another entry runs: people know it takes
+  // over, where "Switch" left them guessing (forms council round 12).
+  const hoursHint = START_OR_ENTER_HOURS_HINT;
 
   return (
     <div
@@ -500,8 +500,8 @@ export function TimeEntryEditorForm({
 
       <footer className="flex items-center justify-end gap-2 pt-1">
         {/* The entry's own verb opens the footer, at its start: Stop for the
-            running entry, Continue for a saved one, Start or Switch for a
-            new one (forms council round 7). */}
+            running entry, Continue for a saved one, Start for a new
+            one (forms council round 7). */}
         <span className="mr-auto flex items-center gap-2">
           {runningTimer ? (
             <Button
@@ -531,7 +531,7 @@ export function TimeEntryEditorForm({
               onClick={start}
             >
               <Play data-icon="inline-start" />
-              {startVerb}
+              Start
             </Button>
           )}
           {startsToday ? (

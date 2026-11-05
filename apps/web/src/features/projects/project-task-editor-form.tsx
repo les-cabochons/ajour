@@ -2,14 +2,18 @@ import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
 import {
   RiCloseLine as X,
   RiMoneyDollarCircleLine as BillableIcon,
-  RiTimeLine as BudgetIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/toggle-chip";
+import { FigureField, FigureFieldRow } from "@/components/ui/figure-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { formatDurationHoursInput } from "@/domain/time/duration";
+import {
+  formatCompactDuration,
+  formatDurationHoursInput,
+  parseHoursInput,
+} from "@/domain/time/duration";
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
@@ -19,6 +23,16 @@ import type {
 } from "@/features/projects/project-task-editor";
 import { TaskPropertyFields } from "@/features/projects/task-property-fields";
 import { cn } from "@/lib/utils";
+
+/** Typed hours as figures show them ("120h", "-1h30"), or null if they aren't. */
+function formatBudgetFigure(value: string) {
+  const text = value.trim();
+  const negative = text.startsWith("-");
+  const ms = parseHoursInput(text.replace(/^[-+]/, ""));
+  return ms === null
+    ? null
+    : `${negative ? "-" : ""}${formatCompactDuration(ms)}`;
+}
 
 /**
  * The form for creating and editing a task: name, billable, budget, adjustment,
@@ -150,42 +164,6 @@ export function ProjectTaskEditorForm({
           >
             Billable
           </ToggleChip>
-          <div
-            className="composer-chip composer-estimate"
-            data-invalid={editor.budgetError ? "true" : undefined}
-          >
-            <BudgetIcon aria-hidden className="size-3.5 shrink-0" />
-            <label htmlFor="project-task-editor-budget">Budget</label>
-            <input
-              id="project-task-editor-budget"
-              className="composer-estimate-input"
-              autoComplete="off"
-              value={fields.budget}
-              aria-invalid={Boolean(editor.budgetError)}
-              onChange={(event) =>
-                onFieldsChange({ budget: event.target.value })
-              }
-              onKeyDown={saveOnEnter}
-            />
-          </div>
-          <div
-            className="composer-chip composer-estimate"
-            data-invalid={editor.adjustmentError ? "true" : undefined}
-          >
-            <BudgetIcon aria-hidden className="size-3.5 shrink-0" />
-            <label htmlFor="project-task-editor-adjustment">Adjustment</label>
-            <input
-              id="project-task-editor-adjustment"
-              className="composer-estimate-input"
-              autoComplete="off"
-              value={fields.adjustment}
-              aria-invalid={Boolean(editor.adjustmentError)}
-              onChange={(event) =>
-                onFieldsChange({ adjustment: event.target.value })
-              }
-              onKeyDown={saveOnEnter}
-            />
-          </div>
           <PinnedSlotField
             taskName={fields.name}
             taskId={taskId}
@@ -193,6 +171,28 @@ export function ProjectTaskEditorForm({
             onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
           />
         </div>
+        {/* Budget and adjustment are figures, as the project page's, typed
+            in place (forms council round 12). */}
+        <FigureFieldRow role="group" aria-label="Budget">
+          <FigureField
+            id="project-task-editor-budget"
+            label="Budget"
+            value={fields.budget}
+            onChange={(budget) => onFieldsChange({ budget })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.budgetError)}
+            onKeyDown={saveOnEnter}
+          />
+          <FigureField
+            id="project-task-editor-adjustment"
+            label="Adjustment"
+            value={fields.adjustment}
+            onChange={(adjustment) => onFieldsChange({ adjustment })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.adjustmentError)}
+            onKeyDown={saveOnEnter}
+          />
+        </FigureFieldRow>
         {editor.budgetError ? (
           <span className="field-error">Budget: {editor.budgetError}</span>
         ) : null}

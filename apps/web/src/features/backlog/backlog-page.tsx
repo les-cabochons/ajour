@@ -659,6 +659,18 @@ export function BacklogPage() {
         }}
         onClose={closeEditor}
         onAction={runCommittedAction}
+        onOpenPage={
+          target?.kind === "edit"
+            ? async () => {
+                if (!(await leaveDraft())) return;
+                closeEditor();
+                void navigate({
+                  to: "/backlog/$itemId",
+                  params: { itemId: target.workItem._id },
+                });
+              }
+            : undefined
+        }
       />
     );
   }

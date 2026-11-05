@@ -13,11 +13,11 @@ import {
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiArchiveLine as KeepIcon,
-  RiTimeLine as EstimateIcon,
   RiCloseLine as X,
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
   RiRefreshLine as RotateCcw,
+  RiArrowRightUpLine as ShowMoreIcon,
 } from "@remixicon/react";
 import { ProjectIcon } from "@/lib/project-icons";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
@@ -27,6 +27,11 @@ import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/toggle-chip";
+import { FigureField, FigureFieldRow } from "@/components/ui/figure-field";
+import {
+  ESTIMATE_FIGURES,
+  formatHours,
+} from "@/features/backlog/backlog-estimates";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
@@ -76,6 +81,7 @@ import {
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
   followChangedItem,
+  parseEstimateInput,
   sumSubitemEstimates,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
@@ -134,6 +140,17 @@ const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
   completedEstimateHours: "Completed",
 };
 
+/** A typed estimate as figures show it ("8h", "2h30"), or null if it isn't one. */
+function formatEstimateFigure(value: string) {
+  const hours = parseEstimateInput(value);
+  return typeof hours === "number" ? formatHours(hours) : null;
+}
+
+/** Longer than the composer shows whole: over six lines, or 480 characters. */
+function isLongDescription(text: string) {
+  return text.split("\n").length > 6 || text.length > 480;
+}
+
 const ESTIMATE_ERROR_KEYS = {
   originalEstimateHours: "originalEstimateError",
   remainingEstimateHours: "remainingEstimateError",
@@ -187,6 +204,7 @@ export function BacklogItemEditorForm({
   surface = "editor",
   initialFields,
   onFieldsChange,
+  onOpenPage,
 }: {
   target: BacklogTaskEditorTarget;
   onClose: () => void;
@@ -204,6 +222,11 @@ export function BacklogItemEditorForm({
   initialFields?: BacklogTaskEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: BacklogTaskEditorFields) => void;
+  /**
+   * Opens the item's page. Given, a long description shows its first lines
+   * and "Show more" opens the page (forms council round 12).
+   */
+  onOpenPage?: () => void;
 }) {
   const editorSurface = surface;
   // Unique per mounted form: the sidebar's New backlog item dialog can open
@@ -599,61 +622,57 @@ export function BacklogItemEditorForm({
   const titleError =
     showErrors || fields.title !== base.title ? validation.titleError : null;
   const sourceMetaLabel = workItem ? getSourceMetaLabel(workItem) : "";
+  // Judged on the saved text, so typing never moves the cut.
+  const clampDescription =
+    Boolean(onOpenPage) &&
+    target.kind === "edit" &&
+    isLongDescription(
+      descriptionEditable ? base.description : (currentDescription ?? ""),
+    );
 
-  // Each estimate is a chip with its value typed in place (forms council
-  // round 6): "Original 8", "Remaining 5", "Completed 3".
-  // A new item has nothing left or done yet: one "Estimate" chip, which sets
-  // the original; the other two show once the item exists (forms council
-  // round 10).
+  // The estimates are figures, as on the item page: Remaining, Completed,
+  // then Original, each typed in place (forms council round 12). A new item
+  // has nothing left or done yet: one "Estimate", which sets the original.
   const shownEstimateKeys =
     target.kind === "create"
-      ? BACKLOG_ESTIMATE_FIELD_KEYS.filter(
-          (key) => key === "originalEstimateHours",
-        )
-      : BACKLOG_ESTIMATE_FIELD_KEYS;
-  const estimateChips = shownEstimateKeys.map((key) => {
+      ? (["originalEstimateHours"] as const)
+      : ESTIMATE_FIGURES.map((figure) => figure.key);
+  const estimateFigures = shownEstimateKeys.map((key) => {
     const error = validation[ESTIMATE_ERROR_KEYS[key]];
     const resetValue = editor.estimateResets[key];
     const label = target.kind === "create" ? "Estimate" : ESTIMATE_LABELS[key];
     return (
-      <div
+      <FigureField
         key={key}
-        className="composer-chip composer-estimate"
-        data-invalid={error ? "true" : undefined}
-      >
-        {/* Every chip leads with a mark: a clock for an estimate. */}
-        <EstimateIcon aria-hidden className="size-3.5 shrink-0" />
-        <label htmlFor={`${idPrefix}-${key}`}>{label}</label>
-        <input
-          id={`${idPrefix}-${key}`}
-          className="composer-estimate-input"
-          inputMode="decimal"
-          autoComplete="off"
-          value={fields[key]}
-          onChange={(event) => updateFields({ [key]: event.target.value })}
-          aria-invalid={Boolean(error)}
-        />
-        {resetValue !== undefined ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
-                  onClick={() => updateFields({ [key]: resetValue })}
-                />
-              }
-            >
-              <RotateCcw />
-            </TooltipTrigger>
-            <TooltipContent>
-              Reset to subitem total ({resetValue})
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-      </div>
+        id={`${idPrefix}-${key}`}
+        label={label}
+        value={fields[key]}
+        onChange={(value) => updateFields({ [key]: value })}
+        format={formatEstimateFigure}
+        invalid={Boolean(error)}
+        trailing={
+          resetValue !== undefined ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
+                    onClick={() => updateFields({ [key]: resetValue })}
+                  />
+                }
+              >
+                <RotateCcw />
+              </TooltipTrigger>
+              <TooltipContent>
+                Reset to subitem total ({resetValue})
+              </TooltipContent>
+            </Tooltip>
+          ) : null
+        }
+      />
     );
   });
   const estimateErrors = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
@@ -764,8 +783,12 @@ export function BacklogItemEditorForm({
         {/* The writing comes first: the name, then its description, then
             the properties (forms council round 3). */}
         {/* A long description scrolls inside its editor, so the properties
-            and the buttons stay in reach. */}
+            and the buttons stay in reach. With a page to open, it shows its
+            first lines, and "Show more" opens the page (forms council round
+            12); typing in it lifts the cut. */}
         <Field
+          className="composer-description"
+          data-clamped={clampDescription ? "" : undefined}
           style={{ "--markdown-editor-max-height": "14rem" } as CSSProperties}
         >
           <FieldLabel htmlFor={`${idPrefix}-description`} className="sr-only">
@@ -800,7 +823,10 @@ export function BacklogItemEditorForm({
             </>
           ) : null}
           {descriptionEditable ? null : (
-            <div id={`${idPrefix}-description`}>
+            <div
+              id={`${idPrefix}-description`}
+              className="composer-description-text"
+            >
               {currentDescription ? (
                 <DescriptionText body={currentDescription} />
               ) : (
@@ -814,6 +840,16 @@ export function BacklogItemEditorForm({
               ) : null}
             </div>
           )}
+          {clampDescription ? (
+            <button
+              type="button"
+              className="composer-show-more"
+              onClick={onOpenPage}
+            >
+              Show more
+              <ShowMoreIcon aria-hidden className="size-3.5" />
+            </button>
+          ) : null}
         </Field>
 
         <section aria-label="Properties" className="composer-chips">
@@ -899,7 +935,6 @@ export function BacklogItemEditorForm({
               }
             />
           ) : null}
-          {estimateChips}
           {editor.isSynced ? (
             <Tooltip>
               <TooltipTrigger
@@ -923,6 +958,9 @@ export function BacklogItemEditorForm({
             </Tooltip>
           ) : null}
         </section>
+        <FigureFieldRow aria-label="Estimates" role="group">
+          {estimateFigures}
+        </FigureFieldRow>
         {validation.priorityError ? (
           <span className="field-error">{validation.priorityError}</span>
         ) : null}
