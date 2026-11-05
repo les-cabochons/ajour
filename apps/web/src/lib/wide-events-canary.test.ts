@@ -278,8 +278,8 @@ export async function mergePullRequest(connection) {
 };
 
 /**
- * A project source, a plugin of its own. Every name, code, URL and group in its snapshot is marked, and so
- * is its cursor. It answers `unchanged` only to the cursor it gave.
+ * A project source. Every name, code, URL and group in its snapshot is
+ * marked, and so is its cursor. It answers `unchanged` only to the cursor it gave.
  */
 const canaryProjectSource: TestPlugin = {
   id: "canary-projects",
