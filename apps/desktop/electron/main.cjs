@@ -366,14 +366,17 @@ const trayPanel = createTrayPanelController({
   visibility: (visible) => sendTrayPanelState(visible ? "show" : "hide"),
 });
 
+// Returns false when there is no window to render the panel.
 function sendTrayPanelState(state) {
   if (
-    mainWindow &&
-    !mainWindow.isDestroyed() &&
-    !mainWindow.webContents.isDestroyed()
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
   ) {
-    mainWindow.webContents.send("ajour:tray-panel", state);
+    return false;
   }
+  mainWindow.webContents.send("ajour:tray-panel", state);
+  return true;
 }
 
 // The ajour command, installed from Settings › General › Terminal (#568).
@@ -755,6 +758,9 @@ ipc.onMessage("ajour:set-tray-state", (event, state) => {
 
 ipc.onMessage("ajour:tray-panel-command", (event, command) => {
   assertActiveDesktopWindow(event, "control the timer panel");
+  if (["ready", "hide", "open-main"].includes(command)) {
+    events.current()?.set({ tray_panel: { command } });
+  }
   if (command === "ready") trayPanel.ready();
   else if (command === "hide") trayPanel.hide();
   else if (command === "open-main") {
@@ -2164,7 +2170,8 @@ async function createMainWindow(trigger = "launch") {
           show: false,
           frame: process.platform === "linux",
           resizable: process.platform === "linux",
-          skipTaskbar: true,
+          // Linux has no popup: its regular window stays findable.
+          skipTaskbar: process.platform !== "linux",
           alwaysOnTop: process.platform !== "linux",
           autoHideMenuBar: true,
           title: "Ajour timer",

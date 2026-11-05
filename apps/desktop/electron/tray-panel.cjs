@@ -1,4 +1,10 @@
-/** Owns the native child window. The app renderer owns its React tree and state. */
+const OPEN_RETRY_MS = 2_000;
+
+/**
+ * Owns the native child window. The app renderer owns its React tree and state.
+ * `request` asks the owner to open the panel and returns false when there is
+ * no owner to ask.
+ */
 function createTrayPanelController({
   platform,
   getBounds,
@@ -8,7 +14,10 @@ function createTrayPanelController({
   now = Date.now,
 }) {
   let panel = null;
-  let opening = false;
+  // When the owner was asked to open the panel; null when nothing is pending.
+  // An owner that never answers (no window yet, a reload) must not block the
+  // next click forever, so a request older than OPEN_RETRY_MS is sent again.
+  let requestedAt = null;
   let blurredAt = null;
 
   function show() {
@@ -47,7 +56,7 @@ function createTrayPanelController({
   }
 
   function hide() {
-    opening = false;
+    requestedAt = null;
     if (!panel || panel.isDestroyed()) return;
     panel.hide();
     visibility(false);
@@ -61,11 +70,13 @@ function createTrayPanelController({
         return;
       }
       if (panel && !panel.isDestroyed()) {
-        if (panel.isVisible()) hide();
+        // Linux keeps a regular window that can sit behind others: a click
+        // brings it forward, and only hides it when it is already in front.
+        const inFront = platform !== "linux" || panel.isFocused();
+        if (panel.isVisible() && inFront) hide();
         else show();
-      } else if (!opening) {
-        opening = true;
-        request();
+      } else if (requestedAt === null || now() - requestedAt >= OPEN_RETRY_MS) {
+        requestedAt = request() === false ? null : now();
       }
     },
     attach(window) {
@@ -78,17 +89,17 @@ function createTrayPanelController({
       });
       window.on("closed", () => {
         if (panel === window) panel = null;
-        opening = false;
+        requestedAt = null;
         visibility(false);
       });
     },
     ready() {
-      opening = false;
+      requestedAt = null;
       show();
     },
     hide,
     destroy() {
-      opening = false;
+      requestedAt = null;
       if (panel && !panel.isDestroyed()) panel.destroy();
       panel = null;
     },

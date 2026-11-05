@@ -6,9 +6,11 @@ function setup(platform = "win32") {
   let time = 1000;
   const listeners = new Map<string, () => void>();
   let visible = false;
+  const state = { focused: true };
   const window = {
     isDestroyed: () => false,
     isVisible: () => visible,
+    isFocused: () => state.focused,
     setBounds: vi.fn(),
     show: () => {
       visible = true;
@@ -20,7 +22,7 @@ function setup(platform = "win32") {
     destroy: vi.fn(),
     on: (name: string, callback: () => void) => listeners.set(name, callback),
   };
-  const request = vi.fn();
+  const request = vi.fn(() => true);
   const visibility = vi.fn();
   const controller = createTrayPanelController({
     now: () => time,
@@ -36,8 +38,14 @@ function setup(platform = "win32") {
     listeners,
     request,
     visibility,
-    advance: () => {
-      time += 200;
+    get focused() {
+      return state.focused;
+    },
+    set focused(value: boolean) {
+      state.focused = value;
+    },
+    advance: (ms = 200) => {
+      time += ms;
     },
   };
 }
@@ -126,6 +134,33 @@ describe("the compact tray window", () => {
     expect(s.window.setBounds).not.toHaveBeenCalled();
     s.listeners.get("blur")!();
     expect(s.window.isVisible()).toBe(true);
+  });
+
+  it("brings a Linux window hidden behind others forward instead of hiding it", () => {
+    const s = setup("linux");
+    s.controller.toggle();
+    s.controller.attach(s.window);
+    s.controller.ready();
+    s.focused = false;
+    s.controller.toggle();
+    expect(s.window.isVisible()).toBe(true);
+    expect(s.window.focus).toHaveBeenCalledTimes(2);
+    s.focused = true;
+    s.controller.toggle();
+    expect(s.window.isVisible()).toBe(false);
+  });
+
+  it("asks its owner again when the first request is never answered", () => {
+    const s = setup();
+    s.request.mockReturnValueOnce(false);
+    s.controller.toggle();
+    s.controller.toggle();
+    expect(s.request).toHaveBeenCalledTimes(2);
+    s.controller.toggle();
+    expect(s.request).toHaveBeenCalledTimes(2);
+    s.advance(2_000);
+    s.controller.toggle();
+    expect(s.request).toHaveBeenCalledTimes(3);
   });
 
   it("does not reopen when clicking the tray first blurs an open panel", () => {
