@@ -397,8 +397,15 @@ async function checkWsl(page, version, baseUrl) {
     run(wsl, ["-d", distro, "--exec", program, ...args], {
       timeout: 60_000,
       windowsHide: true,
-    }).catch(() => {
-      throw new Error("The WSL check command failed.");
+    }).catch((error) => {
+      // Its exit and output, never its arguments: one is the check's token.
+      throw new Error(
+        `\`${program}\` in ${distro} failed with ${error.code}: ${String(
+          error.stderr || error.stdout || "",
+        )
+          .trim()
+          .slice(0, 800)}`,
+      );
     });
   await page.evaluate(() => window.ajourDesktop.getCliCommand());
   const added = await page.evaluate(
@@ -429,14 +436,33 @@ async function checkWsl(page, version, baseUrl) {
     return (await post("/api/mcp/clients", { name: "WSL check" })).token;
   }, baseUrl);
   if (!token) throw new Error("No WSL check token.");
+  // The app reads the MCP setting at launch: a reload opens the bridge.
+  await page.reload();
+  await page.waitForLoadState("domcontentloaded");
   // The token is a short-lived fixture. Passing it as an argument avoids shell interpolation.
-  const status = await inWsl("bash", [
-    "-lc",
-    'export AJOUR_URL="$1" AJOUR_TOKEN="$2"; ajour status',
-    "sh",
-    baseUrl,
-    token,
-  ]);
+  const ajourStatus = () =>
+    inWsl("bash", [
+      "-lc",
+      'export AJOUR_URL="$1" AJOUR_TOKEN="$2"; ajour status',
+      "sh",
+      baseUrl,
+      token,
+    ]);
+  // The window answers once its bridge is open.
+  let status;
+  for (const deadline = Date.now() + 30_000; ;) {
+    try {
+      status = await ajourStatus();
+      break;
+    } catch (error) {
+      if (
+        Date.now() > deadline ||
+        !String(error.message).includes("Open the Ajour window")
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
   expect(
     status.stdout.trim().length > 0,
     "ajour status reaches the real app through the relay",
