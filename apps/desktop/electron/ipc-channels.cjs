@@ -62,6 +62,10 @@ const IPC_CHANNELS = {
   },
   // The running entry for the tray icon, sent when it changes.
   "ajour:set-tray-state": { event: "tray.set_state", mode: "message" },
+  "ajour:tray-panel-command": {
+    event: "tray.panel_command",
+    mode: "message",
+  },
   "ajour:check-for-updates": { event: "update.check", mode: "invoke" },
   "ajour:get-update-state": { event: "update.get_state", mode: "invoke" },
   "ajour:update-and-restart": { event: "update.install", mode: "invoke" },

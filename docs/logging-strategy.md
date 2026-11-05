@@ -1063,6 +1063,7 @@ channel to read the event each emits.
 | `timesheet_import.commit`            | command                            | store command                                    |
 | `timesheet_import.dismiss`           | command                            | store command                                    |
 | `timesheet_import.stage`             | command                            | store command                                    |
+| `tray.panel_command`                 | ipc                                | IPC channel                                      |
 | `tray.set_state`                     | ipc                                | IPC channel                                      |
 | `undo.expire`                        | command                            | store command                                    |
 | `undo.group`                         | command                            | store command                                    |

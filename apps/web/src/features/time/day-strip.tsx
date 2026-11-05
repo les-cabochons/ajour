@@ -25,6 +25,7 @@ function formatDayNumber(localDate: string) {
  * its element, and `dropTargetDate` lights up the one under the pointer.
  */
 export function DayStrip({
+  compact = false,
   date,
   today,
   weekDates,
@@ -35,6 +36,7 @@ export function DayStrip({
   dropTargetDate,
   registerDropTarget,
 }: {
+  compact?: boolean;
   date: string;
   today: string;
   weekDates: string[];
@@ -50,7 +52,7 @@ export function DayStrip({
       className="day-strip"
       style={{
         gridTemplateColumns: weekDates.length
-          ? `repeat(${weekDates.length}, minmax(0, 1fr)) auto`
+          ? `repeat(${weekDates.length}, minmax(0, 1fr))${compact ? "" : " auto"}`
           : "auto",
       }}
       role="tablist"
@@ -81,7 +83,9 @@ export function DayStrip({
             )}
           >
             <span className="day-strip-weekday">{formatWeekday(day)}</span>
-            <span className="day-strip-number">{formatDayNumber(day)}</span>
+            {compact ? null : (
+              <span className="day-strip-number">{formatDayNumber(day)}</span>
+            )}
             <Value
               className={cn("day-strip-hours", value === "0:00" && "is-empty")}
               tone={isSelected ? "default" : "muted"}
@@ -91,12 +95,14 @@ export function DayStrip({
           </button>
         );
       })}
-      <div className="day-strip-total">
-        <span className="day-strip-total-label">{totalLabel}</span>
-        <Value size="base" className="day-strip-total-value">
-          {totalValue}
-        </Value>
-      </div>
+      {compact ? null : (
+        <div className="day-strip-total">
+          <span className="day-strip-total-label">{totalLabel}</span>
+          <Value size="base" className="day-strip-total-value">
+            {totalValue}
+          </Value>
+        </div>
+      )}
     </div>
   );
 }

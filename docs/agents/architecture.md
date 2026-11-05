@@ -926,3 +926,11 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
   nothing about what a plugin does with data it may read. No page needs a
   weaker wording for any plugin, because a plugin that isn't built for API 4
   does not run.
+
+## Compact desktop timer panel
+
+The desktop tray panel, specified in [#609](https://github.com/les-cabochons/ajour/issues/609), is a trusted blank child window of the main renderer. `features/layout/desktop-tray-panel.tsx` renders it through a React portal. It starts no second app, local store, agent bridge or sync scheduler. Its hooks, action dispatch and canonical entry form run in the owning renderer. The child preload exposes no desktop bridge and reads no bootstrap state. Existing main-window IPC sender checks stay in place.
+
+`apps/desktop/electron/tray-panel.cjs` owns native visibility, placement, dismissal and destruction. The owner alone sends ready, hide and open-main commands through `ajour:tray-panel-command`. Child navigation and child-created windows are blocked. The default session serves only the app and this trusted child; plugin renderers keep their isolated partitions.
+
+`components/ui/portal-container.tsx` supplies the child document to shared popup wrappers. The normal app uses their default container. Each window renders the same Undo toast manager in its own document. Cross-document events use the element's owner document rather than assuming the main window's Node constructor.

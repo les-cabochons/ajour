@@ -1869,6 +1869,17 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** A command from the compact timer panel: which one, never its content. */
+    "tray.panel_command": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        tray_panel: {
+          command: operational<"ready" | "hide" | "open-main">(),
+        },
+      },
+    },
     /** The running entry for the tray icon: whether one runs, never its title. */
     "tray.set_state": {
       kinds: ["ipc"],

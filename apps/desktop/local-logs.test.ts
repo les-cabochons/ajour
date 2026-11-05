@@ -1,3 +1,4 @@
+import { createTrayPanelController } from "./electron/tray-panel.cjs";
 import {
   mkdir,
   mkdtemp,
@@ -20,6 +21,16 @@ import { noWindowSession, recordingEvents } from "./recording-events.ts";
 // inside Electron, so these tests run its own statements, the ones that make
 // the local log file and the shared sink and register the logs channels, in
 // a VM context, with a temporary user data folder.
+
+function emptyTrayPanel() {
+  return createTrayPanelController({
+    platform: "win32",
+    getBounds: () => ({ x: 0, y: 0, width: 20, height: 20 }),
+    getWorkArea: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
+    request: () => {},
+    visibility: () => {},
+  });
+}
 
 const require = createRequire(import.meta.url);
 const {
@@ -149,6 +160,7 @@ async function mainProcess({
     },
     mainWindow: activeWindow,
     tray: { remove: () => {} },
+    trayPanel: emptyTrayPanel(),
     refusedSender,
     ipc: createIpcListeners(
       {

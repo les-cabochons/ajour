@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { cn } from "@/lib/utils";
+import { usePortalContainer } from "@/components/ui/portal-container";
 
 function HoverCard({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="hover-card" {...props} />;
@@ -42,7 +43,7 @@ function HoverCardContent({
     positionerClassName?: string;
   }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={usePortalContainer()}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

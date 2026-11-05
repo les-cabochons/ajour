@@ -155,7 +155,8 @@ export function useRowHoverCard(
       // A pressed button is a drag or a selection, not a look.
       if (event.pointerType !== "mouse" || event.buttons !== 0) return;
       const row =
-        event.target instanceof Element
+        event.target instanceof
+        (list?.ownerDocument.defaultView?.Element ?? Element)
           ? event.target.closest<HTMLElement>(rowSelector)
           : null;
       const id = row && list!.contains(row) ? readId(row) : undefined;
@@ -170,14 +171,15 @@ export function useRowHoverCard(
     list.addEventListener("pointerdown", dismiss, true);
     list.addEventListener("contextmenu", dismiss, true);
     list.addEventListener(closeOnScroll, dismiss, { passive: true });
-    window.addEventListener("blur", dismiss);
+    const ownerWindow = list.ownerDocument.defaultView ?? window;
+    ownerWindow.addEventListener("blur", dismiss);
     return () => {
       list.removeEventListener("pointerover", onPointerOver);
       list.removeEventListener("pointerleave", leave);
       list.removeEventListener("pointerdown", dismiss, true);
       list.removeEventListener("contextmenu", dismiss, true);
       list.removeEventListener(closeOnScroll, dismiss);
-      window.removeEventListener("blur", dismiss);
+      ownerWindow.removeEventListener("blur", dismiss);
       intent.dispose();
     };
   }, [closeOnScroll, container, intent, readId, rowSelector]);

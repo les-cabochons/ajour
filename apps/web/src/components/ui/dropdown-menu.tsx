@@ -1,3 +1,4 @@
+import { usePortalContainer } from "@/components/ui/portal-container";
 import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 
@@ -9,7 +10,13 @@ function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
-  return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />;
+  return (
+    <MenuPrimitive.Portal
+      container={usePortalContainer()}
+      data-slot="dropdown-menu-portal"
+      {...props}
+    />
+  );
 }
 
 function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
@@ -29,7 +36,7 @@ function DropdownMenuContent({
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
   return (
-    <MenuPrimitive.Portal>
+    <MenuPrimitive.Portal container={usePortalContainer()}>
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

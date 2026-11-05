@@ -62,30 +62,33 @@ function msUntilNextLocalDay(now: number) {
   return Math.max(1000, next.getTime() - now + 1000);
 }
 
+function subscribeToToday(listener: () => void) {
+  let id: number | undefined;
+  const schedule = () => {
+    id = window.setTimeout(() => {
+      listener();
+      schedule();
+    }, msUntilNextLocalDay(Date.now()));
+  };
+  schedule();
+  return () => window.clearTimeout(id);
+}
+
+const getToday = () => todayIsoDateFrom(Date.now());
+
 /**
  * Today's ISO date, refreshed once the local day changes. One timeout per
  * subscriber, so an idle app rolls its "today" readouts over at midnight
- * without a running clock.
+ * without a running clock. Read on every render, so a view that missed
+ * midnight while paused (a hidden `Activity`) shows today when it resumes.
  */
 export function useTodayIsoDate() {
-  const [today, setToday] = useState(() => todayIsoDateFrom(Date.now()));
-
-  useEffect(() => {
-    let id: number | undefined;
-    const schedule = () => {
-      id = window.setTimeout(() => {
-        setToday(todayIsoDateFrom(Date.now()));
-        schedule();
-      }, msUntilNextLocalDay(Date.now()));
-    };
-    schedule();
-    return () => window.clearTimeout(id);
-  }, []);
-
-  return today;
+  return useSyncExternalStore(subscribeToToday, getToday, getToday);
 }
+
+const isoDateFormat = new Intl.DateTimeFormat("en-CA");
 
 /** The same local ISO date as `todayIsoDate` in `lib/utils`, for a given instant. */
 function todayIsoDateFrom(now: number) {
-  return new Intl.DateTimeFormat("en-CA").format(new Date(now));
+  return isoDateFormat.format(new Date(now));
 }

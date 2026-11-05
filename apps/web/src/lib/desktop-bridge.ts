@@ -287,6 +287,13 @@ declare global {
       ) => Promise<DesktopWindowSettings>;
       /** Sends the running entry to the tray icon, one way. */
       setTrayState?: (state: DesktopTrayState, trace?: TraceCarrier) => void;
+      trayPanelCommand?: (
+        command: "ready" | "hide" | "open-main",
+        trace?: TraceCarrier,
+      ) => void;
+      onTrayPanel?: (
+        callback: (command: "open" | "show" | "hide") => void,
+      ) => () => void;
       /** Runs `callback` with each action the tray menu asks for. */
       onTrayAction?: (
         callback: (action: DesktopTrayAction) => void,

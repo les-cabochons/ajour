@@ -1,5 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// A blank child has no entrypoint or privileged bridge. Its DOM is rendered
+// by the owner's React tree, which remains the only local-state writer.
+const isTrayPanel =
+  typeof location !== "undefined" && location.href === "about:blank";
+
 // The edit menu's Copy on selected text. The page copies the focused entries on
 // any copy event, so this one copy skips the page's listeners and stays the
 // browser's own copy, with formatting and links. The pass is in place before
@@ -42,10 +47,12 @@ const invoke = (channel, ...args) =>
     );
   });
 
-const bootstrapLocalState = ipcRenderer.sendSync(
-  "ajour:get-bootstrap-local-state",
-);
-const runtime = ipcRenderer.sendSync("ajour:get-runtime-info");
+const bootstrapLocalState = isTrayPanel
+  ? null
+  : ipcRenderer.sendSync("ajour:get-bootstrap-local-state");
+const runtime = isTrayPanel
+  ? null
+  : ipcRenderer.sendSync("ajour:get-runtime-info");
 
 // Whether the page forwards its wide events to the local log file: whether
 // main is writing it, from the runtime info and then each change main
@@ -63,10 +70,10 @@ ipcRenderer.on("ajour:wide-events-forwarding", (_event, forwarding) => {
   }
 });
 
-contextBridge.exposeInMainWorld("ajourDesktop", {
+const desktopApi = {
   bootstrapLocalState,
   runtime,
-  appMenu: ipcRenderer.sendSync("ajour:get-app-menu"),
+  appMenu: isTrayPanel ? null : ipcRenderer.sendSync("ajour:get-app-menu"),
   onMenuAction: (callback) => {
     const listener = (_event, action) => callback(action);
     ipcRenderer.on("ajour:menu-action", listener);
@@ -88,6 +95,13 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     invoke("ajour:configure-window-settings", settings, ...traced(trace)),
   setTrayState: (state, trace) =>
     ipcRenderer.send("ajour:set-tray-state", state, ...traced(trace)),
+  trayPanelCommand: (command, trace) =>
+    ipcRenderer.send("ajour:tray-panel-command", command, ...traced(trace)),
+  onTrayPanel: (callback) => {
+    const listener = (_event, command) => callback(command);
+    ipcRenderer.on("ajour:tray-panel", listener);
+    return () => ipcRenderer.removeListener("ajour:tray-panel", listener);
+  },
   onTrayAction: (callback) => {
     const listener = (_event, action) => callback(action);
     ipcRenderer.on("ajour:tray-action", listener);
@@ -169,4 +183,5 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
       forwardingListeners.delete(callback);
     };
   },
-});
+};
+if (!isTrayPanel) contextBridge.exposeInMainWorld("ajourDesktop", desktopApi);

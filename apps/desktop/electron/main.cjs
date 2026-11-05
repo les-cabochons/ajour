@@ -20,6 +20,7 @@ const {
   powerMonitor,
   protocol,
   safeStorage,
+  screen,
   session,
   shell,
   Tray,
@@ -36,6 +37,7 @@ const {
 } = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const { createCliCommandController } = require("./cli-command.cjs");
+const { createTrayPanelController } = require("./tray-panel.cjs");
 const { createManualRedirectFetch } = require("./manual-redirect-fetch.cjs");
 const {
   createPowerShellRegistry,
@@ -352,7 +354,38 @@ const tray = createTrayController({
   createTray: () => new Tray(trayIcon()),
   buildMenu: (template) => Menu.buildFromTemplate(template),
   onAction: runTrayAction,
+  onPanelRequested: () => trayPanel.toggle(),
+  imageForState: (running) => trayIcon(running),
 });
+
+const trayPanel = createTrayPanelController({
+  platform: process.platform,
+  getBounds: () => tray.bounds(),
+  getWorkArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
+  request: () => sendTrayPanelState("open"),
+  visibility: (visible) => {
+    // The panel's document runs on its owner's frame clock, which Chromium
+    // pauses while the owner is hidden: popups would freeze mid-animation.
+    // The owner runs unthrottled only while the panel shows.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.setBackgroundThrottling(!visible);
+    }
+    sendTrayPanelState(visible ? "show" : "hide");
+  },
+});
+
+// Returns false when there is no window to render the panel.
+function sendTrayPanelState(state) {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
+  ) {
+    return false;
+  }
+  mainWindow.webContents.send("ajour:tray-panel", state);
+  return true;
+}
 
 // The ajour command, installed from Settings › General › Terminal (#568).
 // A development build has no release of its own version, so it installs
@@ -729,6 +762,19 @@ ipc.onMessage("ajour:set-tray-state", (event, state) => {
   assertActiveDesktopWindow(event, "update the tray icon");
   tray.setState(state);
   events.current()?.set({ tray: { running: tray.entry() !== null } });
+});
+
+ipc.onMessage("ajour:tray-panel-command", (event, command) => {
+  assertActiveDesktopWindow(event, "control the timer panel");
+  if (["ready", "hide", "open-main"].includes(command)) {
+    events.current()?.set({ tray_panel: { command } });
+  }
+  if (command === "ready") trayPanel.ready();
+  else if (command === "hide") trayPanel.hide();
+  else if (command === "open-main") {
+    trayPanel.hide();
+    showMainWindow();
+  }
 });
 
 ipc.handle("ajour:check-for-updates", async (event, track) => {
@@ -1301,16 +1347,21 @@ function getContextMenuIcon(icon) {
 /**
  * Shows the edit menu on a right-click that no object menu claimed. Object
  * menus cancel the page's contextmenu event, so Electron only reports the
- * right-clicks they leave alone.
+ * right-clicks they leave alone. `copySelection` copies selected text outside
+ * a field; the main window's page needs it to skip its own copy listeners.
  */
-function showEditContextMenu(window, params) {
+function showEditContextMenu(
+  window,
+  params,
+  copySelection = () => window.webContents.send("ajour:copy-selection"),
+) {
   const { webContents } = window;
   const template = buildEditContextMenuTemplate(params, {
     replaceMisspelling: (word) => webContents.replaceMisspelling(word),
     addToDictionary: (word) =>
       webContents.session.addWordToSpellCheckerDictionary(word),
     copyText: (text) => clipboard.writeText(text),
-    copySelection: () => webContents.send("ajour:copy-selection"),
+    copySelection,
   });
   if (template.length > 0) {
     Menu.buildFromTemplate(template).popup({
@@ -1675,13 +1726,38 @@ function stopInternalAppApiWithinTimeout() {
 }
 
 /** The tray icon's image: Windows reads its sizes from the .ico. */
-function trayIcon() {
-  if (process.platform === "win32") {
+function trayIcon(running = false) {
+  if (process.platform === "darwin") {
+    const mark = nativeImage.createFromPath(
+      path.join(path.dirname(iconPath), "ajour-logo-mark.png"),
+    );
+    const image = mark.resize({ width: 16, height: 16 });
+    image.addRepresentation({
+      scaleFactor: 2,
+      buffer: mark.resize({ width: 32, height: 32 }).toPNG(),
+    });
+    image.setTemplateImage(true);
+    return image;
+  }
+  if (process.platform === "win32" && !running) {
     return path.join(path.dirname(iconPath), "ajour-icon.ico");
   }
-  return nativeImage
+  const image = nativeImage
     .createFromPath(iconPath)
-    .resize({ width: 16, height: 16, quality: "best" });
+    .resize({ width: 32, height: 32, quality: "best" });
+  if (!running) return image;
+  // Native bitmaps are BGRA. A small running mark stays legible at tray size.
+  const bitmap = image.toBitmap();
+  for (let y = 19; y < 32; y++)
+    for (let x = 19; x < 32; x++) {
+      if ((x - 25) ** 2 + (y - 25) ** 2 > 36) continue;
+      const offset = (y * 32 + x) * 4;
+      bitmap[offset] = 120;
+      bitmap[offset + 1] = 185;
+      bitmap[offset + 2] = 30;
+      bitmap[offset + 3] = 255;
+    }
+  return nativeImage.createFromBitmap(bitmap, { width: 32, height: 32 });
 }
 
 /**
@@ -1709,6 +1785,7 @@ function runTrayAction(action, entry) {
  * windows. Opens a new one when there is none.
  */
 function showMainWindow() {
+  trayPanel.hide();
   if (!mainWindow || mainWindow.isDestroyed()) {
     createMainWindow("activate").catch(quitAfterStartupFailure);
     return;
@@ -1835,6 +1912,7 @@ let updateQuit = null;
  * Resolves the stop outcome, for the install's event.
  */
 async function prepareToInstallUpdate() {
+  trayPanel.destroy();
   const quit = startQuit("update_install");
   updateQuit = { quit, outcome: undefined };
   const stopStartedAt = Date.now();
@@ -2076,6 +2154,7 @@ async function createMainWindow(trigger = "launch") {
   window.once("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;
+      trayPanel.destroy();
     }
   });
 
@@ -2090,9 +2169,47 @@ async function createMainWindow(trigger = "launch") {
     },
   });
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    // Only this blank child is rendered by the owner through a React portal.
+    // It loads no app entrypoint, so there is still one store and one bridge.
+    if (url === "about:blank" && frameName === "ajour-tray-panel") {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 360,
+          height: 680,
+          minWidth: 0,
+          minHeight: 0,
+          show: false,
+          frame: process.platform === "linux",
+          resizable: process.platform === "linux",
+          // Linux has no popup: its regular window stays findable.
+          skipTaskbar: process.platform !== "linux",
+          alwaysOnTop: process.platform !== "linux",
+          autoHideMenuBar: true,
+          title: "Ajour timer",
+          backgroundColor: nativeTheme.shouldUseDarkColors
+            ? "#171717"
+            : "#ffffff",
+          ...(process.platform === "darwin" ? { type: "panel" } : {}),
+        },
+      };
+    }
     followNavigation(url, classifyNavigation(url, rendererUrl), "window_open");
     return { action: "deny" };
+  });
+
+  window.webContents.on("did-create-window", (child, details) => {
+    if (details.frameName !== "ajour-tray-panel") return;
+    trayPanel.attach(child);
+    child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    child.webContents.on("will-navigate", (event) => event.preventDefault());
+    child.webContents.on("will-redirect", (event) => event.preventDefault());
+    // The panel's fields get the main window's edit menu. Its document has
+    // none of the page's copy listeners, so Copy is the browser's own.
+    child.webContents.on("context-menu", (_event, params) => {
+      showEditContextMenu(child, params, () => child.webContents.copy());
+    });
   });
 
   window.on("session-end", recordSessionEnd);
@@ -2238,8 +2355,8 @@ if (!hasSingleInstanceLock) {
       }
 
       // Before the window opens, so its first request to the API has it.
-      // The hook sits on the default session, so the window must stay that
-      // session's only user: plugin renderers use their own partitions, and
+      // The hook sits on the default session, used only by the app and its
+      // trusted blank timer child. Plugin renderers use their own partitions, and
       // moving the window to one would orphan the renderer's localStorage.
       // Electron allows one onBeforeSendHeaders listener per session, so no
       // other code may register one on it.
@@ -2336,6 +2453,9 @@ if (!hasSingleInstanceLock) {
     }
 
     gracefulQuitStarted = true;
+    // Close the portal document while its owner can still unmount it. Leaving
+    // a same-process child until the owner's closed event can stall Chromium.
+    trayPanel.destroy();
     const quitStartedAt = Date.now();
     const quit = systemQuitRecorded ? undefined : startQuit(quitTrigger);
     if (pluginCatalogRefreshTimer) {
@@ -2372,6 +2492,7 @@ if (!hasSingleInstanceLock) {
         // and take the tray icon down, which Windows would leave behind.
         localLogs.drainSync();
         tray.remove();
+        trayPanel.destroy();
         app.exit(0);
         return;
       }
@@ -2388,6 +2509,7 @@ if (!hasSingleInstanceLock) {
     // and the process exits before the batch timer. Write them now.
     localLogs.drainSync();
     tray.remove();
+    trayPanel.destroy();
   });
 
   app.on("window-all-closed", () => {

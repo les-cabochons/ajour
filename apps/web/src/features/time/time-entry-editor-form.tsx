@@ -377,7 +377,10 @@ export function TimeEntryEditorForm({
     // Fields that already saved on Enter mark the event as handled.
     if (
       event.defaultPrevented ||
-      !(event.target instanceof Node) ||
+      !(
+        event.target instanceof
+        (rootRef.current?.ownerDocument.defaultView?.Node ?? Node)
+      ) ||
       !rootRef.current?.contains(event.target)
     ) {
       return;
