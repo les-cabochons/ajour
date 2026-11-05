@@ -1,5 +1,5 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
-import { placeFloatingComposer } from "@/lib/floating-composer";
+import { placeFloatingComposerFor } from "@/lib/floating-composer";
 import {
   EMPTY_ENTRY_SELECTION,
   selectEntryOnClick,
@@ -1029,15 +1029,19 @@ export function BacklogPage() {
             )}
             overlay={narrow}
             showCloseButton={false}
-            // Off the edited row, so it stays readable while it is edited.
+            // Off the edited row, so it stays readable while it is edited;
+            // placed once per item, not on every render of the page.
             ref={(popup: HTMLDivElement | null) => {
-              if (!narrow && target.kind === "edit")
-                placeFloatingComposer(
-                  popup,
-                  document.querySelector(
-                    `.backlog-workspace [data-work-item-id="${CSS.escape(target.workItem._id)}"]`,
-                  ),
-                );
+              if (narrow) return;
+              const itemId =
+                target.kind === "edit" ? target.workItem._id : undefined;
+              placeFloatingComposerFor(popup, itemId ?? "new", () =>
+                itemId
+                  ? document.querySelector(
+                      `.backlog-workspace [data-work-item-id="${CSS.escape(itemId)}"]`,
+                    )
+                  : null,
+              );
             }}
           >
             {editorForm(DialogTitle)}
