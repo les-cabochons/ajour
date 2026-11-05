@@ -750,15 +750,19 @@ When("I open Settings directly", async ({ page }) => {
 });
 
 /**
- * Marks the page's main element before Settings opens. The mark lives on
- * the DOM node, so it survives only while that node stays mounted.
+ * Marks the Time page's own root before Settings opens. The mark lives on
+ * the DOM node, so it survives only while the page component stays mounted;
+ * the shell's main element around the route would survive a remount.
  */
 const PAGE_MARK = "data-page-before-settings";
+const PAGE_ROOT = "main .time-page-stack";
 
 When("I open Settings from the desktop sidebar", async ({ page }) => {
+  // The page's code may still be loading after a goto.
+  await page.locator(PAGE_ROOT).first().waitFor();
   await page.evaluate(
-    (mark) => document.querySelector("main")?.setAttribute(mark, ""),
-    PAGE_MARK,
+    ([root, mark]) => document.querySelector(root)?.setAttribute(mark, ""),
+    [PAGE_ROOT, PAGE_MARK] as const,
   );
   const settingsLink = page
     .getByRole("navigation", { name: "Primary navigation" })
@@ -771,12 +775,12 @@ When("I open Settings from the desktop sidebar", async ({ page }) => {
 // element is still there, not a remount.
 Then("the page stays mounted behind the window", async ({ page }) => {
   await expect(settingsWindow(page)).toBeVisible();
-  await expect(page.locator(`main[${PAGE_MARK}]`)).toHaveCount(1);
+  await expect(page.locator(`${PAGE_ROOT}[${PAGE_MARK}]`)).toHaveCount(1);
 });
 
 Then("the same page is back", async ({ page }) => {
   await expect(settingsWindow(page)).toHaveCount(0);
-  await expect(page.locator(`main[${PAGE_MARK}]`)).toHaveCount(1);
+  await expect(page.locator(`${PAGE_ROOT}[${PAGE_MARK}]`)).toHaveCount(1);
 });
 
 When("I open Plugins from the Settings navigation", async ({ page }) => {

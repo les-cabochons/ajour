@@ -186,11 +186,20 @@ function NewEntryButton() {
 function WindowNewEntryButton() {
   const today = useTodayIsoDate();
   const [open, setOpen] = useState(false);
+  // One entry editor at a time, as the titlebar's host keeps it: opening
+  // either of the card's editors closes the other.
+  const runningOpen = useRunningEntryEditor(true);
+  useEffect(() => {
+    if (runningOpen) setOpen(false);
+  }, [runningOpen]);
   return (
     <TimeEntryEditorPopover
       target={{ kind: "create", localDate: today }}
-      open={open}
-      onOpenChange={setOpen}
+      open={open && !runningOpen}
+      onOpenChange={(next) => {
+        if (next) setRunningEntryEditorOpen(false);
+        setOpen(next);
+      }}
       triggerLabel="Create time entry"
       triggerShortcut="entry.new"
       iconTrigger
