@@ -69,10 +69,11 @@ function escapesFolder(name) {
  *   appVersion: string,
  *   development: boolean,
  *   releaseOrigin?: string,
+ *   allowAdHocSignature?: boolean,
  *   paths: { installDir: string, recordFile: string, tar: string },
  *   link: {
- *     add(folder: string): Promise<{ added: boolean }>,
- *     remove(folder: string): Promise<unknown>,
+ *     add(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean }>,
+ *     remove(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean, cleanupSafe?: boolean }>,
  *   },
  *   now?: () => number,
  *   env?: Record<string, string | undefined>,
@@ -89,6 +90,7 @@ function createCliCommandController({
   releaseOrigin,
   paths,
   link,
+  allowAdHocSignature = false,
   now = Date.now,
   env = process.env,
 }) {
@@ -104,12 +106,11 @@ function createCliCommandController({
   const asset = cliAssetName(platform, arch, appVersion);
   const binary = binaryName(platform);
   // A version with no release tag was never released: it builds from source.
-  const unsupportedReason =
-    platform !== "win32"
-      ? "unsupported_platform"
-      : (development && !localOrigin) || !tag
-        ? "development_build"
-        : null;
+  const unsupportedReason = !["win32", "darwin"].includes(platform)
+    ? "unsupported_platform"
+    : (development && !localOrigin) || !tag
+      ? "development_build"
+      : null;
 
   const listeners = new Set();
   /** The state while an install runs, or after one failed; null otherwise. */
@@ -160,7 +161,10 @@ function createCliCommandController({
       ? {
           version: record.version,
           binaryPath: record.binaryPath,
-          location: path.dirname(record.binaryPath),
+          location:
+            platform === "darwin"
+              ? "/usr/local/bin/ajour"
+              : path.dirname(record.binaryPath),
         }
       : {};
   }
@@ -539,7 +543,7 @@ function createCliCommandController({
   const isOldName = (candidate, name) =>
     new RegExp(`^${name.replaceAll(".", "\\.")}\\.old-${ID}$`).test(candidate);
 
-  async function reconcileDisk() {
+  async function reconcileDisk(interactive = false) {
     const names = await namesIn(paths.installDir);
     let record = await readRecordFile();
     const entries = [binary, "share"];
@@ -587,6 +591,17 @@ function createCliCommandController({
       await fs.rm(paths.recordFile, { force: true });
       record = null;
     }
+    // Removing a privileged link can require Retry. Keep its pending target
+    // intact until removal succeeds, so launch recovery cannot leave it dangling.
+    let result = { added: false };
+    if (record) result = await link.add(paths.installDir, { interactive });
+    else {
+      const removal = await link.remove(paths.installDir, { interactive });
+      if (removal?.cleanupSafe === false)
+        throw new Error(
+          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
+        );
+    }
     if (!record) {
       // A missing record proves nothing about files in the user's folder.
       // Only a fully written pending marker identifies an uncommitted swap.
@@ -609,9 +624,7 @@ function createCliCommandController({
         }
       }
     }
-    let result = { added: false };
-    if (record) result = await link.add(paths.installDir);
-    else await link.remove(paths.installDir);
+    // Link operations must confirm the committed target or absence before cleanup.
     for (const name of await namesIn(paths.installDir)) {
       const old = entries.some((entry) => isOldName(name, entry));
       if (
@@ -667,9 +680,10 @@ function createCliCommandController({
     let staging;
     let swapped = false;
     let committed = false;
+    let linkAdded = false;
     try {
       if (reconciliation) await reconciliation;
-      await reconcileDisk();
+      await reconcileDisk(platform === "darwin");
       initialized = true;
       // Retry repairs an existing commit without another download or swap.
       if (
@@ -698,6 +712,30 @@ function createCliCommandController({
       publishInstalling("checking");
       const unpacked = path.join(staging, "unpacked");
       await unpack(archive, unpacked);
+      if (platform === "darwin") {
+        try {
+          await exec(
+            "/usr/bin/codesign",
+            [
+              "--verify",
+              "--strict",
+              ...(development && localOrigin && allowAdHocSignature
+                ? []
+                : [
+                    "-R",
+                    'anchor apple generic and certificate leaf[subject.OU] = "DDX8GJH69G"',
+                  ]),
+              path.join(unpacked, binary),
+            ],
+            { timeout: VERSION_CHECK_TIMEOUT_MS },
+          );
+        } catch {
+          throw refusal(
+            "invalid_signature",
+            "The download isn't signed by Ajour. Nothing was installed.",
+          );
+        }
+      }
       await checkVersion(path.join(unpacked, binary));
       // From here the swap runs to its end, or rolls back: quitting waits.
       stopIfQuitting();
@@ -732,6 +770,9 @@ function createCliCommandController({
           await fs.rename(targetOf(name), asideOf(name, id));
         await fs.rename(path.join(unpacked, name), targetOf(name));
       }
+      if (platform === "darwin")
+        linkAdded = (await link.add(paths.installDir, { interactive: true }))
+          .added;
       await writeRecord({
         version: appVersion,
         binaryPath: targetOf(binary),
@@ -740,7 +781,7 @@ function createCliCommandController({
       });
       committed = true;
       const { added } = await reconcileDisk();
-      report.path_added = added;
+      report.path_added = added || linkAdded;
       report.result = "installed";
       newlyInstalled = true;
       transient = null;
@@ -753,8 +794,8 @@ function createCliCommandController({
         : error instanceof Error && error.message
           ? error.message
           : "Ajour couldn't install ajour.";
-      report.result = error instanceof CliInstallRefusal ? "refused" : "failed";
-      if (error instanceof CliInstallRefusal) {
+      report.result = error.reason ? "refused" : "failed";
+      if (error.reason) {
         unit?.refuse(error.reason);
       } else {
         unit?.fail(error);

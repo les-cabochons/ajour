@@ -246,3 +246,231 @@ module.exports = {
   pathWithFolder,
   checkPathRestoration,
 };
+
+/**
+ * Links into this install folder are owned, but only the committed binary is correct.
+ * Repair precedes reconciliation cleanup. Launch reconciliation never prompts.
+ * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access" | "mkdir" | "symlink">,
+ *   exec: (file: string, args: string[], options?: { timeout?: number }) => Promise<unknown> }} options
+ */
+function createMacosCommandLink({ fs, exec }) {
+  const destination = "/usr/local/bin/ajour";
+  const directory = path.posix.dirname(destination);
+  const failure = (reason, message) =>
+    Object.assign(new Error(message), { reason });
+  async function inspect(folder) {
+    let entry;
+    try {
+      entry = await fs.lstat(destination);
+    } catch (error) {
+      if (error.code === "ENOENT") return { kind: "absent" };
+      throw error;
+    }
+    if (!entry.isSymbolicLink()) return { kind: "foreign" };
+    const observed = await fs.readlink(destination);
+    const target = path.posix.resolve(directory, observed);
+    const relative = path.posix.relative(folder, target);
+    return relative &&
+      relative !== ".." &&
+      !relative.startsWith("../") &&
+      !path.posix.isAbsolute(relative)
+      ? { kind: "ours", target: observed }
+      : { kind: "foreign" };
+  }
+  async function ensure(folder, present, { interactive = false } = {}) {
+    const current = await inspect(folder);
+    if (current.kind === "foreign") {
+      if (!present) return { added: false, cleanupSafe: false };
+      throw failure(
+        "foreign_command",
+        "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
+      );
+    }
+    const target = path.posix.join(folder, "ajour");
+    const repair =
+      present && current.kind === "ours" && current.target !== target;
+    if (
+      (present && current.kind === "ours" && !repair) ||
+      (!present && current.kind === "absent")
+    )
+      return { added: false };
+    const canWrite = async (location) =>
+      fs.access(location, 2).then(
+        () => true,
+        (error) => {
+          if (["EACCES", "EPERM"].includes(error.code)) return false;
+          throw error;
+        },
+      );
+    let writable;
+    try {
+      writable = await canWrite(directory);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      writable = await canWrite(path.posix.dirname(directory)).catch(
+        (error) => {
+          if (error.code === "ENOENT") return false;
+          throw error;
+        },
+      );
+      if (writable) {
+        try {
+          await fs.mkdir(directory, { mode: 0o755 });
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+      }
+    }
+    if (!writable) {
+      const parentWritable = await canWrite("/usr/local").catch((error) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      if (parentWritable)
+        throw new Error(
+          "Ajour can't add ajour to /usr/local/bin: the folder isn't yours, but /usr/local is. Fix their owners, then try again.",
+        );
+      for (const ancestor of linkAncestors(destination)) {
+        let entry;
+        try {
+          entry = await fs.lstat(ancestor);
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
+        if (
+          entry.isSymbolicLink() ||
+          !entry.isDirectory() ||
+          entry.uid !== 0 ||
+          (entry.mode & 0o022) !== 0
+        )
+          throw new Error(
+            "Ajour can't safely change /usr/local/bin/ajour because an ancestor isn't a protected root-owned directory. Fix its owner and permissions, then press Retry in Settings.",
+          );
+      }
+    }
+    if (!writable && !interactive)
+      throw new Error(
+        "Ajour needs your password to repair /usr/local/bin/ajour. Press Retry in Settings.",
+      );
+    // Recheck before removing. A foreign replacement is never deliberately removed.
+    if (!present || repair) {
+      const checked = await inspect(folder);
+      if (checked.kind !== "ours" || checked.target !== current.target) {
+        throw new Error(
+          "The ajour link changed during reconciliation. Press Retry in Settings.",
+        );
+      }
+    }
+    const removal = guardedRemoval(destination, current.target ?? "");
+    const changed = () =>
+      new Error(
+        "The ajour link changed during reconciliation. Press Retry in Settings.",
+      );
+    if (writable) {
+      if (!present || repair) {
+        try {
+          await exec("/bin/sh", ["-c", removal], { timeout: 30_000 });
+        } catch {
+          throw changed();
+        }
+      }
+      if (present) {
+        try {
+          // symlink(2) fails for every existing destination, including a directory.
+          await fs.symlink(target, destination);
+        } catch {
+          throw new Error(
+            "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+          );
+        }
+      }
+    } else {
+      const { appleScript: script } = macosPrivilegedCommand({
+        destination,
+        target,
+        present,
+        observed: !present || repair ? current.target : "",
+      });
+      try {
+        await exec("/usr/bin/osascript", ["-e", script], { timeout: 120_000 });
+      } catch (error) {
+        if (/(-128|cancel)/i.test(`${error.message} ${error.stderr ?? ""}`))
+          throw failure(
+            "admin_cancelled",
+            "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+          );
+        if (!present) throw changed();
+        throw new Error(
+          "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+        );
+      }
+    }
+    if (!present && (await inspect(folder)).kind !== "absent") throw changed();
+    if (
+      present &&
+      (await fs.readlink(destination).catch(() => null)) !==
+        path.posix.join(folder, "ajour")
+    )
+      throw new Error(
+        "Ajour couldn't verify /usr/local/bin/ajour. Press Retry in Settings.",
+      );
+    return { added: present };
+  }
+  return {
+    add: (folder, options) => ensure(folder, true, options),
+    remove: (folder, options) => ensure(folder, false, options),
+  };
+}
+module.exports.createMacosCommandLink = createMacosCommandLink;
+
+const shellQuote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+function linkAncestors(destination) {
+  const result = ["/"];
+  for (const part of path.posix.dirname(destination).split("/").filter(Boolean))
+    result.push(path.posix.join(result[result.length - 1], part));
+  return result;
+}
+function guardedRemoval(destination, observed) {
+  const quote = shellQuote;
+  return `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(observed)} ]; then /bin/rm ${quote(destination)}; else exit 1; fi`;
+}
+/** Same builder for production and the real macOS check. No caller-controlled path reaches it from IPC. */
+function macosPrivilegedCommand({
+  destination,
+  target,
+  present,
+  observed = "",
+}) {
+  const quote = shellQuote;
+  const ancestors = linkAncestors(destination);
+  const verify = (directory) =>
+    `[ ! -L ${quote(directory)} ] && [ -d ${quote(directory)} ] || exit 1; set -- $(/usr/bin/stat -f '%u %Lp' ${quote(directory)}); [ "$#" -eq 2 ] && [ "$1" = 0 ] && [ "$((0$2 & 022))" -eq 0 ] || exit 1`;
+  const guards = ancestors.map(verify).join("; ");
+  // Each mkdir runs only under parents already verified in this invocation.
+  const prepare = ancestors
+    .map((directory, index) => {
+      const parents = ancestors.slice(0, index).map(verify).join("; ");
+      return `${parents ? parents + "; " : ""}if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then /bin/mkdir -m 755 ${quote(directory)} || exit 1; fi; ${verify(directory)}`;
+    })
+    .join("; ");
+  // Foundation normalizes Unicode paths. The POSIX call keeps the exact UTF-8
+  // target and atomically refuses every existing destination, including directories.
+  const jxa = `ObjC.import("Foundation"); ObjC.bindFunction("symlink", ["int", ["char *", "char *"]]); const env = $.NSProcessInfo.processInfo.environment; if ($.symlink(ObjC.unwrap(env.objectForKey("AJOUR_TARGET")), ObjC.unwrap(env.objectForKey("AJOUR_LINK"))) !== 0) throw new Error("Link creation failed");`;
+  const creation = `[ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && AJOUR_LINK=${quote(destination)} AJOUR_TARGET=${quote(target)} /usr/bin/osascript -l JavaScript -e ${quote(jxa)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
+
+  const removal = guardedRemoval(destination, observed);
+  const operation = present
+    ? observed
+      ? `${guards}; ${removal} && { ${guards}; ${creation}; }`
+      : `${guards}; ${creation}`
+    : `${guards}; ${removal}`;
+  const shell = `${prepare}; ${operation}`;
+  return {
+    shell,
+    appleScript: `do shell script ${JSON.stringify(shell)} with administrator privileges`,
+  };
+}
+// Electron never exports the destination override, including in packaged builds.
+if (!process.versions.electron)
+  module.exports.macosPrivilegedCommand = macosPrivilegedCommand;

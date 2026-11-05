@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+import { macosLinkFixture as fixture } from "./fake-macos-command-link.ts";
 import { recordingEvents } from "./recording-events.ts";
 
 /*
@@ -563,4 +564,234 @@ describe("literal Windows path comparison", () => {
       expect(fake.writes).toEqual([]);
     },
   );
+});
+
+describe("macOS command link", () => {
+  const { createMacosCommandLink } = require("./electron/cli-path.cjs");
+  it("refuses elevation through a writable parent of a protected bin", async () => {
+    const f = fixture({ writable: false, parentWritable: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("the folder isn't yours, but /usr/local is");
+    expect(f.calls).toEqual([]);
+  });
+  it("uses Node without elevation when both folders are writable", async () => {
+    const f = fixture({ writable: true, parentWritable: true });
+    await f.link().add("/Users/alex/bin", { interactive: true });
+    expect(f.calls.map((call) => call.file)).toEqual(["fs.symlink"]);
+  });
+  it("creates missing local and bin components through one elevation", async () => {
+    const f = fixture({ writable: false, parentMissing: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).resolves.toEqual({ added: true });
+    const script = f.calls[0]!.args[1]!;
+    expect(script).toContain("/bin/mkdir -m 755 '/usr/local'");
+    expect(script.indexOf("/bin/mkdir -m 755 '/usr/local'")).toBeLessThan(
+      script.indexOf("/bin/mkdir -m 755 '/usr/local/bin'"),
+    );
+    expect(script).not.toContain("mkdir -p");
+  });
+  it.each([
+    { ancestorUid: 501 },
+    { ancestorMode: 0o775 },
+    { ancestorSymlink: true },
+  ])("refuses unsafe ancestry before elevation: %j", async (options) => {
+    const f = fixture({ writable: false, ...options });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
+  it("creates an absent link directly without a password", async () => {
+    const f = fixture();
+    expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
+      added: true,
+    });
+    expect(f.calls).toEqual([
+      {
+        file: "fs.symlink",
+        args: ["/Users/alex/Ajour/bin/ajour", "/usr/local/bin/ajour"],
+      },
+    ]);
+  });
+  it.each([true, false])(
+    "refuses a directory link that appears before creation, writable=%s",
+    async (writable) => {
+      const f = fixture({
+        writable,
+        beforeCreate: () => f.replace("/another/directory"),
+      });
+      await expect(
+        f.link().add("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow();
+      expect(f.escaped).toEqual([]);
+      expect(f.current()).toBe("/another/directory");
+    },
+  );
+  it.each([true, false])(
+    "leaves a real directory empty when it appears after inspection, writable=%s",
+    async (writable) => {
+      const f = fixture({
+        writable,
+        beforeCreate: () => f.replaceWithDirectory(),
+      });
+      await expect(
+        f.link().add("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow(
+        "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+      );
+      expect(f.escaped).toEqual([]);
+      expect((await f.fs.lstat()).isSymbolicLink()).toBe(false);
+    },
+  );
+  it("creates a missing bin without privilege when its parent is writable", async () => {
+    const f = fixture({
+      directoryMissing: true,
+      parentWritable: true,
+      writable: false,
+    });
+    expect(await f.link().add("/Users/alex/bin")).toEqual({ added: true });
+    expect(f.calls.map((call) => call.file)).toEqual([
+      "fs.mkdir",
+      "fs.symlink",
+    ]);
+  });
+  it.each([
+    { directoryMissing: true, parentWritable: false },
+    { directoryUid: 501 },
+    { directoryMode: 0o775 },
+    { directoryMode: 0o757 },
+    { directorySymlink: true },
+  ])(
+    "checks the privileged directory before creating entries: %j",
+    async (options) => {
+      const f = fixture({ writable: false, ...options });
+      const result = f.link().add("/Users/alex/bin", { interactive: true });
+      if (options.directoryMissing) {
+        expect(await result).toEqual({ added: true });
+        const shell = JSON.parse(
+          f.calls[0]!.args[1]!.slice(
+            "do shell script ".length,
+            -" with administrator privileges".length,
+          ),
+        );
+        expect(shell).toContain("/bin/mkdir -m 755 '/usr/local/bin'");
+        expect(shell).not.toContain("mkdir -p");
+        expect(shell).toContain("[ ! -L '/usr/local/bin' ]");
+        expect(shell).toContain("/usr/bin/stat -f '%u %Lp'");
+      } else {
+        await expect(result).rejects.toThrow("Retry");
+        expect(f.current()).toBeNull();
+      }
+    },
+  );
+  it("refuses a user-owned bin appearing while the password prompt is open", async () => {
+    const f = fixture({
+      writable: false,
+      directoryMissing: true,
+      beforeExec: () => f.makeDirectoryUnsafe(),
+    });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("Retry");
+    expect(f.current()).toBeNull();
+  });
+  it("rejects success when the exact link no longer has the intended target", async () => {
+    const f = fixture();
+    const files = {
+      ...f.fs,
+      symlink: async (...args: Parameters<typeof f.fs.symlink>) => {
+        await f.fs.symlink(...args);
+        f.replace("/opt/homebrew/bin/ajour");
+      },
+    };
+    await expect(
+      createMacosCommandLink({ fs: files, exec: f.exec }).add(
+        "/Users/alex/Ajour/bin",
+      ),
+    ).rejects.toThrow(
+      "Ajour couldn't verify /usr/local/bin/ajour. Press Retry in Settings.",
+    );
+  });
+  it.each([true, false])(
+    "preserves a foreign replacement before removal, writable=%s",
+    async (writable) => {
+      let reads = 0;
+      const f = fixture({
+        target: "/Users/alex/Ajour/bin/ajour",
+        writable,
+        afterRead: () => {
+          if (++reads === 2) f.replace("/opt/homebrew/bin/ajour");
+        },
+      });
+      await expect(
+        f.link().remove("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow("changed during reconciliation");
+      expect(f.current()).toBe("/opt/homebrew/bin/ajour");
+    },
+  );
+  it("leaves an owned link alone", async () => {
+    const f = fixture({ target: "/Users/alex/Ajour/bin/ajour" });
+    expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
+      added: false,
+    });
+    expect(f.calls).toEqual([]);
+  });
+  it.each([
+    { foreignFile: true },
+    { target: "/opt/homebrew/bin/ajour" },
+    { target: "/Users/alex/Ajour/bin-other/ajour" },
+  ])("refuses foreign commands %j", async (options) => {
+    const f = fixture(options);
+    await expect(f.link().add("/Users/alex/Ajour/bin")).rejects.toThrow(
+      "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
+    );
+    await f.link().remove("/Users/alex/Ajour/bin");
+    expect(f.calls).toEqual([]);
+  });
+  it("quotes shell paths and the AppleScript string independently", async () => {
+    const f = fixture({ writable: false });
+    await f.link().add(`/Users/A "B"/it's\\$home/bin`, { interactive: true });
+    expect(f.calls[0]!.file).toBe("/usr/bin/osascript");
+    const script = f.calls[0]!.args[1]!;
+    expect(script).toContain("with administrator privileges");
+    // Decode only the AppleScript string. Shell quoting must survive unchanged.
+    const shell = JSON.parse(
+      script.slice(
+        "do shell script ".length,
+        -" with administrator privileges".length,
+      ),
+    );
+    expect(f.calls).toHaveLength(1);
+    expect(f.current()).toBe(`/Users/A "B"/it's\\$home/bin/ajour`);
+    expect(shell).not.toContain("/bin/ln");
+    expect(shell).toContain(
+      `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && AJOUR_LINK='/usr/local/bin/ajour'`,
+    );
+    expect(shell).toContain(
+      `AJOUR_TARGET='/Users/A "B"/it'"'"'s\\$home/bin/ajour' /usr/bin/osascript -l JavaScript`,
+    );
+    expect(shell).toContain(
+      `[ -L '/usr/local/bin/ajour' ] && [ "$(/usr/bin/readlink '/usr/local/bin/ajour')" = `,
+    );
+  });
+  it("refuses cancellation with the specified message", async () => {
+    const f = fixture({ writable: false, cancelled: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow(
+      "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+    );
+  });
+  it("does not prompt to clean an orphaned link during reconciliation", async () => {
+    const f = fixture({ target: "/Users/alex/bin/ajour", writable: false });
+    await expect(f.link().remove("/Users/alex/bin")).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
+  it("never prompts without an explicit action", async () => {
+    const f = fixture({ writable: false });
+    await expect(f.link().add("/Users/alex/bin")).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
 });

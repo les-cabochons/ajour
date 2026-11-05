@@ -29,12 +29,15 @@
 //
 // --skip-build reuses the last renderer build (apps/web/dist-desktop) and the
 // last CLI archive of the app's version (apps/cli/out/archives). --keep keeps the temp folder.
-// CI runs it on Windows (`.github/workflows/desktop-lifecycle.yml`). Exits 1
+// CI runs it on Windows and macOS (`.github/workflows/desktop-lifecycle.yml`). Exits 1
 // when anything fails.
 import { execFile, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import {
+  lstat,
+  readlink,
+  access,
   mkdtemp,
   readdir,
   rename,
@@ -61,10 +64,8 @@ const { _electron } = require(
   require.resolve("playwright", { paths: [repoRoot] }),
 );
 
-if (process.platform !== "win32") {
-  process.stdout.write(
-    "check:cli-command runs on Windows only; macOS comes with #569.\n",
-  );
+if (!["win32", "darwin"].includes(process.platform)) {
+  process.stdout.write("check:cli-command runs on Windows and macOS.\n");
   process.exit(0);
 }
 
@@ -231,7 +232,7 @@ function withPath(env, value) {
   const rest = Object.fromEntries(
     Object.entries(env).filter(([key]) => key.toLowerCase() !== "path"),
   );
-  return { ...rest, Path: value };
+  return { ...rest, [process.platform === "win32" ? "Path" : "PATH"]: value };
 }
 
 function runNode(script, env = {}) {
@@ -243,7 +244,9 @@ function runNode(script, env = {}) {
     // The system's tar, as the release runner's shell finds it first.
     env: withPath(
       { ...process.env, ...env },
-      `${path.join(systemRoot, "System32")};${inherited ?? ""}`,
+      process.platform === "win32"
+        ? `${path.join(systemRoot, "System32")};${inherited ?? ""}`
+        : (inherited ?? ""),
     ),
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -264,7 +267,7 @@ function buildCliArchive(release) {
 
 /** The release of `version`: its tag, asset and archive. */
 function releaseOf(version) {
-  const asset = `ajour-${version}-windows-${process.arch}.zip`;
+  const asset = `ajour-${version}-${process.platform === "darwin" ? "macos" : "windows"}-${process.arch}.${process.platform === "darwin" ? "tar.gz" : "zip"}`;
   return {
     tag: `v${version}`,
     asset,
@@ -588,4 +591,149 @@ async function main() {
   );
 }
 
-await main();
+// A durable ownership marker lets the next macOS run clean up a cut-short check.
+const LINK_BACKUP = path.join(os.tmpdir(), "ajour-check-cli-command-link.json");
+const LINK = "/usr/local/bin/ajour";
+async function cleanMacBackup() {
+  if (!existsSync(LINK_BACKUP)) return;
+  const saved = JSON.parse(readFileSync(LINK_BACKUP, "utf8"));
+  if (
+    typeof saved.temp !== "string" ||
+    path.dirname(saved.temp) !== os.tmpdir() ||
+    !path.basename(saved.temp).startsWith("ajour-cli-command-") ||
+    saved.binary !==
+      path.join(saved.temp, "Application Support", "Ajour", "bin", "ajour")
+  )
+    throw new Error("Invalid check cleanup folder.");
+
+  const entry = await lstat(LINK).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (entry?.isSymbolicLink() && (await readlink(LINK)) === saved.binary)
+    await rm(LINK);
+  else if (
+    entry?.isFile() &&
+    entry.size === Buffer.byteLength(saved.sentinel) &&
+    readFileSync(LINK, "utf8") === saved.sentinel
+  )
+    await rm(LINK);
+  else if (entry)
+    throw new Error(
+      "A foreign ajour replaced the check's link. It was left untouched.",
+    );
+  await rm(saved.temp, { recursive: true, force: true });
+  await rm(LINK_BACKUP);
+}
+async function macMain() {
+  await cleanMacBackup();
+  // Never change an existing developer command, even a broken symlink.
+  if (
+    await lstat(LINK).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    })
+  )
+    throw new Error(
+      "The check requires an absent /usr/local/bin/ajour. Existing command left untouched.",
+    );
+  await access("/usr/local/bin", 2);
+  const temp = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-command-"));
+  const installDir = path.join(temp, "Application Support", "Ajour", "bin");
+  const binary = path.join(installDir, "ajour");
+  const sentinel = `ajour check foreign file ${randomUUID()}\n`;
+  await writeFile(
+    `${LINK_BACKUP}.tmp`,
+    JSON.stringify({ binary, sentinel, temp }),
+    { mode: 0o600 },
+  );
+  await rename(`${LINK_BACKUP}.tmp`, LINK_BACKUP);
+  const port = await freePort();
+  const release = await serveRelease();
+  let electronApp;
+  try {
+    if (!process.argv.includes("--skip-build"))
+      buildRenderer(`http://127.0.0.1:${port}`);
+    const env = {
+      ...process.env,
+      AJOUR_USER_DATA_PATH: path.join(temp, "user-data"),
+      AJOUR_APP_API_PORT: String(port),
+      AJOUR_CLI_RELEASE_ORIGIN: release.origin,
+      AJOUR_CLI_INSTALL_DIR: installDir,
+      AJOUR_CLI_ADHOC_SIGNATURE: "1",
+    };
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.AJOUR_DESKTOP_RENDERER_URL;
+    delete env.ELECTRON_DISABLE_SANDBOX;
+    electronApp = await _electron.launch({
+      args: [checkMain],
+      cwd: desktopRoot,
+      env,
+      timeout: 60_000,
+    });
+    const page = await electronApp.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    const version = await electronApp.evaluate(({ app }) => app.getVersion());
+    const artifact = releaseOf(version);
+    // sea.mjs signs the injected Mach-O with the job's ad-hoc identity.
+    buildCliArchive(artifact);
+    release.serve(artifact, readFileSync(artifact.archivePath));
+    expect(
+      (await page.evaluate(() => window.ajourDesktop.getCliCommand()))
+        .status === "not-installed",
+      "fresh macOS profile is not installed",
+    );
+    await writeFile(LINK, sentinel, { flag: "wx" });
+    const refused = await page.evaluate(() =>
+      window.ajourDesktop.installCliCommand(),
+    );
+    expect(
+      refused.status === "error" &&
+        refused.error ===
+          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
+      "foreign file is refused",
+      refused,
+    );
+    expect(
+      readFileSync(LINK, "utf8") === sentinel,
+      "foreign file stays untouched",
+    );
+    await rm(LINK);
+    const installed = await page.evaluate(() =>
+      window.ajourDesktop.installCliCommand(),
+    );
+    expect(
+      installed.status === "installed" && installed.location === LINK,
+      "Settings installs through the macOS link",
+      installed,
+    );
+    expect(
+      (await readlink(LINK)) === binary,
+      "link points to the check's binary",
+    );
+    const { stdout } = await run(LINK, ["-V"], { timeout: 10_000 });
+    expect(
+      stdout.trim() === `ajour ${version}`,
+      "ajour -V runs through /usr/local/bin/ajour",
+      stdout,
+    );
+    await run("/usr/bin/codesign", ["--verify", "--strict", binary]);
+  } finally {
+    await electronApp?.close().catch(() => undefined);
+    await release.close();
+    await cleanMacBackup();
+    expect(
+      !(await lstat(LINK).catch(() => null)),
+      "the check leaves no link or foreign fixture",
+    );
+    await rm(temp, { recursive: true, force: true });
+    expect(
+      !existsSync(temp) && !existsSync(LINK_BACKUP),
+      "the check leaves no install or ownership marker",
+    );
+  }
+  if (failures.length)
+    throw new Error(`${failures.length} macOS CLI checks failed.`);
+}
+if (process.platform === "darwin") await macMain();
+else await main();

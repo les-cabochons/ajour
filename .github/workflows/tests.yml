@@ -313,6 +313,10 @@ jobs:
         env:
           AJOUR_SHELL_TESTS: "1"
 
+      - name: Check the real macOS privileged command link
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.LIFECYCLE == 'true' }}
+        run: node apps/desktop/scripts/check-macos-command-link.mjs
+
       # The package check, as in `package` on Windows. macOS builds both
       # architectures, because the unsigned binary is re-signed ad hoc after
       # the fuses are flipped and must still start.

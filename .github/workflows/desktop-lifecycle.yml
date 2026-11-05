@@ -9,10 +9,10 @@ name: Desktop lifecycle
 # Then it opens the window from the tray, finds the saved entry, quits from
 # the tray, and checks that no process the app started outlives the quit.
 #
-# On Windows it also runs `check:cli-command` (#568): the real app installs
+# Both platforms run `check:cli-command` (#568, #569): the real app installs
 # the ajour command, built in the job with the app's version, from a local
-# fake release, puts it on the runner's user Path, and a fresh PowerShell
-# runs `ajour -V`.
+# fake release. Windows checks the user Path in a fresh PowerShell. macOS
+# checks the signed binary through /usr/local/bin/ajour and refuses a foreign file.
 #
 # Windows and macOS, the systems the desktop app ships on. The `Tests`
 # workflow calls this one for pull requests that can change the desktop app,
@@ -96,6 +96,10 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
 
+      - name: Check the real macOS privileged command link
+        if: runner.os == 'macOS'
+        run: node apps/desktop/scripts/check-macos-command-link.mjs
+
       - name: Run the desktop lifecycle check
         # Windows and macOS runners have a desktop session, so Electron needs
         # no virtual display.
@@ -104,10 +108,14 @@ jobs:
           LOG: ${{ runner.temp }}/desktop-lifecycle.log
         run: corepack pnpm --filter @ajour/desktop check:keep-running 2>&1 | tee "$LOG"
 
+      - name: Prepare writable command directory on macOS
+        if: runner.os == 'macOS'
+        run: sudo mkdir -p /usr/local/bin && sudo chown "$(id -u):$(id -g)" /usr/local/bin
+
       - name: Run the ajour command install check
         # It reuses the renderer the lifecycle check built, and builds the
         # CLI archive of the app's version with the release scripts.
-        if: runner.os == 'Windows' && !cancelled()
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           LOG: ${{ runner.temp }}/cli-command.log

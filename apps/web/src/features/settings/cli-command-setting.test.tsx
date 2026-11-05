@@ -195,6 +195,16 @@ describe("the ajour command setting", () => {
     expect(mocks.success).not.toHaveBeenCalled();
   });
 
+  it("shows a skipped link removal and offers Retry without an installed record", async () => {
+    const error =
+      "The ajour link changed during reconciliation. Press Retry in Settings.";
+    const main = desktop({ status: "error", progress: null, error });
+    await mount();
+    expect(screen.getByRole("alert").textContent).toBe(error);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(main.installCliCommand).toHaveBeenCalledOnce();
+    await main.finish({ ...NOT_INSTALLED });
+  });
   it("disables Install from the click, before main's first change arrives", async () => {
     const main = desktop();
     await mount();
@@ -214,7 +224,7 @@ describe("the ajour command setting", () => {
     expect(screen.getByRole("link", { name: "How to use it" })).toBeTruthy();
   });
 
-  it("shows why an install failed next to the row, never in a toast, and offers Install again", async () => {
+  it("shows why an install failed next to the row, never in a toast, and offers Retry", async () => {
     const main = desktop();
     await mount();
     fireEvent.click(installButton());
@@ -230,7 +240,9 @@ describe("the ajour command setting", () => {
       screen.getByText("ajour command").closest(".settings-row"),
     );
     expect(mocks.error).not.toHaveBeenCalled();
-    expect(installButton().hasAttribute("disabled")).toBe(false);
+    expect(
+      screen.getByRole("button", { name: "Retry" }).hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("keeps showing the installed version when a newer install fails", async () => {
@@ -402,4 +414,18 @@ describe("the ajour command setting", () => {
 
     expect(main.unsubscribe).toHaveBeenCalledOnce();
   });
+});
+
+it("shows the macOS password hint before installation", async () => {
+  desktop();
+  window.ajourDesktop = {
+    ...window.ajourDesktop!,
+    runtime: { ...window.ajourDesktop!.runtime!, platform: "darwin" },
+  };
+  render(<CliCommandSetting />);
+  expect(
+    await screen.findByText(
+      "Asks for your password to add it to /usr/local/bin.",
+    ),
+  ).toBeTruthy();
 });

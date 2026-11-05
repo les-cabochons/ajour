@@ -4,15 +4,19 @@
 
 ## Install from Ajour
 
-On Windows, Ajour installs the command for you:
+On Windows and macOS, Ajour installs the command for you:
 
 1. In Ajour, open **Settings › General**. Under **Terminal**, press **Install** on the **ajour command** row.
-2. Ajour downloads the command of its own version from its release, checks it against the checksum GitHub publishes, and adds `%LOCALAPPDATA%\Ajour\bin` to your user Path. There is no administrator prompt.
+2. Ajour downloads the command of its own version from its release, checks it against the checksum GitHub publishes, and installs it. On Windows, it adds `%LOCALAPPDATA%\Ajour\bin` to your user Path with no administrator prompt. On macOS, it adds the link described below.
 3. Open a new terminal: one opened before doesn't see the new Path. Then [check it](#check-it) and [connect](#connect).
 
 The row then shows the version and its folder, which also holds `man` and `completions` for [Shell setup](/terminal/shell). When an install fails, the row says why, and nothing changes.
 
-On macOS and Linux, install from the archive below for now.
+On macOS, Ajour uses `~/Library/Application Support/Ajour/bin/` and links `/usr/local/bin/ajour` to the command. It checks the signature belongs to Ajour before running it. Ajour asks for your password when `/usr/local/bin` needs administrator access. Cancelling installs nothing. An existing command from another source stays untouched.
+
+If the link goes missing, Ajour repairs it at launch only when no password is needed. Otherwise Settings shows the reason and **Retry**, which can ask for your password.
+
+On Linux, install from the archive below.
 
 ## Download
 
