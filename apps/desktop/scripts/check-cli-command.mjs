@@ -447,6 +447,19 @@ async function checkFollow(electronApp, env, release, version, binary) {
               .join(";"),
         "Remove preserves the other Path entries and registry type",
       );
+      // Install trims trailing separators when appending. After Remove, the
+      // check's own expected write is that projection, not the appended Path.
+      // Derive it from the saved write so concurrent entries still prevent
+      // restoring the snapshot, just as they did before Remove existed.
+      const backup = JSON.parse(readFileSync(PATH_BACKUP, "utf8"));
+      backup.written = backup.written
+        .split(";")
+        .filter((entry) => entry !== folder)
+        .join(";");
+      await writeFile(`${PATH_BACKUP}.tmp`, JSON.stringify(backup), {
+        mode: 0o600,
+      });
+      await rename(`${PATH_BACKUP}.tmp`, PATH_BACKUP);
     }
   } finally {
     await app.close();

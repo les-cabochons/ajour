@@ -415,8 +415,8 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
 
-      - name: Package an unpacked app
-        run: corepack pnpm --filter @ajour/desktop package
+      - name: Build the Windows app and NSIS installer
+        run: corepack pnpm --filter @ajour/desktop make
 
       - name: Check the packaged apps' Electron fuses
         run: corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
