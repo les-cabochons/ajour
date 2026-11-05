@@ -9,6 +9,7 @@ import {
   readFile,
   readlink,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import fs from "node:fs/promises";
@@ -45,7 +46,7 @@ type CliState = {
       progress?: number | null;
       error?: string;
       added?: boolean;
-      operation?: "remove";
+      operation?: "add" | "remove";
       reason?: string;
       hint?: string;
     }[];
@@ -2878,6 +2879,7 @@ describe("adding the command to a WSL distro", () => {
         name: "Ubuntu",
         wslVersion: 2,
         status: "error",
+        operation: "add",
         error: sentence,
         added: false,
       });
@@ -3013,6 +3015,7 @@ describe("adding the command to a WSL distro", () => {
         name: "Ubuntu",
         wslVersion: 2,
         status: "error",
+        operation: "add",
         error: sentence,
         added: true,
       });
@@ -3468,6 +3471,40 @@ describe("removing the command with WSL distros added", () => {
     expect((await controller.install()).notice).toBeUndefined();
   });
 
+  // The deleted record commits the removal; nothing on disk names the
+  // distros after it, so their links go even when cleaning up fails.
+  it("removes the links even when cleaning up bin\\linux fails, and Retry names the one left", async () => {
+    const { wsl } = await addedTo(["Ubuntu", "Debian"]);
+    wsl.distros.get("Debian")!.failing = "sh";
+    let busy = true;
+    const files = fsWith({
+      rm: (async (...args: Parameters<typeof fs.rm>) => {
+        if (busy && path.resolve(String(args[0])) === linuxFolder())
+          throw Object.assign(new Error("EBUSY: resource busy or locked"), {
+            code: "EBUSY",
+          });
+        return fs.rm(...args);
+      }) as never,
+    });
+    const { controller } = controllerWith({ exec: wsl, files });
+
+    const failed = await controller.remove();
+
+    expect(failed).toMatchObject({ status: "error", operation: "remove" });
+    expect(existsSync(recordFile)).toBe(false);
+    expect(wsl.distros.get("Ubuntu")!.entry).toBeNull();
+    expect(wsl.distros.get("Debian")!.entry).not.toBeNull();
+
+    busy = false;
+    const state = await controller.remove();
+
+    expect(state.status).toBe("not-installed");
+    expect(state.notice).toBe(
+      "ajour was removed, but ~/.local/bin/ajour in Debian couldn't be. It now points at nothing.",
+    );
+    expect(existsSync(installDir)).toBe(false);
+  });
+
   it("names every link when WSL can't list its distros", async () => {
     const { wsl } = await addedTo(["Ubuntu", "Debian"]);
     const run = wsl.exec;
@@ -3666,6 +3703,61 @@ describe.runIf(process.platform !== "win32")(
         distroRow(await controller.addWsl("Ubuntu"), "Ubuntu")?.status,
       ).toBe("error");
       expect(await readdir(home)).toEqual([]);
+    });
+
+    /** Ubuntu added through the real shell, its link made by LINK_SCRIPT. */
+    async function addedThroughShell() {
+      await installedBefore(VERSION);
+      const { controller } = controllerWith({
+        exec: realShell(),
+        github: linuxRelease(),
+      });
+      await controller.state();
+      expect(
+        distroRow(await controller.addWsl("Ubuntu"), "Ubuntu")?.status,
+      ).toBe("added");
+      return controller;
+    }
+
+    it("Remove deletes its own link and keeps ~/.local/bin", async () => {
+      const controller = await addedThroughShell();
+
+      const state = await controller.removeWsl("Ubuntu");
+
+      expect(distroRow(state, "Ubuntu")?.status).toBe("not-added");
+      expect(await readdir(path.dirname(link()))).toEqual([]);
+    });
+
+    it.each([
+      ["someone's file", () => writeFile(link(), "my own build")],
+      [
+        "a link to another ajour",
+        () => symlink("/opt/ajour/bin/ajour", link()),
+      ],
+    ])("Remove keeps %s at ~/.local/bin/ajour", async (_case, put) => {
+      const controller = await addedThroughShell();
+      await rm(link());
+      await put();
+      const before = await lstat(link());
+
+      const state = await controller.removeWsl("Ubuntu");
+
+      expect(distroRow(state, "Ubuntu")?.status).toBe("not-added");
+      const after = await lstat(link());
+      expect([after.ino, after.isSymbolicLink()]).toEqual([
+        before.ino,
+        before.isSymbolicLink(),
+      ]);
+    });
+
+    it("Remove with nothing at ~/.local/bin/ajour exits 0 and drops the distro", async () => {
+      const controller = await addedThroughShell();
+      await rm(link());
+
+      const state = await controller.removeWsl("Ubuntu");
+
+      expect(distroRow(state, "Ubuntu")?.status).toBe("not-added");
+      expect(existsSync(linuxFolder())).toBe(false);
     });
   },
 );

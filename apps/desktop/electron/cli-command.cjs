@@ -212,15 +212,17 @@ function createCliCommandController({
   // WSL distros (#604): x64 Windows only, as no linux-arm64 build ships.
   const wslSupported =
     !unsupportedReason && platform === "win32" && arch === "x64";
-  /** The distros WSL listed last, with their versions, and when. Never read at launch. */
-  let listedDistros = [];
-  /** Whether the last read of the list failed: no WSL, or one that can't list. */
-  let distroListFailed = false;
+  /**
+   * WSL's last list: its distros with their versions, or `ok: false` when
+   * it failed (no WSL, or one that can't list). Never read at launch.
+   * @type {{ ok: false } | { ok: true, distros: ReturnType<typeof distrosOf> }}
+   */
+  let distroList = { ok: true, distros: [] };
   let distroReadAt = -Infinity;
   let distroRead = null;
   /**
    * Per distro, an Add or Remove running (`adding`, `removing`), its failure
-   * (`error`, with `operation: "remove"` for a Remove's), or the hint of an
+   * (`error`, with the `operation` that failed), or the hint of an
    * Add that succeeded in this launch. "Added" itself is the record's.
    */
   const wslStates = new Map();
@@ -240,18 +242,34 @@ function createCliCommandController({
           env: { ...env, WSL_UTF8: "1" },
           encoding: "buffer",
         });
-        listedDistros = distrosOf(stdout);
-        distroListFailed = false;
+        distroList = { ok: true, distros: distrosOf(stdout) };
       } catch {
         // No WSL, or none it can list: no rows.
-        listedDistros = [];
-        distroListFailed = true;
+        distroList = { ok: false };
       }
       distroReadAt = now();
     })().finally(() => {
       distroRead = null;
     });
     await distroRead;
+  }
+
+  /** `distro` as WSL listed it last, or undefined. */
+  function listedDistro(distro) {
+    return distroList.ok
+      ? distroList.distros.find(({ name }) => name === distro)
+      : undefined;
+  }
+
+  /**
+   * What Remove does in a recorded `distro`, from WSL's last list (#605):
+   * `unlink` a listed one; `keep` the link when the list failed, since it
+   * may still be there; `skip` one WSL no longer lists, as it's gone.
+   * @returns {"unlink" | "keep" | "skip"}
+   */
+  function removalIn(distro) {
+    if (!distroList.ok) return "keep";
+    return listedDistro(distro) ? "unlink" : "skip";
   }
 
   /**
@@ -286,7 +304,7 @@ function createCliCommandController({
         status: "error",
         error: live.error,
         added,
-        ...(live.operation ? { operation: live.operation } : {}),
+        operation: live.operation,
       };
     if (!added) return { name, wslVersion, status: "not-added" };
     return {
@@ -299,11 +317,17 @@ function createCliCommandController({
 
   /** The `wsl` part of the state: one row per listed distro. */
   function wslFields(record) {
-    if (!wslSupported || !record || !listedDistros.length) return {};
+    if (
+      !wslSupported ||
+      !record ||
+      !distroList.ok ||
+      !distroList.distros.length
+    )
+      return {};
     return {
       wsl: {
         version: record.wsl?.version,
-        distros: listedDistros.map((distro) => distroRow(record, distro)),
+        distros: distroList.distros.map((distro) => distroRow(record, distro)),
       },
     };
   }
@@ -826,6 +850,8 @@ function createCliCommandController({
   async function runRemove(unit) {
     let previous;
     let marker;
+    /** `wsl_links_left`, once the recorded distros' links were tried. */
+    let wslReport = {};
     try {
       if (reconciliation) await reconciliation;
       transient = { status: "removing", progress: null, error: null };
@@ -846,19 +872,28 @@ function createCliCommandController({
         await writeAtomically(marker, JSON.stringify({ digests }));
         await fs.rm(paths.recordFile, { force: true });
       }
-      await reconcileDisk(true);
+      let cleanup;
+      try {
+        await reconcileDisk(true);
+      } catch (error) {
+        cleanup = error;
+      }
+      // The deleted record commits the removal, and nothing on disk names
+      // the distros after it: their links go now, even when reconcile
+      // failed, which Retry repeats from disk. A cancelled prompt restores
+      // the record, so its links stay.
+      if (cleanup?.reason === "admin_cancelled") throw cleanup;
       const recorded = previous?.wsl?.distros ?? [];
-      const left = recorded.length ? await unlinkAll(recorded) : [];
-      removalNotice = left.length ? linksLeftSentence(left) : null;
+      if (recorded.length) {
+        const left = await unlinkAll(recorded);
+        removalNotice = left.length ? linksLeftSentence(left) : null;
+        wslReport = { wsl_links_left: left.length };
+      }
+      if (cleanup) throw cleanup;
       newlyInstalled = false;
       transient = null;
       wslStates.clear();
-      unit?.set({
-        cli_command: {
-          result: "removed",
-          ...(recorded.length ? { wsl_links_left: left.length } : {}),
-        },
-      });
+      unit?.set({ cli_command: { result: "removed", ...wslReport } });
     } catch (error) {
       // Cancellation happens before any file cleanup. Restore the commit so
       // a later launch cannot silently finish a cancelled user action.
@@ -869,7 +904,10 @@ function createCliCommandController({
       if (error.reason) unit?.refuse(error.reason);
       else unit?.fail(error, { reason: "remove_failed" });
       unit?.set({
-        cli_command: { result: error.reason ? "refused" : "failed" },
+        cli_command: {
+          result: error.reason ? "refused" : "failed",
+          ...wslReport,
+        },
       });
       transient = {
         status: "error",
@@ -941,8 +979,9 @@ function createCliCommandController({
     await listDistros({ fresh: true });
     const left = [];
     for (const distro of distros) {
-      if (distroListFailed) left.push(distro);
-      else if (listedDistros.some(({ name }) => name === distro))
+      const removal = removalIn(distro);
+      if (removal === "keep") left.push(distro);
+      else if (removal === "unlink")
         await unlinkFrom(distro).catch(() => left.push(distro));
     }
     return left;
@@ -984,8 +1023,8 @@ function createCliCommandController({
     return digests;
   }
 
-  /** Ends the WSL Add's event `refused`, with `reason`. */
-  function refuseWslAdd(unit, reason) {
+  /** Ends a WSL Add's or Remove's event `refused`, with `reason`. */
+  function refuseWsl(unit, reason) {
     unit?.refuse(reason);
     unit?.set({ cli_command: { result: "refused" } });
   }
@@ -999,16 +1038,16 @@ function createCliCommandController({
   async function runAddWsl(distro, unit) {
     if (!wslSupported || quitting.signal.aborted) return settledState();
     // The renderer passes a name; only one WSL lists now is used.
-    const listed = () => listedDistros.find(({ name }) => name === distro);
-    if (!listed()) await listDistros({ fresh: true });
-    if (!listed()) {
-      refuseWslAdd(unit, "unknown_distro");
+    if (!listedDistro(distro)) await listDistros({ fresh: true });
+    const listed = listedDistro(distro);
+    if (!listed) {
+      refuseWsl(unit, "unknown_distro");
       throw refusal("unknown_distro", UNKNOWN_DISTRO);
     }
     // The Linux ajour can't start in WSL 1 (#611): nothing is downloaded or
     // run, and the row keeps its sentence. Not thrown: it names the distro.
-    if (listed().wslVersion === 1) {
-      refuseWslAdd(unit, "wsl1_unsupported");
+    if (listed.wslVersion === 1) {
+      refuseWsl(unit, "wsl1_unsupported");
       return settledState();
     }
     const id = randomUUID();
@@ -1129,9 +1168,13 @@ function createCliCommandController({
         : error instanceof Error && error.message
           ? error.message
           : `Ajour couldn't add ajour to ${distro}.`;
-      wslStates.set(distro, { status: "error", error: message });
+      wslStates.set(distro, {
+        status: "error",
+        operation: "add",
+        error: message,
+      });
       // Never the message: it names the distro, and a path holds the user name.
-      if (error.reason) refuseWslAdd(unit, error.reason);
+      if (error.reason) refuseWsl(unit, error.reason);
       else {
         unit?.fail(new Error("Ajour couldn't add ajour to WSL."), {
           reason: "wsl_add_failed",
@@ -1159,12 +1202,11 @@ function createCliCommandController({
     if (!wslSupported || quitting.signal.aborted) return settledState();
     // The cached list may be 30 seconds old.
     await listDistros({ fresh: true });
-    const listed = listedDistros.some(({ name }) => name === distro);
+    const removal = removalIn(distro);
     const recorded = (await readRecord().catch(() => null))?.wsl?.distros;
     // The renderer passes a name: only one WSL lists or the record holds is used.
-    if (!listed && !recorded?.includes(distro)) {
-      unit?.refuse("unknown_distro");
-      unit?.set({ cli_command: { result: "refused" } });
+    if (removal !== "unlink" && !recorded?.includes(distro)) {
+      refuseWsl(unit, "unknown_distro");
       throw refusal("unknown_distro", UNKNOWN_DISTRO);
     }
     try {
@@ -1175,9 +1217,8 @@ function createCliCommandController({
       initialized = true;
       const record = await readRecord();
       if (record?.wsl?.distros?.includes(distro)) {
-        // Only a distro WSL listed without it is gone: one it couldn't list may hold the link.
-        if (listed) await unlinkFrom(distro);
-        else if (distroListFailed)
+        if (removal === "unlink") await unlinkFrom(distro);
+        else if (removal === "keep")
           throw new Error(
             `Ajour couldn't run commands in ${distro}. Check that it starts, then try again.`,
           );
@@ -1210,14 +1251,13 @@ function createCliCommandController({
             : `Ajour couldn't remove ajour from ${distro}.`,
       });
       // Never the message: it names the distro, and a path holds the user name.
-      if (error.reason) unit?.refuse(error.reason);
-      else
+      if (error.reason) refuseWsl(unit, error.reason);
+      else {
         unit?.fail(new Error("Ajour couldn't remove ajour from WSL."), {
           reason: "wsl_remove_failed",
         });
-      unit?.set({
-        cli_command: { result: error.reason ? "refused" : "failed" },
-      });
+        unit?.set({ cli_command: { result: "failed" } });
+      }
     }
     const state = await settledState();
     emit(state);
