@@ -13,6 +13,7 @@ name: Desktop lifecycle
 # the ajour command, built in the job with the app's version, from a local
 # fake release. Windows checks the user Path in a fresh PowerShell. macOS
 # checks the signed binary through /usr/local/bin/ajour and refuses a foreign file.
+# On Windows it also checks that Add to a WSL 1 distro is refused (#611).
 #
 # Windows and macOS, the systems the desktop app ships on. The `Tests`
 # workflow calls this one for pull requests that can change the desktop app,
@@ -43,37 +44,10 @@ permissions:
   contents: read
 
 jobs:
-  linux-cli:
-    name: Linux CLI for WSL check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: corepack enable
-      - run: corepack pnpm install --frozen-lockfile
-      - name: Build the check versions
-        shell: bash
-        run: |
-          for version in 0.0.1 0.0.2; do
-            for script in bundle sea archive; do
-              RELEASE_TAG="v$version" node "apps/cli/scripts/$script.mjs"
-            done
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cli-command-linux
-          path: apps/cli/out/archives/*linux-x64.tar.gz
-
   check:
-    needs: linux-cli
     name: Desktop lifecycle (${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       # The check runs Electron, so download its binary.
       ELECTRON_SKIP_BINARY_DOWNLOAD: ""
@@ -139,16 +113,10 @@ jobs:
         if: runner.os == 'macOS'
         run: sudo mkdir -p /usr/local/bin && sudo chown "$(id -u):$(id -g)" /usr/local/bin
 
-      - name: Download Linux CLI archives
-        if: runner.os == 'Windows'
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-command-linux
-          path: apps/cli/out/archives
-
       # GitHub's Windows runners only run WSL 1, where the Linux ajour can't
-      # start (#611): the check proves Add's refusal there. The Linux
-      # archives serve a WSL 2 distro, and WSL 1 once #611 is fixed.
+      # start (#611): the check proves Add's refusal there, which needs no
+      # Linux build. The WSL 2 Add path runs locally (see the script's
+      # header); #611 brings the Linux build back here.
       - name: Install disposable WSL1 Ubuntu (WSL 1 path, Add refused)
         if: runner.os == 'Windows'
         uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
@@ -166,7 +134,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not configure the disposable Ubuntu user." }
           wsl.exe --terminate Ubuntu-24.04
           "AJOUR_CLI_CHECK_WSL_DISTRO=Ubuntu-24.04" >> $env:GITHUB_ENV
-          "AJOUR_CLI_CHECK_LINUX_ARCHIVES=$env:GITHUB_WORKSPACE\apps\cli\out\archives" >> $env:GITHUB_ENV
 
       - name: "Run the ajour command install check${{ matrix.os == 'windows-latest' && ' (WSL 1 path, Add refused, #611)' || '' }}"
         # It reuses the renderer the lifecycle check built, and builds the

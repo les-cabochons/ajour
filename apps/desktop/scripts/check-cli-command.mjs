@@ -31,6 +31,26 @@
 // last CLI archive of the app's version (apps/cli/out/archives). --keep keeps the temp folder.
 // CI runs it on Windows and macOS (`.github/workflows/desktop-lifecycle.yml`). Exits 1
 // when anything fails.
+//
+// WSL (#604) is checked only in the distro AJOUR_CLI_CHECK_WSL_DISTRO names,
+// and nothing else is entered. The check writes ~/.local/bin/ajour there, so
+// name a throwaway distro, never your own. CI names a disposable WSL 1 Ubuntu,
+// where the Linux ajour can't start (#611): the check proves that Add is
+// refused and changes nothing. On a WSL 2 distro it runs Add end to end: a
+// new login shell runs `ajour -V` and `ajour status` through the relay, then
+// Add refuses a foreign ~/.local/bin/ajour. That path needs the Linux archive
+// of the app's version, 0.0.1 unless AJOUR_CLI_CHECK_VERSION says otherwise.
+// To run it locally, from PowerShell:
+//
+//   # 1. A throwaway WSL 2 distro, from any Linux root filesystem tarball:
+//   wsl --import ajour-check $env:TEMP\ajour-check <rootfs.tar.gz> --version 2
+//   # 2. The Linux archive, built in a Linux checkout or WSL distro of this repo:
+//   #    for s in bundle sea archive; do RELEASE_TAG=v0.0.1 node apps/cli/scripts/$s.mjs; done
+//   # 3. The check, with the folder that holds ajour-0.0.1-linux-x64.tar.gz:
+//   $env:AJOUR_CLI_CHECK_WSL_DISTRO = "ajour-check"
+//   $env:AJOUR_CLI_CHECK_LINUX_ARCHIVES = "<folder>"
+//   corepack pnpm --filter @ajour/desktop check:cli-command
+//   # 4. Then: wsl --unregister ajour-check
 import { execFile, spawnSync } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -140,6 +160,7 @@ const {
   checkPathRestoration,
 } = require("../electron/cli-path.cjs");
 const { codesignVerifyArgs } = require("../electron/cli-signature.cjs");
+const { cliAssetName } = require("../electron/cli-command.cjs");
 const registry = createPowerShellRegistry();
 
 const samePath = (left, right) =>
@@ -268,7 +289,7 @@ function buildCliArchive(release) {
 
 /** The release of `version`: its tag, asset and archive. */
 function releaseOf(version) {
-  const asset = `ajour-${version}-${process.platform === "darwin" ? "macos" : "windows"}-${process.arch}.${process.platform === "darwin" ? "tar.gz" : "zip"}`;
+  const asset = cliAssetName(process.platform, process.arch, version);
   return {
     tag: `v${version}`,
     asset,
@@ -292,6 +313,14 @@ function buildRenderer(baseUrl) {
   }
 }
 
+/** The Linux archive of `version` in AJOUR_CLI_CHECK_LINUX_ARCHIVES, or null. */
+function linuxArchiveOf(version) {
+  const folder = process.env.AJOUR_CLI_CHECK_LINUX_ARCHIVES;
+  if (!folder) return null;
+  const file = path.join(folder, cliAssetName("linux", "x64", version));
+  return existsSync(file) ? file : null;
+}
+
 /**
  * A release origin that answers as GitHub does: the release `serve` gives,
  * with the asset's digest and size, and its download through a redirect.
@@ -308,15 +337,9 @@ async function serveRelease() {
       return;
     }
     const { tag, asset, bytes, digest, missing } = served;
-    const linuxAsset = `ajour-${tag.slice(1)}-linux-x64.tar.gz`;
-    const linuxPath = path.join(
-      process.env.AJOUR_CLI_CHECK_LINUX_ARCHIVES || "",
-      linuxAsset,
-    );
-    const linuxBytes =
-      process.env.AJOUR_CLI_CHECK_LINUX_ARCHIVES && existsSync(linuxPath)
-        ? readFileSync(linuxPath)
-        : null;
+    const linuxAsset = cliAssetName("linux", "x64", tag.slice(1));
+    const linuxPath = linuxArchiveOf(tag.slice(1));
+    const linuxBytes = linuxPath ? readFileSync(linuxPath) : null;
     const linuxReleasePage = `/les-cabochons/ajour/releases/download/${tag}/${linuxAsset}`;
     const origin = `http://127.0.0.1:${server.address().port}`;
     const releasePage = `/les-cabochons/ajour/releases/download/${tag}/${asset}`;
@@ -382,21 +405,19 @@ async function serveRelease() {
 }
 
 /**
- * CI opts into its disposable Ubuntu; local runs never enter a user's
- * distro. The Linux ajour can't start in WSL 1 (#611), and GitHub's Windows
- * runners only run WSL 1: there the check proves the refusal. On a WSL 2
- * distro it runs Add end to end.
+ * Only the throwaway distro AJOUR_CLI_CHECK_WSL_DISTRO names is entered, as
+ * the header says. The Linux ajour can't start in WSL 1 (#611), and GitHub's
+ * Windows runners only run WSL 1: there the check proves the refusal. On a
+ * WSL 2 distro it runs Add end to end.
  */
 async function checkWsl(page, version, baseUrl, { events, installDir }) {
   const distro = process.env.AJOUR_CLI_CHECK_WSL_DISTRO;
   if (!distro) {
     process.stdout.write(
-      "SKIP WSL: no disposable distro configured. The user's Ubuntu and .wslconfig are untouched.\n",
+      "SKIP WSL: AJOUR_CLI_CHECK_WSL_DISTRO names no throwaway distro, so no distro is entered.\n",
     );
     return;
   }
-  if (process.env.CI !== "true")
-    throw new Error("WSL check requires CI's disposable distro.");
   const wsl = path.join(systemRoot, "System32", "wsl.exe");
   const inWsl = (program, args) =>
     run(wsl, ["-d", distro, "--exec", program, ...args], {
@@ -415,15 +436,19 @@ async function checkWsl(page, version, baseUrl, { events, installDir }) {
   const listed = (
     await page.evaluate(() => window.ajourDesktop.getCliCommand())
   ).wsl?.distros.find((row) => row.name === distro);
-  if (listed?.version === 1) {
+  if (listed?.wslVersion === 1) {
     process.stdout.write(
       `WSL 1 path: ${distro} runs on WSL 1, so the check proves Add's refusal (#611).\n`,
     );
     await checkWsl1Refusal(page, { distro, events, installDir, inWsl, listed });
     return;
   }
-  if (listed?.version !== 2)
+  if (listed?.wslVersion !== 2)
     throw new Error(`${distro} isn't in Settings' WSL rows.`);
+  if (!linuxArchiveOf(version))
+    throw new Error(
+      `The WSL 2 path needs ${cliAssetName("linux", "x64", version)} in the folder AJOUR_CLI_CHECK_LINUX_ARCHIVES names.`,
+    );
   process.stdout.write(
     `WSL 2 path: ${distro} runs on WSL 2, so the check runs Add end to end.\n`,
   );
@@ -495,10 +520,14 @@ async function checkWsl(page, version, baseUrl, { events, installDir }) {
     (distro) => window.ajourDesktop.addCliCommandWsl({ distro }),
     distro,
   );
+  const refusedRow = refused.wsl?.distros.find((row) => row.name === distro);
   expect(
-    refused.wsl?.distros.find((row) => row.name === distro)?.error ===
-      `Another ajour is at ~/.local/bin/ajour in ${distro}. Remove it, then add again.`,
-    "Add refuses a foreign Ubuntu command",
+    refusedRow?.status === "error" &&
+      refusedRow.added === true &&
+      refusedRow.error ===
+        `Another ajour is at ~/.local/bin/ajour in ${distro}. Remove it, then add again.`,
+    "Add refuses a foreign Ubuntu command, and the row stays Added",
+    refusedRow,
   );
   await inWsl("sh", [
     "-c",
