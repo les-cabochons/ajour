@@ -2059,8 +2059,11 @@
     display: none;
   }
 
+  /* Content runs to the window's edges on a phone: lists and their
+     dividers bleed, and each page insets its own text by --page-gutter
+     (the user, after forms council round 18). */
   .page-container {
-    padding: 1rem;
+    padding: 1rem 0;
   }
 }
 
@@ -2227,7 +2230,8 @@
 
 /* The narrow view's gutter: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. */
 @media (width < 768px) {
+  /* The text inset of an edge-to-edge page, level with the titlebar's. */
   :root {
-    --page-gutter: 0.75rem;
+    --page-gutter: 1.25rem;
   }
 }

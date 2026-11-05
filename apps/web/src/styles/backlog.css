@@ -1165,7 +1165,7 @@
 
   /* One toolbar row, Filter then Display, over a compact status line. */
   .backlog-workspace-filterbar {
-    padding: 0.25rem 0.75rem;
+    padding: 0.25rem var(--page-gutter);
   }
 
   /* One row (council round 11): Filter, the status, which truncates, the
@@ -1417,9 +1417,32 @@
     padding-bottom: 6rem;
   }
 
-  /* The page container gives the 16px gutter, as on the project page. */
+  /* Edge to edge: the text keeps the page gutter, and the side cards run
+     to the window's edges as bands. */
   .backlog-item-page {
-    padding: 0.25rem 0 6rem;
+    padding: 0.25rem var(--page-gutter) 6rem;
+  }
+
+  .backlog-item-side-cards .backlog-item-card {
+    margin-inline: calc(-1 * var(--page-gutter));
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .backlog-item-side-cards .backlog-item-properties-card {
+    padding-inline: var(--page-gutter);
+  }
+
+  .backlog-item-side-cards .backlog-item-card-header {
+    padding-inline: calc(var(--page-gutter) - 0.625rem);
+  }
+
+  .backlog-item-side-cards .backlog-item-card-body {
+    padding-inline: calc(var(--page-gutter) - 0.75rem);
+  }
+
+  .backlog-item-side-cards .backlog-item-card-summary {
+    padding-inline: calc(var(--page-gutter) + 0.625rem) var(--page-gutter);
   }
 
   /* The back link says where the page sits; the breadcrumb row repeated it,
