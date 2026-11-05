@@ -13,7 +13,11 @@ import {
   setTaskFavorite,
 } from "@/features/projects/favorites";
 import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
-import { isProjectTaskBillable } from "@/features/projects/project-task-options";
+import { isTaskNotAssigned } from "@/domain/projects/task-assignment";
+import {
+  isProjectTaskBillable,
+  NOT_ASSIGNED_HINT,
+} from "@/features/projects/project-task-options";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -89,8 +93,9 @@ interface PickerTaskRowProps {
 }
 
 /**
- * A task on one line: the star, the name, its pinned key and "Non-billable"
- * when it is not billable. A long name is cut.
+ * A task on one line: the star, the name, "Not assigned" when its project
+ * source assigns it to someone else, its pinned key and "Non-billable" when
+ * it is not billable. A long name is cut.
  */
 export function PickerTaskRow({
   project,
@@ -101,6 +106,7 @@ export function PickerTaskRow({
   trailing,
   onSelect,
 }: PickerTaskRowProps) {
+  const notAssigned = isTaskNotAssigned(task);
   return (
     <CommandItem
       value={value}
@@ -114,6 +120,7 @@ export function PickerTaskRow({
       aria-label={[
         task.name,
         projectDisplay ? getProjectLabel(project) : undefined,
+        notAssigned ? NOT_ASSIGNED_HINT : undefined,
         task.pinnedSlot ? `pinned to ${task.pinnedSlot}` : undefined,
         isProjectTaskBillable(task) ? undefined : "Non-billable",
       ]
@@ -146,6 +153,11 @@ export function PickerTaskRow({
       ) : (
         <span className="min-w-0 flex-1 truncate">{task.name}</span>
       )}
+      {notAssigned ? (
+        <span className="shrink-0 text-xs text-[var(--text-tertiary)]">
+          {NOT_ASSIGNED_HINT}
+        </span>
+      ) : null}
       {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
       {isProjectTaskBillable(task) ? null : <Chip>Non-billable</Chip>}
       {trailing}

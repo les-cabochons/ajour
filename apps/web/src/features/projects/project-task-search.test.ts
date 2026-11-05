@@ -137,3 +137,27 @@ describe("project and task search", () => {
     expect(filterProjectTaskRows(rows, " ")).toEqual(rows);
   });
 });
+
+describe("a managed project's tasks in the task menu", () => {
+  const assigned = { remoteId: "1", assigned: true };
+  const notAssigned = { remoteId: "2", assigned: false };
+  const managed = createProject("project-acme", "Acme support", "ACME", [
+    { ...createTask("task-export", "Ticket 102 export"), source: notAssigned },
+    createTask("task-local", "Ticket notes"),
+    { ...createTask("task-login", "Ticket 101 login"), source: assigned },
+  ]);
+
+  it("lists the tasks the source assigns to the user before the Not assigned ones", () => {
+    expect(
+      findMatchingTasksInProject(managed, "").map(({ _id }) => _id),
+    ).toEqual(["task-local", "task-login", "task-export"]);
+  });
+
+  it("ranks an assigned task first among equal search matches", () => {
+    expect(
+      findMatchingProjectTasks([managed], "ticket").matches.map(
+        ({ task }) => task._id,
+      ),
+    ).toEqual(["task-local", "task-login", "task-export"]);
+  });
+});

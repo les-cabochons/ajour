@@ -43,3 +43,29 @@ describe("buildProjectTaskOptions", () => {
     ]);
   });
 });
+
+describe("a managed project's task options", () => {
+  it("lists the Not assigned tasks last in their group, with the hint", () => {
+    expect(
+      buildProjectTaskOptions([
+        {
+          _id: "task-export",
+          name: "Ticket #102 - Export",
+          status: "active",
+          createdAt: 1,
+          source: { remoteId: "1002", assigned: false },
+        },
+        {
+          _id: "task-login",
+          name: "Ticket #101 - Login",
+          status: "active",
+          createdAt: 2,
+          source: { remoteId: "1001", assigned: true },
+        },
+      ]).map(({ value, hint }) => ({ value, hint })),
+    ).toEqual([
+      { value: "task-login", hint: undefined },
+      { value: "task-export", hint: "Not assigned" },
+    ]);
+  });
+});
