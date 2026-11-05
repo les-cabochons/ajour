@@ -72,6 +72,7 @@ export interface ToolSession {
 export function mcpClient(options: {
   url: string;
   token: string;
+  fetch?: typeof globalThis.fetch;
   /** Opens a session. Tests pass their own; the default is the MCP SDK's. */
   open?: () => Promise<ToolSession>;
 }): AjourClient {
@@ -82,6 +83,7 @@ export function mcpClient(options: {
     const transport = new StreamableHTTPClientTransport(
       new URL("/mcp/ajour", options.url),
       {
+        fetch: options.fetch,
         requestInit: { headers: { Authorization: `Bearer ${options.token}` } },
       },
     );
