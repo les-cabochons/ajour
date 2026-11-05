@@ -94,6 +94,7 @@ async function run(context) {
     ICS_FEED,
     installPluginForServer,
     server,
+    sink,
     tar,
     userData,
   } = context;
@@ -265,25 +266,70 @@ async function run(context) {
   }
   pass("ics: a secret feed address syncs through 1, 2 and 3 HTTPS redirects");
 
-  // A fourth redirect, and the unsafe targets, are refused.
+  // A fourth redirect, and the unsafe targets, are refused. The refusal is
+  // the broker's: the first hop was requested (so the chain really ran), the
+  // broker recorded its refusal, and the target it refused was never reached.
   const refusals = { four: chains.four };
   for (const kind of Object.keys(unsafe)) {
     refusals[kind] = `https://edge.example.test/u/${kind}/${hopA}`;
   }
+  /** The broker's reason for each refusal, as its event records it. */
+  const reasons = {
+    four: "redirect_refused",
+    private: "private_address",
+    metadata: "private_address",
+    loopback: "private_address",
+    downgrade: "redirect_refused",
+  };
+  /** The refusals the broker recorded for the ICS plugin since `eventMark`. */
+  const brokerRefusals = (eventMark) =>
+    sink.events
+      .slice(eventMark)
+      .filter(
+        (event) =>
+          event.name === "plugin.request" &&
+          event.plugin?.id === "ics" &&
+          event.outcome === "refused",
+      )
+      .map((event) => event.outcome_reason);
+  /** What the fixture hosts received since `mark`, as host and path. */
+  const requested = (mark) =>
+    world.since(mark).map((request) => `${request.host}${request.path}`);
   for (const [kind, address] of Object.entries(refusals)) {
     const mark = world.mark();
+    const eventMark = sink.events.length;
     const saved = await save("ics", `ics-refused-${kind}`, address);
     assert.notEqual(saved.status, 200, `${kind} must be refused`);
     noAddress(saved.body, `the refusal of ${kind}`);
-    const reached = world
-      .since(mark)
-      .map((request) => `${request.host}${request.path}`);
+    const reached = requested(mark);
+    const firstHop = new URL(address);
+    assert.ok(
+      reached.includes(`${firstHop.hostname}${firstHop.pathname}`),
+      `${kind}: the first hop was requested (${reached.join(", ")})`,
+    );
+    assert.deepEqual(
+      brokerRefusals(eventMark),
+      [reasons[kind]],
+      `${kind}: the broker recorded its refusal`,
+    );
     assert.ok(
       !reached.some((target) =>
         /internal\.example|localhost|169\.254/.test(target),
       ),
       `${kind}: nothing was sent to a private target (${reached.join(", ")})`,
     );
+    if (kind === "four") {
+      // Three redirects were followed, to the fourth hop; the redirect it
+      // answered with was not.
+      assert.ok(
+        reached.includes(`calendar.example.test/r4d/${hopA}`),
+        "four: the third redirect was followed",
+      );
+      assert.ok(
+        !reached.includes(`calendar.example.test${FEED_PATH}`),
+        "four: the fourth redirect was never requested",
+      );
+    }
     if (kind === "downgrade") {
       assert.ok(
         !reached.includes(`calendar.example.test${FEED_PATH}`),
@@ -292,17 +338,28 @@ async function run(context) {
     }
   }
   pass(
-    "ics: a fourth redirect and an unsafe redirect target are refused, unseen",
+    "ics: a fourth redirect and an unsafe redirect target are refused by the broker, unseen",
   );
 
   // A saved feed that starts redirecting somewhere unsafe fails the same way.
   redirect(`calendar.example.test${FEED_PATH}`, unsafe.private);
   {
+    const mark = world.mark();
+    const eventMark = sink.events.length;
     const answer = await events("ics", "ics_main");
     assert.notEqual(answer.status, 200);
     noAddress(
       answer.body,
       "the error of a feed that now redirects to a private host",
+    );
+    assert.ok(
+      requested(mark).includes(`calendar.example.test${FEED_PATH}`),
+      "the saved feed was requested",
+    );
+    assert.deepEqual(brokerRefusals(eventMark), ["private_address"]);
+    assert.ok(
+      !requested(mark).some((target) => /internal\.example/.test(target)),
+      "nothing was sent to the private target",
     );
   }
   routes.delete(`calendar.example.test${FEED_PATH}`);

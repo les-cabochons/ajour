@@ -30,6 +30,14 @@ const SECRETS = [
 
 const pass = (name) => process.stdout.write(`PASS ${name}\n`);
 
+/**
+ * The broker lets a plugin send 10 requests a second, 60 in a burst. A
+ * connection that syncs as the upgrade left it and again after a save sends
+ * more than that at once, so the check waits for the bucket to refill, as a
+ * user's next sync would.
+ */
+const refill = () => new Promise((resolve) => setTimeout(resolve, 6_000));
+
 /** The state file of the last release: every secret in plain text. */
 function legacyState() {
   const connection = (id, pluginId, config, extras = {}) => ({
@@ -337,14 +345,27 @@ async function runCases(ctx) {
     });
 
   // ------------------------------------------------------------------ Jira
+  // Each upgraded connection syncs once as it was left, before anything
+  // re-saves it: a connection that fails until the user opens and saves it
+  // would break "no action from the user". Only then is it saved again.
   {
+    const asLeft = world.mark();
+    const first = await sync("jira", "jira_main");
+    assert.equal(
+      first.stagedCount + first.updatedCount,
+      1,
+      "the API 3 Jira connection syncs its issue as it was left",
+    );
+    assert.ok(world.since(asLeft, JIRA.host).length >= 1);
+    pass("jira: an API 3 connection syncs with its saved token, untouched");
+
     const mark = world.mark();
     await resave("jira", "jira_main");
     const result = await sync("jira", "jira_main");
     assert.equal(
       result.stagedCount + result.updatedCount,
       1,
-      "the API 3 Jira connection syncs its issue",
+      "the Jira connection syncs its issue after a save",
     );
     assert.ok(world.since(mark, JIRA.host).length >= 2);
     pass("jira: an API 3 connection validates and syncs with its saved token");
@@ -352,23 +373,41 @@ async function runCases(ctx) {
 
   // ---------------------------------------------------------------- GitHub
   {
-    for (const suffix of ["canonical", "www", "http", "httpwww", "port"]) {
-      const id = `github_${suffix}`;
+    const reachOnlyTheApi = async (id, step) => {
       const mark = world.mark();
-      const saved = await resave("github", id);
-      assert.equal(saved.id, id);
-      await sync("github", id);
-      await ok(
-        "POST",
-        `/api/code-hosts/github/connections/${id}/syncPullRequests`,
-        { tracked: [] },
-      );
+      await step();
       const hosts = new Set(world.since(mark).map((request) => request.host));
       assert.deepEqual(
         [...hosts],
         ["api.github.com"],
         `${id} reaches only the API`,
       );
+    };
+    const syncAll = async (id) => {
+      await sync("github", id);
+      await ok(
+        "POST",
+        `/api/code-hosts/github/connections/${id}/syncPullRequests`,
+        { tracked: [] },
+      );
+    };
+    // As the upgrade left them: no re-save yet.
+    for (const suffix of ["canonical", "www", "http", "httpwww", "port"]) {
+      const id = `github_${suffix}`;
+      await reachOnlyTheApi(id, () => syncAll(id));
+    }
+    pass(
+      "github: every legacy connection syncs through api.github.com, untouched",
+    );
+
+    await refill();
+    for (const suffix of ["canonical", "www", "http", "httpwww", "port"]) {
+      const id = `github_${suffix}`;
+      await reachOnlyTheApi(id, async () => {
+        const saved = await resave("github", id);
+        assert.equal(saved.id, id);
+        await syncAll(id);
+      });
       const overview = await ok("GET", "/api/plugins");
       assert.equal(
         connectionOf(overview, "github", id).editableValues.hostUrl,
@@ -382,6 +421,17 @@ async function runCases(ctx) {
 
   // ---------------------------------------------------------- Azure DevOps
   for (const id of ["azure_org", "azure_project"]) {
+    // As the upgrade left it: it syncs before any re-save.
+    {
+      const asLeft = world.mark();
+      const first = await sync("azure_devops", id);
+      assert.ok(
+        first.stagedCount + first.updatedCount >= 1,
+        `${id}: the upgraded connection syncs its items untouched`,
+      );
+      assert.ok(world.since(asLeft, "dev.azure.com").length > 0);
+    }
+    await refill();
     const mark = world.mark();
     const saved = await resave("azure_devops", id, {}, [
       "editWorkItems",
@@ -461,7 +511,7 @@ async function runCases(ctx) {
     assert.ok(world.since(mark).length > 0);
   }
   pass(
-    "azure devops: org and project URL connections sync, refresh, settle and comment",
+    "azure devops: org and project URL connections sync untouched, then refresh, settle and comment",
   );
 
   // ------------------------------------------------------------------- ICS
@@ -478,6 +528,7 @@ async function runCases(ctx) {
     ICS_FEED,
     installPluginForServer,
     server,
+    sink,
     tar,
     userData,
   });
@@ -554,6 +605,55 @@ async function runCases(ctx) {
     assert.equal(imported.projects[0].code, "100200");
     assert.equal(imported.projects[0].tasks[0].name, "Billet #101 - Login");
     pass("workday-project-data: imports a project export");
+
+    // A data shape plugin the user turned off is neither listed nor run, as
+    // any plugin of the plugin host.
+    // The plugin run's own event: the route's event has the same name.
+    const operations = (name, outcome) =>
+      sink.events.filter(
+        (event) =>
+          event.name === name &&
+          event.kind === "plugin_operation" &&
+          event.outcome === outcome,
+      ).length;
+    const importedBefore = operations("project.import", "ok");
+    const refusedBefore = operations("project.import", "refused");
+    await ok("POST", "/api/plugins/workday-project-data/activation", {
+      enabled: false,
+    });
+    assert.deepEqual(
+      (await ok("GET", "/api/project-data-shapes")).plugins,
+      [],
+      "an inactive data shape plugin is not listed",
+    );
+    const refused = await call(
+      "POST",
+      "/api/project-data-shapes/workday-project-data/import",
+      { sheets: [{ name: "Sheet1", rows: [["Afficher un projet"]] }] },
+    );
+    assert.equal(refused.status, 400);
+    assert.match(JSON.stringify(refused.body), /Activate this plugin/);
+    assert.equal(
+      operations("project.import", "ok"),
+      importedBefore,
+      "an inactive data shape plugin runs nothing",
+    );
+    assert.equal(operations("project.import", "refused"), refusedBefore + 1);
+    assert.equal(
+      sink.events.findLast(
+        (event) =>
+          event.name === "project.import" && event.kind === "plugin_operation",
+      )?.outcome_reason,
+      "plugin_off",
+    );
+    await ok("POST", "/api/plugins/workday-project-data/activation", {
+      enabled: true,
+    });
+    assert.equal(
+      (await ok("GET", "/api/project-data-shapes")).plugins.length,
+      1,
+    );
+    pass("workday-project-data: turned off, it is neither listed nor run");
   }
 
   // ---------------------------------------------------- nothing leaked

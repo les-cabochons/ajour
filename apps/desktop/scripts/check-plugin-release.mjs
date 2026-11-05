@@ -5,6 +5,10 @@
 //
 //   AJOUR_PLUGINS_CHECKOUT      a clone of les-cabochons/ajour-plugins
 //   AJOUR_PLUGINS_COMMIT        the commit to check (default: HEAD)
+//   AJOUR_PLUGINS_LEGACY_COMMIT the commit or tag whose `ajour.json` names the
+//                               packages users have installed today, at API 3
+//                               (default: `legacyCatalogCommit` of
+//                               `sandbox-check/release-baseline.json`)
 //   AJOUR_PLUGIN_RELEASE_EXECUTABLE
 //                               the packaged check app, from
 //                               apps/desktop/out/plugin-release-check
@@ -14,9 +18,10 @@
 //                               Electron instead of a packaged build. It is
 //                               no release check.
 //
-// The commit's `ajour.json` names the packages users have installed today,
-// at API 3. This script extracts them too, to seed the data folder an
-// upgrade starts from. Exits 1 when any case fails.
+// The previous release's `ajour.json` (not the commit's own, which lists API 4
+// once the signed catalog is released) names the packages users have
+// installed today, at API 3. This script extracts them too, to seed the data
+// folder an upgrade starts from. Exits 1 when any case fails.
 import { execFileSync, spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
@@ -86,11 +91,22 @@ try {
       );
   }
 
-  // What users have installed: the packages the commit's ajour.json lists
-  // at an older plugin API.
+  // What users have installed: the packages the previous release's
+  // ajour.json lists at an older plugin API.
+  const baseline = JSON.parse(
+    await readFile(
+      path.join(desktopRoot, "sandbox-check/release-baseline.json"),
+      "utf8",
+    ),
+  );
+  const legacyCommit = git(
+    "rev-parse",
+    "--verify",
+    `${process.env.AJOUR_PLUGINS_LEGACY_COMMIT ?? baseline.legacyCatalogCommit}^{commit}`,
+  ).trim();
   const legacy = path.join(root, "legacy");
   await mkdir(legacy);
-  const listing = JSON.parse(await readFile(path.join(source, "ajour.json")));
+  const listing = JSON.parse(git("show", `${legacyCommit}:ajour.json`));
   const legacyIds = [];
   for (const entry of listing.plugins) {
     // Only an available entry names a package users can have installed.
