@@ -308,20 +308,7 @@
   }
 }
 
-/* Outside the layer: the settings list beside the app sidebar and the
-   narrow settings list override their sidebar utilities. */
-.ajour-settings-navigation [data-sidebar="content"] {
-  gap: 0.75rem;
-  padding-top: 0.5rem;
-}
-
-.ajour-settings-navigation-label {
-  height: 1.5rem;
-  font-size: var(--text-2xs);
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-
+/* Outside the layer: the narrow settings list. */
 .settings-narrow-nav {
   display: flex;
   flex-direction: column;
@@ -399,7 +386,7 @@
   grid-template-columns: 232px minmax(0, 1fr);
   width: min(1120px, calc(100vw - 80px));
   max-width: none;
-  height: min(760px, calc(100dvh - 40px));
+  height: min(760px, calc(100dvh - 80px));
   max-height: none;
   gap: 0;
   padding: 0;

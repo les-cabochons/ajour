@@ -71,6 +71,7 @@ import { getSettingsPages } from "@/features/settings/settings-navigation";
 import {
   useOpenSettings,
   useSettingsWindowLocation,
+  useSettingsWindowMaskRepair,
 } from "@/features/settings/settings-link";
 import {
   rememberAppLocation,
@@ -580,6 +581,7 @@ export function AppShell() {
   // while it is open.
   const settingsWindowLocation = useSettingsWindowLocation();
   const showsSettingsWindow = settingsWindowLocation !== null && !isNarrowView;
+  useSettingsWindowMaskRepair(settingsWindowLocation);
   const appSidebar = useAppSidebar({ suspended: showsSettingsWindow });
   const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
   useGlobalShortcuts(selectedTimeDate);

@@ -1,5 +1,6 @@
 import { RiCloseLine as Close } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import { TooltipButton } from "@/components/tooltip-button";
 import {
   Dialog,
   DialogClose,
@@ -94,7 +95,7 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
           {/* The app sidebar's timer card, so Settings shows the one form of
               the timer beside a sidebar (council round 25). */}
           <div className="settings-window-nav-foot">
-            <TimerDock />
+            <TimerDock inWindow />
           </div>
         </nav>
         <div className="settings-window-body">
@@ -108,18 +109,22 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
             <DialogTitle render={<h1 />} className="settings-window-title">
               {openEntry?.label ?? "Settings"}
             </DialogTitle>
-            <DialogClose
+            <TooltipButton
+              label="Close settings"
               render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="settings-window-close"
-                  aria-label="Close settings"
+                <DialogClose
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="settings-window-close"
+                    />
+                  }
                 />
               }
             >
               <Close />
-            </DialogClose>
+            </TooltipButton>
           </header>
           <ScrollArea className="settings-window-scroll">
             <div className="settings-content">

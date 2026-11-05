@@ -277,9 +277,11 @@ Feature: Open the local time workspace
     When I open today's new-entry workspace
     And I open Settings from the desktop sidebar
     Then Settings opens as a window over the app
+    And the page stays mounted behind the window
     When I open Plugins from the Settings navigation
     And I go back to the app from Settings
-    Then the Time workspace is visible
+    Then the same page is back
+    And the Time workspace is visible
 
   Scenario: Keep the running entry's draft across the narrow breakpoint
     Given I have no saved Ajour workspace

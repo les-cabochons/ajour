@@ -631,11 +631,9 @@ Then("the window title shows the running entry", async ({ page }) => {
 
 /** The settings window: the dialog that holds the settings pages list. */
 function settingsWindow(page: Page) {
-  return page
-    .getByRole("dialog")
-    .filter({
-      has: page.getByRole("navigation", { name: "Settings sections" }),
-    });
+  return page.getByRole("dialog").filter({
+    has: page.getByRole("navigation", { name: "Settings sections" }),
+  });
 }
 
 // The settings window shows the sidebar's own timer card, not the floating
@@ -751,12 +749,34 @@ When("I open Settings directly", async ({ page }) => {
   await page.goto("/settings");
 });
 
+/**
+ * Marks the page's main element before Settings opens. The mark lives on
+ * the DOM node, so it survives only while that node stays mounted.
+ */
+const PAGE_MARK = "data-page-before-settings";
+
 When("I open Settings from the desktop sidebar", async ({ page }) => {
+  await page.evaluate(
+    (mark) => document.querySelector("main")?.setAttribute(mark, ""),
+    PAGE_MARK,
+  );
   const settingsLink = page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Settings" });
   await settingsLink.focus();
   await settingsLink.press("Enter");
+});
+
+// The window opens over the page, which keeps its state: the same main
+// element is still there, not a remount.
+Then("the page stays mounted behind the window", async ({ page }) => {
+  await expect(settingsWindow(page)).toBeVisible();
+  await expect(page.locator(`main[${PAGE_MARK}]`)).toHaveCount(1);
+});
+
+Then("the same page is back", async ({ page }) => {
+  await expect(settingsWindow(page)).toHaveCount(0);
+  await expect(page.locator(`main[${PAGE_MARK}]`)).toHaveCount(1);
 });
 
 When("I open Plugins from the Settings navigation", async ({ page }) => {

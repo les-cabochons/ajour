@@ -2,16 +2,24 @@ import {
   Link,
   useNavigate,
   useRouter,
+  useRouterState,
   useSearch,
   type LinkComponentProps,
 } from "@tanstack/react-router";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+} from "react";
 import { isNarrowView, useIsNarrowView } from "@/lib/use-narrow-view";
 import {
   SETTINGS_SEARCH_KEY,
   parseSettingsLocation,
   settingsLocationOf,
   settingsPathname,
+  settingsWindowMask,
   settingsWindowNavigation,
   withoutSettings,
   type SettingsLocation,
@@ -27,10 +35,12 @@ import {
 
 /** The settings window's page, from the page's search; null while closed. */
 export function useSettingsWindowLocation(): SettingsLocation | null {
-  const value = useSearch({
-    strict: false,
-    select: (search) =>
-      (search as Record<string, unknown>)[SETTINGS_SEARCH_KEY],
+  // From the router's location, not a match's search: the two update in
+  // different renders, and the mask repair below must see the same moment
+  // as the mask.
+  const value = useRouterState({
+    select: (state) =>
+      (state.location.search as Record<string, unknown>)[SETTINGS_SEARCH_KEY],
   });
   return useMemo(() => parseSettingsLocation(value), [value]);
 }
@@ -51,11 +61,13 @@ export function useSettingsWindowLocationReader() {
 
 /**
  * Opens a settings page: the window in wide windows, the page in the narrow
- * view. `replace` switches pages without a history entry, as the window's
- * own navigation does.
+ * view. Opening the window pushes a history entry; switching its page, from
+ * its navigation or any link followed while it is open, replaces it, so Back
+ * closes the window in one step. `replace` overrides either.
  */
 export function useOpenSettings() {
   const navigate = useNavigate();
+  const router = useRouter();
   return useCallback(
     (page: string | SettingsLocation, options: { replace?: boolean } = {}) => {
       const location =
@@ -72,11 +84,52 @@ export function useOpenSettings() {
         to: window.to as never,
         search: window.search as never,
         mask: window.mask as never,
-        replace: options.replace,
+        // Opening the window pushes an entry; switching its page replaces
+        // it, so Back closes the window in one step.
+        replace:
+          options.replace ??
+          hasSettingsWindow(
+            router.state.location.search as Record<string, unknown>,
+          ),
       });
     },
-    [navigate],
+    [navigate, router],
   );
+}
+
+/** True while the settings window is open at `search`. */
+function hasSettingsWindow(search: Record<string, unknown>) {
+  return parseSettingsLocation(search[SETTINGS_SEARCH_KEY]) !== null;
+}
+
+/**
+ * Keeps the browser on the settings route while the window is open. A
+ * navigation the page behind makes on its own, such as the Time page adding
+ * `view=day` as it loads, is built without the mask and would show the page's
+ * address with the `settings` key. This puts the mask back, in place.
+ */
+export function useSettingsWindowMaskRepair(
+  windowLocation: SettingsLocation | null,
+) {
+  const navigate = useNavigate();
+  const isMasked = useRouterState({
+    select: (state) => state.location.maskedLocation !== undefined,
+  });
+  useEffect(() => {
+    if (!windowLocation || isMasked || isNarrowView()) return;
+    void navigate({
+      to: ".",
+      search: ((search: Record<string, unknown>) => search) as never,
+      // A same-address navigation with the same state writes nothing, so
+      // the state changes each time to carry the mask into history.
+      state: ((state: Record<string, unknown>) => ({
+        ...state,
+        settingsMask: Number(state.settingsMask ?? 0) + 1,
+      })) as never,
+      mask: settingsWindowMask(windowLocation) as never,
+      replace: true,
+    });
+  }, [isMasked, navigate, windowLocation]);
 }
 
 /**
@@ -107,9 +160,19 @@ type SettingsLinkProps = Omit<
   search?: Record<string, unknown>;
 };
 
-/** A link to a settings page. Its href is the settings route either way. */
-export function SettingsLink({ page, search, ...props }: SettingsLinkProps) {
+/**
+ * A link to a settings page. Its href is the settings route either way. While
+ * the window is open it replaces the history entry unless `replace` says
+ * otherwise, as `useOpenSettings` does.
+ */
+export function SettingsLink({
+  page,
+  search,
+  replace,
+  ...props
+}: SettingsLinkProps) {
   const isNarrow = useIsNarrowView();
+  const windowOpen = useSettingsWindowLocation() !== null;
   const location = useMemo(
     () => settingsLocationOf(page, search),
     [page, search],
@@ -119,6 +182,7 @@ export function SettingsLink({ page, search, ...props }: SettingsLinkProps) {
       <Link
         to={settingsPathname(location) as never}
         search={location.search as never}
+        replace={replace}
         {...props}
       />
     );
@@ -129,6 +193,7 @@ export function SettingsLink({ page, search, ...props }: SettingsLinkProps) {
       to={window.to as never}
       search={window.search as never}
       mask={window.mask as never}
+      replace={replace ?? windowOpen}
       {...props}
     />
   );

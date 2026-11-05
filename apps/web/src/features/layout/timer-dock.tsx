@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
@@ -24,6 +25,7 @@ import {
   requestRunningEntryOnPage,
 } from "@/features/time/new-entry-request";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
+import { useSettingsWindowLocation } from "@/features/settings/settings-link";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import {
@@ -159,17 +161,43 @@ function StopButton({
   );
 }
 
+const NEW_ENTRY_BUTTON_CLASS =
+  "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring";
+
 /** The docks' "+". It opens the new entry editor in a popover anchored to it. */
 function NewEntryButton() {
   return (
     <TooltipButton
       label="Create time entry"
       shortcut="entry.new"
-      className="flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className={NEW_ENTRY_BUTTON_CLASS}
       onClick={(event) => openBlankEntryEditor(event.currentTarget)}
     >
       <PlusIcon className="size-4" />
     </TooltipButton>
+  );
+}
+
+/**
+ * The settings window's "+": the new entry editor opens in the card's own
+ * popover, inside the window, never in the Time page's side panel behind it,
+ * whose navigation would close the window.
+ */
+function WindowNewEntryButton() {
+  const today = useTodayIsoDate();
+  const [open, setOpen] = useState(false);
+  return (
+    <TimeEntryEditorPopover
+      target={{ kind: "create", localDate: today }}
+      open={open}
+      onOpenChange={setOpen}
+      triggerLabel="Create time entry"
+      triggerShortcut="entry.new"
+      iconTrigger
+      triggerClassName={NEW_ENTRY_BUTTON_CLASS}
+    >
+      <PlusIcon className="size-4" />
+    </TimeEntryEditorPopover>
   );
 }
 
@@ -191,14 +219,25 @@ function StartButton() {
  * The timer box in the expanded sidebar. While an entry runs: its title, the
  * time counted, "+", Stop, and how much of the item's remaining estimate it
  * uses. Clicking it opens the running entry's editor. Otherwise, one row holds
- * "+", Start for an empty entry, and today's total.
+ * "+", Start for an empty entry, and today's total. `inWindow` is the settings
+ * window's copy: its editors open in the card's own popover, never on the
+ * page behind the window.
  */
-export function TimerDock() {
+export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const editorOpen = useRunningEntryEditor(Boolean(timer));
+  // While the settings window is open, its own card shows the editor and the
+  // sidebar's card behind the window stays quiet.
+  const windowOpen = useSettingsWindowLocation() !== null;
+  const showsEditor = editorOpen && (inWindow || !windowOpen);
+  const newEntryButton = inWindow ? (
+    <WindowNewEntryButton />
+  ) : (
+    <NewEntryButton />
+  );
 
   if (!timer || !summary) {
     return (
@@ -206,7 +245,7 @@ export function TimerDock() {
         aria-label="Timer"
         className="mx-2 mt-1 mb-2 flex items-center gap-1.5 rounded-md border bg-background p-2.5 text-xs"
       >
-        <NewEntryButton />
+        {newEntryButton}
         <StartButton />
         <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">
           Today {formatClockDuration(todayTotalMs)}
@@ -222,8 +261,12 @@ export function TimerDock() {
     >
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
-        open={editorOpen}
-        onOpenChange={(open) => openRunningEditor(open, timer._id, pathname)}
+        open={showsEditor}
+        onOpenChange={(open) =>
+          inWindow
+            ? setRunningEntryEditorOpen(open)
+            : openRunningEditor(open, timer._id, pathname)
+        }
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
@@ -262,7 +305,7 @@ export function TimerDock() {
         ) : null}
       </TimeEntryEditorPopover>
       <span className="absolute top-2 right-2 flex gap-1">
-        <NewEntryButton />
+        {newEntryButton}
         <StopButton timerId={timer._id} />
       </span>
     </section>
