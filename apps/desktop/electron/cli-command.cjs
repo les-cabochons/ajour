@@ -805,7 +805,7 @@ function createCliCommandController({
         new Error(
           `Ajour couldn't run commands in ${distro}. Check that it starts, then try again.`,
         ),
-        { exitCode: error?.code },
+        { exitCode: error?.code, timedOut: Boolean(error?.killed) },
       );
     }
   }
@@ -926,10 +926,12 @@ function createCliCommandController({
         printed = (
           await inDistro(distro, target, ["-V"], VERSION_CHECK_TIMEOUT_MS)
         ).trim();
-      } catch {
+      } catch (error) {
         throw refusal(
           "wrong_version",
-          "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't install it.",
+          error.timedOut
+            ? "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't install it."
+            : `The downloaded ajour didn't start in ${distro}, so Ajour didn't add it.`,
         );
       }
       if (printed !== `ajour ${appVersion}`)

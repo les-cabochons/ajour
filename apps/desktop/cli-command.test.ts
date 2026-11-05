@@ -2435,6 +2435,8 @@ type FakeDistro = {
   failing?: string;
   /** What the downloaded binary prints for `-V` here, instead of its version. */
   versionOutput?: string;
+  /** How running the downloaded binary fails here, as WSL 1 fails one it can't load. */
+  versionFailure?: { code?: number; killed?: boolean; message: string };
 };
 
 const exited = (code: number, message = `exited with ${code}`) =>
@@ -2510,6 +2512,10 @@ function fakeWsl(
     }
     if (mounted.has(program!)) {
       expect(rest).toEqual(["-V"]);
+      if (distro.versionFailure)
+        throw Object.assign(new Error(distro.versionFailure.message), {
+          ...distro.versionFailure,
+        });
       if (distro.versionOutput) return { stdout: `${distro.versionOutput}\n` };
       const bytes = await readFile(mounted.get(program!)!, "utf8");
       return { stdout: `ajour ${bytes.replace("binary ", "")}\n` };
@@ -2716,6 +2722,25 @@ describe("adding the command to a WSL distro", () => {
       { versionOutput: "ajour 0.0.0" },
       {},
       `The downloaded ajour says "ajour 0.0.0", not "ajour ${VERSION}", so Ajour didn't install it.`,
+    ],
+    [
+      "wrong_version",
+      "a binary the distro can't run",
+      {
+        versionFailure: {
+          code: 1,
+          message: "execvpe(/mnt/c/…/ajour) failed: Exec format error",
+        },
+      },
+      {},
+      "The downloaded ajour didn't start in Ubuntu, so Ajour didn't add it.",
+    ],
+    [
+      "wrong_version",
+      "a binary that hangs",
+      { versionFailure: { killed: true, message: "timed out" } },
+      {},
+      "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't install it.",
     ],
     [
       "foreign_command",
