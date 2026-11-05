@@ -166,7 +166,9 @@ Your entries are never among them: they stay in Ajour.
 
 ## Update
 
-Download the new release's archive and extract it over the old folder. On Linux and macOS, the link in `~/.local/bin` keeps working.
+A command installed from Ajour updates with the app, on its next launch. In WSL, `ajour` updates with it too: Ajour replaces its Linux build in `%LOCALAPPDATA%\Ajour\bin\linux`, which every distro's `~/.local/bin/ajour` links to, so nothing changes inside your distros. If an `ajour` command is still running in a distro, its files can't be replaced: the installed version keeps working, Settings shows the reason with **Retry**, and Ajour tries again at its next launch.
+
+For a command installed from the archive, download the new release's archive and extract it over the old folder. On Linux and macOS, the link in `~/.local/bin` keeps working.
 
 Keep the command and the app on the same release. When the app is older than the command, a command the app doesn't know yet stops with:
 
