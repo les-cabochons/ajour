@@ -3,6 +3,12 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+
+// The desktop app verifies downloads against this same requirement.
+const { codesignVerifyArgs } = createRequire(import.meta.url)(
+  "../../desktop/electron/cli-signature.cjs",
+);
 
 const SECRETS = [
   "CSC_LINK",
@@ -159,7 +165,7 @@ try {
     "apps/cli/scripts/entitlements.plist",
     binary,
   ]);
-  run("verify signature", "codesign", ["--verify", "--strict", binary]);
+  run("verify signature", "codesign", codesignVerifyArgs(binary));
   const zip = path.join(dir, "ajour.zip");
   run("zip for notarization", "ditto", [
     "-c",
