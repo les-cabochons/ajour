@@ -134,10 +134,16 @@ export interface DesktopWindowSettings {
  * it and asks for an install: it never passes a path or a URL.
  */
 export interface DesktopCliCommandState {
+  operation?: "remove";
   /** Version being followed, also after a failed update. */
   pending?: string;
   status:
-    "unsupported" | "not-installed" | "installing" | "installed" | "error";
+    | "unsupported"
+    | "not-installed"
+    | "installing"
+    | "installed"
+    | "removing"
+    | "error";
   /** Why it can't install here: a development build, or a system without it yet. */
   reason?: "development_build" | "unsupported_platform";
   /** The installed version, also while a new install runs or after one failed. */
@@ -222,6 +228,7 @@ declare global {
       installCliCommand?: (
         trace?: TraceCarrier,
       ) => Promise<DesktopCliCommandState>;
+      removeCliCommand?: () => Promise<DesktopCliCommandState>;
       onCliCommandChanged?: (
         callback: (state: DesktopCliCommandState) => void,
       ) => () => void;

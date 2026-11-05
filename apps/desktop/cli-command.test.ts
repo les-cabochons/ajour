@@ -33,7 +33,12 @@ const require = createRequire(import.meta.url);
 
 type CliState = {
   status:
-    "unsupported" | "not-installed" | "installing" | "installed" | "error";
+    | "unsupported"
+    | "not-installed"
+    | "installing"
+    | "installed"
+    | "removing"
+    | "error";
   version?: string;
   binaryPath?: string;
   location?: string;
@@ -47,6 +52,7 @@ type CliState = {
 type Controller = {
   state(): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
+  remove(options?: { unit?: unknown }): Promise<CliState>;
   followAppVersion(): Promise<CliState>;
   reconcile(): Promise<CliState>;
   stop(timeoutMs?: number): Promise<void>;
@@ -2234,4 +2240,147 @@ it("sets aside a running Windows executable and cleans it on a later launch", as
       name.startsWith("ajour.exe.old-"),
     ),
   ).toBe(false);
+});
+
+describe("Remove from Settings", () => {
+  it("removes the committed command, record and exact Path entry, preserving user state", async () => {
+    const link = fakeLink({
+      initial: { value: "C:\\Tools;%TOOLS%", kind: "ExpandString" },
+    });
+    const { controller } = controllerWith({ link });
+    await controller.install();
+    await writeFile(path.join(root, "token"), "personal token");
+    const { events, recorded } = recordingEvents();
+    const unit = events.start("cli_command.remove", {
+      kind: "command",
+      trigger: "user",
+    });
+    const states: string[] = [];
+    controller.onChange((state) => states.push(state.status));
+    const removed = await controller.remove({ unit });
+    unit.end();
+    expect(removed.status).toBe("not-installed");
+    expect(states).toContain("removing");
+    expect(existsSync(installDir)).toBe(false);
+    expect(existsSync(recordFile)).toBe(false);
+    expect(link.current()).toEqual(link.initial);
+    expect(await readFile(path.join(root, "token"), "utf8")).toBe(
+      "personal token",
+    );
+    expect(recorded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "cli_command.remove",
+          outcome: "ok",
+          kind: "command",
+        }),
+      ]),
+    );
+  });
+});
+
+it("queues Remove after an in-flight Install and keeps later reconciliation serialized", async () => {
+  let release!: () => void;
+  let reached!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const exec = fakeExec({
+    versionOutput: async () => {
+      reached();
+      await hold;
+      return `ajour ${VERSION}`;
+    },
+  });
+  const { controller, link } = controllerWith({ exec });
+  const install = controller.install();
+  await gate;
+  const remove = controller.remove();
+  const reconcile = controller.reconcile();
+  release();
+  await Promise.all([install, remove, reconcile]);
+  expect((await controller.state()).status).toBe("not-installed");
+  expect(link.current()).toEqual(link.initial);
+  expect(existsSync(installDir)).toBe(false);
+});
+
+it("keeps modified and unrelated files while removing owned command files", async () => {
+  const { controller } = controllerWith();
+  await controller.install();
+  await writeFile(path.join(installDir, "personal.txt"), "keep");
+  await writeFile(path.join(installDir, "share", "custom"), "keep too");
+  await controller.remove();
+  expect(await readFile(path.join(installDir, "personal.txt"), "utf8")).toBe(
+    "keep",
+  );
+  expect(await readFile(path.join(installDir, "share", "custom"), "utf8")).toBe(
+    "keep too",
+  );
+  expect(existsSync(path.join(installDir, "ajour.exe"))).toBe(false);
+  expect(existsSync(recordFile)).toBe(false);
+});
+
+it("restores the commit when the real macOS adapter reports a cancelled removal prompt", async () => {
+  const { controller: installer } = controllerWith();
+  await installer.install();
+  const before = await readFile(recordFile, "utf8");
+  const folder = "/Users/alex/Ajour/bin";
+  const f = macosLinkFixture({
+    target: `${folder}/ajour`,
+    writable: false,
+    cancelled: true,
+  });
+  const adapter = f.link();
+  const { controller } = controllerWith({
+    link: {
+      link: {
+        add: async () => ({ added: false }),
+        remove: () => adapter.remove(folder, { interactive: true }),
+      },
+    },
+  });
+  const { events, recorded } = recordingEvents();
+  const unit = events.start("cli_command.remove", {
+    kind: "command",
+    trigger: "user",
+  });
+  const result = await controller.remove({ unit });
+  unit.end();
+  expect(result.error).toBe(
+    "Ajour needs your password to remove /usr/local/bin/ajour. Nothing was removed.",
+  );
+  expect(await readFile(recordFile, "utf8")).toBe(before);
+  expect(f.current()).toBe(`${folder}/ajour`);
+  expect(existsSync(path.join(installDir, "ajour.exe"))).toBe(true);
+  expect(recorded).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "cli_command.remove",
+        outcome: "refused",
+        outcome_reason: "admin_cancelled",
+      }),
+    ]),
+  );
+});
+
+it("cancels a pending follow retry on Remove", async () => {
+  await installedBefore("0.0.0");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const github = fakeGithub({ release: { assets: [] } });
+  const { controller } = controllerWith({ github });
+  try {
+    await controller.followAppVersion();
+    expect(github.requests).toEqual([API]);
+    await controller.remove();
+    await vi.advanceTimersByTimeAsync(3_900_000);
+    expect(github.requests).toEqual([API]);
+    expect((await controller.state()).status).toBe("not-installed");
+    expect(existsSync(installDir)).toBe(false);
+  } finally {
+    await controller.stop();
+    vi.useRealTimers();
+  }
 });

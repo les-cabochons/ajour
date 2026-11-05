@@ -795,3 +795,23 @@ describe("macOS command link", () => {
     expect(f.calls).toEqual([]);
   });
 });
+
+it("restores a trailing separator after the check's Remove wrote its projected Path", () => {
+  const saved: RegistryValue = { value: "C:\\Tools;", kind: "String" };
+  expect(
+    checkPathRestoration(
+      { value: "C:\\Tools", kind: "String" },
+      saved,
+      "C:\\Tools",
+      FOLDER,
+    ),
+  ).toEqual(saved);
+  expect(
+    checkPathRestoration(
+      { value: "C:\\Tools;D:\\Later", kind: "String" },
+      saved,
+      "C:\\Tools",
+      FOLDER,
+    ),
+  ).toEqual({ value: "C:\\Tools;D:\\Later", kind: "String" });
+});

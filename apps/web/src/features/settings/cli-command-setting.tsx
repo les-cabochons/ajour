@@ -19,6 +19,7 @@ function statusLine(state: DesktopCliCommandState) {
     if (state.phase === "linking") return "Adding ajour to your PATH…";
     return `Downloading ajour, ${state.progress ?? 0}%`;
   }
+  if (state.status === "removing") return "Removing ajour…";
   if (state.status === "unsupported") return DEVELOPMENT_REASON;
   if (state.version) return `ajour ${state.version}`;
   return "Not installed.";
@@ -87,6 +88,7 @@ export function CliCommandSetting() {
   const [refused, setRefused] = useState<string | null>(null);
   /** From the click until main reports the install, so a second click does nothing. */
   const [starting, setStarting] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!supported) return;
@@ -115,7 +117,11 @@ export function CliCommandSetting() {
     return null;
   }
 
-  const installing = starting || state?.status === "installing";
+  const installing =
+    starting ||
+    removing ||
+    state?.status === "installing" ||
+    state?.status === "removing";
   const development = state?.status === "unsupported";
   const installed = state?.status === "installed";
   const macos = desktop?.runtime?.platform === "darwin";
@@ -124,6 +130,16 @@ export function CliCommandSetting() {
     reason && state?.pending
       ? `ajour couldn't update to ${state.pending}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`
       : reason;
+
+  function remove() {
+    if (installing || !desktop?.removeCliCommand) return;
+    setRemoving(true);
+    setRefused(null);
+    desktop
+      .removeCliCommand()
+      .then(setState, (failure: unknown) => setRefused(messageOf(failure)))
+      .finally(() => setRemoving(false));
+  }
 
   function install() {
     if (installing || development) return;
@@ -150,7 +166,9 @@ export function CliCommandSetting() {
               <span role="status" className="flex min-w-0 flex-col">
                 {state ? (
                   <>
-                    <Line text={statusLine(state)} />
+                    <Line
+                      text={removing ? "Removing ajour…" : statusLine(state)}
+                    />
                     {development ? (
                       <Line text="From source, run: just cli" />
                     ) : state.location ? (
@@ -171,6 +189,11 @@ export function CliCommandSetting() {
             </span>
           }
         >
+          {installed && desktop?.removeCliCommand ? (
+            <Button variant="outline" disabled={installing} onClick={remove}>
+              Remove
+            </Button>
+          ) : null}
           {installed ? (
             <a
               href={GUIDE_URL}
@@ -189,7 +212,7 @@ export function CliCommandSetting() {
               <Button
                 variant="outline"
                 disabled={!state || installing || development}
-                onClick={install}
+                onClick={state?.operation === "remove" ? remove : install}
               >
                 {state?.status === "error" ? "Retry" : "Install"}
               </Button>

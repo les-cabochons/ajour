@@ -67,9 +67,16 @@ function desktop(initial: DesktopCliCommandState | Error = NOT_INSTALLED) {
         finishInstall = { resolve, reject };
       }),
   );
+  const removeCliCommand = vi.fn(
+    () =>
+      new Promise<DesktopCliCommandState>((resolve, reject) => {
+        finishInstall = { resolve, reject };
+      }),
+  );
   window.ajourDesktop = {
     getCliCommand,
     installCliCommand,
+    removeCliCommand,
     onCliCommandChanged: (
       callback: (state: DesktopCliCommandState) => void,
     ) => {
@@ -80,6 +87,7 @@ function desktop(initial: DesktopCliCommandState | Error = NOT_INSTALLED) {
   return {
     getCliCommand,
     installCliCommand,
+    removeCliCommand,
     unsubscribe,
     push: (state: DesktopCliCommandState) => act(() => push!(state)),
     finish: (state: DesktopCliCommandState) =>
@@ -454,6 +462,39 @@ it("shows follow progress and its failure with Retry in the fixed-height row", a
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(main.installCliCommand).toHaveBeenCalledOnce();
   await main.finish(INSTALLED);
+  cleanup();
+  delete window.ajourDesktop;
+});
+
+it("Remove returns the fixed-height row to Not installed without confirmation", async () => {
+  const fake = desktop(INSTALLED);
+  await mount();
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  expect(status()).toContain("Removing ajour…");
+  expect(fake.removeCliCommand).toHaveBeenCalledWith();
+  expect(fake.installCliCommand).not.toHaveBeenCalled();
+  await fake.finish(NOT_INSTALLED);
+  expect(status()).toContain("Not installed.");
+  expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
+  cleanup();
+  delete window.ajourDesktop;
+});
+
+it("retries a failed Remove inline and keeps its status and alert roles", async () => {
+  const fake = desktop({
+    ...INSTALLED,
+    status: "error",
+    operation: "remove",
+    error: "Removal failed.",
+  });
+  await mount();
+  expect(screen.getByRole("alert").textContent).toBe("Removal failed.");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(fake.removeCliCommand).toHaveBeenCalledWith();
+  expect(fake.installCliCommand).not.toHaveBeenCalled();
+  expect(status()).toContain("Removing ajour…");
+  await fake.finish(NOT_INSTALLED);
+  expect(screen.queryByRole("alert")).toBeNull();
   cleanup();
   delete window.ajourDesktop;
 });

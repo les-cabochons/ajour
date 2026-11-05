@@ -664,6 +664,14 @@ function createCliCommandController({
       }
     }
     await fs.rm(`${paths.recordFile}.tmp`, { force: true });
+    if (!record) {
+      try {
+        await fs.rmdir(paths.installDir);
+      } catch (error) {
+        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code))
+          throw error;
+      }
+    }
     return result;
   }
 
@@ -850,6 +858,63 @@ function createCliCommandController({
     return state;
   }
 
+  async function runRemove(unit) {
+    let previous;
+    let marker;
+    try {
+      if (reconciliation) await reconciliation;
+      transient = { status: "removing", progress: null, error: null };
+      emit({ ...transient });
+      previous = await readRecordFile();
+      if (previous) {
+        // Retain ownership evidence before deleting the commit. Recovery uses
+        // the same pending-file cleanup as an interrupted install.
+        const digests = previous.digests ?? {};
+        if (!previous.digests) {
+          for (const name of [binary, "share"])
+            digests[name] = await contentDigest(targetOf(name));
+        }
+        marker = targetOf(`.pending-${randomUUID()}.json`);
+        await writeAtomically(marker, JSON.stringify({ digests }));
+        await fs.rm(paths.recordFile, { force: true });
+      }
+      await reconcileDisk(true);
+      newlyInstalled = false;
+      transient = null;
+      unit?.set({ cli_command: { result: "removed" } });
+    } catch (error) {
+      // Cancellation happens before any file cleanup. Restore the commit so
+      // a later launch cannot silently finish a cancelled user action.
+      if (error.reason === "admin_cancelled" && previous) {
+        await writeRecord(previous);
+        if (marker) await fs.rm(marker, { force: true });
+      }
+      if (error.reason) unit?.refuse(error.reason);
+      else unit?.fail(error, { reason: "remove_failed" });
+      unit?.set({
+        cli_command: { result: error.reason ? "refused" : "failed" },
+      });
+      transient = {
+        status: "error",
+        operation: "remove",
+        progress: null,
+        error: error.message || "Ajour couldn't remove the ajour command.",
+      };
+    }
+    initialized = true;
+    const state = await settledState();
+    emit(state);
+    return state;
+  }
+
+  function trackRunning(work) {
+    const task = work.finally(() => {
+      if (running === task) running = null;
+    });
+    running = task;
+    return task;
+  }
+
   /** Follows only an existing install, through the same checks, without a prompt. */
   function followAppVersion(interactive = false) {
     if (unsupportedReason || quitting.signal.aborted) return settledState();
@@ -857,30 +922,48 @@ function createCliCommandController({
     clearTimeout(retryTimer);
     retryTimer = undefined;
     following = true;
-    running = (async () => {
-      if (!initialized) await reconcileState();
-      const record = await readRecord();
-      if (!record || (record.version === appVersion && !transient?.pending))
-        return settledState();
-      const unit = events?.start("cli_command.follow", {
-        kind: "job",
-        trigger: "system",
-        detached: true,
-      });
-      try {
-        return await runInstall(unit, true, interactive);
-      } finally {
-        unit?.end();
-      }
-    })().finally(() => {
-      running = null;
-      following = false;
-    });
-    return running;
+    return trackRunning(
+      (async () => {
+        if (!initialized) await reconcileState();
+        const record = await readRecord();
+        if (!record || (record.version === appVersion && !transient?.pending))
+          return settledState();
+        const unit = events?.start("cli_command.follow", {
+          kind: "job",
+          trigger: "system",
+          detached: true,
+        });
+        try {
+          return await runInstall(unit, true, interactive);
+        } finally {
+          unit?.end();
+        }
+      })().finally(() => {
+        following = false;
+      }),
+    );
   }
 
   return {
     followAppVersion,
+
+    /** @param {{ unit?: any }} [options] */
+    remove({ unit } = {}) {
+      if (unsupportedReason || quitting.signal.aborted) return settledState();
+      // Queue after the current install/follow, then claim running immediately.
+      // Timers and Retry join this promise and cannot resurrect the command.
+      const before = running;
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      return trackRunning(
+        (async () => {
+          if (before) await before;
+          clearTimeout(retryTimer);
+          retryTimer = undefined;
+          return runRemove(unit);
+        })(),
+      );
+    },
 
     async state() {
       return await settledState();
@@ -903,10 +986,7 @@ function createCliCommandController({
         unit?.set({ cli_command: { result: "joined" } });
         return running;
       }
-      running = runInstall(unit).finally(() => {
-        running = null;
-      });
-      return running;
+      return trackRunning(runInstall(unit));
     },
 
     async reconcile() {

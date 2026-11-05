@@ -398,7 +398,9 @@ function createMacosCommandLink({ fs, exec }) {
         if (/(-128|cancel)/i.test(`${error.message} ${error.stderr ?? ""}`))
           throw failure(
             "admin_cancelled",
-            "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+            present
+              ? "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed."
+              : "Ajour needs your password to remove /usr/local/bin/ajour. Nothing was removed.",
           );
         if (!present) throw changed();
         throw new Error(
