@@ -128,6 +128,9 @@ export function CliCommandSetting() {
   const development = state?.status === "unsupported";
   const installed = state?.status === "installed";
   const macos = desktop?.runtime?.platform === "darwin";
+  // The Linux build following the app (#606): the WSL rows wait for it.
+  const wslUpdating =
+    state?.wsl?.distros.some((row) => row.status === "updating") ?? false;
   // After Remove, `notice` names the WSL links it couldn't delete (#605).
   const errorOrNotice = state?.error ?? refused ?? state?.notice ?? null;
   const alert =
@@ -230,7 +233,8 @@ export function CliCommandSetting() {
                 key={distro.name}
                 distro={distro}
                 version={state.wsl?.version}
-                disabled={installing}
+                pending={state.wsl?.pending}
+                disabled={installing || wslUpdating}
                 onChange={setState}
               />
             ))
@@ -247,7 +251,8 @@ function messageOf(
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-type WslOperation = "add" | "remove";
+/** What a distro row runs: Add, Remove, or the Linux build's follow (#606). */
+type WslOperation = "add" | "remove" | "follow";
 
 /**
  * What a distro row is doing: an Add or Remove running, from the click on;
@@ -269,6 +274,8 @@ function wslRowMode(
   if (distro.status === "adding") return { kind: "running", operation: "add" };
   if (distro.status === "removing")
     return { kind: "running", operation: "remove" };
+  if (distro.status === "updating")
+    return { kind: "running", operation: "follow" };
   // A failed Add of an added distro, or a failed Remove, keeps its link.
   const added =
     distro.status === "added" || (distro.status === "error" && distro.added);
@@ -304,10 +311,19 @@ function wslStatusLine(
   distro: DesktopCliWslDistro,
   mode: WslRowMode,
   version?: string,
+  pending?: string,
 ) {
   if (distro.status === "unsupported") return distro.reason;
   if (mode.kind === "running" && mode.operation === "remove")
     return "Removing ajour…";
+  if (mode.kind === "running" && mode.operation === "follow") {
+    const progress = distro.status === "updating" ? distro.progress : null;
+    return followSentence(
+      pending,
+      (to) => `Updating ajour to ${to}, ${progress ?? 0}%`,
+      "Updating ajour…",
+    );
+  }
   if (mode.kind === "running") {
     // Until main reports the Add, it starts as a download does.
     const phase = distro.status === "adding" ? distro.phase : "downloading";
@@ -322,22 +338,58 @@ function wslStatusLine(
 }
 
 /**
+ * A sentence of the Linux build's follow (#606), which names the version
+ * it follows to, or `plain` while main names none.
+ */
+function followSentence(
+  pending: string | undefined,
+  sentence: (version: string) => string,
+  plain: string,
+) {
+  return pending ? sentence(pending) : plain;
+}
+
+/** Why the Linux build couldn't follow the app (#606): the old one works. */
+function followFailure(pending: string | undefined, reason: string) {
+  return followSentence(
+    pending,
+    (to) =>
+      `ajour in WSL couldn't update to ${to}: ${reason.replace(/\.$/, "")}. The installed version keeps working.`,
+    reason,
+  );
+}
+
+/** What a distro row says when main rejects its call without a sentence. */
+function wslFallback(operation: WslOperation, distro: string) {
+  if (operation === "add") return `Ajour couldn't add ajour to ${distro}.`;
+  if (operation === "remove")
+    return `Ajour couldn't remove ajour from ${distro}.`;
+  return "Ajour couldn't update ajour in WSL.";
+}
+
+/**
  * One WSL distro under the ajour command (#604, #605): Add, its three
  * phases, the added command with the hint for a new terminal and Remove,
  * "Removing ajour…", or the reason an Add or Remove failed, inline with
  * Retry, which repeats it. A failed Add of an added distro, or a failed
  * Remove, keeps it Added, since its link still works. Remove asks for no
  * confirmation: Add restores it. Main serializes them, so each row runs
- * alone. A WSL 1 distro has no Add, only how to convert it (#611).
+ * alone. A WSL 1 distro has no Add, only how to convert it (#611). While
+ * the Linux build follows the app, an added row says "Updating ajour to
+ * <version>"; a failed follow keeps it Added, with the reason and Retry,
+ * which follows again through Install's channel, as the command row's
+ * Retry does (#606).
  */
 function WslRow({
   distro,
   version,
+  pending,
   disabled,
   onChange,
 }: {
   distro: DesktopCliWslDistro;
   version?: string;
+  pending?: string;
   disabled: boolean;
   onChange: (state: DesktopCliCommandState) => void;
 }) {
@@ -350,29 +402,40 @@ function WslRow({
   } | null>(null);
   const mode = wslRowMode(distro, starting, rejected);
   const busy = mode.kind === "running";
+  const failure =
+    rejected ??
+    (distro.status === "error"
+      ? { operation: distro.operation, message: distro.error }
+      : null);
   // A Retry hides the reason it retries.
-  const reason = busy
-    ? null
-    : (rejected?.message ?? (distro.status === "error" ? distro.error : null));
+  const reason =
+    busy || !failure
+      ? null
+      : failure.operation === "follow"
+        ? followFailure(pending, failure.message)
+        : failure.message;
   const button = wslButton(mode);
 
-  function run(next: WslOperation) {
+  /** Main's call for `next`, or undefined when this window has none. */
+  function request(next: WslOperation) {
     const desktop = window.ajourDesktop;
+    if (next === "follow") return desktop?.installCliCommand?.(traceCarrier());
     const call =
       next === "add" ? desktop?.addCliCommandWsl : desktop?.removeCliCommandWsl;
-    if (!call || busy) return;
+    return call?.({ distro: distro.name }, traceCarrier());
+  }
+
+  function run(next: WslOperation) {
+    if (busy) return;
+    const answer = request(next);
+    if (!answer) return;
     setStarting(next);
     setRejected(null);
-    call({ distro: distro.name }, traceCarrier())
+    answer
       .then(onChange, (failure: unknown) =>
         setRejected({
           operation: next,
-          message: messageOf(
-            failure,
-            next === "add"
-              ? `Ajour couldn't add ajour to ${distro.name}.`
-              : `Ajour couldn't remove ajour from ${distro.name}.`,
-          ),
+          message: messageOf(failure, wslFallback(next, distro.name)),
         }),
       )
       .finally(() => setStarting(null));
@@ -384,7 +447,7 @@ function WslRow({
       description={
         <span className="flex h-12 min-w-0 flex-col overflow-hidden">
           <span role="status">
-            <Line text={wslStatusLine(distro, mode, version)} />
+            <Line text={wslStatusLine(distro, mode, version, pending)} />
             {distro.status === "added" && distro.hint && !busy ? (
               <Line text={distro.hint} />
             ) : null}

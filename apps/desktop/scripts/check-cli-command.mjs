@@ -40,16 +40,23 @@
 // WSL 2 distro it runs Add end to end: a new login shell runs `ajour -V` and
 // `ajour status` through the relay, then Add refuses a foreign
 // ~/.local/bin/ajour. It ends with Remove on the distro (#605), which deletes
-// the link and bin\linux, then adds again and removes the command, which
-// deletes the link too. That path needs the Linux archive
-// of the app's version, 0.0.1 unless AJOUR_CLI_CHECK_VERSION says otherwise.
-// To run it locally, from PowerShell:
+// the link and bin\linux, then adds again. The relaunch as version B follows
+// both builds (#606): with B's Linux asset missing at first, the distro's row
+// shows the failure and `ajour -V` there still prints A; once the asset is
+// attached, the retry picks it up and `ajour -V` prints B through the same
+// link. Removing the command then deletes the link too. That path needs the
+// Linux archives of version A, the app's (0.0.1 unless
+// AJOUR_CLI_CHECK_VERSION says otherwise), and of version B (0.0.2 unless
+// AJOUR_CLI_CHECK_NEXT_VERSION says otherwise). Two real nightlies serve: their
+// Linux archives print their own versions. To run it locally, from PowerShell:
 //
 //   # 1. A throwaway WSL 2 distro, from any Linux root filesystem tarball:
 //   wsl --import ajour-check $env:TEMP\ajour-check <rootfs.tar.gz> --version 2
-//   # 2. The Linux archive, built in a Linux checkout or WSL distro of this repo:
-//   #    for s in bundle sea archive; do RELEASE_TAG=v0.0.1 node apps/cli/scripts/$s.mjs; done
-//   # 3. The check, with the folder that holds ajour-0.0.1-linux-x64.tar.gz:
+//   # 2. The Linux archives, built in a Linux checkout or WSL distro of this repo:
+//   #    for v in 0.0.1 0.0.2; do for s in bundle sea archive; do RELEASE_TAG=v$v node apps/cli/scripts/$s.mjs; done; done
+//   #    or two nightlies' ajour-<version>-linux-x64.tar.gz, with
+//   #    AJOUR_CLI_CHECK_VERSION and AJOUR_CLI_CHECK_NEXT_VERSION set to theirs.
+//   # 3. The check, with the folder that holds both archives:
 //   $env:AJOUR_CLI_CHECK_WSL_DISTRO = "ajour-check"
 //   $env:AJOUR_CLI_CHECK_LINUX_ARCHIVES = "<folder>"
 //   corepack pnpm --filter @ajour/desktop check:cli-command
@@ -341,7 +348,8 @@ async function serveRelease() {
     }
     const { tag, asset, bytes, digest, missing } = served;
     const linuxAsset = cliAssetName("linux", "x64", tag.slice(1));
-    const linuxPath = linuxArchiveOf(tag.slice(1));
+    // `missing: "linux"` leaves only the Linux build off the release (#606).
+    const linuxPath = missing === "none" ? linuxArchiveOf(tag.slice(1)) : null;
     const linuxBytes = linuxPath ? readFileSync(linuxPath) : null;
     const linuxReleasePage = `/les-cabochons/ajour/releases/download/${tag}/${linuxAsset}`;
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -351,26 +359,27 @@ async function serveRelease() {
       response.end(
         JSON.stringify({
           tag_name: tag,
-          assets: missing
-            ? []
-            : [
-                ...(linuxBytes
-                  ? [
-                      {
-                        name: linuxAsset,
-                        size: linuxBytes.length,
-                        digest: `sha256:${createHash("sha256").update(linuxBytes).digest("hex")}`,
-                        browser_download_url: `${origin}${linuxReleasePage}`,
-                      },
-                    ]
-                  : []),
-                {
-                  name: asset,
-                  size: bytes.byteLength,
-                  digest: `sha256:${digest}`,
-                  browser_download_url: `${origin}${releasePage}`,
-                },
-              ],
+          assets:
+            missing === "all"
+              ? []
+              : [
+                  ...(linuxBytes
+                    ? [
+                        {
+                          name: linuxAsset,
+                          size: linuxBytes.length,
+                          digest: `sha256:${createHash("sha256").update(linuxBytes).digest("hex")}`,
+                          browser_download_url: `${origin}${linuxReleasePage}`,
+                        },
+                      ]
+                    : []),
+                  {
+                    name: asset,
+                    size: bytes.byteLength,
+                    digest: `sha256:${digest}`,
+                    browser_download_url: `${origin}${releasePage}`,
+                  },
+                ],
         }),
       );
     } else if (linuxBytes && request.url === linuxReleasePage) {
@@ -395,7 +404,12 @@ async function serveRelease() {
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
     requests,
-    serve(release, bytes, missing = false) {
+    /**
+     * Serves `release`. `missing` names the assets left off it: `"none"`,
+     * `"all"`, or `"linux"`, only the Linux build.
+     * @param {"none" | "all" | "linux"} [missing]
+     */
+    serve(release, bytes, missing = "none") {
       served = {
         ...release,
         missing,
@@ -587,7 +601,7 @@ async function checkWsl(page, version, baseUrl, { events, installDir }) {
       (await linkState()).endsWith("/linux/ajour"),
     "Add after Remove links Ubuntu's ~/.local/bin/ajour again",
   );
-  return { distro, linkState };
+  return { distro, linkState, inWsl, rowOf };
 }
 
 /** The first event `name` main printed, waiting up to 5 seconds for it. */
@@ -678,13 +692,18 @@ async function checkWsl1Refusal(
  */
 async function checkFollow(electronApp, env, release, version, binary, wsl) {
   await electronApp.close();
-  const nextVersion = "0.0.2";
+  const nextVersion = process.env.AJOUR_CLI_CHECK_NEXT_VERSION || "0.0.2";
   if (version === nextVersion)
     throw new Error("Follow fixture versions must differ.");
+  // The Linux build follows too (#606): it needs B's Linux archive.
+  if (wsl && !linuxArchiveOf(nextVersion))
+    throw new Error(
+      `The WSL 2 follow needs ${cliAssetName("linux", "x64", nextVersion)} in the folder AJOUR_CLI_CHECK_LINUX_ARCHIVES names.`,
+    );
   const next = releaseOf(nextVersion);
   buildCliArchive(next);
-  // B's release metadata is present but its asset is absent.
-  release.serve(next, readFileSync(next.archivePath), true);
+  // B's release metadata is present but its assets are absent.
+  release.serve(next, readFileSync(next.archivePath), "all");
   const app = await _electron.launch({
     args: [checkMain],
     cwd: desktopRoot,
@@ -695,6 +714,8 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
     },
     timeout: 60_000,
   });
+  const events = [];
+  collectEvents(app.process(), events);
   try {
     const page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
@@ -722,7 +743,8 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
       (await run(binary, ["-V"])).stdout.trim() === `ajour ${version}`,
       "follow missing asset keeps version A working",
     );
-    release.serve(next, readFileSync(next.archivePath));
+    // With WSL, B's Linux build stays missing a while longer (#606).
+    release.serve(next, readFileSync(next.archivePath), wsl ? "linux" : "none");
     await waitForState("installed");
     const printed = (await run(binary, ["-V"])).stdout.trim();
     expect(
@@ -733,6 +755,15 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
         state: await page.evaluate(() => window.ajourDesktop.getCliCommand()),
       },
     );
+    if (wsl)
+      await checkLinuxFollow(page, {
+        release,
+        next,
+        version,
+        nextVersion,
+        events,
+        wsl,
+      });
     const pathBeforeRemove =
       process.platform === "win32" ? await readUserPath() : null;
     const removed = await page.evaluate(() =>
@@ -790,8 +821,118 @@ async function checkFollow(electronApp, env, release, version, binary, wsl) {
   }
 }
 
+/**
+ * The Linux build follows the app (#606), on the WSL 2 path: with B's Linux
+ * asset still missing, the distro's row says why and the old build keeps
+ * working; once it's attached, the retry picks it up and `ajour -V` in the
+ * distro prints B, through the same link.
+ */
+async function checkLinuxFollow(
+  page,
+  { release, next, version, nextVersion, events, wsl },
+) {
+  const { distro, linkState, inWsl, rowOf } = wsl;
+  const linked = await linkState();
+  /** The command's state once `done` holds for it, within the install bound. */
+  const stateWhen = async (done, what) => {
+    let state;
+    for (const deadline = Date.now() + INSTALL_TIMEOUT_MS; ;) {
+      state = await page.evaluate(() => window.ajourDesktop.getCliCommand());
+      if (done(state)) return state;
+      if (Date.now() > deadline)
+        throw new Error(
+          `The Linux follow did not reach ${what}: ${JSON.stringify(state.wsl)}`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  };
+  const missing = await stateWhen(
+    (state) =>
+      state.wsl?.pending === nextVersion &&
+      rowOf(state)?.status === "error" &&
+      rowOf(state)?.operation === "follow",
+    "its missing-asset failure",
+  );
+  expect(
+    missing.wsl.version === version && rowOf(missing).added === true,
+    "with B's Linux asset missing, Ubuntu's row keeps version A and shows the follow's failure",
+    rowOf(missing),
+  );
+  const ajourV = async () =>
+    (await inWsl("bash", ["-lc", "ajour -V"])).stdout.trim();
+  expect(
+    (await ajourV()) === `ajour ${version}`,
+    "the old Linux build keeps working while B's Linux asset is missing",
+  );
+  release.serve(next, readFileSync(next.archivePath));
+  const followed = await stateWhen(
+    (state) =>
+      state.wsl?.version === nextVersion && rowOf(state)?.status === "added",
+    "version B",
+  );
+  expect(
+    !followed.wsl.pending,
+    "the Linux follow retry picks up B's Linux asset without another restart",
+    followed.wsl,
+  );
+  const printedB = await ajourV();
+  expect(
+    printedB === `ajour ${nextVersion}`,
+    "ajour -V in Ubuntu prints B, with nothing run to relink",
+    printedB,
+  );
+  expect(
+    (await linkState()) === linked,
+    "Ubuntu's ~/.local/bin/ajour is the same link as before the follow",
+  );
+  const linux = events.filter(
+    (event) =>
+      event.name === "cli_command.follow" &&
+      event.cli_command?.target === "linux",
+  );
+  expect(
+    linux.some(
+      (event) =>
+        event.outcome === "refused" && event.outcome_reason === "missing_asset",
+    ) &&
+      linux.at(-1)?.outcome === "ok" &&
+      events.some(
+        (event) =>
+          event.name === "cli_command.follow" &&
+          event.cli_command?.target === "windows" &&
+          event.outcome === "ok",
+      ) &&
+      !JSON.stringify(linux).includes(distro),
+    "cli_command.follow names each target, linux refused then ok, without the distro's name",
+    linux.map((event) => [event.outcome, event.outcome_reason]),
+  );
+}
+
 const entriesOf = (value) =>
   (value ?? "").split(";").filter((entry) => entry.trim() !== "");
+
+/** Pushes each `cli_command.*` event the main process prints onto `events`. */
+function collectEvents(mainProcess, events) {
+  let buffered = "";
+  mainProcess.stdout?.on("data", (chunk) => {
+    buffered += chunk;
+    const lines = buffered.split(/\r?\n/);
+    buffered = lines.pop();
+    for (const line of lines) {
+      try {
+        const event = JSON.parse(line);
+        if (
+          typeof event?.name === "string" &&
+          event.name.startsWith("cli_command.")
+        ) {
+          events.push(event);
+        }
+      } catch {
+        // Not an event.
+      }
+    }
+  });
+}
 
 async function main() {
   // Before anything else: a Path an earlier run left changed goes back.
@@ -840,25 +981,7 @@ async function main() {
     mainProcess.stderr?.on("data", (chunk) => {
       stderr = (stderr + chunk).slice(-4_000);
     });
-    let buffered = "";
-    mainProcess.stdout?.on("data", (chunk) => {
-      buffered += chunk;
-      const lines = buffered.split(/\r?\n/);
-      buffered = lines.pop();
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          if (
-            typeof event?.name === "string" &&
-            event.name.startsWith("cli_command.")
-          ) {
-            events.push(event);
-          }
-        } catch {
-          // Not an event.
-        }
-      }
-    });
+    collectEvents(mainProcess, events);
 
     const page = await electronApp.firstWindow();
     await page.waitForLoadState("domcontentloaded");
