@@ -34,3 +34,26 @@ Feature: Managed projects from a project source
     And I open "[ACME-SUP] Support (mine)" in the task menu
     Then the task menu's "Tasks" section lists "Ticket #101 - Login, Ticket #102 - Export"
     And only "Ticket #102 - Export" says "Not assigned" in the task menu
+
+  Scenario: Merge into… moves a local task's entries to a source task, under its name
+    Given I have a local project "Support (mine)" with the code "ACME-SUP"
+    And its task "Login fixes" has an entry "Fixed the redirect"
+    And the example project source is connected
+    When I sync the example project source now
+    And I open the project "Support (mine)"
+    And I merge the task "Login fixes" into "Ticket #101 - Login"
+    Then the toast says "1 entry moved to Ticket #101 - Login"
+    And the project's entries show "Fixed the redirect" under "Ticket #101 - Login"
+    And the task "Login fixes" is archived
+
+  Scenario: Ajour suggests merging a local task with a close name, until I say it is not the same
+    Given I have a local project "Support (mine)" with the code "ACME-SUP"
+    And its task "Ticket 101 - Login" has an entry "Fixed the redirect"
+    And the example project source is connected
+    When I sync the example project source now
+    And I open the project "Support (mine)"
+    Then a merge suggestion says "Looks like “Ticket #101 - Login” from Example planner."
+    When I answer "Not the same" on the suggestion
+    Then no merge suggestion shows
+    When I reload the page
+    Then no merge suggestion shows

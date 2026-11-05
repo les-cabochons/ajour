@@ -333,6 +333,35 @@ describe("task actions", () => {
   });
 });
 
+describe("task actions in a managed project", () => {
+  const managed = { status: "active", source: { remoteId: "acme" } } as const;
+
+  it("offers Merge into… before Archive, on active and archived tasks", () => {
+    expect(ids(getTaskActions(managed, { status: "active" }))).toEqual([
+      "start-entry",
+      "new-entry",
+      "edit",
+      "assign-shortcut",
+      "favorite",
+      "merge-into",
+      "archive",
+    ]);
+    expect(
+      getTaskActions(managed, { status: "archived" }).find(
+        (action) => action.id === "merge-into",
+      ),
+    ).toMatchObject({ label: "Merge into…", disabledReason: undefined });
+  });
+
+  it("blocks Merge into… in an archived project", () => {
+    expect(
+      disabledReasons(
+        getTaskActions({ ...managed, status: "archived" }, managed),
+      ),
+    ).toMatchObject({ "merge-into": "Restore the project first" });
+  });
+});
+
 describe("backlog item actions", () => {
   const manualItem = { status: "active", source: "manual" } as const;
   const syncedItem = {

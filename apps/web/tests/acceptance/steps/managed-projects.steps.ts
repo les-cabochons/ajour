@@ -248,3 +248,100 @@ Then(
     );
   },
 );
+
+/*
+ * Merge into… (#507): a local task of the linked project, its entries, and
+ * the task picker or a suggestion that moves them to a source task.
+ */
+
+Given(
+  "its task {string} has an entry {string}",
+  async ({ page }, name: string, note: string) => {
+    await page.addInitScript(
+      ({ name, note }) => {
+        if (sessionStorage.getItem("managed-projects-task")) return;
+        sessionStorage.setItem("managed-projects-task", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.projects[0].tasks.push({
+          _id: "local-task",
+          name,
+          status: "active",
+          createdAt: 1,
+        });
+        state.timesheetEntries = [
+          {
+            _id: "local-entry",
+            localDate: "2026-10-28",
+            projectId: state.projects[0]._id,
+            taskId: "local-task",
+            label: name,
+            note,
+            durationMs: 3_600_000,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ];
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { name, note },
+    );
+  },
+);
+
+When("I open the project {string}", async ({ page }, name: string) => {
+  await page.goto("/projects");
+  await page.getByRole("link", { name, exact: true }).click();
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+});
+
+When(
+  "I merge the task {string} into {string}",
+  async ({ page }, from: string, into: string) => {
+    const row = page.getByRole("row").filter({ hasText: from });
+    // The "…" button shows on hover, as on every task row.
+    await row.hover();
+    await row.getByRole("button", { name: `Actions for ${from}` }).click();
+    await page.getByRole("menuitem", { name: "Merge into…" }).click();
+    const picker = page.getByRole("dialog");
+    await expect(picker.getByText("Merge into", { exact: true })).toBeVisible();
+    await picker.getByPlaceholder("Search tasks…").fill(into.slice(0, 10));
+    await picker.getByRole("option", { name: into }).click();
+  },
+);
+
+Then(
+  "the project's entries show {string} under {string}",
+  async ({ page }, note: string, task: string) => {
+    await page.getByRole("tab", { name: /^Time entries/ }).click();
+    const row = page.getByRole("link").filter({ hasText: note });
+    await expect(row).toContainText(task);
+  },
+);
+
+Then("the task {string} is archived", async ({ page }, name: string) => {
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await page.getByRole("tab", { name: /^Archived/ }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: name }).getByText("Archived"),
+  ).toBeVisible();
+});
+
+Then("a merge suggestion says {string}", async ({ page }, text: string) => {
+  const row = page.locator("[data-task-merge-suggestion]");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText(text);
+});
+
+When("I answer {string} on the suggestion", async ({ page }, label: string) => {
+  await page
+    .locator("[data-task-merge-suggestion]")
+    .getByRole("button", { name: label, exact: true })
+    .click();
+});
+
+Then("no merge suggestion shows", async ({ page }) => {
+  await expect(page.getByRole("tab", { name: /^Tasks/ })).toBeVisible();
+  await expect(page.locator("[data-task-merge-suggestion]")).toHaveCount(0);
+});

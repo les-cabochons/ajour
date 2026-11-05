@@ -427,16 +427,19 @@ export type TaskActionId =
   | "assign-shortcut"
   | "favorite"
   | "unfavorite"
+  | "merge-into"
   | "archive"
   | "restore";
 
 /**
  * Lists a task's actions: Start entry · New entry… | Edit · Assign shortcut… ·
- * Add to favorites/Remove from favorites | Archive/Restore.
+ * Add to favorites/Remove from favorites | Merge into… | Archive/Restore.
+ * Merge into… is on the tasks of a managed project only (#507), archived ones
+ * included, so a task the source left out can hand its entries over.
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
-  project: { status: ArchiveStatus },
+  project: { status: ArchiveStatus; source?: unknown },
   task: { status: ArchiveStatus; favoritedAt?: number },
 ): ObjectAction<TaskActionId>[] {
   const projectReason =
@@ -466,6 +469,16 @@ export function getTaskActions(
       disabledReason: workReason,
     },
     favoriteAction(task.favoritedAt, "edit", workReason),
+    ...(project.source
+      ? [
+          {
+            id: "merge-into" as const,
+            label: "Merge into…",
+            group: "merge",
+            disabledReason: projectReason,
+          },
+        ]
+      : []),
     isTaskArchived
       ? {
           id: "restore",
