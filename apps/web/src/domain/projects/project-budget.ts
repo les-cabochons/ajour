@@ -5,9 +5,10 @@ import type {
   LocalProjectTask,
   LocalTimesheetEntry,
   LocalTimesheetEntryCommit,
+  LocalTimesheetTombstone,
 } from "@/domain/local-state";
 
-const HOUR_MS = 3_600_000;
+export const HOUR_MS = 3_600_000;
 
 /*
  * A managed project's budget card (#509, ADR 0016). The source writes the
@@ -15,6 +16,41 @@ const HOUR_MS = 3_600_000;
  * the source can't have yet from the entries and their committed copies.
  * Every function is pure and nothing it returns is stored.
  */
+
+/**
+ * The entries a managed project's figures read: those on the project, those
+ * whose committed copy is on it (so one moved off it counts), and the deleted
+ * ones whose committed copy was on it. A deleted entry has no time on any
+ * project now, so it stands as an entry of no project and no time, holding
+ * its committed copy: it subtracts that copy from Not counted yet and counts
+ * on the reconciliation's committed side.
+ */
+export function budgetEntries(
+  projectId: string,
+  entries: readonly LocalTimesheetEntry[],
+  tombstones: readonly LocalTimesheetTombstone[],
+): LocalTimesheetEntry[] {
+  const deleted: LocalTimesheetEntry[] = [];
+  for (const { entryId, commit } of tombstones) {
+    if (commit.projectId !== projectId) continue;
+    deleted.push({
+      _id: entryId,
+      localDate: commit.localDate,
+      label: "",
+      durationMs: 0,
+      sourceBlockIds: [],
+      committedAt: commit.at,
+      commit,
+    });
+  }
+  return [
+    ...entries.filter(
+      (entry) =>
+        entry.projectId === projectId || entry.commit?.projectId === projectId,
+    ),
+    ...deleted,
+  ];
+}
 
 /** Whether the timesheet tool had this committed copy by `asOfMs`. */
 function reachedSource(
@@ -38,6 +74,11 @@ function inPeriod(localDate: string, since: string | undefined) {
  * full, a stale entry counts its difference from the copy, and an entry moved
  * off the project subtracts its committed hours. With `since`, the budget's
  * first day, only time dated from that day counts.
+ *
+ * Known limitation: `commit` keeps only an entry's latest copy. An entry
+ * committed before `asOf`, then edited and committed again after it, shows
+ * the later copy, which the source can't have, so the whole entry counts here
+ * until the next snapshot passes the re-commit.
  */
 export function notCountedMs(
   project: Pick<LocalProject, "_id">,
@@ -73,12 +114,36 @@ export function remainingEstimate(
   budget: LocalProjectSourceBudget,
   notCounted: number,
 ): number | undefined {
+  const sourceRemaining = sourceRemainingMs(budget);
+  return sourceRemaining === undefined
+    ? undefined
+    : sourceRemaining - notCounted;
+}
+
+/** The source's own remaining hours in ms, before Not counted yet. */
+export function sourceRemainingMs(
+  budget: LocalProjectSourceBudget,
+): number | undefined {
   if (budget.unit !== "hours") return undefined;
   const remainingHours =
     budget.remaining ??
     (budget.total === undefined ? undefined : budget.total - budget.consumed);
-  if (remainingHours === undefined) return undefined;
-  return Math.round(remainingHours * HOUR_MS) - notCounted;
+  return remainingHours === undefined
+    ? undefined
+    : Math.round(remainingHours * HOUR_MS);
+}
+
+/** An hours budget's total and consumed hours, in ms. */
+export function budgetHoursMs(budget: LocalProjectSourceBudget): {
+  totalMs?: number;
+  consumedMs: number;
+} {
+  return {
+    ...(budget.total === undefined
+      ? {}
+      : { totalMs: Math.round(budget.total * HOUR_MS) }),
+    consumedMs: Math.round(budget.consumed * HOUR_MS),
+  };
 }
 
 /** A task whose committed hours differ from the source's hours for the user. */
@@ -95,25 +160,26 @@ export interface ReconciledTask {
 }
 
 export interface Reconciliation {
-  /** The source's hours for the user across the project's tasks. */
+  /** The source's hours for the user across the tasks it gives them for. */
   sourceMs: number;
-  /** What the user committed on the project that the source could have. */
+  /** What the user committed on those tasks, and on none, that the source could have. */
   committedMs: number;
-  /** The tasks' differences added up, each one as a positive duration. */
+  /** |sourceMs - committedMs|: what "See the Z" is. */
   differenceMs: number;
   /** The tasks that differ, in the project's order. Empty when all match. */
   tasks: ReconciledTask[];
 }
 
 /** A difference under a minute is the source rounding its hours. */
-const RECONCILIATION_TOLERANCE_MS = 60_000;
+export const RECONCILIATION_TOLERANCE_MS = 60_000;
 
 /**
  * Whether what the user committed on the project matches what the source
  * has for them, task by task. It compares the committed copies the source
  * could have, sent before `asOf` and not as local time, with each task's
- * `myHours`. With `me.hoursSince`, only copies dated from that day count.
- * Null when the source can't give the user's hours.
+ * `myHours`. A task without `myHours` is unknown, not zero: it is left out of
+ * the comparison and of both totals. With `me.hoursSince`, only copies dated
+ * from that day count. Null when the source can't give the user's hours.
  */
 export function reconciliation(
   project: Pick<LocalProject, "_id" | "tasks">,
@@ -127,7 +193,6 @@ export function reconciliation(
     string | undefined,
     { committedMs: number; entries: LocalTimesheetEntry[] }
   >();
-  let committedMs = 0;
   for (const entry of entries) {
     const { commit } = entry;
     if (
@@ -144,16 +209,19 @@ export function reconciliation(
     task.committedMs += commit.durationMs;
     task.entries.push(entry);
     committedByTask.set(commit.taskId, task);
-    committedMs += commit.durationMs;
   }
 
   let sourceMs = 0;
+  let committedMs = 0;
   const compared: ReconciledTask[] = [];
   for (const task of project.tasks) {
-    const taskSourceMs = Math.round((task.source?.myHours ?? 0) * HOUR_MS);
-    sourceMs += taskSourceMs;
     const committed = committedByTask.get(task._id);
     committedByTask.delete(task._id);
+    const myHours = task.source?.myHours;
+    if (myHours === undefined) continue;
+    const taskSourceMs = Math.round(myHours * HOUR_MS);
+    sourceMs += taskSourceMs;
+    committedMs += committed?.committedMs ?? 0;
     compared.push({
       taskId: task._id,
       name: task.name,
@@ -162,28 +230,34 @@ export function reconciliation(
       entries: committed?.entries ?? [],
     });
   }
-  // Time committed on a task the project no longer has, or on no task.
+  // Time committed on no task, and on tasks the project no longer has, which
+  // are one row.
+  const removed: ReconciledTask = {
+    name: "A removed task",
+    sourceMs: 0,
+    committedMs: 0,
+    entries: [],
+  };
   for (const [taskId, committed] of committedByTask) {
-    compared.push({
-      ...(taskId === undefined ? {} : { taskId }),
-      name: "No task",
-      sourceMs: 0,
-      ...committed,
-    });
+    committedMs += committed.committedMs;
+    if (taskId === undefined) {
+      compared.push({ name: "No task", sourceMs: 0, ...committed });
+    } else {
+      removed.committedMs += committed.committedMs;
+      removed.entries.push(...committed.entries);
+    }
   }
+  if (removed.entries.length > 0) compared.push(removed);
 
-  const tasks = compared.filter(
-    (task) =>
-      Math.abs(task.committedMs - task.sourceMs) >= RECONCILIATION_TOLERANCE_MS,
-  );
   return {
     sourceMs,
     committedMs,
-    differenceMs: tasks.reduce(
-      (sum, task) => sum + Math.abs(task.committedMs - task.sourceMs),
-      0,
+    differenceMs: Math.abs(sourceMs - committedMs),
+    tasks: compared.filter(
+      (task) =>
+        Math.abs(task.committedMs - task.sourceMs) >=
+        RECONCILIATION_TOLERANCE_MS,
     ),
-    tasks,
   };
 }
 

@@ -6,9 +6,11 @@ import type {
   LocalTimesheetEntryCommit,
 } from "@/domain/local-state";
 import {
+  budgetEntries,
   notCountedMs,
   reconciliation,
   remainingEstimate,
+  sourceRemainingMs,
   sourceTaskConsumed,
 } from "@/domain/projects/project-budget";
 
@@ -143,6 +145,48 @@ describe("notCountedMs", () => {
   });
 });
 
+describe("budgetEntries with deleted entries", () => {
+  const tombstone = (at: number, overrides = {}) => ({
+    entryId: "gone",
+    commit: committed(at, { durationMs: 3 * HOUR, ...overrides }),
+  });
+
+  it("subtracts the committed hours of a deleted entry the source could have", () => {
+    const entries = budgetEntries("acme", [entry({})], [tombstone(BEFORE)]);
+
+    expect(notCountedMs(project, entries, AS_OF)).toBe(-1 * HOUR);
+  });
+
+  it("leaves out a deleted entry committed after the source's time", () => {
+    const entries = budgetEntries("acme", [], [tombstone(AFTER)]);
+
+    expect(notCountedMs(project, entries, AS_OF)).toBe(0);
+  });
+
+  it("keeps only the tombstones whose copy was on the project", () => {
+    const entries = budgetEntries(
+      "acme",
+      [],
+      [tombstone(BEFORE, { projectId: "globex" })],
+    );
+
+    expect(entries).toEqual([]);
+  });
+
+  it("counts a deleted entry on the committed side of the reconciliation, and lists it", () => {
+    const entries = budgetEntries("acme", [], [tombstone(BEFORE)]);
+    const result = reconciliation(
+      { _id: "acme", tasks: [] },
+      entries,
+      { hoursAvailable: true },
+      AS_OF,
+    );
+
+    expect(result!.committedMs).toBe(3 * HOUR);
+    expect(result!.tasks[0]!.entries.map((e) => e._id)).toEqual(["gone"]);
+  });
+});
+
 describe("remainingEstimate", () => {
   function budget(
     overrides: Partial<LocalProjectSourceBudget>,
@@ -197,7 +241,7 @@ describe("reconciliation", () => {
         name: "Ticket #102 - Export",
         status: "active",
         createdAt: 1,
-        source: { remoteId: "1002", assigned: false },
+        source: { remoteId: "1002", assigned: false, myHours: 0 },
       },
       { _id: "notes", name: "Notes", status: "active", createdAt: 1 },
     ],
@@ -286,6 +330,69 @@ describe("reconciliation", () => {
     );
   });
 
+  it("reads Z as the source's hours less what the user committed, not the tasks' differences added up", () => {
+    // Login is 2:15 short, Export 2:15 over: the totals match.
+    const entries = [
+      entry({ commit: committed(BEFORE, { durationMs: 3 * HOUR }) }),
+      entry({
+        commit: committed(BEFORE, {
+          taskId: "export",
+          durationMs: 2.25 * HOUR,
+        }),
+      }),
+    ];
+    const result = reconciliation(managed, entries, me, AS_OF)!;
+
+    expect(result.tasks).toHaveLength(2);
+    expect(result.differenceMs).toBe(0);
+
+    const short = reconciliation(
+      managed,
+      [entry({ commit: committed(BEFORE, { durationMs: 3 * HOUR }) })],
+      me,
+      AS_OF,
+    )!;
+    expect(short.differenceMs).toBe(2.25 * HOUR);
+  });
+
+  it("leaves a task with no hours from the source out of the comparison and both totals", () => {
+    const entries = [
+      entry({ commit: committed(BEFORE, { durationMs: 5.25 * HOUR }) }),
+      entry({ commit: committed(BEFORE, { taskId: "export" }) }),
+    ];
+    const unknown = {
+      ...managed,
+      tasks: managed.tasks.map((task) =>
+        task._id === "export"
+          ? { ...task, source: { remoteId: "1002", assigned: false } }
+          : task,
+      ),
+    };
+
+    expect(reconciliation(unknown, entries, me, AS_OF)).toEqual({
+      sourceMs: 5.25 * HOUR,
+      committedMs: 5.25 * HOUR,
+      differenceMs: 0,
+      tasks: [],
+    });
+  });
+
+  it("shows time committed on tasks the project no longer has as one row", () => {
+    const entries = [
+      entry({ commit: committed(BEFORE, { durationMs: 5.25 * HOUR }) }),
+      entry({ commit: committed(BEFORE, { taskId: "gone-1" }) }),
+      entry({ commit: committed(BEFORE, { taskId: "gone-2" }) }),
+      entry({ commit: committed(BEFORE, { taskId: undefined }) }),
+    ];
+
+    const rows = reconciliation(managed, entries, me, AS_OF)!.tasks;
+
+    expect(rows.map((row) => [row.name, row.committedMs])).toEqual([
+      ["No task", 2 * HOUR],
+      ["A removed task", 4 * HOUR],
+    ]);
+  });
+
   it("ignores a difference under a minute, which is the source's rounding", () => {
     const entries = [
       entry({
@@ -303,6 +410,31 @@ describe("reconciliation", () => {
       reconciliation(managed, entries, { hoursAvailable: false }, AS_OF),
     ).toBeNull();
     expect(reconciliation(managed, entries, undefined, AS_OF)).toBeNull();
+  });
+});
+
+describe("sourceRemainingMs", () => {
+  it("is the source's remaining hours in milliseconds", () => {
+    expect(
+      sourceRemainingMs({
+        unit: "hours",
+        consumed: 31.5,
+        remaining: 8.5,
+        asOf: AS_OF,
+      }),
+    ).toBe(8.5 * HOUR);
+  });
+});
+
+describe("re-committing after the source's time (known limitation)", () => {
+  it("counts the whole entry again until a snapshot passes the re-commit, because commit keeps only the latest copy", () => {
+    // Committed 2:00 before asOf, edited to 3:00 and committed again after.
+    const recommitted = entry({
+      durationMs: 3 * HOUR,
+      commit: committed(AFTER, { durationMs: 3 * HOUR }),
+    });
+
+    expect(notCountedMs(project, [recommitted], AS_OF)).toBe(3 * HOUR);
   });
 });
 

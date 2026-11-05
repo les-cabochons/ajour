@@ -135,15 +135,151 @@ describe("ProjectBudgetCard", () => {
         /^Example planner has 5h15 for you\. You committed 3h before Oct 31/,
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Ticket #101 - Login")).toBeNull();
+    expect(
+      screen.queryByRole("list", { name: "Tasks that differ" }),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "See the 2h15" }));
 
-    const list = screen.getByRole("list", { name: "Committed entries" });
+    const list = screen.getByRole("list", { name: "Tasks that differ" });
     expect(list.textContent).toContain("Ticket #101 - Login");
     expect(list.textContent).toContain("Example planner 5:15");
     expect(list.textContent).toContain("You 3:00");
     expect(list.textContent).toContain("3:00");
+  });
+
+  it("keeps the list mounted for the button it controls, hidden until opened, with labels", () => {
+    render(
+      <ProjectBudgetCard
+        project={managedProject(hoursBudget)}
+        entries={entries}
+        source={source({ hoursAvailable: true })}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "See the 2h15" });
+    const list = document.getElementById(
+      button.getAttribute("aria-controls")!,
+    )!;
+    expect(list.hidden).toBe(true);
+
+    fireEvent.click(button);
+
+    expect(list.hidden).toBe(false);
+    expect(list.getAttribute("aria-label")).toBe("Tasks that differ");
+    expect(
+      screen.getByRole("list", { name: "Entries on Ticket #101 - Login" }),
+    ).toBeTruthy();
+  });
+
+  it("says the totals match and offers the tasks when only some tasks differ", () => {
+    const project = managedProject(hoursBudget);
+    project.tasks[0]!.source!.myHours = 3;
+    project.tasks.push({
+      _id: "export",
+      name: "Ticket #102 - Export",
+      status: "active",
+      createdAt: 1,
+      source: { remoteId: "1002", assigned: true, myHours: 2 },
+    });
+    const other = [
+      entry("a", {
+        taskId: "export",
+        commit: {
+          at: BEFORE,
+          localDate: "2026-10-28",
+          projectId: "acme",
+          taskId: "export",
+          durationMs: 3 * HOUR,
+        },
+      }),
+      entry("b", {
+        commit: {
+          at: BEFORE,
+          localDate: "2026-10-28",
+          projectId: "acme",
+          taskId: "login",
+          durationMs: 2 * HOUR,
+        },
+      }),
+    ];
+
+    render(
+      <ProjectBudgetCard
+        project={project}
+        entries={other}
+        source={source({ hoursAvailable: true })}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /^Example planner has 5h for you, as you committed before Oct 31, .*, but 2 tasks differ\./,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "See them" })).toBeTruthy();
+  });
+
+  it("shows the year of the source's time when it is not this year", () => {
+    render(
+      <ProjectBudgetCard
+        project={managedProject({
+          ...hoursBudget,
+          asOf: "2025-10-31T16:00:00.000Z",
+        })}
+        entries={[]}
+        source={source({ hoursAvailable: true })}
+      />,
+    );
+
+    expect(figure("Consumed")).toMatch(/^31:30as of Oct 31, 2025, /);
+  });
+
+  it("writes a negative figure with one minus sign, and never a minus before 0:00", () => {
+    const moved = [
+      entry("moved", {
+        projectId: "globex",
+        commit: {
+          at: BEFORE,
+          localDate: "2026-10-28",
+          projectId: "acme",
+          taskId: "login",
+          durationMs: 3 * HOUR,
+          stale: true,
+        },
+      }),
+    ];
+    const { unmount } = render(
+      <ProjectBudgetCard
+        project={managedProject(hoursBudget)}
+        entries={moved}
+        source={source({ hoursAvailable: true })}
+      />,
+    );
+    expect(figure("Not counted yet")).toBe("−3:00");
+    expect(figure("≈ Remaining")).toBe("11:30Estimate: 8:30 + 3:00");
+    unmount();
+
+    const seconds = [
+      entry("tiny", {
+        durationMs: 3 * HOUR - 20_000,
+        commit: {
+          at: BEFORE,
+          localDate: "2026-10-28",
+          projectId: "acme",
+          taskId: "login",
+          durationMs: 3 * HOUR,
+        },
+      }),
+    ];
+    render(
+      <ProjectBudgetCard
+        project={managedProject(hoursBudget)}
+        entries={seconds}
+        source={source({ hoursAvailable: true })}
+      />,
+    );
+    expect(figure("Not counted yet")).toBe("0:00");
   });
 
   it("offers no list when what the user committed matches", () => {

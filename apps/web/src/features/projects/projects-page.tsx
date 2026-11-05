@@ -87,7 +87,10 @@ import {
 } from "@/features/projects/pinned-slot";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { ProjectBudgetCard } from "@/features/projects/project-budget-card";
-import { sourceTaskConsumed } from "@/domain/projects/project-budget";
+import {
+  budgetEntries as budgetEntriesOf,
+  sourceTaskConsumed,
+} from "@/domain/projects/project-budget";
 import {
   ProjectPropertiesCard,
   ProjectTitle,
@@ -614,8 +617,9 @@ function ProjectDetail({
   /** The project's time entries, newest first. */
   entries: LocalTimesheetEntry[];
   /**
-   * For a managed project, its entries and those whose committed copy is on
-   * it, which the budget card counts.
+   * For a managed project, its entries, those whose committed copy is on it
+   * and the deleted ones whose committed copy was, which the budget card
+   * counts.
    */
   budgetEntries: readonly LocalTimesheetEntry[];
   /** A managed project's source record: its label and the user's hours. */
@@ -1978,13 +1982,13 @@ export function ProjectsPage() {
   const budgetEntries = useMemo(
     () =>
       managedProjectId
-        ? state.timesheetEntries.filter(
-            (entry) =>
-              entry.projectId === managedProjectId ||
-              entry.commit?.projectId === managedProjectId,
+        ? budgetEntriesOf(
+            managedProjectId,
+            state.timesheetEntries,
+            state.timesheetTombstones,
           )
         : [],
-    [managedProjectId, state.timesheetEntries],
+    [managedProjectId, state.timesheetEntries, state.timesheetTombstones],
   );
 
   if (!teamState?.team) return null;

@@ -8,15 +8,20 @@ import type {
   LocalTimesheetEntry,
 } from "@/domain/local-state";
 import {
+  RECONCILIATION_TOLERANCE_MS,
+  budgetHoursMs,
   notCountedMs,
   reconciliation,
   remainingEstimate,
+  sourceRemainingMs,
   type Reconciliation,
 } from "@/domain/projects/project-budget";
 import {
   formatClockDuration,
   formatCompactDuration,
+  formatLocalDateFromTimestamp,
 } from "@/domain/time/duration";
+import { formatShortLocalDate } from "@/domain/time/local-date";
 
 /*
  * A managed project's budget card (#509, ADR 0016). Two writers: the source's
@@ -26,8 +31,6 @@ import {
  * it can't say. The card names the source by its label only.
  */
 
-const HOUR_MS = 3_600_000;
-
 const STATUS_LABELS: Record<ProjectSourceBudgetStatus, string> = {
   ok: "Within budget",
   warning: "Near its budget",
@@ -35,28 +38,28 @@ const STATUS_LABELS: Record<ProjectSourceBudgetStatus, string> = {
   unknown: "Unknown",
 };
 
-/** "Oct 31, 7:59 PM": when the source's figures are from. */
+/** "Oct 31, 7:59 PM", with the year when it is not this one. */
 function formatAsOf(asOf: string) {
-  return new Date(asOf).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
+  const date = new Date(asOf);
+  const day = formatShortLocalDate(
+    formatLocalDateFromTimestamp(date.getTime()),
+    new Date().getFullYear(),
+  );
+  const time = date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
   });
+  return `${day}, ${time}`;
 }
 
+/** "h:mm" with one minus sign (U+2212), and none for a value that reads 0:00. */
 function formatSignedClock(durationMs: number) {
-  return durationMs < 0
-    ? `-${formatClockDuration(-durationMs)}`
-    : formatClockDuration(durationMs);
+  const clock = formatClockDuration(Math.abs(durationMs));
+  return durationMs < 0 && clock !== "0:00" ? `−${clock}` : clock;
 }
 
 function formatEntryDay(localDate: string) {
-  return new Date(`${localDate}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return formatShortLocalDate(localDate, new Date().getFullYear());
 }
 
 /**
@@ -95,24 +98,34 @@ function TwoLineRow({
 
 function ReconciliationList({
   id,
+  open,
   label,
   result,
 }: {
   id: string;
+  open: boolean;
   label: string;
   result: Reconciliation;
 }) {
   return (
-    <ul id={id} aria-label="Committed entries" className="project-budget-tasks">
+    <ul
+      id={id}
+      aria-label="Tasks that differ"
+      hidden={!open}
+      className="project-budget-tasks"
+    >
       {result.tasks.map((task) => (
-        <li key={task.taskId ?? ""} className="flex flex-col gap-1">
+        <li key={task.taskId ?? task.name} className="flex flex-col gap-1">
           <span className="truncate font-medium">{task.name}</span>
           <span className="text-xs text-muted-foreground">
             {label} <Value>{formatClockDuration(task.sourceMs)}</Value>
             {" · "}You <Value>{formatClockDuration(task.committedMs)}</Value>
           </span>
           {task.entries.length > 0 ? (
-            <ul className="flex flex-col">
+            <ul
+              aria-label={`Entries on ${task.name}`}
+              className="flex flex-col"
+            >
               {task.entries.map((entry) => (
                 <li key={entry._id} className="project-budget-entry">
                   <span className="truncate">
@@ -162,8 +175,9 @@ export function ProjectBudgetCard({
       budget.since,
     );
     return {
+      ...budgetHoursMs(budget),
       notCounted,
-      sourceRemaining: remainingEstimate(budget, 0),
+      sourceRemaining: sourceRemainingMs(budget),
       remaining: remainingEstimate(budget, notCounted),
     };
   }, [project, entries, budget]);
@@ -190,16 +204,16 @@ export function ProjectBudgetCard({
             />
           ) : (
             <>
-              {budget.total === undefined ? null : (
+              {figures!.totalMs === undefined ? null : (
                 <PropertyRow label="Budget">
                   <Value size="base">
-                    {formatClockDuration(budget.total * HOUR_MS)}
+                    {formatClockDuration(figures!.totalMs)}
                   </Value>
                 </PropertyRow>
               )}
               <TwoLineRow
                 label="Consumed"
-                value={formatClockDuration(budget.consumed * HOUR_MS)}
+                value={formatClockDuration(figures!.consumedMs)}
                 line={`as of ${formatAsOf(budget.asOf)}`}
               />
               <PropertyRow label="Not counted yet">
@@ -216,9 +230,12 @@ export function ProjectBudgetCard({
                   tone={figures!.remaining < 0 ? "danger" : undefined}
                   line={`Estimate: ${formatSignedClock(
                     figures!.sourceRemaining!,
-                  )} ${figures!.notCounted < 0 ? "+" : "−"} ${formatClockDuration(
-                    Math.abs(figures!.notCounted),
-                  )}`}
+                  )} ${
+                    figures!.notCounted < 0 &&
+                    formatClockDuration(-figures!.notCounted) !== "0:00"
+                      ? "+"
+                      : "−"
+                  } ${formatClockDuration(Math.abs(figures!.notCounted))}`}
                 />
               )}
             </>
@@ -227,9 +244,21 @@ export function ProjectBudgetCard({
       ) : null}
       {reconciled && asOf ? (
         <p className="project-budget-note">
-          {label} has {formatCompactDuration(reconciled.sourceMs)} for you. You
-          committed {formatCompactDuration(reconciled.committedMs)} before{" "}
-          {formatAsOf(asOf)}.
+          {reconciled.differenceMs < RECONCILIATION_TOLERANCE_MS &&
+          reconciled.tasks.length > 0 ? (
+            <>
+              {label} has {formatCompactDuration(reconciled.sourceMs)} for you,
+              as you committed before {formatAsOf(asOf)}, but{" "}
+              {reconciled.tasks.length}{" "}
+              {reconciled.tasks.length === 1 ? "task differs" : "tasks differ"}.
+            </>
+          ) : (
+            <>
+              {label} has {formatCompactDuration(reconciled.sourceMs)} for you.
+              You committed {formatCompactDuration(reconciled.committedMs)}{" "}
+              before {formatAsOf(asOf)}.
+            </>
+          )}
           {reconciled.tasks.length > 0 ? (
             <>
               {" "}
@@ -240,7 +269,9 @@ export function ProjectBudgetCard({
                 aria-controls={listId}
                 onClick={() => setListOpen((open) => !open)}
               >
-                See the {formatCompactDuration(reconciled.differenceMs)}
+                {reconciled.differenceMs < RECONCILIATION_TOLERANCE_MS
+                  ? "See them"
+                  : `See the ${formatCompactDuration(reconciled.differenceMs)}`}
               </button>
             </>
           ) : null}
@@ -248,8 +279,13 @@ export function ProjectBudgetCard({
       ) : hoursNote ? (
         <p className="project-budget-note">{hoursNote}</p>
       ) : null}
-      {reconciled && listOpen && reconciled.tasks.length > 0 ? (
-        <ReconciliationList id={listId} label={label} result={reconciled} />
+      {reconciled && reconciled.tasks.length > 0 ? (
+        <ReconciliationList
+          id={listId}
+          open={listOpen}
+          label={label}
+          result={reconciled}
+        />
       ) : null}
     </section>
   );

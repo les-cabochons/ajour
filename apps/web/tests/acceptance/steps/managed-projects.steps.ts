@@ -411,7 +411,7 @@ Then("the budget card says {string}", async ({ page }, text: string) => {
 Then(
   "the committed entries show {string} with {string}",
   async ({ page }, task: string, committed: string) => {
-    const list = page.getByRole("list", { name: "Committed entries" });
+    const list = page.getByRole("list", { name: "Tasks that differ" });
     await expect(list).toContainText(task);
     await expect(list).toContainText(committed);
   },
