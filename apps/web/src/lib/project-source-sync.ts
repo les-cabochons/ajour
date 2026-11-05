@@ -82,6 +82,7 @@ export function syncProjectSourceConnection(
     job: Unit<AjourCatalog, "project_source.sync">,
   ): Promise<ProjectSourceSyncOutcome> => {
     const generation = connectionGeneration(pluginId, connectionId);
+    job.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
     const summary = await job.enter(() =>
       activeConnection(pluginId, connectionId),
     );
@@ -97,8 +98,6 @@ export function syncProjectSourceConnection(
       (summary.lastSyncAt !== undefined &&
         record.syncedAt < summary.lastSyncAt);
     job.set({
-      plugin: { id: pluginId },
-      connection: { id: connectionId },
       project_source_sync: {
         trigger: trigger === "schedule" ? "auto" : "manual",
         fresh,

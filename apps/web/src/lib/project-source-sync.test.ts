@@ -267,6 +267,8 @@ describe("a project source sync", () => {
       outcome: "refused",
       outcome_reason: "connection_not_found",
       error: { type: expect.any(String) },
+      plugin: { id: PLUGIN },
+      connection: { id: connectionId },
     });
   });
 
