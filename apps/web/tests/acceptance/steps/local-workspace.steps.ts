@@ -3729,3 +3729,79 @@ Then(
     await page.mouse.up();
   },
 );
+
+// A phone has no keyboard: the keys in menus, the pinned tasks' key badges
+// and the Sidebar settings only teach what it can't do (usability testing,
+// 2026-11-06).
+Given(
+  "the {string} task is pinned to key {string}",
+  async ({ page }, task: string, key: string) => {
+    await page.addInitScript(
+      ([taskName, slot]) => {
+        const state = JSON.parse(
+          window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+        );
+        for (const project of state.projects) {
+          for (const candidate of project.tasks) {
+            if (candidate.name === taskName) candidate.pinnedSlot = slot;
+          }
+        }
+        window.localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify(state),
+        );
+      },
+      [task, key],
+    );
+  },
+);
+Then("the open menu shows no keys", async ({ page }) => {
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem").first()).toBeVisible();
+  for (const key of await menu
+    .locator('[data-slot="dropdown-menu-shortcut"]')
+    .all()) {
+    await expect(key).toBeHidden();
+  }
+});
+When("I open the entry editor's task picker", async ({ page }) => {
+  await page
+    .getByRole("dialog")
+    .last()
+    .getByRole("button", { name: "Project or task" })
+    .click();
+});
+Then(
+  "the task picker shows {string} without its key badge",
+  async ({ page }, task: string) => {
+    await expect(
+      page.getByRole("option", { name: new RegExp(task) }).first(),
+    ).toBeVisible();
+    await expect(page.locator('kbd[aria-label^="Pinned to"]')).not.toHaveCount(
+      0,
+    );
+    for (const badge of await page
+      .locator('kbd[aria-label^="Pinned to"]')
+      .all()) {
+      await expect(badge).toBeHidden();
+    }
+  },
+);
+When("I open Settings General on the phone", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await page.goto("/settings/general");
+});
+Then(
+  "General offers Changes end a snooze early and no Sidebar section",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("switch", { name: "Changes end a snooze early" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Sidebar", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: "Sidebar density" }),
+    ).toHaveCount(0);
+  },
+);

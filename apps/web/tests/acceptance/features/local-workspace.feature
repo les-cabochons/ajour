@@ -142,6 +142,18 @@ Feature: Open the local time workspace
     When I choose "Edit" from the action menu
     Then the entry editor opens in a full-width dialog
 
+  Scenario: A phone shows no keyboard hints
+    Given I have a week of saved entries
+    And the "Development" task is pinned to key "1"
+    When I long press Monday's "API" entry on a narrow touch screen
+    Then the entry's action menu is open
+    And the open menu shows no keys
+    When I choose "Edit" from the action menu
+    And I open the entry editor's task picker
+    Then the task picker shows "Development" without its key badge
+    When I open Settings General on the phone
+    Then General offers Changes end a snooze early and no Sidebar section
+
   Scenario: Reorder a day by dragging a card in the Week Days view
     Given I have a week of saved entries
     When I open the Week Days view

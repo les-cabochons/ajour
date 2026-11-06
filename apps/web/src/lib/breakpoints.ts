@@ -17,3 +17,9 @@ export const NARROW_VIEW_QUERY = `(width < ${DESKTOP_MIN_WIDTH}px)`;
 
 /** Matches every desktop width. */
 export const DESKTOP_QUERY = `(width >= ${DESKTOP_MIN_WIDTH}px)`;
+
+/**
+ * Matches a touch screen or the narrow view, where keyboard hints such as
+ * the keys in menus only teach what a phone can't do.
+ */
+export const TOUCH_OR_NARROW_QUERY = `(pointer: coarse), ${NARROW_VIEW_QUERY}`;

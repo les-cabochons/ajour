@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
  * The key badge for a pinned task's slot, shown next to the task's name: a
  * keycap with the chord that starts it, "⇧3" on macOS and "Shift+3"
  * elsewhere, so it never reads as a count or a metric (council round 19).
- * The tooltip names both keys: the bare digit opens a new entry.
+ * The tooltip names both keys: the bare digit opens a new entry. Touch
+ * screens and the narrow view hide it, having no number keys to press.
  */
 export function PinnedSlotBadge({
   slot,
@@ -31,7 +32,7 @@ export function PinnedSlotBadge({
   return (
     <kbd
       className={cn(
-        "inline-flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-sm border border-b-2 border-border bg-transparent px-1 font-mono text-2xs leading-none font-medium text-[var(--text-secondary)]",
+        "inline-flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-sm border border-b-2 border-border bg-transparent px-1 font-mono text-2xs leading-none font-medium text-[var(--text-secondary)] touch-or-narrow:hidden",
         className,
       )}
       title={`Press ${slot} for a new entry, Shift+${slot} to start`}
