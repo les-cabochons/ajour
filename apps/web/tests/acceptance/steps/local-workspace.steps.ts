@@ -3805,3 +3805,57 @@ Then(
     ).toHaveCount(0);
   },
 );
+
+// Between 800 and 1000px beside the sidebar the Grid scrolls sideways, and
+// its Project/task column scrolled away with it, so a typed cell's row had
+// no name (usability testing, 2026-11-06).
+When("I scroll the Grid sideways to its end", async ({ page }) => {
+  await expect(page.locator(".weekly-grid-task-cell").first()).toBeVisible();
+  // The sidebar is beside the Grid.
+  await expect(page.locator(".ajour-shell-sidebar").first()).toBeVisible();
+  const scrolled = await page.evaluate(() => {
+    const table = document.querySelector(".weekly-grid-table")!;
+    let scroller = table.parentElement;
+    while (scroller && scroller.scrollWidth <= scroller.clientWidth + 1) {
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) return 0;
+    scroller.scrollLeft = scroller.scrollWidth;
+    return scroller.scrollLeft;
+  });
+  expect(scrolled).toBeGreaterThan(0);
+});
+Then(
+  "the Grid's task column stays at its left edge, over the day cells",
+  async ({ page }) => {
+    const layout = await page.evaluate(() => {
+      const scroller =
+        document.querySelector(".weekly-grid-table")!.parentElement!;
+      const edge = scroller.getBoundingClientRect().left;
+      const name = document.querySelector(".weekly-grid-task-cell")!;
+      const nameBox = name.getBoundingClientRect();
+      // What shows at the middle of the name's cell is the name itself.
+      const hit = document.elementFromPoint(
+        nameBox.left + nameBox.width / 2,
+        nameBox.top + nameBox.height / 2,
+      );
+      return {
+        edge,
+        left: nameBox.left,
+        coversDays: Boolean(hit && name.contains(hit)),
+      };
+    });
+    expect(Math.abs(layout.left - layout.edge)).toBeLessThanOrEqual(1);
+    expect(layout.coversDays).toBe(true);
+  },
+);
+Then(
+  "the Grid's Total column scrolled into view with the days",
+  async ({ page }) => {
+    const total = page
+      .locator(".weekly-grid-table thead")
+      .getByText("Total", { exact: true });
+    const box = (await total.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  },
+);
