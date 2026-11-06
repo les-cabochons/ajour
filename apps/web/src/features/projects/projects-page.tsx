@@ -177,6 +177,8 @@ type TaskEditorSession = {
   openedPinnedSlot: PinnedTaskSlot | undefined;
   /** Set once Save or a switch was blocked, so a missing name shows its error. */
   showErrors: boolean;
+  /** Tasks created in a row with Create more, so the composer starts over. */
+  createdInRow?: number;
 };
 
 /** The task whose Assign shortcut… picker is open, from its row menu or the palette. */
@@ -1317,7 +1319,8 @@ function ProjectDetail({
               className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
             >
               <TabsTrigger value="tasks" className="flex-none px-0">
-                Tasks <Value tone="muted">{project.tasks.length}</Value>
+                {/* Active tasks, as the Active filter counts them. */}
+                Tasks <Value tone="muted">{summary.active}</Value>
               </TabsTrigger>
               <TabsTrigger value="entries" className="flex-none px-0">
                 Time entries <Value tone="muted">{entries.length}</Value>
@@ -1428,6 +1431,7 @@ function ProjectDetail({
                   variant="ghost"
                   size="sm"
                   className="mt-1 w-fit text-muted-foreground"
+                  data-new-task-button=""
                   onClick={onNewTask}
                 >
                   <Plus data-icon="inline-start" />
@@ -1607,6 +1611,8 @@ export function ProjectsPage() {
   const [projectModalState, setProjectModalState] =
     useState<ProjectModalState | null>(null);
   const [taskEditor, setTaskEditor] = useState<TaskEditorSession | null>(null);
+  // Create more in the new task composer, kept while the page stays open.
+  const [createMoreTasks, setCreateMoreTasks] = useState(false);
   const [shortcutRequest, setShortcutRequest] =
     useState<ShortcutRequest | null>(null);
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
@@ -2084,6 +2090,22 @@ export function ProjectsPage() {
     if (result.kind === "save") {
       writeProjectTask(taskEditor, result.values);
     }
+    if (!taskEditor.taskId && result.kind === "save") {
+      if (createMoreTasks) {
+        // Create more, as Linear's: a blank composer for the next task, its
+        // name field focused.
+        setTaskEditor({
+          projectId: taskEditor.projectId,
+          fields: createProjectTaskEditorFields(),
+          openedPinnedSlot: undefined,
+          showErrors: false,
+          createdInRow: (taskEditor.createdInRow ?? 0) + 1,
+        });
+        return;
+      }
+      // Back on New task, so Enter starts the next one.
+      focusNewTaskAfterClose();
+    }
     setTaskEditor(null);
   };
 
@@ -2245,7 +2267,12 @@ export function ProjectsPage() {
   const taskEditorForm =
     visibleTaskEditor && taskEditorState && taskEditorProject ? (
       <ProjectTaskEditorForm
+        key={visibleTaskEditor.createdInRow ?? 0}
         fields={visibleTaskEditor.fields}
+        createMore={{
+          checked: createMoreTasks,
+          onCheckedChange: setCreateMoreTasks,
+        }}
         editor={taskEditorState}
         showNameError={visibleTaskEditor.showErrors}
         projectName={getProjectDisplayName(taskEditorProject)}

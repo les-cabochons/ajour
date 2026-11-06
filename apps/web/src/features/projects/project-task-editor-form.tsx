@@ -74,6 +74,7 @@ export function ProjectTaskEditorForm({
   onClose,
   titleAs: Title = "h2",
   className,
+  createMore,
 }: {
   fields: ProjectTaskEditorFields;
   editor: ProjectTaskEditorState;
@@ -104,6 +105,14 @@ export function ProjectTaskEditorForm({
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
   className?: string;
+  /**
+   * Create more, shown on a new task: on, Create keeps the composer open
+   * with a blank task, as Linear's.
+   */
+  createMore?: {
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+  };
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lockId = useId();
@@ -303,7 +312,16 @@ export function ProjectTaskEditorForm({
         ) : null}
       </FieldGroup>
 
-      <footer className="flex flex-wrap justify-end gap-2">
+      <footer className="flex flex-wrap items-center justify-end gap-2">
+        {editor.isNew && createMore ? (
+          <label className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch
+              checked={createMore.checked}
+              onCheckedChange={createMore.onCheckedChange}
+            />
+            Create more
+          </label>
+        ) : null}
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
