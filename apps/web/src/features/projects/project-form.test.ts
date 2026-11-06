@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createProjectFormFields,
+  getProjectFormErrors,
   getProjectFormValues,
   getProjectPatch,
   setProjectFormName,
@@ -69,6 +70,36 @@ describe("project form", () => {
       expect(
         getProjectPatch(atlas, (fields) => ({ ...fields, code: " ATL " })),
       ).toBeNull();
+    });
+
+    it("keeps an imported code the code rule refuses while other fields change", () => {
+      // Imports and project sources may bring codes the form would refuse;
+      // they stay as they are and never block another edit (Sol on #649).
+      const imported = { ...atlas, code: "SOURCE-LONG-CODE" };
+      expect(
+        getProjectPatch(imported, (fields) => ({
+          ...fields,
+          displayName: "Atlas",
+        })),
+      ).toMatchObject({ displayName: "Atlas", code: "SOURCE-LONG-CODE" });
+
+      const fields = {
+        ...createProjectFormFields(imported),
+        displayName: "Atlas",
+      };
+      expect(getProjectFormErrors(fields)).toEqual({});
+      expect(getProjectFormValues(fields)).toMatchObject({
+        code: "SOURCE-LONG-CODE",
+      });
+    });
+
+    it("checks a code once the user changes it", () => {
+      const imported = { ...atlas, code: "SOURCE-LONG-CODE" };
+      const fields = {
+        ...createProjectFormFields(imported),
+        code: "SOURCE-LONG-CODES",
+      };
+      expect(getProjectFormErrors(fields).code).toBeTruthy();
     });
 
     it("keeps the saved project when the full name is emptied", () => {
