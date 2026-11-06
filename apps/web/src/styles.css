@@ -2158,7 +2158,7 @@
    with the indicator beside them. Below that the toggle spans the row up to
    the indicator, and each section puts its name under its icon, so all four
    names show down to a 320px window. */
-@media (width < 400px) {
+@variant phone {
   .ajour-narrow-switcher {
     right: calc(
       max(1rem, env(safe-area-inset-right, 0px)) +
