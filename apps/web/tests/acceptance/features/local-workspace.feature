@@ -183,13 +183,34 @@ Feature: Open the local time workspace
     And I double-click the text of Monday's capacity card
     Then no entry editor is open
 
-  Scenario: The entry composer floats over the Week at every width
+  Scenario: The entry editor sits beside the Week on a wide window
     Given I have a week of saved entries
     When the window is 1280 pixels wide
     And I open the Week Days view
     Then opening Monday's "API" card floats the entry panel over the Week
     When the window is 1800 pixels wide
-    Then the entry composer still floats and the Week keeps its width
+    Then the entry panel sits beside the Week and narrows it
+
+  Scenario: The entry editor opens beside the Day and hides no entry
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I double-click Monday's first entry
+    Then the side panel edits that entry beside the entries, which it hides none of
+
+  Scenario: The new project composer opens below the Projects column headers
+    Given I have projects with searchable tasks
+    When I open the Projects workspace
+    And I open New project while watching its composer
+    Then the project composer opened below the Projects column headers without sliding
+
+  Scenario: An open composer centers when the window narrows, and floats again when it widens
+    Given I have projects with searchable tasks
+    When I open the Projects workspace
+    And I open New project while watching its composer
+    And the window is 390 pixels wide
+    Then the project composer is centered in the window
+    When the window is 1440 pixels wide
+    Then the project composer floats below the Projects column headers
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
@@ -201,6 +222,13 @@ Feature: Open the local time workspace
     And I open Backlog from the app sidebar
     And I open Time from the app sidebar
     Then the Day view is visible
+
+  Scenario: Click an empty Grid cell and type its hours
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I click the "Code review" cell on Wednesday, type "2" and press Enter
+    Then the "Code review" cell on Wednesday shows "2:00"
+    And no entry editor opens after the click
 
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries
@@ -292,6 +320,16 @@ Feature: Open the local time workspace
     Then the running entry's dialog still has "Standup notes"
     When I widen the app back to a desktop width
     Then the running entry's popover still has "Standup notes"
+
+  Scenario: Keep a new entry's draft across the narrow breakpoint, off the Time page
+    Given I have no saved Ajour workspace
+    When I open the Backlog workspace
+    And I open a new entry from the timer dock "+"
+    And I type "Planning notes" in the new entry's note
+    And I narrow the window to the narrow view
+    Then the new entry's dialog still has "Planning notes"
+    When I widen the app back to a desktop width
+    Then the new entry's popover still has "Planning notes"
 
   Scenario: Open one entry editor at a time
     Given I have no saved Ajour workspace

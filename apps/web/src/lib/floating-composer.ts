@@ -3,13 +3,18 @@ const RESTING_TOP = 64;
 const GAP = 8;
 /** Room kept at the bottom for the toasts, which share the corner. */
 const MARGIN = 88;
-/** The card's room below it, as composer.css keeps it at its resting top. */
-const BOTTOM_GAP = 16;
+/**
+ * The placed top, which only `.composer-floating` reads (composer.css), for
+ * its top and its max height. When the window narrows, the card loses that
+ * class and centers as a dialog; an inline `top` stayed and held it off
+ * center.
+ */
+const TOP = "--composer-top";
 
 /**
  * Places a floating composer before it paints. It rests at the top right,
- * below `restBelow` when given, such as the Time page's day strip, so it
- * never covers the page's own header. When it edits a row and that resting
+ * below `restBelow` when given, such as the Projects list's column headers,
+ * so it never covers the page's own header. When it edits a row and that resting
  * place covers the row, across and down, it sits just below the row, or
  * just above it (forms council rounds 11 and 12). When it fits neither way
  * it stays put: a card squeezed to the bottom would put its footer under the
@@ -26,8 +31,7 @@ export function placeFloatingComposer(
   { restBelow }: { restBelow?: Element | null } = {},
 ) {
   if (!popup) return;
-  popup.style.top = "";
-  popup.style.maxHeight = "";
+  popup.style.removeProperty(TOP);
   const resting =
     restBelow?.isConnected === true
       ? Math.max(RESTING_TOP, restBelow.getBoundingClientRect().bottom + GAP)
@@ -55,8 +59,7 @@ export function placeFloatingComposer(
     }
   }
   if (top === RESTING_TOP) return;
-  popup.style.top = `${top}px`;
-  popup.style.maxHeight = `calc(100dvh - ${top + BOTTOM_GAP}px)`;
+  popup.style.setProperty(TOP, `${top}px`);
 }
 
 /** The target each card was last placed for. */

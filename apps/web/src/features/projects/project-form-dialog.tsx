@@ -3,6 +3,7 @@ import {
   RiHashtag as CodeIcon,
   RiPencilLine as EditIcon,
 } from "@remixicon/react";
+import { placeFloatingComposer } from "@/lib/floating-composer";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -94,8 +95,19 @@ export function ProjectFormDialog({
           !narrow && "composer-floating",
         )}
         overlay={narrow}
+        ref={narrow ? undefined : placeProjectComposer}
       >
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={handleSubmit}
+          // ⌘/Ctrl+Enter creates from any field, as in every composer.
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              event.currentTarget.requestSubmit();
+            }
+          }}
+        >
           <DialogHeader className="sr-only">
             {/* The composer says what it makes by itself; its title only
                 names the dialog for assistive tech (forms council round 13). */}
@@ -198,7 +210,7 @@ export function ProjectFormDialog({
                 <label htmlFor="project-form-code">Code</label>
                 <input
                   id="project-form-code"
-                  className="composer-estimate-input"
+                  className="composer-estimate-input composer-code-input"
                   autoComplete="off"
                   placeholder="ATL"
                   readOnly={sourceOwned}
@@ -233,4 +245,15 @@ export function ProjectFormDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Places the floating card before it paints: below the Projects list's
+ * column headers when the list shows, as the entry composer rests below the
+ * Time page's day strip.
+ */
+function placeProjectComposer(popup: HTMLDivElement | null) {
+  placeFloatingComposer(popup, null, {
+    restBelow: document.querySelector("main .project-list-table thead"),
+  });
 }

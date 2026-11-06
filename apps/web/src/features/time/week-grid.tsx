@@ -474,6 +474,10 @@ export function WeekGrid({
   /** Starts editing in place. Returns false when the cell can't edit now. */
   function beginEdit(model: CellModel, initialText?: string) {
     if (!model.canEditInPlace) return false;
+    // A click's panel still waiting on a double-click is dropped: typing
+    // right after the click edits in place, and the panel opening after it
+    // took focus and left a blank entry open (usability council U1).
+    window.clearTimeout(pendingOpenRef.current);
     // The side panel would keep stale hours for this cell, so it closes first.
     const panelShowsCell =
       isSameWeekGridCell(activeCell, model.cell) ||

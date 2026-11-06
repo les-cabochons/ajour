@@ -91,12 +91,14 @@ export function TimePage({ date }: { date: string }) {
   );
   // Week needs a desktop width. The narrow view does not offer it: a Week link
   // shows Day with a note and keeps `view=week`, so widening the window shows
-  // Week. A remembered Week shows Day without the note. Entries are edited
-  // in the composer dialog at every width, as Linear's new issue: no side
-  // panel for a form (forms council round 8).
+  // Week. A remembered Week shows Day without the note. On a desktop width,
+  // entries are edited in the side panel, which narrows the page so the
+  // editor hides no row, cell or Stop button; the narrow view edits them in a
+  // dialog. A floating card over the page covered the very hours and controls
+  // being worked on (usability council U1, 2026-11-06).
   const isNarrowView = useIsNarrowView();
   const weekAvailable = !isNarrowView;
-  const editsInDialog = true;
+  const editsInDialog = isNarrowView;
   // `view=week` and `view=day` pick a view. A link without `view`, such as the
   // sidebar's Time link, opens the view the user last picked.
   const wantsWeek =
@@ -589,7 +591,6 @@ export function TimePage({ date }: { date: string }) {
         <TimeEntryModal
           // Another entry, cell or task is another form.
           key={editorKey}
-          floating={!isNarrowView}
           formRef={editorFormRef}
           date={date}
           entryId={editingEntry?._id}

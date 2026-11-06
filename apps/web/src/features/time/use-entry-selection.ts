@@ -304,8 +304,23 @@ export function useEntrySelection({
   });
 
   useEffect(() => {
+    /**
+     * In the entry editor, a dialog or a menu, Copy, Cut and Paste belong
+     * there, not to the selected entries: a Copy on the editor's project chip
+     * copied the whole entry (usability council U1). Elsewhere on the page,
+     * such as the day strip after moving to another day, they still do.
+     */
+    function focusIsElsewhere() {
+      return (
+        document.activeElement?.closest(
+          '[role="dialog"], [role="menu"], [aria-label="Time entry editor"]',
+        ) != null
+      );
+    }
+
     function copyOrCut(event: ClipboardEvent) {
       if (event.defaultPrevented || isTextEditingTarget(event.target)) return;
+      if (focusIsElsewhere()) return;
       // Text selected outside the entries, such as in a dialog, copies as text.
       const focusOnEntry = document.activeElement?.closest("[data-entry-id]");
       if (!focusOnEntry && window.getSelection()?.type === "Range") return;
@@ -330,6 +345,7 @@ export function useEntrySelection({
 
     function pasteFromClipboard(event: ClipboardEvent) {
       if (event.defaultPrevented || isTextEditingTarget(event.target)) return;
+      if (focusIsElsewhere()) return;
       if (!matchEntryClipboard(event.clipboardData?.getData("text/plain"))) {
         return;
       }

@@ -16,6 +16,7 @@ import {
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
   RiExpandDiagonalLine as OpenPageIcon,
+  RiExternalLinkLine as ExternalIcon,
 } from "@remixicon/react";
 import { ProjectIcon } from "@/lib/project-icons";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
@@ -724,21 +725,31 @@ export function BacklogItemEditorForm({
               Under {parent.title}
             </span>
           ) : null}
+          {/* The ticket line is text to select and copy, as on the item
+              page; the link to the source is its own icon. The whole line
+              as a link dragged the link and opened the source instead
+              (usability council U1). */}
           {sourceMetaLabel ? (
-            workItem?.sourceUrl ? (
-              <a
-                href={workItem.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="backlog-task-meta backlog-task-meta-link truncate"
-              >
-                {sourceMetaLabel}
-              </a>
-            ) : (
+            <span className="flex min-w-0 items-center gap-1">
               <span className="backlog-task-meta truncate">
                 {sourceMetaLabel}
               </span>
-            )
+              {workItem?.sourceUrl ? (
+                <TooltipButton
+                  label="Open in source"
+                  render={
+                    <a
+                      href={workItem.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="backlog-task-meta backlog-task-meta-link inline-flex shrink-0 items-center"
+                    />
+                  }
+                >
+                  <ExternalIcon className="size-3" />
+                </TooltipButton>
+              ) : null}
+            </span>
           ) : null}
         </header>
       ) : null}
@@ -797,6 +808,9 @@ export function BacklogItemEditorForm({
               className="composer-body"
               value={fields.description}
               onChange={(description) => updateFields({ description })}
+              // ⌘/Ctrl+Enter saves from here too, as from the title; left to
+              // the editor, it inserted a blank line.
+              onSubmit={() => void save()}
               placeholder="Add description…"
               minLines={1}
             />
