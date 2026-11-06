@@ -8,13 +8,11 @@ import {
   samePluginProperties,
   type PluginProperties,
 } from "@/domain/projects/plugin-properties";
-import {
-  formatSignedDurationHoursInput,
-  parseSignedHoursInput,
-} from "@/domain/projects/task-budget";
+import { formatSignedDurationHoursInput } from "@/domain/projects/task-budget";
 import {
   formatDurationHoursInput,
-  parseHoursInput,
+  PLANNED_HOURS_LIMIT,
+  readDurationInput,
 } from "@/domain/time/duration";
 import { isProjectTaskBillable } from "@/features/projects/project-task-options";
 
@@ -92,8 +90,6 @@ export type ProjectTaskDraftCommit =
   | { kind: "invalid"; error: string };
 
 const NAME_ERROR = "Enter a task name.";
-const BUDGET_ERROR = "Enter a valid non-negative duration.";
-const ADJUSTMENT_ERROR = "Enter a valid signed duration.";
 const COMMITS_AS_ERROR = "Pick the task it commits as.";
 
 /** Seeds the draft from a saved task, or blank for a new one. New tasks are billable. */
@@ -118,24 +114,28 @@ export function createProjectTaskEditorFields(
 }
 
 /**
- * Parses an optional duration field. Text left as it was seeded keeps the saved
- * milliseconds, because the hours text is rounded to the minute.
+ * Reads an optional duration field, up to 100,000 hours. Text left as it was
+ * seeded keeps the saved milliseconds, because the hours text is rounded to
+ * the minute.
  */
-function parseOptionalDuration(
+function readOptionalDuration(
   text: string,
   seededText: string,
   savedMs: number | undefined,
-  parse: (value: string) => number | null,
-): number | undefined | null {
+  signed: boolean,
+): { durationMs: number | undefined; error: string | null } {
   if (text.trim() === "") {
-    return undefined;
+    return { durationMs: undefined, error: null };
   }
 
   if (text === seededText && typeof savedMs === "number") {
-    return savedMs;
+    return { durationMs: savedMs, error: null };
   }
 
-  return parse(text);
+  const typed = readDurationInput(text, PLANNED_HOURS_LIMIT, { signed });
+  return typed.ok
+    ? { durationMs: typed.durationMs, error: null }
+    : { durationMs: undefined, error: typed.error };
 }
 
 /** Evaluates a draft against the saved task it edits, if any. */
@@ -145,21 +145,23 @@ export function evaluateProjectTaskEditor(
 ): ProjectTaskEditorState {
   const seeded = createProjectTaskEditorFields(original);
   const name = fields.name.trim();
-  const budgetMs = parseOptionalDuration(
+  const budget = readOptionalDuration(
     fields.budget,
     seeded.budget,
     original?.budgetMs,
-    parseHoursInput,
+    false,
   );
-  const adjustmentMs = parseOptionalDuration(
+  const adjustment = readOptionalDuration(
     fields.adjustment,
     seeded.adjustment,
     original?.adjustmentMs,
-    parseSignedHoursInput,
+    true,
   );
+  const budgetMs = budget.durationMs;
+  const adjustmentMs = adjustment.durationMs;
   const nameError = name ? null : NAME_ERROR;
-  const budgetError = budgetMs === null ? BUDGET_ERROR : null;
-  const adjustmentError = adjustmentMs === null ? ADJUSTMENT_ERROR : null;
+  const budgetError = budget.error;
+  const adjustmentError = adjustment.error;
   const choosing = fields.choosingAnotherTask;
   const commitsAsError =
     choosing &&
@@ -167,7 +169,7 @@ export function evaluateProjectTaskEditor(
       ? COMMITS_AS_ERROR
       : null;
   const values =
-    nameError || budgetMs === null || adjustmentMs === null || commitsAsError
+    nameError || budgetError || adjustmentError || commitsAsError
       ? null
       : {
           name,

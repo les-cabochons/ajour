@@ -4,7 +4,6 @@ import {
   getProjectTaskConsumedTone,
   durationHoursValueToMs,
   normalizeProjectTaskBudgetMs,
-  parseSignedHoursInput,
 } from "@/domain/projects/task-budget";
 
 describe("formatProjectTaskConsumedBadge", () => {
@@ -74,14 +73,6 @@ describe("getProjectTaskConsumedTone", () => {
         trackedMs: 60 * 60 * 1000,
       }),
     ).toBe("default");
-  });
-});
-
-describe("parseSignedHoursInput", () => {
-  it("parses positive and negative decimal or clock values", () => {
-    expect(parseSignedHoursInput("1.5")).toBe(90 * 60 * 1000);
-    expect(parseSignedHoursInput("-1.5")).toBe(-90 * 60 * 1000);
-    expect(parseSignedHoursInput("-1:15")).toBe(-75 * 60 * 1000);
   });
 });
 

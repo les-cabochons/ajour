@@ -198,7 +198,13 @@ export function ProjectTaskEditorForm({
             invalid={Boolean(editor.budgetError)}
             onKeyDown={saveOnEnter}
             readOnly={Boolean(sourceLock)}
-            describedBy={sourceLock ? `${lockId}-budget` : undefined}
+            describedBy={
+              sourceLock
+                ? `${lockId}-budget`
+                : editor.budgetError
+                  ? "project-task-editor-budget-error"
+                  : undefined
+            }
             trailing={
               sourceLock ? (
                 <LockHint label={sourceLock.label} id={`${lockId}-budget`} />
@@ -213,6 +219,11 @@ export function ProjectTaskEditorForm({
             format={formatBudgetFigure}
             invalid={Boolean(editor.adjustmentError)}
             onKeyDown={saveOnEnter}
+            describedBy={
+              editor.adjustmentError
+                ? "project-task-editor-adjustment-error"
+                : undefined
+            }
           />
         </InlineFigures>
         <div className="composer-chips" role="group" aria-label="Properties">
@@ -240,10 +251,15 @@ export function ProjectTaskEditorForm({
           />
         </div>
         {editor.budgetError ? (
-          <span className="field-error">Budget: {editor.budgetError}</span>
+          <span id="project-task-editor-budget-error" className="field-error">
+            Budget: {editor.budgetError}
+          </span>
         ) : null}
         {editor.adjustmentError ? (
-          <span className="field-error">
+          <span
+            id="project-task-editor-adjustment-error"
+            className="field-error"
+          >
             Adjustment: {editor.adjustmentError}
           </span>
         ) : null}
