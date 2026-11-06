@@ -202,6 +202,10 @@ import {
 } from "@/domain/time/calendar-suggestions";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 import {
+  archiveProject as applyArchiveProject,
+  archiveProjectTask as applyArchiveProjectTask,
+} from "@/domain/projects/project-archive";
+import {
   cancelTimer as applyCancelTimer,
   editRunningEntry as applyEditRunningEntry,
   normalizeTimer,
@@ -250,7 +254,6 @@ import {
   setProjectFavorite as applySetProjectFavorite,
   setProjectTaskFavorite as applySetProjectTaskFavorite,
   setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
-  setProjectTaskStatus,
   updateProject as applyUpdateProject,
   updateProjectTask as applyUpdateProjectTask,
   type CreateOrRestoreTaskGiven,
@@ -2042,14 +2045,14 @@ const store = {
       return projects === state.projects ? state : { ...state, projects };
     });
   },
-  /** Archives a project. Returns an undo token, or null when nothing changed. */
+  /**
+   * Archives a project, and stops and saves the running entry on it. Returns
+   * whether it did, with an undo token, null when nothing changed.
+   */
   archiveProject(projectId: string) {
-    return updateStateWithUndo((state) => ({
-      ...state,
-      projects: applyUpdateProject(state.projects, projectId, {
-        status: "archived",
-      }),
-    }));
+    return updateStateWithUndoResult((state) =>
+      applyArchiveProject(state, projectId, { createId, now: Date.now }),
+    );
   },
   /**
    * Restores a project. Returns why it stayed archived when its project
@@ -2351,17 +2354,17 @@ const store = {
   },
 
   /** Archives a task. Returns an undo token, or null when nothing changed. */
+  /**
+   * Archives a task, and stops and saves the running entry on it. Returns
+   * whether it did, with an undo token, null when nothing changed.
+   */
   archiveProjectTask(projectId: string, taskId: string) {
-    return updateStateWithUndo((state) => ({
-      ...state,
-      projects: setProjectTaskStatus(
-        state.projects,
-        projectId,
-        taskId,
-        "archived",
-        Date.now,
-      ),
-    }));
+    return updateStateWithUndoResult((state) =>
+      applyArchiveProjectTask(state, projectId, taskId, {
+        createId,
+        now: Date.now,
+      }),
+    );
   },
   /**
    * Merge into… (#507): moves the task's entries and running entry to

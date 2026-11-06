@@ -854,10 +854,7 @@ function ProjectDetail({
           setTaskFavorite(project._id, task._id, actionId === "favorite");
           return;
         case "archive":
-          offerUndo(localStore.archiveProjectTask(project._id, task._id), {
-            title: "Task archived",
-            subject: "project",
-          });
+          archiveTask(project._id, task._id);
           return;
         case "restore":
           restoreTask(project._id, task._id);
@@ -1539,6 +1536,34 @@ function ProjectDetail({
  * Restores a task, or says why it stays archived: its project source closed
  * it or left it out.
  */
+/**
+ * Puts the focus on the New task button once the composer has closed and
+ * handed focus back, so the next task is one Enter away.
+ */
+function focusNewTaskAfterClose() {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>("main [data-new-task-button]")
+        ?.focus();
+    });
+  });
+}
+
+/** Said after Archive when the running entry was on what it archived. */
+const RUNNING_ENTRY_SAVED = "Its running entry stopped and was saved.";
+
+/** Archives a task with Undo, saying so when its running entry stopped. */
+function archiveTask(projectId: string, taskId: string) {
+  const archived = localStore.archiveProjectTask(projectId, taskId);
+  offerUndo(archived.undoToken, {
+    title: archived.result.savedRunningEntry
+      ? `Task archived. ${RUNNING_ENTRY_SAVED}`
+      : "Task archived",
+    subject: "project",
+  });
+}
+
 function restoreTask(projectId: string, taskId: string) {
   const refusal = localStore.unarchiveProjectTask(projectId, taskId);
   if (refusal) showToast(formatRestoreRefusal(refusal));
@@ -1965,10 +1990,7 @@ export function ProjectsPage() {
       setMergeRequest({ projectId: project._id, taskId: task._id });
     }
     if (requested.id === "archive") {
-      offerUndo(localStore.archiveProjectTask(project._id, task._id), {
-        title: "Task archived",
-        subject: "project",
-      });
+      archiveTask(project._id, task._id);
     }
     if (requested.id === "restore") restoreTask(project._id, task._id);
     // The handlers are declared after the early return below, so a request
@@ -2168,12 +2190,16 @@ export function ProjectsPage() {
         case "unfavorite":
           setProjectFavorite(project._id, actionId === "favorite");
           return;
-        case "archive":
-          offerUndo(localStore.archiveProject(project._id), {
-            title: "Project archived",
+        case "archive": {
+          const archived = localStore.archiveProject(project._id);
+          offerUndo(archived.undoToken, {
+            title: archived.result.savedRunningEntry
+              ? `Project archived. ${RUNNING_ENTRY_SAVED}`
+              : "Project archived",
             subject: "project",
           });
           return;
+        }
         case "restore": {
           const refusal = localStore.unarchiveProject(project._id);
           if (refusal) showToast(formatRestoreRefusal(refusal));

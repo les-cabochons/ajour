@@ -1,3 +1,4 @@
+import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -957,6 +958,30 @@ describe("the sidebar's backlog items", () => {
       "first",
       "own",
       "second",
+    ]);
+  });
+
+  it("leaves out the items of archived projects", () => {
+    const project = (_id: string, status: "active" | "archived") => ({
+      _id,
+      name: _id,
+      color: "#2563eb",
+      icon: DEFAULT_PROJECT_ICON,
+      status,
+      tasks: [],
+    });
+    const state = createState({
+      projects: [project("atlas", "archived"), project("beta", "active")],
+      workItems: [
+        item("atlas-item", { projectId: "atlas" }),
+        item("beta-item", { projectId: "beta" }),
+        item("loose"),
+      ],
+    });
+
+    expect(ids(selectSidebarBacklogItems(state, 1_000))).toEqual([
+      "beta-item",
+      "loose",
     ]);
   });
 
