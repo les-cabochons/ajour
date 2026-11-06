@@ -11,10 +11,17 @@ import {
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ToggleChip } from "@/components/ui/toggle-chip";
 import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldWarning,
+} from "@/components/ui/field";
+import { getDuplicateTaskNameWarning } from "@/domain/projects/project-names";
 import {
   formatCompactDuration,
   formatDurationHoursInput,
@@ -67,6 +74,7 @@ export function ProjectTaskEditorForm({
   onClose,
   titleAs: Title = "h2",
   className,
+  createMore,
 }: {
   fields: ProjectTaskEditorFields;
   editor: ProjectTaskEditorState;
@@ -97,6 +105,14 @@ export function ProjectTaskEditorForm({
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
   className?: string;
+  /**
+   * Create more, shown on a new task: on, Create keeps the composer open
+   * with a blank task, as Linear's.
+   */
+  createMore?: {
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+  };
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lockId = useId();
@@ -185,6 +201,16 @@ export function ProjectTaskEditorForm({
             ) : null}
           </span>
           {nameError ? <span className="field-error">{nameError}</span> : null}
+          {sourceLock ? null : (
+            <FieldWarning>
+              {getDuplicateTaskNameWarning(
+                projectName,
+                project?.tasks ?? [],
+                fields.name,
+                taskId,
+              )}
+            </FieldWarning>
+          )}
         </Field>
         {/* Budget and adjustment are one sentence under the name, typed in
             place, as a backlog item's estimates (forms council round 13). */}
@@ -286,7 +312,16 @@ export function ProjectTaskEditorForm({
         ) : null}
       </FieldGroup>
 
-      <footer className="flex flex-wrap justify-end gap-2">
+      <footer className="flex flex-wrap items-center justify-end gap-2">
+        {editor.isNew && createMore ? (
+          <label className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch
+              checked={createMore.checked}
+              onCheckedChange={createMore.onCheckedChange}
+            />
+            Create more
+          </label>
+        ) : null}
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>

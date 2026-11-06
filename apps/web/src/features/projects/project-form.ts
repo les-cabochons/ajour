@@ -7,6 +7,10 @@ import {
   type LocalProjectIcon,
 } from "@/domain/projects/project-icon";
 import { DEFAULT_PROJECT_COLOR } from "@/domain/projects/project-transitions";
+import {
+  normalizeProjectCode,
+  PROJECT_NAME_ERROR,
+} from "@/domain/projects/project-names";
 
 /** The project form's draft: what the user typed, before trimming. */
 export interface ProjectFormFields {
@@ -15,6 +19,12 @@ export interface ProjectFormFields {
   code: string;
   color: string;
   icon: LocalProjectIcon;
+  /**
+   * The saved project's code, as it is. An import or a project source may
+   * bring a code the form would refuse; left as it is, it is kept, and only a
+   * changed code is checked (Sol's review of #649).
+   */
+  savedCode?: string;
 }
 
 /** What Save writes for a project, for both create and edit. */
@@ -44,6 +54,7 @@ export function createProjectFormFields(
     name: project.name,
     displayName: getLocalProjectDisplayName(project),
     code: project.code ?? "",
+    savedCode: project.code ?? "",
     color: project.color,
     icon: project.icon,
   };
@@ -68,22 +79,49 @@ export function setProjectFormName(
   };
 }
 
+/** The code to save: the saved one left as it is, or a typed one checked. */
+function readProjectFormCode(fields: ProjectFormFields) {
+  if (fields.savedCode !== undefined && fields.code === fields.savedCode) {
+    return { ok: true as const, code: fields.savedCode || undefined };
+  }
+  return normalizeProjectCode(fields.code);
+}
+
+/** Why the form can't save: an empty full name or a code Ajour refuses. */
+export interface ProjectFormErrors {
+  name?: string;
+  code?: string;
+}
+
+/** The form's mistakes, each said next to its field. Empty when it can save. */
+export function getProjectFormErrors(
+  fields: ProjectFormFields,
+): ProjectFormErrors {
+  const code = readProjectFormCode(fields);
+  return {
+    ...(fields.name.trim() ? {} : { name: PROJECT_NAME_ERROR }),
+    ...(code.ok ? {} : { code: code.error }),
+  };
+}
+
 /**
- * Returns the trimmed values to save, or `null` while the full name is empty.
- * An empty display name falls back to the full name; an empty code is cleared.
+ * Returns the values to save, or `null` while the full name is empty or the
+ * code is refused. Names are trimmed and the code uppercase. An empty display
+ * name falls back to the full name; an empty code is cleared.
  */
 export function getProjectFormValues(
   fields: ProjectFormFields,
 ): ProjectFormValues | null {
   const name = fields.name.trim();
-  if (!name) {
+  const code = readProjectFormCode(fields);
+  if (!name || !code.ok) {
     return null;
   }
 
   return {
     name,
     displayName: fields.displayName.trim() || name,
-    code: fields.code.trim() || undefined,
+    code: code.code,
     color: fields.color,
     icon: fields.icon,
   };

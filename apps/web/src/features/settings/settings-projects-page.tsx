@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectDataShapePluginManifest } from "@ajour/shared";
 import {
   RiDownloadLine as Download,
@@ -77,6 +77,15 @@ export function SettingsProjectsPage() {
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
   const [error, setError] = useState("");
+  const [importNotes, setImportNotes] = useState<string[]>([]);
+  // The import's result or error shows under the button, which can sit at
+  // the bottom of the pane: it scrolls into view when it appears.
+  const importOutcomeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error || statusMessage) {
+      importOutcomeRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [error, statusMessage]);
 
   useEffect(() => {
     let active = true;
@@ -204,6 +213,7 @@ export function SettingsProjectsPage() {
     setSelectedImportFile(file);
     setError("");
     setStatusMessage("");
+    setImportNotes([]);
   }
 
   async function handleImport() {
@@ -226,6 +236,7 @@ export function SettingsProjectsPage() {
             await parseProjectTransferWorkbook(workbookBytes),
           );
       setStatusMessage(formatProjectImportSummary(result));
+      setImportNotes(result.notes);
       setError("");
     } catch (nextError) {
       setError(
@@ -234,6 +245,7 @@ export function SettingsProjectsPage() {
           : "Unable to import the workbook.",
       );
       setStatusMessage("");
+      setImportNotes([]);
     } finally {
       setIsTransferring(false);
     }
@@ -447,8 +459,18 @@ export function SettingsProjectsPage() {
             </Button>
           </SettingRow>
 
-          {statusMessage ? <ResultLine>{statusMessage}</ResultLine> : null}
-          {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
+          <div ref={importOutcomeRef} className="flex flex-col gap-2">
+            {statusMessage ? <ResultLine>{statusMessage}</ResultLine> : null}
+            {importNotes.length > 0 ? (
+              // What the counts don't say: renames, and what it skipped.
+              <ul className="flex flex-col gap-1 text-xs text-[var(--text-secondary)]">
+                {importNotes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
+            {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
+          </div>
         </AppPanel>
       </section>
     </div>

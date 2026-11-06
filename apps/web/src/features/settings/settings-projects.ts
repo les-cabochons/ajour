@@ -119,17 +119,23 @@ function normalizeImportCell(value: unknown) {
   return formatTaskImportName(String(value ?? ""));
 }
 
+/**
+ * A cell Ajour can't read, named by its column header. The row reader adds
+ * the row: "Row 3 is invalid. budget_hours "abc" is not a number."
+ */
+class ImportCellError extends Error {}
+
 function normalizeHoursValue(
   value: unknown,
-  options?: { allowBlank?: boolean },
+  options: { allowBlank?: boolean; column: string },
 ): number | "" {
   if (value === null || value === undefined || value === "") {
-    return options?.allowBlank ? "" : 0;
+    return options.allowBlank ? "" : 0;
   }
 
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new Error("Duration hours must be a finite number.");
+      throw new ImportCellError(`${options.column} is not a number.`);
     }
 
     return value;
@@ -137,12 +143,14 @@ function normalizeHoursValue(
 
   const normalized = normalizeImportCell(value).replace(",", ".");
   if (!normalized) {
-    return options?.allowBlank ? "" : 0;
+    return options.allowBlank ? "" : 0;
   }
 
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid duration hours "${normalized}".`);
+    throw new ImportCellError(
+      `${options.column} "${normalized}" is not a number.`,
+    );
   }
 
   return parsed;
@@ -176,27 +184,31 @@ function normalizeBillableValue(
     return "non_billable";
   }
 
-  throw new Error(
-    `Invalid billable value "${normalized}". Expected billable or non_billable.`,
+  throw new ImportCellError(
+    `billable "${normalized}" is not billable or non_billable.`,
   );
 }
 
 function normalizeStatus(
   value: unknown,
-  options?: { allowBlank?: boolean; fallback?: ProjectTransferStatus },
+  options: {
+    allowBlank?: boolean;
+    fallback?: ProjectTransferStatus;
+    column: string;
+  },
 ): ProjectTransferStatus | "" {
   const normalized = normalizeImportCell(value).toLowerCase();
 
   if (!normalized) {
-    return options?.allowBlank ? "" : (options?.fallback ?? "active");
+    return options.allowBlank ? "" : (options.fallback ?? "active");
   }
 
   if (normalized === "active" || normalized === "archived") {
     return normalized;
   }
 
-  throw new Error(
-    `Invalid status "${normalized}". Expected active or archived.`,
+  throw new ImportCellError(
+    `${options.column} "${normalized}" is not active or archived.`,
   );
 }
 
@@ -450,17 +462,35 @@ export async function parseProjectTransferWorkbook(
       );
     }
 
-    const status = normalizeStatus(rawStatus, {
-      fallback: "active",
-    }) as ProjectTransferStatus;
-    const taskStatus = normalizeStatus(rawTaskStatus, { allowBlank: true });
-    const billable = normalizeBillableValue(rawBillable, { allowBlank: true });
-    const budgetHours = normalizeHoursValue(rawBudgetHours, {
-      allowBlank: true,
-    });
-    const adjustmentHours = normalizeHoursValue(rawAdjustmentHours, {
-      allowBlank: true,
-    });
+    let cells;
+    try {
+      cells = {
+        status: normalizeStatus(rawStatus, {
+          fallback: "active",
+          column: "status",
+        }) as ProjectTransferStatus,
+        taskStatus: normalizeStatus(rawTaskStatus, {
+          allowBlank: true,
+          column: "task_status",
+        }),
+        billable: normalizeBillableValue(rawBillable, { allowBlank: true }),
+        budgetHours: normalizeHoursValue(rawBudgetHours, {
+          allowBlank: true,
+          column: "budget_hours",
+        }),
+        adjustmentHours: normalizeHoursValue(rawAdjustmentHours, {
+          allowBlank: true,
+          column: "adjustment_hours",
+        }),
+      };
+    } catch (error) {
+      if (error instanceof ImportCellError) {
+        throw new Error(`Row ${rowNumber} is invalid. ${error.message}`);
+      }
+      throw error;
+    }
+    const { status, taskStatus, billable, budgetHours, adjustmentHours } =
+      cells;
 
     if (!task && taskStatus) {
       throw new Error(

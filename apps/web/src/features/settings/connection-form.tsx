@@ -1,3 +1,4 @@
+import { useNumberDraft } from "@/lib/number-draft";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import {
   isCapabilityActive,
@@ -149,26 +150,32 @@ export function PluginConnectionForm({
                 className="composer-chip composer-estimate"
               >
                 <label htmlFor={field.id}>{label}</label>
-                <input
-                  id={field.id}
-                  className="composer-estimate-input"
-                  autoComplete="off"
-                  inputMode={field.type === "number" ? "numeric" : undefined}
-                  value={String(form.values[field.id] ?? "")}
-                  onChange={(event) => {
-                    const text = event.target.value;
-                    const next =
-                      field.type === "number"
-                        ? Number.isFinite(Number(text))
-                          ? Number(text)
-                          : 0
-                        : text;
-                    update((current) => ({
-                      ...current,
-                      values: { ...current.values, [field.id]: next },
-                    }));
-                  }}
-                />
+                {field.type === "number" ? (
+                  <ChipNumberInput
+                    id={field.id}
+                    value={form.values[field.id]}
+                    onChange={(next) =>
+                      update((current) => ({
+                        ...current,
+                        values: { ...current.values, [field.id]: next },
+                      }))
+                    }
+                  />
+                ) : (
+                  <input
+                    id={field.id}
+                    className="composer-estimate-input"
+                    autoComplete="off"
+                    value={String(form.values[field.id] ?? "")}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      update((current) => ({
+                        ...current,
+                        values: { ...current.values, [field.id]: text },
+                      }));
+                    }}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -272,5 +279,35 @@ export function PluginConnectionForm({
         </Button>
       </div>
     </AppPanel>
+  );
+}
+
+/**
+ * A number in a row of chips. It can be empty while the user types; each
+ * valid number goes to the form, and text that isn't one keeps the field
+ * marked invalid instead of reading as 0.
+ */
+function ChipNumberInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: unknown;
+  onChange: (value: number) => void;
+}) {
+  const { inputProps } = useNumberDraft({
+    value: typeof value === "number" ? value : undefined,
+    rule: { message: "Enter a number." },
+    live: true,
+    onCommit: onChange,
+  });
+  return (
+    <input
+      id={id}
+      className="composer-estimate-input"
+      autoComplete="off"
+      {...inputProps}
+    />
   );
 }

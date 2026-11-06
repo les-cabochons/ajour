@@ -13,6 +13,7 @@ import {
   importProjectDataShapeTasks,
   importProjectTasks,
   importProjectWorkbookRows,
+  type ProjectTransferRow,
 } from "@/domain/projects/project-import";
 import { createOrRestoreProjectTask } from "@/domain/projects/project-transitions";
 
@@ -127,6 +128,7 @@ describe("importProjectWorkbookRows", () => {
       mergedProjectCount: 1,
       addedTaskCount: 1,
       updatedTaskCount: 1,
+      notes: ["Renamed Mercury to Mércury."],
     });
     expect(operation.projects).toHaveLength(2);
     expect(operation.projects[0]).toMatchObject({
@@ -578,5 +580,82 @@ describe("a managed project's import", () => {
       status: "archived",
       archivedBySource: true,
     });
+  });
+});
+
+describe("what a workbook import reports", () => {
+  const row = (overrides: Partial<ProjectTransferRow>): ProjectTransferRow => ({
+    project: "atlas platform",
+    code: "",
+    color: "",
+    status: "active",
+    task: "",
+    taskStatus: "",
+    billable: "",
+    budgetHours: "",
+    adjustmentHours: "",
+    ...overrides,
+  });
+  const atlas = () =>
+    createFactories().createProject({
+      name: "Atlas Platform",
+      color: "#2563eb",
+      tasks: [{ name: "Build", budgetMs: 3_600_000 }],
+    });
+
+  it("says a merge renamed the project", () => {
+    const operation = importProjectWorkbookRows(
+      [atlas()],
+      [row({})],
+      createFactories(),
+    );
+    expect(operation.result.notes).toEqual([
+      "Renamed Atlas Platform to atlas platform.",
+    ]);
+  });
+
+  it("skips a negative budget and keeps the task's own", () => {
+    const operation = importProjectWorkbookRows(
+      [atlas()],
+      [row({ project: "Atlas Platform", task: "Build", budgetHours: -5 })],
+      createFactories(),
+    );
+    expect(operation.result.notes).toEqual([
+      "Skipped the negative budget of Atlas Platform · Build.",
+    ]);
+    expect(operation.projects[0]?.tasks[0]?.budgetMs).toBe(3_600_000);
+  });
+
+  it("skips a color that isn't hex and reads short hex", () => {
+    const skipped = importProjectWorkbookRows(
+      [atlas()],
+      [row({ project: "Atlas Platform", color: "red" })],
+      createFactories(),
+    );
+    expect(skipped.result.notes).toEqual([
+      'Skipped color "red" of Atlas Platform: use a hex color such as #4f46e5.',
+    ]);
+    expect(skipped.projects[0]?.color).toBe("#2563eb");
+
+    const short = importProjectWorkbookRows(
+      [atlas()],
+      [row({ project: "Atlas Platform", color: "#fff" })],
+      createFactories(),
+    );
+    expect(short.projects[0]?.color).toBe("#ffffff");
+  });
+
+  it("says which task rows it merged", () => {
+    const operation = importProjectWorkbookRows(
+      [atlas()],
+      [
+        row({ project: "Atlas Platform", task: "Design", budgetHours: 4 }),
+        row({ project: "Atlas Platform", task: "design", budgetHours: 6 }),
+      ],
+      createFactories(),
+    );
+    expect(operation.result.notes).toEqual([
+      "Merged 1 repeated task row: Atlas Platform · design.",
+    ]);
   });
 });

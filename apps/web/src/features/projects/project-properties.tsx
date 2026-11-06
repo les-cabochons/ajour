@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ProjectPropertyField } from "@ajour/shared";
 import {
   RiArchiveLine as ArchiveIcon,
@@ -14,6 +14,7 @@ import {
 } from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
+import { FieldWarning } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { OptionSelect, type SelectOption } from "@/components/ui/option-select";
 import {
@@ -30,6 +31,11 @@ import {
   getProjectEndedOn,
 } from "@/domain/projects/project-dates";
 import { isManagedProject } from "@/domain/projects/project-transitions";
+import {
+  getDuplicateProjectNameWarning,
+  normalizeProjectCode,
+  PROJECT_NAME_ERROR,
+} from "@/domain/projects/project-names";
 import {
   getTaskNameField,
   PLUGIN_PROPERTY_MAX_LENGTH,
@@ -54,6 +60,7 @@ import {
   ProjectTeamRow,
 } from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
+import { useLocalState } from "@/lib/local-hooks";
 import { useTodayIsoDate } from "@/lib/use-now";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { subscribePluginsOverview } from "@/lib/app-api";
@@ -96,7 +103,10 @@ function patchProject(
  * A line of text that turns into a field on click. Enter or blur saves,
  * Escape cancels. `renderValue` draws the resting text, such as the title.
  * While `value` is empty, a non-empty `defaultValue` shows muted in its
- * place, as the value the field falls back to.
+ * place, as the value the field falls back to. `validate` refuses a value
+ * with a sentence: the field stays open with the typed text and says why
+ * under it. `warn` says something about the typed text that doesn't block
+ * saving, such as a name another project has.
  */
 function InlineText({
   value,
@@ -107,6 +117,8 @@ function InlineText({
   className,
   inputClassName,
   maxLength,
+  validate,
+  warn,
   onSave,
   renderValue,
 }: {
@@ -122,6 +134,8 @@ function InlineText({
   inputClassName?: string;
   /** Longest text the field accepts while editing. */
   maxLength?: number;
+  validate?: (value: string) => string | null;
+  warn?: (value: string) => string | null;
   onSave: (value: string) => void;
   renderValue?: (props: {
     className: string;
@@ -129,12 +143,23 @@ function InlineText({
   }) => ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   // Enter saves and unmounts the input, whose blur then must not save twice.
   const closedRef = useRef(false);
 
   function close(save: boolean, next: string) {
     if (closedRef.current) return;
+    if (save) {
+      const refusal = validate?.(next) ?? null;
+      if (refusal) {
+        setError(refusal);
+        return;
+      }
+    }
     closedRef.current = true;
+    setError(null);
     if (save) onSave(next);
     setEditing(false);
   }
@@ -145,6 +170,8 @@ function InlineText({
       ? undefined
       : () => {
           closedRef.current = false;
+          setDraft(value);
+          setError(null);
           setEditing(true);
         };
     if (renderValue) {
@@ -181,27 +208,42 @@ function InlineText({
     );
   }
 
+  const warning = error ? null : (warn?.(draft) ?? null);
   return (
-    <Input
-      autoFocus
-      aria-label={label}
-      defaultValue={value}
-      maxLength={maxLength}
-      placeholder={defaultValue || placeholder}
-      className={cn("-mx-1 h-7 px-1", inputClassName)}
-      onFocus={(event) => event.currentTarget.select()}
-      onBlur={(event) => close(true, event.currentTarget.value)}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return;
-        if (event.key === "Enter") {
-          event.preventDefault();
-          close(true, event.currentTarget.value);
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          close(false, value);
-        }
-      }}
-    />
+    <span className="flex w-full min-w-0 flex-col gap-1">
+      <Input
+        autoFocus
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        value={draft}
+        maxLength={maxLength}
+        placeholder={defaultValue || placeholder}
+        className={cn("-mx-1 h-7 px-1", inputClassName)}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value);
+          if (error) setError(null);
+        }}
+        onBlur={(event) => close(true, event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            close(true, event.currentTarget.value);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            close(false, value);
+          }
+        }}
+      />
+      {error ? (
+        <span id={errorId} role="alert" className="field-error">
+          {error}
+        </span>
+      ) : null}
+      <FieldWarning>{warning}</FieldWarning>
+    </span>
   );
 }
 
@@ -234,7 +276,7 @@ export function ProjectTitle({
           {onClick ? (
             <button
               type="button"
-              className={cn("max-w-full truncate text-left", className)}
+              className={cn("max-w-full text-left", className)}
               onClick={onClick}
             >
               {displayName}
@@ -361,6 +403,7 @@ export function ProjectPropertiesCard({
 }) {
   const isArchived = project.status === "archived";
   const managed = isManagedProject(project);
+  const { projects } = useLocalState();
   const sourceUrl = project.source?.url;
   const today = useTodayIsoDate();
   const currentYear = Number(today.slice(0, 4));
@@ -415,6 +458,10 @@ export function ProjectPropertiesCard({
               label="Full name"
               placeholder="Full name"
               readOnly={isArchived}
+              validate={(value) => (value.trim() ? null : PROJECT_NAME_ERROR)}
+              warn={(value) =>
+                getDuplicateProjectNameWarning(projects, value, project._id)
+              }
               onSave={(value) =>
                 patchProject(
                   project,
@@ -436,6 +483,10 @@ export function ProjectPropertiesCard({
               label="Code"
               placeholder="None"
               readOnly={isArchived}
+              validate={(value) => {
+                const code = normalizeProjectCode(value);
+                return code.ok ? null : code.error;
+              }}
               onSave={(value) =>
                 patchProject(
                   project,

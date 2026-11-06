@@ -267,4 +267,34 @@ describe("project workbook round-trip", () => {
       parseProjectTransferWorkbook(await workbook.xlsx.writeBuffer()),
     ).rejects.toThrow("Row 3 is invalid. A project name is required.");
   });
+
+  it("names the row and column of a cell it can't read", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Projects");
+    sheet.addRow([
+      "project",
+      "code",
+      "color",
+      "status",
+      "task",
+      "task_status",
+      "billable",
+      "budget_hours",
+      "adjustment_hours",
+    ]);
+    sheet.addRow(["Atlas", "", "", "active", "Design", "", "", 4]);
+    sheet.addRow(["Atlas", "", "", "active", "Build", "", "", "abc"]);
+
+    await expect(
+      parseProjectTransferWorkbook(await workbook.xlsx.writeBuffer()),
+    ).rejects.toThrow('Row 3 is invalid. budget_hours "abc" is not a number.');
+
+    sheet.getRow(3).getCell(8).value = 2;
+    sheet.getRow(3).getCell(7).value = "maybe";
+    await expect(
+      parseProjectTransferWorkbook(await workbook.xlsx.writeBuffer()),
+    ).rejects.toThrow(
+      'Row 3 is invalid. billable "maybe" is not billable or non_billable.',
+    );
+  });
 });
