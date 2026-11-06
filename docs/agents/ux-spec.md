@@ -185,10 +185,11 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width        | Layout                                            |
-| ------------ | ------------------------------------------------- |
-| 768px and up | Desktop, sidebar expanded or hidden by preference |
-| Below 768px  | Narrow view, no sidebars                          |
+| Width        | Layout                                                        |
+| ------------ | ------------------------------------------------------------- |
+| 768px and up | Desktop, sidebar expanded or hidden by preference             |
+| Below 768px  | Narrow view, no sidebars                                      |
+| Below 400px  | Narrow view, with the bottom toggle's names under their icons |
 
 Today's splits at 640px and 1023px go away.
 
