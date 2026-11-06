@@ -441,7 +441,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 ### Pinned tasks
 
 - A pinned task has a number slot from 1 to 0, ten in all. "Assign shortcut…" on the task sets, changes or clears it. A slot belongs to at most one task.
-- The slot shows next to the task in the project task picker and on the task row.
+- The slot shows next to the task in the project task picker and on the task row, except on touch screens and in the narrow view.
 - The plain digit only opens the form, so a stray key press never stops the running entry. Starting needs Shift.
 - While an entry is being edited, the digits do nothing special.
 - When a Grid cell has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
@@ -454,7 +454,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - On a focused task or project, F adds it to favorites or removes it.
 - The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. Escape closes whatever is open.
-- Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
+- Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts. Touch screens and the narrow view show no keys, in menus or tooltips, since a phone has none to press (usability testing, 2026-11-06).
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.
 
 ### Selecting, copying and pasting entries
@@ -823,7 +823,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card was removed; the idle timer dock starts an empty entry.
 
 - Density has two values. Comfortable is the default. Compact fits more items.
-- Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device.
+- Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device. The narrow view, which has no sidebar, does not show the group. Changes end a snooze early, which applies to every list, sits in its own Snoozing group above it.
 - The Snoozed and Settled sections are the same in every layout.
 
 ### Width
