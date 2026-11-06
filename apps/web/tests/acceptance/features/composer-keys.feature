@@ -15,3 +15,10 @@ Feature: Save a composer from any of its fields
     Then its empty Code field shows its "ATL" placeholder
     When I name the new project "Northwind" and press Ctrl+Enter
     Then the project composer is closed
+
+  Scenario: Correct an entry's hours by typing over them
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I double-click Monday's first entry
+    And I type "0:45" and press Enter
+    Then Monday's first entry is saved with 0:45 hours

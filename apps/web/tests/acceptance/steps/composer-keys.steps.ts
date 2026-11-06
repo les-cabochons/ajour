@@ -71,3 +71,23 @@ Then("the project composer is closed", async ({ page }) => {
     0,
   );
 });
+
+When("I type {string} and press Enter", async ({ page }, text: string) => {
+  await page.keyboard.type(text);
+  await page.keyboard.press("Enter");
+});
+
+Then("Monday's first entry is saved with 0:45 hours", async ({ page }) => {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        return state.timesheetEntries?.find(
+          (entry: { note?: string }) => entry.note === "Login form",
+        )?.durationMs;
+      }),
+    )
+    .toBe(45 * 60 * 1000);
+});

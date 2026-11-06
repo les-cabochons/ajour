@@ -227,11 +227,14 @@ export function TimeEntryEditorForm({
   }));
 
   useEffect(() => {
-    rootRef.current
-      ?.querySelector<HTMLElement>(
-        ".time-entry-fields :is(button, input, textarea)",
-      )
-      ?.focus();
+    const first = rootRef.current?.querySelector<HTMLElement>(
+      ".time-entry-fields :is(button, input, textarea)",
+    );
+    first?.focus();
+    // The hours open selected, so typing replaces them: correcting an
+    // entry's time is the editor's first job, and a caret after "0:15"
+    // turned "0:30" into "0:150:30" (usability council U2).
+    if (first instanceof HTMLInputElement) first.select();
   }, []);
 
   function updateFields(patch: Partial<TimeEntryEditorFields>) {
