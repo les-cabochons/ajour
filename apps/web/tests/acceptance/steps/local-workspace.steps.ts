@@ -2631,7 +2631,7 @@ Then(
       page.getByRole("textbox", { name: "Hours", exact: true }),
     ).toHaveValue("invalid");
     await expect(
-      page.getByText("Enter a valid duration", { exact: true }),
+      page.getByText("Enter hours, such as 1:30, 1.5 or 1h30", { exact: true }),
     ).toBeVisible();
   },
 );
@@ -3604,7 +3604,7 @@ Then("the Week Grid entry draft still has invalid hours", async ({ page }) => {
     page.getByRole("textbox", { name: "Hours", exact: true }),
   ).toHaveValue("invalid");
   await expect(
-    page.getByText("Enter a valid duration", { exact: true }),
+    page.getByText("Enter hours, such as 1:30, 1.5 or 1h30", { exact: true }),
   ).toBeVisible();
 });
 

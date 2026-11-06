@@ -89,8 +89,8 @@ describe("project task editor", () => {
       values: null,
       canSave: false,
       nameError: "Enter a task name.",
-      budgetError: "Enter a valid non-negative duration.",
-      adjustmentError: "Enter a valid signed duration.",
+      budgetError: "Enter hours, such as 1:30, 1.5 or 1h30",
+      adjustmentError: "Enter hours, such as 1:30, 1.5 or 1h30",
     });
   });
 
@@ -249,6 +249,31 @@ describe("project task editor", () => {
       });
     });
 
+    it("reads common formats and refuses more than 100,000 hours", () => {
+      const original = { name: "Build" };
+      const fields = createProjectTaskEditorFields(original);
+      expect(
+        evaluateProjectTaskEditor(
+          { ...fields, budget: "1h30", adjustment: "-2h" },
+          original,
+        ),
+      ).toMatchObject({
+        budgetError: null,
+        adjustmentError: null,
+        values: { budgetMs: 90 * 60_000, adjustmentMs: -2 * 3_600_000 },
+      });
+      expect(
+        evaluateProjectTaskEditor(
+          { ...fields, budget: "99999999", adjustment: "-100001" },
+          original,
+        ),
+      ).toMatchObject({
+        values: null,
+        budgetError: "Enter at most 100,000 hours",
+        adjustmentError: "Enter at most 100,000 hours",
+      });
+    });
+
     it("blocks a switch while a changed field is invalid", () => {
       const original = { name: "Build" };
       const editor = evaluateProjectTaskEditor(
@@ -258,7 +283,7 @@ describe("project task editor", () => {
 
       expect(commitProjectTaskDraft(editor, "switch")).toEqual({
         kind: "invalid",
-        error: "Enter a valid non-negative duration.",
+        error: "Enter hours, such as 1:30, 1.5 or 1h30",
       });
     });
   });

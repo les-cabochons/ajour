@@ -195,7 +195,7 @@ describe("backlog task editor", () => {
       validateBacklogTaskEditor(fields, { isSubtask: false }),
     ).toMatchObject({
       priorityError: "Choose a priority",
-      remainingEstimateError: "Enter a non-negative number",
+      remainingEstimateError: "Enter hours, such as 1:30, 1.5 or 1h30",
       canSave: false,
     });
     expect(
@@ -212,6 +212,25 @@ describe("backlog task editor", () => {
 
   it("rejects estimate values that overflow during normalization", () => {
     expect(parseEstimateInput("1e308")).toBeNull();
+  });
+
+  it("reads estimates in every duration format, up to 100,000 hours", () => {
+    expect(parseEstimateInput("2,5")).toBe(2.5);
+    expect(parseEstimateInput("1h30")).toBe(1.5);
+    expect(parseEstimateInput("90m")).toBe(1.5);
+    expect(parseEstimateInput(":45")).toBe(0.75);
+    expect(parseEstimateInput("100000")).toBe(100_000);
+    expect(parseEstimateInput("1e2")).toBeNull();
+    expect(parseEstimateInput("9999999")).toBeNull();
+    expect(
+      validateBacklogTaskEditor(
+        createBacklogTaskEditorFields(undefined, {
+          title: "Big",
+          originalEstimateHours: "9999999",
+        }),
+        { isSubtask: true },
+      ).originalEstimateError,
+    ).toBe("Enter at most 100,000 hours");
   });
 
   it("builds trimmed root and subtask drafts through one path", () => {

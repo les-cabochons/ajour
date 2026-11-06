@@ -1,7 +1,8 @@
 import { isValidLocalDate } from "@/domain/time/local-date";
 import {
+  ENTRY_DURATION_LIMIT,
   formatDurationHoursInput,
-  parseHoursInput,
+  readDurationInput,
 } from "@/domain/time/duration";
 
 export interface TimeEntryEditorFields {
@@ -112,11 +113,19 @@ export function evaluateTimeEntryEditor(
   const unchangedDuration =
     original !== undefined &&
     fields.durationHours === formatDurationHoursInput(original.durationMs);
+  // An entry saved before the 24:00 limit keeps its hours until they are retyped.
+  const typedDuration =
+    unchangedDuration ||
+    (options.allowEmptyDuration && !fields.durationHours.trim())
+      ? null
+      : readDurationInput(fields.durationHours, ENTRY_DURATION_LIMIT);
   const durationMs = unchangedDuration
     ? original.durationMs
-    : options.allowEmptyDuration && !fields.durationHours.trim()
+    : typedDuration === null
       ? 0
-      : parseHoursInput(fields.durationHours);
+      : typedDuration.ok
+        ? typedDuration.durationMs
+        : null;
   const metadata: TimeEntryMetadata = {
     projectId: fields.projectId || undefined,
     taskId: fields.taskId || undefined,
@@ -164,9 +173,13 @@ export function evaluateTimeEntryEditor(
     canSave,
     isTimerMode: !original && durationMs === 0,
     durationError:
-      durationMs === null
-        ? "Enter a valid duration"
-        : original && !isRunning && !unchangedDuration && durationMs <= 0
+      typedDuration && !typedDuration.ok
+        ? typedDuration.error
+        : original &&
+            !isRunning &&
+            !unchangedDuration &&
+            durationMs !== null &&
+            durationMs <= 0
           ? NON_POSITIVE_DURATION_ERROR
           : null,
     dateError,

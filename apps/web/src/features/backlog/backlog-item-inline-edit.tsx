@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
 import {
   MarkdownEditor,
@@ -20,7 +20,7 @@ import {
   buildBacklogTaskDraft,
   createBacklogTaskEditorSeed,
   formatEstimateInput,
-  parseEstimateInput,
+  readEstimateInput,
 } from "@/features/backlog/backlog-task-editor";
 import { clearDescriptionDraftConflict } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
@@ -155,7 +155,9 @@ export function EstimateFigure({
   // Set once the field closes, so the blur of the unmounting input after
   // Enter or Escape does not save again.
   const closedRef = useRef(false);
-  const invalid = draft !== null && parseEstimateInput(draft) === null;
+  const estimate = draft === null ? null : readEstimateInput(draft);
+  const error = estimate && !estimate.ok ? estimate.error : null;
+  const errorId = useId();
 
   function open() {
     closedRef.current = false;
@@ -174,60 +176,70 @@ export function EstimateFigure({
       close();
       return;
     }
-    const hours = parseEstimateInput(draft);
-    // Invalid hours keep the field open with its error.
-    if (hours === null) return;
+    const typed = readEstimateInput(draft);
+    // Invalid hours keep the field open with its message.
+    if (!typed.ok) return;
     patchBacklogItemWithUndo(
       item,
-      { [field]: hours },
+      { [field]: typed.hours },
       `${label} estimate changed`,
     );
     close();
   }
 
   return (
-    <Figure label={label} size={size}>
-      {draft === null ? (
-        <button
-          type="button"
-          className="backlog-item-inline-target -mx-1 px-1 disabled:cursor-default"
-          aria-label={`Edit ${label.toLowerCase()} estimate, ${formatHours(item[field])}`}
-          disabled={readOnly}
-          onClick={open}
-        >
-          {formatHours(item[field])}
-        </button>
-      ) : (
-        <Input
-          autoFocus
-          inputMode="decimal"
-          aria-label={`${label} estimate in hours`}
-          aria-invalid={invalid}
-          title={invalid ? "Enter a non-negative number" : undefined}
-          value={draft}
-          placeholder="0"
-          className="h-7 w-20 px-1 font-mono text-lg"
-          onFocus={(event) => event.currentTarget.select()}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={save}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              save();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              close();
-            }
-          }}
-        />
-      )}
-      {conflict ? (
-        <span className="ml-1.5 inline-flex items-center gap-1 font-sans text-xs font-normal text-destructive">
-          Conflict
-          <SyncConflictButton item={item} />
+    <div className="flex min-w-0 flex-col gap-1">
+      <Figure label={label} size={size}>
+        {draft === null ? (
+          <button
+            type="button"
+            className="backlog-item-inline-target -mx-1 px-1 disabled:cursor-default"
+            aria-label={`Edit ${label.toLowerCase()} estimate, ${formatHours(item[field])}`}
+            disabled={readOnly}
+            onClick={open}
+          >
+            {formatHours(item[field])}
+          </button>
+        ) : (
+          <Input
+            autoFocus
+            // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
+            inputMode="text"
+            autoComplete="off"
+            aria-label={`${label} estimate in hours`}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
+            value={draft}
+            placeholder="0"
+            className="h-7 w-20 px-1 font-mono text-lg"
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={save}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                save();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                close();
+              }
+            }}
+          />
+        )}
+        {conflict ? (
+          <span className="ml-1.5 inline-flex items-center gap-1 font-sans text-xs font-normal text-destructive">
+            Conflict
+            <SyncConflictButton item={item} />
+          </span>
+        ) : null}
+      </Figure>
+      {/* Under the number, as the composer says it under its sentence. */}
+      {error ? (
+        <span id={errorId} className="field-error max-w-48">
+          {error}
         </span>
       ) : null}
-    </Figure>
+    </div>
   );
 }
 

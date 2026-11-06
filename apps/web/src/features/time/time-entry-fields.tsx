@@ -55,6 +55,7 @@ export function TimeEntryFields({
   const noteId = `${idPrefix}-note`;
   const durationId = `${idPrefix}-hours`;
   const durationHintId = `${idPrefix}-hours-hint`;
+  const durationErrorId = `${idPrefix}-hours-error`;
   const dateId = `${idPrefix}-date`;
 
   return (
@@ -71,7 +72,8 @@ export function TimeEntryFields({
         <input
           id={durationId}
           className="composer-title composer-hours"
-          inputMode="numeric"
+          // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
+          inputMode="text"
           autoComplete="off"
           value={durationHours}
           onChange={(event) => onDurationChange(event.target.value)}
@@ -82,11 +84,17 @@ export function TimeEntryFields({
           placeholder="0:00"
           aria-invalid={Boolean(durationError)}
           aria-describedby={
-            !durationError && durationHint ? durationHintId : undefined
+            durationError
+              ? durationErrorId
+              : durationHint
+                ? durationHintId
+                : undefined
           }
         />
         {durationError ? (
-          <span className="field-error">{durationError}</span>
+          <span id={durationErrorId} className="field-error">
+            {durationError}
+          </span>
         ) : durationHint ? (
           <span id={durationHintId} className="text-xs text-muted-foreground">
             {durationHint}

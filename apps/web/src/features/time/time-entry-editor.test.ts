@@ -105,7 +105,7 @@ describe("time-entry editor", () => {
       values: null,
       canSave: false,
       isTimerMode: false,
-      durationError: "Enter a valid duration",
+      durationError: "Enter hours, such as 1:30, 1.5 or 1h30",
     });
     fields.durationHours = "";
     expect(evaluateTimeEntryEditor(fields).values).toBeNull();
@@ -116,6 +116,33 @@ describe("time-entry editor", () => {
       canSave: false,
       isTimerMode: true,
       hasContent: true,
+    });
+  });
+
+  it("refuses more than 24:00 typed, and keeps a longer saved entry as it is", () => {
+    const fields = { ...createTimeEntryEditorFields(DAY), durationHours: "90" };
+    expect(evaluateTimeEntryEditor(fields)).toMatchObject({
+      values: null,
+      canSave: false,
+      durationError: "An entry can be at most 24:00",
+    });
+    expect(
+      evaluateTimeEntryEditor({ ...fields, durationHours: "24:00" }),
+    ).toMatchObject({ canSave: true, durationError: null });
+
+    const original = { localDate: DAY, durationMs: 30 * 3_600_000 };
+    const saved = createTimeEntryEditorFields(DAY, original);
+    expect(
+      evaluateTimeEntryEditor({ ...saved, note: "kept" }, { original }),
+    ).toMatchObject({ canSave: true, durationError: null });
+    expect(
+      evaluateTimeEntryEditor(
+        { ...saved, durationHours: "30:01" },
+        { original },
+      ),
+    ).toMatchObject({
+      canSave: false,
+      durationError: "An entry can be at most 24:00",
     });
   });
 
@@ -166,7 +193,10 @@ describe("time-entry editor", () => {
           ),
           "switch",
         ),
-      ).toEqual({ kind: "invalid", error: "Enter a valid duration" });
+      ).toEqual({
+        kind: "invalid",
+        error: "Enter hours, such as 1:30, 1.5 or 1h30",
+      });
       expect(
         commitTimeEntryDraft(
           evaluateTimeEntryEditor(

@@ -132,9 +132,15 @@
     color: var(--text);
   }
 
+  /* An entry saved before the 24:00 limit can hold absurd hours: the day's
+     total ends in an ellipsis instead of running into the next day. */
   .day-strip-hours {
+    max-width: 100%;
+    overflow: hidden;
     font-size: var(--text-2xs);
     line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .day-strip-hours.is-empty {
@@ -344,6 +350,16 @@
   }
 
   .time-entry-trailing > * {
+    vertical-align: middle;
+  }
+
+  /* A duration saved before the 24:00 limit can be absurd: it ends in an
+     ellipsis instead of running out of the row. */
+  .time-entry-trailing [data-slot="value"] {
+    display: inline-block;
+    max-width: 3.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
     vertical-align: middle;
   }
 
@@ -575,6 +591,7 @@
   }
 
   .weekly-capacity-warning {
+    flex-shrink: 0;
     width: 14px;
     height: 14px;
     color: var(--warning);
@@ -809,6 +826,58 @@
 
   .weekly-grid-cell-input.is-invalid {
     box-shadow: inset 0 0 0 2px var(--destructive);
+  }
+
+  /* An entry saved before the 24:00 limit can hold absurd hours: its figures
+     end in an ellipsis instead of running into the next day. */
+  .weekly-grid-time-button,
+  .weekly-grid-table-scroll .weekly-grid-footer-row > .weekly-grid-time-cell,
+  .weekly-grid-table-scroll .weekly-grid-total-cell {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .weekly-grid-day-total,
+  .weekly-grid-day-total .weekly-capacity-value,
+  .weekly-days-column-header .weekly-capacity-value {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .weekly-grid-day-total .weekly-capacity-trigger,
+  .weekly-days-column-header .weekly-capacity-trigger {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The editing cell holds its message, which hangs below it over the next
+     row, right-aligned with the hours. */
+  .weekly-grid-time-cell.is-editing {
+    position: relative;
+    z-index: 1;
+  }
+
+  .weekly-grid-cell-error {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1;
+    margin-top: 2px;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--popover);
+    color: var(--danger);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1rem;
+    text-align: left;
+    white-space: nowrap;
+    box-shadow: var(--shadow-popup);
+    pointer-events: none;
   }
 
   .weekly-grid-total-cell {

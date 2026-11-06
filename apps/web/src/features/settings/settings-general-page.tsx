@@ -21,8 +21,9 @@ import {
 import type { ThemeMode, WeeklyCapacityTargets } from "@/domain/local-state";
 import {
   formatClockDuration,
+  DAY_CAPACITY_LIMIT,
   formatDurationHoursInput,
-  parseHoursInput,
+  readDurationInput,
 } from "@/domain/time/duration";
 import {
   computePaceRange,
@@ -64,6 +65,10 @@ const CAPACITY_DAYS: Array<{
   { key: "sunday", label: "Sunday" },
 ];
 
+/**
+ * A weekday's capacity target. Enter or leaving the field saves it. Hours it
+ * can't read, or more than 24:00, keep the typed text with a message under it.
+ */
 function CapacityInput({
   label,
   value,
@@ -74,32 +79,61 @@ function CapacityInput({
   onCommit: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(() => formatDurationHoursInput(value));
+  const [error, setError] = useState<string | null>(null);
+  const id = `capacity-${label.toLowerCase()}`;
+  const errorId = `${id}-error`;
 
   useEffect(() => {
     setDraft(formatDurationHoursInput(value));
+    setError(null);
   }, [value]);
 
+  function commit(text: string) {
+    if (!text.trim()) {
+      setDraft(formatDurationHoursInput(value));
+      setError(null);
+      return;
+    }
+    const typed = readDurationInput(text, DAY_CAPACITY_LIMIT);
+    if (!typed.ok) {
+      setError(typed.error);
+      return;
+    }
+    setError(null);
+    setDraft(formatDurationHoursInput(typed.durationMs));
+    if (typed.durationMs !== value) onCommit(typed.durationMs);
+  }
+
   return (
-    <Field>
-      <FieldLabel htmlFor={`capacity-${label.toLowerCase()}`}>
-        {label}
-      </FieldLabel>
+    <Field data-invalid={error ? true : undefined}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Input
-        id={`capacity-${label.toLowerCase()}`}
+        id={id}
         className="font-mono"
         value={draft}
-        placeholder="08:00"
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={(event) => {
-          const parsed = parseHoursInput(event.target.value);
-          if (parsed !== null && parsed >= 0) {
-            onCommit(parsed);
-            setDraft(formatDurationHoursInput(parsed));
-          } else {
-            setDraft(formatDurationHoursInput(value));
+        placeholder="8:00"
+        // A text keyboard: a numeric keypad has no ":" or "h" for "7:30" or "7h30".
+        inputMode="text"
+        autoComplete="off"
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            commit(event.currentTarget.value);
           }
         }}
+        onBlur={(event) => commit(event.target.value)}
       />
+      {error ? (
+        <span id={errorId} className="field-error">
+          {error}
+        </span>
+      ) : null}
     </Field>
   );
 }

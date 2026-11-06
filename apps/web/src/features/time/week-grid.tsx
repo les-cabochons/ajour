@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -212,6 +213,7 @@ function WeekGridCellInput({
 }) {
   const [text, setText] = useState(initialText ?? savedText);
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   // Set once the edit ended from a key, so the blur that follows writes nothing.
   const endedRef = useRef(false);
@@ -250,28 +252,39 @@ function WeekGridCellInput({
   }
 
   return (
-    <input
-      ref={inputRef}
-      className={cn("weekly-grid-cell-input", error && "is-invalid")}
-      value={text}
-      inputMode="decimal"
-      // The default size of 20 characters would widen the day column.
-      size={1}
-      aria-label={label}
-      aria-invalid={error ? true : undefined}
-      title={error ?? undefined}
-      onChange={(event) => {
-        setText(event.target.value);
-        setError(null);
-      }}
-      onKeyDown={handleKeyDown}
-      onBlur={() => {
-        if (!endedRef.current) {
-          endedRef.current = true;
-          onEnd(text, "blur");
-        }
-      }}
-    />
+    <>
+      <input
+        ref={inputRef}
+        className={cn("weekly-grid-cell-input", error && "is-invalid")}
+        value={text}
+        // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
+        inputMode="text"
+        autoComplete="off"
+        // The default size of 20 characters would widen the day column.
+        size={1}
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => {
+          setText(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          if (!endedRef.current) {
+            const nextError = onEnd(text, "blur");
+            setError(nextError);
+            endedRef.current = nextError === null;
+          }
+        }}
+      />
+      {/* Under the cell, as the entry editor shows it under Hours. */}
+      {error ? (
+        <span id={errorId} role="alert" className="weekly-grid-cell-error">
+          {error}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -280,7 +293,7 @@ function WeekGridCellInput({
  *
  * A click opens the cell in the side panel: a new entry for an empty cell, the
  * entry of a one-entry cell, or the list of a cell with several entries.
- * Double-click, Enter or a digit edits an empty or one-entry cell in place; see
+ * Double-click, Enter, a digit, ".", "," or ":" edits an empty or one-entry cell in place; see
  * `commitWeekGridCellText` for what the typed hours write. Cells with several
  * entries, or with the running entry, show their total and never edit in place.
  * Right-click lists Add entry, then the cell's entry actions or Open entries.
@@ -365,6 +378,8 @@ export function WeekGrid({
   const pendingFocusRef = useRef<string | null>(null);
   // A single click on a cell that edits in place waits out the double-click delay.
   const pendingOpenRef = useRef<number | undefined>(undefined);
+  /** The cell still editing hours it couldn't save, after focus left it. */
+  const invalidEditRef = useRef<string | null>(null);
   const lastClickedCellRef = useRef<string | null>(null);
 
   useEffect(() => () => window.clearTimeout(pendingOpenRef.current), []);
@@ -452,6 +467,7 @@ export function WeekGrid({
    * `clickCount` is the event's `detail`; keyboard clicks report 0.
    */
   function handleCellClick(model: CellModel, clickCount: number) {
+    if (returnsToInvalidEdit(model)) return;
     window.clearTimeout(pendingOpenRef.current);
     if (clickCount >= 2) {
       // The browser counts clicks by place and time, not by cell. A second click
@@ -471,9 +487,26 @@ export function WeekGrid({
     }
   }
 
+  /**
+   * While another cell holds hours it can't save, opening or editing this one
+   * would drop them: focus goes back to that cell, to fix or Escape them
+   * (Sol's review of #648).
+   */
+  function returnsToInvalidEdit(model: CellModel) {
+    const held = invalidEditRef.current;
+    if (!held || held === model.cellId || editing?.cellId !== held) {
+      return false;
+    }
+    document
+      .querySelector<HTMLInputElement>(".weekly-grid-cell-input")
+      ?.focus();
+    return true;
+  }
+
   /** Starts editing in place. Returns false when the cell can't edit now. */
   function beginEdit(model: CellModel, initialText?: string) {
     if (!model.canEditInPlace) return false;
+    if (returnsToInvalidEdit(model)) return false;
     // A click's panel still waiting on a double-click is dropped: typing
     // right after the click edits in place, and the panel opening after it
     // took focus and left a blank entry open (usability council U1).
@@ -499,9 +532,13 @@ export function WeekGrid({
       row,
       localDate: model.cell.localDate,
     });
-    if (result.kind === "invalid" && end !== "blur") {
+    // Hours it can't save keep the cell editing with the message, also when
+    // focus leaves it: the typed draft never disappears silently.
+    if (result.kind === "invalid") {
+      invalidEditRef.current = model.cellId;
       return result.error;
     }
+    invalidEditRef.current = null;
 
     if (result.kind === "create") {
       runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
@@ -535,6 +572,7 @@ export function WeekGrid({
   }
 
   function cancelEdit(model: CellModel) {
+    invalidEditRef.current = null;
     setEditing(null);
     pendingFocusRef.current = model.cellId;
   }
@@ -588,8 +626,11 @@ export function WeekGrid({
     ) {
       return;
     }
-    // Enter edits in place instead of pressing the button; Space still opens the panel.
-    if (event.key === "Enter" || /^[0-9]$/.test(event.key)) {
+    // Enter edits in place instead of pressing the button; Space still opens the
+    // panel. A digit, or the ".", "," or ":" that starts ".5" or ":45", edits
+    // in place with that character. So does "-": dropped, "-1" saved 1:00;
+    // kept, the hours refuse it with their message.
+    if (event.key === "Enter" || /^[0-9.,:-]$/.test(event.key)) {
       event.preventDefault();
       event.stopPropagation();
       beginEdit(model, event.key === "Enter" ? undefined : event.key);

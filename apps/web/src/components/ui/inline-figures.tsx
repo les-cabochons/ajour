@@ -26,7 +26,8 @@ function InlineFigure({
   placeholder = "0h",
   trailing,
   onKeyDown,
-  inputMode = "decimal",
+  // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
+  inputMode = "text",
   readOnly = false,
   describedBy,
 }: {

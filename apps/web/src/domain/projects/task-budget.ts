@@ -1,7 +1,4 @@
-import {
-  formatDurationHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
+import { formatDurationHoursInput } from "@/domain/time/duration";
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
@@ -91,19 +88,6 @@ export function getProjectTaskConsumedTone(
   }
 
   return "danger-strong";
-}
-
-export function parseSignedHoursInput(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const sign = trimmed.startsWith("-") ? -1 : 1;
-  const normalized = trimmed.replace(/^[+-]\s*/, "");
-  const parsed = parseHoursInput(normalized);
-
-  return parsed === null ? null : parsed * sign;
 }
 
 export function durationMsToHoursValue(durationMs: number | undefined) {

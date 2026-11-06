@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   formatChangedClockDurations,
   formatCompactDuration,
+  DAY_CAPACITY_LIMIT,
+  DURATION_FORMAT_ERROR,
+  ENTRY_DURATION_LIMIT,
   formatDecimalHours,
   parseHoursInput,
+  PLANNED_HOURS_LIMIT,
+  readDurationInput,
   toDecimalHours,
 } from "@/domain/time/duration";
 
@@ -26,6 +31,115 @@ describe("parseHoursInput", () => {
   it("rejects non-decimal numeric syntaxes", () => {
     expect(parseHoursInput("0x10")).toBeNull();
     expect(parseHoursInput("1e3")).toBeNull();
+  });
+});
+
+describe("parseHoursInput formats", () => {
+  const minutes = (count: number) => count * 60_000;
+
+  it.each([
+    ["8", 480],
+    ["1:30", 90],
+    ["1.5", 90],
+    ["1,5", 90],
+    [".5", 30],
+    [",5", 30],
+    [":45", 45],
+    ["1h30", 90],
+    ["1h 30m", 90],
+    ["1h30m", 90],
+    ["1H30MIN", 90],
+    ["2h", 120],
+    ["0.5h", 30],
+    ["2,5h", 150],
+    ["90m", 90],
+    ["45min", 45],
+    ["45 min", 45],
+    ["1h05", 65],
+    ["0", 0],
+    [" 1 : 30 ", 90],
+  ])("reads %j as %i minutes", (text, expected) => {
+    expect(parseHoursInput(text)).toBe(minutes(expected));
+  });
+
+  it.each([
+    "",
+    "abc",
+    "1:60",
+    "1h60",
+    "1.5h30",
+    "h",
+    "m",
+    "1:",
+    "-1",
+    "+1",
+    "1e2",
+    "Infinity",
+    "1..5",
+    "1.5.5",
+    "1h30h",
+  ])("refuses %j", (text) => {
+    expect(parseHoursInput(text)).toBeNull();
+  });
+});
+
+describe("readDurationInput", () => {
+  const hour = 3_600_000;
+
+  it("accepts a duration up to the limit", () => {
+    expect(readDurationInput("24:00", ENTRY_DURATION_LIMIT)).toEqual({
+      ok: true,
+      durationMs: 24 * hour,
+    });
+  });
+
+  it("refuses a duration past the limit with the limit's message", () => {
+    expect(readDurationInput("24:01", ENTRY_DURATION_LIMIT)).toEqual({
+      ok: false,
+      error: "An entry can be at most 24:00",
+    });
+    expect(readDurationInput("90", ENTRY_DURATION_LIMIT)).toEqual({
+      ok: false,
+      error: "An entry can be at most 24:00",
+    });
+    expect(
+      readDurationInput("99999999999999999999", ENTRY_DURATION_LIMIT),
+    ).toEqual({ ok: false, error: "An entry can be at most 24:00" });
+    expect(readDurationInput("25", DAY_CAPACITY_LIMIT)).toEqual({
+      ok: false,
+      error: "A day can hold at most 24:00",
+    });
+    expect(readDurationInput("100001", PLANNED_HOURS_LIMIT)).toEqual({
+      ok: false,
+      error: "Enter at most 100,000 hours",
+    });
+  });
+
+  it("says how to write hours when it can't read them", () => {
+    expect(readDurationInput("abc", ENTRY_DURATION_LIMIT)).toEqual({
+      ok: false,
+      error: DURATION_FORMAT_ERROR,
+    });
+    expect(readDurationInput("1e2", PLANNED_HOURS_LIMIT)).toEqual({
+      ok: false,
+      error: DURATION_FORMAT_ERROR,
+    });
+  });
+
+  it("reads a sign only when the field takes one", () => {
+    expect(
+      readDurationInput("-1h30", PLANNED_HOURS_LIMIT, { signed: true }),
+    ).toEqual({ ok: true, durationMs: -1.5 * hour });
+    expect(
+      readDurationInput("+2", PLANNED_HOURS_LIMIT, { signed: true }),
+    ).toEqual({ ok: true, durationMs: 2 * hour });
+    expect(
+      readDurationInput("-0", PLANNED_HOURS_LIMIT, { signed: true }),
+    ).toEqual({ ok: true, durationMs: 0 });
+    expect(readDurationInput("-2", PLANNED_HOURS_LIMIT).ok).toBe(false);
+    expect(
+      readDurationInput("-200000", PLANNED_HOURS_LIMIT, { signed: true }),
+    ).toEqual({ ok: false, error: "Enter at most 100,000 hours" });
   });
 });
 
