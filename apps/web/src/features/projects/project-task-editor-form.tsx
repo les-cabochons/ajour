@@ -11,10 +11,17 @@ import {
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ToggleChip } from "@/components/ui/toggle-chip";
 import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldWarning,
+} from "@/components/ui/field";
+import { getDuplicateTaskNameWarning } from "@/domain/projects/project-names";
 import {
   formatCompactDuration,
   formatDurationHoursInput,
@@ -185,6 +192,16 @@ export function ProjectTaskEditorForm({
             ) : null}
           </span>
           {nameError ? <span className="field-error">{nameError}</span> : null}
+          {sourceLock ? null : (
+            <FieldWarning>
+              {getDuplicateTaskNameWarning(
+                projectName,
+                project?.tasks ?? [],
+                fields.name,
+                taskId,
+              )}
+            </FieldWarning>
+          )}
         </Field>
         {/* Budget and adjustment are one sentence under the name, typed in
             place, as a backlog item's estimates (forms council round 13). */}

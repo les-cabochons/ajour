@@ -15,12 +15,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldWarning,
+} from "@/components/ui/field";
+import { getDuplicateProjectNameWarning } from "@/domain/projects/project-names";
+import { useLocalState } from "@/lib/local-hooks";
 import type { LocalProject } from "@/domain/local-state";
 import { isManagedProject } from "@/domain/projects/project-transitions";
 import { LockHint } from "@/features/projects/project-source-ui";
 import {
   createProjectFormFields,
+  getProjectFormErrors,
   getProjectFormValues,
   setProjectFormName,
   type ProjectFormFields,
@@ -55,7 +63,16 @@ export function ProjectFormDialog({
   onSubmit: (values: ProjectFormValues) => void;
 }) {
   const [fields, setFields] = useState(() => createProjectFormFields(project));
+  // The full name's error shows once the user typed in it, not on a new form.
+  const [nameEdited, setNameEdited] = useState(false);
   const values = getProjectFormValues(fields);
+  const errors = getProjectFormErrors(fields);
+  const { projects } = useLocalState();
+  const nameWarning = getDuplicateProjectNameWarning(
+    projects,
+    fields.name,
+    project?._id,
+  );
   const isCreate = !project;
   // A managed project's source sets its full name and code (#506).
   const sourceOwned = project ? isManagedProject(project) : false;
@@ -170,11 +187,15 @@ export function ProjectFormDialog({
                         sourceOwned ? `${lockId}-name` : undefined
                       }
                       value={fields.name}
-                      onChange={(event) =>
+                      aria-invalid={
+                        nameEdited && errors.name ? true : undefined
+                      }
+                      onChange={(event) => {
+                        setNameEdited(true);
                         setFields((current) =>
                           setProjectFormName(current, event.target.value),
-                        )
-                      }
+                        );
+                      }}
                     />
                     {sourceOwned ? (
                       <LockHint label={sourceLabel} id={`${lockId}-name`} />
@@ -216,6 +237,7 @@ export function ProjectFormDialog({
                   readOnly={sourceOwned}
                   aria-describedby={sourceOwned ? `${lockId}-code` : undefined}
                   value={fields.code}
+                  aria-invalid={errors.code ? true : undefined}
                   onChange={(event) => update({ code: event.target.value })}
                 />
                 {sourceOwned ? (
@@ -231,6 +253,17 @@ export function ProjectFormDialog({
                 trailing={<span>Color</span>}
               />
             </div>
+            {nameEdited && errors.name ? (
+              <span role="alert" className="field-error">
+                {errors.name}
+              </span>
+            ) : null}
+            {errors.code ? (
+              <span role="alert" className="field-error">
+                {errors.code}
+              </span>
+            ) : null}
+            {sourceOwned ? null : <FieldWarning>{nameWarning}</FieldWarning>}
           </FieldGroup>
 
           <DialogFooter>
