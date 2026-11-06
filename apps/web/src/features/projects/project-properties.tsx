@@ -276,7 +276,7 @@ export function ProjectTitle({
           {onClick ? (
             <button
               type="button"
-              className={cn("max-w-full truncate text-left", className)}
+              className={cn("max-w-full text-left", className)}
               onClick={onClick}
             >
               {displayName}
