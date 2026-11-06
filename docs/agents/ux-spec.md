@@ -481,7 +481,7 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 - A right-click on an unselected entry selects that entry alone before its menu opens. A right-click on a selected entry keeps the selection, and the menu acts on it.
 - Cmd+A, and the Edit menu's Select All, selects every shown entry of the day or week while focus is in the list or the columns and not in a text field.
 - Plain ↑ and ↓ move focus and collapse the selection to the focused entry. Shift+↑ and Shift+↓ extend the range from the anchor, in reading order on the Week cards too. With no anchor, the focused entry is the anchor; after Cmd+A, the first shown entry is.
-- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does. A tap on a touch screen still opens it. Week Grid cells keep their click. Calendar suggestions never join the selection.
+- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does, except that a tap on a touch screen, and a click in the narrow view, open it, since a phone has no double click to spare. A tap is known by the press that starts it, so it opens the entry in browsers whose click does not say a finger made it. Week Grid cells keep their click. Calendar suggestions never join the selection.
 - Escape, a click on empty space, or showing another day or week clears the selection.
 
 #### Which actions take the selection
