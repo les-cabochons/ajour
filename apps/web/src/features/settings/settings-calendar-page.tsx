@@ -12,6 +12,7 @@ import {
 import { normalizeCalendarSuggestionSettings } from "@/domain/time/calendar-suggestions";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
+import { useNumberDraft, type NumberDraftRule } from "@/lib/number-draft";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
@@ -77,6 +78,55 @@ function meetingTarget(
 }
 
 /**
+ * A minutes field that saves on Enter or when focus leaves it. It can be
+ * empty while the user types; a value out of range says why under the
+ * description and saves nothing.
+ */
+function CalendarNumberRow({
+  id,
+  label,
+  description,
+  value,
+  rule,
+  onCommit,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  value: number;
+  rule: NumberDraftRule;
+  onCommit: (value: number) => void;
+}) {
+  const { inputProps, error } = useNumberDraft({ value, rule, onCommit });
+  return (
+    <SettingRow
+      label={label}
+      labelFor={id}
+      description={
+        <>
+          {description}
+          {error ? (
+            <span role="alert" className="mt-1 block text-destructive">
+              {error}
+            </span>
+          ) : null}
+        </>
+      }
+    >
+      <Input
+        id={id}
+        type="number"
+        min={rule.min}
+        max={rule.max}
+        step={5}
+        className="w-20"
+        {...inputProps}
+      />
+    </SettingRow>
+  );
+}
+
+/**
  * Settings > Calendar: which calendar events the Time view suggests, how
  * often it refreshes them, and the meetings Ajour remembers. Shown while a
  * calendar plugin is on.
@@ -133,48 +183,36 @@ export function SettingsCalendarPage() {
               />
             </SettingRow>
           ))}
-          <SettingRow
+          <CalendarNumberRow
+            id="calendar-minimum-minutes"
             label="Hide events shorter than"
-            labelFor="calendar-minimum-minutes"
             description="In minutes. 0 shows every length."
-          >
-            <Input
-              id="calendar-minimum-minutes"
-              type="number"
-              min={0}
-              max={480}
-              step={5}
-              className="w-20"
-              value={settings.minimumMinutes}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) {
-                  updateSettings(settings, { minimumMinutes: value });
-                }
-              }}
-            />
-          </SettingRow>
-          <SettingRow
+            value={settings.minimumMinutes}
+            rule={{
+              min: 0,
+              max: 480,
+              integer: true,
+              message: "Enter a whole number of minutes from 0 to 480.",
+            }}
+            onCommit={(minimumMinutes) =>
+              updateSettings(settings, { minimumMinutes })
+            }
+          />
+          <CalendarNumberRow
+            id="calendar-refresh-minutes"
             label="Refresh every"
-            labelFor="calendar-refresh-minutes"
             description="In minutes, while Ajour is open. Refresh in the Time view gets them at once."
-          >
-            <Input
-              id="calendar-refresh-minutes"
-              type="number"
-              min={1}
-              max={1440}
-              step={5}
-              className="w-20"
-              value={settings.refreshMinutes}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value) && value >= 1) {
-                  updateSettings(settings, { refreshMinutes: value });
-                }
-              }}
-            />
-          </SettingRow>
+            value={settings.refreshMinutes}
+            rule={{
+              min: 1,
+              max: 1440,
+              integer: true,
+              message: "Enter a whole number of minutes from 1 to 1440.",
+            }}
+            onCommit={(refreshMinutes) =>
+              updateSettings(settings, { refreshMinutes })
+            }
+          />
         </AppPanel>
       </section>
 

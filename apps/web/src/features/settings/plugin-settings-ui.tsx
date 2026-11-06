@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import type { PluginField, PluginFieldValue } from "@ajour/shared";
+import { useNumberDraft } from "@/lib/number-draft";
 import { FieldHelp } from "./field-help";
 import { SecretFieldInput, type SecretFieldBinding } from "./secret-field";
 
@@ -71,11 +72,21 @@ function PluginFieldInput({
               onChange={onChange}
               options={field.options ?? []}
             />
+          ) : field.type === "number" ? (
+            <PluginNumberInput
+              field={field}
+              value={value}
+              onChange={onChange}
+              className="inline-field"
+              placeholder={
+                field.placeholder ? `e.g. ${field.placeholder}` : "Not set"
+              }
+            />
           ) : (
             <Input
               id={field.id}
               className="inline-field"
-              type={field.type === "number" ? "number" : "text"}
+              type="text"
               value={
                 typeof value === "number"
                   ? String(value)
@@ -88,14 +99,7 @@ function PluginFieldInput({
               min={field.min}
               max={field.max}
               step={field.step}
-              onChange={(event) => {
-                if (field.type === "number") {
-                  const nextValue = Number(event.target.value);
-                  onChange(Number.isFinite(nextValue) ? nextValue : 0);
-                  return;
-                }
-                onChange(event.target.value);
-              }}
+              onChange={(event) => onChange(event.target.value)}
               // The plugin's placeholder says what to type, never a value, so
               // an empty row never reads as a saved one. Settings show it in
               // italics (styles/settings.css).
@@ -167,42 +171,94 @@ function PluginFieldInput({
     <Field>
       <FieldLabel htmlFor={field.id}>{label}</FieldLabel>
       <FieldContent>
-        <Input
-          id={field.id}
-          type={
-            field.type === "number"
-              ? "number"
-              : field.type === "password"
-                ? "password"
-                : "text"
-          }
-          value={
-            typeof value === "number"
-              ? String(value)
-              : typeof value === "boolean"
-                ? value
-                  ? "true"
-                  : "false"
-                : (value ?? "")
-          }
-          min={field.min}
-          max={field.max}
-          step={field.step}
-          onChange={(event) => {
-            if (field.type === "number") {
-              const nextValue = Number(event.target.value);
-              onChange(Number.isFinite(nextValue) ? nextValue : 0);
-              return;
+        {field.type === "number" ? (
+          <PluginNumberInput
+            field={field}
+            value={value}
+            onChange={onChange}
+            placeholder={field.placeholder}
+          />
+        ) : (
+          <Input
+            id={field.id}
+            type={field.type === "password" ? "password" : "text"}
+            value={
+              typeof value === "number"
+                ? String(value)
+                : typeof value === "boolean"
+                  ? value
+                    ? "true"
+                    : "false"
+                  : (value ?? "")
             }
-
-            onChange(event.target.value);
-          }}
-          placeholder={field.placeholder}
-          autoComplete="off"
-        />
+            min={field.min}
+            max={field.max}
+            step={field.step}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={field.placeholder}
+            autoComplete="off"
+          />
+        )}
         {help ? <FieldHelp text={help} /> : null}
       </FieldContent>
     </Field>
+  );
+}
+
+/**
+ * A plugin's number field. It can be empty or half-typed while the user
+ * types; each valid number goes to the form, and leaving the field with
+ * text it doesn't take says why under it.
+ */
+function PluginNumberInput({
+  field,
+  value,
+  onChange,
+  className,
+  placeholder,
+}: {
+  field: PluginField;
+  value: PluginFieldValue | undefined;
+  onChange: (nextValue: PluginFieldValue) => void;
+  className?: string;
+  placeholder?: string;
+}) {
+  const { inputProps, error } = useNumberDraft({
+    value: typeof value === "number" ? value : undefined,
+    rule: {
+      min: field.min,
+      max: field.max,
+      message:
+        field.min !== undefined && field.max !== undefined
+          ? `Enter a number from ${field.min} to ${field.max}.`
+          : field.min !== undefined
+            ? `Enter a number of at least ${field.min}.`
+            : field.max !== undefined
+              ? `Enter a number up to ${field.max}.`
+              : "Enter a number.",
+    },
+    live: true,
+    onCommit: onChange,
+  });
+  return (
+    <>
+      <Input
+        id={field.id}
+        className={className}
+        type="number"
+        min={field.min}
+        max={field.max}
+        step={field.step}
+        placeholder={placeholder}
+        autoComplete="off"
+        {...inputProps}
+      />
+      {error ? (
+        <span role="alert" className="field-error">
+          {error}
+        </span>
+      ) : null}
+    </>
   );
 }
 

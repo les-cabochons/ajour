@@ -32,6 +32,7 @@ import {
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { useNumberDraft } from "@/lib/number-draft";
 import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
 
 const THEME_OPTIONS: Array<{
@@ -148,6 +149,20 @@ export function SettingsGeneralPage() {
     today,
     capacityTargets: preferences.weeklyCapacityTargets,
     tolerancePercent: getPaceTolerancePercent(preferences),
+  });
+  // Saves each valid keystroke, so the range under the field follows the
+  // typed percent (council round 21).
+  const paceToleranceDraft = useNumberDraft({
+    value: getPaceTolerancePercent(preferences),
+    rule: {
+      min: 0,
+      max: 100,
+      integer: true,
+      message: "Enter a whole percent from 0 to 100.",
+    },
+    live: true,
+    onCommit: (paceTolerancePercent) =>
+      localStore.setUserPreferences({ paceTolerancePercent }),
   });
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
@@ -326,18 +341,7 @@ export function SettingsGeneralPage() {
                   max={100}
                   step={5}
                   className="w-20 pr-6"
-                  value={getPaceTolerancePercent(preferences)}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isFinite(value)) {
-                      localStore.setUserPreferences({
-                        paceTolerancePercent: Math.min(
-                          100,
-                          Math.max(0, Math.round(value)),
-                        ),
-                      });
-                    }
-                  }}
+                  {...paceToleranceDraft.inputProps}
                 />
                 <span
                   aria-hidden
@@ -346,6 +350,14 @@ export function SettingsGeneralPage() {
                   %
                 </span>
               </div>
+              {paceToleranceDraft.error ? (
+                <p
+                  role="alert"
+                  className="max-w-36 text-left text-xs text-destructive desktop:text-right"
+                >
+                  {paceToleranceDraft.error}
+                </p>
+              ) : null}
               {paceRange.targetMs ? (
                 <p
                   id="pace-range"
