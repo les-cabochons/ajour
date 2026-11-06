@@ -648,6 +648,7 @@ export function BacklogItemEditorForm({
         onChange={(value) => updateFields({ [key]: value })}
         format={formatEstimateFigure}
         invalid={Boolean(error)}
+        describedBy={error ? `${idPrefix}-${key}-error` : undefined}
         onKeyDown={saveOnEnter}
       />
     );
@@ -655,7 +656,7 @@ export function BacklogItemEditorForm({
   const estimateErrors = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
     const error = validation[ESTIMATE_ERROR_KEYS[key]];
     return error ? (
-      <span key={key} className="field-error">
+      <span key={key} id={`${idPrefix}-${key}-error`} className="field-error">
         {ESTIMATE_LABELS[key]}: {error}
       </span>
     ) : null;

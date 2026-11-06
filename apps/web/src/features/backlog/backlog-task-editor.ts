@@ -4,6 +4,9 @@ import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { getPriorityRefusal } from "@/domain/backlog/backlog-item-lifecycle";
 import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
+import { PLANNED_HOURS_LIMIT, readDurationInput } from "@/domain/time/duration";
+
+const MS_PER_HOUR = 3_600_000;
 
 /**
  * The editor model for backlog items. The side panel and the narrow dialog render the
@@ -118,18 +121,36 @@ export function formatEstimateInput(value?: number) {
   return typeof value === "number" ? String(value) : "";
 }
 
-export function parseEstimateInput(value: string) {
+/**
+ * Reads a typed estimate as hours, with the shared duration parser and its
+ * 100,000-hour ceiling: "2,5", "1h30" and "90m" all work. Empty is no estimate.
+ */
+export function readEstimateInput(
+  value: string,
+): { ok: true; hours: number | undefined } | { ok: false; error: string } {
   if (value.trim() === "") {
-    return undefined;
+    return { ok: true, hours: undefined };
   }
 
-  const parsedValue = Number(value);
-  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-    return null;
+  const typed = readDurationInput(value, PLANNED_HOURS_LIMIT);
+  if (!typed.ok) {
+    return typed;
   }
+  return {
+    ok: true,
+    hours: Math.round((typed.durationMs / MS_PER_HOUR) * 10_000) / 10_000,
+  };
+}
 
-  const normalizedValue = Math.round(parsedValue * 10_000) / 10_000;
-  return Number.isFinite(normalizedValue) ? normalizedValue : null;
+/** The estimate in hours, `undefined` when empty, or null when it can't be read. */
+export function parseEstimateInput(value: string) {
+  const estimate = readEstimateInput(value);
+  return estimate.ok ? estimate.hours : null;
+}
+
+function getEstimateError(value: string) {
+  const estimate = readEstimateInput(value);
+  return estimate.ok ? null : estimate.error;
 }
 
 export function createBacklogTaskEditorFields(
@@ -211,18 +232,13 @@ export function validateBacklogTaskEditor(
       : !options.isSubtask && priority === undefined
         ? (options.noPriorityRefusal ?? null)
         : null;
-  const originalEstimateError =
-    parseEstimateInput(fields.originalEstimateHours) === null
-      ? "Enter a non-negative number"
-      : null;
-  const remainingEstimateError =
-    parseEstimateInput(fields.remainingEstimateHours) === null
-      ? "Enter a non-negative number"
-      : null;
-  const completedEstimateError =
-    parseEstimateInput(fields.completedEstimateHours) === null
-      ? "Enter a non-negative number"
-      : null;
+  const originalEstimateError = getEstimateError(fields.originalEstimateHours);
+  const remainingEstimateError = getEstimateError(
+    fields.remainingEstimateHours,
+  );
+  const completedEstimateError = getEstimateError(
+    fields.completedEstimateHours,
+  );
   const descriptionLength = normalizeDescriptionText(fields.description).length;
   const descriptionError =
     options.descriptionLimit !== undefined &&
