@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
 const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
@@ -40,7 +41,7 @@ Then("the Commit page shows the week is not submitted", async ({ page }) => {
 const lockReason = "The week of Oct 5 is submitted. Reopen it to change it.";
 
 Then("the entry editor is read-only", async ({ page }) => {
-  const editor = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
+  const editor = timeEntryEditor(page);
   await expect(editor.getByText("Submitted", { exact: true })).toBeVisible();
   await expect(editor.getByText(lockReason)).toBeVisible();
   await expect(editor.getByLabel("Note")).toBeDisabled();

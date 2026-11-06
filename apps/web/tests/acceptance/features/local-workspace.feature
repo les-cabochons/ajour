@@ -183,37 +183,19 @@ Feature: Open the local time workspace
     And I double-click the text of Monday's capacity card
     Then no entry editor is open
 
-  Scenario: The entry composer floats over the Week at every width
+  Scenario: The entry editor sits beside the Week on a wide window
     Given I have a week of saved entries
     When the window is 1280 pixels wide
     And I open the Week Days view
     Then opening Monday's "API" card floats the entry panel over the Week
     When the window is 1800 pixels wide
-    Then the entry composer still floats and the Week keeps its width
+    Then the entry panel sits beside the Week and narrows it
 
-  Scenario: A new entry's composer opens below the day strip, in place
+  Scenario: The entry editor opens beside the Day and hides no entry
     Given I have a week of saved entries
     When I open Monday in the Day view
-    And I open a new entry from the Day view while watching its composer
-    Then the entry composer opened below the day strip without sliding
-
-  Scenario: An entry's composer opens below its row, in place
-    Given I have a week of saved entries
-    When I open Monday in the Day view
-    And I double-click Monday's first entry while watching its composer
-    Then the entry composer opened below that entry without sliding
-
-  Scenario: A new entry's composer opens below the Week Days headers, in place
-    Given I have a week of saved entries
-    When I open the Week Days view
-    And I open a new entry from the timer dock while watching its composer
-    Then the entry composer opened below the Week's day headers without sliding
-
-  Scenario: A new entry's composer opens below the Week Grid headers, in place
-    Given I have a week of saved entries
-    When I open the Week Grid
-    And I open a new entry from the timer dock while watching its composer
-    Then the entry composer opened below the Week's day headers without sliding
+    And I double-click Monday's first entry
+    Then the side panel edits that entry beside the entries, which it hides none of
 
   Scenario: The new project composer opens below the Projects column headers
     Given I have projects with searchable tasks
@@ -221,14 +203,14 @@ Feature: Open the local time workspace
     And I open New project while watching its composer
     Then the project composer opened below the Projects column headers without sliding
 
-  Scenario: An open entry composer centers when the window narrows, and floats again when it widens
-    Given I have a week of saved entries
-    When I open Monday in the Day view
-    And I double-click Monday's first entry while watching its composer
+  Scenario: An open composer centers when the window narrows, and floats again when it widens
+    Given I have projects with searchable tasks
+    When I open the Projects workspace
+    And I open New project while watching its composer
     And the window is 390 pixels wide
-    Then the entry composer is centered in the window
+    Then the project composer is centered in the window
     When the window is 1440 pixels wide
-    Then the entry composer floats below that entry
+    Then the project composer floats below the Projects column headers
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries

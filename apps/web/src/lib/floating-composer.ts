@@ -13,8 +13,8 @@ const TOP = "--composer-top";
 
 /**
  * Places a floating composer before it paints. It rests at the top right,
- * below `restBelow` when given, such as the Time page's day strip, so it
- * never covers the page's own header. When it edits a row and that resting
+ * below `restBelow` when given, such as the Projects list's column headers,
+ * so it never covers the page's own header. When it edits a row and that resting
  * place covers the row, across and down, it sits just below the row, or
  * just above it (forms council rounds 11 and 12). When it fits neither way
  * it stays put: a card squeezed to the bottom would put its footer under the

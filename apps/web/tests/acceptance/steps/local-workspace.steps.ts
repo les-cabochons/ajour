@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 import { viewSwitcher } from "../../fixtures/sidebar";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
@@ -693,9 +694,7 @@ Then("the floating dock opens the running entry", async ({ page }) => {
 
 /** The running entry's editor: the dock's popover, or the Time page's panel. */
 function runningEditor(page: Page) {
-  return page
-    .getByRole("dialog")
-    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
+  return page.getByRole("dialog").or(timeEntryEditor(page));
 }
 
 When("I reload the app", async ({ page }) => {
@@ -717,10 +716,7 @@ When("I press the {string} key", async ({ page }, key: string) => {
 
 When("I type {string} in the entry note", async ({ page }, text: string) => {
   // Typing key by key sends the keydown events that shortcuts listen for.
-  await page
-    .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
-    .getByLabel("Note")
-    .pressSequentially(text);
+  await timeEntryEditor(page).getByLabel("Note").pressSequentially(text);
 });
 
 When(
@@ -1116,16 +1112,16 @@ Then(
 When(
   "I press {string} on the entry editor's Cancel button",
   async ({ page }, key: string) => {
-    const cancel = page
-      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
-      .getByRole("button", { name: "Cancel" });
+    const cancel = timeEntryEditor(page).getByRole("button", {
+      name: "Cancel",
+    });
     await cancel.focus();
     await cancel.press(key);
   },
 );
 
 Then("the entry editor has no project or task", async ({ page }) => {
-  const editor = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
+  const editor = timeEntryEditor(page);
   await expect(editor).toBeVisible();
   await expect(
     editor.getByRole("button", { name: "Project or task" }),
@@ -1577,17 +1573,11 @@ Then(
 );
 
 Then("the entry editor is open", async ({ page }) => {
-  await expect(
-    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
-  ).toBeVisible();
+  await expect(timeEntryEditor(page)).toBeVisible();
 });
 
 Then("the entry note reads {string}", async ({ page }, text: string) => {
-  await expect(
-    page
-      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
-      .getByLabel("Note"),
-  ).toHaveValue(text);
+  await expect(timeEntryEditor(page).getByLabel("Note")).toHaveValue(text);
   // "?" typed in the note must not open the shortcut overlay.
   await expect(
     page.getByRole("dialog", { name: "Keyboard shortcuts" }),
@@ -2048,9 +2038,7 @@ When("I open the running entry from the timer dock", async ({ page }) => {
  * and 5).
  */
 const entryEditors = (page: Page) =>
-  page
-    .locator('[data-slot="popover-content"]')
-    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
+  page.locator('[data-slot="popover-content"]').or(timeEntryEditor(page));
 
 Then("only the new entry's editor is open", async ({ page }) => {
   const editors = entryEditors(page);
@@ -3024,11 +3012,7 @@ When("I focus the top entry of Monday's Day list", async ({ page }) => {
 Then(
   "the side panel edits the {string} entry",
   async ({ page }, note: string) => {
-    await expect(
-      page
-        .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
-        .getByLabel("Note"),
-    ).toHaveValue(note);
+    await expect(timeEntryEditor(page).getByLabel("Note")).toHaveValue(note);
   },
 );
 
@@ -3205,9 +3189,7 @@ When("I double-click {word}'s header", async ({ page }, day: string) => {
 When(
   "I save the new entry with note {string} and hours {string}",
   async ({ page }, note: string, hours: string) => {
-    const editor = page.getByRole("dialog", {
-      name: /^(New|Edit) time entry$/,
-    });
+    const editor = timeEntryEditor(page);
     await expect(editor).toContainText("New time entry");
     await editor.getByRole("textbox", { name: "Note", exact: true }).fill(note);
     await editor
@@ -3221,9 +3203,7 @@ When(
 Then(
   "the side panel opens a new entry on {string}",
   async ({ page }, localDate: string) => {
-    const editor = page.getByRole("dialog", {
-      name: /^(New|Edit) time entry$/,
-    });
+    const editor = timeEntryEditor(page);
     await expect(editor).toContainText("New time entry");
     await expect(page).toHaveURL(
       new RegExp(`/time/${localDate}\\?.*entry=new`),
@@ -3266,9 +3246,7 @@ When(
 );
 
 Then("no entry editor is open", async ({ page }) => {
-  await expect(
-    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
-  ).toHaveCount(0);
+  await expect(timeEntryEditor(page)).toHaveCount(0);
   await expect(page).not.toHaveURL(/entry=new/);
 });
 
@@ -3282,7 +3260,9 @@ Then(
     const week = page.getByRole("region", { name: "Week" });
     const before = await week.boundingBox();
     await daysCard(page, day, text).dblclick();
-    const panel = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
     await expect(panel).toBeVisible();
     const after = await week.boundingBox();
     const panelBox = await panel.boundingBox();
@@ -3294,27 +3274,50 @@ Then(
 );
 
 Then(
-  "the entry composer still floats and the Week keeps its width",
+  "the entry panel sits beside the Week and narrows it",
   async ({ page }) => {
-    // No dock: the composer is a card over the page, which keeps its width
-    // and stays live (forms council round 8).
     const week = page.getByRole("region", { name: "Week" });
-    const composer = page.getByRole("dialog", {
-      name: /^(New|Edit) time entry$/,
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
     });
-    await expect(composer).toBeVisible();
-    await expect(composer).toHaveClass(/composer-floating/);
-    const weekBox = await week.boundingBox();
-    const composerBox = await composer.boundingBox();
-    expect(weekBox && composerBox).toBeTruthy();
-    expect(weekBox!.x + weekBox!.width).toBeGreaterThan(composerBox!.x);
+    await expect
+      .poll(async () => {
+        const weekBox = await week.boundingBox();
+        const panelBox = await panel.boundingBox();
+        return weekBox && panelBox
+          ? panelBox.x - (weekBox.x + weekBox.width)
+          : null;
+      })
+      .toBeGreaterThanOrEqual(0);
+  },
+);
+
+When("I double-click Monday's first entry", async ({ page }) => {
+  await page.locator("main [data-entry-id]").first().dblclick();
+});
+
+Then(
+  "the side panel edits that entry beside the entries, which it hides none of",
+  async ({ page }) => {
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel("Note")).toHaveValue("Login form");
+    const panelBox = (await panel.boundingBox())!;
+    // Every row, its hours and its buttons end before the panel starts.
+    const rows = page.locator("main [data-entry-id]");
+    for (let index = 0; index < (await rows.count()); index++) {
+      const row = (await rows.nth(index).boundingBox())!;
+      expect(row.x + row.width).toBeLessThanOrEqual(panelBox.x + 1);
+    }
   },
 );
 
 /**
- * Records the entry composer's top edge on every frame from now until it has
- * settled, so a scenario can tell a card that opens in place from one that
- * slides there.
+ * Records the floating composer's top edge on every frame from now until it
+ * has settled, so a scenario can tell a card that opens in place from one
+ * that slides there.
  */
 async function watchComposerFrames(page: Page) {
   await page.evaluate(() => {
@@ -3335,10 +3338,7 @@ async function watchComposerFrames(page: Page) {
  * open animation scales it about its center from 95%, so its top edge may
  * start up to 2.5% of its height lower, never higher.
  */
-async function expectComposerOpenedInPlace(
-  page: Page,
-  name: RegExp = /time entry$/,
-) {
+async function expectComposerOpenedInPlace(page: Page, name: RegExp) {
   const composer = page.getByRole("dialog", { name });
   await expect(composer).toBeVisible();
   await page.waitForTimeout(1600);
@@ -3353,14 +3353,6 @@ async function expectComposerOpenedInPlace(
   }
   return settled;
 }
-
-When(
-  "I open a new entry from the Day view while watching its composer",
-  async ({ page }) => {
-    await watchComposerFrames(page);
-    await page.getByRole("button", { name: "New entry" }).first().click();
-  },
-);
 
 When("I open New project while watching its composer", async ({ page }) => {
   await expect(page.locator("main .project-list-table thead")).toBeVisible();
@@ -3379,63 +3371,8 @@ Then(
   },
 );
 
-When(
-  "I open a new entry from the timer dock while watching its composer",
-  async ({ page }) => {
-    await expect(
-      page.getByRole("region", { name: "Week" }).locator("thead, header"),
-    ).not.toHaveCount(0);
-    await watchComposerFrames(page);
-    await page.getByRole("button", { name: "Create time entry" }).click();
-  },
-);
-
-Then(
-  "the entry composer opened below the Week's day headers without sliding",
-  async ({ page }) => {
-    const header = (await page
-      .getByRole("region", { name: "Week" })
-      .locator(".weekly-grid-table thead, .weekly-days-column-header")
-      .first()
-      .boundingBox())!;
-    const settled = await expectComposerOpenedInPlace(page);
-    expect(settled.y).toBeGreaterThanOrEqual(header.y + header.height);
-  },
-);
-
-When(
-  "I double-click Monday's first entry while watching its composer",
-  async ({ page }) => {
-    const row = page.locator("main [data-entry-id]").first();
-    await expect(row).toBeVisible();
-    await watchComposerFrames(page);
-    await row.dblclick();
-  },
-);
-
-Then(
-  "the entry composer opened below the day strip without sliding",
-  async ({ page }) => {
-    const strip = (await page.locator("main .day-strip").boundingBox())!;
-    const settled = await expectComposerOpenedInPlace(page);
-    expect(settled.y).toBeGreaterThanOrEqual(strip.y + strip.height);
-  },
-);
-
-Then(
-  "the entry composer opened below that entry without sliding",
-  async ({ page }) => {
-    const row = (await page
-      .locator("main [data-entry-id]")
-      .first()
-      .boundingBox())!;
-    const settled = await expectComposerOpenedInPlace(page);
-    expect(settled.y).toBeGreaterThanOrEqual(row.y + row.height);
-  },
-);
-
-Then("the entry composer is centered in the window", async ({ page }) => {
-  const composer = page.getByRole("dialog", { name: /time entry$/ });
+Then("the project composer is centered in the window", async ({ page }) => {
+  const composer = page.getByRole("dialog", { name: "New project" });
   await expect(composer).not.toHaveClass(/composer-floating/);
   // Its open animation has ended; the narrow dialog has none to wait for.
   await page.waitForTimeout(300);
@@ -3446,17 +3383,19 @@ Then("the entry composer is centered in the window", async ({ page }) => {
   expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
 });
 
-Then("the entry composer floats below that entry", async ({ page }) => {
-  const composer = page.getByRole("dialog", { name: /time entry$/ });
-  await expect(composer).toHaveClass(/composer-floating/);
-  await page.waitForTimeout(300);
-  const row = (await page
-    .locator("main [data-entry-id]")
-    .first()
-    .boundingBox())!;
-  const box = (await composer.boundingBox())!;
-  expect(box.y).toBeGreaterThanOrEqual(row.y + row.height);
-});
+Then(
+  "the project composer floats below the Projects column headers",
+  async ({ page }) => {
+    const composer = page.getByRole("dialog", { name: "New project" });
+    await expect(composer).toHaveClass(/composer-floating/);
+    await page.waitForTimeout(300);
+    const header = (await page
+      .locator("main .project-list-table thead")
+      .boundingBox())!;
+    const box = (await composer.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(header.y + header.height);
+  },
+);
 
 Then("the Day view is visible", async ({ page }) => {
   await expect(page.locator(".day-strip")).toBeVisible();
