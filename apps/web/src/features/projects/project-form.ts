@@ -7,6 +7,10 @@ import {
   type LocalProjectIcon,
 } from "@/domain/projects/project-icon";
 import { DEFAULT_PROJECT_COLOR } from "@/domain/projects/project-transitions";
+import {
+  normalizeProjectCode,
+  PROJECT_NAME_ERROR,
+} from "@/domain/projects/project-names";
 
 /** The project form's draft: what the user typed, before trimming. */
 export interface ProjectFormFields {
@@ -68,22 +72,41 @@ export function setProjectFormName(
   };
 }
 
+/** Why the form can't save: an empty full name or a code Ajour refuses. */
+export interface ProjectFormErrors {
+  name?: string;
+  code?: string;
+}
+
+/** The form's mistakes, each said next to its field. Empty when it can save. */
+export function getProjectFormErrors(
+  fields: ProjectFormFields,
+): ProjectFormErrors {
+  const code = normalizeProjectCode(fields.code);
+  return {
+    ...(fields.name.trim() ? {} : { name: PROJECT_NAME_ERROR }),
+    ...(code.ok ? {} : { code: code.error }),
+  };
+}
+
 /**
- * Returns the trimmed values to save, or `null` while the full name is empty.
- * An empty display name falls back to the full name; an empty code is cleared.
+ * Returns the values to save, or `null` while the full name is empty or the
+ * code is refused. Names are trimmed and the code uppercase. An empty display
+ * name falls back to the full name; an empty code is cleared.
  */
 export function getProjectFormValues(
   fields: ProjectFormFields,
 ): ProjectFormValues | null {
   const name = fields.name.trim();
-  if (!name) {
+  const code = normalizeProjectCode(fields.code);
+  if (!name || !code.ok) {
     return null;
   }
 
   return {
     name,
     displayName: fields.displayName.trim() || name,
-    code: fields.code.trim() || undefined,
+    code: code.code,
     color: fields.color,
     icon: fields.icon,
   };
