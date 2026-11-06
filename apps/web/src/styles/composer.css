@@ -374,7 +374,12 @@
   left: auto;
   width: min(30rem, calc(100vw - 2rem));
   max-height: calc(100dvh - var(--composer-top, 64px) - 16px);
-  translate: none;
+  /* Cancels the dialog's centering shift through Tailwind's own variables.
+     `translate: none` worked on the dev server, but the build's CSS
+     minifier dropped it beside `transform: none`, so every floating card
+     shipped shifted up and left by half its size (usability council U1). */
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
   transform: none;
   box-shadow: var(--shadow-popup);
   border: 1px solid var(--border);
@@ -466,7 +471,8 @@ body:has([data-slot="dialog-content"].composer-floating)
   top: 96px;
   right: 16px;
   left: auto;
-  translate: none;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
   transform: none;
 }
 
