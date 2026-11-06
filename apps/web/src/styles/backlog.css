@@ -1501,10 +1501,12 @@
     flex: 1 1 0;
   }
 
+  /* Padding, not margin: a margin beside the full basis pushed Settle past
+     the window's edge. */
   .backlog-item-page-actions {
     flex-basis: 100%;
     flex-wrap: wrap;
-    margin-inline-start: calc(1rem + 0.75rem);
+    padding-inline-start: calc(1rem + 0.75rem);
   }
 
   /* Logged time takes its own line under the estimates, with no hairline:
