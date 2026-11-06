@@ -60,6 +60,11 @@ Feature: Typed durations
     When I open the Week Grid
     And I type "90" in the "Code review" cell on Tuesday and click the Grid's header
     Then the "Code review" cell on Tuesday keeps "90" and says "An entry can be at most 24:00"
+    When I double-click the "Code review" cell on Wednesday
+    Then the "Code review" cell on Tuesday says "An entry can be at most 24:00"
+    When I press Escape in the cell
+    And I double-click the "Code review" cell on Wednesday
+    Then the "Code review" cell on Wednesday is being edited
 
   Scenario: A huge entry saved before the limit keeps the week readable
     Given I have a week with an entry of a million hours

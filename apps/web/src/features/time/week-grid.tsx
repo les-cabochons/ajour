@@ -378,6 +378,8 @@ export function WeekGrid({
   const pendingFocusRef = useRef<string | null>(null);
   // A single click on a cell that edits in place waits out the double-click delay.
   const pendingOpenRef = useRef<number | undefined>(undefined);
+  /** The cell still editing hours it couldn't save, after focus left it. */
+  const invalidEditRef = useRef<string | null>(null);
   const lastClickedCellRef = useRef<string | null>(null);
 
   useEffect(() => () => window.clearTimeout(pendingOpenRef.current), []);
@@ -465,6 +467,7 @@ export function WeekGrid({
    * `clickCount` is the event's `detail`; keyboard clicks report 0.
    */
   function handleCellClick(model: CellModel, clickCount: number) {
+    if (returnsToInvalidEdit(model)) return;
     window.clearTimeout(pendingOpenRef.current);
     if (clickCount >= 2) {
       // The browser counts clicks by place and time, not by cell. A second click
@@ -484,9 +487,26 @@ export function WeekGrid({
     }
   }
 
+  /**
+   * While another cell holds hours it can't save, opening or editing this one
+   * would drop them: focus goes back to that cell, to fix or Escape them
+   * (Sol's review of #648).
+   */
+  function returnsToInvalidEdit(model: CellModel) {
+    const held = invalidEditRef.current;
+    if (!held || held === model.cellId || editing?.cellId !== held) {
+      return false;
+    }
+    document
+      .querySelector<HTMLInputElement>(".weekly-grid-cell-input")
+      ?.focus();
+    return true;
+  }
+
   /** Starts editing in place. Returns false when the cell can't edit now. */
   function beginEdit(model: CellModel, initialText?: string) {
     if (!model.canEditInPlace) return false;
+    if (returnsToInvalidEdit(model)) return false;
     // A click's panel still waiting on a double-click is dropped: typing
     // right after the click edits in place, and the panel opening after it
     // took focus and left a blank entry open (usability council U1).
@@ -515,8 +535,10 @@ export function WeekGrid({
     // Hours it can't save keep the cell editing with the message, also when
     // focus leaves it: the typed draft never disappears silently.
     if (result.kind === "invalid") {
+      invalidEditRef.current = model.cellId;
       return result.error;
     }
+    invalidEditRef.current = null;
 
     if (result.kind === "create") {
       runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
@@ -550,6 +572,7 @@ export function WeekGrid({
   }
 
   function cancelEdit(model: CellModel) {
+    invalidEditRef.current = null;
     setEditing(null);
     pendingFocusRef.current = model.cellId;
   }

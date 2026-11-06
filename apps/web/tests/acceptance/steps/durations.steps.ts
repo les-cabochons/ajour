@@ -99,6 +99,13 @@ Then(
   },
 );
 
+When(
+  "I double-click the {string} cell on {word}",
+  async ({ page }, task: string, day: string) => {
+    await weekGridCell(page, task, day).dblclick();
+  },
+);
+
 When("I press Enter again", async ({ page }) => {
   await page.keyboard.press("Enter");
 });
