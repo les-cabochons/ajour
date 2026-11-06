@@ -53,6 +53,7 @@ import {
 import { copyTextToClipboard, readTextFromClipboard } from "@/lib/clipboard";
 import { FOCUS_ITEM_SELECTOR } from "@/lib/item-keys";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import { isNarrowView } from "@/lib/use-narrow-view";
 import { localStore } from "@/lib/local-store";
 import { traceCarrier } from "@/lib/wide-events";
 
@@ -119,6 +120,8 @@ export function useEntrySelection({
   const scopeRef = useRef<HTMLDivElement>(null);
   /** Set while Shift+arrow moves focus, so `handleFocus` keeps the new range. */
   const extendingRef = useRef(false);
+  /** The pointer type of the last press on an entry, for the click after it. */
+  const lastPressPointerRef = useRef("");
   const [stored, setStored] = useState<{
     resetKey: string;
     selection: EntrySelection;
@@ -396,13 +399,19 @@ export function useEntrySelection({
     }
   }
 
-  /** A click on an entry: selects it, or opens it on a touch screen. */
+  /**
+   * A click on an entry: selects it, or opens it on a touch screen and in the
+   * narrow view, which have no double click to spare.
+   */
   function handleClick(entryId: string, event: ReactMouseEvent<HTMLElement>) {
+    // Safari's click is a MouseEvent without a pointer type: the press that
+    // came before it says whether a finger made it.
     const pointerType =
-      "pointerType" in event.nativeEvent
+      ("pointerType" in event.nativeEvent
         ? (event.nativeEvent as PointerEvent).pointerType
-        : "mouse";
-    if (pointerType === "touch") {
+        : "") || lastPressPointerRef.current;
+    lastPressPointerRef.current = "";
+    if (pointerType === "touch" || pointerType === "pen" || isNarrowView()) {
       select({ ids: [entryId], anchorId: entryId });
       onOpen(entryId);
       return;
@@ -424,6 +433,7 @@ export function useEntrySelection({
    * entry keeps the selection for the drag. Touch presses are left to the tap.
    */
   function handlePress(entryId: string, event: ReactPointerEvent<HTMLElement>) {
+    lastPressPointerRef.current = event.pointerType;
     if (event.button !== 0 || event.pointerType === "touch") return;
     const next = selectEntryOnPress(selection, entryId, {
       range: event.shiftKey,

@@ -185,17 +185,18 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width        | Layout                                            |
-| ------------ | ------------------------------------------------- |
-| 768px and up | Desktop, sidebar expanded or hidden by preference |
-| Below 768px  | Narrow view, no sidebars                          |
+| Width        | Layout                                                        |
+| ------------ | ------------------------------------------------------------- |
+| 768px and up | Desktop, sidebar expanded or hidden by preference             |
+| Below 768px  | Narrow view, no sidebars                                      |
+| Below 400px  | Narrow view, with the bottom toggle's names under their icons |
 
 Today's splits at 640px and 1023px go away.
 
 ### Navigation
 
 - The narrow titlebar names the page: the day on Time pages, the section elsewhere, such as "Backlog" (council round 6).
-- A segmented toggle for Time, Backlog and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- A segmented toggle for Time, Backlog and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. The agents control shares the toggle's row, at the right, as its dot alone: the dot's color gives the state, and its name and a tap the rest. Below 400px the toggle spans the row up to that dot and puts each name under its icon, so the four names fit down to a 320px window (usability testing, 2026-11-06). See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - The titlebar holds the date, New entry (+), Start (▶), then the totals pill. Start turns into Stop while an entry runs.
 - While an entry runs, the totals pill shows its time, with seconds, instead of the day total. The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
 - Start opens the running entry's dialog too. A click outside it saves the draft and closes the dialog, and the entry keeps running. An invalid draft keeps the dialog open with its error. The other entry dialogs ignore outside clicks.
@@ -215,6 +216,8 @@ Today's splits at 640px and 1023px go away.
 - Day rows have two lines, 52px tall ([#511](https://github.com/les-cabochons/ajour/issues/511)). An entry with a note leads with it, since the note tells entries of one task apart: the note, with Continue or Stop and the duration, over the project mark, the project and the task in 12px secondary text (council round 3). Without a note, the task leads and line 2 shows the project alone.
 - Backlog list rows have two lines, 52px tall ([#512](https://github.com/les-cabochons/ajour/issues/512)): the title, then a 12px second line with the project dot and name, the subitem count, the Running, Settled, Snoozed and conflict marks and, when shown, the source state. The estimate and actions sit centered at the right. Line 1 holds the title, Start and the estimate, as a Day row holds its note, Continue and duration; line 2 holds where the item belongs and how it stands (council rounds 16, 19 and 23). The state ring leads both lines; the priority, a source's own type icon and the project dot open line 2, a subitem's "↳ Parent" follows the project's dot and replaces its name, so every line 2 starts the same way (council rounds 13, 17, 18 and 21). Line 2 reads as one sentence, as Day's does: the Running, Snoozed and Settled marks and the source state follow the project after a tertiary " · ", and the subitems fraction is left to the desktop row and the item page (council round 22), and the estimate and actions end it, so the title has all of line 1 (council rounds 4 and 8). Items of different projects stay apart without opening them. An item without a project keeps the 52px height with an empty second line.
 - Page actions that floated over the content, such as the Backlog filter and "+", move into the page header.
+- A page scrolls in one place, and that scroll stops at the end of its content: the titlebar and the bottom row stay where they are, and a wheel or swipe past the end moves nothing else (usability testing, 2026-11-06).
+- The backlog item page puts its actions under the title, indented to the title's text, and wraps them so Settle stays inside the window, down to 320px.
 - Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
 
 ## Entry editor
@@ -333,6 +336,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 
 ### Grid
 
+- When the window is too narrow for the seven days, such as 800 to 1000px beside the sidebar, the Grid scrolls sideways. Its Project/task column stays at the left edge while the days and the Total column scroll under it, so the row being typed into keeps its name (usability testing, 2026-11-06).
 - An empty cell is blank at rest, so the logged cells stand out; its dash shows on hover, focus and selection (council round 1). A cell with several entries shows "×2" after its total, and hovering it says "2 entries. Click to review." (council round 17).
 - A click on a cell opens it in the side panel:
   - an empty cell opens a new entry with the row's task and the day filled in,
@@ -439,7 +443,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 ### Pinned tasks
 
 - A pinned task has a number slot from 1 to 0, ten in all. "Assign shortcut…" on the task sets, changes or clears it. A slot belongs to at most one task.
-- The slot shows next to the task in the project task picker and on the task row.
+- The slot shows next to the task in the project task picker and on the task row, except on touch screens and in the narrow view.
 - The plain digit only opens the form, so a stray key press never stops the running entry. Starting needs Shift.
 - While an entry is being edited, the digits do nothing special.
 - When a Grid cell has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
@@ -452,7 +456,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - On a focused task or project, F adds it to favorites or removes it.
 - The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. Escape closes whatever is open.
-- Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
+- Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts. Touch screens and the narrow view show no keys, in menus or tooltips, since a phone has none to press (usability testing, 2026-11-06).
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.
 
 ### Selecting, copying and pasting entries
@@ -466,7 +470,7 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 - A right-click on an unselected entry selects that entry alone before its menu opens. A right-click on a selected entry keeps the selection, and the menu acts on it.
 - Cmd+A, and the Edit menu's Select All, selects every shown entry of the day or week while focus is in the list or the columns and not in a text field.
 - Plain ↑ and ↓ move focus and collapse the selection to the focused entry. Shift+↑ and Shift+↓ extend the range from the anchor, in reading order on the Week cards too. With no anchor, the focused entry is the anchor; after Cmd+A, the first shown entry is.
-- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does. A tap on a touch screen still opens it. Week Grid cells keep their click. Calendar suggestions never join the selection.
+- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does, except that a tap on a touch screen, and a click in the narrow view, open it, since a phone has no double click to spare. A tap is known by the press that starts it, so it opens the entry in browsers whose click does not say a finger made it. Week Grid cells keep their click. Calendar suggestions never join the selection.
 - Escape, a click on empty space, or showing another day or week clears the selection.
 
 #### Which actions take the selection
@@ -821,7 +825,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card was removed; the idle timer dock starts an empty entry.
 
 - Density has two values. Comfortable is the default. Compact fits more items.
-- Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device.
+- Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device. The narrow view, which has no sidebar, does not show the group. Changes end a snooze early, which applies to every list, sits in its own Snoozing group above it.
 - The Snoozed and Settled sections are the same in every layout.
 
 ### Width

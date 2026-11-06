@@ -1055,9 +1055,14 @@
     --app-shell-nav-height: var(--desktop-shell-chrome-height);
   }
 
+  /* Only the viewport inside scrolls. "overflow-x: hidden" made the root a
+     scroller too: an absolutely placed element deep in a page that scrolls
+     on its own, such as the item page's sync status, gave it overflow, and
+     a wheel past the page's end scrolled the whole page off over a blank
+     window. Clip never scrolls. */
   .app-content-scroll-area {
     height: 100%;
-    overflow-x: hidden;
+    overflow: clip;
   }
 
   .app-content-scroll-area [data-slot="scroll-area-viewport"] {
@@ -2132,8 +2137,49 @@
     min-width: 44px;
   }
 
+  /* The indicator is its dot alone on the toggle's row: a label beside the
+     toggle ran over Settings and Commit. The dot's color gives the state,
+     and its name and a tap the rest. */
+  .ajour-agent-indicator {
+    gap: 0;
+    padding-inline: calc((var(--control-height) - 0.5rem - 2px) / 2);
+  }
+
+  .ajour-agent-indicator .ajour-agent-indicator-label {
+    display: none;
+  }
+
   .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
     padding-bottom: var(--narrow-nav-clearance);
+  }
+}
+
+/* A phone in portrait: the toggle's sections side by side need about 400px
+   with the indicator beside them. Below that the toggle spans the row up to
+   the indicator, and each section puts its name under its icon, so all four
+   names show down to a 320px window. */
+@variant phone {
+  .ajour-narrow-switcher {
+    right: calc(
+      max(1rem, env(safe-area-inset-right, 0px)) +
+        var(--agent-indicator-clearance, 0px)
+    );
+  }
+
+  .ajour-narrow-switcher-item {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding-inline: 2px;
+    font-size: var(--text-2xs);
+  }
+
+  .ajour-narrow-switcher-item > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

@@ -2812,3 +2812,64 @@ When(
     ).toBeVisible();
   },
 );
+
+// A tester wheeled a narrow item page past its end: the window's own
+// scroller then carried the titlebar, page and bottom bar off over a blank
+// screen. One scroller holds the page, and it stops at the content's end.
+When(
+  "I scroll the item page far past its end with the mouse wheel",
+  async ({ page }) => {
+    await expect(page.locator(".backlog-comment").first()).toBeVisible();
+    const viewport = page.viewportSize()!;
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    for (let turn = 0; turn < 14; turn += 1) {
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(50);
+    }
+  },
+);
+Then(
+  "the item page stops at its end, with the titlebar and the bottom bar in place",
+  async ({ page }) => {
+    await expect(async () => {
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) =>
+          document.querySelector(selector)!.getBoundingClientRect();
+        const scrolledAway = [...document.querySelectorAll("*")]
+          .filter(
+            (element) =>
+              element.scrollTop > 0 &&
+              !element.closest(".backlog-item-page") &&
+              !element.matches(".backlog-page-main"),
+          )
+          .map((element) => element.className.toString());
+        return {
+          titlebarTop: box(".ajour-nav").top,
+          navBottom: box('nav[aria-label="Primary navigation"]').bottom,
+          pageBottom: box(".backlog-item-page").bottom,
+          height: window.innerHeight,
+          scrolledAway,
+        };
+      });
+      expect(layout.scrolledAway).toEqual([]);
+      expect(layout.titlebarTop).toBe(0);
+      expect(layout.navBottom).toBeLessThanOrEqual(layout.height);
+      expect(layout.navBottom).toBeGreaterThan(layout.height - 40);
+      // The page's end sits at the bottom of its column, not above a blank.
+      expect(layout.pageBottom).toBeGreaterThan(layout.height - 100);
+      expect(layout.pageBottom).toBeLessThanOrEqual(layout.height + 1);
+    }).toPass({ timeout: 3_000 });
+  },
+);
+Then("the item page's actions fit inside the window", async ({ page }) => {
+  const actions = page.locator(".backlog-item-page-actions");
+  await expect(actions.getByRole("button", { name: /Settle/ })).toBeVisible();
+  const width = page.viewportSize()!.width;
+  const box = await actions.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+  for (const button of await actions.getByRole("button").all()) {
+    const buttonBox = await button.boundingBox();
+    expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width);
+  }
+});

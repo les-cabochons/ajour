@@ -162,9 +162,9 @@ export function SettingsGeneralPage() {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Sidebar</h2>
+        <h2 className="settings-section-title">Snoozing</h2>
         <p className="settings-section-desc">
-          How items in the sidebar look and return on this device.
+          When snoozed items come back on this device.
         </p>
 
         <AppPanel>
@@ -183,6 +183,17 @@ export function SettingsGeneralPage() {
               }
             />
           </SettingRow>
+        </AppPanel>
+      </section>
+
+      {/* The narrow view has no sidebar to set up. */}
+      <section className="settings-section narrow:hidden">
+        <h2 className="settings-section-title">Sidebar</h2>
+        <p className="settings-section-desc">
+          How items in the sidebar look on this device.
+        </p>
+
+        <AppPanel>
           <SettingRow
             label="Density"
             description="Three lines, or one line in a narrower sidebar."

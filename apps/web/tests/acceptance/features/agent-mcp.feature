@@ -69,6 +69,23 @@ Feature: Agents through MCP
     When I open the agent panel
     Then the agent panel is an overlay
 
+  Scenario Outline: The bottom row fits a <width>-pixel phone
+    Given MCP is on with no clients
+    When I open the app on a <width>-pixel phone
+    Then the navigation toggle and the agent indicator fit the window side by side
+    And every section in the navigation toggle shows its whole name
+
+    Examples:
+      | width |
+      | 390   |
+      | 360   |
+      | 320   |
+
+  Scenario: The bottom row fits a 360-pixel phone while an agent asks
+    Given MCP is on and "Claude Code" asks "Which project gets the 2 hours?" with choices "Acme" and "Globex"
+    When I open the app on a 360-pixel phone
+    Then the navigation toggle and the agent indicator fit the window side by side
+
   Scenario: The narrow view keeps the page inside the window under the back bar
     Given MCP is on with no clients
     When I open Settings MCP on a narrow screen

@@ -3746,3 +3746,133 @@ Then(
     await page.mouse.up();
   },
 );
+
+// A phone has no keyboard: the keys in menus, the pinned tasks' key badges
+// and the Sidebar settings only teach what it can't do (usability testing,
+// 2026-11-06).
+Given(
+  "the {string} task is pinned to key {string}",
+  async ({ page }, task: string, key: string) => {
+    await page.addInitScript(
+      ([taskName, slot]) => {
+        const state = JSON.parse(
+          window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+        );
+        for (const project of state.projects) {
+          for (const candidate of project.tasks) {
+            if (candidate.name === taskName) candidate.pinnedSlot = slot;
+          }
+        }
+        window.localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify(state),
+        );
+      },
+      [task, key],
+    );
+  },
+);
+Then("the open menu shows no keys", async ({ page }) => {
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem").first()).toBeVisible();
+  for (const key of await menu
+    .locator('[data-slot="dropdown-menu-shortcut"]')
+    .all()) {
+    await expect(key).toBeHidden();
+  }
+});
+When("I open the entry editor's task picker", async ({ page }) => {
+  await page
+    .getByRole("dialog")
+    .last()
+    .getByRole("button", { name: "Project or task" })
+    .click();
+});
+Then(
+  "the task picker shows {string} without its key badge",
+  async ({ page }, task: string) => {
+    await expect(
+      page.getByRole("option", { name: new RegExp(task) }).first(),
+    ).toBeVisible();
+    await expect(page.locator('kbd[aria-label^="Pinned to"]')).not.toHaveCount(
+      0,
+    );
+    for (const badge of await page
+      .locator('kbd[aria-label^="Pinned to"]')
+      .all()) {
+      await expect(badge).toBeHidden();
+    }
+  },
+);
+When("I open Settings General on the phone", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await page.goto("/settings/general");
+});
+Then(
+  "General offers Changes end a snooze early and no Sidebar section",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("switch", { name: "Changes end a snooze early" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Sidebar", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: "Sidebar density" }),
+    ).toHaveCount(0);
+  },
+);
+
+// Between 800 and 1000px beside the sidebar the Grid scrolls sideways, and
+// its Project/task column scrolled away with it, so a typed cell's row had
+// no name (usability testing, 2026-11-06).
+When("I scroll the Grid sideways to its end", async ({ page }) => {
+  await expect(page.locator(".weekly-grid-task-cell").first()).toBeVisible();
+  // The sidebar is beside the Grid.
+  await expect(page.locator(".ajour-shell-sidebar").first()).toBeVisible();
+  const scrolled = await page.evaluate(() => {
+    const table = document.querySelector(".weekly-grid-table")!;
+    let scroller = table.parentElement;
+    while (scroller && scroller.scrollWidth <= scroller.clientWidth + 1) {
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) return 0;
+    scroller.scrollLeft = scroller.scrollWidth;
+    return scroller.scrollLeft;
+  });
+  expect(scrolled).toBeGreaterThan(0);
+});
+Then(
+  "the Grid's task column stays at its left edge, over the day cells",
+  async ({ page }) => {
+    const layout = await page.evaluate(() => {
+      const scroller =
+        document.querySelector(".weekly-grid-table")!.parentElement!;
+      const edge = scroller.getBoundingClientRect().left;
+      const name = document.querySelector(".weekly-grid-task-cell")!;
+      const nameBox = name.getBoundingClientRect();
+      // What shows at the middle of the name's cell is the name itself.
+      const hit = document.elementFromPoint(
+        nameBox.left + nameBox.width / 2,
+        nameBox.top + nameBox.height / 2,
+      );
+      return {
+        edge,
+        left: nameBox.left,
+        coversDays: Boolean(hit && name.contains(hit)),
+      };
+    });
+    expect(Math.abs(layout.left - layout.edge)).toBeLessThanOrEqual(1);
+    expect(layout.coversDays).toBe(true);
+  },
+);
+Then(
+  "the Grid's Total column scrolled into view with the days",
+  async ({ page }) => {
+    const total = page
+      .locator(".weekly-grid-table thead")
+      .getByText("Total", { exact: true });
+    const box = (await total.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  },
+);
