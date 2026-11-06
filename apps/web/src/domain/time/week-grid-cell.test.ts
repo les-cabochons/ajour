@@ -79,4 +79,21 @@ describe("typing hours in a Week Grid cell", () => {
       commitWeekGridCellText({ text: "abc", row, localDate }),
     ).toMatchObject({ kind: "invalid" });
   });
+
+  it("refuses more than 24:00, and keeps a longer saved entry left as it shows", () => {
+    expect(commitWeekGridCellText({ text: "130", row, localDate })).toEqual({
+      kind: "invalid",
+      error: "An entry can be at most 24:00",
+    });
+    const long = { ...entry, durationMs: 30 * 3_600_000 };
+    expect(
+      commitWeekGridCellText({ text: "30:00", entry: long, row, localDate }),
+    ).toEqual({ kind: "unchanged" });
+  });
+
+  it('reads ".5" as half an hour', () => {
+    expect(
+      commitWeekGridCellText({ text: ".5", row, localDate }),
+    ).toMatchObject({ kind: "create", values: { durationMs: 30 * 60_000 } });
+  });
 });

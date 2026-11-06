@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -212,6 +213,7 @@ function WeekGridCellInput({
 }) {
   const [text, setText] = useState(initialText ?? savedText);
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   // Set once the edit ended from a key, so the blur that follows writes nothing.
   const endedRef = useRef(false);
@@ -250,28 +252,38 @@ function WeekGridCellInput({
   }
 
   return (
-    <input
-      ref={inputRef}
-      className={cn("weekly-grid-cell-input", error && "is-invalid")}
-      value={text}
-      inputMode="decimal"
-      // The default size of 20 characters would widen the day column.
-      size={1}
-      aria-label={label}
-      aria-invalid={error ? true : undefined}
-      title={error ?? undefined}
-      onChange={(event) => {
-        setText(event.target.value);
-        setError(null);
-      }}
-      onKeyDown={handleKeyDown}
-      onBlur={() => {
-        if (!endedRef.current) {
-          endedRef.current = true;
-          onEnd(text, "blur");
-        }
-      }}
-    />
+    <>
+      <input
+        ref={inputRef}
+        className={cn("weekly-grid-cell-input", error && "is-invalid")}
+        value={text}
+        // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
+        inputMode="text"
+        autoComplete="off"
+        // The default size of 20 characters would widen the day column.
+        size={1}
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(event) => {
+          setText(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={handleKeyDown}
+        onBlur={() => {
+          if (!endedRef.current) {
+            endedRef.current = true;
+            onEnd(text, "blur");
+          }
+        }}
+      />
+      {/* Under the cell, as the entry editor shows it under Hours. */}
+      {error ? (
+        <span id={errorId} role="alert" className="weekly-grid-cell-error">
+          {error}
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -280,7 +292,7 @@ function WeekGridCellInput({
  *
  * A click opens the cell in the side panel: a new entry for an empty cell, the
  * entry of a one-entry cell, or the list of a cell with several entries.
- * Double-click, Enter or a digit edits an empty or one-entry cell in place; see
+ * Double-click, Enter, a digit, ".", "," or ":" edits an empty or one-entry cell in place; see
  * `commitWeekGridCellText` for what the typed hours write. Cells with several
  * entries, or with the running entry, show their total and never edit in place.
  * Right-click lists Add entry, then the cell's entry actions or Open entries.
@@ -588,8 +600,10 @@ export function WeekGrid({
     ) {
       return;
     }
-    // Enter edits in place instead of pressing the button; Space still opens the panel.
-    if (event.key === "Enter" || /^[0-9]$/.test(event.key)) {
+    // Enter edits in place instead of pressing the button; Space still opens the
+    // panel. A digit, or the ".", "," or ":" that starts ".5" or ":45", edits
+    // in place with that character.
+    if (event.key === "Enter" || /^[0-9.,:]$/.test(event.key)) {
       event.preventDefault();
       event.stopPropagation();
       beginEdit(model, event.key === "Enter" ? undefined : event.key);

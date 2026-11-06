@@ -1,7 +1,8 @@
 import type { LocalTimesheetEntry } from "@/domain/local-state";
 import {
+  ENTRY_DURATION_LIMIT,
   formatDurationHoursInput,
-  parseHoursInput,
+  readDurationInput,
 } from "@/domain/time/duration";
 
 /**
@@ -45,6 +46,7 @@ export function formatWeekGridCellText(entry?: LocalTimesheetEntry) {
  * - Empty text, or zero, clears the cell: its entry is deleted. Ajour never saves a 0h entry.
  * - Text equal to what the cell showed writes nothing, so opening and leaving
  *   a cell keeps the entry's exact saved milliseconds.
+ * - Text the shared duration parser can't read, or more than 24:00, is invalid.
  * - Otherwise the hours update the entry, or create one with the row's project and task.
  */
 export function commitWeekGridCellText({
@@ -63,10 +65,13 @@ export function commitWeekGridCellText({
     return { kind: "unchanged" };
   }
 
-  const durationMs = trimmed ? parseHoursInput(trimmed) : 0;
-  if (durationMs === null) {
-    return { kind: "invalid", error: "Enter hours, such as 1:30 or 1.5" };
+  const typed = trimmed
+    ? readDurationInput(trimmed, ENTRY_DURATION_LIMIT)
+    : ({ ok: true, durationMs: 0 } as const);
+  if (!typed.ok) {
+    return { kind: "invalid", error: typed.error };
   }
+  const durationMs = typed.durationMs;
 
   if (durationMs === 0) {
     return entry
