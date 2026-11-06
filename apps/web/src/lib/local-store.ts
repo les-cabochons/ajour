@@ -2430,12 +2430,13 @@ const store = {
     );
   },
   /**
-   * Deletes a workflow state with its source state mappings and clears it from work
-   * items. Returns an undo token, or null when nothing changed.
+   * Deletes a workflow state. Its items and source state mappings move to
+   * `moveItemsTo`, or without it go to No state. Returns an undo token, or
+   * null when nothing changed.
    */
-  deleteWorkflowState(statusId: string) {
+  deleteWorkflowState(statusId: string, moveItemsTo?: string) {
     return updateStateWithUndo((state) =>
-      applyDeleteWorkflowState(state, statusId),
+      applyDeleteWorkflowState(state, statusId, { moveItemsTo }),
     );
   },
   /** Maps new source states that match a workflow state or a done category. */
