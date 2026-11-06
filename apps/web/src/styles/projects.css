@@ -190,7 +190,8 @@
 
   .project-detail-header {
     display: flex;
-    align-items: center;
+    /* The icon and chips sit on the title's first line when it wraps. */
+    align-items: first baseline;
     gap: 0.5rem;
     min-width: 0;
   }
@@ -201,17 +202,17 @@
     height: 16px;
   }
 
+  /* The whole title shows: a long one wraps, and one with no spaces breaks
+     inside its column, as the backlog item page's does. */
   .project-detail-title {
     min-width: 0;
     margin: 0;
-    overflow: hidden;
     color: var(--text);
     font-size: var(--text-xl);
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   /* Tasks and time entries, with the Properties card on the right. */
