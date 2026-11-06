@@ -648,6 +648,38 @@
     padding-left: var(--page-gutter) !important;
   }
 
+  /* When the Grid scrolls sideways, beside the sidebar from 800 to 1000px,
+     the Project/task column stays at its left edge, so the row being typed
+     into keeps its name; the Total column scrolls with the days. A collapsed
+     border scrolls away from a sticky cell, so its edge is drawn instead. */
+  .weekly-grid-table-scroll .weekly-grid-task-column,
+  .weekly-grid-table-scroll .weekly-grid-task-cell {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--background);
+  }
+
+  .weekly-grid-table-scroll .weekly-grid-task-column::after,
+  .weekly-grid-table-scroll .weekly-grid-task-cell::after {
+    position: absolute;
+    top: 0;
+    right: -1px;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+    content: "";
+  }
+
+  /* The row's hover tint (bg-muted/50), over the opaque cell. */
+  .weekly-grid-table-scroll tbody tr:hover > .weekly-grid-task-cell {
+    background: color-mix(in srgb, var(--muted) 50%, var(--background));
+  }
+
+  .weekly-grid-table-scroll .weekly-grid-footer-row > .weekly-grid-task-cell {
+    background: var(--surface-low);
+  }
+
   .weekly-grid-day-column {
     width: var(--weekly-grid-day-width);
   }

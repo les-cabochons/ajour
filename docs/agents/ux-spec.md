@@ -335,6 +335,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 
 ### Grid
 
+- When the window is too narrow for the seven days, such as 800 to 1000px beside the sidebar, the Grid scrolls sideways. Its Project/task column stays at the left edge while the days and the Total column scroll under it, so the row being typed into keeps its name (usability testing, 2026-11-06).
 - An empty cell is blank at rest, so the logged cells stand out; its dash shows on hover, focus and selection (council round 1). A cell with several entries shows "×2" after its total, and hovering it says "2 entries. Click to review." (council round 17).
 - A click on a cell opens it in the side panel:
   - an empty cell opens a new entry with the row's task and the day filled in,
