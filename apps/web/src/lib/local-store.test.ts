@@ -2622,6 +2622,7 @@ describe("localStore workflow state sync", () => {
       mergedProjectCount: 1,
       addedTaskCount: 1,
       updatedTaskCount: 1,
+      notes: [],
     });
 
     const mercury = localStore
@@ -2708,6 +2709,7 @@ describe("localStore workflow state sync", () => {
       mergedProjectCount: 1,
       addedTaskCount: 0,
       updatedTaskCount: 1,
+      notes: [],
     });
 
     expect(
