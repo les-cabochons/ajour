@@ -70,6 +70,35 @@ When(
   },
 );
 
+When(
+  "I type {string} in the {string} cell on {word} and click the Grid's header",
+  async ({ page }, hours: string, task: string, day: string) => {
+    await weekGridCell(page, task, day).focus();
+    await page.keyboard.type(hours);
+    await page
+      .getByRole("region", { name: "Week" })
+      .getByRole("columnheader", { name: /Project/ })
+      .click();
+  },
+);
+
+Then(
+  "the {string} cell on {word} keeps {string} and says {string}",
+  async (
+    { page },
+    task: string,
+    day: string,
+    typed: string,
+    message: string,
+  ) => {
+    // Focus left: the draft stays, with the message, until fixed or cancelled.
+    const input = gridCellInput(page, task, day);
+    await expect(input).toHaveValue(typed);
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription(message);
+  },
+);
+
 When("I press Enter again", async ({ page }) => {
   await page.keyboard.press("Enter");
 });

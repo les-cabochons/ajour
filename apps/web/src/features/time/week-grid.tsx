@@ -272,8 +272,9 @@ function WeekGridCellInput({
         onKeyDown={handleKeyDown}
         onBlur={() => {
           if (!endedRef.current) {
-            endedRef.current = true;
-            onEnd(text, "blur");
+            const nextError = onEnd(text, "blur");
+            setError(nextError);
+            endedRef.current = nextError === null;
           }
         }}
       />
@@ -511,7 +512,9 @@ export function WeekGrid({
       row,
       localDate: model.cell.localDate,
     });
-    if (result.kind === "invalid" && end !== "blur") {
+    // Hours it can't save keep the cell editing with the message, also when
+    // focus leaves it: the typed draft never disappears silently.
+    if (result.kind === "invalid") {
       return result.error;
     }
 
@@ -602,8 +605,9 @@ export function WeekGrid({
     }
     // Enter edits in place instead of pressing the button; Space still opens the
     // panel. A digit, or the ".", "," or ":" that starts ".5" or ":45", edits
-    // in place with that character.
-    if (event.key === "Enter" || /^[0-9.,:]$/.test(event.key)) {
+    // in place with that character. So does "-": dropped, "-1" saved 1:00;
+    // kept, the hours refuse it with their message.
+    if (event.key === "Enter" || /^[0-9.,:-]$/.test(event.key)) {
       event.preventDefault();
       event.stopPropagation();
       beginEdit(model, event.key === "Enter" ? undefined : event.key);

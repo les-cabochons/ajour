@@ -350,7 +350,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
   - an empty cell opens a new entry with the row's task and the day filled in,
   - a cell with one entry opens that entry, with an "Add another entry for <day>" button under the form,
   - a cell with several entries lists them, with "Add another entry".
-- Double-click, Enter, or typing a digit, ".", "," or ":" on a focused cell edits its hours in place, starting with that character, so ".5" is 0:30. On these cells "." starts the hours instead of opening the menu; Shift+F10 and the context menu key still open it. Enter or Tab saves, Tab moves to the next day, Escape cancels. Hours the cell can't save keep it editing, with the message under the cell (see Hours fields). Clearing the hours of a one-entry cell deletes that entry and shows the Undo toast.
+- Double-click, Enter, or typing a digit, ".", ",", ":" or "-" on a focused cell edits its hours in place, starting with that character, so ".5" is 0:30 and "-1" is refused. On these cells "." starts the hours instead of opening the menu; Shift+F10 and the context menu key still open it. Enter or Tab saves, Tab moves to the next day, Escape cancels. Hours the cell can't save keep it editing, with the message under the cell, also when focus leaves it (see Hours fields). Clearing the hours of a one-entry cell deletes that entry and shows the Undo toast.
 - A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
