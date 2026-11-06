@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { HEX_COLOR_ERROR, normalizeHexColor } from "@/domain/hex-color";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,8 +9,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 /** The project palette: twelve presets, the accent first. */
 export const COLOR_PRESETS = [
@@ -30,7 +29,9 @@ export const COLOR_PRESETS = [
 /**
  * A color as a swatch button that opens a popover with the preset palette and
  * a hex input, in place of the browser's own color control. `onChange` gets
- * a "#rrggbb" value.
+ * a "#rrggbb" value. The hex input takes "#fff" or "ff8800" too, and applies
+ * on Enter, when it loses focus or when the popover closes; text that isn't a
+ * color stays, with a sentence saying why, and changes nothing.
  */
 export function ColorField({
   id,
@@ -50,12 +51,33 @@ export function ColorField({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+
+  /** Applies the typed color. Returns false when it isn't one. */
+  function applyDraft() {
+    const color = normalizeHexColor(draft);
+    if (!color) {
+      setError(HEX_COLOR_ERROR);
+      return false;
+    }
+    setError(null);
+    setDraft(color);
+    if (color !== value.toLowerCase()) onChange(color);
+    return true;
+  }
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
-        if (next) setDraft(value);
+        if (next) {
+          setDraft(value);
+          setError(null);
+        } else if (draft !== value) {
+          // Closing applies a color typed but not yet entered.
+          applyDraft();
+        }
         setOpen(next);
       }}
     >
@@ -110,21 +132,30 @@ export function ColorField({
         </div>
         <Input
           aria-label="Hex color"
-          aria-invalid={!HEX_COLOR.test(draft) || undefined}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           className="font-mono"
           placeholder="Hex color"
           value={draft}
           onChange={(event) => {
-            const next = event.target.value.trim();
-            setDraft(next);
-            if (HEX_COLOR.test(next)) onChange(next);
+            setDraft(event.target.value);
+            if (error) setError(null);
           }}
-          // An unfinished hex never becomes the value: leaving the input
-          // shows the color that stands.
           onBlur={() => {
-            if (!HEX_COLOR.test(draft)) setDraft(value);
+            if (draft !== value) applyDraft();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (applyDraft()) setOpen(false);
+            }
           }}
         />
+        {error ? (
+          <p id={errorId} role="alert" className="field-error mt-1.5">
+            {error}
+          </p>
+        ) : null}
       </PopoverContent>
     </Popover>
   );
