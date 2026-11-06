@@ -457,6 +457,16 @@ body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
   padding-inline-end: 10px;
 }
 
+/* A project's code keeps room for its placeholder, such as "ATL": an empty
+   estimate collapses to its label, but an empty code read as no field at
+   all (usability council U1). */
+.composer-chips
+  .composer-chip.composer-estimate
+  .composer-code-input:placeholder-shown {
+  width: 4ch;
+  min-width: 4ch;
+}
+
 /* A select row shows its arrow at rest, faintly: it says "pick me". */
 .connection-rows [data-slot="select-trigger"].inline-field > svg:last-child {
   opacity: 1;

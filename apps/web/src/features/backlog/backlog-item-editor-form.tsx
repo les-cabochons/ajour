@@ -808,6 +808,9 @@ export function BacklogItemEditorForm({
               className="composer-body"
               value={fields.description}
               onChange={(description) => updateFields({ description })}
+              // ⌘/Ctrl+Enter saves from here too, as from the title; left to
+              // the editor, it inserted a blank line.
+              onSubmit={() => void save()}
               placeholder="Add description…"
               minLines={1}
             />

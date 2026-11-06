@@ -3418,6 +3418,22 @@ Then(
 );
 
 When(
+  "I click the {string} cell on {word}, type {string} and press Enter",
+  async ({ page }, task: string, day: string, hours: string) => {
+    // A quick typist: the digit comes before the click's double-click wait ends.
+    await weekGridCell(page, task, day).click();
+    await page.keyboard.type(hours);
+    await page.keyboard.press("Enter");
+  },
+);
+
+Then("no entry editor opens after the click", async ({ page }) => {
+  // Past the click's double-click wait, the panel would have opened by now.
+  await page.waitForTimeout(600);
+  await expect(timeEntryEditor(page)).toHaveCount(0);
+});
+
+When(
   "I type {string} in the {string} cell on {word} and press Tab",
   async ({ page }, hours: string, task: string, day: string) => {
     await weekGridCell(page, task, day).focus();

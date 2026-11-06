@@ -223,6 +223,13 @@ Feature: Open the local time workspace
     And I open Time from the app sidebar
     Then the Day view is visible
 
+  Scenario: Click an empty Grid cell and type its hours
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I click the "Code review" cell on Wednesday, type "2" and press Enter
+    Then the "Code review" cell on Wednesday shows "2:00"
+    And no entry editor opens after the click
+
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries
     When I open the Week Grid
