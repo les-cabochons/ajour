@@ -56,6 +56,21 @@ describe("createSidebarMatcher", () => {
     ).toBe(true);
   });
 
+  it("finds a synced item by the start of its number", () => {
+    const billet = {
+      title: "Billet #11017098",
+      projectId: "ajour",
+      sourceExternalId: "331150",
+    };
+
+    expect(
+      createSidebarMatcher({ query: "3311" }, projects).workItem(billet),
+    ).toBe(true);
+    expect(
+      createSidebarMatcher({ query: "150" }, projects).workItem(billet),
+    ).toBe(false);
+  });
+
   it("needs every word, each in the title or the project", () => {
     const matcher = createSidebarMatcher({ query: "ajour sidebar" }, projects);
 

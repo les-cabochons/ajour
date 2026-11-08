@@ -1,9 +1,9 @@
-import {
-  getLocalProjectDisplayName,
-  type LocalProject,
-  type LocalWorkItem,
-} from "@/domain/local-state";
+import type { LocalProject } from "@/domain/local-state";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
+import {
+  createWorkItemSearch,
+  type SearchableWorkItem,
+} from "@/domain/backlog/work-item-search";
 
 /** What narrows the sidebar's work list. See "Search and project filter" in docs/agents/ux-spec.md. */
 export interface SidebarFilter {
@@ -24,17 +24,10 @@ export interface SidebarMatcher {
   active: boolean;
   /** The picked project while it narrows the list. Missing for an archived or gone one. */
   projectId?: string;
-  workItem: (workItem: Pick<LocalWorkItem, "title" | "projectId">) => boolean;
+  workItem: (workItem: SearchableWorkItem) => boolean;
   pullRequest: (item: {
     facts: Pick<LocalPullRequest["facts"], "title" | "repository">;
   }) => boolean;
-}
-
-function normalizeSearchText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
 }
 
 /** Whether the project is active and a project source manages it. */
@@ -75,10 +68,11 @@ export function getPickedSidebarClient(
 }
 
 /**
- * Builds the row tests for `filter`. Every typed word must appear in the
- * item's title or its project's name, display name or code, ignoring case and
- * accents. A pull request matches on its title and repository. Pull requests
- * have no Ajour project, so they hide while a project is picked. A picked
+ * Builds the row tests for `filter`. The query is `createWorkItemSearch`'s:
+ * every typed word in the item's title, its project's name, display name or
+ * code, or the start of its number, ignoring case and accents. A pull
+ * request matches on its title and repository. Pull requests have no Ajour
+ * project, so they hide while a project is picked. A picked
  * project that no longer exists, or is archived, filters nothing. A picked
  * client keeps the items of its active managed projects, and filters nothing
  * once none has it.
@@ -87,17 +81,7 @@ export function createSidebarMatcher(
   filter: SidebarFilter,
   projects: readonly LocalProject[],
 ): SidebarMatcher {
-  const terms = normalizeSearchText(filter.query).split(/\s+/u).filter(Boolean);
-  const projectText = new Map(
-    projects.map((project) => [
-      project._id,
-      normalizeSearchText(
-        [project.name, getLocalProjectDisplayName(project), project.code]
-          .filter(Boolean)
-          .join(" "),
-      ),
-    ]),
-  );
+  const search = createWorkItemSearch(filter.query, projects);
   const projectId = projects.some(
     (project) =>
       project._id === filter.projectId && project.status === "active",
@@ -119,27 +103,19 @@ export function createSidebarMatcher(
       )
     : undefined;
   const clientPicked = clientProjectIds !== undefined;
-  const matchesTerms = (text: string) =>
-    terms.every((term) => text.includes(term));
 
   return {
-    active: terms.length > 0 || projectId !== undefined || clientPicked,
+    active: search.active || projectId !== undefined || clientPicked,
     projectId,
     workItem: (workItem) =>
       (!projectId || workItem.projectId === projectId) &&
       (!clientPicked ||
         (workItem.projectId !== undefined &&
           clientProjectIds.has(workItem.projectId))) &&
-      matchesTerms(
-        `${normalizeSearchText(workItem.title)} ${
-          (workItem.projectId && projectText.get(workItem.projectId)) ?? ""
-        }`,
-      ),
+      search.matches(workItem),
     pullRequest: (item) =>
       !projectId &&
       !clientPicked &&
-      matchesTerms(
-        normalizeSearchText(`${item.facts.title} ${item.facts.repository}`),
-      ),
+      search.matchesText(`${item.facts.title} ${item.facts.repository}`),
   };
 }
