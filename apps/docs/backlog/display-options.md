@@ -14,7 +14,7 @@ Ajour saves display options on this device. Ordering is shared with the sidebar,
 | **Grouping**           | **Workflow state** (default), **Priority**, **Project**, or **None** in the list layout. |
 | **Swimlanes**          | On the board: **None** or **Project**.                                                   |
 | **Ordering**           | **Custom** (default), **Priority**, **Created**, **Remaining estimate** or **Title**.    |
-| **Done items**         | **Past week** (default), **All** or **None**.                                            |
+| **Done items**         | What the Done shelf holds: **Past week** (default), **All** or **None**, which hides it. |
 | **Show settled items** | Shows settled items, marked **Settled**. On by default.                                  |
 | **Show subitems**      | Shows subitems. On by default.                                                           |
 

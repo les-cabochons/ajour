@@ -40,9 +40,19 @@ Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item'
 
 <Shot name="backlog-peek" alt="The peek next to the backlog list" />
 
+## Done items
+
+Done items are archived. They leave their group, so the list and the board show only the work still open, whatever the grouping.
+
+Items archived in the past week wait on the **Done in the past week** shelf at the end of the page. The shelf starts closed and shows how many items it holds. Click its title to open it, and click again to close it. Ajour remembers on this device whether it is open. To change how far back the shelf goes, see **Done items** in [Display options](/backlog/display-options).
+
+<Shot name="backlog-done-shelf" alt="The open Done shelf at the end of the Backlog list" />
+
 ## Archive
 
-Done items are archived. To see them, press **Filter**, choose **State**, then **Archived**. Open an archived item and press **Restore** to put it back in your backlog.
+The archive holds every archived item, including older ones and items archived because they left a sync. Press **View archive** on the Done shelf, or press **Filter**, choose **State**, then **Archived**. Remove the **State** filter to go back to your open work.
+
+To put an item back in your backlog, open its **…** menu, or open the item, and press **Restore**.
 
 ## Unmapped source states
 

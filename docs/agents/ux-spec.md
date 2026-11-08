@@ -632,7 +632,7 @@ The Display popover holds:
 - Grouping: workflow state (the default), priority, project, or none. None is list-only.
 - Swimlanes, on the board only: None (the default) or Project. One collapsible swimlane per project, with "No project" last. Hidden when grouping is Project.
 - Ordering: Custom (the default), Priority, Created, Remaining estimate or Title.
-- Done items: Past week (the default), All or None.
+- Done items: Past week (the default), All or None. It sets what the Done shelf holds; None hides the shelf.
 - Show settled items and Show subitems, both on by default.
 - Display properties: ID, priority, project, estimate and source state.
 
@@ -673,9 +673,16 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - Included synced subitems are written through their own source project's mapping. Subitems already settled or archived are left alone.
 - Reopening the parent brings back the subitems that closed with it.
 
+### Done shelf
+
+- Archived items leave their group, in every grouping and layout, so the groups and columns hold only open work. A done state's column stays on the board as a drop target.
+- The archived items within the done window wait on the Done shelf at the end of the page, after every group and swimlane: "Done in the past week" with Past week, "Done" with All. It lists them as list rows, latest archived first, on the board too.
+- The shelf starts closed. Its header shows the count; its title opens and closes it, and the device remembers which. The shelf hides while it is empty.
+- Shelf rows select, peek and open like other rows, and carry the same actions. They don't drag or reorder.
+
 ### Archive
 
-- Archived items older than the done window live in Archive, from the header's "…" menu: the list layout filtered to archived items, including items archived because they dropped out of the sync. Restore puts an item back in its state's column.
+- Archive is the list under the State filter's Archived value: every archived item, including items older than the done window and items archived because they dropped out of the sync. "View archive" on the Done shelf's header opens it, replacing any State filter; removing the State chip goes back. The archive has no shelf: its items stay in their groups. Restore puts an item back in its state's column.
 
 ### Keyboard
 
