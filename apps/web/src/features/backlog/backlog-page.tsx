@@ -17,6 +17,9 @@ import {
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
 import { BacklogRefresh } from "./backlog-refresh";
+import { BacklogSearch } from "./backlog-search";
+import { createWorkItemSearch } from "@/domain/backlog/work-item-search";
+import { useBacklogSearch } from "@/lib/backlog-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setOpenDraftGuard } from "@/lib/open-draft";
 import {
@@ -153,17 +156,23 @@ export function BacklogPage() {
   const draft = useRef<BacklogTaskEditorFields | null>(null);
   const board = !narrow && view.layout === "board";
   const grouping = board && view.grouping === "none" ? "state" : view.grouping;
+  // The page's search narrows the rows on top of the filters (#652).
+  const { query } = useBacklogSearch();
+  const search = useMemo(
+    () => createWorkItemSearch(query, state.projects),
+    [query, state.projects],
+  );
   const items = useMemo(
     () =>
       orderBacklogItems(
         selectBacklogViewItems(state, view, view.filters, {
           now,
           runningWorkItemId: state.timers[0]?.workItemId,
-        }),
+        }).filter(search.matches),
         state.workItems,
         state.backlogSortMode,
       ),
-    [state, view, now],
+    [state, view, now, search],
   );
   const lanes = useMemo(
     () =>
@@ -767,6 +776,7 @@ export function BacklogPage() {
               <>
                 {syncStatus}
                 {unmappedLink}
+                <BacklogSearch />
                 <BacklogFilters state={state} view={view} part="button" />
                 <BacklogLayoutToggle view={view} />
                 <BacklogDisplay
@@ -780,6 +790,7 @@ export function BacklogPage() {
         )}
         {narrow ? (
           <div className="backlog-workspace-filterbar">
+            <BacklogSearch />
             <BacklogFilters state={state} view={view} />
             <BacklogDisplay
               view={view}
@@ -805,17 +816,19 @@ export function BacklogPage() {
             <Empty align="start">
               <EmptyHeader>
                 <EmptyTitle>
-                  {view.filters.length
+                  {view.filters.length || search.active
                     ? "No matching items"
                     : "Your backlog is empty"}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {view.filters.length
-                    ? "Change the filters to see more items."
-                    : "Create a backlog item or import items from a plugin."}
+                  {search.active
+                    ? "Change the search or the filters to see more items."
+                    : view.filters.length
+                      ? "Change the filters to see more items."
+                      : "Create a backlog item or import items from a plugin."}
                 </EmptyDescription>
               </EmptyHeader>
-              {!view.filters.length && (
+              {!view.filters.length && !search.active && (
                 <EmptyContent>
                   <Button variant="outline" onClick={() => add()}>
                     New backlog item
