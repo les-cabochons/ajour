@@ -1,13 +1,12 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   RiBuilding2Line as ClientIcon,
-  RiCloseLine as CloseIcon,
   RiDraggable as CustomOrderIcon,
   RiFilter3Line as FilterIcon,
   RiFolderLine as AllProjectsIcon,
-  RiSearchLine as SearchIcon,
   RiSortDesc as PriorityOrderIcon,
 } from "@remixicon/react";
+import { ExpandingSearch } from "@/components/expanding-search";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +17,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
 import {
   Popover,
   PopoverContent,
@@ -44,93 +37,19 @@ import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
 
 /**
- * The sidebar's Search: a button that expands into a search box over the view
- * switcher's row. Escape clears and closes it. Leaving it empty closes it too;
- * a typed query stays so the user can open the rows it found, even when the
- * sidebar hides in between. `lib/sidebar-search.ts` holds the state.
+ * The sidebar's Search: the expanding box over the view switcher's row, see
+ * `components/expanding-search.tsx`. `lib/sidebar-search.ts` holds the state.
  */
 export function SidebarSearch() {
-  const { open, query } = useSidebarSearch();
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Escape gives focus back to the button when it mounts again; a click
-  // elsewhere leaves focus where the user put it.
-  const refocusRef = useRef(false);
-
-  function close() {
-    updateSidebarSearch({ open: false, query: "" });
-  }
-
-  if (!open) {
-    return (
-      <TooltipButton
-        label="Search"
-        side="bottom"
-        render={
-          <Button
-            ref={(button) => {
-              if (button && refocusRef.current) {
-                refocusRef.current = false;
-                button.focus();
-              }
-            }}
-            variant="ghost"
-            size="icon"
-            className="ajour-app-sidebar-toggle"
-            onClick={() => updateSidebarSearch({ open: true })}
-          />
-        }
-      >
-        <SearchIcon />
-      </TooltipButton>
-    );
-  }
-
+  const state = useSidebarSearch();
   return (
-    <InputGroup className="h-8 min-w-0 flex-1">
-      <InputGroupAddon>
-        <SearchIcon />
-      </InputGroupAddon>
-      <InputGroupInput
-        ref={inputRef}
-        autoFocus
-        type="search"
-        aria-label="Search the sidebar"
-        placeholder="Search"
-        value={query}
-        onChange={(event) => updateSidebarSearch({ query: event.target.value })}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            refocusRef.current = true;
-            close();
-          }
-        }}
-        onBlur={() => {
-          if (!query.trim()) close();
-        }}
-        className="[&::-webkit-search-cancel-button]:hidden"
-      />
-      {query ? (
-        <InputGroupAddon align="inline-end">
-          <TooltipButton
-            label="Clear search"
-            render={
-              <InputGroupButton
-                size="icon-xs"
-                // The button unmounts with the query, so focus goes back to
-                // the box, whether it was clicked or pressed from the keyboard.
-                onClick={() => {
-                  updateSidebarSearch({ query: "" });
-                  inputRef.current?.focus();
-                }}
-              />
-            }
-          >
-            <CloseIcon />
-          </TooltipButton>
-        </InputGroupAddon>
-      ) : null}
-    </InputGroup>
+    <ExpandingSearch
+      state={state}
+      onChange={updateSidebarSearch}
+      label="Search the sidebar"
+      className="flex-1"
+      buttonClassName="ajour-app-sidebar-toggle"
+    />
   );
 }
 
