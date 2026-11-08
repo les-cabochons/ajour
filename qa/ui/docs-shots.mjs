@@ -165,6 +165,16 @@ const shots = [
     run: (page) => go(page, "/backlog"),
   },
   {
+    name: "backlog-done-shelf",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page
+        .getByRole("button", { name: /^Done in the past week/ })
+        .click();
+      return page.getByRole("region", { name: "Done in the past week" });
+    },
+  },
+  {
     name: "backlog-display",
     run: async (page) => {
       await go(page, "/backlog");

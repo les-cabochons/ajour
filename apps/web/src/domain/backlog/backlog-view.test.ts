@@ -6,6 +6,7 @@ import {
   isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
+  splitDoneShelf,
   getSubitemHoursLeft,
   getSubitemProgress,
 } from "./backlog-view";
@@ -260,6 +261,26 @@ describe("backlog view selection", () => {
         { now, runningWorkItemId: "a" },
       ).map((i) => i._id),
     ).toEqual(["a"]);
+  });
+});
+describe("the Done shelf", () => {
+  const items = [
+    item("open"),
+    item("earlier", { status: "archived", archivedAt: 10 }),
+    item("settled", { status: "settled" }),
+    item("latest", { status: "archived", archivedAt: 20 }),
+  ];
+  it("takes archived items out of the groups, latest archived first", () => {
+    const { open, done } = splitDoneShelf(items, []);
+    expect(open.map((i) => i._id)).toEqual(["open", "settled"]);
+    expect(done.map((i) => i._id)).toEqual(["latest", "earlier"]);
+  });
+  it("has no shelf under the Archived state filter, where the page is the archive", () => {
+    const { open, done } = splitDoneShelf(items, [
+      { field: "state", value: ARCHIVED_STATE_FILTER },
+    ]);
+    expect(open).toEqual(items);
+    expect(done).toEqual([]);
   });
 });
 describe("backlog ordering and grouping", () => {

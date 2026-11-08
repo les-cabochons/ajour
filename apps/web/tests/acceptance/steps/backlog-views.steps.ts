@@ -1871,6 +1871,34 @@ Then(
     await expect(page.locator('[data-work-item-id="missing"]')).toBeVisible();
   },
 );
+Then(
+  "the other item has left its priority group for the closed Done shelf",
+  async ({ page }) => {
+    const shelf = page.getByRole("region", { name: "Done in the past week" });
+    await expect(
+      shelf.getByRole("button", { name: /Done in the past week/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(shelf.locator(".backlog-group-count")).toHaveText("1");
+    await expect(page.locator('[data-work-item-id="other"]')).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Medium" })).toHaveCount(0);
+  },
+);
+When("I open the Done shelf", async ({ page }) => {
+  await page.getByRole("button", { name: /Done in the past week/ }).click();
+});
+Then("the Done shelf shows the other item", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "Done in the past week" })
+      .locator('[data-work-item-id="other"]'),
+  ).toBeVisible();
+});
+When("I view the archive from the Done shelf", async ({ page }) => {
+  await page.getByRole("button", { name: "View archive", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit State filter" }),
+  ).toHaveText("StateArchived");
+});
 When("I restore the old done item", async ({ page }) => {
   const oldRow = page.locator('[data-work-item-id="old"]');
   await oldRow.hover();

@@ -353,6 +353,17 @@ Feature: Backlog list and board views
     When I restore the old done item
     Then the old done item is active in To do
 
+  Scenario: Done items wait on a closed shelf under the priority groups
+    When I group the Backlog by "Priority"
+    And I press "Alt+ArrowRight" on the other Backlog row
+    Then the other item has left its priority group for the closed Done shelf
+    When I open the Done shelf
+    Then the Done shelf shows the other item
+    When I reload the app
+    Then the Done shelf shows the other item
+    When I view the archive from the Done shelf
+    Then the Backlog shows the old done and missing sync items
+
   Scenario: Use the priority key when the property is hidden
     When I hide the Backlog priority property
     And I set the parent priority to Low with its key

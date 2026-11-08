@@ -27,3 +27,14 @@ it("validates stored fields independently and keeps valid filters", () => {
     filters: [{ field: "connection", value: "c" }],
   });
 });
+it("keeps the Done shelf closed unless this device opened it", () => {
+  expect(parseBacklogViewPreferences(null).doneShelfOpen).toBe(false);
+  expect(
+    parseBacklogViewPreferences(JSON.stringify({ doneShelfOpen: "yes" }))
+      .doneShelfOpen,
+  ).toBe(false);
+  expect(
+    parseBacklogViewPreferences(JSON.stringify({ doneShelfOpen: true }))
+      .doneShelfOpen,
+  ).toBe(true);
+});

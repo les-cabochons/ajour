@@ -685,6 +685,35 @@
     margin-top: 1rem;
   }
 
+  /* -- Done shelf ------------------------------------------------ */
+
+  /* The shelf's header is a group header whose title is the toggle. */
+  .backlog-done-shelf-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .backlog-done-shelf-toggle > svg {
+    margin-left: -0.25rem;
+    color: var(--text-secondary);
+  }
+
+  /* Under the board, the shelf keeps the window's width while the columns
+     scroll sideways. */
+  .backlog-workspace-scroll.is-board .backlog-done-shelf {
+    position: sticky;
+    left: 0;
+    width: 100%;
+    margin-top: 1rem;
+  }
+
   .backlog-list-group.is-drop-target .backlog-group-header,
   .backlog-board-column.is-drop-target {
     background: var(--indigo-muted);

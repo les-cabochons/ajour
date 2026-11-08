@@ -151,6 +151,14 @@ function matchesFilter(
   }
 }
 
+/** Whether the State filter asks for archived items: the page is the archive. */
+function showsArchiveFilter(filters: readonly BacklogFilter[]) {
+  return filters.some(
+    (filter) =>
+      filter.field === "state" && filter.value === ARCHIVED_STATE_FILTER,
+  );
+}
+
 /**
  * The items the page shows. Archived items show only in a done state and
  * within the done window, unless the Archived state filter asks for all of
@@ -180,9 +188,7 @@ export function selectBacklogViewItems(
     ]);
   }
 
-  const showsArchive = filtersByField
-    .get("state")
-    ?.some((filter) => filter.value === ARCHIVED_STATE_FILTER);
+  const showsArchive = showsArchiveFilter(filters);
 
   return state.workItems.filter((workItem) => {
     if (workItem.status === "archived" && !showsArchive) {
@@ -220,6 +226,27 @@ export function selectBacklogViewItems(
     }
     return true;
   });
+}
+
+/**
+ * Splits the shown items between the groups and the Done shelf below them.
+ * Archived items leave their group for the shelf, latest archived first, so
+ * the groups hold only open work in every grouping. Under the Archived state
+ * filter the page is the archive: the groups keep every item and the shelf is
+ * empty. "Done shelf" under "Backlog" in docs/agents/ux-spec.md.
+ */
+export function splitDoneShelf(
+  items: readonly LocalWorkItem[],
+  filters: readonly BacklogFilter[],
+): { open: LocalWorkItem[]; done: LocalWorkItem[] } {
+  if (showsArchiveFilter(filters)) return { open: [...items], done: [] };
+  const open: LocalWorkItem[] = [];
+  const done: LocalWorkItem[] = [];
+  for (const workItem of items)
+    (workItem.status === "archived" ? done : open).push(workItem);
+  // Array.prototype.sort is stable, so equal dates keep the page's order.
+  done.sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0));
+  return { open, done };
 }
 
 /** Orders items by the persisted ordering. Ties keep the custom order. */

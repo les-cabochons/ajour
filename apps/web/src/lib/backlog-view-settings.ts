@@ -16,6 +16,8 @@ import { recordDeviceSettingChange } from "@/lib/preference-events";
  */
 export interface BacklogViewPreferences extends BacklogViewSettings {
   filters: BacklogFilter[];
+  /** Whether the Done shelf under the groups is open. Closed by default. */
+  doneShelfOpen: boolean;
 }
 
 export const BACKLOG_VIEW_STORAGE_KEY = "ajour.backlog-view";
@@ -23,6 +25,7 @@ export const BACKLOG_VIEW_STORAGE_KEY = "ajour.backlog-view";
 const DEFAULT_PREFERENCES: BacklogViewPreferences = {
   ...DEFAULT_BACKLOG_VIEW_SETTINGS,
   filters: [],
+  doneShelfOpen: false,
 };
 
 const FILTER_FIELDS: readonly BacklogFilterField[] = [
@@ -79,6 +82,7 @@ export function parseBacklogViewPreferences(
       ),
       showSettled: parsed.showSettled !== false,
       showSubitems: parsed.showSubitems !== false,
+      doneShelfOpen: parsed.doneShelfOpen === true,
       properties,
       filters: Array.isArray(parsed.filters)
         ? parsed.filters.filter(
