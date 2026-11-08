@@ -23,10 +23,7 @@ import {
   patchBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-surface";
 import { PickerChevron } from "@/components/picker-chevron";
-import {
-  changeSourceStateWithUndo,
-  getOtherSourceStates,
-} from "@/features/backlog/backlog-item-moves";
+import { BacklogItemSourceSection } from "@/features/backlog/backlog-item-source-section";
 import { useLinkQuestion } from "@/features/backlog/description-links";
 import {
   FrontmatterRows,
@@ -44,10 +41,11 @@ import { localStore } from "@/lib/local-store";
 const LONG_NAME_LIST_WIDTH = 320;
 
 /**
- * A backlog item's properties, each changed in place with Undo: state, source
- * state, priority, project and task, then When missing for synced items. The
+ * A backlog item's properties, each changed in place with Undo: state,
+ * priority, project and task, then Missing from sync for synced items. The
  * peek and the item page show the same rows; `children` adds rows before
- * When missing. The description's frontmatter follows: plain values as rows,
+ * Missing from sync. The description's frontmatter follows: plain values as
+ * rows, then the source section of a synced item (#653) and the frontmatter's
  * lists and nested keys as sections. A button after Project offers the
  * description's timelog while the item's project or task differs from it.
  */
@@ -80,18 +78,6 @@ export function BacklogItemProperties({
         <PropertyRow label="State">
           <BacklogStatePicker item={item} state={state} full />
         </PropertyRow>
-        {item.sourceStatusLabel && (
-          <PropertyRow label="Source state">
-            <Button
-              variant="ghost"
-              aria-label={`Change source state of ${item.title}`}
-              disabled={getOtherSourceStates(item).length === 0}
-              onClick={() => void changeSourceStateWithUndo(item)}
-            >
-              {item.sourceStatusLabel}
-            </Button>
-          </PropertyRow>
-        )}
         <PropertyRow label="Priority">
           <BacklogPriorityPicker item={item} full />
         </PropertyRow>
@@ -175,6 +161,7 @@ export function BacklogItemProperties({
           onLinkClick={linkQuestion.ask}
         />
       </PropertyList>
+      <BacklogItemSourceSection item={item} />
       <FrontmatterSections
         fields={frontmatterFields}
         onLinkClick={linkQuestion.ask}

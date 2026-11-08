@@ -1,5 +1,4 @@
 import { getCompletedEstimateShare } from "@/domain/backlog/work-item-estimates";
-import { BacklogRefresh } from "./backlog-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -587,33 +586,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 className="backlog-item-card backlog-item-properties-card"
                 aria-label="Properties"
               >
-                <BacklogItemProperties item={item} state={state}>
-                  {/* The refresh sits with the source it refreshes (council
-                      round 16). */}
-                  <PropertyRow label="Source">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate">
-                        {item.source === "manual"
-                          ? "Ajour"
-                          : (item.sourceProjectName ??
-                            item.sourceConnectionLabel ??
-                            "–")}
-                      </span>
-                      {item.source !== "manual" &&
-                      item.sourceConnectionId &&
-                      item.sourceId ? (
-                        <BacklogRefresh
-                          source={{
-                            pluginId: item.source,
-                            connectionId: item.sourceConnectionId,
-                            sourceId: item.sourceId,
-                            syncedAt: item.sourceSyncedAt,
-                          }}
-                        />
-                      ) : null}
-                    </span>
-                  </PropertyRow>
-                </BacklogItemProperties>
+                {/* A synced item's source rows and its refresh are the
+                    properties' source section (#653). */}
+                <BacklogItemProperties item={item} state={state} />
                 {archiveAction && !archiveAction.disabledReason ? (
                   <PropertyActions>
                     <PropertyAction onClick={() => runAction("archive")}>
