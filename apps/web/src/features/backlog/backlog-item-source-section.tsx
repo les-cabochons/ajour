@@ -136,21 +136,30 @@ export function SourceSection({
           </PropertyRow>
         ) : null}
         <PropertyRow label="Synced">
-          <span className="capitalize">
-            {syncAge(item.sourceSyncedAt, now)}
+          {/* The value column is narrow: the refresh's status, shown while a
+              sync runs or failed, truncates, and its tooltip says it all. */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 [&_[role=status]]:min-w-0 [&_[role=status]]:truncate">
+            <span className="shrink-0">
+              {sentenceCase(syncAge(item.sourceSyncedAt, now))}
+            </span>
+            {item.sourceConnectionId && item.sourceId ? (
+              <BacklogRefresh
+                source={{
+                  pluginId: item.source,
+                  connectionId: item.sourceConnectionId,
+                  sourceId: item.sourceId,
+                  syncedAt: item.sourceSyncedAt,
+                }}
+              />
+            ) : null}
           </span>
-          {item.sourceConnectionId && item.sourceId ? (
-            <BacklogRefresh
-              source={{
-                pluginId: item.source,
-                connectionId: item.sourceConnectionId,
-                sourceId: item.sourceId,
-                syncedAt: item.sourceSyncedAt,
-              }}
-            />
-          ) : null}
         </PropertyRow>
       </PropertyList>
     </PropertySection>
   );
+}
+
+/** "just now" as a row value: "Just now". */
+function sentenceCase(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
