@@ -13,7 +13,8 @@ export function BacklogSearch() {
       state={state}
       onChange={updateBacklogSearch}
       label="Search the backlog"
-      className="w-44"
+      // The narrow toolbar row lends the box the status line's room.
+      className="w-44 narrow:w-auto narrow:flex-1"
     />
   );
 }
