@@ -16,7 +16,7 @@ The release bundle embeds every source page through `resources.ts`. Archives
 include the generated pages at `man/man1/`. Live completion runs the hidden
 `__task-candidates` command in a child of the same executable. Development
 invokes `task-candidates.ts` through Node; the SEA binary invokes itself without Node
-flags or source files. The parent terminates the lookup after 900 ms.
+flags or source files. The parent terminates the lookup after 900 ms; the test terminal allows 10 s, because a host running the whole suite starts the child slowly.
 
 The general unit suite skips the real-shell tests. To run them on a POSIX host
 with python3 and the shells installed, use

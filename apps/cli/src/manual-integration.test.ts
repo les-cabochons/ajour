@@ -145,6 +145,8 @@ it("bounds an unresponsive API lookup to about a second without diagnostics", as
       AJOUR_URL: `http://127.0.0.1:${address.port}`,
       AJOUR_TOKEN: "valid-token",
     };
+    // This test is about the terminal's bound, not the test terminal's.
+    term.io.completionTimeoutMs = 900;
     const started = performance.now();
     expect(await run(["__complete", "tasks"], term.io)).toBe(0);
     expect(performance.now() - started).toBeLessThan(1600);
