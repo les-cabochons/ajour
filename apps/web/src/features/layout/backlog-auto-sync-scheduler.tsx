@@ -22,10 +22,34 @@ import { offerSourceWaitingQuestions } from "@/features/projects/source-waiting-
 
 const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
 
+type AutoSyncCapability = "connector" | "codeHost" | "team" | "projectSource";
+
+/** Each capability as its switch names it on the plugin's settings page. */
+const CAPABILITY_NAMES: Record<AutoSyncCapability, string> = {
+  connector: "Backlog items",
+  codeHost: "Pull requests",
+  team: "Projects",
+  projectSource: "Managed projects",
+};
+
 /**
- * Syncs connections with automatic sync on when they are due. A failure shows
- * one error toast. A due connection retries on every poll, so the same failure
- * again shows nothing new until the connection syncs or fails differently.
+ * A connection's failure toast text: the reason alone, or one line per
+ * capability that failed, named, when several did.
+ */
+function describeFailures(failures: Map<AutoSyncCapability, string>) {
+  if (failures.size === 1) return [...failures.values()][0];
+  return Array.from(
+    failures,
+    ([capability, message]) => `${CAPABILITY_NAMES[capability]}: ${message}`,
+  ).join("\n");
+}
+
+/**
+ * Syncs connections with automatic sync on when they are due. Failures show
+ * one error toast per connection: a later failure of that connection, of the
+ * same or another capability, replaces the toast's text instead of stacking a
+ * new toast. A due connection retries on every poll, so the same failure again
+ * shows nothing new until the capability syncs or fails differently.
  * The tick emits no event of its own; each sync it starts is one job.
  */
 export function BacklogAutoSyncScheduler() {
@@ -33,8 +57,11 @@ export function BacklogAutoSyncScheduler() {
     cancelled: false,
     running: false,
     timeoutId: undefined as number | undefined,
-    /** The last failure shown per connection, by `pluginId:connectionId`. */
-    shownFailures: new Map<string, string>(),
+    /**
+     * The failures shown per connection, by `pluginId:connectionId`, with
+     * the last reason of each capability that has not synced since.
+     */
+    shownFailures: new Map<string, Map<AutoSyncCapability, string>>(),
   });
 
   useEffect(() => {
@@ -184,19 +211,26 @@ export function BacklogAutoSyncScheduler() {
               )
             )
               continue;
-            const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}:${operation.capability}`;
+            const connectionKey = `${dueConnection.pluginId}:${dueConnection.connection.id}`;
             try {
               await operation.run();
-              loopState.shownFailures.delete(failureKey);
+              loopState.shownFailures
+                .get(connectionKey)
+                ?.delete(operation.capability);
             } catch (error) {
               // The sync's own event records the failure.
               const message =
                 error instanceof Error ? error.message : "Unknown error";
-              if (loopState.shownFailures.get(failureKey) !== message) {
-                loopState.shownFailures.set(failureKey, message);
+              const failures =
+                loopState.shownFailures.get(connectionKey) ??
+                new Map<AutoSyncCapability, string>();
+              if (failures.get(operation.capability) !== message) {
+                failures.set(operation.capability, message);
+                loopState.shownFailures.set(connectionKey, failures);
                 showErrorToast({
+                  id: `sync-failed:${connectionKey}`,
                   title: `${dueConnection.connection.label} sync failed`,
-                  description: message,
+                  description: describeFailures(failures),
                 });
               }
             }

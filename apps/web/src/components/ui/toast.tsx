@@ -122,16 +122,22 @@ export function showActionToast({
 
 /**
  * Shows an error from background work that has no place on screen, such as an
- * automatic backlog sync. It stays until the user dismisses it.
+ * automatic backlog sync. It stays until the user dismisses it. A toast with
+ * the `id` of one still showing replaces its text in place instead of
+ * stacking a new toast; once dismissed, the same `id` shows a new one.
  */
 export function showErrorToast({
+  id,
   title,
   description,
 }: {
+  id?: string;
   title: string;
+  /** Line breaks show as separate lines. */
   description?: string;
 }) {
   toastManager.add({
+    id,
     title,
     description,
     type: "error",
@@ -214,7 +220,7 @@ function ToastList() {
               toast.type === "error" && "text-destructive",
             )}
           />
-          <ToastPrimitive.Description className="[overflow-wrap:anywhere] text-muted-foreground" />
+          <ToastPrimitive.Description className="[overflow-wrap:anywhere] whitespace-pre-line text-muted-foreground" />
         </div>
         {toast.data?.onUndo ? (
           <ToastPrimitive.Action
