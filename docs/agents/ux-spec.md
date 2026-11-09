@@ -675,14 +675,14 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Shelves
 
-- Settled and archived items leave their group, in every grouping and layout, so the groups and columns hold only the work on the user's plate. One exception: on the board grouped by state, archived items within the done window stay in their done state's column, and that column's header has View archive. That board has no Done shelf.
+- Settled and archived items leave their group, in every grouping and layout, so the groups and columns hold only the work on the user's plate. The board grouped by state is the exception. There, archived items within the done window stay in their done state's column, and that column's header has View archive. That board has no Done shelf.
 - Two shelves end the page, after every group and swimlane. The Settled shelf holds every settled item, latest settled first. "Show settled items" off hides it with its items. The Done shelf holds the archived items within the done window, latest archived first: "Done in the past week" with Past week, "Done" with All.
-- Both list their items as list rows, on the board too. Each starts closed. Its header shows the count; its title opens and closes it, and the device remembers which, per shelf. A shelf hides while it is empty.
+- Both list their items as list rows, on the board too. Each starts closed. Its header shows the count; its title opens and closes it, and the device remembers which, per shelf. The Settled shelf hides while it is empty. The Done shelf stays while any item is archived, even with none in the window, so View archive stays in reach; open and empty, it says "No items".
 - Shelf rows select, peek and open like other rows, and carry the same actions. They don't drag or reorder.
 
 ### Archive
 
-- Archive is the list under the State filter's Archived value: every archived item, including items older than the done window and items archived because they dropped out of the sync. "View archive" on the Done shelf's header, or on a done column's header on the board, opens it, replacing any State filter; removing the State chip goes back. The archive has no shelves: its items stay in their groups. Restore puts an item back in its state's column.
+- Archive is the page under the State filter's Archived value, in the current layout. It lists every archived item, including items older than the done window and items archived because they dropped out of the sync. "View archive" on the Done shelf's header, or on a done column's header on the board, opens it and clears every other filter, so nothing hides an archived item. Removing the State chip goes back to open work. The archive has no shelves, and its items stay in their groups. Restore puts an item back in its state's column.
 
 ### Keyboard
 
