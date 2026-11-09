@@ -5,11 +5,13 @@ import { useSyncExternalStore } from "react";
  * sidebar layout, it lives outside the local app state so it is never
  * exported. Time entries starts closed on its summary line. Subitems stays
  * unchosen until the user opens or closes it: a short list then shows open
- * (`resolveSubitemsOpen`, council round 13).
+ * (`resolveSubitemsOpen`, council round 13). The source section of the
+ * properties card starts open (#653).
  */
 export interface BacklogItemCards {
   subitemsOpen: boolean | undefined;
   timeEntriesOpen: boolean;
+  sourceOpen: boolean;
 }
 
 /** Subitems open while the user has not chosen and the list is 1 to 3 long. */
@@ -25,6 +27,7 @@ export const BACKLOG_ITEM_CARDS_STORAGE_KEY = "ajour.backlog-item-cards";
 const DEFAULT_CARDS: BacklogItemCards = {
   subitemsOpen: undefined,
   timeEntriesOpen: false,
+  sourceOpen: true,
 };
 
 /** Unknown or broken values fall back to the defaults, card by card. */
@@ -39,6 +42,7 @@ export function parseBacklogItemCards(value: string | null): BacklogItemCards {
           : undefined,
       timeEntriesOpen:
         "timeEntriesOpen" in parsed && parsed.timeEntriesOpen === true,
+      sourceOpen: !("sourceOpen" in parsed && parsed.sourceOpen === false),
     };
   } catch {
     return DEFAULT_CARDS;
