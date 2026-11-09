@@ -29,7 +29,10 @@ export function ExpandingSearch({
 }: {
   state: SearchBoxState;
   onChange: (patch: Partial<SearchBoxState>) => void;
-  /** Names the box for the tooltip and assistive technology: "Search the backlog". */
+  /**
+   * Names the open box for assistive technology: "Search the backlog". The
+   * button is "Search", told apart by its landmark, the sidebar or the page.
+   */
   label: string;
   /** The open box's size, such as its width in a toolbar. */
   className?: string;
@@ -59,7 +62,6 @@ export function ExpandingSearch({
             }}
             variant="ghost"
             size="icon"
-            aria-label={label}
             className={buttonClassName}
             onClick={() => onChange({ open: true })}
           />

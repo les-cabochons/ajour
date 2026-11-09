@@ -62,7 +62,7 @@ async function renderBacklog() {
 it("keeps only the item whose number starts with the typed digits, and brings every row back on Escape", async () => {
   await renderBacklog();
 
-  fireEvent.click(screen.getByRole("button", { name: "Search the backlog" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   const box = screen.getByRole("searchbox", { name: "Search the backlog" });
   act(() => {
     fireEvent.change(box, { target: { value: "3311" } });
@@ -82,7 +82,7 @@ it("keeps only the item whose number starts with the typed digits, and brings ev
 it("says no item matches while the query finds nothing", async () => {
   await renderBacklog();
 
-  fireEvent.click(screen.getByRole("button", { name: "Search the backlog" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   act(() => {
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search the backlog" }),

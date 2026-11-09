@@ -25,7 +25,8 @@ function Host({ initial }: { initial?: Partial<SearchBoxState> }) {
   );
 }
 
-const button = () => screen.getByRole("button", { name: "Search the list" });
+const button = () =>
+  screen.getByRole("button", { name: "Search", exact: true });
 const box = () =>
   screen.getByRole("searchbox", {
     name: "Search the list",
