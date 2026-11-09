@@ -613,8 +613,8 @@ Settings > Workflow lists, for each connection and source project, its source st
 
 ### Layouts
 
-- On desktop the top bar holds the Backlog's controls after its title: the sync status, the unmapped-states link, Filter, the list and board toggle and Display. A filter row shows under it only while filters are on, with their chips (council round 10, chosen by the product owner).
-- The page has a list and a board. The header's two-icon toggle and the Display popover switch between them. The narrow view always shows the list and hides the toggle. In the narrow view one row holds Filter, the unmapped-states count as "4 unmapped", the sync status as a short whole label such as "No connection", whose tap shows the full explanation even while Refresh is disabled, and Display (council rounds 2, 11 and 12); the status shows a warning alone, such as "Connection unavailable", and the refresh button's tooltip keeps the age (council round 6).
+- On desktop the top bar holds the Backlog's controls after its title: the sync status, the unmapped-states link, Search, Filter, the list and board toggle and Display. A filter row shows under it only while filters are on, with their chips (council round 10, chosen by the product owner).
+- The page has a list and a board. The header's two-icon toggle and the Display popover switch between them. The narrow view always shows the list and hides the toggle. In the narrow view one row holds Search, whose open box takes the status's room until it closes, Filter, the unmapped-states count as "4 unmapped", the sync status as a short whole label such as "No connection", whose tap shows the full explanation even while Refresh is disabled, and Display (council rounds 2, 11 and 12); the status shows a warning alone, such as "Connection unavailable", and the refresh button's tooltip keeps the age (council round 6).
 - On desktop list rows the project is its dot and name in 12px secondary text in a fixed column, as in the narrow view, not a filled chip (council round 2).
 - The list groups rows under sticky group headers. A row is one line: priority, state, type on 16px tracks 8px apart, the priority's bars at 14px in muted ink, 5, 8 and 11 units tall with unfilled bars kept visible in tertiary ink so every level reads as one glyph with a clear filled count (council rounds 22 and 26) (Urgent stays amber), then the title (an item without a priority shows its dashes faint at rest and full on hover and focus, where the picker sets one, council rounds 17 and 30), the id in 12px secondary mono (council round 5: it follows the title, so titles line up whether or not an item has one), a muted "↳ Parent" for a subitem, drawn with the sidebar's corner-down-right icon (council round 26), subitem progress, the running and Settled markers, each an icon and a word like Snoozed (Settled has the check circle of Settle, council round 21), then the project, Start and the remaining estimate at the right edge, as Day rows end with their duration (council round 28). The type slot holds the project's own icon, or a source's task icon, so items of many projects tell apart at a glance; the Project column names the project in words.
 - Every estimate reads as hours and minutes: "8h", "1h30", "45m", and "0h" for none left (a list row shows nothing at zero), in the list, the sidebar, the item page, the peek and the dock. Logged time is a clock, "1:30". An estimate is never a decimal such as "1.5h" (council round 1).
@@ -638,10 +638,12 @@ The Display popover holds:
 
 The layout, grouping, swimlanes, done window, toggles and properties are saved per device. The ordering stays in local state, because the sidebar shares it.
 
-### Filters
+### Search and filters
 
+- Search expands into a search box in place, as the sidebar's does ([#652](https://github.com/les-cabochons/ajour/issues/652)), and narrows the rows as the user types, on top of the filters, with the sidebar's words: every typed word in the title, the project text or the start of the item's number. Escape clears and closes it, leaving it empty closes it, and a typed query stays while the user opens rows. It is not saved across launches. The page's query and the sidebar's are separate.
+- While the search narrows the list, a group left with no row is not shown in the list layout; the board keeps its columns, as it does with filters. With nothing left, the page says "No matching items" and "Change the search or the filters to see more items."
 - Filter adds removable chips: state, priority, project, task, source project or connection, type, has estimate, and running.
-- Filters apply to the page only. The sidebar keeps its own list.
+- Search and filters apply to the page only. The sidebar keeps its own list.
 
 ### Peek
 

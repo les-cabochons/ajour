@@ -1195,6 +1195,13 @@
     display: none;
   }
 
+  /* While the page's search box is open it takes the status line's room; the
+     status comes back when the box closes (#652). */
+  .backlog-workspace-filterbar:has(input[type="search"])
+    .backlog-workspace-status {
+    display: none;
+  }
+
   .backlog-workspace-status .backlog-refresh {
     order: 1;
     flex: 1;
