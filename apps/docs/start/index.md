@@ -39,7 +39,7 @@ To switch to other work, start another entry. Ajour stops the running one and sa
 
 Forgot to start the timer? Press <kbd>N</kbd>, pick the task, type the hours as `1:30` or `1.5`, and press <kbd>Enter</kbd>.
 
-<Shot name="time-new-entry" alt="The new entry popover with project, note, hours and date" />
+<Shot name="time-new-entry" alt="The new entry in the side panel, with project, note, hours and date" />
 
 ## 4. Fix an entry
 
