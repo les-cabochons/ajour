@@ -2,7 +2,7 @@
 import type { PluginsOverview } from "@ajour/shared";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import {
   afterEach,
   beforeAll,
@@ -12,6 +12,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { Toaster } from "@/components/ui/toast";
 import { BacklogAutoSyncScheduler } from "@/features/layout/backlog-auto-sync-scheduler";
 import { localStore } from "@/lib/local-store";
 import { replaceEventSink } from "@/lib/wide-events";
@@ -297,5 +298,104 @@ describe("the scheduler and a project source", () => {
     await tickOnce(fetch);
 
     expect(sink.events).toEqual([]);
+  });
+});
+
+describe("the scheduler's failure toasts", () => {
+  const TIMED_OUT = 'Plugin "github" timed out while handling syncConnection.';
+  const TOO_MANY = "The plugin sent too many requests. Try again in a moment.";
+
+  /** The code host connection, due for its pull requests and, with `backlog`, its backlog items too. */
+  function failingOverview({ backlog }: { backlog: boolean }) {
+    const overview = overviewSyncedAt(1);
+    if (backlog) {
+      overview.connectionGroups[0]!.plugin.capabilities = {
+        connector: {},
+        codeHost: {},
+      };
+    }
+    return overview;
+  }
+
+  /** Answers the overview, and each sync with the next of `errors` for its route. */
+  function stubFailingApi(
+    overview: PluginsOverview,
+    errors: { sync?: string[]; pullRequests: string[] },
+  ) {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method !== "POST") return Response.json(overview);
+      const queue = url.endsWith("/syncPullRequests")
+        ? errors.pullRequests
+        : errors.sync!;
+      return Response.json({ error: queue.shift() }, { status: 502 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Each toast on screen, as its title and its text. */
+  function shownToasts() {
+    return screen
+      .queryAllByRole("alertdialog", { hidden: true })
+      .map((toast) => ({
+        title: toast.querySelector("h2")?.textContent,
+        text: toast.querySelector("p")?.textContent,
+      }));
+  }
+
+  it("shows one toast for a connection whose backlog items and pull requests both fail, with a line for each", async () => {
+    stubFailingApi(failingOverview({ backlog: true }), {
+      sync: [TIMED_OUT],
+      pullRequests: [TOO_MANY],
+    });
+
+    render(
+      <>
+        <Toaster />
+        <BacklogAutoSyncScheduler />
+      </>,
+    );
+
+    // The pull requests' failure joined the backlog's toast.
+    await waitFor(() =>
+      expect(shownToasts()).toEqual([
+        {
+          title: "Work sync failed",
+          text: `Backlog items: ${TIMED_OUT}\nPull requests: ${TOO_MANY}`,
+        },
+      ]),
+    );
+  });
+
+  it("replaces a connection's toast when a later poll fails with another reason, instead of stacking a second one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stubFailingApi(failingOverview({ backlog: false }), {
+      pullRequests: [TIMED_OUT, TOO_MANY],
+    });
+
+    render(
+      <>
+        <Toaster />
+        <BacklogAutoSyncScheduler />
+      </>,
+    );
+    await waitFor(() =>
+      expect(shownToasts()).toEqual([
+        { title: "Work sync failed", text: TIMED_OUT },
+      ]),
+    );
+
+    // The connection is still due, so the next poll tries again.
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await waitFor(() =>
+      expect(shownToasts()).toEqual([
+        { title: "Work sync failed", text: TOO_MANY },
+      ]),
+    );
   });
 });

@@ -414,7 +414,7 @@ No success toasts. The result shows where the action happened:
 
 - Form mistakes show next to the field, as now.
 - An operation the user started (import, export, sync, plugin install) shows its error inline on that page.
-- Background failures, such as an automatic backlog sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that plugin in Settings.
+- Background failures, such as an automatic backlog sync, show an error toast that stays until dismissed, and a "Last sync failed" line on that plugin in Settings. Automatic syncs show one toast per connection: a later failure of that connection replaces the toast's text instead of stacking another toast. When several of its syncs fail, such as Backlog items and Pull requests, the toast has one line for each, named as their switches are. The same failure again shows nothing new until that sync succeeds or fails differently.
 - A settle write that fails after the Undo window puts the item back to active and shows an error toast, naming the item and the reason, that stays until dismissed. A failed priority write puts the previous priority back, with the same toast.
 
 ### Toasts
