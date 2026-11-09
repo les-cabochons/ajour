@@ -71,7 +71,7 @@ export async function completeTasks(io: CliIo): Promise<number> {
           ],
       {
         env: { ...io.env, AJOUR_COMPLETION_HOME: io.homedir },
-        timeout: 900,
+        timeout: io.completionTimeoutMs ?? 900,
         windowsHide: true,
         maxBuffer: 1024 * 1024,
       },

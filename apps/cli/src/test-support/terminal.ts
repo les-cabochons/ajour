@@ -129,6 +129,9 @@ export async function ajour(
       platform: process.platform,
       homedir: home,
       now: () => NOW,
+      // The lookup forks a Node process; on a host running the whole suite,
+      // it can take more than a terminal's 900 ms.
+      completionTimeoutMs: 10_000,
       readSecret: async () => "",
       readStdin: async () => "",
       wait: async () => false,

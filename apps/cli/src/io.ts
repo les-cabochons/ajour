@@ -18,6 +18,12 @@ export interface CliIo {
   platform: NodeJS.Platform;
   homedir: string;
   now(): number;
+  /**
+   * How long a live completion's lookup may run before the shell gets
+   * nothing, in milliseconds. A terminal takes the default, 900. A test host
+   * under load needs more: the child is a fresh Node process.
+   */
+  completionTimeoutMs?: number;
   /** Reads a line without echoing it, for a token. */
   readSecret(prompt: string): Promise<string>;
   /** Reads all of standard input. */
