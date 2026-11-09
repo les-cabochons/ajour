@@ -588,7 +588,7 @@ Decided in [Backlog page under the new conventions](https://github.com/les-caboc
 - The user defines a workflow in Settings > Workflow: an ordered list of workflow states, each with a name and a color. New workspaces start with To do, In progress, In review and Done.
 - A state can carry the Done flag, and more than one can, such as Done and Canceled. The workflow keeps at least one done state.
 - Moving an item into a done state settles and archives it. Moving it out of one makes it active again and unsettles it. No other state changes whether an item is active, settled or archived. Settle and Snooze stay explicit actions.
-- A settled item stays in its state's column with a muted Settled marker and its settle date.
+- A settled item leaves its state's column for the Settled shelf. See Shelves.
 
 ### Mapping source states
 
@@ -632,7 +632,7 @@ The Display popover holds:
 - Grouping: workflow state (the default), priority, project, or none. None is list-only.
 - Swimlanes, on the board only: None (the default) or Project. One collapsible swimlane per project, with "No project" last. Hidden when grouping is Project.
 - Ordering: Custom (the default), Priority, Created, Remaining estimate or Title.
-- Done items: Past week (the default), All or None.
+- Done items: Past week (the default), All or None. It sets what the Done shelf holds, or the done columns on the board grouped by state; None hides them.
 - Show settled items and Show subitems, both on by default.
 - Display properties: ID, priority, project, estimate and source state.
 
@@ -673,9 +673,16 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - Included synced subitems are written through their own source project's mapping. Subitems already settled or archived are left alone.
 - Reopening the parent brings back the subitems that closed with it.
 
+### Shelves
+
+- Settled and archived items leave their group, in every grouping and layout, so the groups and columns hold only the work on the user's plate. The board grouped by state is the exception. There, archived items within the done window stay in their done state's column, and that column's header has View archive. That board has no Done shelf.
+- Two shelves end the page, after every group and swimlane. The Settled shelf holds every settled item, latest settled first. "Show settled items" off hides it with its items. The Done shelf holds the archived items within the done window, latest archived first: "Done in the past week" with Past week, "Done" with All.
+- Both list their items as list rows, on the board too. Each starts closed. Its header shows the count; its title opens and closes it, and the device remembers which, per shelf. The Settled shelf hides while it is empty. The Done shelf stays while any item is archived, even with none in the window, so View archive stays in reach; open and empty, it says "No items".
+- Shelf rows select, peek and open like other rows, and carry the same actions. They don't drag or reorder.
+
 ### Archive
 
-- Archived items older than the done window live in Archive, from the header's "…" menu: the list layout filtered to archived items, including items archived because they dropped out of the sync. Restore puts an item back in its state's column.
+- Archive is the page under the State filter's Archived value, in the current layout. It lists every archived item, including items older than the done window and items archived because they dropped out of the sync. "View archive" on the Done shelf's header, or on a done column's header on the board, opens it and clears every other filter, so nothing hides an archived item. Removing the State chip goes back to open work. The archive has no shelves, and its items stay in their groups. Restore puts an item back in its state's column.
 
 ### Keyboard
 

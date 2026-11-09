@@ -1871,6 +1871,104 @@ Then(
     await expect(page.locator('[data-work-item-id="missing"]')).toBeVisible();
   },
 );
+Then(
+  "the other item has left its priority group for the closed Done shelf",
+  async ({ page }) => {
+    const shelf = page.getByRole("region", { name: "Done in the past week" });
+    await expect(
+      shelf.getByRole("button", { name: /Done in the past week/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(shelf.locator(".backlog-group-count")).toHaveText("1");
+    await expect(page.locator('[data-work-item-id="other"]')).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Medium" })).toHaveCount(0);
+  },
+);
+When("I open the Done shelf", async ({ page }) => {
+  await page.getByRole("button", { name: /Done in the past week/ }).click();
+});
+Then("the Done shelf shows the other item", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "Done in the past week" })
+      .locator('[data-work-item-id="other"]'),
+  ).toBeVisible();
+});
+Then("the Done shelf shows no items but stays", async ({ page }) => {
+  const shelf = page.getByRole("region", { name: "Done in the past week" });
+  await expect(shelf.locator(".backlog-group-count")).toHaveText("0");
+  await shelf.getByRole("button", { name: /Done in the past week/ }).click();
+  await expect(shelf).toContainText("No items");
+});
+Then("the Backlog has no Priority filter", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Edit Priority filter" }),
+  ).toHaveCount(0);
+});
+When("I view the archive from the Done shelf", async ({ page }) => {
+  await page.getByRole("button", { name: "View archive", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit State filter" }),
+  ).toHaveText("StateArchived");
+});
+Then(
+  "the other item is in the Done column, with no Done shelf",
+  async ({ page }) => {
+    const done = page.locator(".backlog-board-column", {
+      has: page.getByRole("heading", { name: "Done", exact: true }),
+    });
+    await expect(done.locator('[data-work-item-id="other"]')).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Done in the past week" }),
+    ).toHaveCount(0);
+  },
+);
+When("I view the archive from the Done column", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Done", exact: true })
+    .getByRole("button", { name: "View archive", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Edit State filter" }),
+  ).toHaveText("StateArchived");
+});
+Given("the other Backlog item is settled", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    Object.assign(
+      state.workItems.find((item: { _id: string }) => item._id === "other"),
+      { status: "settled", settledAt: Date.now() },
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+Then(
+  "the other item has left its group for the closed Settled shelf",
+  async ({ page }) => {
+    const shelf = page.getByRole("region", { name: "Settled" });
+    await expect(
+      shelf.getByRole("button", { name: /^Settled/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(shelf.locator(".backlog-group-count")).toHaveText("1");
+    await expect(
+      page.locator('.backlog-list-row[data-work-item-id="other"]'),
+    ).toHaveCount(0);
+  },
+);
+When("I open the Settled shelf", async ({ page }) => {
+  // The sidebar has a Settled section too, so look inside the shelf.
+  await page
+    .getByRole("region", { name: "Settled" })
+    .getByRole("button", { name: /^Settled/ })
+    .click();
+});
+Then("the Settled shelf shows the other item", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "Settled" })
+      .locator('.backlog-list-row[data-work-item-id="other"]'),
+  ).toBeVisible();
+});
 When("I restore the old done item", async ({ page }) => {
   const oldRow = page.locator('[data-work-item-id="old"]');
   await oldRow.hover();
@@ -2807,6 +2905,11 @@ When(
       localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
     });
     await page.reload();
+    // A settled item waits on the Settled shelf, closed by default.
+    await page
+      .getByRole("region", { name: "Settled" })
+      .getByRole("button", { name: /^Settled/ })
+      .click();
     await expect(
       page.locator('.backlog-list-row[data-work-item-id="parent"]'),
     ).toBeVisible();

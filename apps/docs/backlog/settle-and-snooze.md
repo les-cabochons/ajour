@@ -12,7 +12,7 @@ When you settle or snooze the item whose page is open, Ajour opens the next item
 Press **Settle** on the item, or focus it and press <kbd>E</kbd>.
 
 - A **manual** item is archived.
-- A **synced** item becomes **settled**. It leaves your plate but stays in the backlog, in the sidebar's **Settled** section.
+- A **synced** item becomes **settled**. It leaves your plate but stays in the backlog, in the sidebar's **Settled** section and on the Backlog page's **Settled** shelf.
 
 Settling a synced item can also write a change to its source, such as moving the Azure DevOps work item to `Resolved` or lowering its priority. By default, **Settle** on a synced item opens the settle dialog so you can choose. Leave a field as it is to write nothing for it.
 

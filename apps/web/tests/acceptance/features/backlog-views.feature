@@ -353,6 +353,39 @@ Feature: Backlog list and board views
     When I restore the old done item
     Then the old done item is active in To do
 
+  Scenario: Done items wait on a closed shelf under the priority groups
+    When I group the Backlog by "Priority"
+    And I press "Alt+ArrowRight" on the other Backlog row
+    Then the other item has left its priority group for the closed Done shelf
+    When I open the Done shelf
+    Then the Done shelf shows the other item
+    When I reload the app
+    Then the Done shelf shows the other item
+    When I view the archive from the Done shelf
+    Then the Backlog shows the old done and missing sync items
+
+  Scenario: View archive stays in reach with nothing done this week, and clears other filters
+    When I filter the Backlog to Urgent
+    Then the Done shelf shows no items but stays
+    When I view the archive from the Done shelf
+    Then the Backlog has no Priority filter
+    And the Backlog shows the old done and missing sync items
+
+  Scenario: On the board, the Done column holds the past week and leads to the archive
+    When I choose the Backlog board
+    And I press "Alt+ArrowRight" on the other Backlog row
+    Then the other item is in the Done column, with no Done shelf
+    When I view the archive from the Done column
+    Then the Backlog shows the old done and missing sync items
+
+  Scenario: Settled items wait on their own closed shelf
+    Given the other Backlog item is settled
+    Then the other item has left its group for the closed Settled shelf
+    When I open the Settled shelf
+    Then the Settled shelf shows the other item
+    When I reload the app
+    Then the Settled shelf shows the other item
+
   Scenario: Use the priority key when the property is hidden
     When I hide the Backlog priority property
     And I set the parent priority to Low with its key

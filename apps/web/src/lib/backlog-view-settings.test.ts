@@ -27,3 +27,15 @@ it("validates stored fields independently and keeps valid filters", () => {
     filters: [{ field: "connection", value: "c" }],
   });
 });
+it.each(["settledShelfOpen", "doneShelfOpen"] as const)(
+  "keeps %s false unless this device opened the shelf",
+  (key) => {
+    expect(parseBacklogViewPreferences(null)[key]).toBe(false);
+    expect(
+      parseBacklogViewPreferences(JSON.stringify({ [key]: "yes" }))[key],
+    ).toBe(false);
+    expect(
+      parseBacklogViewPreferences(JSON.stringify({ [key]: true }))[key],
+    ).toBe(true);
+  },
+);

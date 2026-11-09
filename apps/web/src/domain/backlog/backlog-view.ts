@@ -151,6 +151,14 @@ function matchesFilter(
   }
 }
 
+/** Whether the State filter asks for archived items, which makes the page the archive. */
+export function showsArchiveFilter(filters: readonly BacklogFilter[]) {
+  return filters.some(
+    (filter) =>
+      filter.field === "state" && filter.value === ARCHIVED_STATE_FILTER,
+  );
+}
+
 /**
  * The items the page shows. Archived items show only in a done state and
  * within the done window, unless the Archived state filter asks for all of
@@ -180,9 +188,7 @@ export function selectBacklogViewItems(
     ]);
   }
 
-  const showsArchive = filtersByField
-    .get("state")
-    ?.some((filter) => filter.value === ARCHIVED_STATE_FILTER);
+  const showsArchive = showsArchiveFilter(filters);
 
   return state.workItems.filter((workItem) => {
     if (workItem.status === "archived" && !showsArchive) {
@@ -220,6 +226,44 @@ export function selectBacklogViewItems(
     }
     return true;
   });
+}
+
+/**
+ * Splits the shown items between the groups and the two shelves below them.
+ * Settled items leave their group for the Settled shelf, latest settled
+ * first, and archived items for the Done shelf, latest archived first, so the
+ * groups hold only the work on the user's plate in every grouping. With
+ * `doneInGroups`, as on the board grouped by state, archived items stay in
+ * their done state's column instead and the Done shelf is empty. Under the
+ * Archived state filter the page is the archive, so the groups keep every
+ * item and both shelves are empty. "Shelves" under "Backlog" in
+ * docs/agents/ux-spec.md.
+ */
+export function splitBacklogShelves(
+  items: readonly LocalWorkItem[],
+  filters: readonly BacklogFilter[],
+  { doneInGroups = false }: { doneInGroups?: boolean } = {},
+): {
+  /** The items that stay in the groups and columns. */
+  grouped: LocalWorkItem[];
+  settled: LocalWorkItem[];
+  done: LocalWorkItem[];
+} {
+  if (showsArchiveFilter(filters))
+    return { grouped: [...items], settled: [], done: [] };
+  const grouped: LocalWorkItem[] = [];
+  const settled: LocalWorkItem[] = [];
+  const done: LocalWorkItem[] = [];
+  for (const workItem of items) {
+    if (workItem.status === "archived")
+      (doneInGroups ? grouped : done).push(workItem);
+    else if (workItem.status === "settled") settled.push(workItem);
+    else grouped.push(workItem);
+  }
+  // Array.prototype.sort is stable, so equal dates keep the page's order.
+  settled.sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0));
+  done.sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0));
+  return { grouped, settled, done };
 }
 
 /** Orders items by the persisted ordering. Ties keep the custom order. */

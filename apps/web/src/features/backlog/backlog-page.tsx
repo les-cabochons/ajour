@@ -55,6 +55,7 @@ import {
   BacklogFilters,
   BacklogLayoutToggle,
 } from "@/features/backlog/backlog-display";
+import { BacklogShelf } from "@/features/backlog/backlog-shelf";
 import { BacklogPeek } from "@/features/backlog/backlog-peek";
 import {
   captureReturnNotice,
@@ -77,10 +78,13 @@ import {
   useBacklogDrag,
 } from "@/features/backlog/use-backlog-drag";
 import {
+  ARCHIVED_STATE_FILTER,
   groupBacklogItems,
   isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
+  showsArchiveFilter,
+  splitBacklogShelves,
   type BacklogGroup,
 } from "@/domain/backlog/backlog-view";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
@@ -91,7 +95,7 @@ import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { withEventAttribution } from "@/lib/wide-events";
-import { useBacklogView } from "@/lib/backlog-view-settings";
+import { updateBacklogView, useBacklogView } from "@/lib/backlog-view-settings";
 import { useNow } from "@/lib/use-now";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useActionRequest } from "@/lib/action-request";
@@ -174,12 +178,43 @@ export function BacklogPage() {
       ),
     [state, view, now, search],
   );
+  // Settled and archived items leave their groups for the shelves, so the
+  // groups show only the work on the user's plate. On the board grouped by
+  // state, the done columns keep the done window's items instead, and their
+  // headers lead to the archive.
+  const doneInColumns = board && grouping === "state";
+  const shelf = useMemo(
+    () =>
+      splitBacklogShelves(items, view.filters, {
+        doneInGroups: doneInColumns,
+      }),
+    [items, view.filters, doneInColumns],
+  );
+  const inArchive = showsArchiveFilter(view.filters);
+  // The Done shelf stays while anything is archived, even with nothing done
+  // in the window, so View archive stays in reach. The state board's done
+  // columns carry View archive instead, and None hides the shelf.
+  const showsDoneShelf =
+    !inArchive &&
+    !doneInColumns &&
+    view.doneWindow !== "none" &&
+    (shelf.done.length > 0 ||
+      state.workItems.some((item) => item.status === "archived"));
   const lanes = useMemo(
     () =>
       board && view.swimlanes === "project" && grouping !== "project"
-        ? groupBacklogItems(state, items, "project", { keepEmpty: false })
-        : [{ kind: "all" as const, key: "workspace", label: "", items }],
-    [state, items, board, view.swimlanes, grouping],
+        ? groupBacklogItems(state, shelf.grouped, "project", {
+            keepEmpty: false,
+          })
+        : [
+            {
+              kind: "all" as const,
+              key: "workspace",
+              label: "",
+              items: shelf.grouped,
+            },
+          ],
+    [state, shelf.grouped, board, view.swimlanes, grouping],
   );
   const groupsByLane = lanes.map((lane) => ({
     lane,
@@ -187,15 +222,19 @@ export function BacklogPage() {
       keepEmpty: board,
     }),
   }));
-  const shownItemIds = groupsByLane.flatMap(({ lane, groups }) =>
-    collapsed.has(lane.key)
-      ? []
-      : groups.flatMap((group) =>
-          collapsed.has(`${lane.key}/${group.key}`)
-            ? []
-            : group.items.map((item) => item._id),
-        ),
-  );
+  const shownItemIds = [
+    ...groupsByLane.flatMap(({ lane, groups }) =>
+      collapsed.has(lane.key)
+        ? []
+        : groups.flatMap((group) =>
+            collapsed.has(`${lane.key}/${group.key}`)
+              ? []
+              : group.items.map((item) => item._id),
+          ),
+    ),
+    ...(view.settledShelfOpen ? shelf.settled.map((item) => item._id) : []),
+    ...(view.doneShelfOpen ? shelf.done.map((item) => item._id) : []),
+  ];
   const targets = groupsByLane.flatMap(({ lane, groups }) =>
     collapsed.has(lane.key) || !canUseProjectGroup(lane, state)
       ? []
@@ -577,9 +616,10 @@ export function BacklogPage() {
     );
     if (enabled) action(item, enabled.id);
   });
+  /** `group` is null on a shelf, whose rows don't reorder. */
   async function itemKeys(
     item: LocalWorkItem,
-    group: BacklogGroup,
+    group: BacklogGroup | null,
     e: React.KeyboardEvent<HTMLElement>,
   ) {
     if (
@@ -648,9 +688,10 @@ export function BacklogPage() {
         id === "open"
           ? openPage(item)
           : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
-      onReorder: canReorderItem(item._id, item._id)
-        ? (step) => reorder(item._id, group, step)
-        : undefined,
+      onReorder:
+        group && canReorderItem(item._id, item._id)
+          ? (step) => reorder(item._id, group, step)
+          : undefined,
     });
   }
   function editorForm(titleAs?: typeof DialogTitle) {
@@ -755,6 +796,68 @@ export function BacklogPage() {
         </span>
       </SettingsLink>
     ) : null;
+  /**
+   * One row or card. `place` is its group on the page; a shelf row has
+   * none, so it is a list row that neither drags nor reorders.
+   */
+  function renderRow(
+    item: LocalWorkItem,
+    place: { group: BacklogGroup; key: string; column: number } | null,
+  ) {
+    const asCard = board && place !== null;
+    return (
+      <div
+        key={item._id}
+        ref={(el) => {
+          if (el) drag.rowRefs.current.set(item._id, el);
+          else drag.rowRefs.current.delete(item._id);
+        }}
+        className={cn(
+          drag.drag?.itemId === item._id && "opacity-30",
+          dropMark?.itemId === item._id &&
+            (dropMark.edge === "before"
+              ? "backlog-drop-before"
+              : "backlog-drop-after"),
+        )}
+      >
+        <BacklogItemSurface
+          alwaysLive={narrow}
+          item={item}
+          state={state}
+          view={view}
+          icons={icons}
+          board={asCard}
+          column={asCard ? place.column : 0}
+          now={now}
+          selected={item._id === peekId || selection.ids.includes(item._id)}
+          selectionMenu={selectionMenuFor(item)}
+          beforeChange={async () => {
+            if (!(await leaveDraft())) return false;
+            closeEditor();
+            return true;
+          }}
+          onSelect={(event) => void select(item, event)}
+          onOpen={() => openPage(item)}
+          onAction={(id) => action(item, id)}
+          onKeyDown={(e) => itemKeys(item, place?.group ?? null, e)}
+          onPointerDown={
+            place && drag.canDrag(item._id, place.key)
+              ? (e) => drag.pointerDown(item._id, place.key, e)
+              : undefined
+          }
+        />
+      </div>
+    );
+  }
+  /**
+   * The archive is the page under the State filter's Archived value. View
+   * archive clears every other filter, so it shows every archived item.
+   */
+  function openArchive() {
+    updateBacklogView({
+      filters: [{ field: "state", value: ARCHIVED_STATE_FILTER }],
+    });
+  }
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
   return (
     <div
@@ -911,6 +1014,18 @@ export function BacklogPage() {
                             <span className="backlog-group-count">
                               {group.items.length}
                             </span>
+                            {doneInColumns &&
+                              !inArchive &&
+                              group.kind === "state" &&
+                              group.done && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={openArchive}
+                                >
+                                  View archive
+                                </Button>
+                              )}
                             {!(group.kind === "state" && group.done) &&
                               canUseProjectGroup(group, state) &&
                               canUseProjectGroup(lane, state) && (
@@ -930,52 +1045,9 @@ export function BacklogPage() {
                           role="list"
                           className={board ? "backlog-column-items" : ""}
                         >
-                          {group.items.map((item) => (
-                            <div
-                              key={item._id}
-                              ref={(el) => {
-                                if (el) drag.rowRefs.current.set(item._id, el);
-                                else drag.rowRefs.current.delete(item._id);
-                              }}
-                              className={cn(
-                                drag.drag?.itemId === item._id && "opacity-30",
-                                dropMark?.itemId === item._id &&
-                                  (dropMark.edge === "before"
-                                    ? "backlog-drop-before"
-                                    : "backlog-drop-after"),
-                              )}
-                            >
-                              <BacklogItemSurface
-                                alwaysLive={narrow}
-                                item={item}
-                                state={state}
-                                view={view}
-                                icons={icons}
-                                board={board}
-                                column={board ? column : 0}
-                                now={now}
-                                selected={
-                                  item._id === peekId ||
-                                  selection.ids.includes(item._id)
-                                }
-                                selectionMenu={selectionMenuFor(item)}
-                                beforeChange={async () => {
-                                  if (!(await leaveDraft())) return false;
-                                  closeEditor();
-                                  return true;
-                                }}
-                                onSelect={(event) => void select(item, event)}
-                                onOpen={() => openPage(item)}
-                                onAction={(id) => action(item, id)}
-                                onKeyDown={(e) => itemKeys(item, group, e)}
-                                onPointerDown={
-                                  drag.canDrag(item._id, key)
-                                    ? (e) => drag.pointerDown(item._id, key, e)
-                                    : undefined
-                                }
-                              />
-                            </div>
-                          ))}
+                          {group.items.map((item) =>
+                            renderRow(item, { group, key, column }),
+                          )}
                           {board && group.items.length === 0 && (
                             <p className="backlog-column-empty">No items</p>
                           )}
@@ -1001,6 +1073,39 @@ export function BacklogPage() {
               )}
             </section>
           ))}
+          {shelf.settled.length > 0 && (
+            <BacklogShelf
+              label="Settled"
+              count={shelf.settled.length}
+              open={view.settledShelfOpen}
+              onToggle={() =>
+                updateBacklogView({
+                  settledShelfOpen: !view.settledShelfOpen,
+                })
+              }
+            >
+              {shelf.settled.map((item) => renderRow(item, null))}
+            </BacklogShelf>
+          )}
+          {showsDoneShelf && (
+            <BacklogShelf
+              label={
+                view.doneWindow === "week" ? "Done in the past week" : "Done"
+              }
+              count={shelf.done.length}
+              open={view.doneShelfOpen}
+              onToggle={() =>
+                updateBacklogView({ doneShelfOpen: !view.doneShelfOpen })
+              }
+              action={
+                <Button variant="ghost" size="sm" onClick={openArchive}>
+                  View archive
+                </Button>
+              }
+            >
+              {shelf.done.map((item) => renderRow(item, null))}
+            </BacklogShelf>
+          )}
         </div>
       </div>
       {/* The peek reads an item beside the list; editing and creating open
