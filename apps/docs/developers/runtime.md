@@ -32,9 +32,11 @@ package. That dataset version does not change with the plugin runtime API.
 
 Ajour admits four calls per plugin, with a 30 second timeout and an 8 MiB
 result limit. Through the broker, a plugin can send 60 requests at once, then
-10 a second, with 6 in flight. A request over that rate waits for its turn.
-A request whose turn would come after its own 20 second timeout fails at once
-with "The plugin sent too many requests". Each waiting request counts against
+10 a second, with 6 in flight. A request over that rate waits in line for its
+turn. A request whose turn would come after its own 20 second timeout fails at
+once with "The plugin sent too many requests". At most 64 requests wait for the
+rate, and 64 more for a slot; past that a request fails at once with "The
+plugin sent too many requests at once". Each waiting request counts against
 the call's 30 seconds, so a call that needs hundreds of requests should send
 fewer. A renderer defaults to a 256 MB memory ceiling. Three crashes,
 timeouts or memory kills in ten minutes suspend it. Load when needed closes

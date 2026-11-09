@@ -1,6 +1,7 @@
 /**
- * The credential broker's limits on one plugin: its rate, a token bucket,
- * and its requests in flight, with those waiting for a slot. The limits
+ * The credential broker's limits on one plugin: its rate, a token bucket
+ * with the requests waiting for it, and its requests in flight, with those
+ * waiting for a slot. The limits
  * themselves are `BROKER_LIMITS` (`broker-port.ts`).
  */
 
@@ -12,17 +13,26 @@ export function abortError(signal: AbortSignal) {
     : new DOMException("The operation was aborted.", "AbortError");
 }
 
+/** A request waiting for its rate: woken when its token is ready. */
+interface RateWaiter {
+  wake(): void;
+}
+
 /**
- * A plugin's rate: a token bucket. A request past the burst waits for its
- * token to refill instead of failing, so a sync that sends many requests
- * slows down to the rate rather than stopping at the first one over it.
+ * A plugin's rate: a token bucket. A request past the burst waits in line
+ * for its token instead of failing, so a sync that sends many requests slows
+ * down to the rate rather than stopping at the first one over it. The line
+ * is first come, first served, and one timer wakes its head when a token
+ * refills. A request that leaves the line, aborted, frees its turn for the
+ * ones behind it.
  */
 export class RateBucket {
   private readonly limits: BrokerLimits;
   private readonly now: () => number;
-  /** Below zero while requests wait: one token owed per waiting request. */
   private tokens: number;
   private updatedAt: number;
+  private readonly waiting: RateWaiter[] = [];
+  private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(limits: BrokerLimits, now: () => number) {
     this.limits = limits;
@@ -32,18 +42,31 @@ export class RateBucket {
   }
 
   /**
-   * Takes a token, waiting until it refills when none is left. A request
-   * whose turn would come only after its own timeout (`timeoutMs`) is
-   * refused at once, and a request aborted while it waits rejects with its
-   * signal's reason. Both give their token back.
+   * Takes a token, waiting in line when none is left or others wait. It is
+   * refused at once, charged nothing, when the line already holds
+   * `queuedPerPlugin` requests or when its turn would come only after its
+   * own timeout (`timeoutMs`). Aborted before or while it waits, it rejects
+   * with its signal's reason.
    */
   async take(signal: AbortSignal): Promise<void> {
+    if (signal.aborted) throw abortError(signal);
     this.refill();
-    this.tokens -= 1;
-    if (this.tokens >= 0) return;
-    const waitMs = (-this.tokens / this.limits.ratePerSecond) * 1000;
-    if (waitMs >= this.limits.timeoutMs) {
-      this.giveBack();
+    if (this.waiting.length === 0 && this.tokens >= 1) {
+      this.tokens -= 1;
+      return;
+    }
+    if (this.waiting.length >= this.limits.queuedPerPlugin) {
+      throw new BrokerRequestError(
+        "limit",
+        "too_many_queued",
+        "The plugin sent too many requests at once.",
+      );
+    }
+    // The tokens this request needs: one for each request ahead, and its own.
+    const turnMs =
+      ((this.waiting.length + 1 - this.tokens) / this.limits.ratePerSecond) *
+      1000;
+    if (turnMs >= this.limits.timeoutMs) {
       throw new BrokerRequestError(
         "limit",
         "rate_limited",
@@ -51,22 +74,36 @@ export class RateBucket {
       );
     }
     await new Promise<void>((resolve, reject) => {
+      const waiter: RateWaiter = {
+        wake: () => {
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        },
+      };
       const onAbort = () => {
-        clearTimeout(timer);
-        this.giveBack();
+        const index = this.waiting.indexOf(waiter);
+        if (index !== -1) this.waiting.splice(index, 1);
+        this.schedule();
         reject(abortError(signal));
       };
-      const timer = setTimeout(() => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      }, waitMs);
       signal.addEventListener("abort", onAbort, { once: true });
+      this.waiting.push(waiter);
+      this.schedule();
     });
   }
 
-  private giveBack() {
+  /** Wakes the waiters whose tokens are ready, then times the next one. */
+  private schedule() {
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = undefined;
     this.refill();
-    this.tokens = Math.min(this.limits.rateBurst, this.tokens + 1);
+    while (this.waiting.length > 0 && this.tokens >= 1) {
+      this.tokens -= 1;
+      this.waiting.shift()!.wake();
+    }
+    if (this.waiting.length === 0) return;
+    const nextMs = ((1 - this.tokens) / this.limits.ratePerSecond) * 1000;
+    this.timer = setTimeout(() => this.schedule(), nextMs);
   }
 
   private refill() {
@@ -90,6 +127,9 @@ export class Slots {
   }
 
   async acquire(signal: AbortSignal): Promise<() => void> {
+    // A signal aborted before this call never fires its abort event again,
+    // so a waiter would miss it.
+    if (signal.aborted) throw abortError(signal);
     if (this.running >= this.limits.concurrentPerPlugin) {
       if (this.waiting.length >= this.limits.queuedPerPlugin) {
         throw new BrokerRequestError(
@@ -113,8 +153,6 @@ export class Slots {
         signal.addEventListener("abort", onAbort, { once: true });
         this.waiting.push(wake);
       });
-    } else if (signal.aborted) {
-      throw abortError(signal);
     } else {
       this.running += 1;
     }

@@ -1,5 +1,5 @@
 import os from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   pluginApi4ManifestSchema,
   type PluginApi4Manifest,
@@ -1860,7 +1860,7 @@ describe("the credential broker", () => {
       );
     });
 
-    it("refuses at once a request whose turn would come after its own timeout, and gives its token back", async () => {
+    it("refuses at once a request whose turn would come after its own timeout, and charges it nothing", async () => {
       let now = 1_000_000;
       const { operation, sent } = setup({
         limits: { rateBurst: 1, ratePerSecond: 1, timeoutMs: 500 },
@@ -1879,7 +1879,7 @@ describe("the credential broker", () => {
       expect(sent).toHaveLength(2);
     });
 
-    it("gives back the token of a request aborted while it waits for the rate", async () => {
+    it("lets a request aborted while it waits leave the line, so the next one doesn't wait for it", async () => {
       let now = 1_000_000;
       const { operation } = setup({
         limits: { rateBurst: 1, ratePerSecond: 1, timeoutMs: 5000 },
@@ -1892,18 +1892,79 @@ describe("the credential broker", () => {
       const waiting = broker
         .http({ ...request, signal: controller.signal })
         .catch((thrown: unknown) => thrown);
+      // Let it reach the line before it leaves.
+      await new Promise((resolve) => setTimeout(resolve, 20));
       controller.abort();
       now += 1000;
       const next = broker.http(request).then(() => "sent");
 
       expect(await waiting).toMatchObject({ name: "AbortError" });
-      // Without the aborted request's token back, this one would wait 1 s.
+      // Had the aborted request kept its turn, this one would wait 1 s.
       expect(
         await Promise.race([
           next,
           new Promise((resolve) => setTimeout(resolve, 200, "waiting")),
         ]),
       ).toBe("sent");
+    });
+
+    it("serves the line in order, one token apart, when a request in it is aborted", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      try {
+        const sentAt: number[] = [];
+        const { operation } = setup({
+          limits: { rateBurst: 1, ratePerSecond: 1, timeoutMs: 10_000 },
+          respond: () => {
+            sentAt.push(Date.now());
+            return { status: 200 };
+          },
+        });
+        const broker = operation();
+        const startedAt = Date.now();
+        const aborted = new AbortController();
+
+        await broker.http(request);
+        const first = broker
+          .http({ ...request, signal: aborted.signal })
+          .catch((thrown: unknown) => thrown);
+        const second = broker.http(request);
+        await vi.advanceTimersByTimeAsync(0);
+        aborted.abort();
+        const third = broker.http(request);
+        await vi.advanceTimersByTimeAsync(3000);
+        await Promise.all([first, second, third]);
+
+        // The second takes the aborted one's turn at 1 s, the third the next at 2 s.
+        expect(sentAt.map((at) => at - startedAt)).toEqual([0, 1000, 2000]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("refuses a request when the plugin's line for the rate is full", async () => {
+      const { operation, sent } = setup({
+        limits: {
+          rateBurst: 1,
+          ratePerSecond: 1,
+          timeoutMs: 10_000,
+          queuedPerPlugin: 1,
+        },
+        now: () => 1_000_000,
+      });
+      const broker = operation();
+
+      await broker.http(request);
+      const waiting = broker.http(request).catch((thrown: unknown) => thrown);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const overflow = await refusal(broker.http(request));
+      broker.close();
+
+      expect(overflow).toMatchObject({
+        code: "limit",
+        reason: "too_many_queued",
+      });
+      expect(await waiting).toMatchObject({ reason: "operation_ended" });
+      expect(sent).toHaveLength(1);
     });
 
     it("keeps a plugin to its requests in flight, queues the rest, and refuses past the queue", async () => {
@@ -1942,6 +2003,34 @@ describe("the credential broker", () => {
         reason: "too_many_queued",
       });
       expect(most).toBe(2);
+    });
+
+    it("ends at once a request whose operation closes before it reaches a full slot queue", async () => {
+      const { operation } = setup({
+        limits: { concurrentPerPlugin: 1 },
+        respond: (sentRequest) =>
+          new Promise((_, reject) =>
+            sentRequest.signal.addEventListener("abort", () =>
+              reject(new Error("aborted")),
+            ),
+          ),
+      });
+      const holder = operation();
+      const holding = holder.http(request).catch((thrown: unknown) => thrown);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const closing = operation();
+      const ended = closing.http(request).catch((thrown: unknown) => thrown);
+      closing.close();
+
+      expect(
+        await Promise.race([
+          ended,
+          new Promise((resolve) => setTimeout(resolve, 200, "still waiting")),
+        ]),
+      ).toMatchObject({ reason: "operation_ended" });
+      holder.close();
+      await holding;
     });
 
     it("drops an answer it can't check for secrets", async () => {

@@ -231,7 +231,11 @@ export interface BrokerLimits {
   timeoutMs: number;
   /** A plugin's requests in flight at once. */
   concurrentPerPlugin: number;
-  /** A plugin's requests waiting for a slot. More are refused. */
+  /**
+   * A plugin's requests waiting for its rate, and apart from them those
+   * waiting for a slot: each line holds this many, and more are refused.
+   * With the 4 MB bodies, this bounds what one plugin keeps in memory.
+   */
   queuedPerPlugin: number;
   /** A plugin's sustained requests per second. Requests over it wait, up to `timeoutMs`. */
   ratePerSecond: number;
