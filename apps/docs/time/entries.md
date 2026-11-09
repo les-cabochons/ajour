@@ -2,7 +2,7 @@
 
 A time entry is time spent on a task on one day, with an optional note. This page covers creating, editing and moving entries.
 
-<Shot name="time-new-entry" alt="The new entry popover" />
+<Shot name="time-new-entry" alt="The new entry in the side panel" />
 
 ## Create an entry
 

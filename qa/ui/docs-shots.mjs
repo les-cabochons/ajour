@@ -83,6 +83,16 @@ async function scrollToTop(locator) {
  * `seed` passes options to seed.mjs, and `api` replaces mocked API responses.
  * `keepPointer` leaves the mouse where `run` put it, for hover states.
  */
+/**
+ * The entry editor's form in the Time page's side panel. The panel runs the
+ * page's full height, so the shot crops to the form.
+ */
+function entryEditor(page) {
+  return page
+    .getByRole("complementary", { name: "Time entry editor" })
+    .locator(".time-entry-editor");
+}
+
 const shots = [
   // Time
   { name: "time-day", run: (page) => go(page, "/time/today") },
@@ -107,7 +117,7 @@ const shots = [
         .getByRole("button", { name: "Create time entry" })
         .first()
         .click();
-      return page.getByRole("dialog");
+      return entryEditor(page);
     },
   },
   {
@@ -125,7 +135,7 @@ const shots = [
       await page
         .getByRole("button", { name: "Edit the running entry" })
         .click();
-      return page.getByRole("dialog");
+      return entryEditor(page);
     },
   },
   {
@@ -342,8 +352,11 @@ const shots = [
     name: "settings-plugin-connection-form",
     run: async (page) => {
       await go(page, "/settings/plugins/azure_devops");
-      await page.getByRole("button", { name: "Edit" }).first().click();
-      await scrollToTop(page.getByText("Edit Azure DevOps connection"));
+      await page
+        .getByRole("button", { name: "Edit", exact: true })
+        .first()
+        .click();
+      await scrollToTop(page.getByRole("heading", { name: "Edit Contoso" }));
     },
   },
   // Anywhere
