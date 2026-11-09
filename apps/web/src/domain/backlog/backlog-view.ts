@@ -151,7 +151,7 @@ function matchesFilter(
   }
 }
 
-/** Whether the State filter asks for archived items: the page is the archive. */
+/** Whether the State filter asks for archived items, which makes the page the archive. */
 export function showsArchiveFilter(filters: readonly BacklogFilter[]) {
   return filters.some(
     (filter) =>
@@ -235,30 +235,35 @@ export function selectBacklogViewItems(
  * groups hold only the work on the user's plate in every grouping. With
  * `doneInGroups`, as on the board grouped by state, archived items stay in
  * their done state's column instead and the Done shelf is empty. Under the
- * Archived state filter the page is the archive: the groups keep every item
- * and both shelves are empty. "Shelves" under "Backlog" in
+ * Archived state filter the page is the archive, so the groups keep every
+ * item and both shelves are empty. "Shelves" under "Backlog" in
  * docs/agents/ux-spec.md.
  */
 export function splitBacklogShelves(
   items: readonly LocalWorkItem[],
   filters: readonly BacklogFilter[],
   { doneInGroups = false }: { doneInGroups?: boolean } = {},
-): { open: LocalWorkItem[]; settled: LocalWorkItem[]; done: LocalWorkItem[] } {
+): {
+  /** The items that stay in the groups and columns. */
+  grouped: LocalWorkItem[];
+  settled: LocalWorkItem[];
+  done: LocalWorkItem[];
+} {
   if (showsArchiveFilter(filters))
-    return { open: [...items], settled: [], done: [] };
-  const open: LocalWorkItem[] = [];
+    return { grouped: [...items], settled: [], done: [] };
+  const grouped: LocalWorkItem[] = [];
   const settled: LocalWorkItem[] = [];
   const done: LocalWorkItem[] = [];
   for (const workItem of items) {
     if (workItem.status === "archived")
-      (doneInGroups ? open : done).push(workItem);
+      (doneInGroups ? grouped : done).push(workItem);
     else if (workItem.status === "settled") settled.push(workItem);
-    else open.push(workItem);
+    else grouped.push(workItem);
   }
   // Array.prototype.sort is stable, so equal dates keep the page's order.
   settled.sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0));
   done.sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0));
-  return { open, settled, done };
+  return { grouped, settled, done };
 }
 
 /** Orders items by the persisted ordering. Ties keep the custom order. */

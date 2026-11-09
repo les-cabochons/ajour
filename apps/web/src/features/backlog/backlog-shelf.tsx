@@ -4,7 +4,7 @@ import { RiArrowDownSLine, RiArrowRightSLine } from "@remixicon/react";
 /**
  * A shelf at the end of the Backlog page: the Settled shelf or the Done
  * shelf, which hold the items off the user's plate so the groups show only
- * the work on it. Closed by default. Its header counts the items and can end
+ * the work on it. Closed by default. Open and empty, it says so. Its header counts the items and can end
  * with an action, such as View archive. "Shelves" under "Backlog" in
  * docs/agents/ux-spec.md.
  */
@@ -47,7 +47,12 @@ export function BacklogShelf({
         </h2>
         {action}
       </div>
-      {open && <div role="list">{children}</div>}
+      {open &&
+        (count > 0 ? (
+          <div role="list">{children}</div>
+        ) : (
+          <p className="backlog-shelf-empty">No items</p>
+        ))}
     </section>
   );
 }

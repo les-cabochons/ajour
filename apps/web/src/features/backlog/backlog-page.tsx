@@ -191,19 +191,30 @@ export function BacklogPage() {
     [items, view.filters, doneInColumns],
   );
   const inArchive = showsArchiveFilter(view.filters);
+  // The Done shelf stays while anything is archived, even with nothing done
+  // in the window, so View archive stays in reach. The state board's done
+  // columns carry View archive instead, and None hides the shelf.
+  const showsDoneShelf =
+    !inArchive &&
+    !doneInColumns &&
+    view.doneWindow !== "none" &&
+    (shelf.done.length > 0 ||
+      state.workItems.some((item) => item.status === "archived"));
   const lanes = useMemo(
     () =>
       board && view.swimlanes === "project" && grouping !== "project"
-        ? groupBacklogItems(state, shelf.open, "project", { keepEmpty: false })
+        ? groupBacklogItems(state, shelf.grouped, "project", {
+            keepEmpty: false,
+          })
         : [
             {
               kind: "all" as const,
               key: "workspace",
               label: "",
-              items: shelf.open,
+              items: shelf.grouped,
             },
           ],
-    [state, shelf.open, board, view.swimlanes, grouping],
+    [state, shelf.grouped, board, view.swimlanes, grouping],
   );
   const groupsByLane = lanes.map((lane) => ({
     lane,
@@ -838,13 +849,13 @@ export function BacklogPage() {
       </div>
     );
   }
-  /** The archive is the list under the State filter's Archived value. */
+  /**
+   * The archive is the page under the State filter's Archived value. View
+   * archive clears every other filter, so it shows every archived item.
+   */
   function openArchive() {
     updateBacklogView({
-      filters: [
-        ...view.filters.filter((filter) => filter.field !== "state"),
-        { field: "state", value: ARCHIVED_STATE_FILTER },
-      ],
+      filters: [{ field: "state", value: ARCHIVED_STATE_FILTER }],
     });
   }
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
@@ -1076,7 +1087,7 @@ export function BacklogPage() {
               {shelf.settled.map((item) => renderRow(item, null))}
             </BacklogShelf>
           )}
-          {shelf.done.length > 0 && (
+          {showsDoneShelf && (
             <BacklogShelf
               label={
                 view.doneWindow === "week" ? "Done in the past week" : "Done"

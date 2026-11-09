@@ -1893,6 +1893,17 @@ Then("the Done shelf shows the other item", async ({ page }) => {
       .locator('[data-work-item-id="other"]'),
   ).toBeVisible();
 });
+Then("the Done shelf shows no items but stays", async ({ page }) => {
+  const shelf = page.getByRole("region", { name: "Done in the past week" });
+  await expect(shelf.locator(".backlog-group-count")).toHaveText("0");
+  await shelf.getByRole("button", { name: /Done in the past week/ }).click();
+  await expect(shelf).toContainText("No items");
+});
+Then("the Backlog has no Priority filter", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Edit Priority filter" }),
+  ).toHaveCount(0);
+});
 When("I view the archive from the Done shelf", async ({ page }) => {
   await page.getByRole("button", { name: "View archive", exact: true }).click();
   await expect(

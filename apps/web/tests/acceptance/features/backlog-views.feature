@@ -364,6 +364,13 @@ Feature: Backlog list and board views
     When I view the archive from the Done shelf
     Then the Backlog shows the old done and missing sync items
 
+  Scenario: View archive stays in reach with nothing done this week, and clears other filters
+    When I filter the Backlog to Urgent
+    Then the Done shelf shows no items but stays
+    When I view the archive from the Done shelf
+    Then the Backlog has no Priority filter
+    And the Backlog shows the old done and missing sync items
+
   Scenario: On the board, the Done column holds the past week and leads to the archive
     When I choose the Backlog board
     And I press "Alt+ArrowRight" on the other Backlog row

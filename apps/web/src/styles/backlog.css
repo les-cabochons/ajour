@@ -697,12 +697,22 @@
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
+  }
+
+  .backlog-shelf-toggle:focus-visible {
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 2px var(--focus-ring);
   }
 
   .backlog-shelf-toggle > svg {
     margin-left: -0.25rem;
     color: var(--text-secondary);
+  }
+
+  .backlog-shelf-empty {
+    padding: 0.5rem 0.75rem;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
   }
 
   /* Under the board, a shelf keeps the window's width while the columns
