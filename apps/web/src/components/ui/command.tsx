@@ -63,8 +63,14 @@ function CommandDialog({
   );
 }
 
+/**
+ * The search field. `children` sit at its end, inside the field, for a
+ * control that belongs to the search, such as the project picker's
+ * "No project" button.
+ */
 function CommandInput({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
@@ -81,6 +87,9 @@ function CommandInput({
         <InputGroupAddon>
           <RiSearchLine className="size-4 shrink-0 opacity-50" />
         </InputGroupAddon>
+        {children ? (
+          <InputGroupAddon align="inline-end">{children}</InputGroupAddon>
+        ) : null}
       </InputGroup>
     </div>
   );
