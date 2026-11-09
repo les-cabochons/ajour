@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { BacklogImportCandidate } from "@ajour/shared";
 import { BacklogPage } from "./backlog-page";
 import { localStore } from "@/lib/local-store";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
@@ -19,13 +20,36 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** A synced item whose number is not in its title, as a tracker's are. */
+function synced(externalId: string, title: string): BacklogImportCandidate {
+  return {
+    id: `candidate-${externalId}`,
+    source: "tracker",
+    connectionId: "work",
+    connectionLabel: "Work",
+    tenantLabel: "Tracker",
+    sourceId: `https://tracker.example/items/${externalId}`,
+    externalId,
+    title,
+    workItemType: "Task",
+    state: "Active",
+    depth: 0,
+    selectable: true,
+    selected: true,
+    childCount: 0,
+    pushedAt: 1,
+  };
+}
+
 // The store keeps the two rows for the whole file; each test opens the page anew.
 let seeded = false;
 async function renderBacklog() {
   if (!seeded) {
     seeded = true;
-    localStore.addWorkItem({ title: "Alpha gateway" });
-    localStore.addWorkItem({ title: "Beta gateway" });
+    localStore.importSyncedWorkItems([
+      synced("331150", "Alpha gateway"),
+      synced("332001", "Beta gateway"),
+    ]);
   }
   await renderRoutes({
     shell: ({ children }) => <ShortcutProvider>{children}</ShortcutProvider>,
@@ -35,13 +59,13 @@ async function renderBacklog() {
   await screen.findByText("Alpha gateway");
 }
 
-it("narrows the rows as the user types and brings them back on Escape", async () => {
+it("keeps only the item whose number starts with the typed digits, and brings every row back on Escape", async () => {
   await renderBacklog();
 
   fireEvent.click(screen.getByRole("button", { name: "Search the backlog" }));
   const box = screen.getByRole("searchbox", { name: "Search the backlog" });
   act(() => {
-    fireEvent.change(box, { target: { value: "alpha" } });
+    fireEvent.change(box, { target: { value: "3311" } });
   });
 
   expect(screen.getByText("Alpha gateway")).toBeTruthy();
