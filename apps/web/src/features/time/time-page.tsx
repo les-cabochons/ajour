@@ -25,6 +25,7 @@ import {
   type WeekGridCell,
 } from "@/features/time/week-grid";
 import { WeekGridCellPanel } from "@/features/time/week-grid-cell-panel";
+import { TimeEntryDayList } from "@/features/time/time-entry-day-list";
 import {
   useNewEntryPageHost,
   useRunningEntryPageHost,
@@ -543,6 +544,23 @@ export function TimePage({ date }: { date: string }) {
             onFieldsChange={keepEditorDraft}
             onClose={closeEditor}
             host="side_panel"
+            // Below 1160px the panel covers the Week's last days, often the
+            // one being edited, so it lists that day under the form.
+            renderBelow={
+              isWeekView
+                ? (draft) => (
+                    <TimeEntryDayList
+                      localDate={draft.localDate}
+                      current={{
+                        entryId: editingEntry?._id,
+                        timerId: editingTimer?._id,
+                      }}
+                      draftDurationMs={draft.durationMs}
+                      onOpen={(request) => openEditor(request)}
+                    />
+                  )
+                : undefined
+            }
           />
           {panelCell && editorTarget.kind !== "create" ? (
             <div className="weekly-grid-add-another">

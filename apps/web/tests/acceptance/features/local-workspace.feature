@@ -538,7 +538,7 @@ Feature: Open the local time workspace
   Scenario: Start a new entry that has no hours
     Given I have no saved Ajour workspace
     When I open a new entry from the titlebar on the Backlog page
-    Then Save waits for hours or Start
+    Then the entry's main button reads "Start"
     When I press Enter in Hours
     Then a running entry starts today with no time counted
 

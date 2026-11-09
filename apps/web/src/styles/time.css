@@ -27,9 +27,13 @@
 
   /* The Week view fills the content area, so the Days columns run to the
      bottom of the page even when a day has few cards. */
+  /* The Week's toolbar and side panel start right under the top bar, as the
+     Day view's strip and the Backlog's filter row do. With the page's top
+     padding, the panel started 20px down and read as a floating box. */
   .page-container:has(> .time-page-stack.is-week-view) {
     height: 100%;
     min-height: 0;
+    padding-top: 0;
     padding-bottom: 0;
   }
 
@@ -518,8 +522,97 @@
     }
   }
 
-  /* The entry editor follows the backlog peek: chips and the date under the
-     task heading. */
+  /* In the side panel the editor opens on a 28px row, as the backlog peek
+     does: the muted title, the status chip, then ⋯ and × at the end. */
+  .time-entry-editor-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 28px;
+  }
+
+  .time-entry-editor-title {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+
+  .time-entry-editor-bar > .composer-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+
+  /* The Week's day list under the entry editor: the form's date, its total,
+     then one 36px row per entry with its project's rail, in the Days order. */
+  .time-entry-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .time-entry-day-list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 36px;
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    border-left: var(--weekly-project-rail, 3px) solid
+      var(--rail, var(--border));
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+
+  /* Hover and the open entry match the Day page's rows. No box-shadow: the
+     panel scrolls, so focus is an outline. */
+  button.time-entry-day-list-row:hover {
+    background: var(--highlight-bg);
+  }
+
+  .time-entry-day-list-row:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  .time-entry-day-list-row.is-current {
+    background: var(--hover-bg);
+  }
+
+  /* A draft not saved on this day yet: a new entry, or one moved by its Date. */
+  .time-entry-day-list-row.is-draft {
+    border: 1px dashed var(--ring);
+    color: var(--text-secondary);
+  }
+
+  .time-entry-day-list-text {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .time-entry-day-list-text > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .time-entry-day-list-text > span {
+    font-size: var(--text-sm);
+  }
+
+  .time-entry-day-list-text > small {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  /* The status chip above the hours, in the popover and the dialog. */
   .time-entry-editor-meta {
     display: flex;
     flex-wrap: wrap;

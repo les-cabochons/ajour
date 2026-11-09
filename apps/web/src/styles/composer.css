@@ -688,7 +688,7 @@ body:has([data-slot="dialog-content"].composer-floating)
     padding-block: 6px;
   }
 
-  .composer-root > .composer-actions [data-slot="button"],
+  .composer-root .composer-actions [data-slot="button"],
   [data-slot="dialog-close"],
   .comment-action {
     min-width: 32px;

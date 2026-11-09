@@ -5,6 +5,7 @@ import {
   useState,
   type ElementType,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
 } from "react";
 import {
@@ -29,6 +30,7 @@ import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
   evaluateTimeEntryEditor,
+  getTimeEntryPrimaryAction,
   START_OR_ENTER_HOURS_HINT,
   type TimeEntryDraftCommitReason,
   type TimeEntryEditorFields,
@@ -130,13 +132,16 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * Hosts (the side panel, the dialog, the titlebar popovers) only supply the container,
  * so keys, buttons and save rules stay the same everywhere.
  *
- * Laid out like the backlog peek: the form's title, "…" and × on top, then the task
- * as a heading with status, project and date chips, then Start (which also stops another
- * running entry), Continue on a saved entry, or Stop on the running entry, the property rows
- * and the note. Footer: Cancel · Save. Save: the Save button, Enter in Hours or Note,
- * or Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press
- * Start. Escape, Cancel or × discard the draft. Save on the running entry keeps it
- * running. An entry of a submitted week opens read-only, with the lock under Date.
+ * A composer: the hours as the title, the note, then the project and date chips. The
+ * side panel opens it on a row with the title, the status, "…" and ×, as the backlog
+ * peek; the popover and the dialog put "…" and × in the corner and the status above
+ * the hours. Footer: Stop on the running entry, then Cancel and one main button
+ * (`getTimeEntryPrimaryAction`): Start or Create entry on a new entry, Continue or
+ * Save on a saved one, "Start today" when Start or Continue would count on another
+ * day than the form's. Start also stops another running entry. Enter in Hours or
+ * Note, and Cmd/Ctrl+Enter, press the main button. Escape, Cancel or × discard the
+ * draft. Save on the running entry keeps it running. An entry of a submitted week
+ * opens read-only, with the lock under Date.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
  * A host that can swap containers mid-edit (side panel and dialog across a
@@ -150,6 +155,7 @@ export function TimeEntryEditorForm({
   className,
   initialFields,
   onFieldsChange,
+  renderBelow,
   host,
 }: {
   target: TimeEntryEditorTarget;
@@ -160,6 +166,15 @@ export function TimeEntryEditorForm({
   initialFields?: TimeEntryEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: TimeEntryEditorFields) => void;
+  /**
+   * Host content under the footer that follows the draft's date and hours, such
+   * as the Week's day list. It renders with the form, so typing re-renders only
+   * the form, not the page.
+   */
+  renderBelow?: (draft: {
+    localDate: string;
+    durationMs: number | null;
+  }) => ReactNode;
   ref?: Ref<TimeEntryEditorFormHandle>;
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
@@ -212,15 +227,13 @@ export function TimeEntryEditorForm({
   const isAnotherEntryRunning = state.timers.some(
     (timer) => timer._id !== runningTimer?._id,
   );
-  // The header names the draft's task and project, so it follows the picker.
-  const selectedProject = projects.find(
-    (project) => project._id === fields.projectId,
-  );
-  const selectedTask = selectedProject?.tasks.find(
-    (task) => task._id === fields.taskId,
-  );
-  // Start and Continue always count on today, whatever day the form shows.
-  const startsToday = !runningTimer && fields.localDate !== today;
+  // One main button follows the draft: Start, Create entry, Continue, Start
+  // today or Save. Enter and Cmd/Ctrl+Enter press it.
+  const primary = getTimeEntryPrimaryAction(editor, {
+    isRunning: Boolean(runningTimer),
+    localDate: fields.localDate,
+    today,
+  });
 
   useImperativeHandle(ref, () => ({
     commitBeforeSwitch: () => commit("switch"),
@@ -351,12 +364,19 @@ export function TimeEntryEditorForm({
     onClose();
   }
 
-  /** Save, unless a new entry has no hours: then Start, since 0h is never saved. */
+  /** Runs the main button: Enter and Cmd/Ctrl+Enter press it too. */
   function submit() {
-    if (editor.isTimerMode) {
-      start();
-    } else {
-      save();
+    switch (primary.kind) {
+      case "start":
+        start();
+        return;
+      case "continue":
+        continueEntry();
+        return;
+      case "create":
+      case "save":
+        save();
+        return;
     }
   }
 
@@ -413,6 +433,43 @@ export function TimeEntryEditorForm({
   // Start reads Start even while another entry runs: people know it takes
   // over, where "Switch" left them guessing (forms council round 12).
   const hoursHint = START_OR_ENTER_HOURS_HINT;
+  const title = target.kind === "create" ? "New time entry" : "Edit time entry";
+  // Only the status sits above the hours: the chips below already name the
+  // task and the date (forms council round 7).
+  const status = runningTimer ? (
+    <Chip tone="success">Running</Chip>
+  ) : lockReason ? (
+    <WeekLockChip />
+  ) : entry && isTimesheetEntryCommitted(entry) ? (
+    <Chip>Committed</Chip>
+  ) : null;
+  const actions = (
+    <div className="composer-actions">
+      {actionTarget ? (
+        <ObjectActionsButton
+          actions={entryActions.getActions(actionTarget, {
+            isEditing: true,
+            invalidDraftReason:
+              lockReason || editor.canSave
+                ? undefined
+                : "Enter a valid duration first",
+          })}
+          onAction={(actionId) =>
+            withEventAttribution({ surface: editorSurface }, () =>
+              handleAction(actionId),
+            )
+          }
+          label="Entry actions"
+        />
+      ) : null}
+      <TooltipButton
+        label="Close"
+        render={<Button variant="ghost" size="icon" onClick={onClose} />}
+      >
+        <X />
+      </TooltipButton>
+    </div>
+  );
 
   return (
     <div
@@ -424,54 +481,27 @@ export function TimeEntryEditorForm({
       data-mode={target.kind}
       onKeyDown={handleKeyDown}
     >
-      {/* No "New time entry" line: the hours open the composer. The title
-          stays for assistive tech, naming the dialog, and ⋯ and × sit in the
-          corner, so the composer starts with what the user writes (forms
-          council round 15). */}
-      <Title className="sr-only">
-        {target.kind === "create" ? "New time entry" : "Edit time entry"}
-      </Title>
-      <div className="composer-actions">
-        {actionTarget ? (
-          <ObjectActionsButton
-            actions={entryActions.getActions(actionTarget, {
-              isEditing: true,
-              invalidDraftReason:
-                lockReason || editor.canSave
-                  ? undefined
-                  : "Enter a valid duration first",
-            })}
-            onAction={(actionId) =>
-              withEventAttribution({ surface: editorSurface }, () =>
-                handleAction(actionId),
-              )
-            }
-            label="Entry actions"
-          />
-        ) : null}
-        <TooltipButton
-          label="Close"
-          render={<Button variant="ghost" size="icon" onClick={onClose} />}
-        >
-          <X />
-        </TooltipButton>
-      </div>
-
-      {/* Only the status sits above the hours: the chips below already
-          name the task and the date (forms council round 7). */}
-      {runningTimer ? (
-        <header className="time-entry-editor-meta">
-          <Chip tone="success">Running</Chip>
+      {host === "side_panel" ? (
+        // The side panel is a docked column, not a card: like the backlog
+        // peek, it opens on a row that names it, with the status, ⋯ and ×.
+        <header className="time-entry-editor-bar">
+          <Title className="time-entry-editor-title">{title}</Title>
+          {status}
+          {actions}
         </header>
-      ) : lockReason ? (
-        <header className="time-entry-editor-meta">
-          <WeekLockChip />
-        </header>
-      ) : entry && isTimesheetEntryCommitted(entry) ? (
-        <header className="time-entry-editor-meta">
-          <Chip>Committed</Chip>
-        </header>
-      ) : null}
+      ) : (
+        <>
+          {/* No "New time entry" line: the hours open the composer. The
+              title stays for assistive tech, naming the dialog, and ⋯ and ×
+              sit in the corner, so the composer starts with what the user
+              writes (forms council round 15). */}
+          <Title className="sr-only">{title}</Title>
+          {actions}
+          {status ? (
+            <header className="time-entry-editor-meta">{status}</header>
+          ) : null}
+        </>
+      )}
 
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
       <fieldset
@@ -508,58 +538,44 @@ export function TimeEntryEditorForm({
       </fieldset>
 
       <footer className="flex items-center justify-end gap-2 pt-1">
-        {/* The entry's own verb opens the footer, at its start: Stop for the
-            running entry, Continue for a saved one, Start for a new
-            one (forms council round 7). */}
-        <span className="mr-auto flex items-center gap-2">
-          {runningTimer ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={editor.hasChanges && !editor.canSave}
-              onClick={stop}
-            >
-              <Stop data-icon="inline-start" />
-              Stop
-            </Button>
-          ) : entry ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={editor.hasChanges && !editor.canSave}
-              onClick={continueEntry}
-            >
-              <Play data-icon="inline-start" />
-              Continue
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={editor.durationMs === null}
-              onClick={start}
-            >
-              <Play data-icon="inline-start" />
-              Start
-            </Button>
-          )}
-          {startsToday ? (
-            <span className="text-xs text-muted-foreground">Starts today</span>
-          ) : null}
-        </span>
+        {/* Stop opens the running entry's footer. Start and Continue are the
+            main button's own verbs, and stay in the ⋯ menu. */}
+        {runningTimer ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="mr-auto"
+            disabled={editor.hasChanges && !editor.canSave}
+            onClick={stop}
+          >
+            <Stop data-icon="inline-start" />
+            Stop
+          </Button>
+        ) : null}
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button
           type="button"
-          disabled={!editor.canSave}
-          title={editor.isTimerMode ? hoursHint : undefined}
-          onClick={save}
+          disabled={
+            primary.kind === "start"
+              ? editor.durationMs === null
+              : primary.kind === "continue"
+                ? false
+                : !editor.canSave
+          }
+          onClick={submit}
         >
-          {/* A new record's button names what it makes, as every form's. */}
-          {target.kind === "create" ? "Create entry" : "Save"}
+          {primary.kind === "start" || primary.kind === "continue" ? (
+            <Play data-icon="inline-start" />
+          ) : null}
+          {primary.label}
         </Button>
       </footer>
+      {renderBelow?.({
+        localDate: fields.localDate,
+        durationMs: editor.durationMs,
+      })}
       {entryActions.dialogs}
     </div>
   );
