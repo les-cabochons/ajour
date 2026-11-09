@@ -7,9 +7,22 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PluginsOverview } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { SourceSection } from "@/features/backlog/backlog-item-source-section";
+import {
+  BacklogItemSourceSection,
+  SourceSection,
+} from "@/features/backlog/backlog-item-source-section";
+import { cachePluginsOverview } from "@/lib/app-api";
+import { updateBacklogItemCards } from "@/lib/backlog-item-cards";
 import { installDomShims } from "@/test-support/dom";
+import { codeHostOverview } from "../../../tests/fixtures/pull-requests";
+
+const refreshBacklog = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("@/features/backlog/backlog-refresh-workflow", async (original) => ({
+  ...(await original<object>()),
+  refreshBacklog,
+}));
 
 const now = Date.UTC(2026, 10, 8, 14, 0);
 
@@ -18,11 +31,11 @@ const billet: LocalWorkItem = {
   createdAt: now - 86_400_000,
   title: "Billet #11017098 - Réserver un lot",
   status: "active",
-  source: "azure_devops",
-  sourceId: "https://dev.azure.com/acme/_workitems/edit/331150",
+  source: "tracker",
+  sourceId: "https://tracker.example/items/331150",
   sourceExternalId: "331150",
   sourceConnectionId: "c1",
-  sourceConnectionLabel: "nventive",
+  sourceConnectionLabel: "Work",
   sourceProjectName: "Oliva Horticulture",
   sourceWorkItemType: "Billet",
   sourceStatusLabel: "Active",
@@ -34,7 +47,7 @@ function renderSection(item: LocalWorkItem, open = true) {
   return render(
     <SourceSection
       item={item}
-      label="Azure DevOps"
+      label="Tracker"
       now={now}
       open={open}
       onOpenChange={() => {}}
@@ -42,7 +55,29 @@ function renderSection(item: LocalWorkItem, open = true) {
   );
 }
 
-beforeEach(installDomShims);
+/** The overview with the item's plugin, "Tracker", and its connection c1. */
+function trackerOverview(): PluginsOverview {
+  const overview = structuredClone(codeHostOverview);
+  const group = overview.connectionGroups[0]!;
+  group.plugin = {
+    ...group.plugin,
+    id: "tracker",
+    displayName: "Tracker",
+    capabilities: { connector: {} },
+  };
+  group.connections = [
+    { ...group.connections[0]!, id: "c1", pluginId: "tracker", label: "Work" },
+  ];
+  overview.plugins = [group.plugin];
+  return overview;
+}
+
+beforeEach(() => {
+  installDomShims();
+  window.localStorage.clear();
+  updateBacklogItemCards({ sourceOpen: true });
+  refreshBacklog.mockClear();
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -53,7 +88,7 @@ describe("a synced item's source section", () => {
     renderSection(billet);
 
     expect(
-      screen.getByRole("button", { name: /Azure DevOps.*331150/ }),
+      screen.getByRole("button", { name: /Tracker.*331150/ }),
     ).toBeTruthy();
     const terms = screen.getAllByRole("term").map((dt) => dt.textContent);
     expect(terms).toEqual([
@@ -68,7 +103,7 @@ describe("a synced item's source section", () => {
     expect(screen.getByText("Billet")).toBeTruthy();
     expect(screen.getByText("Oliva Horticulture")).toBeTruthy();
     expect(screen.getByText("Alex Trépanier")).toBeTruthy();
-    expect(screen.getByText("nventive")).toBeTruthy();
+    expect(screen.getByText("Work")).toBeTruthy();
     expect(screen.getByText("5 min ago")).toBeTruthy();
   });
 
@@ -104,5 +139,63 @@ describe("a synced item's source section", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("331150"));
+  });
+});
+
+describe("the section on the item page and in the peek", () => {
+  it("shows nothing for a manual item", () => {
+    cachePluginsOverview(trackerOverview());
+    render(
+      <BacklogItemSourceSection
+        item={{ ...billet, source: "manual", sourceExternalId: undefined }}
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("term")).toBeNull();
+  });
+
+  it("takes its title from the plugin, and falls back on the connection's label without the overview", () => {
+    cachePluginsOverview(trackerOverview());
+    render(<BacklogItemSourceSection item={billet} />);
+    expect(
+      screen.getByRole("button", { name: /^Tracker.*331150/ }),
+    ).toBeTruthy();
+    cleanup();
+
+    cachePluginsOverview({ ...trackerOverview(), plugins: [] });
+    render(<BacklogItemSourceSection item={billet} />);
+    expect(screen.getByRole("button", { name: /^Work.*331150/ })).toBeTruthy();
+  });
+
+  it("stays closed on the next mount once the user closes it", () => {
+    cachePluginsOverview(trackerOverview());
+    const first = render(<BacklogItemSourceSection item={billet} />);
+    expect(screen.getAllByRole("term").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Tracker.*331150/ }));
+    expect(screen.queryByRole("term")).toBeNull();
+    first.unmount();
+
+    render(<BacklogItemSourceSection item={billet} />);
+    expect(screen.queryByRole("term")).toBeNull();
+    expect(
+      JSON.parse(window.localStorage.getItem("ajour.backlog-item-cards")!),
+    ).toMatchObject({ sourceOpen: false });
+  });
+
+  it("refreshes this item alone from its Synced row", () => {
+    cachePluginsOverview(trackerOverview());
+    render(<BacklogItemSourceSection item={billet} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh item" }));
+
+    expect(refreshBacklog).toHaveBeenCalledWith({
+      source: {
+        pluginId: "tracker",
+        connectionId: "c1",
+        sourceId: "https://tracker.example/items/331150",
+        syncedAt: billet.sourceSyncedAt,
+      },
+    });
   });
 });

@@ -65,7 +65,7 @@ export function SourceSection({
   onOpenChange,
 }: {
   item: LocalWorkItem;
-  /** The plugin's display name, such as "Azure DevOps". */
+  /** The plugin's display name, as the plugins overview gives it. */
   label: string;
   now: number;
   open: boolean;
