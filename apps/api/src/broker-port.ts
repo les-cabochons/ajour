@@ -233,7 +233,7 @@ export interface BrokerLimits {
   concurrentPerPlugin: number;
   /** A plugin's requests waiting for a slot. More are refused. */
   queuedPerPlugin: number;
-  /** A plugin's sustained requests per second. */
+  /** A plugin's sustained requests per second. Requests over it wait, up to `timeoutMs`. */
   ratePerSecond: number;
   /** The requests a plugin may send at once before the rate applies. */
   rateBurst: number;

@@ -12,27 +12,70 @@ export function abortError(signal: AbortSignal) {
     : new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** A plugin's rate: a token bucket. */
+/**
+ * A plugin's rate: a token bucket. A request past the burst waits for its
+ * token to refill instead of failing, so a sync that sends many requests
+ * slows down to the rate rather than stopping at the first one over it.
+ */
 export class RateBucket {
   private readonly limits: BrokerLimits;
+  private readonly now: () => number;
+  /** Below zero while requests wait: one token owed per waiting request. */
   private tokens: number;
   private updatedAt: number;
 
-  constructor(limits: BrokerLimits, now: number) {
+  constructor(limits: BrokerLimits, now: () => number) {
     this.limits = limits;
+    this.now = now;
     this.tokens = limits.rateBurst;
-    this.updatedAt = now;
+    this.updatedAt = now();
   }
 
-  take(now: number) {
+  /**
+   * Takes a token, waiting until it refills when none is left. A request
+   * whose turn would come only after its own timeout (`timeoutMs`) is
+   * refused at once, and a request aborted while it waits rejects with its
+   * signal's reason. Both give their token back.
+   */
+  async take(signal: AbortSignal): Promise<void> {
+    this.refill();
+    this.tokens -= 1;
+    if (this.tokens >= 0) return;
+    const waitMs = (-this.tokens / this.limits.ratePerSecond) * 1000;
+    if (waitMs >= this.limits.timeoutMs) {
+      this.giveBack();
+      throw new BrokerRequestError(
+        "limit",
+        "rate_limited",
+        "The plugin sent too many requests. Try again in a moment.",
+      );
+    }
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        this.giveBack();
+        reject(abortError(signal));
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, waitMs);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private giveBack() {
+    this.refill();
+    this.tokens = Math.min(this.limits.rateBurst, this.tokens + 1);
+  }
+
+  private refill() {
+    const now = this.now();
     this.tokens = Math.min(
       this.limits.rateBurst,
       this.tokens + ((now - this.updatedAt) / 1000) * this.limits.ratePerSecond,
     );
     this.updatedAt = now;
-    if (this.tokens < 1) return false;
-    this.tokens -= 1;
-    return true;
   }
 }
 

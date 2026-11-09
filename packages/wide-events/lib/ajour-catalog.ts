@@ -707,7 +707,7 @@ export const catalog = defineCatalog({
           on_premises: operational<boolean>(),
           /** Sent while a connection was validated, before it was saved. */
           pending: operational<boolean>(),
-          /** How long it waited for one of the plugin's request slots. */
+          /** How long it waited for the plugin's rate, then for one of its request slots. */
           queued_ms: operational<number>(),
           /** Absent on-premises, where no address is judged. Its least judged exchange's. */
           answer_address: operational<PluginRequestAnswerAddress>(),

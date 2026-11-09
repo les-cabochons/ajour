@@ -238,19 +238,13 @@ export class CredentialBroker implements CredentialBrokerPort {
     return slots;
   }
 
-  private takeRate(pluginId: string) {
+  private rateOf(pluginId: string) {
     let bucket = this.rates.get(pluginId);
     if (!bucket) {
-      bucket = new RateBucket(this.limits, this.now());
+      bucket = new RateBucket(this.limits, this.now);
       this.rates.set(pluginId, bucket);
     }
-    if (!bucket.take(this.now())) {
-      throw new BrokerRequestError(
-        "limit",
-        "rate_limited",
-        "The plugin sent too many requests. Try again in a moment.",
-      );
-    }
+    return bucket;
   }
 
   /**
@@ -300,7 +294,8 @@ export class CredentialBroker implements CredentialBrokerPort {
           `A request body may hold up to ${this.limits.requestBodyBytes / (1024 * 1024)} MB.`,
         );
       }
-      this.takeRate(caller.pluginId);
+      // Both waits count against the request's own timeout.
+      await this.rateOf(caller.pluginId).take(signal);
       release = await this.slotsOf(caller.pluginId).acquire(signal);
       unit?.set({ broker: { queued_ms: this.now() - queuedAt } });
       if (!this.options.transport) {

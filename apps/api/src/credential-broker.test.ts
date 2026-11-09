@@ -1842,21 +1842,68 @@ describe("the credential broker", () => {
       expect(sent).toHaveLength(1);
     });
 
-    it("refuses requests past the plugin's rate, and lets them through again as it refills", async () => {
+    it("makes requests past the plugin's burst wait for the rate, instead of refusing them", async () => {
+      const { operation, sent, requestEvents } = setup({
+        // One token every 50 ms past the first two.
+        limits: { rateBurst: 2, ratePerSecond: 20 },
+      });
+      const broker = operation();
+      const startedAt = Date.now();
+
+      await Promise.all(Array.from({ length: 4 }, () => broker.http(request)));
+
+      expect(sent).toHaveLength(4);
+      // The third and fourth waited one and two tokens' time.
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(90);
+      expect(requestEvents().every((event) => event.outcome === "ok")).toBe(
+        true,
+      );
+    });
+
+    it("refuses at once a request whose turn would come after its own timeout, and gives its token back", async () => {
       let now = 1_000_000;
       const { operation, sent } = setup({
-        limits: { rateBurst: 3, ratePerSecond: 2 },
+        limits: { rateBurst: 1, ratePerSecond: 1, timeoutMs: 500 },
         now: () => now,
       });
       const broker = operation();
 
-      for (let index = 0; index < 3; index += 1) await broker.http(request);
+      await broker.http(request);
+      // Its token would refill in 1 s, past its 500 ms.
       const limited = await refusal(broker.http(request));
-      now += 500;
+      now += 1000;
+      // The refused request owes nothing, so a full token is back.
       await broker.http(request);
 
       expect(limited).toMatchObject({ code: "limit", reason: "rate_limited" });
-      expect(sent).toHaveLength(4);
+      expect(sent).toHaveLength(2);
+    });
+
+    it("gives back the token of a request aborted while it waits for the rate", async () => {
+      let now = 1_000_000;
+      const { operation } = setup({
+        limits: { rateBurst: 1, ratePerSecond: 1, timeoutMs: 5000 },
+        now: () => now,
+      });
+      const broker = operation();
+      const controller = new AbortController();
+
+      await broker.http(request);
+      const waiting = broker
+        .http({ ...request, signal: controller.signal })
+        .catch((thrown: unknown) => thrown);
+      controller.abort();
+      now += 1000;
+      const next = broker.http(request).then(() => "sent");
+
+      expect(await waiting).toMatchObject({ name: "AbortError" });
+      // Without the aborted request's token back, this one would wait 1 s.
+      expect(
+        await Promise.race([
+          next,
+          new Promise((resolve) => setTimeout(resolve, 200, "waiting")),
+        ]),
+      ).toBe("sent");
     });
 
     it("keeps a plugin to its requests in flight, queues the rest, and refuses past the queue", async () => {
