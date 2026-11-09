@@ -156,9 +156,9 @@ Then(
   async ({ page }, day: string, total: string, list: string) => {
     const rows = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
     const region = dayList(page, day);
-    await expect(region.locator(".time-entry-day-list-total")).toHaveText(
-      total,
-    );
+    await expect(
+      region.getByRole("heading").locator('[data-slot="value"]'),
+    ).toHaveText(total);
     await expect(
       region.locator(
         ".time-entry-day-list-row .time-entry-day-list-text > span",

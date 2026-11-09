@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { SectionHeading } from "@/components/section-heading";
+import { Value } from "@/components/ui/value";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
@@ -98,12 +100,11 @@ export function TimeEntryDayList({
       className="time-entry-day-list"
       aria-label={`Entries on ${formatListDay(localDate, "long")}`}
     >
-      <h3 className="time-entry-day-list-heading">
-        <span>{formatListDay(localDate, "short")}</span>
-        <span className="time-entry-day-list-total">
-          {formatClockDuration(totalMs)}
-        </span>
-      </h3>
+      <SectionHeading
+        trailing={<Value tone="muted">{formatClockDuration(totalMs)}</Value>}
+      >
+        {formatListDay(localDate, "short")}
+      </SectionHeading>
       {rows.map((row) => {
         const running = row === timer;
         const { color, title, context } = describe(row);
@@ -126,13 +127,13 @@ export function TimeEntryDayList({
               <span>{title}</span>
               <small>{context}</small>
             </span>
-            <span className="time-entry-day-list-hours">
+            <Value className="shrink-0" tone={running ? "success" : "default"}>
               {formatClockDuration(
                 "durationMs" in row
                   ? row.durationMs
                   : durations.runningDurationMs,
               )}
-            </span>
+            </Value>
           </button>
         );
       })}
@@ -141,11 +142,11 @@ export function TimeEntryDayList({
           <span className="time-entry-day-list-text">
             <span>This entry</span>
           </span>
-          <span className="time-entry-day-list-hours">
+          <Value className="shrink-0" tone="muted">
             {draftDurationMs === null
               ? "–"
               : formatClockDuration(draftDurationMs)}
-          </span>
+          </Value>
         </div>
       )}
     </section>
