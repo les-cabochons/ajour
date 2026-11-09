@@ -4,6 +4,7 @@ import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
   evaluateTimeEntryEditor,
+  getTimeEntryPrimaryAction,
 } from "./time-entry-editor";
 
 const DAY = "2026-10-05";
@@ -382,6 +383,87 @@ describe("time-entry editor", () => {
       expect(commitTimeEntryDraft(editor, "switch")).toEqual({
         kind: "unchanged",
       });
+    });
+  });
+
+  describe("the main button", () => {
+    const TODAY = "2026-10-07";
+    const saved = { localDate: DAY, durationMs: 3_600_000, note: "Standup" };
+
+    function primaryFor(
+      fields: ReturnType<typeof createTimeEntryEditorFields>,
+      options: { original?: typeof saved; isRunning?: boolean } = {},
+    ) {
+      const editor = evaluateTimeEntryEditor(fields, {
+        original: options.original,
+        allowEmptyDuration: !options.original,
+        isRunning: options.isRunning,
+      });
+      return getTimeEntryPrimaryAction(editor, {
+        isRunning: options.isRunning ?? false,
+        localDate: fields.localDate,
+        today: TODAY,
+      });
+    }
+
+    it("starts a new entry with no hours, and says it starts today from another day", () => {
+      expect(primaryFor(createTimeEntryEditorFields(TODAY))).toEqual({
+        kind: "start",
+        label: "Start",
+      });
+      expect(primaryFor(createTimeEntryEditorFields(DAY))).toEqual({
+        kind: "start",
+        label: "Start today",
+      });
+    });
+
+    it("creates a new entry once it has hours", () => {
+      const fields = {
+        ...createTimeEntryEditorFields(DAY),
+        durationHours: "1:30",
+      };
+
+      expect(primaryFor(fields)).toEqual({
+        kind: "create",
+        label: "Create entry",
+      });
+    });
+
+    it("continues an untouched saved entry, today or from another day", () => {
+      const todays = { ...saved, localDate: TODAY };
+
+      expect(
+        primaryFor(createTimeEntryEditorFields(TODAY, todays), {
+          original: todays,
+        }),
+      ).toEqual({ kind: "continue", label: "Continue" });
+      expect(
+        primaryFor(createTimeEntryEditorFields(DAY, saved), {
+          original: saved,
+        }),
+      ).toEqual({ kind: "continue", label: "Start today" });
+    });
+
+    it("saves a saved entry after any edit, not only to its hours", () => {
+      const fields = createTimeEntryEditorFields(DAY, saved);
+
+      expect(
+        primaryFor({ ...fields, durationHours: "2:00" }, { original: saved }),
+      ).toEqual({ kind: "save", label: "Save" });
+      expect(
+        primaryFor({ ...fields, note: "Retro" }, { original: saved }),
+      ).toEqual({ kind: "save", label: "Save" });
+    });
+
+    it("saves the running entry, which Stop ends", () => {
+      const running = { ...saved, localDate: TODAY };
+
+      expect(
+        primaryFor(createTimeEntryEditorFields(TODAY, running), {
+          original: running,
+          isRunning: true,
+        }),
+      ).toEqual({ kind: "save", label: "Save" });
     });
   });
 });

@@ -56,8 +56,8 @@ export interface TimeEntryEditorState {
   hasContent: boolean;
   canSave: boolean;
   /**
-   * A new entry with no hours. It can only start: Save is disabled, and Enter
-   * presses Start. Ajour never saves a 0h entry.
+   * A new entry with no hours. It can only start: the main button says Start,
+   * and Enter presses it. Ajour never saves a 0h entry.
    */
   isTimerMode: boolean;
   durationError: string | null;
@@ -186,6 +186,40 @@ export function evaluateTimeEntryEditor(
     relocationValues: (localDate) =>
       canSave && values ? { ...values, localDate } : null,
   };
+}
+
+/**
+ * The editor's one main button, which Enter and Cmd/Ctrl+Enter also press.
+ * Start and Continue count on today whatever date the form shows, so on another
+ * day both read "Start today".
+ */
+export type TimeEntryPrimaryAction =
+  | { kind: "start"; label: "Start" | "Start today" }
+  | { kind: "create"; label: "Create entry" }
+  | { kind: "continue"; label: "Continue" | "Start today" }
+  | { kind: "save"; label: "Save" };
+
+/**
+ * Picks the main button from the draft: a new entry starts until it has hours,
+ * then creates; a saved entry continues until any field changes, then saves.
+ * The running entry always saves; Stop ends it.
+ */
+export function getTimeEntryPrimaryAction(
+  editor: TimeEntryEditorState,
+  context: { isRunning: boolean; localDate: string; today: string },
+): TimeEntryPrimaryAction {
+  const onAnotherDay = context.localDate !== context.today;
+  if (context.isRunning) {
+    return { kind: "save", label: "Save" };
+  }
+  if (editor.isNew) {
+    return editor.isTimerMode
+      ? { kind: "start", label: onAnotherDay ? "Start today" : "Start" }
+      : { kind: "create", label: "Create entry" };
+  }
+  return editor.hasChanges
+    ? { kind: "save", label: "Save" }
+    : { kind: "continue", label: onAnotherDay ? "Start today" : "Continue" };
 }
 
 /**

@@ -27,9 +27,13 @@
 
   /* The Week view fills the content area, so the Days columns run to the
      bottom of the page even when a day has few cards. */
+  /* The Week's toolbar and side panel start right under the top bar, as the
+     Day view's strip and the Backlog's filter row do. With the page's top
+     padding, the panel started 20px down and read as a floating box. */
   .page-container:has(> .time-page-stack.is-week-view) {
     height: 100%;
     min-height: 0;
+    padding-top: 0;
     padding-bottom: 0;
   }
 
@@ -518,8 +522,29 @@
     }
   }
 
-  /* The entry editor follows the backlog peek: chips and the date under the
-     task heading. */
+  /* In the side panel the editor opens on a 28px row, as the backlog peek
+     does: the muted title, the status chip, then ⋯ and × at the end. */
+  .time-entry-editor-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 28px;
+  }
+
+  .time-entry-editor-title {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+
+  .time-entry-editor-bar > .composer-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+
+  /* The status chip above the hours, in the popover and the dialog. */
   .time-entry-editor-meta {
     display: flex;
     flex-wrap: wrap;

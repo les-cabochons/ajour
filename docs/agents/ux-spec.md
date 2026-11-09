@@ -225,9 +225,9 @@ Decided in [One entry editor for Day and Week](https://github.com/les-cabochons/
 
 Creating and editing a time entry always use the same form:
 
-- Header: the title ("New time entry" or "Edit time entry"), the entry's date, the "…" action menu for saved entries, and × to close.
+- Header: in the side panel, a row with the title ("New time entry" or "Edit time entry"), the entry's status (Running, Committed or the week lock), the "…" action menu for saved entries, and × to close. In the popover and the dialog, the hours open the form: the title is for assistive tech, "…" and × sit in the corner, and the status sits above the hours (forms council round 15).
 - Fields: Project / task, Note, Hours, Date (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`). See the Running entries section for Date and empty Hours.
-- Footer: Cancel · Start (Continue on a saved entry, Stop on the running entry) · Save. Start also stops another running entry.
+- Footer: Stop on the running entry, then Cancel and one main button that follows the draft. A new entry reads Start while Hours is empty and Create entry once it has hours. A saved entry reads Continue until any field changes, then Save. The running entry reads Save. Start and Continue count on today, so on another day both read "Start today". Start also stops another running entry. Continue stays in the "…" menu.
 
 The Day view's inline new row and the titlebar's own create form go away. What an empty Hours field means belongs to [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 
@@ -244,7 +244,7 @@ The form is the same in every host. Only its container changes.
 
 ### Saving and closing
 
-- Save: the Save button, Enter in Hours or in Note, or Cmd/Ctrl+Enter anywhere in the form. Shift+Enter in Note inserts a line break.
+- Enter in Hours or in Note, or Cmd/Ctrl+Enter anywhere in the form, presses the main button, whatever it reads. Shift+Enter in Note inserts a line break.
 - Escape or × closes the editor and discards changes.
 - Clicking outside does nothing.
 - In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
@@ -319,15 +319,15 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 ### Editing
 
 - The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it, except on the Time pages, where it opens the side panel as the row does (forms council round 5). The narrow view uses the full-width dialog.
-- The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
+- The footer reads Stop · Cancel · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
 - Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
 - Discard happens at once and shows the Undo toast (see Feedback).
 
 ### Starting
 
-- In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
-- With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
-- A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
+- In a new entry with empty Hours, the main button reads Start, the hint says "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
+- With Hours filled, the main button reads Create entry and saves the entry without starting it.
+- A running entry is always on today. Starting from another day's form starts the entry today, and the button reads "Start today". An entry that runs past midnight stays on the day it started; Move to… changes that.
 - Starting while another entry runs saves the running one and switches, without a prompt. The button still reads Start. The timer dock and the rows show the switch; no message appears.
 - Start entry on tasks and backlog items starts on today, as it does now.
 
