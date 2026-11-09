@@ -1256,18 +1256,6 @@ When(
   },
 );
 
-Then("Save waits for hours or Start", async ({ page }) => {
-  await expect(
-    page.getByRole("button", { name: SAVE_OR_CREATE }),
-  ).toBeDisabled();
-  await expect(page.getByText("Enter hours, or press Start")).toBeVisible();
-  await expect(
-    page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Start", exact: true }),
-  ).toBeEnabled();
-});
-
 When("I press Enter in Hours", async ({ page }) => {
   await page.getByRole("textbox", { name: "Hours" }).press("Enter");
 });

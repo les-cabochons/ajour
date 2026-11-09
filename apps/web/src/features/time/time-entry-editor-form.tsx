@@ -5,6 +5,7 @@ import {
   useState,
   type ElementType,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
 } from "react";
 import {
@@ -154,6 +155,7 @@ export function TimeEntryEditorForm({
   className,
   initialFields,
   onFieldsChange,
+  renderBelow,
   host,
 }: {
   target: TimeEntryEditorTarget;
@@ -164,6 +166,15 @@ export function TimeEntryEditorForm({
   initialFields?: TimeEntryEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: TimeEntryEditorFields) => void;
+  /**
+   * Host content under the footer that follows the draft's date and hours, such
+   * as the Week's day list. It renders with the form, so typing re-renders only
+   * the form, not the page.
+   */
+  renderBelow?: (draft: {
+    localDate: string;
+    durationMs: number | null;
+  }) => ReactNode;
   ref?: Ref<TimeEntryEditorFormHandle>;
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
@@ -561,6 +572,10 @@ export function TimeEntryEditorForm({
           {primary.label}
         </Button>
       </footer>
+      {renderBelow?.({
+        localDate: fields.localDate,
+        durationMs: editor.durationMs,
+      })}
       {entryActions.dialogs}
     </div>
   );

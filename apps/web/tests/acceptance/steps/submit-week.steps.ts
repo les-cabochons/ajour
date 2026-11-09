@@ -45,9 +45,14 @@ Then("the entry editor is read-only", async ({ page }) => {
   await expect(editor.getByText("Submitted", { exact: true })).toBeVisible();
   await expect(editor.getByText(lockReason)).toBeVisible();
   await expect(editor.getByLabel("Note")).toBeDisabled();
+  // No field can change, so the main button never turns into Save. Starting
+  // the work again today stays open: it changes nothing in the submitted week.
   await expect(
     editor.getByRole("button", { name: SAVE_OR_CREATE }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
+  await expect(
+    editor.getByRole("button", { name: "Start today", exact: true }),
+  ).toBeEnabled();
 });
 
 Then(
