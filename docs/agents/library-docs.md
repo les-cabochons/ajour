@@ -86,7 +86,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 ### Backlog views
 
-- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`. Its `splitDoneShelf` takes archived items out of the groups for the Done shelf. Its `isBacklogReorderPeer` says which items a drag or Alt+Up and Alt+Down moves an item among under each ordering.
+- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`. Its `splitBacklogShelves` takes settled and archived items out of the groups for the Settled and Done shelves. Its `isBacklogReorderPeer` says which items a drag or Alt+Up and Alt+Down moves an item among under each ordering.
 - Device-local preferences: `lib/backlog-view-settings.ts`. Ordering stays in local state.
 - Page orchestration: `features/backlog/backlog-page.tsx`.
 - Display controls and filters: `features/backlog/backlog-display.tsx`.

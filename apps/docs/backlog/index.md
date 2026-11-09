@@ -40,17 +40,26 @@ Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item'
 
 <Shot name="backlog-peek" alt="The peek next to the backlog list" />
 
-## Done items
+## Settled and done items
 
-Done items are archived. They leave their group, so the list and the board show only the work still open, whatever the grouping.
+Settled and done items leave their group, so the list and the board show only the work on your plate, whatever the grouping. Done items are archived.
 
-Items archived in the past week wait on the **Done in the past week** shelf at the end of the page. The shelf starts closed and shows how many items it holds. Click its title to open it, and click again to close it. Ajour remembers on this device whether it is open. To change how far back the shelf goes, see **Done items** in [Display options](/backlog/display-options).
+Two shelves end the page:
+
+- **Settled** holds every [settled](/backlog/settle-and-snooze) item, the latest settled first.
+- **Done in the past week** holds the items archived in the past week, the latest first. To change how far back it goes, see **Done items** in [Display options](/backlog/display-options).
+
+Each shelf starts closed and shows how many items it holds. Click its title to open it, and click again to close it. Ajour remembers on this device which shelves are open.
+
+On the board grouped by workflow state, the **Done** column holds the items done in the past week instead of a shelf, and its header has **View archive**.
+
+<Shot name="backlog-board-done" alt="The board's Done column with View archive in its header" />
 
 <Shot name="backlog-done-shelf" alt="The open Done shelf at the end of the Backlog list" />
 
 ## Archive
 
-The archive holds every archived item, including older ones and items archived because they left a sync. Press **View archive** on the Done shelf, or press **Filter**, choose **State**, then **Archived**. Remove the **State** filter to go back to your open work.
+The archive holds every archived item, including older ones and items archived because they left a sync. Press **View archive** on the Done shelf or on the board's **Done** column, or press **Filter**, choose **State**, then **Archived**. Remove the **State** filter to go back to your open work.
 
 To put an item back in your backlog, open its **…** menu, or open the item, and press **Restore**.
 

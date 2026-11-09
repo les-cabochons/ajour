@@ -175,6 +175,17 @@ const shots = [
     },
   },
   {
+    name: "backlog-board-done",
+    seed: { backlogLayout: "board" },
+    run: async (page) => {
+      await go(page, "/backlog");
+      // The board scrolls sideways, and the Done column is past the edge.
+      const done = page.getByRole("region", { name: "Done", exact: true });
+      await done.scrollIntoViewIfNeeded();
+      return done;
+    },
+  },
+  {
     name: "backlog-display",
     run: async (page) => {
       await go(page, "/backlog");
