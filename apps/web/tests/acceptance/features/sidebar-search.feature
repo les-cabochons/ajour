@@ -14,7 +14,7 @@ Feature: Sidebar search and project filter
     Then the sidebar lists only "Sidebar search"
     When I press Escape in the sidebar search
     Then the sidebar lists every backlog item
-    And the sidebar Search button has focus
+    And the empty sidebar search box has focus
 
   Scenario: Filter the sidebar to one project
     When I filter the sidebar to the "Rideau" project

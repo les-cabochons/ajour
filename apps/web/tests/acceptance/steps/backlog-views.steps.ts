@@ -357,7 +357,7 @@ Then("the other item is pinned at the top of the sidebar", async ({ page }) => {
   await expect(page.getByRole("menu")).toHaveCount(0);
   const search = page
     .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("button", { name: "Search", exact: true });
+    .getByRole("searchbox", { name: "Search the sidebar" });
   await search.focus();
   await expect(search).toBeFocused();
   await page.getByRole("main").hover();

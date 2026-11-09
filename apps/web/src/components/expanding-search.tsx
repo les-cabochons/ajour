@@ -15,8 +15,8 @@ import type { SearchBoxState } from "@/lib/search-box-state";
 import { cn } from "@/lib/utils";
 
 /**
- * A Search button that expands in place into a search box, as in the sidebar
- * and the Backlog page's top bar. Escape clears and closes it. Leaving it
+ * A Search button that expands in place into a search box, as in the
+ * Backlog page's top bar. Escape clears and closes it. Leaving it
  * empty closes it too; a typed query stays so the user can open the rows it
  * found. The state is the host's, see `lib/search-box-state.ts`.
  */
@@ -31,7 +31,7 @@ export function ExpandingSearch({
   onChange: (patch: Partial<SearchBoxState>) => void;
   /**
    * Names the open box for assistive technology: "Search the backlog". The
-   * button is "Search", told apart by its landmark, the sidebar or the page.
+   * button is "Search".
    */
   label: string;
   /** The open box's size, such as its width in a toolbar. */

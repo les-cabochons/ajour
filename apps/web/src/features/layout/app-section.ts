@@ -1,11 +1,11 @@
 /**
- * The part of the app a page belongs to. The sidebar's view switcher and the
+ * The part of the app a page belongs to. The sidebar's nav and the
  * narrow titlebar highlight it, and the shell reads it for Time and Settings.
  */
 export type AppSection =
   "time" | "backlog" | "pull-requests" | "projects" | "settings";
 
-/** A section the sidebar's view switcher opens. Settings has its own button. */
+/** A section the sidebar's nav opens. Settings has its own button. */
 export type AppView = Exclude<AppSection, "settings">;
 
 /**

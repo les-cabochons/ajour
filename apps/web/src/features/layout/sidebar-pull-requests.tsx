@@ -33,7 +33,7 @@ export function useSidebarPullRequests() {
 
 /**
  * The collapsible Pull requests section of the sidebar work list, shown while
- * pull requests need the user and `matcher` accepts some. The view switcher
+ * pull requests need the user and `matcher` accepts some. The nav
  * lists the Pull requests page as soon as a code host plugin is enabled.
  */
 export function SidebarPullRequests({

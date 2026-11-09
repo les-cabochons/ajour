@@ -60,15 +60,9 @@ Given("I have backlog items in two projects", async ({ page }) => {
 });
 
 When("I search the sidebar for {string}", async ({ page }, query: string) => {
-  const box = sidebar(page).getByRole("searchbox", {
-    name: "Search the sidebar",
-  });
-  if (!(await box.isVisible())) {
-    await sidebar(page)
-      .getByRole("button", { name: "Search", exact: true })
-      .click();
-  }
-  await box.fill(query);
+  await sidebar(page)
+    .getByRole("searchbox", { name: "Search the sidebar" })
+    .fill(query);
 });
 
 When("I press Escape in the sidebar search", async ({ page }) => {
@@ -104,12 +98,6 @@ Then("the sidebar lists every backlog item", async ({ page }) => {
   for (const title of ALL_TITLES) {
     await expect(sidebarTitles(page).filter({ hasText: title })).toHaveCount(1);
   }
-});
-
-Then("the sidebar Search button has focus", async ({ page }) => {
-  await expect(
-    sidebar(page).getByRole("button", { name: "Search", exact: true }),
-  ).toBeFocused();
 });
 
 Then("the Backlog page still lists every item", async ({ page }) => {
