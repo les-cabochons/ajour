@@ -6,7 +6,7 @@ import {
   isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
-  splitDoneShelf,
+  splitBacklogShelves,
   getSubitemHoursLeft,
   getSubitemProgress,
 } from "./backlog-view";
@@ -263,23 +263,29 @@ describe("backlog view selection", () => {
     ).toEqual(["a"]);
   });
 });
-describe("the Done shelf", () => {
+describe("the Settled and Done shelves", () => {
   const items = [
     item("open"),
     item("earlier", { status: "archived", archivedAt: 10 }),
-    item("settled", { status: "settled" }),
+    item("settled first", { status: "settled", settledAt: 5 }),
     item("latest", { status: "archived", archivedAt: 20 }),
+    item("settled last", { status: "settled", settledAt: 15 }),
   ];
-  it("takes archived items out of the groups, latest archived first", () => {
-    const { open, done } = splitDoneShelf(items, []);
-    expect(open.map((i) => i._id)).toEqual(["open", "settled"]);
+  it("takes settled and archived items out of the groups, latest first", () => {
+    const { open, settled, done } = splitBacklogShelves(items, []);
+    expect(open.map((i) => i._id)).toEqual(["open"]);
+    expect(settled.map((i) => i._id)).toEqual([
+      "settled last",
+      "settled first",
+    ]);
     expect(done.map((i) => i._id)).toEqual(["latest", "earlier"]);
   });
-  it("has no shelf under the Archived state filter, where the page is the archive", () => {
-    const { open, done } = splitDoneShelf(items, [
+  it("has no shelves under the Archived state filter, where the page is the archive", () => {
+    const { open, settled, done } = splitBacklogShelves(items, [
       { field: "state", value: ARCHIVED_STATE_FILTER },
     ]);
     expect(open).toEqual(items);
+    expect(settled).toEqual([]);
     expect(done).toEqual([]);
   });
 });

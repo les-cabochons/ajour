@@ -55,7 +55,7 @@ import {
   BacklogFilters,
   BacklogLayoutToggle,
 } from "@/features/backlog/backlog-display";
-import { BacklogDoneShelf } from "@/features/backlog/backlog-done-shelf";
+import { BacklogShelf } from "@/features/backlog/backlog-shelf";
 import { BacklogPeek } from "@/features/backlog/backlog-peek";
 import {
   captureReturnNotice,
@@ -83,7 +83,7 @@ import {
   isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
-  splitDoneShelf,
+  splitBacklogShelves,
   type BacklogGroup,
 } from "@/domain/backlog/backlog-view";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
@@ -177,10 +177,10 @@ export function BacklogPage() {
       ),
     [state, view, now, search],
   );
-  // Archived items leave their groups for the Done shelf, so the groups show
-  // only open work whatever the grouping.
+  // Settled and archived items leave their groups for the shelves, so the
+  // groups show only the work on the user's plate whatever the grouping.
   const shelf = useMemo(
-    () => splitDoneShelf(items, view.filters),
+    () => splitBacklogShelves(items, view.filters),
     [items, view.filters],
   );
   const lanes = useMemo(
@@ -213,6 +213,7 @@ export function BacklogPage() {
               : group.items.map((item) => item._id),
           ),
     ),
+    ...(view.settledShelfOpen ? shelf.settled.map((item) => item._id) : []),
     ...(view.doneShelfOpen ? shelf.done.map((item) => item._id) : []),
   ];
   const targets = groupsByLane.flatMap(({ lane, groups }) =>
@@ -596,7 +597,7 @@ export function BacklogPage() {
     );
     if (enabled) action(item, enabled.id);
   });
-  /** `group` is null on the Done shelf, whose rows don't reorder. */
+  /** `group` is null on a shelf, whose rows don't reorder. */
   async function itemKeys(
     item: LocalWorkItem,
     group: BacklogGroup | null,
@@ -777,7 +778,7 @@ export function BacklogPage() {
       </SettingsLink>
     ) : null;
   /**
-   * One row or card. `place` is its group on the page; a Done shelf row has
+   * One row or card. `place` is its group on the page; a shelf row has
    * none, so it is a list row that neither drags nor reorders.
    */
   function renderRow(
@@ -1041,18 +1042,38 @@ export function BacklogPage() {
               )}
             </section>
           ))}
+          {shelf.settled.length > 0 && (
+            <BacklogShelf
+              label="Settled"
+              count={shelf.settled.length}
+              open={view.settledShelfOpen}
+              onToggle={() =>
+                updateBacklogView({
+                  settledShelfOpen: !view.settledShelfOpen,
+                })
+              }
+            >
+              {shelf.settled.map((item) => renderRow(item, null))}
+            </BacklogShelf>
+          )}
           {shelf.done.length > 0 && (
-            <BacklogDoneShelf
+            <BacklogShelf
+              label={
+                view.doneWindow === "week" ? "Done in the past week" : "Done"
+              }
               count={shelf.done.length}
-              doneWindow={view.doneWindow}
               open={view.doneShelfOpen}
               onToggle={() =>
                 updateBacklogView({ doneShelfOpen: !view.doneShelfOpen })
               }
-              onOpenArchive={openArchive}
+              action={
+                <Button variant="ghost" size="sm" onClick={openArchive}>
+                  View archive
+                </Button>
+              }
             >
               {shelf.done.map((item) => renderRow(item, null))}
-            </BacklogDoneShelf>
+            </BacklogShelf>
           )}
         </div>
       </div>

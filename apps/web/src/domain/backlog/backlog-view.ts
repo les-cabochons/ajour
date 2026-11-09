@@ -229,24 +229,32 @@ export function selectBacklogViewItems(
 }
 
 /**
- * Splits the shown items between the groups and the Done shelf below them.
- * Archived items leave their group for the shelf, latest archived first, so
- * the groups hold only open work in every grouping. Under the Archived state
- * filter the page is the archive: the groups keep every item and the shelf is
- * empty. "Done shelf" under "Backlog" in docs/agents/ux-spec.md.
+ * Splits the shown items between the groups and the two shelves below them.
+ * Settled items leave their group for the Settled shelf, latest settled
+ * first, and archived items for the Done shelf, latest archived first, so the
+ * groups hold only the work on the user's plate in every grouping. Under the
+ * Archived state filter the page is the archive: the groups keep every item
+ * and both shelves are empty. "Shelves" under "Backlog" in
+ * docs/agents/ux-spec.md.
  */
-export function splitDoneShelf(
+export function splitBacklogShelves(
   items: readonly LocalWorkItem[],
   filters: readonly BacklogFilter[],
-): { open: LocalWorkItem[]; done: LocalWorkItem[] } {
-  if (showsArchiveFilter(filters)) return { open: [...items], done: [] };
+): { open: LocalWorkItem[]; settled: LocalWorkItem[]; done: LocalWorkItem[] } {
+  if (showsArchiveFilter(filters))
+    return { open: [...items], settled: [], done: [] };
   const open: LocalWorkItem[] = [];
+  const settled: LocalWorkItem[] = [];
   const done: LocalWorkItem[] = [];
-  for (const workItem of items)
-    (workItem.status === "archived" ? done : open).push(workItem);
+  for (const workItem of items) {
+    if (workItem.status === "archived") done.push(workItem);
+    else if (workItem.status === "settled") settled.push(workItem);
+    else open.push(workItem);
+  }
   // Array.prototype.sort is stable, so equal dates keep the page's order.
+  settled.sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0));
   done.sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0));
-  return { open, done };
+  return { open, settled, done };
 }
 
 /** Orders items by the persisted ordering. Ties keep the custom order. */

@@ -685,10 +685,10 @@
     margin-top: 1rem;
   }
 
-  /* -- Done shelf ------------------------------------------------ */
+  /* -- Shelves ---------------------------------------------------- */
 
-  /* The shelf's header is a group header whose title is the toggle. */
-  .backlog-done-shelf-toggle {
+  /* A shelf's header is a group header whose title is the toggle. */
+  .backlog-shelf-toggle {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -700,14 +700,14 @@
     cursor: pointer;
   }
 
-  .backlog-done-shelf-toggle > svg {
+  .backlog-shelf-toggle > svg {
     margin-left: -0.25rem;
     color: var(--text-secondary);
   }
 
-  /* Under the board, the shelf keeps the window's width while the columns
+  /* Under the board, a shelf keeps the window's width while the columns
      scroll sideways. */
-  .backlog-workspace-scroll.is-board .backlog-done-shelf {
+  .backlog-workspace-scroll.is-board .backlog-shelf {
     position: sticky;
     left: 0;
     width: 100%;

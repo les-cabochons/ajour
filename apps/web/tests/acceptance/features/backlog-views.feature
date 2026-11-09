@@ -364,6 +364,14 @@ Feature: Backlog list and board views
     When I view the archive from the Done shelf
     Then the Backlog shows the old done and missing sync items
 
+  Scenario: Settled items wait on their own closed shelf
+    Given the other Backlog item is settled
+    Then the other item has left its group for the closed Settled shelf
+    When I open the Settled shelf
+    Then the Settled shelf shows the other item
+    When I reload the app
+    Then the Settled shelf shows the other item
+
   Scenario: Use the priority key when the property is hidden
     When I hide the Backlog priority property
     And I set the parent priority to Low with its key

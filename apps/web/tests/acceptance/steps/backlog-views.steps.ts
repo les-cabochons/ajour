@@ -1899,6 +1899,44 @@ When("I view the archive from the Done shelf", async ({ page }) => {
     page.getByRole("button", { name: "Edit State filter" }),
   ).toHaveText("StateArchived");
 });
+Given("the other Backlog item is settled", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    Object.assign(
+      state.workItems.find((item: { _id: string }) => item._id === "other"),
+      { status: "settled", settledAt: Date.now() },
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+Then(
+  "the other item has left its group for the closed Settled shelf",
+  async ({ page }) => {
+    const shelf = page.getByRole("region", { name: "Settled" });
+    await expect(
+      shelf.getByRole("button", { name: /^Settled/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(shelf.locator(".backlog-group-count")).toHaveText("1");
+    await expect(
+      page.locator('.backlog-list-row[data-work-item-id="other"]'),
+    ).toHaveCount(0);
+  },
+);
+When("I open the Settled shelf", async ({ page }) => {
+  // The sidebar has a Settled section too, so look inside the shelf.
+  await page
+    .getByRole("region", { name: "Settled" })
+    .getByRole("button", { name: /^Settled/ })
+    .click();
+});
+Then("the Settled shelf shows the other item", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "Settled" })
+      .locator('.backlog-list-row[data-work-item-id="other"]'),
+  ).toBeVisible();
+});
 When("I restore the old done item", async ({ page }) => {
   const oldRow = page.locator('[data-work-item-id="old"]');
   await oldRow.hover();
@@ -2835,6 +2873,11 @@ When(
       localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
     });
     await page.reload();
+    // A settled item waits on the Settled shelf, closed by default.
+    await page
+      .getByRole("region", { name: "Settled" })
+      .getByRole("button", { name: /^Settled/ })
+      .click();
     await expect(
       page.locator('.backlog-list-row[data-work-item-id="parent"]'),
     ).toBeVisible();
