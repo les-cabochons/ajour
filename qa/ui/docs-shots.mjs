@@ -276,14 +276,6 @@ const shots = [
     margin: 0,
   },
   {
-    name: "sidebar-view-switcher",
-    run: async (page) => {
-      await go(page, "/time/today");
-      await page.getByRole("button", { name: /^Time/ }).first().click();
-      return page.getByRole("menu");
-    },
-  },
-  {
     name: "sidebar-hover-card",
     keepPointer: true,
     run: async (page) => {

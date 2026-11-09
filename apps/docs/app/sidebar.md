@@ -2,7 +2,7 @@
 
 The sidebar shows what is on your plate on every page: the running entry, your active backlog items and the pull requests that need you.
 
-<Shot name="sidebar" alt="The sidebar with the view switcher, the running entry and the backlog items" />
+<Shot name="sidebar" alt="The sidebar with the nav rows, the running entry, the search row and the backlog items" />
 
 Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 
@@ -10,9 +10,9 @@ Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 
 From top to bottom, the sidebar has:
 
-- **The view switcher**, to move between Time, Backlog, Pull requests and Projects.
-- **Search**, **Filter and order**, and **+** for a new backlog item.
+- **The views**: Time, Backlog, Pull requests and Projects, each with a count.
 - **The running entry**, or **Start** when nothing runs, with **+** for a new time entry. See [Running entries](/time/running-entries).
+- **Search**, **Filter and order**, and **+** for a new backlog item.
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
 - **Snoozed** and **Settled** sections, collapsed by default.
@@ -21,13 +21,11 @@ From top to bottom, the sidebar has:
 
 ## Switch views
 
-Click the view name at the top to switch between **Time**, **Backlog**, **Pull requests** and **Projects**. Each shows a count: today's total, the number of backlog items, and the pull requests on your plate.
-
-<Shot name="sidebar-view-switcher" alt="The view switcher menu with counts" />
+The rows at the top open **Time**, **Backlog**, **Pull requests** and **Projects**. Each shows a count: today's total, the number of backlog items, and the pull requests on your plate. The open view's row is shaded.
 
 ## Search and filter
 
-Press the search icon and type. Every word must appear in the item's title or its project's name or code. A pull request matches on its title and repository. Case and accents do not matter. Press <kbd>Esc</kbd> to clear the search.
+Click **Search** under the running entry and type. Every word must appear in the item's title or its project's name or code. A pull request matches on its title and repository. Case and accents do not matter. Press <kbd>Esc</kbd> to clear the search, and again to leave the field.
 
 Press **Filter and order** to show one project's items only. With [managed projects](/projects/#managed-projects), the menu also lists their clients under **Clients**: pick one to show the items of all its projects. Ajour remembers the filter on this device. While a project is picked, a new item from the **+** starts in that project. Search and filter apply to the sidebar only, not to the Backlog page.
 

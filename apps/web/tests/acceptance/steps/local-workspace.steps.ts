@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
-import { viewSwitcher } from "../../fixtures/sidebar";
+import { activeViewLink, sidebarNav, viewLink } from "../../fixtures/sidebar";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
 const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
@@ -730,14 +730,12 @@ When(
 );
 
 When("I open Time from the app sidebar", async ({ page }) => {
-  // The keyboard path: Enter opens the view switcher, then chooses Time.
-  await viewSwitcher(page).press("Enter");
-  await page.getByRole("menuitem", { name: /^Time/ }).press("Enter");
+  // The keyboard path: Enter on the nav row follows its link.
+  await viewLink(page, "Time").press("Enter");
 });
 
 When("I open Backlog from the app sidebar", async ({ page }) => {
-  await viewSwitcher(page).press("Enter");
-  await page.getByRole("menuitem", { name: /^Backlog/ }).press("Enter");
+  await viewLink(page, "Backlog").press("Enter");
   await expect(page).toHaveURL(/\/backlog$/);
 });
 
@@ -1604,10 +1602,8 @@ Then("the Time workspace is visible", async ({ page }) => {
     name: "Primary navigation",
   });
   await expect(primaryNavigation).toBeVisible();
-  // The view switcher names the open view.
-  await expect(
-    primaryNavigation.getByRole("button", { name: "Time", exact: true }),
-  ).toHaveAttribute("aria-haspopup", "menu");
+  // The nav marks the open view.
+  await expect(activeViewLink(page)).toHaveAttribute("data-view", "time");
   // The Time page itself has rendered, so its own shortcuts (such as N opening
   // the side panel instead of the titlebar popover) are registered.
   await expect(page.locator(".time-page-stack")).toBeVisible({
@@ -1754,7 +1750,7 @@ async function expectAppSidebarWidth(page: Page, width: number) {
 Then("the app sidebar is expanded", async ({ page }) => {
   // The Comfortable density's default width. See "Width" in docs/agents/ux-spec.md.
   await expectAppSidebarWidth(page, 272);
-  await expect(viewSwitcher(page)).toBeVisible();
+  await expect(sidebarNav(page).first()).toBeVisible();
 });
 
 Then("the app sidebar is hidden", async ({ page }) => {
@@ -2584,8 +2580,7 @@ When(
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await viewSwitcher(page).press("Enter");
-    await page.getByRole("menuitem", { name: /^Backlog/ }).press("Enter");
+    await viewLink(page, "Backlog").press("Enter");
     await expect(page).toHaveURL(/\/backlog$/);
     await page
       .getByRole("button", { name: "Commit week", exact: true })

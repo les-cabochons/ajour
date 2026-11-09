@@ -562,7 +562,10 @@ const shots = [
     name: "sidebar-search",
     run: async (page) => {
       await go(page, "/time/today");
-      await page.getByRole("button", { name: "Search" }).first().click();
+      await page
+        .getByRole("searchbox", { name: "Search the sidebar" })
+        .first()
+        .click();
     },
   },
   {

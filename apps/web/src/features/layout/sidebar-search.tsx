@@ -1,14 +1,16 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   RiBuilding2Line as ClientIcon,
+  RiCloseLine as CloseIcon,
   RiDraggable as CustomOrderIcon,
   RiFilter3Line as FilterIcon,
   RiFolderLine as AllProjectsIcon,
+  RiSearchLine as SearchIcon,
   RiSortDesc as PriorityOrderIcon,
 } from "@remixicon/react";
-import { ExpandingSearch } from "@/components/expanding-search";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Command,
   CommandEmpty,
@@ -37,19 +39,58 @@ import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
 
 /**
- * The sidebar's Search: the expanding box over the view switcher's row, see
- * `components/expanding-search.tsx`. `lib/sidebar-search.ts` holds the state.
+ * The sidebar's search row, like T3 Code's: a search icon and a borderless
+ * field under the timer dock, always in view, with the filter menu and New
+ * backlog item at its end. Typing narrows the work list. Escape clears a
+ * typed query and keeps focus, and leaves the field when it is empty. A typed
+ * query stays so the user can open the rows it found, even when the sidebar
+ * hides in between. `lib/sidebar-search.ts` holds the state.
  */
 export function SidebarSearch() {
-  const state = useSidebarSearch();
+  const { query } = useSidebarSearch();
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
-    <ExpandingSearch
-      state={state}
-      onChange={updateSidebarSearch}
-      label="Search the sidebar"
-      className="flex-1"
-      buttonClassName="ajour-app-sidebar-toggle"
-    />
+    // The label makes the icon and the gaps part of the click target.
+    <label className="flex h-7 min-w-0 flex-1 cursor-text items-center gap-2 pl-1.5 text-muted-foreground">
+      <SearchIcon className="size-4 shrink-0" />
+      <Input
+        ref={inputRef}
+        type="search"
+        aria-label="Search the sidebar"
+        placeholder="Search"
+        value={query}
+        onChange={(event) => updateSidebarSearch({ query: event.target.value })}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          if (query) updateSidebarSearch({ query: "" });
+          else event.currentTarget.blur();
+        }}
+        // The row's quiet look: no border, box or padding of its own.
+        className="h-7 flex-1 rounded-sm border-0 bg-transparent px-0 py-0 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-search-cancel-button]:hidden"
+      />
+      {query ? (
+        <TooltipButton
+          label="Clear search"
+          render={
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              // The button unmounts with the query, so focus goes back to
+              // the field, whether it was clicked or pressed from the keyboard.
+              onClick={() => {
+                updateSidebarSearch({ query: "" });
+                inputRef.current?.focus();
+              }}
+            />
+          }
+        >
+          <CloseIcon />
+        </TooltipButton>
+      ) : null}
+    </label>
   );
 }
 

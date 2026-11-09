@@ -28,9 +28,9 @@ import {
   SidebarSearch,
 } from "@/features/layout/sidebar-search";
 import {
-  SidebarViewSwitcher,
+  SidebarNav,
   type SidebarViewOption,
-} from "@/features/layout/sidebar-view-switcher";
+} from "@/features/layout/sidebar-nav";
 import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
@@ -179,11 +179,10 @@ function NewBacklogItemButton({ projectId }: { projectId?: string }) {
 
 /**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
- * logo beside the macOS traffic lights (in the corner elsewhere), the view
- * switcher with Search, the project filter and New backlog item, the
- * timer dock, the work list, narrowed by the search and the filter, then a foot
- * row with Settings and Commit week, icons only. Search
- * expands into a search box in place of the switcher. It shows beside the
+ * logo beside the macOS traffic lights (in the corner elsewhere), the nav
+ * rows, the timer dock, the search row with the project filter and New
+ * backlog item, the work list, narrowed by the search and the filter, then a
+ * foot row with Settings and Commit week, icons only. It shows beside the
  * page. `useAppSidebar` owns whether it shows.
  */
 export function AppNavigationSidebar({
@@ -205,7 +204,7 @@ export function AppNavigationSidebar({
     select: (router) =>
       getSectionPathname(router.location.pathname, router.location.search),
   });
-  const { open: searchOpen, query } = useSidebarSearch();
+  const { query } = useSidebarSearch();
   const matcher = useMemo(
     () =>
       createSidebarMatcher(
@@ -253,7 +252,7 @@ export function AppNavigationSidebar({
         )}
       >
         {/* The toggle opens under the pointer that showed the sidebar. Its
-            tooltip shows on the right, so it does not cover the switcher. */}
+            tooltip shows on the right, so it does not cover the nav. */}
         <SidebarToggleButton
           label="Hide sidebar"
           onToggle={onToggle}
@@ -263,36 +262,29 @@ export function AppNavigationSidebar({
         <BrandLogo linked className={cn(isDesktopShell && "desktop-no-drag")} />
       </SidebarHeader>
 
-      <div className="flex shrink-0 items-center justify-between gap-1 px-2 pb-1">
-        {searchOpen ? null : (
-          <SidebarViewSwitcher
-            pathname={sectionPathname}
-            selectedTimeDate={selectedTimeDate}
-            options={views}
-          />
-        )}
-        <span
-          className={cn(
-            "flex items-center gap-0.5",
-            searchOpen ? "min-w-0 flex-1" : "ml-auto",
-          )}
-        >
-          <SidebarSearch />
-          <SidebarFilterMenu
-            projects={state.projects}
-            projectId={layout.projectId}
-            client={layout.client}
-            onChange={({ projectId, client }) =>
-              updateSidebarLayout({ projectId, client })
-            }
-            ordering={state.backlogSortMode}
-            onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
-          />
-          <NewBacklogItemButton projectId={matcher.projectId} />
-        </span>
-      </div>
+      <SidebarNav
+        pathname={sectionPathname}
+        selectedTimeDate={selectedTimeDate}
+        options={views}
+      />
 
       <TimerDock />
+
+      {/* The search row. Its hairline parts it from the list. */}
+      <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-[var(--border-row)] px-2">
+        <SidebarSearch />
+        <SidebarFilterMenu
+          projects={state.projects}
+          projectId={layout.projectId}
+          client={layout.client}
+          onChange={({ projectId, client }) =>
+            updateSidebarLayout({ projectId, client })
+          }
+          ordering={state.backlogSortMode}
+          onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
+        />
+        <NewBacklogItemButton projectId={matcher.projectId} />
+      </div>
 
       <SidebarContent>
         <SidebarBacklogList pathname={pathname} matcher={matcher}>

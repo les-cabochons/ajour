@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+import { activeViewLink, viewSlug } from "../../fixtures/sidebar";
 const { When, Then } = createBdd();
 
 function sidebar(page: Page) {
@@ -18,15 +19,12 @@ When("I open the Projects page", async ({ page }) => {
   await page.goto("/projects");
 });
 
-Then(
-  "the sidebar view switcher shows {string}",
-  async ({ page }, view: string) => {
-    // The switcher's trigger is named after the view it shows.
-    await expect(
-      sidebar(page).getByRole("button", { name: view, exact: true }),
-    ).toBeVisible();
-  },
-);
+Then("the sidebar nav marks {string}", async ({ page }, view: string) => {
+  await expect(activeViewLink(page)).toHaveAttribute(
+    "data-view",
+    viewSlug(view),
+  );
+});
 
 Then("the item page offers {string}", async ({ page }, label: string) => {
   await expect(backLink(page)).toHaveText(label);
