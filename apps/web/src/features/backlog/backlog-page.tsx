@@ -83,6 +83,7 @@ import {
   isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
+  showsArchiveFilter,
   splitBacklogShelves,
   type BacklogGroup,
 } from "@/domain/backlog/backlog-view";
@@ -178,11 +179,18 @@ export function BacklogPage() {
     [state, view, now, search],
   );
   // Settled and archived items leave their groups for the shelves, so the
-  // groups show only the work on the user's plate whatever the grouping.
+  // groups show only the work on the user's plate. On the board grouped by
+  // state, the done columns keep the done window's items instead, and their
+  // headers lead to the archive.
+  const doneInColumns = board && grouping === "state";
   const shelf = useMemo(
-    () => splitBacklogShelves(items, view.filters),
-    [items, view.filters],
+    () =>
+      splitBacklogShelves(items, view.filters, {
+        doneInGroups: doneInColumns,
+      }),
+    [items, view.filters, doneInColumns],
   );
+  const inArchive = showsArchiveFilter(view.filters);
   const lanes = useMemo(
     () =>
       board && view.swimlanes === "project" && grouping !== "project"
@@ -995,6 +1003,18 @@ export function BacklogPage() {
                             <span className="backlog-group-count">
                               {group.items.length}
                             </span>
+                            {doneInColumns &&
+                              !inArchive &&
+                              group.kind === "state" &&
+                              group.done && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={openArchive}
+                                >
+                                  View archive
+                                </Button>
+                              )}
                             {!(group.kind === "state" && group.done) &&
                               canUseProjectGroup(group, state) &&
                               canUseProjectGroup(lane, state) && (

@@ -280,6 +280,17 @@ describe("the Settled and Done shelves", () => {
     ]);
     expect(done.map((i) => i._id)).toEqual(["latest", "earlier"]);
   });
+  it("keeps archived items in their groups when asked, as on the state board", () => {
+    const { open, settled, done } = splitBacklogShelves(items, [], {
+      doneInGroups: true,
+    });
+    expect(open.map((i) => i._id)).toEqual(["open", "earlier", "latest"]);
+    expect(settled.map((i) => i._id)).toEqual([
+      "settled last",
+      "settled first",
+    ]);
+    expect(done).toEqual([]);
+  });
   it("has no shelves under the Archived state filter, where the page is the archive", () => {
     const { open, settled, done } = splitBacklogShelves(items, [
       { field: "state", value: ARCHIVED_STATE_FILTER },

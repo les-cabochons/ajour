@@ -152,7 +152,7 @@ function matchesFilter(
 }
 
 /** Whether the State filter asks for archived items: the page is the archive. */
-function showsArchiveFilter(filters: readonly BacklogFilter[]) {
+export function showsArchiveFilter(filters: readonly BacklogFilter[]) {
   return filters.some(
     (filter) =>
       filter.field === "state" && filter.value === ARCHIVED_STATE_FILTER,
@@ -232,7 +232,9 @@ export function selectBacklogViewItems(
  * Splits the shown items between the groups and the two shelves below them.
  * Settled items leave their group for the Settled shelf, latest settled
  * first, and archived items for the Done shelf, latest archived first, so the
- * groups hold only the work on the user's plate in every grouping. Under the
+ * groups hold only the work on the user's plate in every grouping. With
+ * `doneInGroups`, as on the board grouped by state, archived items stay in
+ * their done state's column instead and the Done shelf is empty. Under the
  * Archived state filter the page is the archive: the groups keep every item
  * and both shelves are empty. "Shelves" under "Backlog" in
  * docs/agents/ux-spec.md.
@@ -240,6 +242,7 @@ export function selectBacklogViewItems(
 export function splitBacklogShelves(
   items: readonly LocalWorkItem[],
   filters: readonly BacklogFilter[],
+  { doneInGroups = false }: { doneInGroups?: boolean } = {},
 ): { open: LocalWorkItem[]; settled: LocalWorkItem[]; done: LocalWorkItem[] } {
   if (showsArchiveFilter(filters))
     return { open: [...items], settled: [], done: [] };
@@ -247,7 +250,8 @@ export function splitBacklogShelves(
   const settled: LocalWorkItem[] = [];
   const done: LocalWorkItem[] = [];
   for (const workItem of items) {
-    if (workItem.status === "archived") done.push(workItem);
+    if (workItem.status === "archived")
+      (doneInGroups ? open : done).push(workItem);
     else if (workItem.status === "settled") settled.push(workItem);
     else open.push(workItem);
   }

@@ -364,6 +364,13 @@ Feature: Backlog list and board views
     When I view the archive from the Done shelf
     Then the Backlog shows the old done and missing sync items
 
+  Scenario: On the board, the Done column holds the past week and leads to the archive
+    When I choose the Backlog board
+    And I press "Alt+ArrowRight" on the other Backlog row
+    Then the other item is in the Done column, with no Done shelf
+    When I view the archive from the Done column
+    Then the Backlog shows the old done and missing sync items
+
   Scenario: Settled items wait on their own closed shelf
     Given the other Backlog item is settled
     Then the other item has left its group for the closed Settled shelf

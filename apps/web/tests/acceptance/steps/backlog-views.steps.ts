@@ -1899,6 +1899,27 @@ When("I view the archive from the Done shelf", async ({ page }) => {
     page.getByRole("button", { name: "Edit State filter" }),
   ).toHaveText("StateArchived");
 });
+Then(
+  "the other item is in the Done column, with no Done shelf",
+  async ({ page }) => {
+    const done = page.locator(".backlog-board-column", {
+      has: page.getByRole("heading", { name: "Done", exact: true }),
+    });
+    await expect(done.locator('[data-work-item-id="other"]')).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Done in the past week" }),
+    ).toHaveCount(0);
+  },
+);
+When("I view the archive from the Done column", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Done", exact: true })
+    .getByRole("button", { name: "View archive", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Edit State filter" }),
+  ).toHaveText("StateArchived");
+});
 Given("the other Backlog item is settled", async ({ page }) => {
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
