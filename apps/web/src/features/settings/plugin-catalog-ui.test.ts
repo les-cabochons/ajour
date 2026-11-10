@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { PluginCatalogEntry, PluginOrigin } from "@ajour/shared";
+import {
+  pluginCatalogCapabilitySchema,
+  type PluginCatalogEntry,
+  type PluginOrigin,
+} from "@ajour/shared";
 import {
   canInstallCatalogPlugin,
   catalogOffersUpdate,
@@ -49,16 +53,15 @@ function origin(overrides: Partial<PluginOrigin> = {}): PluginOrigin {
 }
 
 describe("canInstallCatalogPlugin", () => {
-  it.each([["connector"], ["codeHost"], ["calendar"], ["team"], ["agentTask"]])(
-    "allows downloading a packaged %s plugin",
-    (capability) => {
-      expect(
-        canInstallCatalogPlugin(
-          entry([capability as PluginCatalogEntry["capabilities"][number]]),
-        ),
-      ).toBe(true);
-    },
-  );
+  // Every capability of the shared list but `schema`, so a capability added
+  // there cannot leave its plugins without a Download button again.
+  it.each(
+    pluginCatalogCapabilitySchema.options.filter(
+      (capability) => capability !== "schema",
+    ),
+  )("allows downloading a packaged %s plugin", (capability) => {
+    expect(canInstallCatalogPlugin(entry([capability]))).toBe(true);
+  });
 
   it("leaves a schema-only plugin to the built-in shapes for now", () => {
     expect(canInstallCatalogPlugin(entry(["schema"]))).toBe(false);
