@@ -1566,6 +1566,49 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 1.5rem;
   }
+
+  /* Comments drop the timeline: each block takes the full width, with the
+     author's initials in its header. */
+  .backlog-comments {
+    padding-left: 0;
+  }
+
+  .backlog-comments::before,
+  .backlog-comment-verb {
+    display: none;
+  }
+
+  .backlog-comment-avatar {
+    top: calc(1px + (2.125rem - 1.25rem) / 2);
+    left: calc(1px + 0.5rem);
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* Name, time, room, actions. A long name truncates, and the Restricted
+     chip takes a second line, so the actions always stay in reach. */
+  .backlog-comment-header {
+    display: grid;
+    grid-template-columns: minmax(0, auto) auto 1fr auto;
+    row-gap: 0.125rem;
+    padding-block: 0.25rem;
+    padding-left: 2.125rem;
+  }
+
+  .backlog-comment-actions {
+    grid-row: 1;
+    grid-column: 4;
+  }
+
+  .backlog-comment-restricted {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .backlog-comments-new {
+    margin-left: 0;
+  }
 }
 
 @media (pointer: coarse) {

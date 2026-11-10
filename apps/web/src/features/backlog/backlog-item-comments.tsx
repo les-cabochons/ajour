@@ -991,15 +991,20 @@ function CommentItem({
           aria-label={own ? "Your comment" : `${author}'s comment`}
         >
           <header className="backlog-comment-header">
-            <span className="font-medium text-foreground">{author}</span>
-            <span className="text-muted-foreground">
-              commented {formatCommentTime(comment.createdAt)}
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {author}
+            </span>
+            <span className="shrink-0 text-muted-foreground">
+              <span className="backlog-comment-verb">commented </span>
+              {formatCommentTime(comment.createdAt)}
               {isEditedComment(comment) ? " · edited" : ""}
             </span>
             {comment.restrictedTo ? (
-              <Chip>Restricted to {comment.restrictedTo}</Chip>
+              <Chip className="backlog-comment-restricted">
+                Restricted to {comment.restrictedTo}
+              </Chip>
             ) : null}
-            <span className="ml-auto flex items-center gap-0.5">
+            <span className="backlog-comment-actions ml-auto flex items-center gap-0.5">
               {reactable.length > 0 ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
