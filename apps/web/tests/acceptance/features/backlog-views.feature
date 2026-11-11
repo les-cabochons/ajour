@@ -428,47 +428,6 @@ Feature: Backlog list and board views
     And I cancel the subitem close prompt
     Then the parent remains active and its editor stays open
 
-  Scenario Outline: Save a draft before opening workflow settings
-    Given the Backlog has an unmapped source state
-    When I edit the other item from the Backlog peek
-    And I rename the open editor draft to "Saved settings draft"
-    And I follow the unmapped-state settings link with "<activation>"
-    Then workflow settings opens with the other item's draft saved
-
-    Examples:
-      | activation |
-      | click      |
-      | Enter      |
-
-  Scenario: Block workflow settings navigation for an invalid draft
-    Given the Backlog has an unmapped source state
-    When I edit the other item from the Backlog peek
-    And I rename the open editor draft to ""
-    And I follow the unmapped-state settings link with "click"
-    Then Backlog keeps the invalid draft and its validation error
-
-  Scenario Outline: Open workflow settings separately without committing the draft
-    Given the Backlog has an unmapped source state
-    When I edit the other item from the Backlog peek
-    And I rename the open editor draft to "Separate settings draft"
-    And I open the unmapped-state settings link with "<modifier>" held
-    Then Backlog keeps its unsaved draft in the original page
-
-    Examples:
-      | modifier |
-      | Control  |
-      | Shift    |
-
-  Scenario: Cancel a draft close before opening workflow settings
-    Given the Backlog has an unmapped source state
-    When I edit the parent item from the Backlog peek
-    And I rename the open editor draft to "Pending settings draft"
-    And I change the editor workflow draft to "Done"
-    And I follow the unmapped-state settings link with "click"
-    And I cancel the subitem close prompt
-    Then the parent remains active and its editor stays open
-    And Backlog keeps the pending settings draft
-
   Scenario: Keep board arrow navigation in its project swimlane
     Given an earlier project has asymmetric board columns
     When I choose the Backlog board
@@ -479,18 +438,6 @@ Feature: Backlog list and board views
     Then the other card has focus
     When I press ArrowLeft on the other card
     Then the parent card has focus
-
-  Scenario: Keep a board drop after committing its open editor
-    When I choose the Backlog board
-    And I edit the subitem from its peek
-    And I rename the open editor draft to "Saved subitem draft"
-    And I drag the subitem to In progress
-    Then the subitem is in In progress
-    And the Backlog editor is closed
-    When I edit the subitem from its peek
-    And I save the open Backlog editor
-    Then the subitem is in In progress
-    And the saved subitem title is "Saved subitem draft"
 
   Scenario Outline: Commit the open editor before an Alt-arrow move
     When I edit the other item from the Backlog peek
@@ -796,16 +743,6 @@ Feature: Backlog list and board views
     And I write "My notes" as its description and press Mod+Enter
     Then the description says it is not saved to the source because "The token expired.", with Retry
     And the source still holds "Original", and the parent "My notes"
-
-  Scenario: Following a conflict mark saves the side panel's draft first
-    Given the Backlog parent is synced
-    And its description is in conflict between "My notes" here and "Their notes" in the source
-    When I open the Backlog workspace
-    And I edit the parent item from the Backlog peek
-    And I rename the parent to "Renamed in the panel" in the side panel without saving
-    And I follow the conflict mark on the parent's sidebar row
-    Then Sync review opens on the parent's conflict
-    And the parent's title is "Renamed in the panel", saved on the way
 
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced

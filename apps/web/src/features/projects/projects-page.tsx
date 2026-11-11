@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { placeFloatingComposerFor } from "@/lib/floating-composer";
 import {
   Tooltip,
   TooltipContent,
@@ -1598,10 +1597,6 @@ export function ProjectsPage() {
   const taskPropertyPlugins = useTaskPropertyPlugins();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The narrow view has no sidebars, so the project list is a page of its own
-  // at /projects, and project pages open without it. Tasks edit in a full-width
-  // dialog there instead of the side panel.
-  const isNarrowView = useIsNarrowView();
   const projectRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const projectPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
@@ -2473,36 +2468,18 @@ export function ProjectsPage() {
         </div>
       ) : null}
 
-      {/* The task composer opens as a dialog at every width: no side
-          panel for a form (forms council round 8). */}
+      {/* The task composer opens as a modal dialog, centered in the window
+          at every width: no side panel for a form (forms council round 8),
+          and no card placed beside the row. */}
       {taskEditorForm ? (
         <Dialog
           open
-          // Floating on a wide window: the project stays live behind it.
-          modal={isNarrowView}
           disablePointerDismissal
           onOpenChange={(open) => !open && setTaskEditor(null)}
         >
           <DialogContent
-            className={cn(
-              "max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]",
-              !isNarrowView && "composer-floating",
-            )}
-            overlay={isNarrowView}
+            className="max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]"
             showCloseButton={false}
-            // Off the edited task's row, so it stays readable; placed once
-            // per task, not on every keystroke, which renders this page.
-            ref={(popup: HTMLDivElement | null) => {
-              if (isNarrowView) return;
-              const taskId = visibleTaskEditor?.taskId;
-              placeFloatingComposerFor(popup, taskId ?? "new", () =>
-                taskId
-                  ? document.querySelector(
-                      `main [data-task-id="${CSS.escape(taskId)}"]`,
-                    )
-                  : null,
-              );
-            }}
           >
             {taskEditorForm}
           </DialogContent>

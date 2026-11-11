@@ -362,34 +362,6 @@
   opacity: 0.5;
 }
 
-/* A floating composer: a card at the top right of the window, with no
-   backdrop and no dock, so the page behind stays live: its rows, keys and
-   menus keep working while a form is open (forms council round 8). */
-/* --composer-top is where placeFloatingComposer puts the card, below the day
-   strip or the row it edits; the card stops 16px short of the window's
-   bottom from there. */
-[data-slot="dialog-content"].composer-floating {
-  top: var(--composer-top, 64px);
-  right: 16px;
-  left: auto;
-  width: min(30rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - var(--composer-top, 64px) - 16px);
-  /* Cancels the dialog's centering shift through Tailwind's own variables.
-     `translate: none` worked on the dev server, but the build's CSS
-     minifier dropped it beside `transform: none`, so every floating card
-     shipped shifted up and left by half its size (usability council U1). */
-  --tw-translate-x: 0;
-  --tw-translate-y: 0;
-  transform: none;
-  box-shadow: var(--shadow-popup);
-  border: 1px solid var(--border);
-  /* The dialog's duration-100 sets a transition duration, and the transition
-     property defaults to all: the top the card is placed at, below the day
-     strip or the row it edits, slid down from 64px. Its open animation is a
-     keyframe animation, which this leaves alone. */
-  transition-property: none;
-}
-
 /* Writing that can change says so: a faint tint on hover and a ring on
    keyboard focus, with no border at rest and no change of size (forms
    council round 9). */
@@ -406,15 +378,6 @@
 /* Focused, a writing field shows its caret and nothing else, as Linear's:
    a tint on focus turned the autofocused title back into a box (forms
    council round 10). */
-
-/* A modal over a floating composer, such as Create task opened from its
-   task chip, dims the composer too: one form is active at a time. */
-body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
-  [data-slot="dialog-content"].composer-floating,
-[data-slot="dialog-content"].composer-floating[data-nested-dialog-open] {
-  filter: brightness(0.55);
-  pointer-events: none;
-}
 
 /* A reminder date in a connection row: the typed date reads as text until
    hovered, as the row's other values. */
@@ -471,19 +434,6 @@ body:has([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"])
 .connection-rows [data-slot="select-trigger"].inline-field > svg:last-child {
   opacity: 1;
   color: var(--text-tertiary);
-}
-
-/* A dialog opened from a floating composer, such as Create task from its
-   task chip, opens over that composer, offset a step, not across the
-   window from it (forms council round 11). */
-body:has([data-slot="dialog-content"].composer-floating)
-  [data-slot="dialog-content"].composer-nested {
-  top: 96px;
-  right: 16px;
-  left: auto;
-  --tw-translate-x: 0;
-  --tw-translate-y: 0;
-  transform: none;
 }
 
 /* Times as one sentence (forms council round 13): "5h remaining · 3h

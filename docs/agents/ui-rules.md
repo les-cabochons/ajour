@@ -37,6 +37,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Use icon-only buttons for common commands when the icon is familiar and an accessible label is provided.
 - Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons. Exceptions are the sidebar rows' hover actions (Start entry or Stop, Snooze…, Settle), so hovering down the list does not cover it, and the comment header's reaction and actions buttons, which use hover, pressed and open-menu tints without a tooltip.
 - Every modal surface uses `Dialog`, `AlertDialog` or `Sheet` from `apps/web/src/components/ui`, and anchored surfaces use `Popover`. Do not build overlays by hand: no `role="dialog"` divs, fixed backdrops or `*-modal-overlay` classes.
+- A `Dialog` is modal and centered in the window, over its backdrop, at every width. Never place one beside a row or in a corner: a form that must leave the page live is a side panel, and one tied to a control is a `Popover`.
 - Use segmented controls, toggles, selects, tabs, popovers, dialogs, and menus according to their existing local patterns.
 
 ## Typography

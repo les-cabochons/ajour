@@ -327,30 +327,6 @@ Then(
   },
 );
 
-When(
-  "I rename the parent to {string} in the side panel without saving",
-  async ({ page }, title: string) => {
-    await page
-      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
-      .getByRole("textbox", { name: "Item", exact: true })
-      .fill(title);
-  },
-);
-
-Then(
-  "the parent's title is {string}, saved on the way",
-  async ({ page }, title: string) => {
-    const saved = await page.evaluate(
-      () =>
-        JSON.parse(
-          localStorage.getItem("ajour.local-state.v2")!,
-        ).workItems.find((item: { _id: string }) => item._id === "parent")
-          .title,
-    );
-    expect(saved).toBe(title);
-  },
-);
-
 /** A source that holds a description, and answers reads and writes of it. */
 interface DescriptionSource {
   /** The text the sync brings. */

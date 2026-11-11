@@ -1,5 +1,4 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
-import { placeFloatingComposerFor } from "@/lib/floating-composer";
 import {
   EMPTY_ENTRY_SELECTION,
   selectEntryOnClick,
@@ -1131,36 +1130,17 @@ export function BacklogPage() {
         </SidePanel>
       )}
       {target && (
+        // A modal dialog, centered in the window at every width.
         <Dialog
           open
-          // Floating on a wide window: the list stays live behind it.
-          modal={narrow}
           disablePointerDismissal
           onOpenChange={(open) => {
             if (!open) closeEditor();
           }}
         >
           <DialogContent
-            className={cn(
-              "max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]",
-              !narrow && "composer-floating",
-            )}
-            overlay={narrow}
+            className="max-w-xl narrow:w-[calc(100%-1rem)] narrow:max-w-[calc(100%-1rem)]"
             showCloseButton={false}
-            // Off the edited row, so it stays readable while it is edited;
-            // placed once per item, not on every render of the page.
-            ref={(popup: HTMLDivElement | null) => {
-              if (narrow) return;
-              const itemId =
-                target.kind === "edit" ? target.workItem._id : undefined;
-              placeFloatingComposerFor(popup, itemId ?? "new", () =>
-                itemId
-                  ? document.querySelector(
-                      `.backlog-workspace [data-work-item-id="${CSS.escape(itemId)}"]`,
-                    )
-                  : null,
-              );
-            }}
           >
             {editorForm(DialogTitle)}
           </DialogContent>
