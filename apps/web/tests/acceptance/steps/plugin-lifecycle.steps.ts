@@ -151,7 +151,9 @@ Then(
     ).toBeVisible();
     const memory = section.getByLabel("Memory ceiling", { exact: true });
     await expect(memory).toHaveValue("");
-    await expect(memory).toHaveAttribute("placeholder", String(ceiling));
+    // The placeholder says where an empty value comes from; the number is
+    // in the description, so it never reads as a saved value.
+    await expect(memory).toHaveAttribute("placeholder", "Plugin default");
     await expect(
       section.getByText(`Empty uses the plugin's, ${ceiling} MB.`, {
         exact: false,

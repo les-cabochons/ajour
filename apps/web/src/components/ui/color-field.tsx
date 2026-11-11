@@ -112,7 +112,7 @@ export function ColorField({
           aria-label="Hex color"
           aria-invalid={!HEX_COLOR.test(draft) || undefined}
           className="font-mono"
-          placeholder="#4f46e5"
+          placeholder="Hex color"
           value={draft}
           onChange={(event) => {
             const next = event.target.value.trim();

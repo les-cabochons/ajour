@@ -40,6 +40,12 @@
     padding: 1.5rem var(--page-gutter);
   }
 
+  /* A settings placeholder says what to type, never a value. Italics keep
+     it from reading as a saved value, as a connection row's text does. */
+  .settings-content :is(input, textarea)::placeholder {
+    font-style: italic;
+  }
+
   /* A settings page of rows keeps its labels and controls close: the eye
      travels 672px, not the content's width. */
   .settings-measure {

@@ -150,13 +150,7 @@ export function SecretFieldInput({
             value={value}
             autoFocus={replacing}
             disabled={blocked}
-            placeholder={
-              replacing
-                ? "Paste the new value"
-                : row && field.placeholder
-                  ? `e.g. ${field.placeholder}`
-                  : field.placeholder
-            }
+            placeholder={replacing ? "Paste the new value" : field.placeholder}
             autoComplete="off"
             onChange={(event) => onChange(event.target.value)}
           />

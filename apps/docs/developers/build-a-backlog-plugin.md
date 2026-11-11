@@ -78,14 +78,14 @@ Create `plugin.json` at the root. It tells Ajour who the plugin is, which API it
       "label": "Connection label",
       "type": "text",
       "required": true,
-      "placeholder": "Work"
+      "placeholder": "Name this connection"
     },
     {
       "id": "tenantLabel",
       "label": "Account",
       "type": "text",
       "required": true,
-      "placeholder": "Acme on GitHub"
+      "placeholder": "Your account or organization name"
     },
     {
       "id": "hostUrl",
