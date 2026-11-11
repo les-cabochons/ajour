@@ -2404,7 +2404,7 @@ When(
       .click();
     await page
       .getByRole("textbox", { name: "Title", exact: true })
-      .fill("Cancelled title");
+      .fill("Escaped title");
     await page.keyboard.press("Escape");
 
     await page
@@ -2418,25 +2418,33 @@ When(
     await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
-      .fill("Cancelled description");
+      .fill("Escaped description");
     await page.keyboard.press("Escape");
     await expect(
-      page.getByRole("heading", { name: "Backlog parent", level: 1 }),
+      page.getByRole("heading", { name: "Escaped title", level: 1 }),
     ).toBeVisible();
   },
 );
 Then(
-  "the Backlog parent keeps its saved title, estimate and description",
+  "the Backlog parent has the title, estimate and description I typed",
   async ({ page }) => {
-    const { workItems } = await readBacklogState(page);
-    const parent = workItems.find(
-      (item: { _id: string }) => item._id === "parent",
-    );
-    expect(parent).toMatchObject({
-      title: "Backlog parent",
-      remainingEstimateHours: 3,
-    });
-    expect(parent.description).toBeUndefined();
+    await expect
+      .poll(async () => {
+        const { workItems } = await readBacklogState(page);
+        const parent = workItems.find(
+          (item: { _id: string }) => item._id === "parent",
+        );
+        return {
+          title: parent.title,
+          remainingEstimateHours: parent.remainingEstimateHours,
+          description: parent.description,
+        };
+      })
+      .toEqual({
+        title: "Escaped title",
+        remainingEstimateHours: 9,
+        description: "Escaped description",
+      });
   },
 );
 Given("the Backlog parent is synced", async ({ page }) => {

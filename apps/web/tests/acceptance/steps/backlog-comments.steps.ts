@@ -305,6 +305,21 @@ When("I edit my comment to {string}", async ({ page }, text: string) => {
   await page.keyboard.press("ControlOrMeta+Enter");
 });
 
+When(
+  "I change my comment to {string} and press Escape",
+  async ({ page }, text: string) => {
+    await myComment(page)
+      .getByRole("button", { name: "Comment actions" })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    const editor = myComment(page).getByRole("textbox", {
+      name: "Edit comment",
+    });
+    await editor.fill(text);
+    await page.keyboard.press("Escape");
+  },
+);
+
 Then(
   "my comment reads {string} and shows it was edited",
   async ({ page }, text: string) => {

@@ -94,7 +94,12 @@ import {
   useLocalState,
   useLocalWorkItems,
 } from "@/lib/local-hooks";
-import { offerUndo } from "@/features/feedback/undo-toast";
+import { keepUndo, offerUndo } from "@/features/feedback/undo-toast";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { DescriptionText } from "@/features/backlog/description-links";
@@ -129,6 +134,30 @@ const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
   remainingEstimateHours: "Remaining",
   completedEstimateHours: "Completed",
 };
+
+/** Where a form's unsaved draft is kept between openings (`lib/composer-drafts.ts`). */
+export function getBacklogItemDraftKey(target: BacklogTaskEditorTarget) {
+  return target.kind === "edit"
+    ? `backlog-item:${target.workItem._id}`
+    : `backlog-item:new:${target.parent?._id ?? ""}`;
+}
+
+/** A kept draft, with the item's fields it started from, so a sync since is followed. */
+interface KeptBacklogItemDraft {
+  fields: BacklogTaskEditorFields;
+  base: BacklogTaskEditorFields;
+}
+
+/** Text the user typed in a new item, which Escape must not lose. */
+function hasTypedText(fields: BacklogTaskEditorFields) {
+  return [
+    fields.title,
+    fields.description,
+    fields.originalEstimateHours,
+    fields.remainingEstimateHours,
+    fields.completedEstimateHours,
+  ].some((value) => value.trim() !== "");
+}
 
 /** A typed estimate as figures show it ("8h", "2h30"), or null if it isn't one. */
 function formatEstimateFigure(value: string) {
@@ -186,7 +215,9 @@ function getSourceMetaLabel(workItem: LocalWorkItem) {
  * The one form for creating and editing a backlog item. Hosts (the side panel, the
  * narrow dialog) only supply the container, so keys, buttons and save rules stay the
  * same everywhere. Save: the Save button, Enter in the title, or Cmd/Ctrl+Enter.
- * Escape, Cancel or × discard the draft.
+ * Escape closes and keeps the draft for the next opening of the same item, or
+ * of a new item under the same parent; Cancel or × discard it. Creating an
+ * item shows the Undo toast.
  *
  * The draft is seeded once, on mount, so hosts key the form by target. A host that can
  * swap containers mid-edit passes the draft back in through `initialFields`.
@@ -255,13 +286,20 @@ export function BacklogItemEditorForm({
     descriptionWritesToSource,
   );
   const parent = target.kind === "create" ? target.parent : undefined;
+  // Escape keeps the draft for the same target; the next opening resumes it.
+  const [draftKey] = useState(() => getBacklogItemDraftKey(target));
+  const [kept] = useState(() =>
+    getComposerDraft<KeptBacklogItemDraft>(draftKey),
+  );
   const [fields, setFields] = useState(
-    () => initialFields ?? createBacklogTaskEditorSeed(target),
+    () => kept?.fields ?? initialFields ?? createBacklogTaskEditorSeed(target),
   );
   // The item's fields when the draft started. A sync can change the item under
   // an open draft: a field the user has not touched follows it, and only the
   // fields the user changed are saved.
-  const [base, setBase] = useState(() => createBacklogTaskEditorSeed(target));
+  const [base, setBase] = useState(
+    () => kept?.base ?? createBacklogTaskEditorSeed(target),
+  );
   const currentFields = useMemo(
     () =>
       target.kind === "edit" && currentItem
@@ -306,7 +344,7 @@ export function BacklogItemEditorForm({
     workItem,
   ]);
   // A new draft starts without a conflict; a draft carried here keeps its own.
-  const startedFresh = useRef(!initialFields);
+  const startedFresh = useRef(!initialFields && !kept);
   const openedItemId = useRef(workItem?._id);
   useEffect(() => {
     if (startedFresh.current && openedItemId.current) {
@@ -391,8 +429,36 @@ export function BacklogItemEditorForm({
     });
   }, [state.workflowStates]);
 
+  // The draft is kept while it holds something to save, until it is saved
+  // or discarded.
+  const holdsDraft =
+    target.kind === "edit" ? editor.hasChanges : hasTypedText(fields);
+  const settledRef = useRef(false);
+  useEffect(() => {
+    if (settledRef.current) return;
+    if (holdsDraft) {
+      keepComposerDraft(draftKey, {
+        fields,
+        base,
+      } satisfies KeptBacklogItemDraft);
+    } else {
+      dropComposerDraft(draftKey);
+    }
+  }, [base, draftKey, fields, holdsDraft]);
+
+  /** Closes after a save, or on Cancel and ×, ending the draft. */
+  function finish() {
+    settledRef.current = true;
+    dropComposerDraft(draftKey);
+    onClose();
+  }
+
   useImperativeHandle(ref, () => ({
-    commitBeforeSwitch: () => commit("switch"),
+    commitBeforeSwitch: async () => {
+      const committed = await commit("switch");
+      if (committed) dropComposerDraft(draftKey);
+      return committed;
+    },
   }));
 
   useEffect(() => {
@@ -401,6 +467,7 @@ export function BacklogItemEditorForm({
 
   function updateFields(patch: Partial<BacklogTaskEditorFields>) {
     setFields((current) => ({ ...current, ...patch }));
+    settledRef.current = false;
   }
 
   /**
@@ -468,7 +535,7 @@ export function BacklogItemEditorForm({
         )
           ? result.draft.workflowStateId
           : undefined;
-        const { undoToken } = withEventAttribution(
+        const { undoToken, createdUndoToken } = withEventAttribution(
           { surface: editorSurface },
           () =>
             localStore.saveNewWorkItem(
@@ -481,12 +548,23 @@ export function BacklogItemEditorForm({
         const doneName = workflowStates.find(
           (state) => state._id === closeIn,
         )?.name;
-        offerUndo(undoToken, {
-          title: doneName
-            ? `Closed in ${doneName}`
-            : "Project and task set from the description",
+        // Two steps back: what the description or a done state did, then
+        // the item itself. The toast shows the newest.
+        const created = {
+          title: editor.isSubitem ? "Subitem created" : "Backlog item created",
           subject: "backlog item",
-        });
+        };
+        if (undoToken) {
+          keepUndo(createdUndoToken, created);
+          offerUndo(undoToken, {
+            title: doneName
+              ? `Closed in ${doneName}`
+              : "Project and task set from the description",
+            subject: "backlog item",
+          });
+        } else {
+          offerUndo(createdUndoToken, created);
+        }
         return true;
       }
       case "update":
@@ -566,7 +644,7 @@ export function BacklogItemEditorForm({
 
   async function save() {
     if (await commit("save")) {
-      onClose();
+      finish();
     }
   }
 
@@ -594,6 +672,8 @@ export function BacklogItemEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
+      // The draft stays kept for the next opening.
+      settledRef.current = true;
       onClose();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -714,7 +794,7 @@ export function BacklogItemEditorForm({
         ) : null}
         <TooltipButton
           label="Close"
-          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+          render={<Button variant="ghost" size="icon" onClick={finish} />}
         >
           <X />
         </TooltipButton>
@@ -953,7 +1033,7 @@ export function BacklogItemEditorForm({
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={finish}>
           Cancel
         </Button>
         <Button type="button" disabled={!validation.canSave} onClick={save}>
