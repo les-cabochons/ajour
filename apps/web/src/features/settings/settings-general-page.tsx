@@ -112,7 +112,8 @@ function CapacityInput({
         id={id}
         className="font-mono"
         value={draft}
-        placeholder="Hours"
+        // The format to type, as every hours field shows it.
+        placeholder="0:00"
         // A text keyboard: a numeric keypad has no ":" or "h" for "7:30" or "7h30".
         inputMode="text"
         autoComplete="off"

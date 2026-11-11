@@ -78,9 +78,8 @@ function PluginFieldInput({
               value={value}
               onChange={onChange}
               className="inline-field"
-              placeholder={
-                field.placeholder ? `e.g. ${field.placeholder}` : "Not set"
-              }
+              // As a text field: the plugin's placeholder as is, never "e.g.".
+              placeholder={field.placeholder ?? "Not set"}
             />
           ) : (
             <Input
