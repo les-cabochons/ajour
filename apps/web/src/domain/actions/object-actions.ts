@@ -505,6 +505,53 @@ export function getTaskActions(
   ];
 }
 
+/** The task actions that a selection of several tasks runs on each of them. */
+export type TaskSelectionActionId = Extract<
+  TaskActionId,
+  "favorite" | "unfavorite" | "archive" | "restore"
+>;
+
+const TASK_SELECTION_LABELS: Record<
+  TaskSelectionActionId,
+  (tasks: string) => string
+> = {
+  favorite: (tasks) => `Add ${tasks} to favorites`,
+  unfavorite: (tasks) => `Remove ${tasks} from favorites`,
+  archive: (tasks) => `Archive ${tasks}`,
+  restore: (tasks) => `Restore ${tasks}`,
+};
+
+function isTaskSelectionAction(
+  action: ObjectAction<TaskActionId>,
+): action is ObjectAction<TaskSelectionActionId> {
+  return action.id in TASK_SELECTION_LABELS && !action.disabledReason;
+}
+
+/**
+ * The right-click menu of a task row that is part of a selection of two or
+ * more, as on the Backlog: Add to favorites, Remove from favorites, Archive and
+ * Restore, each only when every selected task offers it enabled, and named
+ * with the count ("Archive 3 tasks"). The actions of one task, such as Edit or
+ * Start entry, are left out.
+ */
+export function getTaskSelectionActions(
+  project: Parameters<typeof getTaskActions>[0],
+  tasks: readonly Parameters<typeof getTaskActions>[1][],
+): ObjectAction<TaskSelectionActionId>[] {
+  const offered = tasks.map((task) =>
+    getTaskActions(project, task).filter(isTaskSelectionAction),
+  );
+  const [first = [], ...rest] = offered;
+  return first
+    .filter((action) =>
+      rest.every((actions) => actions.some((other) => other.id === action.id)),
+    )
+    .map((action) => ({
+      ...action,
+      label: TASK_SELECTION_LABELS[action.id](`${tasks.length} tasks`),
+    }));
+}
+
 export type BacklogItemActionId =
   | "start-entry"
   | "stop-entry"

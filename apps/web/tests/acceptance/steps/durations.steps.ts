@@ -305,7 +305,7 @@ Then(
 // Task budgets
 
 When("I open task {string}", async ({ page }, task: string) => {
-  await page.getByText(task, { exact: true }).click();
+  await page.getByText(task, { exact: true }).dblclick();
   await expect(taskEditor(page)).toBeVisible();
 });
 

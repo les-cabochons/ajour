@@ -49,9 +49,16 @@ import { formatClockDuration } from "@/domain/time/duration";
 import {
   getProjectActions,
   getTaskActions,
+  getTaskSelectionActions,
   type ProjectActionId,
   type TaskActionId,
 } from "@/domain/actions/object-actions";
+import {
+  EMPTY_ENTRY_SELECTION,
+  keepShownEntries,
+  selectEntryOnClick,
+  type EntrySelection,
+} from "@/domain/time/entry-selection";
 import {
   formatProjectTaskConsumedBadge,
   getProjectTaskConsumedTone,
@@ -660,6 +667,12 @@ function ProjectDetail({
   const [taskDragState, setTaskDragState] = useState<TaskDragState | null>(
     null,
   );
+  // The selected task rows, as on the Backlog: a click selects one, Cmd or
+  // Ctrl+click adds or removes one, Shift+click selects a range. A double
+  // click or Enter opens the task.
+  const [storedSelection, setSelection] = useState<EntrySelection>(
+    EMPTY_ENTRY_SELECTION,
+  );
   const isArchived = project.status === "archived";
   const managed = isManagedProject(project);
   const sourceLabel = getProjectSourceLabel(project, projectSources);
@@ -804,11 +817,6 @@ function ProjectDetail({
 
   function openImportPicker() {
     importInputRef.current?.click();
-  }
-
-  function handleTaskClick(task: LocalProjectTask) {
-    if (performance.now() < suppressTaskClickUntilRef.current) return;
-    onOpenTask(task);
   }
 
   /** Move up and Move down among the active tasks, persisted like a drag. */
@@ -1015,6 +1023,111 @@ function ProjectDetail({
   }
 
   const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
+  const visibleTaskIds = visibleTasks.map((task) => task._id);
+  // Only shown tasks count as selected. A task hidden by archiving,
+  // restoring or the other filter is left out while it is hidden; the stored
+  // selection keeps it, so it is selected again if it comes back.
+  const selection = keepShownEntries(storedSelection, new Set(visibleTaskIds));
+
+  /**
+   * Whether a click or double click on a task row is the row's own: not on its
+   * "…" button, and not on a menu item, whose React events bubble to the row
+   * from their portal. A click that ends a drag is not one either.
+   */
+  function isRowClick(event: React.MouseEvent<HTMLTableRowElement>) {
+    return (
+      performance.now() >= suppressTaskClickUntilRef.current &&
+      event.target instanceof Element &&
+      event.currentTarget.contains(event.target) &&
+      !event.target.closest("button,a,input")
+    );
+  }
+
+  /**
+   * A click on a task row selects it, as on the Backlog. In the narrow view a
+   * tap opens an active task instead.
+   */
+  function handleTaskClick(
+    task: LocalProjectTask,
+    event: React.MouseEvent<HTMLTableRowElement>,
+  ) {
+    if (!isRowClick(event)) return;
+    if (isNarrowView) {
+      if (!isArchivedTaskFilter) onOpenTask(task);
+      return;
+    }
+    event.currentTarget.focus();
+    setSelection(
+      selectEntryOnClick(selection, visibleTaskIds, task._id, {
+        range: event.shiftKey,
+        toggle: event.metaKey || event.ctrlKey,
+      }),
+    );
+  }
+
+  /** The selected tasks in list order, when `task` is one of two or more. */
+  function getSelectedTasksWith(task: LocalProjectTask) {
+    if (selection.ids.length < 2 || !selection.ids.includes(task._id)) {
+      return undefined;
+    }
+    return visibleTasks.filter((other) => selection.ids.includes(other._id));
+  }
+
+  /**
+   * Runs an action of a selection's menu on each selected task, with one Undo
+   * where the action of one task has one: Archive and Remove from favorites.
+   */
+  function runSelectionAction(
+    tasks: LocalProjectTask[],
+    actionId: TaskActionId,
+  ) {
+    const count = `${tasks.length} tasks`;
+    withEventAttribution({ surface: "button" }, () => {
+      switch (actionId) {
+        case "favorite":
+          for (const task of tasks) {
+            localStore.setProjectTaskFavorite(project._id, task._id, true);
+          }
+          return;
+        case "unfavorite": {
+          const { undoToken } = localStore.runWithUndo(() => {
+            for (const task of tasks) {
+              localStore.setProjectTaskFavorite(project._id, task._id, false);
+            }
+          });
+          offerUndo(undoToken, {
+            title: `Removed ${count} from favorites`,
+            subject: "project",
+          });
+          return;
+        }
+        case "archive": {
+          const { undoToken } = localStore.runWithUndo(() => {
+            for (const task of tasks) {
+              localStore.archiveProjectTask(project._id, task._id);
+            }
+          });
+          offerUndo(undoToken, {
+            title: `${count} archived`,
+            subject: "project",
+          });
+          return;
+        }
+        case "restore": {
+          // A task its project source closed stays archived; say why once.
+          const refusal = tasks
+            .map((task) =>
+              localStore.unarchiveProjectTask(project._id, task._id),
+            )
+            .find((reason) => reason !== undefined);
+          if (refusal) showToast(formatRestoreRefusal(refusal));
+          return;
+        }
+        default:
+          return;
+      }
+    });
+  }
   const mergeSuggestions = useTaskMergeSuggestionRows(
     project,
     entries,
@@ -1023,7 +1136,8 @@ function ProjectDetail({
 
   function renderTaskRow(task: LocalProjectTask, index: number) {
     const taskActions = getTaskActions(project, task);
-    // Archived tasks list only: no editor, no drag, no reorder.
+    // Archived tasks select, for Restore, but have no editor, drag or
+    // reorder.
     const isActiveRow = !isArchivedTaskFilter;
     const isDraggedTask = isActiveRow && taskDragState?.taskId === task._id;
     const rowShift =
@@ -1036,13 +1150,26 @@ function ProjectDetail({
           })
         : 0;
     const runAction = (actionId: TaskActionId) => runTaskAction(task, actionId);
+    const isSelected = selection.ids.includes(task._id);
+    // Part of a selection of several, the row's menu acts on all of them. It
+    // shows no keys: they act on the focused task alone.
+    const selectedTasks = getSelectedTasksWith(task);
+    const selectionActions = selectedTasks
+      ? getTaskSelectionActions(project, selectedTasks)
+      : [];
+    const menu =
+      selectedTasks && selectionActions.length > 0
+        ? {
+            actions: selectionActions,
+            onAction: (actionId: TaskActionId) =>
+              runSelectionAction(selectedTasks, actionId),
+          }
+        : { actions: taskActions, keys: TASK_ACTION_KEYS, onAction: runAction };
 
     return (
-      <ObjectContextMenu
+      <ObjectContextMenu<TaskActionId>
         key={task._id}
-        actions={taskActions}
-        keys={TASK_ACTION_KEYS}
-        onAction={runAction}
+        {...menu}
         render={
           <tr
             ref={
@@ -1063,6 +1190,7 @@ function ProjectDetail({
               rowShift !== 0 && "is-shifting",
               isDraggedTask && "is-drag-source",
               editingTaskId === task._id && "is-editing",
+              isSelected && "is-selected",
             )}
             style={
               rowShift !== 0
@@ -1073,7 +1201,16 @@ function ProjectDetail({
             {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
             data-focus-column="0"
             tabIndex={0}
-            onKeyDown={(event) =>
+            onKeyDown={(event) => {
+              if (
+                event.key === "Escape" &&
+                event.target === event.currentTarget &&
+                selection.ids.length > 0
+              ) {
+                event.preventDefault();
+                setSelection(EMPTY_ENTRY_SELECTION);
+                return;
+              }
               handleItemKeyDown(event, {
                 actions: taskActions,
                 keys: TASK_ACTION_KEYS,
@@ -1082,9 +1219,24 @@ function ProjectDetail({
                   isActiveRow && canReorderTasks
                     ? (step) => reorderTask(task._id, step)
                     : undefined,
-              })
+              });
+            }}
+            onClick={(event) => handleTaskClick(task, event)}
+            // Archived tasks have no editor to open.
+            onDoubleClick={
+              isActiveRow
+                ? (event) => {
+                    if (isRowClick(event)) onOpenTask(task);
+                  }
+                : undefined
             }
-            onClick={isActiveRow ? () => handleTaskClick(task) : undefined}
+            // Shift and Cmd/Ctrl+click extend the selection; the browser must
+            // not select the page's text meanwhile.
+            onMouseDown={(event) => {
+              if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                event.preventDefault();
+              }
+            }}
             onPointerDown={
               isActiveRow
                 ? (event) => handleTaskPointerDown(task._id, event)

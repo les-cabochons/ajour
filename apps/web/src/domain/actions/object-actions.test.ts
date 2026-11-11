@@ -7,6 +7,7 @@ import {
   getObjectActionSections,
   getProjectActions,
   getTaskActions,
+  getTaskSelectionActions,
   formatEntryCount,
   getTimeEntryActions,
   getTimeEntryActionState,
@@ -330,6 +331,50 @@ describe("task actions", () => {
         (action) => action.id === "restore",
       )?.disabledReason,
     ).toBe("Restore the project first");
+  });
+});
+
+describe("a selection of several tasks", () => {
+  const project = { status: "active" } as const;
+  const active = { status: "active" } as const;
+  const starred = { status: "active", favoritedAt: 1 } as const;
+  const archived = { status: "archived" } as const;
+
+  it("offers the favorite and archive actions every task shares, with the count", () => {
+    const actions = getTaskSelectionActions(project, [active, active, active]);
+
+    expect(actions.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "favorite", label: "Add 3 tasks to favorites" },
+      { id: "archive", label: "Archive 3 tasks" },
+    ]);
+    expect(actions.at(-1)?.destructive).toBe(true);
+  });
+
+  it("leaves out an action one of the tasks does not offer", () => {
+    expect(ids(getTaskSelectionActions(project, [active, starred]))).toEqual([
+      "archive",
+    ]);
+    expect(ids(getTaskSelectionActions(project, [starred, starred]))).toEqual([
+      "unfavorite",
+      "archive",
+    ]);
+  });
+
+  it("offers Restore on archived tasks, whose other actions are disabled", () => {
+    expect(
+      getTaskSelectionActions(project, [archived, archived]).map(
+        ({ id, label }) => ({ id, label }),
+      ),
+    ).toEqual([{ id: "restore", label: "Restore 2 tasks" }]);
+  });
+
+  it("offers nothing in an archived project, nor the actions of one task", () => {
+    expect(
+      getTaskSelectionActions({ status: "archived" }, [active, active]),
+    ).toEqual([]);
+    expect(
+      ids(getTaskSelectionActions(project, [active, active])),
+    ).not.toContain("edit");
   });
 });
 

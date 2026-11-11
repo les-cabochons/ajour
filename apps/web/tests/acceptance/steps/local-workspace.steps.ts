@@ -799,7 +799,7 @@ When("I open project {string}", async ({ page }, project: string) => {
 When(
   "I rename task {string} to {string} and press Escape",
   async ({ page }, task: string, name: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
     await editor.getByRole("textbox", { name: "Name" }).press("Escape");
@@ -810,7 +810,7 @@ When(
 When(
   "I rename task {string} to {string} and save",
   async ({ page }, task: string, name: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
     await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
@@ -1034,7 +1034,7 @@ Then(
 When(
   "I set key {string} in the panel of task {string} and save",
   async ({ page }, key: string, task: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("button", { name: /^Shortcut/ }).click();
     await page
@@ -1131,6 +1131,62 @@ Then("the entry editor has no project or task", async ({ page }) => {
     editor.getByRole("button", { name: "Project or task" }),
   ).not.toContainText("111 000");
   await expect(page).not.toHaveURL(/task=/);
+});
+
+/** A task's row on the open project page. */
+function projectTaskRow(page: Page, task: string) {
+  return page.locator("main tr.project-task-row").filter({
+    has: page.getByText(task, { exact: true }),
+  });
+}
+
+When("I click task {string}", async ({ page }, task: string) => {
+  await projectTaskRow(page, task).getByText(task, { exact: true }).click();
+});
+
+When("I Cmd-click task {string}", async ({ page }, task: string) => {
+  await projectTaskRow(page, task)
+    .getByText(task, { exact: true })
+    .click({ modifiers: ["ControlOrMeta"] });
+});
+
+When("I right-click task {string}", async ({ page }, task: string) => {
+  await projectTaskRow(page, task)
+    .getByText(task, { exact: true })
+    .click({ button: "right" });
+});
+
+Then(
+  "only task {string} is selected, and no task editor is open",
+  async ({ page }, task: string) => {
+    await expect(
+      page.locator("main tr.project-task-row.is-selected"),
+    ).toHaveCount(1);
+    await expect(projectTaskRow(page, task)).toHaveClass(/\bis-selected\b/);
+    await expect(
+      page.getByRole("dialog", { name: /^(New|Edit) task$/ }),
+    ).toHaveCount(0);
+  },
+);
+
+Then(
+  "the task menu offers {string} and {string}, and not {string}",
+  async ({ page }, first: string, second: string, absent: string) => {
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: first })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: second })).toBeVisible();
+    await expect(
+      menu.getByRole("menuitem", { name: absent, exact: true }),
+    ).toHaveCount(0);
+  },
+);
+
+When("I choose {string} in the task menu", async ({ page }, action: string) => {
+  await page.getByRole("menu").getByRole("menuitem", { name: action }).click();
+});
+
+Then("the project lists no active task", async ({ page }) => {
+  await expect(page.locator("main tr.project-task-row")).toHaveCount(0);
 });
 
 Then("the project lists task {string}", async ({ page }, task: string) => {
