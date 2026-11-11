@@ -346,8 +346,7 @@ export function BacklogPage() {
       editedId: request.kind === "edit" ? request.itemId : undefined,
       // A switch from another item keeps where the first one opened from.
       origin:
-        opened?.origin ??
-        (active?.closest(".composer-floating, [role=dialog]") ? null : active),
+        opened?.origin ?? (active?.closest("[role=dialog]") ? null : active),
       fromPeek:
         opened?.fromPeek ??
         Boolean(active?.closest(`[aria-label="${PEEK_LABEL}"]`)),

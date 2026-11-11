@@ -652,49 +652,6 @@ Then("the entry on Atlas Development is still running", async ({ page }) => {
   ).toBeVisible();
 });
 
-/* ── Projects ────────────────────────────────────────────────── */
-
-const newProjectComposer = (page: Page) =>
-  page.getByRole("dialog", { name: "New project" });
-
-When("I open the Projects page for keyboard work", async ({ page }) => {
-  await page.goto("/projects");
-  await expect(
-    page.getByRole("main").getByText("Harbor mobile").first(),
-  ).toBeVisible({ timeout: 15_000 });
-});
-
-When("I click {string} twice", async ({ page }, name: string) => {
-  const button = page.getByRole("button", { name }).first();
-  await button.click();
-  await expect(newProjectComposer(page)).toBeVisible();
-  await button.click();
-});
-
-When("I click {string} once", async ({ page }, name: string) => {
-  await page.getByRole("button", { name }).first().click();
-  await expect(newProjectComposer(page)).toBeVisible();
-});
-
-When("I click the page behind the composer", async ({ page }) => {
-  // The page's empty space below the list takes no action.
-  const viewport = page.viewportSize()!;
-  await page.mouse.click(viewport.width / 3, viewport.height - 40);
-});
-
-Then(
-  "focus is in the New project composer's {string} field",
-  async ({ page }, name: string) => {
-    await expect(
-      newProjectComposer(page).getByRole("textbox", { name }),
-    ).toBeFocused();
-  },
-);
-
-Then("the New project composer is still open", async ({ page }) => {
-  await expect(newProjectComposer(page)).toBeVisible();
-});
-
 /* ── Settle ──────────────────────────────────────────────────── */
 
 Then("the Settle dialog has focus on its State", async ({ page }) => {

@@ -16,7 +16,6 @@ import {
   blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   getShortcutPlatform,
-  isFloatingComposerOpen,
   isModifierPress,
   resolveShortcut,
   type ShortcutActionId,
@@ -74,12 +73,13 @@ const ShortcutContext = createContext<ShortcutHandlerRegistry | null>(null);
 let sequencePending = false;
 
 /**
- * True while an entry editor in any host or a floating composer is open, even
- * once focus left it. Single keys, on the window and on a focused row, stay
- * quiet then, so a key never acts on the page under an open draft.
+ * True while an entry editor is open in any host, even once focus left it,
+ * as it can from the Time page's side panel. Single keys, on the window and
+ * on a focused row, stay quiet then, so a key never acts on the page under an
+ * open draft. Modal editors need no check: focus never leaves them.
  */
 export function isDraftOpen() {
-  return isEntryEditorOpen() || isFloatingComposerOpen();
+  return isEntryEditorOpen();
 }
 
 /**
@@ -117,8 +117,8 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Single keys never act behind an open draft: an entry editor in any
-      // host, or a floating composer, even once focus left it.
+      // Single keys never act behind an open entry editor in any host, even
+      // once focus left it.
       if (
         !isModifierPress(event, platform) &&
         (blocksSingleKeyShortcuts(document.activeElement) || isDraftOpen())

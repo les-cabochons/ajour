@@ -53,11 +53,4 @@ describe("a row's single keys behind an open draft", () => {
     close();
     expect(pressOnRow("b")).toEqual(["snooze"]);
   });
-
-  it("do nothing while a floating composer is open", () => {
-    const composer = document.createElement("div");
-    composer.className = "composer-floating";
-    document.body.append(composer);
-    expect(pressOnRow("e")).toEqual([]);
-  });
 });

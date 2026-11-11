@@ -123,19 +123,6 @@ Feature: Keyboard focus keeps the user's place
     Then no entry editor opens
     And today's entry row "Standup notes" is running
 
-  Scenario: Clicking New project again focuses its composer
-    When I open the Projects page for keyboard work
-    And I click "New project" twice
-    Then focus is in the New project composer's "Full name" field
-
-  Scenario: Single keys stay quiet while a composer floats over the page
-    When I open the Projects page for keyboard work
-    And I click "New project" once
-    And I click the page behind the composer
-    And I press the "n" key
-    Then no entry editor opens
-    And the New project composer is still open
-
   Scenario: A Grid cell ignores S while an entry editor is open
     Given an entry is running on Atlas Development
     When I open an entry from the Week Grid for keyboard work
