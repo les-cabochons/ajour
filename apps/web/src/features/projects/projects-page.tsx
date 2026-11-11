@@ -89,6 +89,10 @@ import {
   sourceNameOf,
 } from "@/domain/projects/source-link";
 import {
+  getProjectEntryDays,
+  PROJECT_ENTRY_PAGE_SIZE,
+} from "@/domain/projects/project-entry-days";
+import {
   PinnedSlotBadge,
   PinnedSlotDialog,
 } from "@/features/projects/pinned-slot";
@@ -1306,15 +1310,14 @@ function ProjectDetail({
     />
   ) : null;
   const [tab, setTab] = useState<"tasks" | "entries">("tasks");
-  const entryDays = useMemo(() => {
-    const days: { localDate: string; entries: LocalTimesheetEntry[] }[] = [];
-    for (const entry of entries) {
-      const last = days.at(-1);
-      if (last && last.localDate === entry.localDate) last.entries.push(entry);
-      else days.push({ localDate: entry.localDate, entries: [entry] });
-    }
-    return days;
-  }, [entries]);
+  // The Time entries tab renders the newest whole days only, and "Show more"
+  // adds the next page. The page is keyed by project, so another project
+  // starts on its first page again.
+  const [entryLimit, setEntryLimit] = useState(PROJECT_ENTRY_PAGE_SIZE);
+  const { days: entryDays, hiddenCount: hiddenEntryCount } = useMemo(
+    () => getProjectEntryDays(entries, entryLimit),
+    [entries, entryLimit],
+  );
 
   return (
     <div
@@ -1663,6 +1666,19 @@ function ProjectDetail({
                   </div>
                 ))
               )}
+              {hiddenEntryCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-fit text-muted-foreground"
+                  onClick={() =>
+                    setEntryLimit(entryLimit + PROJECT_ENTRY_PAGE_SIZE)
+                  }
+                >
+                  Show more
+                </Button>
+              ) : null}
             </TabsContent>
           </Tabs>
         </div>
