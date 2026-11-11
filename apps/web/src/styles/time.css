@@ -1887,6 +1887,21 @@
   }
 }
 
+/* A Week placeholder says what to do, never a value: light and in the
+   tertiary color, as in the composers (composer.css). Words are also italic.
+   Hours being edited in place show their format, "0:00", which already reads
+   as empty, so it stays upright. Outside the layer, as composer.css, so no
+   utility on the picker overrides it. */
+.weekly-grid-add-row-picker span[data-placeholder],
+.weekly-grid-cell-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+.weekly-grid-add-row-picker span[data-placeholder] {
+  font-style: italic;
+}
+
 /* The narrow view: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. Page files are
    imported before the breakpoint plugin registers its variants. */
 @media (width < 768px) {

@@ -145,6 +145,8 @@ export function InPlaceHoursInput({
           error && "is-invalid",
         )}
         value={text}
+        // Empty, the format to type, as every hours field shows it (styles/time.css).
+        placeholder="0:00"
         // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
         inputMode="text"
         autoComplete="off"
