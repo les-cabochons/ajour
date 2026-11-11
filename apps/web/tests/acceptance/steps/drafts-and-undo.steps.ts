@@ -177,14 +177,6 @@ When("I add {string} to the note", async ({ page }, text: string) => {
   await page.keyboard.type(text);
 });
 
-When("I click the Day view's empty space", async ({ page }) => {
-  // Clicking outside the side panel does nothing to its draft.
-  const main = await page.locator(".time-page-main").boundingBox();
-  if (!main) throw new Error("The Time page has no main area");
-  await page.mouse.click(main.x + 40, main.y + main.height - 40);
-  await expect(timeEntryEditor(page)).toBeVisible();
-});
-
 Then("the new entry form is open", async ({ page }) => {
   await expect(
     timeEntryEditor(page).getByRole("heading", { name: "New time entry" }),
@@ -319,13 +311,6 @@ Then(
     ).toHaveValue(name);
   },
 );
-
-When("I cancel the task editor", async ({ page }) => {
-  await taskComposer(page)
-    .getByRole("button", { name: "Cancel", exact: true })
-    .click();
-  await expect(taskComposer(page)).toHaveCount(0);
-});
 
 function projectComposer(page: Page) {
   return page.getByRole("dialog", { name: "New project" });

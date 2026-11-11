@@ -1701,10 +1701,21 @@ When(
       .fill(title);
   },
 );
+When("I save the open Backlog editor", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
+    .getByRole("button", { name: SAVE_OR_CREATE })
+    .click();
+});
 Then("the Backlog editor is closed", async ({ page }) => {
   await expect(
     page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
+});
+Then("the saved subitem title is {string}", async ({ page }, title: string) => {
+  await expect(
+    page.locator('[data-work-item-id="child"] .backlog-item-title'),
+  ).toHaveText(title);
 });
 When(
   "I press {string} on the other Backlog row",

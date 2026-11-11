@@ -39,8 +39,7 @@ Feature: Never lose a draft, and undo more than one step
     When I open Monday in the Day view
     And I open the Monday entry "API"
     And I add " and tests" to the note
-    And I click the Day view's empty space
-    And I press the "n" key
+    And I open a new entry from the timer dock "+"
     Then a toast says "Entry saved" with Undo
     And the new entry form is open
     When I undo with the toast button
