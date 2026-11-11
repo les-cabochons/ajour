@@ -255,7 +255,7 @@ The form is the same in every host. Only its container changes.
 - In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
 - Leaving the Time page by any way, a sidebar row, Back or another section, saves a valid draft. An invalid draft never holds the user back: it stays as the composer's draft.
 - Every save shows the Undo toast, "Entry saved", "Entry created" or "Moved to Thu, Oct 8", also when opening another composer or leaving saved the draft. Stop and Continue save without one.
-- After saving, the editor closes and focus returns to the row or card it came from.
+- After saving, and after Cancel or ×, the editor closes and focus returns to the row or card it came from, in the narrow view's dialog too.
 
 ## Hours fields
 

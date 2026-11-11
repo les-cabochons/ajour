@@ -168,3 +168,18 @@ Feature: Keyboard focus keeps the user's place
     When I wait for the menu's typed letters to reset
     And I press the "s" key
     Then the open menu highlights the item "Start entry"
+
+  Scenario: Closing an entry with × on a phone puts focus back on its row
+    Given I have a week of saved entries
+    When the window is 390 pixels wide
+    And I open Monday in the Day view
+    And I click Monday's "API" entry
+    And I close the entry editor with its ×
+    Then Monday's "API" entry has keyboard focus
+
+  Scenario: Cancelling an entry puts focus back on its row
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I double-click Monday's "API" entry
+    And I cancel the entry editor
+    Then Monday's "API" entry has keyboard focus
