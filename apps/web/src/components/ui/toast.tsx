@@ -224,6 +224,9 @@ function ToastList() {
     <ToastPrimitive.Root
       key={toast.id}
       toast={toast}
+      // A toast on its way out, such as one a newer Undo replaced, leaves
+      // the accessibility tree at once, so only the newest Undo is found.
+      aria-hidden={toast.transitionStatus === "ending" ? true : undefined}
       className={cn(
         "flex w-full items-center gap-3 rounded-[var(--radius-md)] border border-border bg-popover py-2 pr-2 pl-4 text-[length:var(--control-font-size)] text-popover-foreground shadow-[var(--shadow-popup)] transition-[opacity,transform] duration-150 data-ending-style:opacity-0 data-limited:hidden data-starting-style:translate-y-2 data-starting-style:opacity-0",
         toast.type === "error" && "items-start border-destructive/50",

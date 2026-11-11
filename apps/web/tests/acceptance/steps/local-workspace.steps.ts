@@ -1288,8 +1288,11 @@ When(
 );
 
 Then("the running entry keeps running from one hour", async ({ page }) => {
-  // The editor closed. The timer dock keeps its own Stop.
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // The editor closed. The timer dock keeps its own Stop. The save's Undo
+  // toast is a dialog too, so only entry editors count.
+  await expect(page.getByRole("dialog", { name: /time entry$/ })).toHaveCount(
+    0,
+  );
   const state = await page.evaluate(() =>
     JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
   );
@@ -1877,7 +1880,8 @@ When("I narrow the window to the narrow view", async ({ page }) => {
 Then(
   "the running entry's dialog still has {string}",
   async ({ page }, note: string) => {
-    const dialog = page.getByRole("dialog");
+    // The earlier save's Undo toast is a dialog too.
+    const dialog = page.getByRole("dialog", { name: /time entry$/ });
     await expect(dialog).toHaveCount(1);
     await expect(
       dialog.getByRole("textbox", { name: "Note", exact: true }),
@@ -2813,7 +2817,7 @@ When("I press Stop in the narrow titlebar", async ({ page }) => {
 });
 
 Then("the running entry's dialog is open", async ({ page }) => {
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: /time entry$/ });
   await expect(dialog).toHaveCount(1);
   await expect(
     dialog.getByRole("button", { name: "Stop", exact: true }),
@@ -2828,11 +2832,17 @@ When("I click outside the running entry's dialog", async ({ page }) => {
 
 When("I close the running entry's dialog with Escape", async ({ page }) => {
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // A save's Undo toast is a dialog too, so only entry editors count.
+  await expect(page.getByRole("dialog", { name: /time entry$/ })).toHaveCount(
+    0,
+  );
 });
 
 Then("no entry dialog is open", async ({ page }) => {
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // A save's Undo toast is a dialog too, so only entry editors count.
+  await expect(page.getByRole("dialog", { name: /time entry$/ })).toHaveCount(
+    0,
+  );
 });
 
 Then(
