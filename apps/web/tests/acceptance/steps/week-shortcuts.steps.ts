@@ -58,6 +58,63 @@ When(
 );
 
 When(
+  "I open the {string} cell on {word} in the side panel",
+  async ({ page }, task: string, day: string) => {
+    await weekGridCell(page, task, day).click();
+    await expect(timeEntryEditor(page)).toBeVisible();
+  },
+);
+
+When(
+  "I change the side panel's note to {string}",
+  async ({ page }, note: string) => {
+    await timeEntryEditor(page).getByLabel("Note", { exact: true }).fill(note);
+  },
+);
+
+When(
+  "I type {string} in the side panel's Hours",
+  async ({ page }, hours: string) => {
+    await timeEntryEditor(page)
+      .getByRole("textbox", { name: "Hours", exact: true })
+      .fill(hours);
+  },
+);
+
+Then(
+  "the side panel still has the Hours {string}",
+  async ({ page }, hours: string) => {
+    await expect(
+      timeEntryEditor(page).getByRole("textbox", {
+        name: "Hours",
+        exact: true,
+      }),
+    ).toHaveValue(hours);
+  },
+);
+
+Then(
+  "the entry {string} holds {word} with the note {string}",
+  async ({ page }, entryId: string, hours: string, note: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate((id) => {
+          const state = JSON.parse(
+            localStorage.getItem("ajour.local-state.v2") ?? "{}",
+          );
+          const entry = state.timesheetEntries?.find(
+            (candidate: { _id: string }) => candidate._id === id,
+          );
+          if (!entry) return null;
+          const minutes = Math.round(entry.durationMs / 60_000);
+          return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")} ${entry.note}`;
+        }, entryId),
+      )
+      .toBe(`${hours} ${note}`);
+  },
+);
+
+When(
   "I type {string} in the {string} cell on {word} and paste {string}",
   async ({ page }, typed: string, task: string, day: string, text: string) => {
     await putOnClipboard(page, text.replace(/\\n/g, "\n"));
@@ -171,5 +228,51 @@ Then(
     await expect(
       page.getByText("Commit week of October 5–11", { exact: true }),
     ).toBeVisible();
+  },
+);
+
+const cardHours = (page: Page, day: string, text: string) =>
+  daysCard(page, day, text).getByRole("textbox", { name: /^Hours for / });
+
+Then(
+  "{word}'s {string} card says {string}",
+  async ({ page }, day: string, text: string, message: string) => {
+    const input = cardHours(page, day, text);
+    await expect(input).toBeFocused();
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription(message);
+  },
+);
+
+Then(
+  "{word}'s {string} card holds {string} and says {string}",
+  async (
+    { page },
+    day: string,
+    text: string,
+    hours: string,
+    message: string,
+  ) => {
+    // Focus goes back to the card's hours, which keep what was typed.
+    const input = cardHours(page, day, text);
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue(hours);
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await expect(input).toHaveAccessibleDescription(message);
+  },
+);
+
+When(
+  "I focus {word}'s {string} card and type {string}",
+  async ({ page }, day: string, text: string, typed: string) => {
+    await daysCard(page, day, text).focus();
+    await page.keyboard.type(typed);
+  },
+);
+
+Then(
+  "{word}'s {string} card is being edited",
+  async ({ page }, day: string, text: string) => {
+    await expect(cardHours(page, day, text)).toBeFocused();
   },
 );

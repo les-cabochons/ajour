@@ -329,6 +329,8 @@ export function WeekGrid({
   /** The cell still editing hours it couldn't save, after focus left it. */
   const invalidEditRef = useRef<string | null>(null);
   const lastClickedCellRef = useRef<string | null>(null);
+  /** Hours pasted while the side panel showed the cell, written once it has closed. */
+  const pendingPasteRef = useRef<{ cellId: string; text: string } | null>(null);
 
   useEffect(() => () => window.clearTimeout(pendingOpenRef.current), []);
   const entryActions = useTimeEntryActions({
@@ -341,6 +343,16 @@ export function WeekGrid({
     if (!cellId) return;
     pendingFocusRef.current = null;
     cellButtonsRef.current.get(cellId)?.focus();
+  });
+
+  // The panel saved as it closed: this render shows the cell with what it
+  // saved, so the pasted hours write on top of it, not over a stale entry.
+  useEffect(() => {
+    const paste = pendingPasteRef.current;
+    if (!paste) return;
+    pendingPasteRef.current = null;
+    const cell = cellModelsRef.current.get(paste.cellId);
+    if (cell) writePastedHours(cell.row, cell.model, paste.text);
   });
 
   // An empty row goes without asking. This runs once the request's render has
@@ -460,12 +472,16 @@ export function WeekGrid({
     // took focus and left a blank entry open (usability council U1).
     window.clearTimeout(pendingOpenRef.current);
     // The side panel would keep stale hours for this cell, so it closes first.
-    const panelShowsCell =
-      isSameWeekGridCell(activeCell, model.cell) ||
-      model.entries.some((entry) => entry._id === activeEntryId);
-    if (panelShowsCell && !onClosePanel()) return false;
+    if (panelShowsCell(model) && !onClosePanel()) return false;
     setEditing({ cellId: model.cellId, initialText });
     return true;
+  }
+
+  function panelShowsCell(model: CellModel) {
+    return (
+      isSameWeekGridCell(activeCell, model.cell) ||
+      model.entries.some((entry) => entry._id === activeEntryId)
+    );
   }
 
   function endEdit(
@@ -514,7 +530,10 @@ export function WeekGrid({
    * Pastes hours on a focused cell as if they were typed there and saved:
    * through the duration parser, after `filterPastedHours`. Hours it can't
    * save open the cell with them and the message. A cell that takes no hours
-   * says why instead.
+   * says why instead. A side panel showing the cell saves and closes first, as
+   * editing the cell does, so its draft never overwrites the pasted hours; the
+   * paste then waits for the render that shows what the panel saved. A panel
+   * draft that can't be saved blocks the paste.
    */
   function pasteOnCell(row: WeeklyGridRow, model: CellModel, pasted: string) {
     const text = filterPastedHours(pasted);
@@ -524,6 +543,19 @@ export function WeekGrid({
       return;
     }
     if (returnsToInvalidEdit(model)) return;
+    if (panelShowsCell(model)) {
+      if (!onClosePanel()) return;
+      pendingPasteRef.current = { cellId: model.cellId, text };
+      return;
+    }
+    writePastedHours(row, model, text);
+  }
+
+  function writePastedHours(
+    row: WeeklyGridRow,
+    model: CellModel,
+    text: string,
+  ) {
     const result = commitWeekGridCellText({
       text,
       entry: model.entries[0],

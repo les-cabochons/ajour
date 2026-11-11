@@ -186,6 +186,8 @@ export function WeeklyTimeView({
     initialText?: string;
   } | null>(null);
   const cardRefs = useRef(new Map<string, HTMLElement>());
+  /** The card still editing hours it couldn't save, after focus left it. */
+  const invalidCardRef = useRef<string | null>(null);
   const dragStateRef = useRef<EntryCardDragState | null>(null);
   const dragSessionRef = useRef<SharedTableDragPointerSession | null>(null);
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
@@ -498,15 +500,33 @@ export function WeeklyTimeView({
   }
 
   function openEntry(entryId: string) {
+    if (returnsToInvalidCard(entryId)) return;
     if (performance.now() >= suppressClickUntilRef.current) {
       onOpenEntry({ entryId });
     }
   }
 
   function selectCard(entryId: string, event: ReactMouseEvent<HTMLElement>) {
+    if (returnsToInvalidCard(entryId)) return;
     if (performance.now() >= suppressClickUntilRef.current) {
       selection.handleClick(entryId, event);
     }
+  }
+
+  /**
+   * While another card holds hours it can't save, selecting or editing this
+   * one would drop them: focus goes back to that card's hours, to fix or
+   * Escape them, as on a Grid cell.
+   */
+  function returnsToInvalidCard(entryId: string) {
+    const held = invalidCardRef.current;
+    if (!held || held === entryId || editingCard?.entryId !== held) {
+      return false;
+    }
+    document
+      .querySelector<HTMLInputElement>(".weekly-entry-card-hours-box")
+      ?.focus();
+    return true;
   }
 
   /**
@@ -635,7 +655,11 @@ export function WeeklyTimeView({
       row: entry,
       localDate: entry.localDate,
     });
-    if (result.kind === "invalid") return result.error;
+    if (result.kind === "invalid") {
+      invalidCardRef.current = entry._id;
+      return result.error;
+    }
+    invalidCardRef.current = null;
     writeInPlaceHours(result, "days_card");
     setEditingCard(null);
     if (result.kind !== "delete") {
@@ -645,6 +669,7 @@ export function WeeklyTimeView({
   }
 
   function cancelCardEdit(entryId: string) {
+    invalidCardRef.current = null;
     setEditingCard(null);
     requestAnimationFrame(() => cardRefs.current.get(entryId)?.focus());
   }
@@ -962,6 +987,7 @@ export function WeeklyTimeView({
                               ) {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                if (returnsToInvalidCard(entry._id)) return;
                                 setEditingCard({
                                   entryId: entry._id,
                                   initialText: event.key,
