@@ -58,6 +58,16 @@ Feature: Never lose a draft, and undo more than one step
     And I press the "n" key
     Then the entry editor shows "" and the note ""
 
+  Scenario: Escape in the narrow view's dialog keeps a new entry's draft
+    Given the window is 390 pixels wide
+    When I open Monday in the Day view
+    And I write a new entry of "1:00" with the note "Planning"
+    And I press Escape in the note
+    Then no entry editor is open
+    And Monday has no entry "Planning"
+    When I press the "n" key
+    Then the entry editor shows "1:00" and the note "Planning"
+
   Scenario: Escape keeps a saved entry's unsaved note
     When I open Monday in the Day view
     And I open the Monday entry "API"

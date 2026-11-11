@@ -88,6 +88,8 @@ export interface TimeEntryEditorFormHandle {
    * draft is saved, with the Undo toast, and an invalid one is kept.
    */
   leave: () => void;
+  /** The host closes on Escape: the draft is kept, not saved, for the next opening. */
+  keepDraft: () => void;
 }
 
 /** Where a form's unsaved draft is kept between openings (`lib/composer-drafts.ts`). */
@@ -336,6 +338,9 @@ export function TimeEntryEditorForm({
         writeEntry(result.values);
         dropComposerDraft(draftKey);
       }
+      settledRef.current = true;
+    },
+    keepDraft: () => {
       settledRef.current = true;
     },
   }));
