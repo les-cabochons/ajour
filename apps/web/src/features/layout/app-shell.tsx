@@ -68,6 +68,10 @@ import {
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { WeekTargetPromptHost } from "@/features/time/week-target-prompt";
+import {
+  MAIN_CONTENT_ID,
+  SkipToContent,
+} from "@/features/layout/skip-to-content";
 import { CommitWeekButton } from "@/features/time/commit-week-button";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
 import {
@@ -665,6 +669,7 @@ export function AppShell() {
         isMacDesktopShell && "desktop-shell-macos",
       )}
     >
+      <SkipToContent />
       <RunningEntryWindowTitle />
       {isDesktopShell && <DesktopTrayState />}
       {isDesktopShell && <DesktopTrayPanel />}
@@ -830,7 +835,12 @@ export function AppShell() {
               the row, main takes the row's height: its own explicit height
               would overflow under the narrow back bar. */}
           <div className="flex min-h-0 flex-1">
-            <main className="app-content-shell h-auto min-w-0 flex-1 self-stretch">
+            <main
+              id={MAIN_CONTENT_ID}
+              // Skip to content lands here when the page has no row to focus.
+              tabIndex={-1}
+              className="app-content-shell h-auto min-w-0 flex-1 self-stretch outline-none"
+            >
               <ScrollArea className="app-content-scroll-area">
                 {isSettingsActive ? (
                   <Outlet />

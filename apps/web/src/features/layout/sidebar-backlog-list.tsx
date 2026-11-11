@@ -354,6 +354,9 @@ const platform = getShortcutPlatform();
  * A row's hover action: Start entry, Snooze… or Settle. It has no tooltip; the
  * icons are familiar and a tooltip on every hover would cover the list.
  * `label` is the accessible name and `shortcut` its key, as on `TooltipButton`.
+ * It takes no Tab stop: the focused row's keys (S, B, E) do the same, so a
+ * row is one stop and the page's work is a few Tabs away (usability testing,
+ * 2026-11-06).
  */
 function RowActionButton({
   label,
@@ -363,6 +366,7 @@ function RowActionButton({
   return (
     <button
       type="button"
+      tabIndex={-1}
       aria-label={label}
       aria-keyshortcuts={
         shortcut
@@ -654,6 +658,8 @@ function ParentLink({
     <TooltipButton
       label={parent.title}
       aria-label={`Open parent: ${parent.title}`}
+      // No Tab stop, like the row's other hover controls.
+      tabIndex={-1}
       className={cn(className, "hover:text-foreground")}
       onClick={(event) => {
         event.stopPropagation();
