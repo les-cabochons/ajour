@@ -300,7 +300,8 @@ export function TaskPropertyFields({
                     id={id}
                     value={picked}
                     maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
-                    placeholder="None"
+                    // What to type, as the project page's plugin properties.
+                    placeholder="Add"
                     onChange={(event) => set(event.target.value)}
                   />
                 )}

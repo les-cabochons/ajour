@@ -315,14 +315,16 @@ When("I open the {string} section", async ({ page }, section: string) => {
   await card(page).getByRole("button", { name: section }).click();
 });
 
+// An empty property shows where its value comes from, never the value
+// itself, which would read as saved; a screen reader still hears it.
 Then(
-  "{string} shows the default {string}",
-  async ({ page }, label: string, value: string) => {
+  "{string} says {string}, the default {string}",
+  async ({ page }, label: string, text: string, value: string) => {
     await expect(
       card(page).getByRole("button", {
         name: `Edit ${label.toLowerCase()}, default ${value}`,
       }),
-    ).toBeVisible();
+    ).toHaveText(text);
   },
 );
 

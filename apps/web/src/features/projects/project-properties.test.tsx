@@ -255,4 +255,35 @@ describe("a local project's Properties card", () => {
     expect(screen.queryByLabelText(/^Locked/)).toBeNull();
     expect(screen.queryByRole("link", { name: /^Open in/ })).toBeNull();
   });
+
+  it("says what to type where a value is missing, never a value", () => {
+    const project: LocalProject = {
+      _id: "local",
+      name: "Internal",
+      color: "#123456",
+      icon: { kind: "preset", name: "dot" },
+      status: "active",
+      tasks: [],
+    };
+    renderCard(project);
+
+    const code = screen.getByRole("button", { name: "Edit code, empty" });
+    expect(code.textContent).toBe("Add");
+    // Drawn as a placeholder (styles/projects.css).
+    expect(code.querySelector("[data-placeholder]")).toBeTruthy();
+    fireEvent.click(code);
+    expect(
+      screen.getByRole("textbox", { name: "Code" }).getAttribute("placeholder"),
+    ).toBe("Add");
+
+    cleanup();
+    render(<ProjectTitle project={project} readOnly={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Internal" }));
+    // Emptied, the display name falls back to the full name.
+    expect(
+      screen
+        .getByRole("textbox", { name: "Display name" })
+        .getAttribute("placeholder"),
+    ).toBe("Same as full name");
+  });
 });

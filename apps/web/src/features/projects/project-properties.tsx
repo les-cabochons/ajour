@@ -102,8 +102,10 @@ function patchProject(
 /**
  * A line of text that turns into a field on click. Enter or blur saves,
  * Escape cancels. `renderValue` draws the resting text, such as the title.
- * While `value` is empty, a non-empty `defaultValue` shows muted in its
- * place, as the value the field falls back to. `validate` refuses a value
+ * While `value` is empty, the field and its resting text show `placeholder`,
+ * which says what to type or where an empty value comes from, never a value
+ * (styles/projects.css). A non-empty `defaultValue`, the value the field
+ * falls back to, is named in the accessible label only. `validate` refuses a value
  * with a sentence: the field stays open with the typed text and says why
  * under it. `warn` says something about the typed text that doesn't block
  * saving, such as a name another project has.
@@ -123,11 +125,11 @@ function InlineText({
   renderValue,
 }: {
   value: string;
-  /** Shown muted while `value` is empty, such as a plugin property's default. */
+  /** The value an empty field falls back to, such as a plugin property's default. */
   defaultValue?: string;
   /** The field's accessible name, such as "Code". */
   label: string;
-  /** Shown muted while the value is empty. */
+  /** Shown while the value is empty: what to type, such as "Add", or where an empty value comes from, such as "Same as full name". */
   placeholder: string;
   readOnly: boolean;
   className?: string;
@@ -194,8 +196,11 @@ function InlineText({
         )}
         onClick={open}
       >
-        <span className="min-w-0 truncate">
-          {value || defaultValue || placeholder}
+        <span
+          className="min-w-0 truncate"
+          data-placeholder={value ? undefined : ""}
+        >
+          {value || placeholder}
         </span>
         {/* A pencil says the value edits in place (council round 10). */}
         {readOnly ? null : (
@@ -218,7 +223,7 @@ function InlineText({
         aria-describedby={error ? errorId : undefined}
         value={draft}
         maxLength={maxLength}
-        placeholder={defaultValue || placeholder}
+        placeholder={placeholder}
         className={cn("-mx-1 h-7 px-1", inputClassName)}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => {
@@ -260,7 +265,7 @@ export function ProjectTitle({
     <InlineText
       value={displayName}
       label="Display name"
-      placeholder={project.name}
+      placeholder="Same as full name"
       readOnly={readOnly}
       inputClassName="project-detail-title h-auto py-0.5"
       onSave={(value) =>
@@ -314,6 +319,17 @@ function patchPluginProperty(
   );
 }
 
+/**
+ * What an empty plugin property says: the Ajour field it falls back to, as
+ * the task editor's "Same name", or "Add" when it has none. Never the
+ * fallback's value, which would read as a saved one.
+ */
+function getPluginPropertyPlaceholder(field: ProjectPropertyField) {
+  if (field.defaultFrom === "fullName") return "Same as full name";
+  if (field.defaultFrom === "code") return "Same as code";
+  return "Add";
+}
+
 const LOCAL_ONLY_OPTIONS: SelectOption<"commits" | "local">[] = [
   { value: "commits", label: "Commits" },
   { value: "local", label: "Local only" },
@@ -360,7 +376,7 @@ function PluginPropertySection({
               value={property.isDefault ? "" : property.value}
               defaultValue={property.defaultValue}
               label={property.field.label}
-              placeholder="None"
+              placeholder={getPluginPropertyPlaceholder(property.field)}
               readOnly={readOnly}
               maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
               onSave={(value) =>
@@ -481,7 +497,7 @@ export function ProjectPropertiesCard({
             <InlineText
               value={project.code ?? ""}
               label="Code"
-              placeholder="None"
+              placeholder="Add"
               readOnly={isArchived}
               validate={(value) => {
                 const code = normalizeProjectCode(value);
