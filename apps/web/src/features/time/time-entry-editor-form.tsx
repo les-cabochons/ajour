@@ -45,6 +45,18 @@ import {
   type TimeEntryActionTarget,
 } from "@/features/time/time-entry-actions";
 import { skipUndo } from "@/features/feedback/undo-toast";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
+import {
+  findDraftConflicts,
+  keepMineInDraft,
+  reconcileDraft,
+  useTheirsInDraft,
+  type DraftFieldGroup,
+  type ReconciledDraft,
+} from "@/domain/draft-reconcile";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import {
@@ -113,25 +125,76 @@ export function getTimeEntryDraftKey(target: TimeEntryEditorTarget) {
 }
 
 /**
- * A kept draft. The running entry's Hours shows the time counted when the form
- * opens, so its draft keeps typed hours only.
+ * A kept draft, with the entry's fields it started from (`base`), so the
+ * next opening can tell what the user changed from what changed since. The
+ * running entry's Hours shows the time counted when the form opens, so its
+ * draft keeps typed hours only.
  */
 interface KeptTimeEntryDraft {
   fields: TimeEntryEditorFields;
+  base: TimeEntryEditorFields;
   hoursTyped: boolean;
 }
 
-/** The draft to resume for `key`, with the running entry's hours counted afresh. */
-function resumeKeptDraft(
+/** The project and its task change together, as one pick. */
+const DRAFT_FIELD_GROUPS: readonly DraftFieldGroup<TimeEntryEditorFields>[] = [
+  ["projectId", "taskId"],
+];
+
+const CONFLICT_LABELS: Record<keyof TimeEntryEditorFields, string> = {
+  projectId: "Task",
+  taskId: "Task",
+  note: "Note",
+  durationHours: "Hours",
+  localDate: "Date",
+};
+
+/** A project and task as a conflict names them, "Acme / Design". */
+function describeTask(
+  projects: readonly {
+    _id: string;
+    name: string;
+    displayName?: string;
+    tasks: readonly { _id: string; name: string }[];
+  }[],
+  projectId: string,
+  taskId: string,
+) {
+  const project = projects.find((candidate) => candidate._id === projectId);
+  const task = project?.tasks.find((candidate) => candidate._id === taskId);
+  return [project?.displayName?.trim() || project?.name, task?.name]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+const RESOLVE_CONFLICTS_FIRST =
+  "Choose which version to keep for each changed field first.";
+
+/**
+ * The draft to resume for `key`, brought up to the entry as it is now
+ * (`seed`): a field the user did not change takes the entry's value, and a
+ * field both changed stays as typed, in conflict (`findDraftConflicts`).
+ * The running entry's hours are counted afresh unless typed, and never
+ * conflict. A new entry has no saved entry underneath.
+ */
+function resumeDraft(
   key: string,
   seed: TimeEntryEditorFields,
-  isRunning: boolean,
-): TimeEntryEditorFields | undefined {
+  { isRunning, isNew }: { isRunning: boolean; isNew: boolean },
+  initialFields: TimeEntryEditorFields | undefined,
+): ReconciledDraft<TimeEntryEditorFields> {
   const kept = getComposerDraft<KeptTimeEntryDraft>(key);
-  if (!kept) return undefined;
-  return isRunning && !kept.hoursTyped
-    ? { ...kept.fields, durationHours: seed.durationHours }
-    : kept.fields;
+  const fields =
+    initialFields ??
+    (kept && isRunning && !kept.hoursTyped
+      ? { ...kept.fields, durationHours: seed.durationHours }
+      : kept?.fields);
+  if (!fields) return { fields: seed, base: seed };
+  if (isNew) return { fields, base: seed };
+
+  const base = { ...(kept?.base ?? seed) };
+  if (isRunning) base.durationHours = seed.durationHours;
+  return reconcileDraft({ fields, base }, seed, DRAFT_FIELD_GROUPS);
 }
 
 function formatEntryDate(localDate: string) {
@@ -256,11 +319,22 @@ export function TimeEntryEditorForm({
   const original: TimeEntryValues | undefined = entry ?? runningOriginal;
   // Escape, or leaving the page, keeps the draft for the same target.
   const [draftKey] = useState(() => getTimeEntryDraftKey(target));
-  const [fields, setFields] = useState(
-    () =>
-      initialFields ??
-      resumeKeptDraft(draftKey, seed.fields, Boolean(runningTimer)) ??
+  const [resumed] = useState(() =>
+    resumeDraft(
+      draftKey,
       seed.fields,
+      { isRunning: Boolean(runningTimer), isNew: target.kind === "create" },
+      initialFields,
+    ),
+  );
+  const [fields, setFields] = useState(resumed.fields);
+  // The entry's fields the draft started from. A field the entry changed
+  // since, which the draft changed too, is a conflict until it is settled.
+  const [base, setBase] = useState(resumed.base);
+  const conflictGroups = findDraftConflicts(
+    { fields, base },
+    seed.fields,
+    DRAFT_FIELD_GROUPS,
   );
   // Set once the draft was saved, kept or discarded on purpose, so leaving
   // the page afterwards writes nothing more.
@@ -316,12 +390,45 @@ export function TimeEntryEditorForm({
     if (holdsDraft) {
       keepComposerDraft(draftKey, {
         fields,
+        base,
         hoursTyped: fields.durationHours !== seed.fields.durationHours,
       } satisfies KeptTimeEntryDraft);
     } else {
       dropComposerDraft(draftKey);
     }
-  }, [draftKey, fields, holdsDraft, seed.fields.durationHours]);
+  }, [base, draftKey, fields, holdsDraft, seed.fields.durationHours]);
+
+  const conflicts = conflictGroups.map((group): DraftConflictView => {
+    const describe = (values: TimeEntryEditorFields) => {
+      switch (group[0]) {
+        case "projectId":
+          return describeTask(projects, values.projectId, values.taskId);
+        case "localDate":
+          return formatEntryDate(values.localDate);
+        default:
+          return values[group[0]!] as string;
+      }
+    };
+    return {
+      id: group.join(","),
+      label: CONFLICT_LABELS[group[0]!],
+      theirs: describe(seed.fields),
+      mine: describe(fields),
+    };
+  });
+
+  /** Settles a changed field: the draft's version stays, or the entry's now. */
+  function settleConflict(id: string, keep: "mine" | "theirs") {
+    const group = conflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!group) return;
+    const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
+    const settled = settle({ fields, base }, seed.fields, group);
+    setFields(settled.fields);
+    setBase(settled.base);
+    setCommitError(null);
+  }
 
   useImperativeHandle(ref, () => ({
     commitBeforeSwitch: () => {
@@ -332,7 +439,11 @@ export function TimeEntryEditorForm({
     },
     leave: () => {
       if (settledRef.current) return;
-      const result = commitTimeEntryDraft(editor, "switch");
+      // A changed field nobody settled keeps the draft, as an invalid one is.
+      const result =
+        conflictGroups.length > 0
+          ? ({ kind: "invalid" } as const)
+          : commitTimeEntryDraft(editor, "switch");
       // An invalid draft stays kept, for the next opening.
       if (result.kind === "save") {
         writeEntry(result.values);
@@ -388,6 +499,10 @@ export function TimeEntryEditorForm({
     reason: TimeEntryDraftCommitReason,
     { offerUndo = true }: { offerUndo?: boolean } = {},
   ) {
+    if (conflictGroups.length > 0) {
+      setCommitError(RESOLVE_CONFLICTS_FIRST);
+      return false;
+    }
     const result = commitTimeEntryDraft(editor, reason);
     if (result.kind === "invalid") {
       setCommitError(result.error);
@@ -698,6 +813,12 @@ export function TimeEntryEditorForm({
         </>
       )}
 
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => settleConflict(id, "mine")}
+        onUseTheirs={(id) => settleConflict(id, "theirs")}
+      />
+
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
       <fieldset
         disabled={lockReason !== undefined}
@@ -758,11 +879,12 @@ export function TimeEntryEditorForm({
         <Button
           type="button"
           disabled={
-            primary.kind === "start"
+            conflicts.length > 0 ||
+            (primary.kind === "start"
               ? editor.durationMs === null
               : primary.kind === "continue"
                 ? false
-                : !editor.canSave
+                : !editor.canSave)
           }
           onClick={submit}
         >

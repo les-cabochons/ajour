@@ -119,3 +119,42 @@ Feature: Never lose a draft, and undo more than one step
     When I cancel the project composer
     And I open the New project composer
     Then the new project's full name reads ""
+
+  Scenario: A kept draft takes in the hours another tab changed
+    When I open Monday in the Day view
+    And I open the Monday entry "API"
+    And I add " and tests" to the note
+    And I press Escape in the note
+    And another tab sets the Monday entry "mon-dev-2" to 3:00 hours
+    And I open the Monday entry "API"
+    Then the entry editor shows "3:00" and the note "API and tests"
+    And the entry editor shows no changed field
+    When I press Enter in the note
+    Then the Monday entry "mon-dev-2" has 3:00 hours
+    And the Monday entry "mon-dev-2" has the note "API and tests"
+
+  Scenario: A kept draft shows a field that another tab changed too
+    When I open Monday in the Day view
+    And I open the Monday entry "API"
+    And I change Hours to "1:30"
+    And I press Escape in the note
+    And another tab sets the Monday entry "mon-dev-2" to 4:00 hours
+    And I open the Monday entry "API"
+    Then the entry editor shows "1:30" and the note "API"
+    And the entry editor says "Hours changed"
+    And the entry editor says "Now 4:00. Your draft has 1:30."
+    And the entry editor's Save is disabled
+    When I press "Use theirs" in the entry editor
+    Then the entry editor shows "4:00" and the note "API"
+    And the entry editor shows no changed field
+
+  Scenario: Keeping my version of a changed field lets the draft save
+    When I open Monday in the Day view
+    And I open the Monday entry "API"
+    And I change Hours to "1:30"
+    And I press Escape in the note
+    And another tab sets the Monday entry "mon-dev-2" to 4:00 hours
+    And I open the Monday entry "API"
+    And I press "Keep mine" in the entry editor
+    And I press Enter in the note
+    Then the Monday entry "mon-dev-2" has 1:30 hours

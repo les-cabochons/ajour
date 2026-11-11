@@ -827,6 +827,7 @@ describe("undoing a creation that later records depend on", () => {
             _id: "project-new",
             name: "Venus",
             color: "#654321",
+            icon: { kind: "preset", name: "dot" },
             status: "active",
             tasks: [],
           },

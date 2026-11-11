@@ -368,3 +368,49 @@ When("I cancel the project composer", async ({ page }) => {
     .click();
   await expect(projectComposer(page)).toHaveCount(0);
 });
+
+When(
+  "another tab sets the Monday entry {string} to {word} hours",
+  async ({ page }, id: string, hours: string) => {
+    const [h, m] = hours.split(":").map(Number);
+    // As another window's save arrives: written to storage, then announced.
+    await page.evaluate(
+      ({ id, durationMs }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        const entry = state.timesheetEntries.find(
+          (candidate: { _id: string }) => candidate._id === id,
+        );
+        entry.durationMs = durationMs;
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+      },
+      { id, durationMs: h * HOUR + m * 60_000 },
+    );
+  },
+);
+
+When("I change Hours to {string}", async ({ page }, hours: string) => {
+  await timeEntryEditor(page).getByLabel("Hours").fill(hours);
+});
+
+Then("the entry editor shows no changed field", async ({ page }) => {
+  await expect(
+    timeEntryEditor(page).getByRole("group", { name: "Changed elsewhere" }),
+  ).toHaveCount(0);
+});
+
+Then("the entry editor's Save is disabled", async ({ page }) => {
+  await expect(
+    timeEntryEditor(page).getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+});
+
+When(
+  "I press {string} in the entry editor",
+  async ({ page }, label: string) => {
+    await timeEntryEditor(page)
+      .getByRole("button", { name: label, exact: true })
+      .click();
+  },
+);
