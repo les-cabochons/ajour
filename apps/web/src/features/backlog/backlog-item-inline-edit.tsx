@@ -70,7 +70,11 @@ function useCloseOnce(onClose: () => void) {
   };
 }
 
-/** The item's title. Click it, or press Enter on the page, to rename it. */
+/**
+ * The item's title. Click it, press Enter on it, or press Enter on the page,
+ * to rename it. Enter and Escape give focus back to the title, so the next
+ * key acts on nothing: on the page, E would settle the item.
+ */
 export function InlineTitle({
   item,
   editing,
@@ -82,21 +86,36 @@ export function InlineTitle({
   readOnly: boolean;
   onEditingChange: (editing: boolean) => void;
 }) {
+  // Set when Enter or Escape closes the field, not when focus leaves it.
+  const refocusRef = useRef(false);
   const closer = useCloseOnce(() => onEditingChange(false));
+  const close = (save?: () => void) => {
+    refocusRef.current = true;
+    closer.close(save);
+  };
   if (!editing || readOnly) {
     return (
-      <h1
-        className={cn(
-          "backlog-item-page-title",
-          !readOnly && "backlog-item-inline-target",
+      <h1 className="backlog-item-page-title">
+        {readOnly ? (
+          item.title
+        ) : (
+          <button
+            type="button"
+            className="backlog-item-inline-target backlog-item-title-button"
+            ref={(button) => {
+              if (button && refocusRef.current) {
+                refocusRef.current = false;
+                button.focus({ preventScroll: true });
+              }
+            }}
+            onClick={() => {
+              closer.reset();
+              onEditingChange(true);
+            }}
+          >
+            {item.title}
+          </button>
         )}
-        onClick={() => {
-          if (readOnly) return;
-          closer.reset();
-          onEditingChange(true);
-        }}
-      >
-        {item.title}
       </h1>
     );
   }
@@ -124,10 +143,10 @@ export function InlineTitle({
         if (event.key === "Enter") {
           event.preventDefault();
           const { value } = event.currentTarget;
-          closer.close(() => save(value));
+          close(() => save(value));
         } else if (event.key === "Escape") {
           event.preventDefault();
-          closer.close();
+          close();
         }
       }}
     />
