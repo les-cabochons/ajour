@@ -45,7 +45,7 @@ describe("buildProjectTaskOptions", () => {
 });
 
 describe("a managed project's task options", () => {
-  it("lists the Not assigned tasks last in their group, with the hint", () => {
+  it("lists the tasks assigned to the user first, each with the badge", () => {
     expect(
       buildProjectTaskOptions([
         {
@@ -56,16 +56,23 @@ describe("a managed project's task options", () => {
           source: { remoteId: "1002", assigned: false },
         },
         {
+          _id: "task-local",
+          name: "Ad hoc support",
+          status: "active",
+          createdAt: 2,
+        },
+        {
           _id: "task-login",
           name: "Ticket #101 - Login",
           status: "active",
-          createdAt: 2,
+          createdAt: 3,
           source: { remoteId: "1001", assigned: true },
         },
-      ]).map(({ value, hint }) => ({ value, hint })),
+      ]).map(({ value, badge }) => ({ value, badge })),
     ).toEqual([
-      { value: "task-login", hint: undefined },
-      { value: "task-export", hint: "Not assigned" },
+      { value: "task-login", badge: "Assigned to you" },
+      { value: "task-export", badge: undefined },
+      { value: "task-local", badge: undefined },
     ]);
   });
 });

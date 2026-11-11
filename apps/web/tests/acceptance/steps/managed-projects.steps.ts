@@ -231,6 +231,23 @@ Then(
 );
 
 Then(
+  "no task says {string} in the task menu",
+  async ({ page }, hint: string) => {
+    const rows = page.locator("[cmdk-item][data-task-id]");
+    await expect(rows.filter({ hasText: hint })).toHaveCount(0);
+  },
+);
+
+Then(
+  "only {string} says {string} in the project's task list",
+  async ({ page }, task: string, mark: string) => {
+    const rows = page.locator("tr.project-task-row");
+    await expect(rows.filter({ hasText: mark })).toHaveCount(1);
+    await expect(rows.filter({ hasText: mark })).toContainText(task);
+  },
+);
+
+Then(
   "at 390px the title is whole and the {string} mark is cut first",
   async ({ page }, mark: string) => {
     await page.setViewportSize({ width: 390, height: 800 });

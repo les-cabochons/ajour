@@ -25,15 +25,19 @@ Feature: Managed projects from a project source
     When I open the Projects workspace
     Then the Projects list marks "Support (mine)" as from "Example planner"
 
-  Scenario: The task menu says which of a managed project's tasks are not assigned to me
+  Scenario: The task menu and the project page highlight the managed project's tasks assigned to me
     Given I have a local project "Support (mine)" with the code "ACME-SUP"
+    And its task "Ad hoc support" has an entry "Answered a call"
     And the example project source is connected
     When I sync the example project source now
     And I open today's time workspace
     And I open the new time-entry project and task picker
     And I open "[ACME-SUP] Support (mine)" in the task menu
-    Then the task menu's "Tasks" section lists "Ticket #101 - Login, Ticket #102 - Export"
-    And only "Ticket #102 - Export" says "Not assigned" in the task menu
+    Then the task menu's "Tasks" section lists "Ticket #101 - Login, Ad hoc support, Ticket #102 - Export"
+    And only "Ticket #101 - Login" says "Assigned to you" in the task menu
+    And no task says "Not assigned" in the task menu
+    When I open the project "Support (mine)"
+    Then only "Ticket #101 - Login" says "Assigned to you" in the project's task list
 
   Scenario: A complete managed project shows its dates and when it ended, and the sidebar filters by client
     Given I have a local project "Support (mine)" with the code "ACME-SUP"
