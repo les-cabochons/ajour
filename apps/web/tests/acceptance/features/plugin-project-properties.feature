@@ -6,12 +6,12 @@ Feature: Properties that plugins add to projects and tasks
     When I open project "aaa xyz"
     Then the "Workday" section is collapsed
     When I open the "Workday" section
-    Then "Workday name" shows the default "aaa xyz"
-    And "Workday code" shows the default "AAA"
+    Then "Workday name" says "Same as full name", the default "aaa xyz"
+    And "Workday code" says "Same as code", the default "AAA"
     When I set "Workday name" to "CA004 Tech & Design"
     Then "Workday name" shows "CA004 Tech & Design"
     When I press Undo on the toast
-    Then "Workday name" shows the default "aaa xyz"
+    Then "Workday name" says "Same as full name", the default "aaa xyz"
 
   Scenario: Map a task to a Workday task
     Given I have projects with searchable tasks

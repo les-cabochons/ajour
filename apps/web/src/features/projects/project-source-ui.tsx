@@ -90,7 +90,7 @@ export function LockedValue({
   children: ReactNode;
   /** The source's label. */
   label: string | undefined;
-  /** The value is a placeholder, such as "None". */
+  /** The source gave no value, such as a code: "None", muted. */
   muted?: boolean;
 }) {
   return (

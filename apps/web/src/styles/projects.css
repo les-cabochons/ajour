@@ -615,3 +615,21 @@
     pointer-events: auto;
   }
 }
+
+/* A placeholder on the project page says what to type, or where an empty
+   value comes from, never a value: "Add" for the code, "Same as full name"
+   for the title and a plugin property that falls back to it. Italic, light
+   and in the tertiary color, as in the composers (composer.css). Outside the
+   layer, so the input's own placeholder utility doesn't override it. */
+.project-detail :is(input, textarea)::placeholder,
+.project-detail span[data-placeholder] {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-weight: 300;
+}
+
+/* Italic letters lean past their box, and the value's truncation would clip
+   the last one, so "Add" read "Ada". */
+.project-detail span[data-placeholder] {
+  padding-inline-end: 0.15em;
+}
