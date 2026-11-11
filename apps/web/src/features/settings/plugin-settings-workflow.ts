@@ -212,6 +212,9 @@ function localCatalogEntry(
           ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
           ...(plugin.capabilities.calendar ? (["calendar"] as const) : []),
           ...(plugin.capabilities.team ? (["team"] as const) : []),
+          ...(plugin.capabilities.projectSource
+            ? (["projectSource"] as const)
+            : []),
           ...(plugin.capabilities.agentTask ? (["agentTask"] as const) : []),
         ];
   const features = capabilities.map((capability) =>
@@ -223,9 +226,11 @@ function localCatalogEntry(
           ? "calendar-events"
           : capability === "team"
             ? "project-sync"
-            : capability === "agentTask"
-              ? "agent-task"
-              : "project-data-shape",
+            : capability === "projectSource"
+              ? "project-source"
+              : capability === "agentTask"
+                ? "agent-task"
+                : "project-data-shape",
   );
   return {
     id: plugin.id,
@@ -254,9 +259,11 @@ function localCatalogEntry(
             ? "calendar"
             : capability === "team"
               ? "team"
-              : capability === "agentTask"
-                ? "agent-task"
-                : "data-shape",
+              : capability === "projectSource"
+                ? "project-source"
+                : capability === "agentTask"
+                  ? "agent-task"
+                  : "data-shape",
     ),
   };
 }

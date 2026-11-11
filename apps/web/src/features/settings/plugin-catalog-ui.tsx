@@ -43,15 +43,14 @@ export function pluginCapabilitiesLabel(entry: PluginCatalogEntry) {
     .join(" · ");
 }
 
-/** Whether this Ajour version can install the plugin's package. */
+/**
+ * Whether this Ajour version can install the plugin's package: every plugin
+ * but a schema-only one, which stays with the built-in shapes for now. The
+ * rule names `schema` instead of listing the other capabilities, so a new
+ * capability is installable without a change here.
+ */
 export function canInstallCatalogPlugin(entry: PluginCatalogEntry) {
-  return (
-    entry.capabilities.includes("connector") ||
-    entry.capabilities.includes("codeHost") ||
-    entry.capabilities.includes("calendar") ||
-    entry.capabilities.includes("team") ||
-    entry.capabilities.includes("agentTask")
-  );
+  return entry.capabilities.some((capability) => capability !== "schema");
 }
 
 /**

@@ -130,6 +130,11 @@ describe("plugin settings workflow", () => {
       expected: ["connector", "codeHost"],
       features: ["work-item-sync", "pull-requests"],
     },
+    {
+      capabilities: { projectSource: {} },
+      expected: ["projectSource"],
+      features: ["project-source"],
+    },
   ])(
     "keeps every installed capability when the catalog is unavailable: $expected",
     async ({ capabilities, expected, features }) => {
