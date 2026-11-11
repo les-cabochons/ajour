@@ -75,7 +75,7 @@ Given("the Workday \\(agent) plugin adds task properties", async ({ page }) => {
 When(
   "I map task {string} to the Workday task {string} and save",
   async ({ page }, task: string, workdayTask: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
@@ -121,7 +121,7 @@ async function mapToNewWorkdayTask(
   workdayTask: string,
   close: "Save" | "Cancel",
 ) {
-  await page.getByText(task, { exact: true }).click();
+  await page.getByText(task, { exact: true }).dblclick();
   const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await editor.getByRole("combobox", { name: "Commits as" }).click();
   await page.getByRole("option", { name: "Another task…" }).click();
@@ -144,7 +144,7 @@ When(
 When(
   "I open task {string} in the task editor",
   async ({ page }, task: string) => {
-    await page.getByText(task, { exact: true }).first().click();
+    await page.getByText(task, { exact: true }).first().dblclick();
     await expect(
       page.getByRole("dialog", { name: /^(New|Edit) task$/ }),
     ).toBeVisible();
@@ -178,7 +178,7 @@ Then(
 When(
   "I map task {string} to a new Workday task {string} and save",
   async ({ page }, task: string, workdayTask: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
@@ -209,7 +209,7 @@ Then(
 When(
   "I set task {string} to commit as {string} and save",
   async ({ page }, task: string, choice: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: choice, exact: true }).click();
@@ -221,7 +221,7 @@ When(
 When(
   "I choose Another task… for task {string} without picking one",
   async ({ page }, task: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: "Another task…" }).click();
@@ -281,7 +281,7 @@ When(
 Then(
   "task {string} says its project is local only",
   async ({ page }, task: string) => {
-    await page.getByText(task, { exact: true }).click();
+    await page.getByText(task, { exact: true }).dblclick();
     const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await expect(
       editor.getByText(
@@ -296,7 +296,7 @@ Then(
 );
 
 Then("task {string} offers Commits as", async ({ page }, task: string) => {
-  await page.getByText(task, { exact: true }).click();
+  await page.getByText(task, { exact: true }).dblclick();
   const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(
     editor.getByRole("combobox", { name: "Commits as" }),

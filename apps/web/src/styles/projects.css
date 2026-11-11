@@ -349,6 +349,11 @@
     background: var(--highlight-bg);
   }
 
+  /* Selected rows take the accent's tint, as Backlog rows do. */
+  .project-task-row.is-selected {
+    background: oklch(from var(--primary) l c h / 14%);
+  }
+
   .project-task-row:focus-visible {
     box-shadow: inset 0 0 0 2px var(--focus-ring);
   }

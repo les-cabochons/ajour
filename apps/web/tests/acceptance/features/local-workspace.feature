@@ -482,6 +482,21 @@ Feature: Open the local time workspace
     And I archive the project from its properties
     Then the project properties offer Restore
 
+  Scenario: Select project tasks like Backlog rows, and archive them together
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I click task "111 000"
+    Then only task "111 000" is selected, and no task editor is open
+    When I Cmd-click task "222 000"
+    And I right-click task "222 000"
+    Then the task menu offers "Add 2 tasks to favorites" and "Archive 2 tasks", and not "Edit"
+    When I choose "Archive 2 tasks" in the task menu
+    Then a toast says "2 tasks archived"
+    And the project lists no active task
+    When I undo with the toast button
+    Then the project lists task "111 000"
+    And the project lists task "222 000"
+
   Scenario: Pin tasks to number keys
     Given I have projects with searchable tasks
     When I open project "aaa xyz"
