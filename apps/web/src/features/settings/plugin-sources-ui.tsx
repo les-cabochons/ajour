@@ -372,7 +372,7 @@ export function PluginSourcesSection({
               <Input
                 id="plugin-source-address"
                 className="max-w-96 min-w-0 flex-1"
-                placeholder="https://github.com/owner/repository"
+                placeholder="Repository address"
                 value={address}
                 maxLength={500}
                 inputMode="url"

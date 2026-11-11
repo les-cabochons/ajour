@@ -258,6 +258,16 @@
   }
 }
 
+/* A settings placeholder says what to type, never a value. Italic, light
+   and in the tertiary color, it stands apart from a saved value in the
+   foreground at regular weight. Unlayered, so it wins over the inputs'
+   `placeholder:text-muted-foreground` utility. */
+.settings-content :is(input, textarea)::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-weight: 300;
+}
+
 @media (max-width: 1600px) {
   .settings-layout {
     display: flex;

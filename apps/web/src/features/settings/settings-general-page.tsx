@@ -111,7 +111,7 @@ function CapacityInput({
         id={id}
         className="font-mono"
         value={draft}
-        placeholder="8:00"
+        placeholder="Hours"
         // A text keyboard: a numeric keypad has no ":" or "h" for "7:30" or "7h30".
         inputMode="text"
         autoComplete="off"

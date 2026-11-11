@@ -96,10 +96,10 @@ function PluginFieldInput({
                 }
                 onChange(event.target.value);
               }}
-              // An empty value reads as empty, never as a saved one.
-              placeholder={
-                field.placeholder ? `e.g. ${field.placeholder}` : "Not set"
-              }
+              // The plugin's placeholder says what to type, never a value, so
+              // an empty row never reads as a saved one. Settings show it in
+              // italics (styles/settings.css).
+              placeholder={field.placeholder ?? "Not set"}
               autoComplete="off"
             />
           )}

@@ -156,7 +156,7 @@ export function SettingsMcpPage() {
               <Input
                 id="mcp-client-name"
                 value={name}
-                placeholder="Claude Code on this Mac"
+                placeholder="Name this client"
                 onChange={(event) => setName(event.target.value)}
               />
             </Field>

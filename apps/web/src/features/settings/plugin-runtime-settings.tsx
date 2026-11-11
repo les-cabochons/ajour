@@ -152,7 +152,9 @@ export function PluginAdvancedSettings({
             max={PLUGIN_MEMORY_CEILING_MB.max}
             step={16}
             className="w-24"
-            placeholder={String(declared.memoryCeilingMb)}
+            // The description names the plugin's ceiling; a number here
+            // would read as a saved value.
+            placeholder="Plugin default"
             value={ceiling}
             disabled={disabled}
             aria-invalid={error ? true : undefined}
