@@ -43,6 +43,8 @@ import {
 import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
+import { ignoreSecondClick } from "@/lib/double-click-guard";
+import { focusWhenLost } from "@/lib/focus-return";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
@@ -323,10 +325,35 @@ export function TimeEntryEditorForm({
     });
   }
 
+  /**
+   * Closes the editor after `write`, and focuses the row or card of the entry
+   * it wrote when focus fell to the page, as after N from the page or Stop on
+   * a running row the save replaces. A host that gives focus back to the row
+   * or button the editor came from keeps it there.
+   */
+  function closeOnEntry(write: () => boolean) {
+    const before = new Set(
+      localStore.snapshot().timesheetEntries.map((saved) => saved._id),
+    );
+    const savedId = entry?._id ?? runningTimer?.entryId;
+    if (!write()) return;
+    onClose();
+    focusWhenLost(() => {
+      const id =
+        localStore
+          .snapshot()
+          .timesheetEntries.find((saved) => !before.has(saved._id))?._id ??
+        savedId;
+      return id
+        ? document.querySelector<HTMLElement>(
+            `[data-entry-id="${CSS.escape(id)}"][data-focus-column]`,
+          )
+        : null;
+    });
+  }
+
   function save() {
-    if (commit("save")) {
-      onClose();
-    }
+    closeOnEntry(() => commit("save"));
   }
 
   /**
@@ -357,11 +384,14 @@ export function TimeEntryEditorForm({
 
   /** Saves draft changes to the running entry, then stops it. */
   function stop() {
-    if (!runningTimer || !commit("save")) return;
-    withEventAttribution({ surface: editorSurface }, () =>
-      localStore.saveTimer(runningTimer._id),
-    );
-    onClose();
+    if (!runningTimer) return;
+    closeOnEntry(() => {
+      if (!commit("save")) return false;
+      withEventAttribution({ surface: editorSurface }, () =>
+        localStore.saveTimer(runningTimer._id),
+      );
+      return true;
+    });
   }
 
   /** Runs the main button: Enter and Cmd/Ctrl+Enter press it too. */
@@ -464,7 +494,16 @@ export function TimeEntryEditorForm({
       ) : null}
       <TooltipButton
         label="Close"
-        render={<Button variant="ghost" size="icon" onClick={onClose} />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(event) => {
+              ignoreSecondClick(event);
+              onClose();
+            }}
+          />
+        }
       >
         <X />
       </TooltipButton>
@@ -537,7 +576,12 @@ export function TimeEntryEditorForm({
         />
       </fieldset>
 
-      <footer className="flex items-center justify-end gap-2 pt-1">
+      <footer
+        className="flex items-center justify-end gap-2 pt-1"
+        // Each button closes the editor, so a double-click's second click
+        // would land on the row or button it uncovers.
+        onClickCapture={ignoreSecondClick}
+      >
         {/* Stop opens the running entry's footer. Start and Continue are the
             main button's own verbs, and stay in the ⋯ menu. */}
         {runningTimer ? (

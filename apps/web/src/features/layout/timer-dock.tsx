@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -27,6 +28,7 @@ import {
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import { useSettingsWindowLocation } from "@/features/settings/settings-link";
 import { useLocalState } from "@/lib/local-hooks";
+import { focusWhenLost } from "@/lib/focus-return";
 import { localStore } from "@/lib/local-store";
 import {
   getTimerContributionMs,
@@ -218,6 +220,7 @@ function StartButton() {
       label="Start"
       shortcut="entry.stop-or-start"
       className={DOCK_PRIMARY_BUTTON_CLASS}
+      data-dock-start=""
       onClick={startBlankEntry}
     >
       <PlayIcon className="size-3.5" />
@@ -298,10 +301,25 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
   ) : (
     <NewEntryButton />
   );
+  // Whether focus was in the running card or its editor, which React's focus
+  // events reach through the editor's portal. When the entry stops from
+  // there, its card goes away with the focused button, so focus moves to
+  // the idle card's Start.
+  const focusInRunningCard = useRef(false);
+  const idleCardRef = useRef<HTMLElement>(null);
+  const running = Boolean(timer && summary);
+  useEffect(() => {
+    if (running || !focusInRunningCard.current) return;
+    focusInRunningCard.current = false;
+    focusWhenLost(() =>
+      idleCardRef.current?.querySelector<HTMLElement>("[data-dock-start]"),
+    );
+  }, [running]);
 
   if (!timer || !summary) {
     return (
       <section
+        ref={idleCardRef}
         aria-label="Timer"
         className="mx-2 mt-1 mb-2 flex items-center gap-1.5 rounded-md border bg-background p-2.5 text-xs"
       >
@@ -318,6 +336,13 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
     <section
       aria-label="Running entry"
       className="relative mx-2 mt-1 mb-2 rounded-md border bg-background"
+      onFocus={() => {
+        focusInRunningCard.current = true;
+      }}
+      onBlur={(event) => {
+        // A focused button that unmounts blurs toward nothing: keep it.
+        if (event.relatedTarget) focusInRunningCard.current = false;
+      }}
     >
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}

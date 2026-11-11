@@ -15,10 +15,18 @@ import type { WeekTargetReached } from "@/domain/time/week-target-prompt";
 import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
 import { watchWeekTargets } from "@/features/time/week-target-watch";
 
-/** The week to ask about, until the user answers. */
+/**
+ * The week to ask about, until the user answers. It asks a frame after the
+ * save that reached the target, once the editor that saved has closed and
+ * given focus back to its row, so closing the question returns there.
+ */
 function useWeekTargetPrompt() {
   const [reached, setReached] = useState<WeekTargetReached | null>(null);
-  useEffect(() => watchWeekTargets(setReached), []);
+  useEffect(
+    () =>
+      watchWeekTargets((week) => requestAnimationFrame(() => setReached(week))),
+    [],
+  );
   return { reached, dismiss: () => setReached(null) };
 }
 

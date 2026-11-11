@@ -7,6 +7,7 @@ import {
   type PointerEvent,
 } from "react";
 
+import { FOCUS_ITEM_SELECTOR, captureItemFocus } from "@/lib/item-keys";
 import {
   SIDE_PANEL_MAX_WIDTH,
   SIDE_PANEL_MIN_WIDTH,
@@ -27,7 +28,8 @@ const KEYBOARD_STEP = 16;
  *
  * `contentKey` names what the panel shows. When it changes, and when the panel
  * opens, the panel remembers the element focused outside it, usually the row or card
- * that was clicked. Closing the panel gives focus back to that element.
+ * that was clicked. Closing the panel gives focus back to that element, or,
+ * when the save removed that row or card, to the one that took its place.
  *
  * Dragging the left edge resizes the panel. Each page passes its own
  * `widthKey`, and the width is saved per device in `lib/side-panel-width.ts`.
@@ -49,6 +51,9 @@ export function SidePanel({
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  // For a row or card, what focuses the row that took its place when the
+  // panel's save removed or replaced it, such as Stop on the running row.
+  const fallbackFocusRef = useRef<(() => void) | null>(null);
   const width = useSidePanelWidth(widthKey);
 
   // Layout effects run before the content's own effects can move focus inside.
@@ -60,6 +65,9 @@ export function SidePanel({
       !panelRef.current?.contains(active)
     ) {
       returnFocusRef.current = active;
+      fallbackFocusRef.current = active.matches(FOCUS_ITEM_SELECTOR)
+        ? captureItemFocus(active)
+        : null;
     }
   }, [contentKey]);
 
@@ -76,6 +84,8 @@ export function SidePanel({
       const target = returnFocusRef.current;
       if (target?.isConnected) {
         target.focus();
+      } else {
+        fallbackFocusRef.current?.();
       }
     },
     [],
