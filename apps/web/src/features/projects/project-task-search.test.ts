@@ -167,10 +167,10 @@ describe("a managed project's tasks in the task menu", () => {
     { ...createTask("task-login", "Ticket 101 login"), source: assigned },
   ]);
 
-  it("lists the tasks the source assigns to the user before the Not assigned ones", () => {
+  it("lists the tasks the source assigns to the user before the others", () => {
     expect(
       findMatchingTasksInProject(managed, "").map(({ _id }) => _id),
-    ).toEqual(["task-local", "task-login", "task-export"]);
+    ).toEqual(["task-login", "task-export", "task-local"]);
   });
 
   it("ranks an assigned task first among equal search matches", () => {
@@ -178,6 +178,6 @@ describe("a managed project's tasks in the task menu", () => {
       findMatchingProjectTasks([managed], "ticket").matches.map(
         ({ task }) => task._id,
       ),
-    ).toEqual(["task-local", "task-login", "task-export"]);
+    ).toEqual(["task-login", "task-export", "task-local"]);
   });
 });

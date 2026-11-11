@@ -1,25 +1,26 @@
 import type { LocalProjectTask } from "@/domain/local-state";
 
 /*
- * Every open task of a managed project is selectable, but the task menu and
- * the task pickers put the ones the source assigns to the user first. The
- * others say "Not assigned". A task the source doesn't know, such as a local
- * one, keeps its place.
+ * Every open task of a managed project is selectable. The task menu and the
+ * task pickers put the ones the source assigns to the user first, and they
+ * carry the Assigned to you icon there and on the project page. A task the
+ * source assigns to someone else, or doesn't know, such as a local one, has
+ * no mark.
  */
 
-/** Whether the task's project source assigns it to someone else. */
-export function isTaskNotAssigned(task: Pick<LocalProjectTask, "source">) {
-  return task.source?.assigned === false;
+/** Whether the task's project source assigns it to the user. */
+export function isTaskAssignedToUser(task: Pick<LocalProjectTask, "source">) {
+  return task.source?.assigned === true;
 }
 
 /**
- * The tasks with the Not assigned ones last. Each group keeps its order, so
- * a list without them is returned as it was.
+ * The tasks with the ones assigned to the user first. Each group keeps its
+ * order, so a list without them is returned as it was.
  */
 export function sortAssignedTasksFirst<
   Task extends Pick<LocalProjectTask, "source">,
 >(tasks: readonly Task[]): Task[] {
-  const notAssigned = tasks.filter(isTaskNotAssigned);
-  if (notAssigned.length === 0) return [...tasks];
-  return [...tasks.filter((task) => !isTaskNotAssigned(task)), ...notAssigned];
+  const assigned = tasks.filter(isTaskAssignedToUser);
+  if (assigned.length === 0) return [...tasks];
+  return [...assigned, ...tasks.filter((task) => !isTaskAssignedToUser(task))];
 }

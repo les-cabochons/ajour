@@ -66,6 +66,8 @@ import {
   normalizeProjectTaskBudgetMs,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
+import { isTaskAssignedToUser } from "@/domain/projects/task-assignment";
+import { AssignedToYouMark } from "@/features/projects/assigned-to-you-mark";
 import {
   getProjectTaskBillableValueLabel,
   isProjectTaskBillable,
@@ -1263,6 +1265,8 @@ function ProjectDetail({
       >
         <td className="project-task-name-cell">
           <span className="project-task-name">{task.name}</span>
+          {/* A managed project's task its source assigns to the user. */}
+          {isTaskAssignedToUser(task) ? <AssignedToYouMark /> : null}
           <TaskMappingHints
             task={task}
             plugins={taskPropertyPlugins}

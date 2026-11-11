@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProjectTask } from "@/domain/local-state";
 import {
-  isTaskNotAssigned,
+  isTaskAssignedToUser,
   sortAssignedTasksFirst,
 } from "@/domain/projects/task-assignment";
 
@@ -21,22 +21,22 @@ const review = task("Review", { remoteId: "1004", assigned: true });
 const mine = task("Ad hoc support");
 
 describe("tasks a project source assigns to the user", () => {
-  it("says Not assigned only of a source task the source gives someone else", () => {
-    expect(isTaskNotAssigned(exportTask)).toBe(true);
-    expect(isTaskNotAssigned(login)).toBe(false);
-    expect(isTaskNotAssigned(mine)).toBe(false);
+  it("says a task is assigned to the user only when its source says so", () => {
+    expect(isTaskAssignedToUser(login)).toBe(true);
+    expect(isTaskAssignedToUser(exportTask)).toBe(false);
+    expect(isTaskAssignedToUser(mine)).toBe(false);
   });
 
-  it("puts the Not assigned tasks after the others, each keeping its order", () => {
+  it("puts the tasks assigned to the user first, each group keeping its order", () => {
     expect(
       sortAssignedTasksFirst([exportTask, mine, login, review]).map(
         ({ name }) => name,
       ),
     ).toEqual([
-      "Ad hoc support",
       "Ticket #101 - Login",
       "Review",
       "Ticket #102 - Export",
+      "Ad hoc support",
     ]);
   });
 

@@ -35,8 +35,8 @@ export interface SearchableSelectOption {
   keywords?: string[];
   /** A mark before the label, in the list and, once chosen, in the field. */
   icon?: ReactNode;
-  /** Muted words after the label in the list, such as "Not assigned". */
-  hint?: string;
+  /** A mark right after the label in the list only, such as the Assigned to you icon. */
+  mark?: ReactNode;
 }
 
 interface SearchableSelectProps {
@@ -554,11 +554,7 @@ export function SearchableSelect({
                             option.icon
                           )}
                           <span>{option.label}</span>
-                          {option.hint ? (
-                            <span className="ml-auto shrink-0 text-xs text-[var(--text-tertiary)]">
-                              {option.hint}
-                            </span>
-                          ) : null}
+                          {option.mark}
                         </CommandItem>
                       ))}
                     </CommandGroup>

@@ -13,11 +13,12 @@ import {
   setTaskFavorite,
 } from "@/features/projects/favorites";
 import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
-import { isTaskNotAssigned } from "@/domain/projects/task-assignment";
+import { isTaskAssignedToUser } from "@/domain/projects/task-assignment";
 import {
-  isProjectTaskBillable,
-  NOT_ASSIGNED_HINT,
-} from "@/features/projects/project-task-options";
+  ASSIGNED_TO_YOU_LABEL,
+  AssignedToYouMark,
+} from "@/features/projects/assigned-to-you-mark";
+import { isProjectTaskBillable } from "@/features/projects/project-task-options";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -94,9 +95,9 @@ interface PickerTaskRowProps {
 }
 
 /**
- * A task on one line: the star, the name, "Not assigned" when its project
- * source assigns it to someone else, its pinned key and "Non-billable" when
- * it is not billable. A long name is cut.
+ * A task on one line: the star, the name, right after it the Assigned to you
+ * icon when its project source assigns it to the user, its pinned key and
+ * "Non-billable" when it is not billable. A long name is cut.
  */
 export function PickerTaskRow({
   project,
@@ -107,7 +108,7 @@ export function PickerTaskRow({
   trailing,
   onSelect,
 }: PickerTaskRowProps) {
-  const notAssigned = isTaskNotAssigned(task);
+  const assignedToUser = isTaskAssignedToUser(task);
   return (
     <CommandItem
       value={value}
@@ -121,7 +122,7 @@ export function PickerTaskRow({
       aria-label={[
         task.name,
         projectDisplay ? getProjectLabel(project) : undefined,
-        notAssigned ? NOT_ASSIGNED_HINT : undefined,
+        assignedToUser ? ASSIGNED_TO_YOU_LABEL : undefined,
         task.pinnedSlot ? `pinned to ${task.pinnedSlot}` : undefined,
         isProjectTaskBillable(task) ? undefined : "Non-billable",
       ]
@@ -143,22 +144,18 @@ export function PickerTaskRow({
           className="size-4 shrink-0"
         />
       ) : null}
+      <span className="min-w-0 truncate">{task.name}</span>
+      {/* Right after the name, so the names of a list stay lined up. */}
+      {assignedToUser ? <AssignedToYouMark /> : null}
       {projectDisplay === "label" || projectDisplay === "icon-and-label" ? (
-        <>
-          <span className="min-w-0 truncate">{task.name}</span>
-          {/* Takes what the name leaves, so a long name cuts it first. */}
-          <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-tertiary)]">
-            {getProjectLabel(project)}
-          </span>
-        </>
-      ) : (
-        <span className="min-w-0 flex-1 truncate">{task.name}</span>
-      )}
-      {notAssigned ? (
-        <span className="shrink-0 text-xs text-[var(--text-tertiary)]">
-          {NOT_ASSIGNED_HINT}
+        // Takes what the name leaves, so a long name cuts it first.
+        <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-tertiary)]">
+          {getProjectLabel(project)}
         </span>
-      ) : null}
+      ) : (
+        // Pushes the pinned key and the chips to the row's end.
+        <span className="flex-1" />
+      )}
       {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
       {isProjectTaskBillable(task) ? null : <Chip>Non-billable</Chip>}
       {trailing}
