@@ -11,7 +11,7 @@ Feature: Create a task from a task picker
     Then the item's Task shows "07 Run"
     And a toast says "Task 07 Run created"
     When I press Undo on the toast
-    Then the item's Task shows "No task"
+    Then the item's Task is empty
     And the project has no task "07 Run"
 
   Scenario: Restore an archived task instead of adding a twin

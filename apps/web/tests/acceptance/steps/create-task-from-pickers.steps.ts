@@ -101,12 +101,13 @@ When("I press Enter", async ({ page }) => {
 });
 
 Then("the item's Task shows {string}", async ({ page }, text: string) => {
-  if (text === "No task") {
-    await expect(taskField(page)).toHaveValue("");
-    await expect(taskField(page)).toHaveAttribute("placeholder", "No task");
-    return;
-  }
   await expect(taskField(page)).toHaveValue(text);
+});
+
+Then("the item's Task is empty", async ({ page }) => {
+  await expect(taskField(page)).toHaveValue("");
+  // It says what to do, never "No task", which reads as a set value.
+  await expect(taskField(page)).toHaveAttribute("placeholder", "Pick a task");
 });
 
 Then("the project has no task {string}", async ({ page }, task: string) => {

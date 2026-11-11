@@ -977,6 +977,7 @@ Syncs move synced items between states:
 - The right panel leaves room for fields it doesn't show yet, such as the assignee, which Settle can change, and fields not imported yet, such as iteration, area path, tags and acceptance criteria. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - The page is designed for Azure DevOps first, then Jira.
 - The page edits in place: no editor side panel. Click the title, or press Enter, to rename. Every inline edit saves on Enter, Escape or blur with the Undo toast, so typed text is never lost (usability testing, 2026-11-06). Enter and Escape in the title give focus back to the title, so the next key acts on nothing: on the page, E would settle the item. An estimate it can't save stays open with its message under the number (see Hours fields).
+- A placeholder on the page says what to type, never a value, as in composers and Settings: "Add description…", "Pick a project", "Pick a task" ("Pick a project first" without a project), and an empty State or Priority says "Pick a state" or "Pick a priority", not "No state" or "No priority". An estimate field shows its format, "0h". Every placeholder is light and in the tertiary color; words are also italic, a time stays upright.
 
 ### Description frontmatter
 

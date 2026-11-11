@@ -131,6 +131,15 @@ function useRowPickerFocus() {
   };
 }
 
+/**
+ * An empty full picker says what to do, not "No state" or "No priority",
+ * which read as a set value. The item page draws it as a placeholder
+ * (styles/backlog.css).
+ */
+function EmptyPickerText({ children }: { children: string }) {
+  return <span data-placeholder="">{children}</span>;
+}
+
 export function BacklogStatePicker({
   item,
   state,
@@ -169,7 +178,8 @@ export function BacklogStatePicker({
         onClick={(e) => e.stopPropagation()}
       >
         {dot}
-        {full && (workflow?.name ?? "No state")}
+        {full &&
+          (workflow?.name ?? <EmptyPickerText>Pick a state</EmptyPickerText>)}
         {full && <PickerChevron />}
       </Button>
     );
@@ -196,7 +206,8 @@ export function BacklogStatePicker({
         onClick={(e) => e.stopPropagation()}
       >
         {dot}
-        {full && (workflow?.name ?? "No state")}
+        {full &&
+          (workflow?.name ?? <EmptyPickerText>Pick a state</EmptyPickerText>)}
         {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" finalFocus={focus.finalFocus}>
@@ -251,7 +262,12 @@ export function BacklogPriorityPicker({
         onClick={(e) => e.stopPropagation()}
       >
         <PriorityIcon priority={item.priority} decorative />
-        {full && getPriorityLevelName(item.priority)}
+        {full &&
+          (item.priority ? (
+            getPriorityLevelName(item.priority)
+          ) : (
+            <EmptyPickerText>Pick a priority</EmptyPickerText>
+          ))}
         {full && <PickerChevron />}
       </Button>
     );
@@ -296,7 +312,12 @@ export function BacklogPriorityPicker({
         onClick={(e) => e.stopPropagation()}
       >
         <PriorityIcon priority={item.priority} decorative />
-        {full && getPriorityLevelName(item.priority)}
+        {full &&
+          (item.priority ? (
+            getPriorityLevelName(item.priority)
+          ) : (
+            <EmptyPickerText>Pick a priority</EmptyPickerText>
+          ))}
         {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" finalFocus={focus.finalFocus}>

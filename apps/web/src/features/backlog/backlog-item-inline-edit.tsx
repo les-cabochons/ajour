@@ -227,8 +227,9 @@ export function EstimateFigure({
             aria-invalid={Boolean(error)}
             aria-describedby={error ? errorId : undefined}
             value={draft}
-            placeholder="0"
-            className="h-7 w-20 px-1 font-mono text-lg"
+            // The format to type, as every hours field shows it.
+            placeholder="0h"
+            className="backlog-item-estimate-input h-7 w-20 px-1 font-mono text-lg"
             onFocus={(event) => event.currentTarget.select()}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={save}
@@ -399,7 +400,7 @@ export function DescriptionSection({
             aria-label="Description"
             value={draft}
             onChange={setDraft}
-            placeholder="Markdown supported"
+            placeholder="Add description…"
             minLines={4}
             onBlur={(value, next) => {
               // Focus moving to the warning's Load latest keeps it open.
