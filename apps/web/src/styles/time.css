@@ -1005,6 +1005,30 @@
     pointer-events: none;
   }
 
+  /* Why a cell took no typed hours, hung under it like the error, with the
+     button that opens the cell in the side panel. */
+  .weekly-grid-cell-note {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 2px;
+    padding: 0.25rem 0.25rem 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--popover);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1rem;
+    text-align: left;
+    white-space: nowrap;
+    box-shadow: var(--shadow-popup);
+  }
+
   .weekly-grid-total-cell {
     color: var(--text);
     font-family: var(--font-mono);
@@ -1020,6 +1044,13 @@
 
   .weekly-grid-add-row button {
     margin: 0.25rem 0.5rem;
+  }
+
+  .weekly-grid-add-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
   }
 
   .weekly-grid-add-row-picker {
@@ -1301,6 +1332,31 @@
   .weekly-entry-card.is-running > strong {
     color: var(--success);
     font-size: var(--text-sm);
+  }
+
+  /* Hours typed on a card replace its duration in place, as in a Grid cell;
+     the message hangs below, over the card. */
+  .weekly-entry-card-project .weekly-entry-card-hours-edit {
+    position: relative;
+    flex-shrink: 0;
+    overflow: visible;
+    color: var(--text);
+  }
+
+  .weekly-entry-card-hours-edit .weekly-entry-card-hours-input {
+    width: 4.5rem;
+    height: 1.5rem;
+    padding: 0 0.375rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .weekly-entry-card-project .weekly-grid-cell-error {
+    overflow: visible;
+    color: var(--danger);
+    font-size: 12px;
   }
 
   .weekly-entry-card-task {

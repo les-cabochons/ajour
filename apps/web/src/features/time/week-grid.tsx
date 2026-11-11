@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -9,6 +8,7 @@ import {
 import {
   RiAddLine as Plus,
   RiCalendarLine as CalendarIcon,
+  RiFileCopyLine as CopyIcon,
 } from "@remixicon/react";
 import { ObjectContextMenu } from "@/components/object-actions-menu";
 import {
@@ -38,7 +38,7 @@ import {
   type TimeEntryActionId,
 } from "@/domain/actions/object-actions";
 import type { LocalProject, LocalTimesheetEntry } from "@/domain/local-state";
-import { formatClockDuration } from "@/domain/time/duration";
+import { filterPastedHours, formatClockDuration } from "@/domain/time/duration";
 import {
   commitWeekGridCellText,
   formatWeekGridCellText,
@@ -50,6 +50,11 @@ import {
   type WeeklyTimeProjection,
 } from "@/domain/time/weekly-time";
 import { ProjectTaskPicker } from "@/features/projects/project-task-picker";
+import {
+  InPlaceHoursInput,
+  writeInPlaceHours,
+  type InPlaceHoursEnd,
+} from "@/features/time/in-place-hours-input";
 import {
   offerTimeEntryUndo,
   useTimeEntryActions,
@@ -64,7 +69,8 @@ import {
   TIME_ENTRY_ACTION_KEYS,
   type ActionKeys,
 } from "@/lib/item-keys";
-import { localStore, runStoreCommandWith } from "@/lib/local-store";
+import { matchEntryClipboard } from "@/lib/entry-clipboard";
+import { localStore } from "@/lib/local-store";
 import { leavesContextMenuToSystem } from "@/lib/native-context-menu";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
@@ -166,12 +172,7 @@ const CELL_ACTION_KEYS: ActionKeys<WeekGridCellActionId> = {
   "delete-row": "item.delete-row",
 };
 
-/**
- * How an in-place edit ends. A number saves and moves that many days (Tab and
- * Shift+Tab move one day, Enter stays). `blur` saves a valid value and keeps the
- * saved hours otherwise.
- */
-type CellEditEnd = -1 | 0 | 1 | "blur";
+type CellEditEnd = InPlaceHoursEnd;
 
 /** What one rendered cell holds, derived from its row. */
 interface CellModel {
@@ -192,100 +193,33 @@ function getCellId(rowKey: string, localDate: string) {
   return `${rowKey}@${localDate}`;
 }
 
+/** Characters that start hours on a focused cell, as in ".5", ":45" or "-1". */
+const HOURS_START = /^[0-9.,:-]$/;
+
 /**
- * The hours input of a cell being edited in place. Enter saves, Tab and Shift+Tab
- * save and move a day, Escape cancels, and leaving the cell saves a valid value.
+ * Why a cell takes no hours typed or pasted on it, and what opens it instead.
+ * Cells with several entries or the running entry change in the side panel
+ * (council round 17); a submitted week says its lock.
  */
-function WeekGridCellInput({
-  label,
-  initialText,
-  savedText,
-  onEnd,
-  onCancel,
-}: {
-  label: string;
-  /** Text typed to start editing, such as a digit. Without it, the saved hours are selected. */
-  initialText?: string;
-  savedText: string;
-  /** Saves the text. Returns an error to keep editing, or null when the edit ended. */
-  onEnd: (text: string, end: CellEditEnd) => string | null;
-  onCancel: () => void;
-}) {
-  const [text, setText] = useState(initialText ?? savedText);
-  const [error, setError] = useState<string | null>(null);
-  const errorId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Set once the edit ended from a key, so the blur that follows writes nothing.
-  const endedRef = useRef(false);
-
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    if (initialText === undefined) {
-      input.select();
-    } else {
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
-  }, [initialText]);
-
-  function end(edit: Exclude<CellEditEnd, "blur">) {
-    const nextError = onEnd(text, edit);
-    setError(nextError);
-    endedRef.current = nextError === null;
+function getCellEditBlock(
+  model: CellModel,
+  lockReason: string | undefined,
+): { message: string; actionLabel?: string } {
+  if (lockReason) return { message: lockReason };
+  if (model.hasRunning) {
+    return {
+      message:
+        "The running entry is in this cell. Change its time in the panel.",
+      actionLabel: "Open entry",
+    };
   }
-
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Enter") {
-      event.preventDefault();
-      end(0);
-    } else if (event.key === "Tab") {
-      event.preventDefault();
-      end(event.shiftKey ? -1 : 1);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      endedRef.current = true;
-      onCancel();
-    }
+  if (model.count > 1) {
+    return {
+      message: `${model.count} entries share this cell. Change their hours in the panel.`,
+      actionLabel: "Open entries",
+    };
   }
-
-  return (
-    <>
-      <input
-        ref={inputRef}
-        className={cn("weekly-grid-cell-input", error && "is-invalid")}
-        value={text}
-        // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
-        inputMode="text"
-        autoComplete="off"
-        // The default size of 20 characters would widen the day column.
-        size={1}
-        aria-label={label}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        onChange={(event) => {
-          setText(event.target.value);
-          setError(null);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => {
-          if (!endedRef.current) {
-            const nextError = onEnd(text, "blur");
-            setError(nextError);
-            endedRef.current = nextError === null;
-          }
-        }}
-      />
-      {/* Under the cell, as the entry editor shows it under Hours. */}
-      {error ? (
-        <span id={errorId} role="alert" className="weekly-grid-cell-error">
-          {error}
-        </span>
-      ) : null}
-    </>
-  );
+  return { message: "This cell takes no new entries." };
 }
 
 /**
@@ -308,6 +242,7 @@ export function WeekGrid({
   activeCell,
   activeEntryId,
   onAddRow,
+  onCopyLastWeekRows,
   onClosePanel,
   onOpen,
   onOpenCellEntries,
@@ -328,6 +263,11 @@ export function WeekGrid({
   /** The entry open in the editor; its cell is highlighted. */
   activeEntryId?: string;
   onAddRow: (row: WeeklyGridAddedRow) => void;
+  /**
+   * Adds last week's rows to this empty week, without their hours. Given
+   * only while the week has no row and last week had some.
+   */
+  onCopyLastWeekRows?: () => WeeklyGridAddedRow[];
   /** Saves and closes the side panel. Returns false when its draft is invalid and stays open. */
   onClosePanel: () => boolean;
   onOpen: (request: WeekGridOpenRequest) => void;
@@ -354,7 +294,15 @@ export function WeekGrid({
   const [editing, setEditing] = useState<{
     cellId: string;
     initialText?: string;
+    /** Set when pasted hours can't be saved, so the cell opens with why. */
+    initialError?: string;
   } | null>(null);
+  // The cell that says why it took no typed or pasted hours.
+  const [blockedCellId, setBlockedCellId] = useState<string | null>(null);
+  // Every rendered cell by id, for the clipboard listeners.
+  const cellModelsRef = useRef(
+    new Map<string, { row: WeeklyGridRow; model: CellModel }>(),
+  );
   const [isAddingRow, setIsAddingRow] = useState(false);
   const [nameMenuRowKey, setNameMenuRowKey] = useState<string | null>(null);
   const nameMenuTriggerRef = useRef<HTMLDivElement>(null);
@@ -540,28 +488,7 @@ export function WeekGrid({
     }
     invalidEditRef.current = null;
 
-    if (result.kind === "create") {
-      offerTimeEntryUndo(
-        runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
-          unit.set({ time_entry: { host: "grid_cell" } }),
-        ),
-        "Entry created",
-      );
-    } else if (result.kind === "update") {
-      offerTimeEntryUndo(
-        runStoreCommandWith(
-          "updateTimesheetEntry",
-          [result.entryId, result.values],
-          (unit) => unit.set({ time_entry: { host: "grid_cell" } }),
-        ),
-        "Entry saved",
-      );
-    } else if (result.kind === "delete") {
-      offerTimeEntryUndo(
-        localStore.deleteTimesheetEntry(result.entryId),
-        "Entry deleted",
-      );
-    }
+    writeInPlaceHours(result, "grid_cell");
 
     setEditing(null);
     if (end === "blur") return null;
@@ -582,6 +509,87 @@ export function WeekGrid({
     setEditing(null);
     pendingFocusRef.current = model.cellId;
   }
+
+  /**
+   * Pastes hours on a focused cell as if they were typed there and saved:
+   * through the duration parser, after `filterPastedHours`. Hours it can't
+   * save open the cell with them and the message. A cell that takes no hours
+   * says why instead.
+   */
+  function pasteOnCell(row: WeeklyGridRow, model: CellModel, pasted: string) {
+    const text = filterPastedHours(pasted);
+    if (!text) return;
+    if (!model.canEditInPlace) {
+      setBlockedCellId(model.cellId);
+      return;
+    }
+    if (returnsToInvalidEdit(model)) return;
+    const result = commitWeekGridCellText({
+      text,
+      entry: model.entries[0],
+      row,
+      localDate: model.cell.localDate,
+    });
+    if (result.kind === "invalid") {
+      if (beginEdit(model, text)) {
+        invalidEditRef.current = model.cellId;
+        setEditing({
+          cellId: model.cellId,
+          initialText: text,
+          initialError: result.error,
+        });
+      }
+      return;
+    }
+    writeInPlaceHours(result, "grid_cell");
+  }
+
+  /** A cell's hours as the cell shows them, such as "2:47", or null when empty. */
+  function copyCell(model: CellModel) {
+    return model.count === 0 ? null : formatClockDuration(model.durationMs);
+  }
+
+  // The listeners read the latest render through a ref, so they attach once.
+  const clipboardRef = useRef({ pasteOnCell, copyCell });
+  clipboardRef.current = { pasteOnCell, copyCell };
+  useEffect(() => {
+    /** The focused cell of this Grid. */
+    function focusedCell() {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return null;
+      const cellId = active.dataset.cellId;
+      return cellId ? (cellModelsRef.current.get(cellId) ?? null) : null;
+    }
+
+    function copy(event: ClipboardEvent) {
+      if (event.defaultPrevented) return;
+      const focused = focusedCell();
+      // Text selected on the page copies as text.
+      if (!focused || window.getSelection()?.type === "Range") return;
+      const text = clipboardRef.current.copyCell(focused.model);
+      if (text === null) return;
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", text);
+    }
+
+    function paste(event: ClipboardEvent) {
+      if (event.defaultPrevented) return;
+      const focused = focusedCell();
+      if (!focused) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      // Copied entries paste as entries, by the Week's own paste.
+      if (matchEntryClipboard(text)) return;
+      event.preventDefault();
+      clipboardRef.current.pasteOnCell(focused.row, focused.model, text);
+    }
+
+    document.addEventListener("copy", copy);
+    document.addEventListener("paste", paste);
+    return () => {
+      document.removeEventListener("copy", copy);
+      document.removeEventListener("paste", paste);
+    };
+  }, []);
 
   function runCellAction(
     row: WeeklyGridRow,
@@ -624,12 +632,21 @@ export function WeekGrid({
     model: CellModel,
     event: ReactKeyboardEvent<HTMLButtonElement>,
   ) {
-    if (
-      !model.canEditInPlace ||
-      event.altKey ||
-      event.metaKey ||
-      event.ctrlKey
-    ) {
+    if (event.altKey || event.metaKey || event.ctrlKey) return;
+    if (blockedCellId === model.cellId && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setBlockedCellId(null);
+      return;
+    }
+    if (!model.canEditInPlace) {
+      // Hours typed on a cell that can't take them say why, with the way to
+      // open it, instead of doing nothing (usability testing, 2026-11-06).
+      if (HOURS_START.test(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setBlockedCellId(model.cellId);
+      }
       return;
     }
     // Enter edits in place instead of pressing the button; Space still opens the
@@ -710,6 +727,11 @@ export function WeekGrid({
 
   function renderCell(row: WeeklyGridRow, dayIndex: number) {
     const model = describeCell(row, dayIndex);
+    cellModelsRef.current.set(model.cellId, { row, model });
+    const block =
+      blockedCellId === model.cellId
+        ? getCellEditBlock(model, lockReason)
+        : null;
     const dayLabel = formatWeekDay(model.cell.localDate, { weekday: "long" });
     const isEditing = editing?.cellId === model.cellId;
     const isSelected =
@@ -730,13 +752,14 @@ export function WeekGrid({
           new Date(`${model.cell.localDate}T12:00:00`).getDay() % 6 === 0 &&
             "is-weekend",
           model.cell.localDate === today && "is-today",
-          isEditing && "is-editing",
+          (isEditing || block) && "is-editing",
         )}
       >
         {isEditing ? (
-          <WeekGridCellInput
+          <InPlaceHoursInput
             label={`Hours for ${row.taskName} on ${dayLabel}`}
             initialText={editing.initialText}
+            initialError={editing.initialError}
             savedText={formatWeekGridCellText(model.entries[0])}
             onEnd={(text, end) => endEdit(row, model, text, end)}
             onCancel={() => cancelEdit(model)}
@@ -766,6 +789,7 @@ export function WeekGrid({
                 }
                 // A focused cell keeps the digits, so pinned tasks skip it (GRID_CELL_ATTRIBUTE).
                 data-grid-cell=""
+                data-cell-id={model.cellId}
                 data-focus-column={dayIndex}
                 aria-label={`${row.taskName}, ${dayLabel}, ${valueLabel}`}
                 // "×2" is a count, and the cell opens a list: say so on hover
@@ -776,6 +800,18 @@ export function WeekGrid({
                     : undefined
                 }
                 onClick={(event) => handleCellClick(model, event.detail)}
+                onBlur={(event) => {
+                  // The note's button keeps it; anywhere else drops it.
+                  if (
+                    block &&
+                    !(
+                      event.relatedTarget instanceof Element &&
+                      event.relatedTarget.closest(".weekly-grid-cell-note")
+                    )
+                  ) {
+                    setBlockedCellId(null);
+                  }
+                }}
                 onKeyDown={(event) => {
                   handleCellKeyDown(model, event);
                   handleItemKeyDown(event, {
@@ -799,6 +835,24 @@ export function WeekGrid({
             )}
           </ObjectContextMenu>
         )}
+        {block ? (
+          <span role="status" className="weekly-grid-cell-note">
+            {block.message}
+            {block.actionLabel ? (
+              <Button
+                variant="link"
+                size="xs"
+                className="weekly-grid-cell-note-action"
+                onClick={() => {
+                  setBlockedCellId(null);
+                  openCell(model);
+                }}
+              >
+                {block.actionLabel}
+              </Button>
+            ) : null}
+          </span>
+        ) : null}
       </TableCell>
     );
   }
@@ -936,17 +990,38 @@ export function WeekGrid({
                     </Button>
                   </div>
                 ) : (
-                  <DisabledReason label="Add row" reason={lockReason}>
-                    <Button
-                      variant="ghost"
-                      // Regular weight, like "+ New entry" and "+ New task".
-                      className="font-normal text-muted-foreground"
-                      disabled={lockReason !== undefined}
-                      onClick={() => setIsAddingRow(true)}
-                    >
-                      <Plus data-icon="inline-start" /> Add row
-                    </Button>
-                  </DisabledReason>
+                  <div className="weekly-grid-add-row-actions">
+                    <DisabledReason label="Add row" reason={lockReason}>
+                      <Button
+                        variant="ghost"
+                        // Regular weight, like "+ New entry" and "+ New task".
+                        className="font-normal text-muted-foreground"
+                        disabled={lockReason !== undefined}
+                        onClick={() => setIsAddingRow(true)}
+                      >
+                        <Plus data-icon="inline-start" /> Add row
+                      </Button>
+                    </DisabledReason>
+                    {onCopyLastWeekRows && !lockReason ? (
+                      <Button
+                        variant="ghost"
+                        className="font-normal text-muted-foreground"
+                        onClick={() => {
+                          // The first row's first day takes the typing.
+                          const [first] = onCopyLastWeekRows();
+                          if (first) {
+                            pendingFocusRef.current = getCellId(
+                              getWeeklyGridAddedRowKey(first),
+                              weekDates[0]!,
+                            );
+                          }
+                        }}
+                      >
+                        <CopyIcon data-icon="inline-start" /> Copy last
+                        week&apos;s rows
+                      </Button>
+                    ) : null}
+                  </div>
                 )}
               </TableCell>
             </TableRow>

@@ -3,6 +3,7 @@ import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   getVisibleWeekDates,
   projectWeeklyTime,
+  selectRowsToCopyFromWeek,
   selectWeeklyGridCell,
 } from "@/domain/time/weekly-time";
 
@@ -600,5 +601,68 @@ describe("weekly time projection", () => {
     });
 
     expect(projection.gridRows[0]?.acceptsNewEntries).toBe(false);
+  });
+});
+
+describe("copying last week's rows", () => {
+  const twoTasks = [
+    {
+      ...projects[0]!,
+      tasks: [
+        ...projects[0]!.tasks,
+        {
+          _id: "task-2",
+          name: "Review",
+          status: "active" as const,
+          createdAt: 2,
+        },
+        {
+          _id: "task-old",
+          name: "Old",
+          status: "archived" as const,
+          createdAt: 3,
+        },
+      ],
+    },
+  ];
+  const entry = (
+    _id: string,
+    localDate: string,
+    taskId: string | undefined,
+  ) => ({
+    _id,
+    localDate,
+    projectId: "project-1",
+    taskId,
+    label: taskId ? "" : "Loose",
+    durationMs: 3_600_000,
+    sourceBlockIds: [],
+    committedAt: 1,
+  });
+
+  it("lists each active project and task with time that week, once, without hours", () => {
+    const rows = selectRowsToCopyFromWeek({
+      entries: [
+        entry("a", "2026-08-10", "task-2"),
+        entry("b", "2026-08-11", "task-1"),
+        entry("c", "2026-08-12", "task-2"),
+        entry("d", "2026-08-12", "task-old"),
+        entry("e", "2026-08-13", undefined),
+        entry("f", "2026-08-17", "task-1"),
+      ],
+      projects: twoTasks,
+      weekDates,
+    });
+
+    expect(rows).toEqual([
+      { projectId: "project-1", taskId: "task-2" },
+      { projectId: "project-1", taskId: "task-1" },
+    ]);
+  });
+
+  it("lists nothing for a week without time", () => {
+    expect(
+      selectRowsToCopyFromWeek({ entries: [], projects: twoTasks, weekDates }),
+    ).toEqual([]);
   });
 });

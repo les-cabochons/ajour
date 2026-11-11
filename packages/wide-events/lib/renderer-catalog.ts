@@ -76,7 +76,8 @@ const store = {
 };
 
 /** Where the entry form that saved a time entry sat. */
-type EntryHost = "side_panel" | "dialog" | "popover" | "grid_cell" | "agent";
+type EntryHost =
+  "side_panel" | "dialog" | "popover" | "grid_cell" | "days_card" | "agent";
 
 /**
  * A store command's catalog entry: kind `command`, the write refusals among

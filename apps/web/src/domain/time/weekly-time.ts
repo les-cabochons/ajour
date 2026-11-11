@@ -91,6 +91,45 @@ export function getWeeklyGridAddedRowKey(row: WeeklyGridAddedRow) {
 }
 
 /**
+ * The rows "Copy last week's rows" adds to an empty week: each project and
+ * task with saved time in `weekDates`, once, in the order its time was first
+ * logged, as the Grid lists rows. Only rows a new entry can take: an entry
+ * without a task, or on an archived project or task, adds none. Rows carry
+ * no hours.
+ */
+export function selectRowsToCopyFromWeek({
+  entries,
+  projects,
+  weekDates,
+}: {
+  entries: readonly LocalTimesheetEntry[];
+  projects: readonly LocalProject[];
+  weekDates: readonly string[];
+}): WeeklyGridAddedRow[] {
+  const dates = new Set(weekDates);
+  const rows = new Map<string, WeeklyGridAddedRow>();
+  const ordered = entries
+    .filter((entry) => dates.has(entry.localDate))
+    .sort(
+      (left, right) =>
+        left.localDate.localeCompare(right.localDate) ||
+        left.committedAt - right.committedAt,
+    );
+  for (const entry of ordered) {
+    const project = projects.find(
+      (candidate) => candidate._id === entry.projectId,
+    );
+    const task = project?.tasks.find(
+      (candidate) => candidate._id === entry.taskId,
+    );
+    if (project?.status !== "active" || task?.status !== "active") continue;
+    const row = { projectId: project._id, taskId: task._id };
+    rows.set(getWeeklyGridAddedRowKey(row), row);
+  }
+  return [...rows.values()];
+}
+
+/**
  * Names the Grid row an entry belongs to: its project and task, or its label when
  * it has no task.
  */
