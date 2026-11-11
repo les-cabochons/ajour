@@ -27,7 +27,7 @@ Feature: Managed projects from a project source
 
   Scenario: The task menu and the project page highlight the managed project's tasks assigned to me
     Given I have a local project "Support (mine)" with the code "ACME-SUP"
-    And its task "Ad hoc support" has an entry "Answered a call"
+    And it has my own task "Ad hoc support"
     And the example project source is connected
     When I sync the example project source now
     And I open today's time workspace

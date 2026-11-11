@@ -359,22 +359,26 @@ When(
  * the task picker or a suggestion that moves them to a source task.
  */
 
-Given(
-  "its task {string} has an entry {string}",
-  async ({ page }, name: string, note: string) => {
-    await page.addInitScript(
-      ({ name, note }) => {
-        if (sessionStorage.getItem("managed-projects-task")) return;
-        sessionStorage.setItem("managed-projects-task", "true");
-        const state = JSON.parse(
-          localStorage.getItem("ajour.local-state.v2") ?? "{}",
-        );
-        state.projects[0].tasks.push({
-          _id: "local-task",
-          name,
-          status: "active",
-          createdAt: 1,
-        });
+/**
+ * Adds a task of the user's own to the local project before the app loads,
+ * once per test, with a one-hour entry when `note` is given. An entry also
+ * puts the task in the task menu's Recent tasks.
+ */
+async function addLocalTask(page: Page, name: string, note?: string) {
+  await page.addInitScript(
+    ({ name, note }) => {
+      if (sessionStorage.getItem("managed-projects-task")) return;
+      sessionStorage.setItem("managed-projects-task", "true");
+      const state = JSON.parse(
+        localStorage.getItem("ajour.local-state.v2") ?? "{}",
+      );
+      state.projects[0].tasks.push({
+        _id: "local-task",
+        name,
+        status: "active",
+        createdAt: 1,
+      });
+      if (note !== undefined) {
         state.timesheetEntries = [
           {
             _id: "local-entry",
@@ -388,12 +392,23 @@ Given(
             committedAt: 1,
           },
         ];
-        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
-      },
-      { name, note },
-    );
+      }
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    },
+    { name, note },
+  );
+}
+
+Given(
+  "its task {string} has an entry {string}",
+  async ({ page }, name: string, note: string) => {
+    await addLocalTask(page, name, note);
   },
 );
+
+Given("it has my own task {string}", async ({ page }, name: string) => {
+  await addLocalTask(page, name);
+});
 
 When("I open the project {string}", async ({ page }, name: string) => {
   await page.goto("/projects");
