@@ -93,7 +93,14 @@ function useWordTypeahead() {
       !event.metaKey &&
       !event.altKey &&
       !event.nativeEvent.isComposing;
-    if (!isLetter) return;
+    // A menu's own search field, such as the Projects filter's, keeps its keys.
+    const target = event.target as HTMLElement;
+    if (
+      !isLetter ||
+      target.isContentEditable ||
+      target.closest("input, textarea, select")
+    )
+      return;
     const now = performance.now();
     const previous =
       now - typed.current.at < TYPEAHEAD_RESET_MS ? typed.current.text : "";
