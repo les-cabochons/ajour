@@ -259,3 +259,112 @@ Then(
       .toEqual([expect.objectContaining({ note })]);
   },
 );
+
+const BACKLOG_EDITOR = /^(New|Edit) (backlog item|subitem)$/;
+
+function backlogEditor(page: Page) {
+  return page.getByRole("dialog", { name: BACKLOG_EDITOR });
+}
+
+Then("{string} is not in the Backlog", async ({ page }, title: string) => {
+  await expect(
+    page.getByRole("main").getByText(title, { exact: true }),
+  ).toHaveCount(0);
+  const titles = await page.evaluate(() =>
+    (
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!) as {
+        workItems: { title: string }[];
+      }
+    ).workItems.map((item) => item.title),
+  );
+  expect(titles).not.toContain(title);
+});
+
+When("I press Escape in the open Backlog editor", async ({ page }) => {
+  await backlogEditor(page)
+    .getByRole("textbox", { name: /^(Item|Subitem)$/ })
+    .press("Escape");
+});
+
+When("I open a new backlog item", async ({ page }) => {
+  await page.getByRole("button", { name: "New backlog item" }).first().click();
+  await expect(backlogEditor(page)).toBeVisible();
+});
+
+Then(
+  "the open Backlog editor's title reads {string}",
+  async ({ page }, title: string) => {
+    await expect(
+      backlogEditor(page).getByRole("textbox", { name: /^(Item|Subitem)$/ }),
+    ).toHaveValue(title);
+  },
+);
+
+When("I cancel the open Backlog editor", async ({ page }) => {
+  await backlogEditor(page)
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(backlogEditor(page)).toHaveCount(0);
+});
+
+function taskComposer(page: Page) {
+  return page.getByRole("dialog", { name: /^(New|Edit) task$/ });
+}
+
+Then(
+  "the task editor's name reads {string}",
+  async ({ page }, name: string) => {
+    await expect(
+      taskComposer(page).getByRole("textbox", { name: "Name" }),
+    ).toHaveValue(name);
+  },
+);
+
+When("I cancel the task editor", async ({ page }) => {
+  await taskComposer(page)
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(taskComposer(page)).toHaveCount(0);
+});
+
+function projectComposer(page: Page) {
+  return page.getByRole("dialog", { name: "New project" });
+}
+
+When(
+  "I type {string} as the new project's full name and press Escape",
+  async ({ page }, name: string) => {
+    const field = projectComposer(page).getByRole("textbox", {
+      name: "Full name",
+    });
+    await field.fill(name);
+    await field.press("Escape");
+  },
+);
+
+Then("there is no project {string}", async ({ page }, name: string) => {
+  const names = await page.evaluate(() =>
+    (
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!) as {
+        projects: { name: string }[];
+      }
+    ).projects.map((project) => project.name),
+  );
+  expect(names).not.toContain(name);
+});
+
+Then(
+  "the new project's full name reads {string}",
+  async ({ page }, name: string) => {
+    await expect(
+      projectComposer(page).getByRole("textbox", { name: "Full name" }),
+    ).toHaveValue(name);
+  },
+);
+
+When("I cancel the project composer", async ({ page }) => {
+  await projectComposer(page)
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(projectComposer(page)).toHaveCount(0);
+});

@@ -1,8 +1,19 @@
-import { useId, useState, type CSSProperties, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import {
   RiHashtag as CodeIcon,
   RiPencilLine as EditIcon,
 } from "@remixicon/react";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -41,8 +52,9 @@ import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 
 /**
  * The project form, opened by "New project" and by Edit in the project's action set.
- * Save: the Save button or Enter in a text field. Escape, Cancel or × discard the draft.
- * Clicking outside does nothing, so a stray click never loses the draft.
+ * Save: the Save button or Enter in a text field. Escape closes it and keeps the
+ * draft for the next opening of the same project, or of New project; Cancel or ×
+ * discard it. Clicking outside does nothing, so a stray click never loses the draft.
  *
  * Mount it only while open: the draft is seeded once, from `project` when editing.
  */
@@ -59,9 +71,25 @@ export function ProjectFormDialog({
   onClose: () => void;
   onSubmit: (values: ProjectFormValues) => void;
 }) {
-  const [fields, setFields] = useState(() => createProjectFormFields(project));
+  const [draftKey] = useState(() => `project:${project?._id ?? "new"}`);
+  const [seed] = useState(() => createProjectFormFields(project));
+  const [kept] = useState(() => getComposerDraft<ProjectFormFields>(draftKey));
+  const [fields, setFields] = useState(() => kept ?? seed);
   // The full name's error shows once the user typed in it, not on a new form.
-  const [nameEdited, setNameEdited] = useState(false);
+  const [nameEdited, setNameEdited] = useState(Boolean(kept));
+  // The draft is kept while it differs from what the form opened on, until
+  // it is saved or discarded.
+  const changed = JSON.stringify(fields) !== JSON.stringify(seed);
+  useEffect(() => {
+    if (changed) keepComposerDraft(draftKey, fields);
+    else dropComposerDraft(draftKey);
+  }, [changed, draftKey, fields]);
+
+  /** Cancel and ×: the draft is discarded. */
+  function discard() {
+    dropComposerDraft(draftKey);
+    onClose();
+  }
   const values = getProjectFormValues(fields);
   const errors = getProjectFormErrors(fields);
   const { projects } = useLocalState();
@@ -82,6 +110,7 @@ export function ProjectFormDialog({
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (values) {
+      dropComposerDraft(draftKey);
       onSubmit(values);
     }
   }
@@ -100,7 +129,12 @@ export function ProjectFormDialog({
     <Dialog
       open
       disablePointerDismissal
-      onOpenChange={(open) => !open && onClose()}
+      // Escape keeps the draft; × discards it.
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (details.reason === "escape-key") onClose();
+        else discard();
+      }}
     >
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto">
         <form
@@ -256,7 +290,7 @@ export function ProjectFormDialog({
           </FieldGroup>
 
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={discard}>
               Cancel
             </Button>
             <Button type="submit" disabled={!values}>

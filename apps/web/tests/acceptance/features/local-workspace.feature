@@ -466,7 +466,13 @@ Feature: Open the local time workspace
     When I open project "aaa xyz"
     And I rename task "111 000" to "111 draft" and press Escape
     Then the project lists task "111 000"
-    When I rename task "111 000" to "111 final" and save
+    When I open task "111 000"
+    Then the task editor's name reads "111 draft"
+    When I cancel the task editor
+    And I open task "111 000"
+    Then the task editor's name reads "111 000"
+    When I cancel the task editor
+    And I rename task "111 000" to "111 final" and save
     Then the project lists task "111 final"
 
   Scenario: Edit a project in place from its page

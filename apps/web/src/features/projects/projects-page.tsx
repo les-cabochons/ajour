@@ -122,6 +122,11 @@ import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
+import {
   MergeTaskDialog,
   TaskMergeSuggestionRow,
   useTaskMergeSuggestionRows,
@@ -1724,10 +1729,16 @@ function restoreTask(projectId: string, taskId: string) {
   if (refusal) showToast(formatRestoreRefusal(refusal));
 }
 
+/** Where a task composer's unsaved draft is kept between openings. */
+function getTaskDraftKey(session: { projectId: string; taskId?: string }) {
+  return `task:${session.projectId}:${session.taskId ?? "new"}`;
+}
+
 function writeProjectTask(
   session: TaskEditorSession,
   values: ProjectTaskValues,
 ) {
+  dropComposerDraft(getTaskDraftKey(session));
   if (session.taskId) {
     const { pinnedSlot, ...otherValues } = values;
     localStore.updateProjectTask(
@@ -1883,9 +1894,20 @@ export function ProjectsPage() {
     }
   }, [isTaskEditorTargetEditable, taskEditor]);
 
+  // The task composer's draft is kept while it holds a change, so Escape,
+  // or leaving the project, never loses it; Save, Cancel and × end it.
+  const taskDraftChanged = taskEditorState?.hasChanges ?? false;
+  useEffect(() => {
+    if (!taskEditor) return;
+    const key = getTaskDraftKey(taskEditor);
+    if (taskDraftChanged) keepComposerDraft(key, taskEditor.fields);
+    else dropComposerDraft(key);
+  }, [taskEditor, taskDraftChanged]);
+
   // Every in-page path out of a project goes through `leaveProject`. Route changes
   // the page cannot guard, such as the browser's back button, land here after the
-  // fact: a valid draft is saved, and an invalid one can only be dropped.
+  // fact: a valid draft is saved, and an invalid one stays kept for the next
+  // opening of its task.
   const taskEditorDraftRef = useRef<{
     session: TaskEditorSession;
     editor: ProjectTaskEditorState;
@@ -2214,7 +2236,11 @@ export function ProjectsPage() {
     setTaskEditor({
       projectId,
       taskId: task?._id,
-      fields: createProjectTaskEditorFields(task),
+      // Escape kept the draft of this task, or of a new one, for this opening.
+      fields:
+        getComposerDraft<ProjectTaskEditorFields>(
+          getTaskDraftKey({ projectId, taskId: task?._id }),
+        ) ?? createProjectTaskEditorFields(task),
       openedPinnedSlot: task?.pinnedSlot,
       showErrors: false,
     });
@@ -2452,7 +2478,12 @@ export function ProjectsPage() {
         }
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
-        onClose={() => setTaskEditor(null)}
+        // Cancel and × discard the draft; Escape keeps it.
+        onClose={() => {
+          dropComposerDraft(getTaskDraftKey(visibleTaskEditor));
+          setTaskEditor(null);
+        }}
+        onDismiss={() => setTaskEditor(null)}
         titleAs={DialogTitle}
       />
     ) : null;

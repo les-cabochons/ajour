@@ -97,3 +97,15 @@ Feature: Never lose a draft, and undo more than one step
     And the entry on "Development" is still running
     When I press Start in the entry editor
     Then the running entry has the note "only a note"
+
+  Scenario: Escape keeps a new project's draft
+    When I open the Projects workspace
+    And I open the New project composer
+    And I type "Northwind" as the new project's full name and press Escape
+    Then the project composer is closed
+    And there is no project "Northwind"
+    When I open the New project composer
+    Then the new project's full name reads "Northwind"
+    When I cancel the project composer
+    And I open the New project composer
+    Then the new project's full name reads ""

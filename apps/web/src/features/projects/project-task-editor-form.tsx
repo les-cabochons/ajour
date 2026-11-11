@@ -52,7 +52,8 @@ function formatBudgetFigure(value: string) {
  * The form for creating and editing a task: name, billable, budget, adjustment,
  * the pinned slot, and a section per active plugin that adds task properties.
  * It follows the entry editor's rules. Save: the Save button, Enter in a text field,
- * or Cmd/Ctrl+Enter anywhere in the form. Escape, Cancel or × discard the draft.
+ * or Cmd/Ctrl+Enter anywhere in the form. Escape closes it through `onDismiss`,
+ * which keeps the draft; Cancel or × discard it through `onClose`.
  *
  * The host owns the draft, so the side panel and the narrow-view dialog can swap
  * mid-edit without losing it.
@@ -72,6 +73,7 @@ export function ProjectTaskEditorForm({
   onFieldsChange,
   onSave,
   onClose,
+  onDismiss,
   titleAs: Title = "h2",
   className,
   createMore,
@@ -101,7 +103,10 @@ export function ProjectTaskEditorForm({
   sourceLock?: { label: string | undefined };
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
+  /** Cancel and ×: the draft is discarded. */
   onClose: () => void;
+  /** Escape: the host keeps the draft. Without it, Escape is `onClose`. */
+  onDismiss?: () => void;
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
   className?: string;
@@ -131,7 +136,7 @@ export function ProjectTaskEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      (onDismiss ?? onClose)();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       onSave();
