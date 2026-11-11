@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterPastedHours,
   formatChangedClockDurations,
   formatCompactDuration,
   DAY_CAPACITY_LIMIT,
@@ -190,5 +191,18 @@ describe("formatChangedClockDurations", () => {
       before: "1:00",
       after: "1:00",
     });
+  });
+});
+
+describe("filterPastedHours", () => {
+  it("keeps what hours can hold and drops the rest, line breaks included", () => {
+    expect(filterPastedHours("abc\n7")).toBe("7");
+    expect(filterPastedHours("2:15\r\n")).toBe("2:15");
+    expect(filterPastedHours(" 1h 30m ")).toBe("1h 30m");
+    expect(filterPastedHours("1,5")).toBe("1,5");
+    expect(filterPastedHours("90 min")).toBe("90 min");
+    expect(filterPastedHours("2 hours")).toBe("2 hours");
+    expect(filterPastedHours("-1")).toBe("-1");
+    expect(filterPastedHours("xyz")).toBe("");
   });
 });

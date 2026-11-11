@@ -5,6 +5,7 @@
  * docs/agents/ux-spec.md.
  */
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
 import {
   getBacklogItemActions,
   getProjectActions,
@@ -53,7 +54,6 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 export type PaletteView =
   | { kind: "root" }
   | { kind: "task"; projectId: string; taskId: string }
-  | { kind: "backlog-item"; workItemId: string }
   | { kind: "create-task-in" };
 
 /** What choosing an item does. The palette component runs it. */
@@ -63,7 +63,10 @@ export type PaletteCommand =
   | { kind: "show"; view: PaletteView }
   | { kind: "open-project"; projectId: string }
   | { kind: "open-archive" }
+  | { kind: "open-backlog-item"; workItemId: string }
   | { kind: "create-project" }
+  | { kind: "new-backlog-item" }
+  | { kind: "commit-week" }
   | { kind: "time-entry"; entryId: string; actionId: TimeEntryActionId }
   | { kind: "running-entry"; timerId: string; actionId: TimeEntryActionId }
   | {
@@ -89,6 +92,8 @@ export interface PaletteItem {
   label: string;
   /** Secondary text, such as the project a task belongs to. */
   detail?: string;
+  /** Other words that find the item, such as "submit" for Commit week. Not shown. */
+  keywords?: readonly string[];
   /** The key labels of the item's shortcut, one per chord, such as ["G", "T"]. */
   keys?: string[];
   /** Present when the item is listed but unavailable, per the action model. */
@@ -258,7 +263,7 @@ function rankCommands(query: string, items: readonly PaletteItem[]) {
     items.map((item) => ({
       item,
       primary: item.label,
-      secondary: [item.detail],
+      secondary: [item.detail, ...(item.keywords ?? [])],
     })),
   );
 }
@@ -594,7 +599,17 @@ export function buildSearchResults(
 
   for (const workItem of input.workItems) {
     if (workItem.status !== "active") continue;
+    // A number reads "#48190", as rows show it; a key such as HRB-412 stays
+    // as its source writes it. Both find the item with or without the "#".
     const reference = parseWorkItemReference(workItem.sourceId);
+    const key = getWorkItemKey(workItem);
+    const label = reference
+      ? `#${reference}`
+      : key && !/^\d+$/.test(key)
+        ? key
+        : key
+          ? `#${key}`
+          : undefined;
     const project = input.projects.find(
       (item) => item._id === workItem.projectId,
     );
@@ -602,19 +617,20 @@ export function buildSearchResults(
       item: {
         id: `backlog-item:${workItem._id}`,
         label: workItem.title,
-        detail: [
-          reference ? `#${reference}` : undefined,
-          project ? projectName(project) : "Backlog",
-        ]
+        detail: [label, project ? projectName(project) : "Backlog"]
           .filter(Boolean)
           .join(" · "),
-        command: {
-          kind: "show",
-          view: { kind: "backlog-item", workItemId: workItem._id },
-        },
+        // Enter opens the item, as Linear opens an issue. Its actions are
+        // the palette's first section on its page.
+        command: { kind: "open-backlog-item", workItemId: workItem._id },
       },
       primary: workItem.title,
-      secondary: [reference, project ? projectName(project) : undefined],
+      secondary: [
+        reference,
+        key,
+        label,
+        project ? projectName(project) : undefined,
+      ],
     });
   }
 
@@ -664,6 +680,17 @@ function actionItems(input: PaletteInput): PaletteItem[] {
           !HIDDEN_SHORTCUTS.includes(shortcut.id),
       )
       .map((shortcut) => shortcutItem(shortcut, input.platform)),
+    {
+      id: "new-backlog-item",
+      label: "New backlog item",
+      command: { kind: "new-backlog-item" },
+    },
+    {
+      id: "commit-week",
+      label: "Commit week",
+      keywords: ["submit", "lock", "timesheet"],
+      command: { kind: "commit-week" },
+    },
     {
       id: "create-project",
       label: "Create project",
@@ -731,7 +758,8 @@ function filterSection(
 /**
  * Builds the palette's sections for the current view and query. The main list
  * shows the focused object's actions, search results, actions and navigation.
- * A task, a backlog item and "Create task in…" open lists of their own.
+ * A task and "Create task in…" open lists of their own; a backlog item opens
+ * its page.
  * Sections with no matching item are dropped.
  */
 export function buildPaletteSections(input: PaletteInput): PaletteSection[] {
@@ -745,26 +773,6 @@ export function buildPaletteSections(input: PaletteInput): PaletteSection[] {
         filterSection(
           query,
           found ? taskSection("task", found.project, found.task) : null,
-        ),
-      ];
-      break;
-    }
-    case "backlog-item": {
-      const workItem = input.workItems.find(
-        (item) => item._id === view.workItemId,
-      );
-      sections = [
-        filterSection(
-          query,
-          workItem
-            ? backlogItemSection(
-                "backlog-item",
-                workItem,
-                input.workItems,
-                input.timer?.workItemId,
-                input.settleOpensDialog,
-              )
-            : null,
         ),
       ];
       break;

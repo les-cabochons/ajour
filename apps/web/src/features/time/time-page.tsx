@@ -494,6 +494,7 @@ export function TimePage({ date }: { date: string }) {
           weekAvailable={weekAvailable}
           onSelectDate={goToDate}
           onChangeView={changeTimeView}
+          onCommitWeek={() => openCommitPage()}
           calendar={
             weekCalendar.hasCalendar
               ? {

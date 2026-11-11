@@ -9,3 +9,4 @@ const backlogSearch = createSearchBoxState();
 
 export const updateBacklogSearch = backlogSearch.update;
 export const useBacklogSearch = backlogSearch.use;
+export const readBacklogSearch = backlogSearch.get;

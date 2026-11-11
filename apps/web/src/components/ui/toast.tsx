@@ -104,20 +104,24 @@ export function showToast(title: string) {
 
 /**
  * Shows a toast with one action button, such as "Answer". It stays until the
- * user acts on it or dismisses it. Returns a function that closes it.
+ * user acts on it or dismisses it, or for `timeout`. Returns a function that
+ * closes it.
  */
 export function showActionToast({
   title,
   actionLabel,
   onAction,
+  timeout = 0,
 }: {
   title: string;
   actionLabel: string;
   onAction: () => void;
+  /** How long it shows, in milliseconds. 0, the default, keeps it until dismissed. */
+  timeout?: number;
 }) {
   const id = toastManager.add({
     title,
-    timeout: 0,
+    timeout,
     data: {
       action: {
         label: actionLabel,

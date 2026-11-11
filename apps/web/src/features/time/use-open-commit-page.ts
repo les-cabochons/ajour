@@ -6,9 +6,8 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
  * when given. On a Day or Week page it asks the page through
  * `action=commit-week` (with `target=<weekOf>`), so the page saves or keeps an
  * open entry draft first and passes its view along. Elsewhere it opens the
- * Commit page directly. `CommitWeekButton` (the sidebar foot,
- * or the top bar while that foot is off screen) and the narrow bottom row
- * share it.
+ * Commit page directly. `CommitWeekButton` in the sidebar foot, the
+ * command palette's Commit week and the narrow bottom row share it.
  */
 export function useOpenCommitPage(selectedTimeDate: string) {
   const navigate = useNavigate();

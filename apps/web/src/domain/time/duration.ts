@@ -157,6 +157,24 @@ export function parseHoursInput(value: string): number | null {
   return null;
 }
 
+/** What pasted hours can hold: digits, separators, a sign and unit letters. */
+const PASTED_HOURS_NOISE = /[^0-9.,:\- hourstmine]/gi;
+
+/**
+ * Pasted text as hours could hold it, the way typing on a Week Grid cell
+ * keeps only what starts hours: line breaks and characters no hours contain
+ * are dropped, so "abc\n7" pastes as "7" and a spreadsheet's "2:15\r\n" as
+ * "2:15". The letters of "h", "hours", "m" and "min" stay, and so does "-",
+ * which the hours then refuse with their message.
+ */
+export function filterPastedHours(text: string): string {
+  return text
+    .replace(/[\r\n\t]+/g, "")
+    .replace(PASTED_HOURS_NOISE, "")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
 /** The most a typed duration may be in one field, and what to say past it. */
 export interface DurationLimit {
   maxMs: number;

@@ -163,7 +163,14 @@ function lastSegment(value: string | undefined) {
  * The plugin's external id says it; items synced before Ajour kept that id
  * fall back to the end of their link.
  */
-export function getWorkItemKey(workItem: LocalWorkItem) {
+export function getWorkItemKey(
+  workItem: Partial<
+    Pick<
+      LocalWorkItem,
+      "source" | "sourceExternalId" | "sourceUrl" | "sourceId"
+    >
+  >,
+) {
   if (workItem.source === "manual") return undefined;
   const external = workItem.sourceExternalId?.match(EXTERNAL_ID_KEY);
   if (external) return external[1] ?? external[2];

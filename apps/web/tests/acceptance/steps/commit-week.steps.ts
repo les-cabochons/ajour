@@ -353,8 +353,16 @@ When("I press Commit week in the top bar", async ({ page }) => {
   await expect(
     page.getByRole("navigation", { name: "Primary navigation" }),
   ).toHaveCount(0);
+  // The page's own Commit week, in words in the top bar.
   await page
-    .locator(".ajour-nav")
+    .getByRole("button", { name: "Commit week", exact: true })
+    .filter({ hasText: "Commit week" })
+    .click();
+});
+
+When("I press Commit week in the sidebar", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("button", { name: "Commit week", exact: true })
     .click();
 });

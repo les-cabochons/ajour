@@ -58,6 +58,7 @@ import {
   NO_PROPERTY_PLUGINS,
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
+import type { LocalTimer, LocalTimesheetEntry } from "@/domain/local-state";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
@@ -89,7 +90,11 @@ import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
-import { useTodayIsoDate } from "@/lib/use-now";
+import {
+  getTimerContributionMs,
+  getTimerDurationsMs,
+} from "@/lib/timer-totals";
+import { useRunningClock, useTodayIsoDate } from "@/lib/use-now";
 
 const GROUP_BY_OPTIONS: { value: SubmitGroupBy; label: string }[] = [
   { value: "day-task", label: "Day and task" },
@@ -360,6 +365,33 @@ function SubmitLineRow({
  * saves the checked changes. Submit week checks the pace, then locks the week;
  * a submitted week shows its lock and Reopen week instead.
  */
+/**
+ * "The running entry's 0:47 isn't counted until it stops.": the time the
+ * Week and Day totals add for the running entry, so this page's total plus it
+ * makes theirs (usability testing, 2026-11-06). It ticks on its own clock, so
+ * the page doesn't render every second.
+ */
+function RunningEntryNote({
+  timer,
+  timesheetEntries,
+}: {
+  timer: LocalTimer;
+  timesheetEntries: LocalTimesheetEntry[];
+}) {
+  const now = useRunningClock(true);
+  const addedMs = getTimerContributionMs({
+    timer,
+    timesheetEntries,
+    runningDurationMs: getTimerDurationsMs(timer, now).runningDurationMs,
+  });
+  return (
+    <span>
+      The running entry&apos;s {formatClockDuration(addedMs)} isn&apos;t counted
+      until it stops.
+    </span>
+  );
+}
+
 export function CommitPage({
   date,
   returnView,
@@ -375,9 +407,10 @@ export function CommitPage({
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   // Agents read the unchecked changes under the same Monday key.
   const weekOf = weekDates[0]!;
-  const runningThisWeek = state.timers.some((timer) =>
+  const runningTimer = state.timers.find((timer) =>
     weekDates.includes(timer.localDate),
   );
+  const runningThisWeek = runningTimer !== undefined;
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
   // Saved per device, so a folded list stays folded on the next visit.
   const changesOpen = useCommitChangesSection() === "expanded";
@@ -706,11 +739,12 @@ export function CommitPage({
                 <span>{formatWarning(daysAhead)}</span>
               </li>
             ) : null}
-            {runningThisWeek ? (
+            {runningTimer ? (
               <li className="is-calm">
-                <span>
-                  The running entry isn&apos;t counted until it stops.
-                </span>
+                <RunningEntryNote
+                  timer={runningTimer}
+                  timesheetEntries={state.timesheetEntries}
+                />
               </li>
             ) : null}
           </ul>

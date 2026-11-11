@@ -27,12 +27,21 @@ import type {
   WeeklyTimeViewStyle,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
+import {
+  commitWeekGridCellText,
+  formatWeekGridCellText,
+} from "@/domain/time/week-grid-cell";
+import {
+  InPlaceHoursInput,
+  writeInPlaceHours,
+} from "@/features/time/in-place-hours";
 import { getLockedWeek, lockedWeekMessage } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { placeRunningRow } from "@/domain/time/timesheet-entry";
 import {
   getWeeklyGridAddedRowKey,
   projectWeeklyTime,
+  selectRowsToCopyFromWeek,
   type WeeklyGridAddedRow,
 } from "@/domain/time/weekly-time";
 import {
@@ -78,7 +87,7 @@ import {
   formatWeekDay,
 } from "@/features/time/weekly-capacity-value";
 import { useRunningClock } from "@/lib/use-now";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { addDaysIsoDate, cn, todayIsoDate } from "@/lib/utils";
 
 type EntryCardDragState = {
   /** The pressed card, which the drag preview shows. */
@@ -171,6 +180,14 @@ export function WeeklyTimeView({
   }
   const weekAddedRows = addedRows.rows;
   const [dragState, setDragState] = useState<EntryCardDragState | null>(null);
+  // The Days card whose hours are typed in place, starting with `initialText`.
+  const [editingCard, setEditingCard] = useState<{
+    entryId: string;
+    initialText?: string;
+  } | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+  /** The card still editing hours it couldn't save, after focus left it. */
+  const invalidCardRef = useRef<string | null>(null);
   const dragStateRef = useRef<EntryCardDragState | null>(null);
   const dragSessionRef = useRef<SharedTableDragPointerSession | null>(null);
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
@@ -483,15 +500,33 @@ export function WeeklyTimeView({
   }
 
   function openEntry(entryId: string) {
+    if (returnsToInvalidCard(entryId)) return;
     if (performance.now() >= suppressClickUntilRef.current) {
       onOpenEntry({ entryId });
     }
   }
 
   function selectCard(entryId: string, event: ReactMouseEvent<HTMLElement>) {
+    if (returnsToInvalidCard(entryId)) return;
     if (performance.now() >= suppressClickUntilRef.current) {
       selection.handleClick(entryId, event);
     }
+  }
+
+  /**
+   * While another card holds hours it can't save, selecting or editing this
+   * one would drop them: focus goes back to that card's hours, to fix or
+   * Escape them, as on a Grid cell.
+   */
+  function returnsToInvalidCard(entryId: string) {
+    const held = invalidCardRef.current;
+    if (!held || held === entryId || editingCard?.entryId !== held) {
+      return false;
+    }
+    document
+      .querySelector<HTMLInputElement>(".weekly-entry-card-hours-box")
+      ?.focus();
+    return true;
   }
 
   /**
@@ -590,6 +625,55 @@ export function WeeklyTimeView({
     setAddedRows({ weekStart: weekDates[0], rows: [...weekAddedRows, row] });
   }
 
+  // An empty week offers last week's rows, without their hours.
+  const lastWeekRows = useMemo(
+    () =>
+      projection.gridRows.length === 0
+        ? selectRowsToCopyFromWeek({
+            entries: state.timesheetEntries,
+            projects,
+            weekDates: weekDates.map((date) => addDaysIsoDate(date, -7)),
+          })
+        : [],
+    [projection.gridRows.length, projects, state.timesheetEntries, weekDates],
+  );
+
+  function copyLastWeekRows() {
+    setAddedRows({ weekStart: weekDates[0], rows: lastWeekRows });
+    return lastWeekRows;
+  }
+
+  /**
+   * Saves hours typed on a Days card, as a Grid cell saves them: "0" or an
+   * empty box deletes the entry with Undo, and hours it can't save keep the
+   * card editing with the message.
+   */
+  function endCardEdit(entry: LocalTimesheetEntry, text: string) {
+    const result = commitWeekGridCellText({
+      text,
+      entry,
+      row: entry,
+      localDate: entry.localDate,
+    });
+    if (result.kind === "invalid") {
+      invalidCardRef.current = entry._id;
+      return result.error;
+    }
+    invalidCardRef.current = null;
+    writeInPlaceHours(result, "days_card");
+    setEditingCard(null);
+    if (result.kind !== "delete") {
+      requestAnimationFrame(() => cardRefs.current.get(entry._id)?.focus());
+    }
+    return null;
+  }
+
+  function cancelCardEdit(entryId: string) {
+    invalidCardRef.current = null;
+    setEditingCard(null);
+    requestAnimationFrame(() => cardRefs.current.get(entryId)?.focus());
+  }
+
   function removeGridRow(rowKey: string) {
     setAddedRows({
       weekStart: weekDates[0],
@@ -634,6 +718,9 @@ export function WeeklyTimeView({
           activeCell={activeCell}
           activeEntryId={activeEntryId}
           onAddRow={addGridRow}
+          onCopyLastWeekRows={
+            lastWeekRows.length > 0 ? copyLastWeekRows : undefined
+          }
           onRemoveRow={removeGridRow}
           onClosePanel={onClosePanel}
           onOpen={onOpenEntry}
@@ -846,10 +933,17 @@ export function WeeklyTimeView({
                         onAction={runAction}
                         render={
                           <div
+                            ref={(node) => {
+                              if (node) cardRefs.current.set(entry._id, node);
+                              else cardRefs.current.delete(entry._id);
+                            }}
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
                             data-selection-id={entry._id}
+                            // A focused card keeps the digits for its hours,
+                            // so pinned tasks skip it (GRID_CELL_ATTRIBUTE).
+                            data-grid-cell=""
                             data-focus-column={index}
                             aria-pressed={selection.selectedIds.has(entry._id)}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
@@ -874,13 +968,30 @@ export function WeeklyTimeView({
                               selection.handleFocus(entry._id, event)
                             }
                             onKeyDown={(event) => {
+                              // The hours box takes its own keys.
+                              if (event.target !== event.currentTarget) return;
                               // Space presses the card like a button; Enter is Edit.
-                              if (
-                                event.target === event.currentTarget &&
-                                event.key === " "
-                              ) {
+                              if (event.key === " ") {
                                 event.preventDefault();
                                 openEntry(entry._id);
+                                return;
+                              }
+                              // A digit, ".", ",", ":" or "-" types the card's
+                              // hours in place, as on a Grid cell.
+                              if (
+                                !lockReason &&
+                                !event.altKey &&
+                                !event.metaKey &&
+                                !event.ctrlKey &&
+                                /^[0-9.,:-]$/.test(event.key)
+                              ) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (returnsToInvalidCard(entry._id)) return;
+                                setEditingCard({
+                                  entryId: entry._id,
+                                  initialText: event.key,
+                                });
                                 return;
                               }
                               handleItemKeyDown(event, {
@@ -914,9 +1025,22 @@ export function WeeklyTimeView({
                       >
                         <div className="weekly-entry-card-project">
                           <span>{summary.projectName}</span>
-                          <strong>
-                            {formatClockDuration(entry.durationMs)}
-                          </strong>
+                          {editingCard?.entryId === entry._id ? (
+                            <span className="weekly-entry-card-hours-edit">
+                              <InPlaceHoursInput
+                                label={`Hours for ${summary.taskName}, ${formatWeekDay(day.localDate, { weekday: "long" })}`}
+                                initialText={editingCard.initialText}
+                                savedText={formatWeekGridCellText(entry)}
+                                className="weekly-entry-card-hours-box"
+                                onEnd={(text) => endCardEdit(entry, text)}
+                                onCancel={() => cancelCardEdit(entry._id)}
+                              />
+                            </span>
+                          ) : (
+                            <strong>
+                              {formatClockDuration(entry.durationMs)}
+                            </strong>
+                          )}
                         </div>
                         <span className="weekly-entry-card-task">
                           {summary.taskName}

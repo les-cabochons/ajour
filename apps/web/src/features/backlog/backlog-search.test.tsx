@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { BacklogImportCandidate } from "@ajour/shared";
 import { BacklogPage } from "./backlog-page";
+import { updateBacklogSearch } from "@/lib/backlog-search";
 import { localStore } from "@/lib/local-store";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
@@ -17,6 +18,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  // The page's search outlives the page, as it does across visits.
+  updateBacklogSearch({ open: false, query: "" });
   vi.unstubAllGlobals();
 });
 
@@ -94,4 +97,27 @@ it("says no item matches while the query finds nothing", async () => {
   expect(
     screen.getByText("Change the search or the filters to see more items."),
   ).toBeTruthy();
+});
+
+it("turns text typed in Filter by… into the search, since no field is named so", async () => {
+  await renderBacklog();
+
+  fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+  const fields = await screen.findByPlaceholderText("Filter by...");
+  act(() => {
+    fireEvent.change(fields, { target: { value: "beta gate" } });
+  });
+  fireEvent.click(
+    await screen.findByRole("option", { name: "Search for “beta gate”" }),
+  );
+
+  const box = await screen.findByRole("searchbox", {
+    name: "Search the backlog",
+  });
+  expect((box as HTMLInputElement).value).toBe("beta gate");
+  expect(screen.getByText("Beta gateway")).toBeTruthy();
+  expect(screen.queryByText("Alpha gateway")).toBeNull();
+  act(() => {
+    fireEvent.keyDown(box, { key: "Escape" });
+  });
 });

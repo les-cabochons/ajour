@@ -359,9 +359,11 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
   - a cell with one entry opens that entry, with an "Add another entry for <day>" button under the form,
   - a cell with several entries lists them, with "Add another entry".
 - Double-click, Enter, or typing a digit, ".", ",", ":" or "-" on a focused cell edits its hours in place, starting with that character, so ".5" is 0:30 and "-1" is refused. On these cells "." starts the hours instead of opening the menu; Shift+F10 and the context menu key still open it. Enter or Tab saves, Tab moves to the next day, Escape cancels. Hours the cell can't save keep it editing, with the message under the cell, also when focus leaves it (see Hours fields). Clearing the hours of a one-entry cell deletes that entry and shows the Undo toast.
-- A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
+- A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place. Hours typed or pasted on it show a note under the cell, "2 entries share this cell. Change their hours in the panel.", with Open entries, which opens them in the side panel; Escape or leaving the cell closes the note. A cell with the running entry says so the same way, with Open entry, and a submitted week's cell gives its lock (usability testing, 2026-11-06).
+- Cmd+C on a focused cell copies its hours as the cell shows them, such as "2:47". Cmd+V of hours text on a focused cell saves it as typing it and pressing Enter would, through the same parser; hours it can't save open the cell with them and the message. When the side panel shows that cell, the paste first saves and closes it, as editing the cell does, so the panel's note and other fields stay and only the hours change; a panel draft that can't be saved stays open and the paste waits. Copied entries still paste as entries. Text pasted into a cell being edited keeps only what hours can hold, so "abc" and line breaks are dropped and "abc⏎7" pastes as "7".
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
+- A week with no row also offers "Copy last week's rows": the rows of each active project and task with time the week before, in the order their time was first logged, with no hours. They behave like added rows, and focus goes to the first row's first day.
 - Right-click on a row's name or any of its cells offers Delete row, last in the menu. Shift+Backspace on a focused cell runs it. The row has no "…" button. An empty row goes at once. A row with time opens a dialog showing the project/task name, entry count and total duration, then deletes those entries with the Undo toast. If its side panel is open, deletion saves and closes that draft before counting entries; an invalid draft keeps the panel open and blocks deletion. A row containing a running entry or its saved part can't be deleted until it stops.
 - Right-click on a cell starts with Add entry. On a one-entry cell, that entry's action set follows. On a cell with several entries, Open entries follows.
 
@@ -370,6 +372,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 - "+ Add" in each column opens a new entry for that day in the side panel.
 - Under the entry editor, the side panel lists the entries of the form's date, in the Days order, with the day's total: the panel often covers that very day. The list follows the Date field. The open entry is marked in place; a new entry, or an entry moved to this day by its Date, shows as a dashed "This entry" row with its typed hours. A click on a row opens it, saving a valid draft first.
 - A click on a card opens it in the side panel. Right-click on a card opens the time entry action set.
+- Typing a digit, ".", ",", ":" or "-" on a focused card edits its hours in place, as on a Grid cell: the duration becomes a box that starts with that character, Enter or Tab saves, Escape cancels, and leaving it saves a valid value. Hours a card can't save keep it editing with the message, also when focus leaves it; selecting, opening or typing hours on another card sends focus back to those hours until they are fixed or cancelled, as on a Grid cell. Clearing the hours deletes the entry with the Undo toast. A submitted week's cards don't edit.
 - Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and a move shows the Undo toast.
 
 ### Over-capacity warning
@@ -383,7 +386,7 @@ Decided in [Undo, confirmation and feedback policy](https://github.com/les-caboc
 
 ### Principle
 
-Feedback appears where the action happened. Toasts are kept to three cases: Undo, errors from background work that has no place on screen, and a submitted week's refusal of a write, which has no other place to say why (rule 12 of the action model).
+Feedback appears where the action happened. Toasts are kept to four cases: Undo, errors from background work that has no place on screen, a submitted week's refusal of a write, which has no other place to say why (rule 12 of the action model), and a new backlog item the page's filters hide, which has no row to show it (usability testing, 2026-11-06).
 
 ### Undo instead of confirmation
 
@@ -457,7 +460,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 | Cmd+B              | Show or hide the sidebar                                                                                           |
 | Cmd+Z              | Undo: press the visible Undo toast, or undo the action before it, newest first                                     |
 | Cmd+,              | Settings                                                                                                           |
-| Cmd+K              | Command palette                                                                                                    |
+| Cmd+K              | Command palette, or close it when it is open                                                                       |
 | ?                  | Keyboard shortcuts                                                                                                 |
 
 ### Pinned tasks
@@ -466,7 +469,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - The slot shows next to the task in the project task picker and on the task row, except on touch screens and in the narrow view.
 - The plain digit only opens the form, so a stray key press never stops the running entry. Starting needs Shift.
 - While an entry is being edited, the digits do nothing special.
-- When a Grid cell has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
+- When a Grid cell or a saved Days card has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
 
 ### Focused rows and cards
 
@@ -539,6 +542,11 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 
 Cmd+K opens one palette with navigation, global actions, the focused item's actions, and search across projects, tasks and backlog items, so "Start Development" works from anywhere. The narrow view's future search button opens it. It replaces the Projects command dialog. Searching time entry notes is left for later.
 
+- A backlog item is found by its title, its project, and the number or key its row shows, such as 48190, #48190 or HRB-412.
+- Choosing a task lists its actions. Choosing a backlog item opens its page, as Linear opens an issue; on the item page, with nothing else focused, the palette lists that item's actions first.
+- Its actions include New backlog item, which opens the form as the sidebar's "+" does, and Commit week, which "submit" and "lock" also find.
+- Cmd+K again closes it (usability testing, 2026-11-06).
+
 ### Menu bar
 
 - Menus:
@@ -564,11 +572,11 @@ Decided in [Submit timesheet flow in full and narrow windows](https://github.com
 
 ### Entry point
 
-One "Submit week" button, styled the same, sits in the Day and Week headers at every width, including the narrow view. It opens the submit page for the selected week. The submit page replaces the modal.
+A "Commit week" button, in words, sits in the Day and Week headers on desktop, before Day | Week, so the way to submit the week is in sight. The sidebar foot keeps its Commit icon and the narrow view its bottom-row button. Each opens the Commit page for the week on screen, as the palette's Commit week does (usability testing, 2026-11-06).
 
 ### Summary
 
-- The page leads with the week's saved total against its target ("18:00 logged of 40:00 target"), a progress bar, and warnings such as days under target or entries without a task. Only days up to today warn about their target ([#514](https://github.com/les-cabochons/ajour/issues/514)). While an entry of the week runs, a calm line says "The running entry isn't counted until it stops.", so the total reconciles with the Time view's (council round 4). Two or more such days share one line, "3 days under target: 6:00 short", whose chevron opens the day-by-day amounts; one day keeps its own line (council round 2). Later days still under target share one neutral line with no icon, "Wed 4 – Fri 6 are still ahead: 24:00 of target left", since nothing can be logged on them yet. Submit week's own check is unchanged: it compares the week with its pace up to today. Since [#481](https://github.com/les-cabochons/ajour/issues/481), each Not known yet task with time in the week adds "3:00 on Temp migration waits for a task to commit as." with an Edit task link that opens the task editor on the project page.
+- The page leads with the week's saved total against its target ("18:00 logged of 40:00 target"), a progress bar, and warnings such as days under target or entries without a task. Only days up to today warn about their target ([#514](https://github.com/les-cabochons/ajour/issues/514)). While an entry of the week runs, a calm line says how much it adds, "The running entry's 0:47 isn't counted until it stops.", so this total plus it is the Time view's (council round 4; the amount since usability testing, 2026-11-06). Two or more such days share one line, "3 days under target: 6:00 short", whose chevron opens the day-by-day amounts; one day keeps its own line (council round 2). Later days still under target share one neutral line with no icon, "Wed 4 – Fri 6 are still ahead: 24:00 of target left", since nothing can be logged on them yet. Submit week's own check is unchanged: it compares the week with its pace up to today. Since [#481](https://github.com/les-cabochons/ajour/issues/481), each Not known yet task with time in the week adds "3:00 on Temp migration waits for a task to commit as." with an Edit task link that opens the task editor on the project page.
 - On desktop each change in Changes is one 40px line: the note, then the project and task it commits as at 12px secondary, then the hours (council round 5). The narrow view keeps two lines, the note first at 13px over the project and task; a change without a note leads with the project and task, over "No note". A Deleted change strikes through its note too (council round 3).
 - While Submit week is disabled, a secondary line under the Changes heading says what it waits for, such as "Commit changes before submitting." (council rounds 6 and 10).
 - On desktop, project / task and the hours sit in shared fixed tracks, so they start at one edge on every row (council round 6).
@@ -667,9 +675,9 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Search and filters
 
-- Search expands into a search box in place ([#652](https://github.com/les-cabochons/ajour/issues/652)), and narrows the rows as the user types, on top of the filters, with the sidebar's words: every typed word in the title, the project text or the start of the item's number. Escape clears and closes it, leaving it empty closes it, and a typed query stays while the user opens rows. It is not saved across launches. The page's query and the sidebar's are separate.
+- Search expands into a search box in place ([#652](https://github.com/les-cabochons/ajour/issues/652)), and narrows the rows as the user types, on top of the filters, with the sidebar's words: every typed word in the title, the project text or the start of the item's number or key as its row shows it, such as 48190, #48190 or HRB-412, also for items synced before Ajour kept the plugin's id. A word typed without its space, such as "weekgrid", finds "Week grid". Escape clears and closes it, leaving it empty closes it, and a typed query stays while the user opens rows. It is not saved across launches. The page's query and the sidebar's are separate.
 - While the search narrows the list, a group left with no row is not shown in the list layout; the board keeps its columns, as it does with filters. With nothing left, the page says "No matching items" and "Change the search or the filters to see more items."
-- Filter adds removable chips: state, priority, project, task, source project or connection, type, has estimate, and running.
+- Filter adds removable chips: state, priority, project, task, source project or connection, type, has estimate, and running. Text typed in Filter by… that names no field ends the list with Search for “weekgrid”, which closes the menu and puts the text in the search box, as Linear's Filter by… finds content.
 - Search and filters apply to the page only. The sidebar keeps its own list.
 
 ### Peek
@@ -724,7 +732,8 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape closes and keeps the draft for the next opening of the same item, or of a new item under the same parent, Cancel or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, and the estimates. It is the quick editor: Missing from sync and the rest stay on the item page (forms council round 13). Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
-- "New backlog item" on the Backlog page opens a blank form. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
+- "New backlog item" on the Backlog page opens a blank form, except that each of state, priority, project and task filtered to one value starts set to it, so the item lands in the list on screen; a group's "+" sets its own value over the filter's. A done state, the Archived state and an archived project are not taken. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
+- When the filters, the Display settings or the search still hide the saved item, a toast says "“Fix login” is hidden by the filters" (or "by the display settings", or "by the search") with Show. Show undoes only what hides the item: the filters it fails, Show subitems or Show settled items when the item is one of those and the setting is off, and the search when it misses. A filter the item matches stays.
 - Start entry shows at rest on desktop list rows, and stays in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates

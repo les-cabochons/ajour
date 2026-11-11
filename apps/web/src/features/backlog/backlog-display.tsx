@@ -5,6 +5,7 @@ import {
   RiFilter3Line,
   RiCloseLine,
   RiArrowLeftLine,
+  RiSearchLine,
 } from "@remixicon/react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ import {
   updateBacklogView,
   type BacklogViewPreferences,
 } from "@/lib/backlog-view-settings";
+import { updateBacklogSearch } from "@/lib/backlog-search";
 import { localStore } from "@/lib/local-store";
 
 function Option({ label, children }: { label: string; children: ReactNode }) {
@@ -383,14 +385,31 @@ export function BacklogFilters({
   part?: "all" | "button" | "chips";
 }) {
   const [field, setField] = useState<BacklogFilterField | null>(null);
+  const [open, setOpen] = useState(false);
+  // What Filter by… holds. Text that names no field can still search.
+  const [fieldQuery, setFieldQuery] = useState("");
+  // Set when the menu closes into the search box, which keeps the focus.
+  const [closingToSearch, setClosingToSearch] = useState(false);
   const fields =
     part === "button"
       ? []
       : [...new Set(view.filters.map((filter) => filter.field))];
+  const searchText = fieldQuery.trim();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {part === "chips" ? null : (
-        <Popover onOpenChange={(open) => !open && setField(null)}>
+        <Popover
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (next) {
+              setClosingToSearch(false);
+            } else {
+              setField(null);
+              setFieldQuery("");
+            }
+          }}
+        >
           <PopoverTrigger render={<Button variant="ghost" />}>
             <RiFilter3Line className="size-4" />
             Filter
@@ -399,6 +418,7 @@ export function BacklogFilters({
             align="start"
             className="w-64 gap-0 overflow-hidden p-0"
             aria-label="Add backlog filter"
+            finalFocus={!closingToSearch}
           >
             {field ? (
               <>
@@ -415,9 +435,14 @@ export function BacklogFilters({
               </>
             ) : (
               <Command className="rounded-none bg-transparent p-0">
-                <CommandInput autoFocus placeholder="Filter by..." />
+                <CommandInput
+                  autoFocus
+                  placeholder="Filter by..."
+                  value={fieldQuery}
+                  onValueChange={setFieldQuery}
+                />
                 <CommandList className="max-h-[min(18rem,45vh)] p-1">
-                  <CommandEmpty>No fields</CommandEmpty>
+                  {searchText ? null : <CommandEmpty>No fields</CommandEmpty>}
                   {(
                     Object.entries(FIELDS) as [BacklogFilterField, string][]
                   ).map(([value, label]) => (
@@ -430,6 +455,24 @@ export function BacklogFilters({
                       {label}
                     </CommandItem>
                   ))}
+                  {/* Typed text that names no field searches the rows, as
+                      Linear's Filter by… does: title, number and project. */}
+                  {searchText ? (
+                    <CommandItem
+                      value="search-text"
+                      forceMount
+                      onSelect={() => {
+                        setClosingToSearch(true);
+                        setOpen(false);
+                        setField(null);
+                        setFieldQuery("");
+                        updateBacklogSearch({ open: true, query: searchText });
+                      }}
+                    >
+                      <RiSearchLine className="size-4" />
+                      {`Search for “${searchText}”`}
+                    </CommandItem>
+                  ) : null}
                 </CommandList>
               </Command>
             )}

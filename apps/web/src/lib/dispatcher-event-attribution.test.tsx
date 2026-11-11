@@ -127,13 +127,17 @@ describe("the command palette", () => {
     });
   }
 
-  /** Opens the palette, finds the item by its title, and picks one of its actions. */
-  async function pickAction(title: string, action: RegExp) {
+  /**
+   * Focuses the item's row, opens the palette and picks one of the item's
+   * actions, which the palette lists first for the focused item. Choosing the
+   * item in the search opens its page instead.
+   */
+  async function pickAction(id: string, action: RegExp) {
+    const row = document.createElement("button");
+    row.setAttribute("data-backlog-item-id", id);
+    document.body.append(row);
+    row.focus();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    fireEvent.change(await screen.findByLabelText("Search commands"), {
-      target: { value: title },
-    });
-    fireEvent.click(await screen.findByText(title));
     fireEvent.click(await screen.findByRole("option", { name: action }));
   }
 
@@ -141,7 +145,7 @@ describe("the command palette", () => {
     const id = addItem("Palette pin target");
     await renderPalette();
 
-    await pickAction("Palette pin target", /^Pin/);
+    await pickAction(id, /^Pin/);
 
     await waitFor(() =>
       expect(commands()).toEqual([
@@ -157,7 +161,7 @@ describe("the command palette", () => {
     const id = addItem("Palette edit target");
     const { router } = await renderPalette();
 
-    await pickAction("Palette edit target", /^Edit/);
+    await pickAction(id, /^Edit/);
 
     await waitFor(() =>
       expect(commands()).toEqual([

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 /**
  * Commit week as an icon-only button with the "Commit" tooltip. It opens the
  * Commit page for the week on screen (`useOpenCommitPage`). The sidebar foot
- * shows it, and the top bar while the sidebar foot is not on screen.
+ * shows it; the Day and Week headers have their own in words.
  */
 export function CommitWeekButton({
   selectedTimeDate,

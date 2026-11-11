@@ -9,6 +9,9 @@ import {
   splitBacklogShelves,
   getSubitemHoursLeft,
   getSubitemProgress,
+  getDisplaySettingsHiding,
+  getFilterFieldsHiding,
+  getNewItemFilterPreset,
 } from "./backlog-view";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
@@ -464,5 +467,116 @@ describe("backlog ordering and grouping", () => {
       "Archived project",
       "No project",
     ]);
+  });
+});
+
+describe("a new item under the filters", () => {
+  const withTask: LocalAppState["projects"] = projects.map((project) =>
+    project._id === "p"
+      ? {
+          ...project,
+          tasks: [{ _id: "t", name: "Dev", status: "active", createdAt: 1 }],
+        }
+      : project,
+  );
+  const state = { workItems: [], workflowStates, projects: withTask };
+
+  it("takes each field filtered to one value it can set", () => {
+    expect(
+      getNewItemFilterPreset(state, [
+        { field: "project", value: "q" },
+        { field: "state", value: "todo" },
+        { field: "priority", value: "2" },
+      ]),
+    ).toEqual({ projectId: "q", workflowStateId: "todo", priority: "2" });
+    // A task names its project too.
+    expect(
+      getNewItemFilterPreset(state, [{ field: "task", value: "t" }]),
+    ).toEqual({ projectId: "p", taskId: "t" });
+  });
+
+  it("leaves a field alone when it has several values or one it can't set", () => {
+    expect(
+      getNewItemFilterPreset(state, [
+        { field: "priority", value: "1" },
+        { field: "priority", value: "2" },
+        { field: "state", value: "done" },
+        { field: "project", value: "archived" },
+        { field: "running", value: "yes" },
+      ]),
+    ).toEqual({});
+    expect(
+      getNewItemFilterPreset(state, [
+        { field: "state", value: ARCHIVED_STATE_FILTER },
+        { field: "project", value: "q" },
+        { field: "task", value: "t" },
+      ]),
+    ).toEqual({ projectId: "q" });
+  });
+
+  it("names the filter fields that hide an item", () => {
+    const hidden = item("new", { priority: 3, projectId: "q" });
+    const filters = [
+      { field: "priority" as const, value: "1" },
+      { field: "priority" as const, value: "2" },
+      { field: "project" as const, value: "q" },
+    ];
+
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [hidden] },
+        filters,
+        { now },
+        "new",
+      ),
+    ).toEqual(["priority"]);
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [{ ...hidden, priority: 2 }] },
+        filters,
+        { now },
+        "new",
+      ),
+    ).toEqual([]);
+  });
+
+  it("names only the filters an item fails, whatever the display settings hide", () => {
+    const child = item("child", { parentWorkItemId: "parent", projectId: "q" });
+    const filters = [
+      { field: "project" as const, value: "q" },
+      { field: "priority" as const, value: "1" },
+    ];
+    const hiddenSubitems = { ...defaults, showSubitems: false };
+
+    // Subitems are off, so selection hides the child: that is the display
+    // setting's doing, and the matching Project filter stays.
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [child] },
+        filters,
+        { now },
+        "child",
+      ),
+    ).toEqual(["priority"]);
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [child] },
+        [filters[0]!],
+        { now },
+        "child",
+      ),
+    ).toEqual([]);
+  });
+
+  it("names the display settings that hide an item", () => {
+    const child = item("child", { parentWorkItemId: "parent" });
+    const settled = item("settled", { status: "settled" });
+    const plain = item("plain");
+    const off = { ...defaults, showSubitems: false, showSettled: false };
+
+    expect(getDisplaySettingsHiding(off, child)).toEqual(["showSubitems"]);
+    expect(getDisplaySettingsHiding(off, settled)).toEqual(["showSettled"]);
+    expect(getDisplaySettingsHiding(off, plain)).toEqual([]);
+    expect(getDisplaySettingsHiding(defaults, child)).toEqual([]);
   });
 });

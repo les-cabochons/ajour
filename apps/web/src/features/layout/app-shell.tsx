@@ -680,7 +680,7 @@ export function AppShell() {
       <SyncConflictToasts />
       <LossySaveDialogHost />
       <AgentIndicator />
-      <CommandPalette />
+      <CommandPalette selectedTimeDate={selectedTimeDate} />
       <SnoozePickerHost />
       <SettleDialogHost />
       <NewBacklogItemDialogHost />
@@ -744,15 +744,6 @@ export function AppShell() {
                   <SidebarToggleButton
                     label="Show sidebar"
                     onToggle={appSidebar.toggle}
-                    className={cn(isDesktopShell && "desktop-no-drag")}
-                  />
-                )}
-                {/* Commit week lives in the sidebar foot. While the sidebar
-                    is hidden on a Time page, it sits here, after Show
-                    sidebar. Other pages do without it. */}
-                {isNarrowView || isSidebarInline || !isTimeActive ? null : (
-                  <CommitWeekButton
-                    selectedTimeDate={selectedTimeDate}
                     className={cn(isDesktopShell && "desktop-no-drag")}
                   />
                 )}

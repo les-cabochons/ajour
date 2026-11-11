@@ -559,15 +559,16 @@ export function blocksSingleKeyShortcuts(target: unknown) {
 }
 
 /**
- * Week Grid cells carry this attribute. A focused cell keeps the digits for
- * its hours, so pinned task digits do nothing there, even on a cell that does
- * not edit in place. See "Pinned tasks" in the UX spec.
+ * Week Grid cells and saved Days cards carry this attribute. A focused cell
+ * or card keeps the digits for its hours, so pinned task digits do nothing
+ * there, even on a cell that does not edit in place. See "Pinned tasks" in the
+ * UX spec.
  */
 export const GRID_CELL_ATTRIBUTE = "data-grid-cell";
 
 /**
  * True when the digit shortcuts must stay quiet for this focus target, on top
- * of `blocksSingleKeyShortcuts`: focus is on a Week Grid cell. The handler also
+ * of `blocksSingleKeyShortcuts`: focus is on a Week Grid cell or Days card. The handler also
  * skips digits while an entry editor is open (`lib/entry-editor-presence.ts`).
  */
 export function blocksDigitShortcuts(target: unknown) {
