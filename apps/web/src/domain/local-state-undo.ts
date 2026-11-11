@@ -5,6 +5,7 @@ import type {
   LocalTimesheetEntry,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { breaksReferences } from "@/domain/local-state-references";
 import { recordsEqual } from "@/domain/records-equal";
 import { getSubmitWeekRefusal } from "@/domain/time/locked-weeks";
 
@@ -91,11 +92,15 @@ export type LocalStateUndoResult = "restored" | "stale";
 
 /**
  * Why a restore is stale: a record changed again since, it would leave two
- * running timers, or it would lock again a week that could not be submitted
- * now.
+ * running timers, it would lock again a week that could not be submitted
+ * now, or it would remove a record that something made since still points
+ * at, such as a subitem, a time entry or a task.
  */
 export type LocalStateUndoStaleReason =
-  "changed_since" | "two_running_entries" | "would_lock_week";
+  | "changed_since"
+  | "two_running_entries"
+  | "would_lock_week"
+  | "has_dependents";
 
 /** Updates a replacement action's snapshots without hiding independent edits. */
 export function completeSourceWriteInUndo(
@@ -346,7 +351,8 @@ function restoreLoggedTime(
  * Undoes one action. Every record it changed returns to its `before` value, and
  * records it created are removed. If any of those records changed again since
  * the action, nothing is restored. Nothing is restored either when Undo would
- * lock again a week that could not be submitted now.
+ * lock again a week that could not be submitted now, or when removing a
+ * record it created would leave a record made since pointing at nothing.
  *
  * Time entry actions are the exception for work items: their work item changes
  * are logged time, so a work item edited since gets the inverse logged time
@@ -441,6 +447,11 @@ export function restoreUndo(
   };
   if (relocksWeekThatCannotSubmit(state, restored)) {
     return { state, result: "stale", staleReason: "would_lock_week" };
+  }
+  // Undo never breaks a reference: removing a record that a later action
+  // made a link to would leave that link pointing nowhere.
+  if (breaksReferences(state, restored)) {
+    return { state, result: "stale", staleReason: "has_dependents" };
   }
   return { state: restored, result: "restored" };
 }

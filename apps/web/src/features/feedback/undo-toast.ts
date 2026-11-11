@@ -4,7 +4,8 @@ import {
   showToast,
   showUndoToast,
 } from "@/components/ui/toast";
-import { localStore } from "@/lib/local-store";
+import { undoRefusalMessage } from "@/features/feedback/undo-refusal";
+import { localStore, type UndoResult } from "@/lib/local-store";
 
 /** What an undoable action's toast said, for Cmd+Z once that toast closed. */
 interface UndoLabel {
@@ -26,8 +27,8 @@ function rememberLabel(token: string, label: UndoLabel) {
   offered.set(token, label);
 }
 
-function refuseStale(subject: string) {
-  showToast(`Can't undo. The ${subject} changed after that action.`);
+function refuseUndo(result: UndoResult, subject: string) {
+  showToast(undoRefusalMessage(result, subject));
 }
 
 /**
@@ -58,7 +59,7 @@ export function offerUndo(
     title,
     onUndo: () => {
       const result = localStore.undo(token);
-      if (result !== "restored") refuseStale(subject);
+      if (result !== "restored") refuseUndo(result, subject);
     },
     onClose: () => {
       localStore.closeUndoWindow(token, { keep: !onWindowClosed });
@@ -108,7 +109,7 @@ export function undoLatestKept() {
   offered.delete(token);
   const result = localStore.undo(token);
   if (result === "restored") showToast(`Undone: ${label.title}`);
-  else refuseStale(label.subject);
+  else refuseUndo(result, label.subject);
   return true;
 }
 

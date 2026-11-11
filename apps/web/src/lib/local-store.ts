@@ -1619,8 +1619,12 @@ function updateStateWithUndoResult<T>(
   return { undoToken, result };
 }
 
-/** `expired` means a later action replaced this one, or its toast already closed. */
-export type UndoResult = LocalStateUndoResult | "expired";
+/**
+ * `expired` means a later action replaced this one, or its toast already
+ * closed. `has_dependents` means a record made since points at one the undo
+ * would remove, such as a subitem under a new item: the undo is refused.
+ */
+export type UndoResult = LocalStateUndoResult | "expired" | "has_dependents";
 
 let otherWindowWritesListened = false;
 
@@ -3362,7 +3366,8 @@ const store = {
   /**
    * Undoes the action that returned `token`, while it is kept. Restored
    * records keep their ids, values, committed copies and order. An action
-   * whose records changed since is "stale", and is no longer kept.
+   * whose records changed since is "stale", and one that records made since
+   * point at has "has_dependents": neither is kept any longer.
    */
   undo(token: string): UndoResult {
     const kept = findUndo(token);
@@ -3377,13 +3382,17 @@ const store = {
     dropUndo(token);
     try {
       releaseTeamPushHold();
-      const result = updateStateWithResult((state) => {
+      const result = updateStateWithResult<UndoResult>((state) => {
         const restored = restoreUndo(state, undo);
         if (restored.result === "stale") {
           refuseStoreCommand(restored.staleReason);
         }
         return {
-          result: restored.result,
+          result:
+            restored.result === "stale" &&
+            restored.staleReason === "has_dependents"
+              ? "has_dependents"
+              : restored.result,
           state: reconcileSourceWriteMappings(state, restored.state, {
             createId,
             now: Date.now,

@@ -3974,6 +3974,22 @@ describe("localStore description timelog", () => {
     ).toBeUndefined();
   });
 
+  it("refuses to undo a new item's creation once a subitem was added under it", async () => {
+    const { localStore } = await import("./local-store");
+
+    const { workItemId, createdUndoToken } = localStore.saveNewWorkItem({
+      title: "Parent",
+    });
+    const subitemId = localStore.addSubtask(workItemId, { title: "Child" });
+
+    expect(localStore.undo(createdUndoToken!)).toBe("has_dependents");
+    const items = localStore.snapshot().workItems;
+    expect(items.map((item) => item._id)).toContain(workItemId);
+    expect(items.find((item) => item._id === subitemId)).toMatchObject({
+      parentWorkItemId: workItemId,
+    });
+  });
+
   it("undoes a new editor item's timelog with its close in a done state", async () => {
     const { localStore } = await import("./local-store");
     localStore.addProject({ name: "Acme", color: "#111111" });

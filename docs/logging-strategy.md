@@ -679,7 +679,8 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
   on it. A load that throws, or a first render that fails, ends it with the
   error.
 - **`undo.restore`** is the Undo store command. A refused Undo says why:
-  `expired`, `changed_since`, `two_running_entries` or `would_lock_week`.
+  `expired`, `changed_since`, `two_running_entries`, `would_lock_week` or
+  `has_dependents`.
 - **`local_state.reload`** is another window's write, read from browser
   storage.
 - **`preferences.update`** names the keys that changed, with their values

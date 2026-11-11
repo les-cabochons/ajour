@@ -2,6 +2,7 @@ import { writeToolInputSchemas } from "@ajour/shared/agent-tools";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import type { AgentWriteOutcome } from "@/features/agents/agent-write-tools";
 import { closeUndoToast } from "@/components/ui/toast";
+import { undoRefusalMessage } from "@/features/feedback/undo-refusal";
 import { localStore } from "@/lib/local-store";
 
 /**
@@ -65,13 +66,11 @@ export function runAgentUndo(
   }
   const result = localStore.undo(undoToken);
   if (result === "expired") throw new AgentToolRefusal(EXPIRED);
-  if (result === "stale") {
+  if (result === "stale" || result === "has_dependents") {
     // The store spent the token: its toast must not offer it again.
     lastAgentWrite = undefined;
     closeUndoToast();
-    throw new AgentToolRefusal(
-      `Can't undo. The ${write.undoSubject} changed after that action.`,
-    );
+    throw new AgentToolRefusal(undoRefusalMessage(result, write.undoSubject));
   }
   lastAgentWrite = undefined;
   // The write's toast has nothing left to undo.

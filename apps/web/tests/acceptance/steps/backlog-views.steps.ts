@@ -2882,3 +2882,34 @@ Then("the item page's actions fit inside the window", async ({ page }) => {
     expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width);
   }
 });
+
+When(
+  "I open the page of the Backlog item {string}",
+  async ({ page }, title: string) => {
+    // In the narrow view a row opens the item's page, in this window.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("main").getByText(title, { exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+  },
+);
+Then("no Backlog item has a missing parent", async ({ page }) => {
+  const { workItems } = await readBacklogState(page);
+  const ids = new Set(workItems.map((item: { _id: string }) => item._id));
+  expect(
+    workItems.filter(
+      (item: { parentWorkItemId?: string }) =>
+        item.parentWorkItemId !== undefined && !ids.has(item.parentWorkItemId),
+    ),
+  ).toEqual([]);
+});
+Then(
+  "the Backlog page of {string} still lists {string}",
+  async ({ page }, title: string, subitem: string) => {
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: subitem })).toBeVisible();
+  },
+);

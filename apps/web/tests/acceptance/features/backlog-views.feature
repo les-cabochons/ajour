@@ -479,6 +479,17 @@ Feature: Backlog list and board views
     When I undo with the Cmd+Z shortcut
     Then "Write the release notes" is not in the Backlog
 
+  Scenario: Undoing a new item is refused once a subitem was added under it
+    When I start a new backlog item "Write the release notes" with the description "From the changelog"
+    And I save the open Backlog editor
+    And I open the page of the Backlog item "Write the release notes"
+    And I add the subitem "Proofread" on its page
+    And I press Escape in the subitem name field
+    And I undo with the Cmd+Z shortcut
+    Then a toast says "Can't undo. Something added since depends on the backlog item. Remove that first."
+    And no Backlog item has a missing parent
+    And the Backlog page of "Write the release notes" still lists "Proofread"
+
   Scenario: Escape keeps a new backlog item's draft
     When I start a new backlog item "Write the release notes" with the description "From the changelog"
     And I press Escape in the open Backlog editor

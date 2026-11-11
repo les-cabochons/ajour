@@ -346,6 +346,7 @@ export const rendererEvents = {
         "changed_since",
         "two_running_entries",
         "would_lock_week",
+        "has_dependents",
       ],
     },
   ),
