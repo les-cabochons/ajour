@@ -13,7 +13,7 @@ import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
-import type { KeyboardEvent, PointerEvent } from "react";
+import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import {
   ObjectActionsButton,
   ObjectContextMenu,
@@ -24,7 +24,8 @@ import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -69,7 +70,11 @@ import {
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
-import { BACKLOG_ITEM_ACTION_KEYS } from "@/lib/item-keys";
+import {
+  BACKLOG_ITEM_ACTION_KEYS,
+  FOCUS_KEY_ATTRIBUTE,
+  captureItemFocus,
+} from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
@@ -101,6 +106,31 @@ export function patchBacklogItemWithUndo(
   );
 }
 
+/** The radio value of "No state" and "No priority". */
+const NONE = "none";
+
+/**
+ * Focus for a picker on a Backlog row: its menu gives focus back to the row,
+ * so the row's keys (↓, Shift+S, Alt+→) keep working after a pick or Escape,
+ * and it follows the row when the change draws it in another group. Pickers
+ * outside a row, such as the item page's, keep focus on their button.
+ */
+function useRowPickerFocus() {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const findRow = () =>
+    triggerRef.current?.closest<HTMLElement>(`[${FOCUS_KEY_ATTRIBUTE}]`) ??
+    null;
+  return {
+    triggerRef,
+    finalFocus: () => findRow() ?? true,
+    /** Call before a change; call what it returns once the change is made. */
+    capture: () => {
+      const row = findRow();
+      return row ? captureItemFocus(row) : () => undefined;
+    },
+  };
+}
+
 export function BacklogStatePicker({
   item,
   state,
@@ -115,6 +145,7 @@ export function BacklogStatePicker({
   /** False renders the button alone; see `ObjectActionsButton`. */
   live?: boolean;
 }) {
+  const focus = useRowPickerFocus();
   const workflow = state.workflowStates.find(
     (s) => s._id === item.workflowStateId,
   );
@@ -143,9 +174,16 @@ export function BacklogStatePicker({
       </Button>
     );
   }
+  async function pick(value: string) {
+    const restore = focus.capture();
+    if ((await beforeChange?.()) === false) return;
+    await moveBacklogItemWithUndo(item, value === NONE ? undefined : value);
+    restore();
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        ref={focus.triggerRef}
         data-state-picker
         render={
           <Button
@@ -161,30 +199,25 @@ export function BacklogStatePicker({
         {full && (workflow?.name ?? "No state")}
         {full && <PickerChevron />}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuItem
-          onClick={async () => {
-            if ((await beforeChange?.()) !== false)
-              void moveBacklogItemWithUndo(item, undefined);
-          }}
+      <DropdownMenuContent align="start" finalFocus={focus.finalFocus}>
+        {/* The current state is checked, and the menu opens on it. */}
+        <DropdownMenuRadioGroup
+          value={workflow?._id ?? NONE}
+          onValueChange={(value) => void pick(String(value))}
         >
-          No state
-        </DropdownMenuItem>
-        {state.workflowStates.map((s) => (
-          <DropdownMenuItem
-            key={s._id}
-            onClick={async () => {
-              if ((await beforeChange?.()) !== false)
-                void moveBacklogItemWithUndo(item, s._id);
-            }}
-          >
-            <span
-              className="backlog-state-dot"
-              style={stateDotStyle(s.color, fills.get(s._id))}
-            />
-            {s.name}
-          </DropdownMenuItem>
-        ))}
+          <DropdownMenuRadioItem value={NONE} closeOnClick>
+            No state
+          </DropdownMenuRadioItem>
+          {state.workflowStates.map((s) => (
+            <DropdownMenuRadioItem key={s._id} value={s._id} closeOnClick>
+              <span
+                className="backlog-state-dot"
+                style={stateDotStyle(s.color, fills.get(s._id))}
+              />
+              {s.name}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -203,6 +236,7 @@ export function BacklogPriorityPicker({
   /** False renders the button alone; see `ObjectActionsButton`. */
   live?: boolean;
 }) {
+  const focus = useRowPickerFocus();
   if (!live) {
     // The hidden picker only serves the focused row's keys, so it waits too.
     return hidden ? null : (
@@ -222,9 +256,26 @@ export function BacklogPriorityPicker({
       </Button>
     );
   }
+  const levels = [
+    { level: undefined, name: "No priority" },
+    ...PRIORITY_LEVELS,
+  ];
+  async function pick(value: string) {
+    const picked = levels.find((p) => String(p.level ?? NONE) === value);
+    if (!picked) return;
+    const restore = focus.capture();
+    if ((await beforeChange?.()) === false) return;
+    patchBacklogItemWithUndo(
+      item,
+      { priority: picked.level },
+      `Priority changed to ${picked.name}`,
+    );
+    restore();
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        ref={focus.triggerRef}
         data-priority-picker
         render={
           <Button
@@ -248,29 +299,27 @@ export function BacklogPriorityPicker({
         {full && getPriorityLevelName(item.priority)}
         {full && <PickerChevron />}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {[{ level: undefined, name: "No priority" }, ...PRIORITY_LEVELS].map(
-          (p) => (
-            <DropdownMenuItem
+      <DropdownMenuContent align="start" finalFocus={focus.finalFocus}>
+        {/* The current level is checked, and the menu opens on it. */}
+        <DropdownMenuRadioGroup
+          value={String(item.priority ?? NONE)}
+          onValueChange={(value) => void pick(String(value))}
+        >
+          {levels.map((p) => (
+            <DropdownMenuRadioItem
               key={p.name}
+              value={String(p.level ?? NONE)}
+              closeOnClick
               // A synced item's source can't take No priority (rule 2 of
               // the action model: greyed out, the reason for screen readers).
               disabled={getPriorityRefusal(item, p.level) !== undefined}
               aria-description={getPriorityRefusal(item, p.level)}
-              onClick={async () => {
-                if ((await beforeChange?.()) !== false)
-                  patchBacklogItemWithUndo(
-                    item,
-                    { priority: p.level },
-                    `Priority changed to ${p.name}`,
-                  );
-              }}
             >
               <PriorityIcon priority={p.level} decorative />
               {p.name}
-            </DropdownMenuItem>
-          ),
-        )}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -448,6 +497,8 @@ export function BacklogItemSurface({
           data-work-item-id={item._id}
           // Names the focused object for S and the command palette.
           data-backlog-item-id={item._id}
+          // Focus follows the row when a change draws it in another group.
+          data-focus-key={item._id}
           data-focus-column={column}
           // A subitem row in the narrow view drops the project's name for
           // its parent's when both cannot fit (council round 18).

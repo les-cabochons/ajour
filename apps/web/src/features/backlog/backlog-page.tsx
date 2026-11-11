@@ -100,6 +100,8 @@ import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useActionRequest } from "@/lib/action-request";
 import {
   BACKLOG_ITEM_ROW_KEYS,
+  FOCUS_KEY_ATTRIBUTE,
+  captureItemFocus,
   handleItemKeyDown,
   OPEN_BACKLOG_ITEM_ACTION,
 } from "@/lib/item-keys";
@@ -110,6 +112,7 @@ import {
   getShortcutPlatform,
 } from "@/lib/shortcuts";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { focusWhenLost } from "@/lib/focus-return";
 import { cn } from "@/lib/utils";
 
 function canUseProjectGroup(
@@ -126,6 +129,9 @@ function canUseProjectGroup(
       ))
   );
 }
+
+/** The peek's name, which its side panel carries. */
+const PEEK_LABEL = "Backlog item peek";
 
 type EditorRequest =
   | { kind: "edit"; itemId: string }
@@ -261,9 +267,45 @@ export function BacklogPage() {
               : { kind: "create", parent };
           })()
         : null;
+  // Where focus goes when the composer closes: the row of the item it
+  // created, else what had focus when it opened, else the edited item's row.
+  // The composer unmounts as it closes, so nothing gives focus back on its
+  // own. The peek hides while the composer is open, so an edit from its
+  // Edit button returns to the Edit button of the peek shown again.
+  const composerReturn = useRef<{
+    itemIds: Set<string>;
+    editedId?: string;
+    origin: Element | null;
+    fromPeek: boolean;
+  } | null>(null);
   const closeEditor = useCallback(() => {
     setEditor(null);
     draft.current = null;
+    const opened = composerReturn.current;
+    composerReturn.current = null;
+    if (!opened) return;
+    const rowOf = (itemId: string | undefined) =>
+      itemId
+        ? document.querySelector<HTMLElement>(
+            `.backlog-workspace [${FOCUS_KEY_ATTRIBUTE}="${CSS.escape(itemId)}"]`,
+          )
+        : null;
+    focusWhenLost(() => {
+      const created = localStore
+        .snapshot()
+        .workItems.find((item) => !opened.itemIds.has(item._id));
+      if (created) return rowOf(created._id);
+      if (opened.origin instanceof HTMLElement && opened.origin.isConnected)
+        return opened.origin;
+      const peekEdit = opened.fromPeek
+        ? [
+            ...document.querySelectorAll<HTMLElement>(
+              `[aria-label="${PEEK_LABEL}"] button`,
+            ),
+          ].find((button) => button.textContent?.trim() === "Edit")
+        : undefined;
+      return peekEdit ?? rowOf(opened.editedId);
+    });
   }, []);
   const closePeek = useCallback(() => setPeekId(null), []);
   const [peekReturnNotice, setPeekReturnNotice] =
@@ -297,6 +339,19 @@ export function BacklogPage() {
     [],
   );
   function showEditor(request: EditorRequest) {
+    const active = document.activeElement;
+    const opened = composerReturn.current;
+    composerReturn.current = {
+      itemIds: new Set(localStore.snapshot().workItems.map((item) => item._id)),
+      editedId: request.kind === "edit" ? request.itemId : undefined,
+      // A switch from another item keeps where the first one opened from.
+      origin:
+        opened?.origin ??
+        (active?.closest(".composer-floating, [role=dialog]") ? null : active),
+      fromPeek:
+        opened?.fromPeek ??
+        Boolean(active?.closest(`[aria-label="${PEEK_LABEL}"]`)),
+    };
     draft.current = null;
     setEditor(request);
     setEditorSerial((n) => n + 1);
@@ -364,7 +419,7 @@ export function BacklogPage() {
   async function action(
     item: LocalWorkItem,
     id: BacklogItemActionId,
-    options?: { askToSettle?: boolean },
+    options?: { askToSettle?: boolean; onSettledOrSnoozed?: () => void },
   ) {
     if (!(await leaveDraft())) return;
     runCommittedAction(item, id, options);
@@ -372,7 +427,7 @@ export function BacklogPage() {
   function runCommittedAction(
     item: LocalWorkItem,
     id: BacklogItemActionId,
-    options?: { askToSettle?: boolean },
+    options?: { askToSettle?: boolean; onSettledOrSnoozed?: () => void },
   ) {
     const saved =
       localStore.snapshot().workItems.find((i) => i._id === item._id) ?? item;
@@ -663,6 +718,8 @@ export function BacklogPage() {
       }
       if (id === "item.state-previous" || id === "item.state-next") {
         e.preventDefault();
+        // The row moves to another group: focus follows it there.
+        const restoreFocus = captureItemFocus(e.currentTarget);
         if (!(await leaveDraft())) return;
         closeEditor();
         const current = localStore.snapshot();
@@ -674,6 +731,7 @@ export function BacklogPage() {
         const next =
           current.workflowStates[index + (id === "item.state-next" ? 1 : -1)];
         if (next) await moveBacklogItemWithUndo(committed, next._id);
+        restoreFocus();
         return;
       }
     }
@@ -686,7 +744,12 @@ export function BacklogPage() {
       onAction: (id, { shortcutId }) =>
         id === "open"
           ? openPage(item)
-          : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
+          : action(item, id, {
+              askToSettle: shortcutId === "item.settle-ask",
+              // Settled or snoozed from a dialog, the row leaves: focus
+              // goes to the row that took its place once the dialog closes.
+              onSettledOrSnoozed: captureItemFocus(e.currentTarget),
+            }),
       onReorder:
         group && canReorderItem(item._id, item._id)
           ? (step) => reorder(item._id, group, step)
@@ -1115,7 +1178,7 @@ export function BacklogPage() {
           contentKey={`peek:${peekId}`}
           widthKey="backlog"
           className="backlog-side-panel"
-          aria-label="Backlog item peek"
+          aria-label={PEEK_LABEL}
         >
           <BacklogPeek
             item={peek}

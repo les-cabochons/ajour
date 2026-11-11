@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { showToast } from "@/components/ui/toast";
+import { focusWhenLost } from "@/lib/focus-return";
 import type {
   BacklogItemActionId,
   CalendarSuggestionActionId,
@@ -274,6 +275,49 @@ function findFocusNeighbor(item: HTMLElement, direction: FocusDirection) {
 }
 
 /**
+ * Names the object an item shows, such as a backlog item's id, so focus can
+ * follow it when a change draws it again elsewhere, such as in another group.
+ */
+export const FOCUS_KEY_ATTRIBUTE = "data-focus-key";
+
+/**
+ * Remembers where `item` sits, and returns what puts focus back once a change
+ * has rendered, when focus fell to the page: on the item, or on the element
+ * that shows its object now, such as its row in another group, else on the
+ * item that took its place in its column, else on the column's last item.
+ * A dialog the change opened keeps focus; call the returned function again
+ * once it closes.
+ */
+export function captureItemFocus(item: HTMLElement): () => void {
+  const scope = item.closest(FOCUS_SCOPE_SELECTOR);
+  const key = item.getAttribute(FOCUS_KEY_ATTRIBUTE);
+  const before = getScopeItems(item);
+  const column = before.columns[before.index] ?? 0;
+  const row = before.columns
+    .slice(0, Math.max(before.index, 0))
+    .filter((value) => value === column).length;
+
+  const find = () => {
+    if (item.isConnected) return item;
+    const root = scope?.isConnected ? scope : document;
+    if (key) {
+      const same = root.querySelector<HTMLElement>(
+        `[${FOCUS_KEY_ATTRIBUTE}="${CSS.escape(key)}"]`,
+      );
+      if (same) return same;
+    }
+    if (!scope?.isConnected || before.index === -1) return null;
+    const inColumn = [
+      ...scope.querySelectorAll<HTMLElement>(FOCUS_ITEM_SELECTOR),
+    ].filter(
+      (element) => (Number(element.dataset.focusColumn) || 0) === column,
+    );
+    return inColumn[Math.min(row, inColumn.length - 1)] ?? null;
+  };
+  return () => focusWhenLost(find);
+}
+
+/**
  * Puts focus back after React has rendered the action's result. When the
  * item is gone, focus goes to the next item that is still there, so deleting
  * a backlog item skips the subitems removed with it.
@@ -396,9 +440,13 @@ export function handleItemKeyDown<Id extends string>(
       }
 
       // The scope is read before the action, the fallback picked after it.
+      // Other actions can draw the item elsewhere, such as Settle on a
+      // backlog row, which leaves its group: focus follows it or its place.
       const removesItem = command.shortcutId === "item.delete";
       if (removesItem) {
         refocusAfterRender(item, { fallback: true });
+      } else {
+        captureItemFocus(item)();
       }
       const action = command.action;
       if (action) {

@@ -1760,7 +1760,7 @@ When("I move the parent to Done and include its subitems", async ({ page }) => {
     .locator("[data-state-picker]")
     .and(page.getByRole("button", { name: "Change state of Backlog parent" }))
     .click();
-  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Done", exact: true }).click();
   await page
     .getByRole("button", { name: "Include subitem", exact: true })
     .click();
@@ -2002,7 +2002,7 @@ When("I hide the Backlog priority property", async ({ page }) => {
 When("I set the parent priority to Low with its key", async ({ page }) => {
   await page.locator('[data-work-item-id="parent"]').focus();
   await page.keyboard.press("p");
-  await page.getByRole("menuitem", { name: "Low", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Low", exact: true }).click();
 });
 Then("the parent priority is Low", async ({ page }) => {
   await expect
