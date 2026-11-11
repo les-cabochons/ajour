@@ -728,19 +728,17 @@ async function inspectBacklogStart(
 ) {
   let action: Locator;
   if (control === "command palette") {
+    // The palette lists the focused item's actions first. Choosing the item
+    // in its search opens the item's page instead.
+    await page
+      .locator('.backlog-workspace [data-backlog-item-id="parent"]')
+      .first()
+      .focus();
     const isMac = await page.evaluate(() =>
       /Mac|iPhone|iPad/.test(navigator.userAgent),
     );
     await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
     const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette
-      .getByRole("combobox", { name: "Search commands" })
-      .fill("Backlog parent");
-    await palette
-      .getByRole("option")
-      .filter({ hasText: "Backlog parent" })
-      .first()
-      .click();
     action = palette.getByRole("option", {
       name: running ? /^Stop/ : /^Start entry/,
     });
