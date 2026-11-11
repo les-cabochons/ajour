@@ -4,9 +4,7 @@ import {
   isTaskAssignedToUser,
   sortAssignedTasksFirst,
 } from "@/domain/projects/task-assignment";
-
-/** The accent chip on a task its project source assigns to the user. */
-export const ASSIGNED_TO_YOU_LABEL = "Assigned to you";
+import { AssignedToYouMark } from "@/features/projects/assigned-to-you-mark";
 
 export function isProjectTaskBillable(
   task: Pick<LocalProjectTask, "billable">,
@@ -26,7 +24,10 @@ export function getProjectTaskBillableValueLabel(
   return isProjectTaskBillable(task) ? "Billable" : "Non-billable";
 }
 
-/** A task picker's options: the active tasks, the ones assigned to the user first in their group. */
+/**
+ * A task picker's options: the active tasks, the ones assigned to the user
+ * first in their group, each with the Assigned to you icon.
+ */
 export function buildProjectTaskOptions(
   tasks: LocalProjectTask[],
 ): SearchableSelectOption[] {
@@ -41,7 +42,7 @@ export function buildProjectTaskOptions(
       keywords: isBillable
         ? [task.name, "billable"]
         : [task.name, "non-billable", "non billable"],
-      ...(isTaskAssignedToUser(task) ? { badge: ASSIGNED_TO_YOU_LABEL } : {}),
+      ...(isTaskAssignedToUser(task) ? { mark: <AssignedToYouMark /> } : {}),
     };
   });
 }

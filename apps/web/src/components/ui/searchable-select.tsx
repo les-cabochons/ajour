@@ -14,7 +14,6 @@ import {
   RiAddLine as Plus,
   RiArrowDownSLine as ChevronDown,
 } from "@remixicon/react";
-import { Chip } from "@/components/ui/chip";
 import {
   Command,
   CommandEmpty,
@@ -36,8 +35,8 @@ export interface SearchableSelectOption {
   keywords?: string[];
   /** A mark before the label, in the list and, once chosen, in the field. */
   icon?: ReactNode;
-  /** An accent chip after the label in the list, such as "Assigned to you". */
-  badge?: string;
+  /** A mark after the label in the list, such as the Assigned to you icon. */
+  mark?: ReactNode;
 }
 
 interface SearchableSelectProps {
@@ -555,10 +554,10 @@ export function SearchableSelect({
                             option.icon
                           )}
                           <span>{option.label}</span>
-                          {option.badge ? (
-                            <Chip tone="accent" className="ml-auto">
-                              {option.badge}
-                            </Chip>
+                          {option.mark ? (
+                            <span className="ml-auto inline-flex shrink-0">
+                              {option.mark}
+                            </span>
                           ) : null}
                         </CommandItem>
                       ))}

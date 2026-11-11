@@ -16,8 +16,9 @@ import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
 import { isTaskAssignedToUser } from "@/domain/projects/task-assignment";
 import {
   ASSIGNED_TO_YOU_LABEL,
-  isProjectTaskBillable,
-} from "@/features/projects/project-task-options";
+  AssignedToYouMark,
+} from "@/features/projects/assigned-to-you-mark";
+import { isProjectTaskBillable } from "@/features/projects/project-task-options";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -94,9 +95,9 @@ interface PickerTaskRowProps {
 }
 
 /**
- * A task on one line: the star, the name, an accent "Assigned to you" chip
- * when its project source assigns it to the user, its pinned key and
- * "Non-billable" when it is not billable. A long name is cut.
+ * A task on one line: the star, the name, the Assigned to you icon when its
+ * project source assigns it to the user, its pinned key and "Non-billable"
+ * when it is not billable. A long name is cut.
  */
 export function PickerTaskRow({
   project,
@@ -154,9 +155,7 @@ export function PickerTaskRow({
       ) : (
         <span className="min-w-0 flex-1 truncate">{task.name}</span>
       )}
-      {assignedToUser ? (
-        <Chip tone="accent">{ASSIGNED_TO_YOU_LABEL}</Chip>
-      ) : null}
+      {assignedToUser ? <AssignedToYouMark /> : null}
       {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
       {isProjectTaskBillable(task) ? null : <Chip>Non-billable</Chip>}
       {trailing}

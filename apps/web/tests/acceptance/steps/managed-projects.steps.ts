@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
   exampleProjectSourceManifest,
@@ -221,29 +221,40 @@ Then(
   },
 );
 
-Then(
-  "only {string} says {string} in the task menu",
-  async ({ page }, task: string, hint: string) => {
-    const rows = page.locator("[cmdk-item][data-task-id]");
-    await expect(rows.filter({ hasText: hint })).toHaveCount(1);
-    await expect(rows.filter({ hasText: hint })).toContainText(task);
-  },
-);
+/** Checks that one row alone holds the icon named `mark`, with `mark` as its hover text. */
+async function expectOnlyRowMarked(rows: Locator, task: string, mark: string) {
+  // Relative to a row, so it serves as the row filter too.
+  const icon = rows.page().getByRole("img", { name: mark, exact: true });
+  const marked = rows.filter({ has: icon });
+  await expect(marked).toHaveCount(1);
+  await expect(marked).toContainText(task);
+  await expect(marked.locator(icon)).toHaveAttribute("title", mark);
+}
 
 Then(
-  "no task says {string} in the task menu",
-  async ({ page }, hint: string) => {
-    const rows = page.locator("[cmdk-item][data-task-id]");
-    await expect(rows.filter({ hasText: hint })).toHaveCount(0);
-  },
-);
-
-Then(
-  "only {string} says {string} in the project's task list",
+  "only {string} carries the {string} icon in the task menu, with that hover text",
   async ({ page }, task: string, mark: string) => {
-    const rows = page.locator("tr.project-task-row");
-    await expect(rows.filter({ hasText: mark })).toHaveCount(1);
-    await expect(rows.filter({ hasText: mark })).toContainText(task);
+    await expectOnlyRowMarked(
+      page.locator("[cmdk-item][data-task-id]"),
+      task,
+      mark,
+    );
+  },
+);
+
+Then(
+  "no task says {string} or {string} in the task menu",
+  async ({ page }, first: string, second: string) => {
+    const rows = page.locator("[cmdk-item][data-task-id]");
+    await expect(rows.filter({ hasText: first })).toHaveCount(0);
+    await expect(rows.filter({ hasText: second })).toHaveCount(0);
+  },
+);
+
+Then(
+  "only {string} carries the {string} icon in the project's task list, with that hover text",
+  async ({ page }, task: string, mark: string) => {
+    await expectOnlyRowMarked(page.locator("tr.project-task-row"), task, mark);
   },
 );
 

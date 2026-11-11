@@ -67,8 +67,8 @@ import {
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
 import { isTaskAssignedToUser } from "@/domain/projects/task-assignment";
+import { AssignedToYouMark } from "@/features/projects/assigned-to-you-mark";
 import {
-  ASSIGNED_TO_YOU_LABEL,
   getProjectTaskBillableValueLabel,
   isProjectTaskBillable,
 } from "@/features/projects/project-task-options";
@@ -1271,9 +1271,7 @@ function ProjectDetail({
             projectLocalOnly={project.localOnly}
           />
           {/* A managed project's task its source assigns to the user. */}
-          {isTaskAssignedToUser(task) ? (
-            <Chip tone="accent">{ASSIGNED_TO_YOU_LABEL}</Chip>
-          ) : null}
+          {isTaskAssignedToUser(task) ? <AssignedToYouMark /> : null}
           {/* The shortcut chord, by the name it starts (council round 19). */}
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           {/* Billable is the default: only the exception carries a chip. */}

@@ -45,7 +45,7 @@ describe("buildProjectTaskOptions", () => {
 });
 
 describe("a managed project's task options", () => {
-  it("lists the tasks assigned to the user first, each with the badge", () => {
+  it("lists the tasks assigned to the user first, and marks only them", () => {
     expect(
       buildProjectTaskOptions([
         {
@@ -68,11 +68,11 @@ describe("a managed project's task options", () => {
           createdAt: 3,
           source: { remoteId: "1001", assigned: true },
         },
-      ]).map(({ value, badge }) => ({ value, badge })),
+      ]).map(({ value, mark }) => ({ value, marked: mark !== undefined })),
     ).toEqual([
-      { value: "task-login", badge: "Assigned to you" },
-      { value: "task-export", badge: undefined },
-      { value: "task-local", badge: undefined },
+      { value: "task-login", marked: true },
+      { value: "task-export", marked: false },
+      { value: "task-local", marked: false },
     ]);
   });
 });
