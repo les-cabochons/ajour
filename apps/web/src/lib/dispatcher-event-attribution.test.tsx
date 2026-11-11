@@ -376,7 +376,7 @@ describe("a drag", () => {
 describe("the entry editor", () => {
   /** Types 1.5 hours into a new entry and saves it. */
   async function saveNewEntry() {
-    fireEvent.change(await screen.findByPlaceholderText("0:00"), {
+    fireEvent.change(await screen.findByLabelText("Hours"), {
       target: { value: "01:30" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create entry" }));

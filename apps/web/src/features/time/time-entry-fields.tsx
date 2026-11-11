@@ -81,7 +81,7 @@ export function TimeEntryFields({
             onDurationChange(normalizeHoursInput(event.target.value))
           }
           onKeyDown={onDurationKeyDown}
-          placeholder="0:00"
+          placeholder="Hours"
           aria-invalid={Boolean(durationError)}
           aria-describedby={
             durationError

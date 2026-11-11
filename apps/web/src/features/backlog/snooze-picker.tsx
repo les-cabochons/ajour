@@ -235,7 +235,7 @@ export function SnoozePickerHost() {
                 className="composer-estimate-input"
                 inputMode="numeric"
                 autoComplete="off"
-                placeholder="9:00"
+                placeholder="Time"
                 value={customTime}
                 onChange={(event) => setCustomTime(event.target.value)}
               />

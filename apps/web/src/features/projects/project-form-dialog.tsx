@@ -222,7 +222,7 @@ export function ProjectFormDialog({
                   id="project-form-code"
                   className="composer-estimate-input composer-code-input"
                   autoComplete="off"
-                  placeholder="ATL"
+                  placeholder="Add"
                   readOnly={sourceOwned}
                   aria-describedby={sourceOwned ? `${lockId}-code` : undefined}
                   value={fields.code}
