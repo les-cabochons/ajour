@@ -1028,6 +1028,18 @@ function ProjectDetail({
   // restoring or the other filter is left out while it is hidden; the stored
   // selection keeps it, so it is selected again if it comes back.
   const selection = keepShownEntries(storedSelection, new Set(visibleTaskIds));
+  const selectedIds = new Set(selection.ids);
+  // A selection of two or more tasks, in list order, and the actions they
+  // share. Every selected row shows the same menu, so they are computed once
+  // per render, not once per row: a long Shift-click range stays cheap.
+  const selectedTasks =
+    selectedIds.size > 1
+      ? visibleTasks.filter((task) => selectedIds.has(task._id))
+      : [];
+  const selectionActions =
+    selectedTasks.length > 0
+      ? getTaskSelectionActions(project, selectedTasks)
+      : [];
 
   /**
    * Whether a click or double click on a task row is the row's own: not on its
@@ -1063,14 +1075,6 @@ function ProjectDetail({
         toggle: event.metaKey || event.ctrlKey,
       }),
     );
-  }
-
-  /** The selected tasks in list order, when `task` is one of two or more. */
-  function getSelectedTasksWith(task: LocalProjectTask) {
-    if (selection.ids.length < 2 || !selection.ids.includes(task._id)) {
-      return undefined;
-    }
-    return visibleTasks.filter((other) => selection.ids.includes(other._id));
   }
 
   /**
@@ -1150,15 +1154,11 @@ function ProjectDetail({
           })
         : 0;
     const runAction = (actionId: TaskActionId) => runTaskAction(task, actionId);
-    const isSelected = selection.ids.includes(task._id);
+    const isSelected = selectedIds.has(task._id);
     // Part of a selection of several, the row's menu acts on all of them. It
     // shows no keys: they act on the focused task alone.
-    const selectedTasks = getSelectedTasksWith(task);
-    const selectionActions = selectedTasks
-      ? getTaskSelectionActions(project, selectedTasks)
-      : [];
     const menu =
-      selectedTasks && selectionActions.length > 0
+      isSelected && selectionActions.length > 0
         ? {
             actions: selectionActions,
             onAction: (actionId: TaskActionId) =>
