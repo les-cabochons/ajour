@@ -202,10 +202,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Empty, the hours say "Hours", a word, so the placeholder leaves the
-   figures' face. */
 .composer .composer-hours::placeholder {
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
 }
 
 .composer textarea.composer-note {

@@ -23,7 +23,7 @@ function InlineFigure({
   onChange,
   format,
   invalid = false,
-  placeholder = "hours",
+  placeholder = "0h",
   trailing,
   onKeyDown,
   // A text keyboard: a numeric keypad has no ":" or "h" for "1:30" or "1h30".
@@ -39,7 +39,7 @@ function InlineFigure({
   /** The number as figures show it, or null to show the typed text. */
   format?: (value: string) => string | null;
   invalid?: boolean;
-  /** Says what to type while empty, never a value such as "0h". */
+  /** Shown while empty: the format to type, as "0h". */
   placeholder?: string;
   /** A control after the word, such as a reset. */
   trailing?: ReactNode;

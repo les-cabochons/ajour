@@ -219,7 +219,7 @@ Today's splits at 640px and 1023px go away.
 - A page scrolls in one place, and that scroll stops at the end of its content: the titlebar and the bottom row stay where they are, and a wheel or swipe past the end moves nothing else (usability testing, 2026-11-06).
 - The backlog item page puts its actions under the title, indented to the title's text, and wraps them so Settle stays inside the window, down to 320px.
 - Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
-- A placeholder in a composer says what to type, never a value or a default: "Hours" for an entry's hours, "hours" in an estimate, budget or adjustment, "Add" for a project's code, "Time" for Snooze's custom time, "Same name" for a task property that falls back to the task's name. It is italic, light and in the tertiary color, as in Settings, and so is an empty chip that names its field ("Project", "Priority", "Assignee").
+- A placeholder in a composer says what to type, never a value or a default: "Add" for a project's code, "Same name" for a task property that falls back to the task's name. A time shows its format instead: "0:00" for an entry's hours, "0h" in an estimate, budget or adjustment, "9:00" for Snooze's custom time. Every placeholder is italic, light and in the tertiary color, as in Settings, and so is an empty chip that names its field ("Project", "Priority", "Assignee").
 
 ## Entry editor
 
