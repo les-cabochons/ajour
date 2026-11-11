@@ -278,6 +278,10 @@ function assigneeSearch(source: AssigneeSource) {
     : search;
 }
 
+/** The State and Priority chips, which the dialog moves focus between. */
+const SETTLE_STATE_ID = "settle-state";
+const SETTLE_PRIORITY_ID = "settle-priority";
+
 /**
  * The settle dialog: a state picker grouped by state category, a priority
  * and, for a plugin that assigns, an assignee, all starting at the item's
@@ -352,6 +356,24 @@ export function SettleDialogHost() {
       cancelled = true;
     };
   }, [workItem]);
+
+  // The dialog opens on its first decision, the state (usability testing,
+  // 2026-11-06). State waits for the source's states, so focus first falls to
+  // Priority, which read only "High"; once the states load, focus moves to
+  // State unless the user has moved it.
+  useEffect(() => {
+    if (load.status !== "ready") return;
+    const active = document.activeElement;
+    const stateChip = document.getElementById(SETTLE_STATE_ID);
+    if (
+      stateChip &&
+      active instanceof HTMLElement &&
+      (active.id === SETTLE_PRIORITY_ID ||
+        active.getAttribute("role") === "dialog")
+    ) {
+      stateChip.focus();
+    }
+  }, [load.status]);
 
   const currentItem = state.workItems.find(
     (item) => item._id === workItem?._id,
@@ -461,7 +483,7 @@ export function SettleDialogHost() {
           <div className="composer flex flex-col gap-3">
             <div className="composer-chips" role="group" aria-label="Settle as">
               <OptionSelect
-                id="settle-state"
+                id={SETTLE_STATE_ID}
                 label="State"
                 size="sm"
                 className="composer-chip"
@@ -492,7 +514,7 @@ export function SettleDialogHost() {
                 }))}
               />
               <OptionSelect
-                id="settle-priority"
+                id={SETTLE_PRIORITY_ID}
                 label="Priority"
                 size="sm"
                 iconLabel

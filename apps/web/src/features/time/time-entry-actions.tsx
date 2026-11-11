@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
+import { FOCUS_ITEM_SELECTOR, captureItemFocus } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { withEventAttribution } from "@/lib/wide-events";
@@ -316,6 +317,18 @@ export function useTimeEntryActions({
     }
 
     const localDate = formatIsoDate(selectedDate);
+    // A move takes the entry off the day it is shown on, with its row or
+    // card: focus goes to the one that takes its place.
+    const movedId =
+      "entries" in dateAction
+        ? dateAction.entries[0]?._id
+        : dateAction.entry._id;
+    const shown = movedId
+      ? document.querySelector<HTMLElement>(
+          `[data-entry-id="${CSS.escape(movedId)}"]${FOCUS_ITEM_SELECTOR}`,
+        )
+      : null;
+    const restoreFocus = shown ? captureItemFocus(shown) : undefined;
     if ("entries" in dateAction) {
       relocateMany(
         dateAction.kind,
@@ -332,6 +345,7 @@ export function useTimeEntryActions({
       );
     }
     setDateAction(null);
+    restoreFocus?.();
   }
 
   const isMove = dateAction?.kind === "move-to";

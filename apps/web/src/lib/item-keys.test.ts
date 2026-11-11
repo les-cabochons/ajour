@@ -7,6 +7,9 @@ import {
 import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   BACKLOG_ITEM_ACTION_KEYS,
+  BACKLOG_ITEM_ROW_KEYS,
+  OPEN_BACKLOG_ITEM_ACTION,
+  OPEN_PARENT_ACTION,
   TASK_ACTION_KEYS,
   TIME_ENTRY_ACTION_KEYS,
   findFocusFallbackIndex,
@@ -120,6 +123,22 @@ describe("getItemKeyCommand", () => {
         TIME_ENTRY_ACTION_KEYS,
       ),
     ).toMatchObject({ action: { id: "duplicate" } });
+  });
+
+  it("opens the parent of a subitem row on Shift+Enter", () => {
+    const rowActions = [OPEN_BACKLOG_ITEM_ACTION, OPEN_PARENT_ACTION];
+    const run = (event: ShortcutKeyEvent, listed = rowActions) =>
+      getItemKeyCommand(event, "other", listed, BACKLOG_ITEM_ROW_KEYS);
+
+    expect(run(press("Enter", { shiftKey: true }))).toMatchObject({
+      kind: "action",
+      action: { id: "open-parent" },
+    });
+    expect(run(press("Enter"))).toMatchObject({ action: { id: "open" } });
+    // A row with no parent lists no such action, so the key does nothing.
+    expect(
+      run(press("Enter", { shiftKey: true }), [OPEN_BACKLOG_ITEM_ACTION]),
+    ).toBeNull();
   });
 
   it("moves focus on arrows and reorders on Alt+arrows", () => {

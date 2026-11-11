@@ -8,6 +8,15 @@ Feature: Save a composer from any of its fields
     Then the new item composer is closed
     And "Write the release notes" is in the Backlog
 
+  Scenario: Create a backlog item with Enter from its estimate
+    Given I have a synced backlog item "Fix export rounding" from Azure DevOps ticket 48213
+    When I open the Backlog workspace
+    And I start a new backlog item "Size the export" with the description "Count the formats"
+    And I type "3" in its estimate
+    And I press Enter in the new item's estimate
+    Then the new item composer is closed
+    And "Size the export" is in the Backlog
+
   Scenario: Create a project with Ctrl+Enter, and see where its code goes
     Given I have projects with searchable tasks
     When I open the Projects workspace

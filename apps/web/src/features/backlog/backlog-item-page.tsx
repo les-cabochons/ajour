@@ -434,12 +434,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 item={item}
                 editing={editingTitle}
                 readOnly={readOnly}
-                onEditingChange={(editing) => {
-                  setEditingTitle(editing);
-                  // Enter and Escape give the keys back to the page.
-                  if (!editing)
-                    focusRef.current?.focus({ preventScroll: true });
-                }}
+                onEditingChange={setEditingTitle}
               />
               <div className="backlog-item-page-meta">
                 {/* Plain text: the breadcrumb and the properties already name

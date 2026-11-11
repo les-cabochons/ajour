@@ -159,7 +159,7 @@ When(
   "I change the synced item's priority to {string}",
   async ({ page }, level: string) => {
     await priorityPicker(page).click();
-    await page.getByRole("menuitem", { name: level, exact: true }).click();
+    await page.getByRole("menuitemradio", { name: level, exact: true }).click();
     await expect(page.getByText(`Priority changed to ${level}`)).toBeVisible();
   },
 );
@@ -257,7 +257,8 @@ Then(
 Then(
   "the picker's {string} is disabled with the reason {string}",
   async ({ page }, name: string, reason: string) => {
-    const option = page.getByRole("menuitem", { name, exact: true });
+    // The levels are a radio group: the current one is checked.
+    const option = page.getByRole("menuitemradio", { name, exact: true });
     await expect(option).toBeDisabled();
     await expect(option).toHaveAttribute("aria-description", reason);
   },

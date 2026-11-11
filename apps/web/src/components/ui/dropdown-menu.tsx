@@ -23,18 +23,123 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
+/** How long typed letters keep adding to one search, as Base UI's own. */
+const TYPEAHEAD_RESET_MS = 500;
+
+const ITEM_SELECTOR =
+  '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]';
+
+/** The menu's enabled items, in order, with their text in lower case. */
+function listItems(popup: HTMLElement) {
+  return [...popup.querySelectorAll<HTMLElement>(ITEM_SELECTOR)]
+    .filter((item) => !item.hasAttribute("data-disabled"))
+    .map((item) => ({
+      item,
+      text: (item.textContent ?? "").trim().toLocaleLowerCase(),
+    }));
+}
+
+/**
+ * The item typed letters pick: the first whose name starts with them, else
+ * the first with a word that does, so "rev" finds "In review". One letter
+ * typed again and again cycles instead, as native menus and listboxes do: each
+ * press moves to the next item that starts with it after `currentIndex`, the
+ * highlighted item, and wraps at the end.
+ */
+export function findTypeaheadMatch<T extends { text: string }>(
+  items: readonly T[],
+  typed: string,
+  currentIndex = -1,
+): T | undefined {
+  const typedLower = typed.toLocaleLowerCase();
+  const cycles = [...typedLower].every((letter) => letter === typedLower[0]);
+  const query = cycles ? typedLower.slice(0, 1) : typedLower;
+  const ordered = cycles
+    ? [...items.slice(currentIndex + 1), ...items.slice(0, currentIndex + 1)]
+    : items;
+  return (
+    ordered.find(({ text }) => text.startsWith(query)) ??
+    ordered.find(({ text }) =>
+      text.split(/\s+/).some((word) => word.startsWith(query)),
+    )
+  );
+}
+
+/**
+ * A menu of choices opens on the checked one, as a select does, so the arrows
+ * move from the current value (usability testing, 2026-11-06). Base UI
+ * highlights the item that takes focus.
+ */
+function FocusCheckedItem() {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const popup = ref.current?.closest<HTMLElement>(
+        '[data-slot="dropdown-menu-content"]',
+      );
+      popup
+        ?.querySelector<HTMLElement>(
+          '[role="menuitemradio"][aria-checked="true"]:not([data-disabled])',
+        )
+        ?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return <span ref={ref} hidden />;
+}
+
+/**
+ * Typing picks an item by any word of its name, not only its first: Base UI
+ * matches from the start of the name alone. It runs before the items' own
+ * keys, so a space between typed words never chooses the highlighted item.
+ */
+function useWordTypeahead() {
+  const typed = React.useRef({ text: "", at: 0 });
+  return (event: React.KeyboardEvent<HTMLElement>) => {
+    const isLetter =
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.nativeEvent.isComposing;
+    // A menu's own search field, such as the Projects filter's, keeps its keys.
+    const target = event.target as HTMLElement;
+    if (
+      !isLetter ||
+      target.isContentEditable ||
+      target.closest("input, textarea, select")
+    )
+      return;
+    const now = performance.now();
+    const previous =
+      now - typed.current.at < TYPEAHEAD_RESET_MS ? typed.current.text : "";
+    // A space on its own still chooses the highlighted item.
+    if (event.key === " " && !previous) return;
+    typed.current = { text: previous + event.key, at: now };
+    event.preventDefault();
+    event.stopPropagation();
+    const items = listItems(event.currentTarget);
+    const current = items.findIndex(
+      ({ item }) => item === event.currentTarget.ownerDocument.activeElement,
+    );
+    findTypeaheadMatch(items, typed.current.text, current)?.item.focus();
+  };
+}
+
 function DropdownMenuContent({
   align = "start",
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
   className,
+  children,
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<
     MenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const typeahead = useWordTypeahead();
   return (
     <MenuPrimitive.Portal container={usePortalContainer()}>
       <MenuPrimitive.Positioner
@@ -50,8 +155,12 @@ function DropdownMenuContent({
             "z-50 max-h-(--available-height) w-(--anchor-width) min-w-48 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1.5 text-popover-foreground shadow-[var(--shadow-popup)] ring-1 ring-foreground/5 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95",
             className,
           )}
+          onKeyDownCapture={typeahead}
           {...props}
-        />
+        >
+          <FocusCheckedItem />
+          {children}
+        </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
   );

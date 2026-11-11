@@ -1093,6 +1093,22 @@
     background: var(--highlight-bg);
   }
 
+  /* The title is a button, so Enter and Escape in its field can give focus
+     back to it; it reads as the heading's text. */
+  .backlog-item-title-button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  .backlog-item-title-button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
   /* A quiet button in a section heading, such as the description's Edit:
      the small (24px) ghost button, so it reads as a control. */
   .backlog-item-subtle-action {

@@ -52,6 +52,7 @@ export type ShortcutScope = "global" | "time" | "item";
 
 export type ShortcutActionId =
   | "entry.new"
+  | "item.open-parent"
   | "entry.stop-or-start"
   | "entry.continue"
   | "time.today"
@@ -224,6 +225,12 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Open or edit",
     scope: "item",
     keys: [{ key: "Enter" }],
+  },
+  {
+    id: "item.open-parent",
+    label: "Open the parent of a subitem",
+    scope: "item",
+    keys: [{ key: "Enter", shift: true }],
   },
   {
     id: "item.settle",
