@@ -95,9 +95,9 @@ interface PickerTaskRowProps {
 }
 
 /**
- * A task on one line: the star, the name, the Assigned to you icon when its
- * project source assigns it to the user, its pinned key and "Non-billable"
- * when it is not billable. A long name is cut.
+ * A task on one line: the star, the name, right after it the Assigned to you
+ * icon when its project source assigns it to the user, its pinned key and
+ * "Non-billable" when it is not billable. A long name is cut.
  */
 export function PickerTaskRow({
   project,
@@ -144,18 +144,18 @@ export function PickerTaskRow({
           className="size-4 shrink-0"
         />
       ) : null}
-      {projectDisplay === "label" || projectDisplay === "icon-and-label" ? (
-        <>
-          <span className="min-w-0 truncate">{task.name}</span>
-          {/* Takes what the name leaves, so a long name cuts it first. */}
-          <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-tertiary)]">
-            {getProjectLabel(project)}
-          </span>
-        </>
-      ) : (
-        <span className="min-w-0 flex-1 truncate">{task.name}</span>
-      )}
+      <span className="min-w-0 truncate">{task.name}</span>
+      {/* Right after the name, so the names of a list stay lined up. */}
       {assignedToUser ? <AssignedToYouMark /> : null}
+      {projectDisplay === "label" || projectDisplay === "icon-and-label" ? (
+        // Takes what the name leaves, so a long name cuts it first.
+        <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-tertiary)]">
+          {getProjectLabel(project)}
+        </span>
+      ) : (
+        // Pushes the pinned key and the chips to the row's end.
+        <span className="flex-1" />
+      )}
       {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
       {isProjectTaskBillable(task) ? null : <Chip>Non-billable</Chip>}
       {trailing}

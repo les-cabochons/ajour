@@ -1265,13 +1265,13 @@ function ProjectDetail({
       >
         <td className="project-task-name-cell">
           <span className="project-task-name">{task.name}</span>
+          {/* A managed project's task its source assigns to the user. */}
+          {isTaskAssignedToUser(task) ? <AssignedToYouMark /> : null}
           <TaskMappingHints
             task={task}
             plugins={taskPropertyPlugins}
             projectLocalOnly={project.localOnly}
           />
-          {/* A managed project's task its source assigns to the user. */}
-          {isTaskAssignedToUser(task) ? <AssignedToYouMark /> : null}
           {/* The shortcut chord, by the name it starts (council round 19). */}
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           {/* Billable is the default: only the exception carries a chip. */}

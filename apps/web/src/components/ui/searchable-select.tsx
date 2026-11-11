@@ -35,7 +35,7 @@ export interface SearchableSelectOption {
   keywords?: string[];
   /** A mark before the label, in the list and, once chosen, in the field. */
   icon?: ReactNode;
-  /** A mark after the label in the list, such as the Assigned to you icon. */
+  /** A mark right after the label in the list only, such as the Assigned to you icon. */
   mark?: ReactNode;
 }
 
@@ -554,11 +554,7 @@ export function SearchableSelect({
                             option.icon
                           )}
                           <span>{option.label}</span>
-                          {option.mark ? (
-                            <span className="ml-auto inline-flex shrink-0">
-                              {option.mark}
-                            </span>
-                          ) : null}
+                          {option.mark}
                         </CommandItem>
                       ))}
                     </CommandGroup>
