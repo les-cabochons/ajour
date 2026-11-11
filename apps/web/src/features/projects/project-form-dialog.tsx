@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useMemo,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -41,8 +42,10 @@ import {
   FieldLabel,
   FieldWarning,
 } from "@/components/ui/field";
+import { recordsEqual } from "@/domain/records-equal";
 import { getDuplicateProjectNameWarning } from "@/domain/projects/project-names";
 import { useLocalState } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
 import type { LocalProject } from "@/domain/local-state";
 import { isManagedProject } from "@/domain/projects/project-transitions";
 import { LockHint } from "@/features/projects/project-source-ui";
@@ -126,13 +129,34 @@ export function ProjectFormDialog({
   );
   const [fields, setFields] = useState(resumed.fields);
   const [base, setBase] = useState(resumed.base);
-  const conflictGroups = project
-    ? findDraftConflicts({ fields, base }, seed, DRAFT_FIELD_GROUPS)
+  // The project as it is now, so a save in another window reaches the open form.
+  const { projects } = useLocalState();
+  const savedProject = project
+    ? (projects.find((candidate) => candidate._id === project._id) ?? project)
+    : undefined;
+  const currentFields = useMemo(
+    () => (savedProject ? createProjectFormFields(savedProject) : undefined),
+    [savedProject],
+  );
+  // A field the user did not change follows the project while the form stays
+  // open; a field both changed stays as typed, in conflict, until settled.
+  useEffect(() => {
+    if (!currentFields) return;
+    const next = reconcileDraft(
+      { fields, base },
+      currentFields,
+      DRAFT_FIELD_GROUPS,
+    );
+    if (!recordsEqual(next.fields, fields)) setFields(next.fields);
+    if (!recordsEqual(next.base, base)) setBase(next.base);
+  }, [base, currentFields, fields]);
+  const conflictGroups = currentFields
+    ? findDraftConflicts({ fields, base }, currentFields, DRAFT_FIELD_GROUPS)
     : [];
   const conflicts = conflictGroups.map((group): DraftConflictView => ({
     id: group.join(","),
     label: CONFLICT_LABELS[group[0]!] ?? String(group[0]),
-    theirs: describeProjectField(group[0]!, seed),
+    theirs: describeProjectField(group[0]!, currentFields!),
     mine: describeProjectField(group[0]!, fields),
   }));
 
@@ -141,9 +165,9 @@ export function ProjectFormDialog({
     const group = conflictGroups.find(
       (candidate) => candidate.join(",") === id,
     );
-    if (!group) return;
+    if (!group || !currentFields) return;
     const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
-    const settled = settle({ fields, base }, seed, group);
+    const settled = settle({ fields, base }, currentFields, group);
     setFields(settled.fields);
     setBase(settled.base);
   }
@@ -151,7 +175,7 @@ export function ProjectFormDialog({
   const [nameEdited, setNameEdited] = useState(Boolean(kept));
   // The draft is kept while it differs from what the form opened on, until
   // it is saved or discarded.
-  const changed = JSON.stringify(fields) !== JSON.stringify(seed);
+  const changed = !recordsEqual(fields, currentFields ?? seed);
   useEffect(() => {
     if (changed) {
       keepComposerDraft(draftKey, { fields, base } satisfies KeptProjectDraft);
@@ -165,7 +189,6 @@ export function ProjectFormDialog({
   }
   const values = getProjectFormValues(fields);
   const errors = getProjectFormErrors(fields);
-  const { projects } = useLocalState();
   const nameWarning = getDuplicateProjectNameWarning(
     projects,
     fields.name,
@@ -182,9 +205,26 @@ export function ProjectFormDialog({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (values && conflicts.length === 0) {
+    // The project as the store holds it this moment: a save from another
+    // window can land between the last render and this press.
+    const latest = project
+      ? localStore
+          .snapshot()
+          .projects.find((candidate) => candidate._id === project._id)
+      : undefined;
+    const latestFields = latest ? createProjectFormFields(latest) : undefined;
+    const draft = latestFields
+      ? reconcileDraft({ fields, base }, latestFields, DRAFT_FIELD_GROUPS)
+      : { fields, base };
+    const latestConflicts = latestFields
+      ? findDraftConflicts(draft, latestFields, DRAFT_FIELD_GROUPS)
+      : [];
+    if (!recordsEqual(draft.fields, fields)) setFields(draft.fields);
+    if (!recordsEqual(draft.base, base)) setBase(draft.base);
+    const latestValues = getProjectFormValues(draft.fields);
+    if (latestValues && latestConflicts.length === 0) {
       dropComposerDraft(draftKey);
-      onSubmit(values);
+      onSubmit(latestValues);
     }
   }
 

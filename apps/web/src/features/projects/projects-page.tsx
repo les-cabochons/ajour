@@ -120,10 +120,12 @@ import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-f
 import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
+import { recordsEqual } from "@/domain/records-equal";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   describeTaskConflicts,
   getTaskDraftConflicts,
+  reconcileTaskDraft,
   resumeTaskDraft,
   settleTaskConflict,
   type KeptTaskDraft,
@@ -1743,6 +1745,35 @@ function getTaskDraftKey(session: { projectId: string; taskId?: string }) {
   return `task:${session.projectId}:${session.taskId ?? "new"}`;
 }
 
+/**
+ * The task draft against the task as the store holds it this moment, not as
+ * the last render saw it: a save from another window can land between the two.
+ * A field the user did not change takes the task's value, so Save never writes
+ * an old one back.
+ */
+function readLatestTaskDraft(session: TaskEditorSession) {
+  const task = session.taskId
+    ? localStore
+        .snapshot()
+        .projects.find((project) => project._id === session.projectId)
+        ?.tasks.find((candidate) => candidate._id === session.taskId)
+    : undefined;
+  if (!task) {
+    return {
+      session,
+      editor: evaluateProjectTaskEditor(session.fields, undefined),
+      conflicted: false,
+    };
+  }
+  const current = createProjectTaskEditorFields(task);
+  const draft = reconcileTaskDraft(session, current);
+  return {
+    session: { ...session, ...draft },
+    editor: evaluateProjectTaskEditor(draft.fields, task),
+    conflicted: getTaskDraftConflicts(draft, current).length > 0,
+  };
+}
+
 function writeProjectTask(
   session: TaskEditorSession,
   values: ProjectTaskValues,
@@ -1887,9 +1918,26 @@ export function ProjectsPage() {
     ? evaluateProjectTaskEditor(taskEditor.fields, taskEditorTask)
     : null;
   // Fields of a resumed draft that the task changed too, until settled.
-  const taskCurrentFields = taskEditorTask
-    ? createProjectTaskEditorFields(taskEditorTask)
-    : undefined;
+  const taskCurrentFields = useMemo(
+    () =>
+      taskEditorTask
+        ? createProjectTaskEditorFields(taskEditorTask)
+        : undefined,
+    [taskEditorTask],
+  );
+  // A field the user did not change follows the task while its editor stays
+  // open; a field both changed stays as typed, in conflict, until settled.
+  useEffect(() => {
+    if (!taskEditor || !taskCurrentFields) return;
+    const next = reconcileTaskDraft(taskEditor, taskCurrentFields);
+    if (
+      recordsEqual(next.fields, taskEditor.fields) &&
+      recordsEqual(next.base, taskEditor.base)
+    ) {
+      return;
+    }
+    setTaskEditor({ ...taskEditor, ...next });
+  }, [taskEditor, taskCurrentFields]);
   const taskConflictGroups =
     taskEditor && taskCurrentFields
       ? getTaskDraftConflicts(taskEditor, taskCurrentFields)
@@ -1948,12 +1996,13 @@ export function ProjectsPage() {
       return;
     }
 
+    const latest = readLatestTaskDraft(draft.session);
     // A changed field nobody settled keeps the draft, as an invalid one does.
-    const result = draft.conflicted
+    const result = latest.conflicted
       ? ({ kind: "invalid" } as const)
-      : commitProjectTaskDraft(draft.editor, "switch");
+      : commitProjectTaskDraft(latest.editor, "switch");
     if (result.kind === "save") {
-      writeProjectTask(draft.session, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     setTaskEditor(null);
   }, [selectedProjectId]);
@@ -2240,19 +2289,21 @@ export function ProjectsPage() {
     if (!taskEditor || !taskEditorState) {
       return true;
     }
+    const latest = readLatestTaskDraft(taskEditor);
     // A changed field nobody settled holds the editor open: the notice says which.
-    if (taskConflictGroups.length > 0) {
+    if (latest.conflicted) {
+      setTaskEditor(latest.session);
       return false;
     }
 
-    const result = commitProjectTaskDraft(taskEditorState, "switch");
+    const result = commitProjectTaskDraft(latest.editor, "switch");
     if (result.kind === "invalid") {
-      setTaskEditor({ ...taskEditor, showErrors: true });
+      setTaskEditor({ ...latest.session, showErrors: true });
       return false;
     }
 
     if (result.kind === "save") {
-      writeProjectTask(taskEditor, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     return true;
   };
@@ -2288,18 +2339,23 @@ export function ProjectsPage() {
   };
 
   const saveTaskEditor = () => {
-    if (!taskEditor || !taskEditorState || taskConflictGroups.length > 0) {
+    if (!taskEditor || !taskEditorState) {
+      return;
+    }
+    const latest = readLatestTaskDraft(taskEditor);
+    if (latest.conflicted) {
+      setTaskEditor(latest.session);
       return;
     }
 
-    const result = commitProjectTaskDraft(taskEditorState, "save");
+    const result = commitProjectTaskDraft(latest.editor, "save");
     if (result.kind === "invalid") {
-      setTaskEditor({ ...taskEditor, showErrors: true });
+      setTaskEditor({ ...latest.session, showErrors: true });
       return;
     }
 
     if (result.kind === "save") {
-      writeProjectTask(taskEditor, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     if (!taskEditor.taskId && result.kind === "save") {
       if (createMoreTasks) {

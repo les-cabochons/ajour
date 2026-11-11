@@ -486,7 +486,7 @@ Feature: Backlog list and board views
     And I add the subitem "Proofread" on its page
     And I press Escape in the subitem name field
     And I undo with the Cmd+Z shortcut
-    Then a toast says "Can't undo. Something added since depends on the backlog item. Remove that first."
+    Then a toast says "Can't undo. Something added since depends on the backlog item."
     And no Backlog item has a missing parent
     And the Backlog page of "Write the release notes" still lists "Proofread"
 

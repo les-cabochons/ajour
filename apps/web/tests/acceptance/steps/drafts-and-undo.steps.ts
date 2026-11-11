@@ -586,3 +586,200 @@ When(
       .click();
   },
 );
+
+// Another tab's save, and the Save press, land in one task of the page: React
+// has rendered nothing in between, so only a check at commit time sees it.
+
+When(
+  "another tab sets the Monday entry {string} to {word} hours as I press Save",
+  async ({ page }, id: string, hours: string) => {
+    const [h, m] = hours.split(":").map(Number);
+    await page.evaluate(
+      ({ id, durationMs }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        state.timesheetEntries.find(
+          (candidate: { _id: string }) => candidate._id === id,
+        ).durationMs = durationMs;
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+        const save = [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            '[aria-label="Time entry editor"] button',
+          ),
+        ].find((button) => button.textContent?.trim() === "Save");
+        if (!save) throw new Error("The entry editor has no Save button");
+        save.click();
+      },
+      { id, durationMs: h * HOUR + m * 60_000 },
+    );
+  },
+);
+
+When(
+  "another tab sets the running entry's note to {string}",
+  async ({ page }, note: string) => {
+    await page.evaluate((note) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(window.localStorage.getItem(key)!);
+      state.timers[0].note = note;
+      window.localStorage.setItem(key, JSON.stringify(state));
+      window.dispatchEvent(new StorageEvent("storage", { key }));
+    }, note);
+  },
+);
+
+When(
+  "I type {string} as the project's code",
+  async ({ page }, code: string) => {
+    await projectForm(page).getByRole("textbox", { name: "Code" }).fill(code);
+  },
+);
+
+When(
+  "I type {string} as the project's full name",
+  async ({ page }, name: string) => {
+    await projectForm(page)
+      .getByRole("textbox", { name: "Full name" })
+      .fill(name);
+  },
+);
+
+Then(
+  "the project form's code reads {string}",
+  async ({ page }, code: string) => {
+    await expect(
+      projectForm(page).getByRole("textbox", { name: "Code" }),
+    ).toHaveValue(code);
+  },
+);
+
+Then("the project form shows no changed field", async ({ page }) => {
+  await expect(
+    projectForm(page).getByRole("group", { name: "Changed elsewhere" }),
+  ).toHaveCount(0);
+});
+
+Then(
+  "the stored project {string} is named {string} with the code {string}",
+  async ({ page }, id: string, name: string, code: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate((id) => {
+          const state = JSON.parse(
+            window.localStorage.getItem("ajour.local-state.v2")!,
+          ) as { projects: { _id: string; name: string; code?: string }[] };
+          const project = state.projects.find((item) => item._id === id);
+          return project && { name: project.name, code: project.code };
+        }, id),
+      )
+      .toEqual({ name, code });
+  },
+);
+
+When(
+  "another tab renames project {string} to {string} as I press Save in the project form",
+  async ({ page }, projectId: string, name: string) => {
+    await page.evaluate(
+      ({ projectId, name }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        const project = state.projects.find(
+          (candidate: { _id: string }) => candidate._id === projectId,
+        );
+        project.name = name;
+        project.displayName = name;
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+        const save = [
+          ...document.querySelectorAll<HTMLButtonElement>(
+            '[role="dialog"] button',
+          ),
+        ].find((button) => button.textContent?.trim() === "Save");
+        if (!save) throw new Error("The project form has no Save button");
+        save.click();
+      },
+      { projectId, name },
+    );
+  },
+);
+
+When("I type {string} as the task's name", async ({ page }, name: string) => {
+  await taskComposer(page).getByRole("textbox", { name: "Name" }).fill(name);
+});
+
+async function setTaskBudget(
+  page: Page,
+  taskId: string,
+  hours: number,
+  pressSave: boolean,
+) {
+  await page.evaluate(
+    ({ taskId, hours, pressSave }) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(window.localStorage.getItem(key)!);
+      for (const project of state.projects) {
+        for (const task of project.tasks) {
+          if (task._id === taskId) task.budgetMs = hours * 60 * 60 * 1000;
+        }
+      }
+      window.localStorage.setItem(key, JSON.stringify(state));
+      window.dispatchEvent(new StorageEvent("storage", { key }));
+      if (!pressSave) return;
+      const save = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          '[role="dialog"] button',
+        ),
+      ].find((button) => button.textContent?.trim() === "Save");
+      if (!save) throw new Error("The task editor has no Save button");
+      save.click();
+    },
+    { taskId, hours, pressSave },
+  );
+}
+
+When(
+  "another tab sets the budget of task {string} to {int} hours",
+  async ({ page }, taskId: string, hours: number) => {
+    await setTaskBudget(page, taskId, hours, false);
+  },
+);
+
+When(
+  "another tab sets the budget of task {string} to {int} hours as I press Save in the task editor",
+  async ({ page }, taskId: string, hours: number) => {
+    await setTaskBudget(page, taskId, hours, true);
+  },
+);
+
+Then(
+  "the task editor's budget reads {string}",
+  async ({ page }, budget: string) => {
+    await expect(
+      taskComposer(page).getByLabel("budget", { exact: true }),
+    ).toHaveValue(budget);
+  },
+);
+
+Then(
+  "the stored task {string} is named {string} with a budget of {int} hours",
+  async ({ page }, taskId: string, name: string, hours: number) => {
+    await expect
+      .poll(() =>
+        page.evaluate((taskId) => {
+          const state = JSON.parse(
+            window.localStorage.getItem("ajour.local-state.v2")!,
+          ) as {
+            projects: {
+              tasks: { _id: string; name: string; budgetMs?: number }[];
+            }[];
+          };
+          const task = state.projects
+            .flatMap((project) => project.tasks)
+            .find((item) => item._id === taskId);
+          return task && { name: task.name, budgetMs: task.budgetMs };
+        }, taskId),
+      )
+      .toEqual({ name, budgetMs: hours * HOUR });
+  },
+);

@@ -50,7 +50,18 @@ export function resumeTaskDraft(
 ): ReconciledDraft<ProjectTaskEditorFields> {
   if (!kept) return { fields: current, base: current };
   if (isNew) return { fields: kept.fields, base: current };
-  return reconcileDraft(kept, current, GROUPS);
+  return reconcileTaskDraft(kept, current);
+}
+
+/**
+ * Brings a draft up to the task as it is now: a field the user did not change
+ * takes the task's value, and a field both changed stays as typed, in conflict.
+ */
+export function reconcileTaskDraft(
+  draft: ReconciledDraft<ProjectTaskEditorFields>,
+  current: ProjectTaskEditorFields,
+) {
+  return reconcileDraft(draft, current, GROUPS);
 }
 
 /** The changed fields of a saved task's draft that the user must settle. */
