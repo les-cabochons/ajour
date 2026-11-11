@@ -54,7 +54,7 @@ import {
   InPlaceHoursInput,
   writeInPlaceHours,
   type InPlaceHoursEnd,
-} from "@/features/time/in-place-hours-input";
+} from "@/features/time/in-place-hours";
 import {
   offerTimeEntryUndo,
   useTimeEntryActions,

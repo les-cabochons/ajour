@@ -1343,7 +1343,7 @@
     color: var(--text);
   }
 
-  .weekly-entry-card-hours-edit .weekly-entry-card-hours-input {
+  .weekly-entry-card-hours-edit .weekly-entry-card-hours-box {
     width: 4.5rem;
     height: 1.5rem;
     padding: 0 0.375rem;

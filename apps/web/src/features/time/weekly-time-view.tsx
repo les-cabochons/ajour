@@ -34,7 +34,7 @@ import {
 import {
   InPlaceHoursInput,
   writeInPlaceHours,
-} from "@/features/time/in-place-hours-input";
+} from "@/features/time/in-place-hours";
 import { getLockedWeek, lockedWeekMessage } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { placeRunningRow } from "@/domain/time/timesheet-entry";
@@ -1005,7 +1005,7 @@ export function WeeklyTimeView({
                                 label={`Hours for ${summary.taskName}, ${formatWeekDay(day.localDate, { weekday: "long" })}`}
                                 initialText={editingCard.initialText}
                                 savedText={formatWeekGridCellText(entry)}
-                                className="weekly-entry-card-hours-input"
+                                className="weekly-entry-card-hours-box"
                                 onEnd={(text) => endCardEdit(entry, text)}
                                 onCancel={() => cancelCardEdit(entry._id)}
                               />
