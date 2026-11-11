@@ -43,6 +43,7 @@ import {
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
 import { getDayStripDrop } from "@/lib/cross-day-entry-drag";
+import { ignoreSecondClick } from "@/lib/double-click-guard";
 import { localStore } from "@/lib/local-store";
 import { withEventAttribution } from "@/lib/wide-events";
 import {
@@ -770,6 +771,9 @@ export function TimerPanel({
                               className="text-foreground"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                // The row changes under the pointer: a
+                                // double-click's second click goes nowhere.
+                                ignoreSecondClick(event);
                                 entryActions.runAction(rowTarget, "stop");
                               }}
                             />
@@ -793,6 +797,7 @@ export function TimerPanel({
                               className="text-muted-foreground"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                ignoreSecondClick(event);
                                 handleContinueEntry(entry._id);
                               }}
                             />
