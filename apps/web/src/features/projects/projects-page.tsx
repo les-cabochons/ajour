@@ -1024,8 +1024,9 @@ function ProjectDetail({
 
   const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
   const visibleTaskIds = visibleTasks.map((task) => task._id);
-  // A task that leaves the list, archived, restored or under the other
-  // filter, leaves the selection too.
+  // Only shown tasks count as selected. A task hidden by archiving,
+  // restoring or the other filter is left out while it is hidden; the stored
+  // selection keeps it, so it is selected again if it comes back.
   const selection = keepShownEntries(storedSelection, new Set(visibleTaskIds));
 
   /**
