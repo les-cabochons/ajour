@@ -105,6 +105,9 @@ const projectsView: PickerView = { kind: "projects" };
 const EMPTY_MESSAGE_CLASS =
   "px-4 py-4 text-center text-sm text-[var(--text-tertiary)]";
 
+/** cmdk's value for the Back to projects row. */
+const BACK_TO_PROJECTS = "back-to-projects";
+
 /** How many favorites the start view shows before "N more favorites". */
 const START_VIEW_FAVORITES = 3;
 
@@ -135,6 +138,13 @@ export function ProjectTaskPicker({
   };
   const [view, setView] = useState<PickerView>(projectsView);
   const [query, setQuery] = useState("");
+  // The highlighted row, cmdk's value. cmdk highlights a new list's first
+  // row, which in a project's tasks and on the Favorites and Recent pages is
+  // Back to projects, so a second Enter went back (usability testing,
+  // 2026-11-06). Until the user moves the highlight, the first task takes
+  // it instead.
+  const [highlighted, setHighlighted] = useState("");
+  const highlightMovedRef = useRef(false);
   const activeProjects = useMemo(
     () => projects.filter((project) => project.status === "active"),
     [projects],
@@ -231,6 +241,27 @@ export function ProjectTaskPicker({
   function resetNavigation() {
     setView(projectsView);
     setQuery("");
+    highlightMovedRef.current = false;
+  }
+
+  function highlight(value: string) {
+    if (!highlightMovedRef.current && value === BACK_TO_PROJECTS) {
+      // The first task, else the first row after Back to projects.
+      const rows = [
+        ...(listElement?.querySelectorAll<HTMLElement>("[cmdk-item]") ?? []),
+      ].filter(
+        (item) =>
+          item.dataset.value !== BACK_TO_PROJECTS &&
+          item.getAttribute("aria-disabled") !== "true",
+      );
+      const next = (rows.find((item) => item.dataset.taskId) ?? rows[0])
+        ?.dataset.value;
+      if (next) {
+        setHighlighted(next);
+        return;
+      }
+    }
+    setHighlighted(value);
   }
 
   function handleOpenChange(open: boolean) {
@@ -243,6 +274,7 @@ export function ProjectTaskPicker({
   function openView(next: PickerView) {
     setView(next);
     setQuery("");
+    highlightMovedRef.current = false;
   }
 
   function openProject(project: LocalProject) {
@@ -261,7 +293,7 @@ export function ProjectTaskPicker({
         task={task}
         value={`recent-task-${project._id}-${task._id}`}
         checked={isChecked(project._id, task._id)}
-        projectDisplay="icon"
+        projectDisplay="icon-and-label"
         trailing={
           <span className="shrink-0 text-xs text-[var(--text-tertiary)] tabular-nums">
             {formatLastUsed(usedAt, Date.now())}
@@ -342,6 +374,7 @@ export function ProjectTaskPicker({
 
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      highlightMovedRef.current = true;
       // cmdk moves the highlight after this handler, from its root. The card
       // follows it from the next frame. Opening the menu or typing never
       // shows the card: only an arrow key does.
@@ -354,6 +387,8 @@ export function ProjectTaskPicker({
       );
     } else if (event.key.length === 1 || event.key === "Backspace") {
       hoverCard.dismiss();
+      // A new search highlights its first match again.
+      highlightMovedRef.current = false;
     }
     if (
       event.key === "Backspace" &&
@@ -413,6 +448,8 @@ export function ProjectTaskPicker({
         <Command
           shouldFilter={false}
           className="rounded-none bg-transparent p-0"
+          value={highlighted}
+          onValueChange={highlight}
         >
           <CommandInput
             autoFocus
@@ -431,6 +468,10 @@ export function ProjectTaskPicker({
           />
           <CommandList
             ref={setListElement}
+            // A row the pointer highlights, Back to projects too, keeps it.
+            onPointerMove={() => {
+              highlightMovedRef.current = true;
+            }}
             className="max-h-[min(30rem,calc(var(--available-height)-3rem))] pb-1"
           >
             {view.kind === "projects" ? (
@@ -550,7 +591,7 @@ export function ProjectTaskPicker({
               <>
                 <CommandGroup heading="Recent tasks">
                   <CommandItem
-                    value="back-to-projects"
+                    value={BACK_TO_PROJECTS}
                     className="rounded-[var(--control-radius)]"
                     onSelect={() => openView(projectsView)}
                   >
@@ -573,7 +614,7 @@ export function ProjectTaskPicker({
               <>
                 <CommandGroup heading="Favorites">
                   <CommandItem
-                    value="back-to-projects"
+                    value={BACK_TO_PROJECTS}
                     className="rounded-[var(--control-radius)]"
                     onSelect={() => openView(projectsView)}
                   >
@@ -610,7 +651,7 @@ export function ProjectTaskPicker({
                 ) : null}
                 <CommandGroup heading={getProjectLabel(browsingProject)}>
                   <CommandItem
-                    value="back-to-projects"
+                    value={BACK_TO_PROJECTS}
                     className="rounded-[var(--control-radius)]"
                     onSelect={() => openView(projectsView)}
                   >

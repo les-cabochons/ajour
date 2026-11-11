@@ -82,11 +82,12 @@ interface PickerTaskRowProps {
   value: string;
   checked: boolean;
   /**
-   * How the row names the project: `icon` in Favorites and Recent tasks,
-   * `label` after the name in search results, where names repeat across
-   * projects, and nothing in a project's own task list.
+   * How the row names the project: `icon` in Favorites, `label` after the
+   * name in search results, where names repeat across projects, both in
+   * Recent tasks, where two projects' Development would read the same, and
+   * nothing in a project's own task list.
    */
-  projectDisplay?: "icon" | "label";
+  projectDisplay?: "icon" | "label" | "icon-and-label";
   /** Shown before the check, such as how long ago a recent task was used. */
   trailing?: ReactNode;
   onSelect: () => void;
@@ -135,14 +136,14 @@ export function PickerTaskRow({
           setTaskFavorite(project._id, task._id, favorite)
         }
       />
-      {projectDisplay === "icon" ? (
+      {projectDisplay === "icon" || projectDisplay === "icon-and-label" ? (
         <ProjectIcon
           icon={project.icon}
           color={project.color}
           className="size-4 shrink-0"
         />
       ) : null}
-      {projectDisplay === "label" ? (
+      {projectDisplay === "label" || projectDisplay === "icon-and-label" ? (
         <>
           <span className="min-w-0 truncate">{task.name}</span>
           {/* Takes what the name leaves, so a long name cuts it first. */}
