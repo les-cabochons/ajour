@@ -1314,7 +1314,11 @@ function ProjectDetail({
   // adds the next page. The page is keyed by project, so another project
   // starts on its first page again.
   const [entryLimit, setEntryLimit] = useState(PROJECT_ENTRY_PAGE_SIZE);
-  const { days: entryDays, hiddenCount: hiddenEntryCount } = useMemo(
+  const {
+    days: entryDays,
+    hiddenCount: hiddenEntryCount,
+    nextLimit: nextEntryLimit,
+  } = useMemo(
     () => getProjectEntryDays(entries, entryLimit),
     [entries, entryLimit],
   );
@@ -1672,9 +1676,7 @@ function ProjectDetail({
                   variant="ghost"
                   size="sm"
                   className="mt-1 w-fit text-muted-foreground"
-                  onClick={() =>
-                    setEntryLimit(entryLimit + PROJECT_ENTRY_PAGE_SIZE)
-                  }
+                  onClick={() => setEntryLimit(nextEntryLimit)}
                 >
                   Show more
                 </Button>

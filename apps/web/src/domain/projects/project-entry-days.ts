@@ -15,14 +15,16 @@ export interface ProjectEntryDay<Entry> {
  * its heading's total counts all of its entries; the list can run a few
  * entries past `limit` to finish the last day.
  *
- * @returns the days to show, and how many entries wait behind "Show more".
+ * @returns the days to show, how many entries wait behind "Show more", and
+ * the limit "Show more" sets: a page past the entries shown, not past
+ * `limit`, so a click after a day longer than a page still shows more.
  */
 export function getProjectEntryDays<
   Entry extends Pick<LocalTimesheetEntry, "localDate">,
 >(
   entries: readonly Entry[],
   limit: number,
-): { days: ProjectEntryDay<Entry>[]; hiddenCount: number } {
+): { days: ProjectEntryDay<Entry>[]; hiddenCount: number; nextLimit: number } {
   const days: ProjectEntryDay<Entry>[] = [];
   let shownCount = 0;
   for (const entry of entries) {
@@ -36,5 +38,9 @@ export function getProjectEntryDays<
     }
     shownCount += 1;
   }
-  return { days, hiddenCount: entries.length - shownCount };
+  return {
+    days,
+    hiddenCount: entries.length - shownCount,
+    nextLimit: shownCount + PROJECT_ENTRY_PAGE_SIZE,
+  };
 }

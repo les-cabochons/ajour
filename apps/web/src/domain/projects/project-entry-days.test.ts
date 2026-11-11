@@ -49,7 +49,27 @@ describe("getProjectEntryDays", () => {
     expect(hiddenCount).toBe(3);
   });
 
+  it("shows more after a day longer than a page", () => {
+    const entries = [
+      ...entriesOn(["2026-11-06"], 100),
+      ...entriesOn(["2026-11-05"], 1),
+    ];
+
+    const first = getProjectEntryDays(entries, 50);
+    expect(first.hiddenCount).toBe(1);
+
+    const next = getProjectEntryDays(entries, first.nextLimit);
+    expect(next.hiddenCount).toBe(0);
+    expect(next.days.map((day) => day.localDate)).toEqual([
+      "2026-11-06",
+      "2026-11-05",
+    ]);
+  });
+
   it("shows nothing for a project without entries", () => {
-    expect(getProjectEntryDays([], 50)).toEqual({ days: [], hiddenCount: 0 });
+    const { days, hiddenCount } = getProjectEntryDays([], 50);
+
+    expect(days).toEqual([]);
+    expect(hiddenCount).toBe(0);
   });
 });
