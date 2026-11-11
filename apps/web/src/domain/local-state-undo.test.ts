@@ -772,3 +772,124 @@ it("restores custom backlog order and refuses undo after another reorder", () =>
   ).toEqual(["a", "b"]);
   expect(restoreUndo(before, undo).result).toBe("stale");
 });
+
+describe("undoing a creation that later records depend on", () => {
+  const dependentRefusal = (state: LocalAppState) => ({
+    state,
+    result: "stale",
+    staleReason: "has_dependents",
+  });
+
+  it("refuses to undo a new backlog item once a subitem was added under it", () => {
+    const before = createBacklogState();
+    const { after: created, undo } = undoAction(before, (state) => ({
+      ...state,
+      workItems: [...state.workItems, workItem({ _id: "item-new" })],
+    }));
+    const withChild = {
+      ...created,
+      workItems: [
+        ...created.workItems,
+        workItem({ _id: "subitem-new", parentWorkItemId: "item-new" }),
+      ],
+    };
+
+    expect(restoreUndo(withChild, undo)).toEqual(dependentRefusal(withChild));
+  });
+
+  it("refuses to undo a new backlog item that a time entry now logs against", () => {
+    const { after: created, undo } = undoAction(
+      createBacklogState(),
+      (state) => ({
+        ...state,
+        workItems: [...state.workItems, workItem({ _id: "item-new" })],
+      }),
+    );
+    const withEntry = {
+      ...created,
+      timesheetEntries: [
+        ...created.timesheetEntries,
+        entry({ _id: "entry-new", workItemId: "item-new" }),
+      ],
+    };
+
+    expect(restoreUndo(withEntry, undo)).toEqual(dependentRefusal(withEntry));
+  });
+
+  it("refuses to undo a new project once an entry or an item uses it", () => {
+    const { after: created, undo } = undoAction(
+      createBacklogState(),
+      (state) => ({
+        ...state,
+        projects: [
+          ...state.projects,
+          {
+            _id: "project-new",
+            name: "Venus",
+            color: "#654321",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            tasks: [],
+          },
+        ],
+      }),
+    );
+    const withEntry = {
+      ...created,
+      timesheetEntries: [
+        ...created.timesheetEntries,
+        entry({
+          _id: "entry-new",
+          projectId: "project-new",
+          taskId: undefined,
+        }),
+      ],
+    };
+    const withItem = {
+      ...created,
+      workItems: created.workItems.map((item) =>
+        item._id === "item-first"
+          ? { ...item, projectId: "project-new" }
+          : item,
+      ),
+    };
+
+    expect(restoreUndo(withEntry, undo)).toEqual(dependentRefusal(withEntry));
+    expect(restoreUndo(withItem, undo)).toEqual(dependentRefusal(withItem));
+  });
+
+  it("still undoes a creation that nothing depends on, and one made with its dependents", () => {
+    const before = createBacklogState();
+    const alone = undoAction(before, (state) => ({
+      ...state,
+      workItems: [...state.workItems, workItem({ _id: "item-new" })],
+    }));
+    expect(restoreUndo(alone.after, alone.undo).state.workItems).toEqual(
+      before.workItems,
+    );
+
+    const together = undoAction(before, (state) => ({
+      ...state,
+      workItems: [
+        ...state.workItems,
+        workItem({ _id: "item-new" }),
+        workItem({ _id: "subitem-new", parentWorkItemId: "item-new" }),
+      ],
+    }));
+    expect(restoreUndo(together.after, together.undo).state.workItems).toEqual(
+      before.workItems,
+    );
+  });
+
+  it("does not blame an undo for references that were already broken", () => {
+    const before: LocalAppState = {
+      ...createBacklogState(),
+      timesheetEntries: [entry({ _id: "entry-lost", workItemId: "item-gone" })],
+    };
+    const { after, undo } = undoAction(before, (state) =>
+      archiveBacklogItem(state, "item-first", factories),
+    );
+
+    expect(restoreUndo(after, undo).result).toBe("restored");
+  });
+});

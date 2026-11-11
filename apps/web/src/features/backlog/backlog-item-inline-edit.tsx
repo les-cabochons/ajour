@@ -46,9 +46,9 @@ import {
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 
 /*
- * The backlog item page edits in place: each field below saves on Enter or
- * when focus leaves it, with the Undo toast, and Escape puts the saved value
- * back. They replace the editor side panel on the page.
+ * The backlog item page edits in place: each field below saves on Enter,
+ * Escape, or when focus leaves it, with the Undo toast, so typed text is
+ * never lost. They replace the editor side panel on the page.
  */
 
 /**
@@ -140,13 +140,11 @@ export function InlineTitle({
       }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
-        if (event.key === "Enter") {
+        if (event.key === "Enter" || event.key === "Escape") {
           event.preventDefault();
           const { value } = event.currentTarget;
+          // Enter or Escape saves and gives focus back to the title.
           close(() => save(value));
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          close();
         }
       }}
     />
@@ -172,7 +170,7 @@ export function EstimateFigure({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   // Set once the field closes, so the blur of the unmounting input after
-  // Enter or Escape does not save again.
+  // Enter or Escape does not save twice.
   const closedRef = useRef(false);
   const estimate = draft === null ? null : readEstimateInput(draft);
   const error = estimate && !estimate.ok ? estimate.error : null;
@@ -235,12 +233,10 @@ export function EstimateFigure({
             onChange={(event) => setDraft(event.target.value)}
             onBlur={save}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
+              // Escape saves too; hours it can't read keep the field open.
+              if (event.key === "Enter" || event.key === "Escape") {
                 event.preventDefault();
                 save();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                close();
               }
             }}
           />
@@ -411,7 +407,8 @@ export function DescriptionSection({
               leave(value);
             }}
             onSubmit={leave}
-            onCancel={() => closer.close()}
+            // Escape saves, as leaving the editor does.
+            onCancel={() => void leave(draft)}
           />
           <DescriptionLength text={draft} limit={limit} />
           <SourceChangedWarning

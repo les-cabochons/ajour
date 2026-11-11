@@ -466,10 +466,73 @@ Feature: Backlog list and board views
     Then the Backlog parent's description is "Saved from the keys"
     And its description shows "Saved from the keys"
 
-  Scenario: Escape cancels an inline edit on the item page
+  Scenario: Escape saves an inline edit on the item page
     When I open the Backlog parent page
     And I type in the title, the remaining estimate and the description and press Escape each time
-    Then the Backlog parent keeps its saved title, estimate and description
+    Then the Backlog parent has the title, estimate and description I typed
+
+  Scenario: Creating a backlog item offers Undo
+    When I start a new backlog item "Write the release notes" with the description "From the changelog"
+    And I save the open Backlog editor
+    Then a toast says "Backlog item created" with Undo
+    And "Write the release notes" is in the Backlog
+    When I undo with the Cmd+Z shortcut
+    Then "Write the release notes" is not in the Backlog
+
+  Scenario: Undoing a new item is refused once a subitem was added under it
+    When I start a new backlog item "Write the release notes" with the description "From the changelog"
+    And I save the open Backlog editor
+    And I open the page of the Backlog item "Write the release notes"
+    And I add the subitem "Proofread" on its page
+    And I press Escape in the subitem name field
+    And I undo with the Cmd+Z shortcut
+    Then a toast says "Can't undo. Something added since depends on the backlog item."
+    And no Backlog item has a missing parent
+    And the Backlog page of "Write the release notes" still lists "Proofread"
+
+  Scenario: Escape keeps a new backlog item's draft
+    When I start a new backlog item "Write the release notes" with the description "From the changelog"
+    And I press Escape in the open Backlog editor
+    Then the Backlog editor is closed
+    And "Write the release notes" is not in the Backlog
+    When I open a new backlog item
+    Then the open Backlog editor's title reads "Write the release notes"
+    When I cancel the open Backlog editor
+    And I open a new backlog item
+    Then the open Backlog editor's title reads ""
+
+  Scenario: Escape keeps an edited item's draft
+    When I edit the subitem from its peek
+    And I rename the open editor draft to "Renamed in a draft"
+    And I press Escape in the open Backlog editor
+    Then the Backlog editor is closed
+    And the saved subitem title is "Backlog subitem"
+    When I edit the subitem from its peek
+    Then the open Backlog editor's title reads "Renamed in a draft"
+
+  Scenario: A kept item draft takes in a field another tab changed
+    When I edit the subitem from its peek
+    And I rename the open editor draft to "Renamed in a draft"
+    And I press Escape in the open Backlog editor
+    And another tab sets the subitem's description to "Written elsewhere"
+    And I edit the subitem from its peek
+    Then the open Backlog editor's title reads "Renamed in a draft"
+    And the open Backlog editor's description reads "Written elsewhere"
+    And the open Backlog editor shows no changed field
+
+  Scenario: A kept item draft shows a field another tab changed too
+    When I edit the subitem from its peek
+    And I rename the open editor draft to "Renamed in a draft"
+    And I press Escape in the open Backlog editor
+    And another tab sets the subitem's title to "Renamed elsewhere"
+    And I edit the subitem from its peek
+    Then the open Backlog editor's title reads "Renamed in a draft"
+    And the open Backlog editor says "Title changed"
+    And the open Backlog editor says "Now Renamed elsewhere. Your draft has Renamed in a draft."
+    And the open Backlog editor's Save is disabled
+    When I press "Keep mine" in the open Backlog editor
+    And I save the open Backlog editor
+    Then the saved subitem title is "Renamed in a draft"
 
   Scenario: Read a synced item's comments on its page
     Given the Backlog parent is synced
@@ -527,6 +590,14 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I edit my comment to "Code first, then the task name."
     Then my comment reads "Code first, then the task name." and shows it was edited
+
+  Scenario: Escape saves my comment edit
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I change my comment to "Saved by Escape." and press Escape
+    Then my comment reads "Saved by Escape." and shows it was edited
 
   Scenario: Undo deleting my comment
     Given the Backlog parent is synced

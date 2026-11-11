@@ -2,12 +2,14 @@ import { writeToolInputSchemas } from "@ajour/shared/agent-tools";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import type { AgentWriteOutcome } from "@/features/agents/agent-write-tools";
 import { closeUndoToast } from "@/components/ui/toast";
+import { undoRefusalMessage } from "@/features/feedback/undo-refusal";
 import { localStore } from "@/lib/local-store";
 
 /**
  * The `undo` tool: an agent presses the Undo of one of its own writes, as
- * the user would in its toast. The store keeps only the last action's undo,
- * so this keeps only the last agent write's description, for the answer and
+ * the user would in its toast, and only the newest action's while its toast
+ * shows. The store keeps earlier undos for Cmd+Z, but an agent's reach stops
+ * at the newest, so this keeps only the last agent write's description, for the answer and
  * the refusal. The write belongs to the client that made it: another client
  * holding its token is refused as if the token had expired, so a client learns
  * nothing about another's tokens.
@@ -57,15 +59,18 @@ export function runAgentUndo(
   if (write?.token !== undoToken || write.clientId !== clientId) {
     throw new AgentToolRefusal(EXPIRED);
   }
+  // The window keeps earlier actions for Cmd+Z, but an agent presses only
+  // the Undo of the newest action while its toast shows.
+  if (!localStore.isLatestOpenUndo(undoToken)) {
+    throw new AgentToolRefusal(EXPIRED);
+  }
   const result = localStore.undo(undoToken);
   if (result === "expired") throw new AgentToolRefusal(EXPIRED);
-  if (result === "stale") {
+  if (result === "stale" || result === "has_dependents") {
     // The store spent the token: its toast must not offer it again.
     lastAgentWrite = undefined;
     closeUndoToast();
-    throw new AgentToolRefusal(
-      `Can't undo. The ${write.undoSubject} changed after that action.`,
-    );
+    throw new AgentToolRefusal(undoRefusalMessage(result, write.undoSubject));
   }
   lastAgentWrite = undefined;
   // The write's toast has nothing left to undo.

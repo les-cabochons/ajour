@@ -81,6 +81,8 @@ export function TimeEntryModal({
           // or keeps the dialog open with the error when it is invalid.
           if (!runningTimer || !formRef.current?.commitBeforeSwitch()) return;
         }
+        // Escape keeps the draft for the next opening, as in every host.
+        if (details.reason === "escape-key") formRef.current?.keepDraft();
         onClose();
       }}
     >

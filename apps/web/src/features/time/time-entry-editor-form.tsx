@@ -1,6 +1,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ElementType,
@@ -20,6 +21,7 @@ import { Chip } from "@/components/ui/chip";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import {
   getLocalProjectDisplayName,
+  type LocalAppState,
   type LocalTimer,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
@@ -29,24 +31,47 @@ import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
+  enterPressesPrimaryAction,
   evaluateTimeEntryEditor,
   getTimeEntryPrimaryAction,
   START_OR_ENTER_HOURS_HINT,
+  START_STOPS_RUNNING_HINT,
   type TimeEntryDraftCommitReason,
   type TimeEntryEditorFields,
   type TimeEntryValues,
 } from "@/features/time/time-entry-editor";
 import {
+  formatToastDay,
+  offerTimeEntryUndo,
   useTimeEntryActions,
   type TimeEntryActionTarget,
 } from "@/features/time/time-entry-actions";
+import { skipUndo } from "@/features/feedback/undo-toast";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
+import {
+  findDraftConflicts,
+  keepMineInDraft,
+  reconcileDraft,
+  useTheirsInDraft,
+  type DraftFieldGroup,
+  type ReconciledDraft,
+} from "@/domain/draft-reconcile";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
 import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
 import { ignoreSecondClick } from "@/lib/double-click-guard";
 import { focusWhenLost } from "@/lib/focus-return";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
+import { recordsEqual } from "@/domain/records-equal";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
 import { cn, todayIsoDate } from "@/lib/utils";
 import { withEventAttribution } from "@/lib/wide-events";
@@ -73,6 +98,106 @@ export type TimeEntryEditorTarget =
 export interface TimeEntryEditorFormHandle {
   /** Saves a valid draft. Returns false, and shows the error, when the draft blocks the switch. */
   commitBeforeSwitch: () => boolean;
+  /**
+   * The page is leaving the form by any way, such as a sidebar link: a valid
+   * draft is saved, with the Undo toast, and an invalid one is kept.
+   */
+  leave: () => void;
+  /** The host closes on Escape: the draft is kept, not saved, for the next opening. */
+  keepDraft: () => void;
+}
+
+/** Where a form's unsaved draft is kept between openings (`lib/composer-drafts.ts`). */
+export function getTimeEntryDraftKey(target: TimeEntryEditorTarget) {
+  switch (target.kind) {
+    case "edit":
+      return `time-entry:${target.entry._id}`;
+    case "running":
+      return `time-entry:running:${target.timer._id}`;
+    case "create": {
+      const values = target.initialValues;
+      return [
+        "time-entry:new",
+        target.localDate,
+        values?.projectId ?? "",
+        values?.taskId ?? "",
+        values?.workItemId ?? "",
+      ].join(":");
+    }
+  }
+}
+
+/**
+ * A kept draft, with the entry's fields it started from (`base`), so the
+ * next opening can tell what the user changed from what changed since. The
+ * running entry's Hours shows the time counted when the form opens, so its
+ * draft keeps typed hours only.
+ */
+interface KeptTimeEntryDraft {
+  fields: TimeEntryEditorFields;
+  base: TimeEntryEditorFields;
+  hoursTyped: boolean;
+}
+
+/** The project and its task change together, as one pick. */
+const DRAFT_FIELD_GROUPS: readonly DraftFieldGroup<TimeEntryEditorFields>[] = [
+  ["projectId", "taskId"],
+];
+
+const CONFLICT_LABELS: Record<keyof TimeEntryEditorFields, string> = {
+  projectId: "Task",
+  taskId: "Task",
+  note: "Note",
+  durationHours: "Hours",
+  localDate: "Date",
+};
+
+/** A project and task as a conflict names them, "Acme / Design". */
+function describeTask(
+  projects: readonly {
+    _id: string;
+    name: string;
+    displayName?: string;
+    tasks: readonly { _id: string; name: string }[];
+  }[],
+  projectId: string,
+  taskId: string,
+) {
+  const project = projects.find((candidate) => candidate._id === projectId);
+  const task = project?.tasks.find((candidate) => candidate._id === taskId);
+  return [project?.displayName?.trim() || project?.name, task?.name]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+const RESOLVE_CONFLICTS_FIRST =
+  "Choose which version to keep for each changed field first.";
+
+/**
+ * The draft to resume for `key`, brought up to the entry as it is now
+ * (`seed`): a field the user did not change takes the entry's value, and a
+ * field both changed stays as typed, in conflict (`findDraftConflicts`).
+ * The running entry's hours are counted afresh unless typed, and never
+ * conflict. A new entry has no saved entry underneath.
+ */
+function resumeDraft(
+  key: string,
+  seed: TimeEntryEditorFields,
+  { isRunning, isNew }: { isRunning: boolean; isNew: boolean },
+  initialFields: TimeEntryEditorFields | undefined,
+): ReconciledDraft<TimeEntryEditorFields> {
+  const kept = getComposerDraft<KeptTimeEntryDraft>(key);
+  const fields =
+    initialFields ??
+    (kept && isRunning && !kept.hoursTyped
+      ? { ...kept.fields, durationHours: seed.durationHours }
+      : kept?.fields);
+  if (!fields) return { fields: seed, base: seed };
+  if (isNew) return { fields, base: seed };
+
+  const base = { ...(kept?.base ?? seed) };
+  if (isRunning) base.durationHours = seed.durationHours;
+  return reconcileDraft({ fields, base }, seed, DRAFT_FIELD_GROUPS);
 }
 
 function formatEntryDate(localDate: string) {
@@ -129,6 +254,60 @@ function seedEditor(target: TimeEntryEditorTarget): {
   }
 }
 
+/** The saved record under the form as it is now, with the fields it gives the draft. */
+interface CurrentRecord {
+  entry?: LocalTimesheetEntry;
+  timer?: LocalTimer;
+  /** The values an untouched draft equals; the running entry keeps its opening Hours. */
+  original?: TimeEntryValues;
+  fields?: TimeEntryEditorFields;
+}
+
+/**
+ * Reads the record the form edits from `source`, falling back to the target's
+ * own snapshot when it is gone. A new entry has no record underneath. The
+ * running entry's Hours stays the time counted when the form opened
+ * (`openedDurationMs`), because it does not tick.
+ */
+function readCurrentRecord(
+  source: Pick<LocalAppState, "timesheetEntries" | "timers">,
+  target: TimeEntryEditorTarget,
+  openedDurationMs: number | undefined,
+): CurrentRecord {
+  switch (target.kind) {
+    case "create":
+      return {};
+    case "edit": {
+      const entry =
+        source.timesheetEntries.find(
+          (candidate) => candidate._id === target.entry._id,
+        ) ?? target.entry;
+      return {
+        entry,
+        original: entry,
+        fields: createTimeEntryEditorFields(entry.localDate, entry),
+      };
+    }
+    case "running": {
+      const timer =
+        source.timers.find((candidate) => candidate._id === target.timer._id) ??
+        target.timer;
+      const original: TimeEntryValues = {
+        projectId: timer.projectId,
+        taskId: timer.taskId,
+        note: timer.note,
+        localDate: timer.localDate,
+        durationMs: openedDurationMs ?? 0,
+      };
+      return {
+        timer,
+        original,
+        fields: createTimeEntryEditorFields(timer.localDate, original),
+      };
+    }
+  }
+}
+
 /**
  * The one form for creating and editing a time entry, the running entry included.
  * Hosts (the side panel, the dialog, the titlebar popovers) only supply the container,
@@ -141,9 +320,11 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * (`getTimeEntryPrimaryAction`): Start or Create entry on a new entry, Continue or
  * Save on a saved one, "Start today" when Start or Continue would count on another
  * day than the form's. Start also stops another running entry. Enter in Hours or
- * Note, and Cmd/Ctrl+Enter, press the main button. Escape, Cancel or × discard the
- * draft. Save on the running entry keeps it running. An entry of a submitted week
- * opens read-only, with the lock under Date.
+ * Note, and Cmd/Ctrl+Enter, press the main button, except that Enter does not
+ * Start over another running entry. Escape closes and keeps the draft for the
+ * next opening of the same target; Cancel or × discard it. Every save shows the
+ * Undo toast. Save on the running entry keeps it running. An entry of a
+ * submitted week opens read-only, with the lock under Date.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
  * A host that can swap containers mid-edit (side panel and dialog across a
@@ -186,14 +367,55 @@ export function TimeEntryEditorForm({
   const editorSurface = host === "side_panel" ? "editor" : host;
   const projects = useLocalProjects();
   const today = todayIsoDate();
-  const entry = target.kind === "edit" ? target.entry : undefined;
-  const runningTimer = target.kind === "running" ? target.timer : undefined;
   const workItemId =
     target.kind === "create" ? target.initialValues?.workItemId : undefined;
   const [seed] = useState(() => seedEditor(target));
-  const runningOriginal = seed.runningOriginal;
-  const original: TimeEntryValues | undefined = entry ?? runningOriginal;
-  const [fields, setFields] = useState(() => initialFields ?? seed.fields);
+  const openedDurationMs = seed.runningOriginal?.durationMs;
+  // The record as it is now, so a save in another window reaches the open form.
+  const record = useMemo(
+    () =>
+      readCurrentRecord(
+        { timesheetEntries: state.timesheetEntries, timers: state.timers },
+        target,
+        openedDurationMs,
+      ),
+    [openedDurationMs, state.timesheetEntries, state.timers, target],
+  );
+  const { entry, timer: runningTimer, original } = record;
+  const currentFields = record.fields;
+  // Escape, or leaving the page, keeps the draft for the same target.
+  const [draftKey] = useState(() => getTimeEntryDraftKey(target));
+  const [resumed] = useState(() =>
+    resumeDraft(
+      draftKey,
+      seed.fields,
+      { isRunning: Boolean(runningTimer), isNew: target.kind === "create" },
+      initialFields,
+    ),
+  );
+  const [fields, setFields] = useState(resumed.fields);
+  // The entry's fields the draft started from. A field the entry changed
+  // since, which the draft changed too, is a conflict until it is settled.
+  const [base, setBase] = useState(resumed.base);
+  // A field the user did not change follows the record while the form stays
+  // open, as the Backlog editor's does; a field both changed stays as typed,
+  // in conflict, until it is settled.
+  useEffect(() => {
+    if (!currentFields) return;
+    const next = reconcileDraft(
+      { fields, base },
+      currentFields,
+      DRAFT_FIELD_GROUPS,
+    );
+    if (!recordsEqual(next.fields, fields)) setFields(next.fields);
+    if (!recordsEqual(next.base, base)) setBase(next.base);
+  }, [base, currentFields, fields]);
+  const conflictGroups = currentFields
+    ? findDraftConflicts({ fields, base }, currentFields, DRAFT_FIELD_GROUPS)
+    : [];
+  // Set once the draft was saved, kept or discarded on purpose, so leaving
+  // the page afterwards writes nothing more.
+  const settledRef = useRef(false);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -209,17 +431,22 @@ export function TimeEntryEditorForm({
   const lockReasonFor = (localDate: string) =>
     getDateLockReason(state, localDate);
   const lockReason = entry ? lockReasonFor(entry.localDate) : undefined;
-  const editor = evaluateTimeEntryEditor(fields, {
-    original,
-    lockReasonFor: runningTimer ? undefined : lockReasonFor,
-    allowEmptyDuration: target.kind === "create",
-    isRunning: Boolean(runningTimer),
-    // A switch drops a new entry the user left as it opened, prefilled task included.
-    prefill: target.kind === "create" ? seed.fields : undefined,
-  });
+  const evaluateDraft = (
+    draftFields: TimeEntryEditorFields,
+    draftOriginal: TimeEntryValues | undefined,
+  ) =>
+    evaluateTimeEntryEditor(draftFields, {
+      original: draftOriginal,
+      lockReasonFor: runningTimer ? undefined : lockReasonFor,
+      allowEmptyDuration: target.kind === "create",
+      isRunning: Boolean(runningTimer),
+      // A switch drops a new entry the user left as it opened, prefilled task included.
+      prefill: target.kind === "create" ? seed.fields : undefined,
+    });
+  const editor = evaluateDraft(fields, original);
   const entryActions = useTimeEntryActions({
     onEdit: () => undefined,
-    onAfterAction: onClose,
+    onAfterAction: () => finish(),
   });
   const actionTarget: TimeEntryActionTarget | null = entry
     ? { kind: "entry", entry }
@@ -237,9 +464,98 @@ export function TimeEntryEditorForm({
     today,
   });
 
+  // The draft is kept while it holds something to save, until it is saved
+  // or discarded.
+  const holdsDraft = editor.isNew ? editor.hasContent : editor.hasChanges;
+  useEffect(() => {
+    if (settledRef.current) return;
+    if (holdsDraft) {
+      keepComposerDraft(draftKey, {
+        fields,
+        base,
+        hoursTyped: fields.durationHours !== seed.fields.durationHours,
+      } satisfies KeptTimeEntryDraft);
+    } else {
+      dropComposerDraft(draftKey);
+    }
+  }, [base, draftKey, fields, holdsDraft, seed.fields.durationHours]);
+
+  const conflicts = conflictGroups.map((group): DraftConflictView => {
+    const describe = (values: TimeEntryEditorFields) => {
+      switch (group[0]) {
+        case "projectId":
+          return describeTask(projects, values.projectId, values.taskId);
+        case "localDate":
+          return formatEntryDate(values.localDate);
+        default:
+          return values[group[0]!] as string;
+      }
+    };
+    return {
+      id: group.join(","),
+      label: CONFLICT_LABELS[group[0]!],
+      theirs: describe(currentFields ?? seed.fields),
+      mine: describe(fields),
+    };
+  });
+
+  /** Settles a changed field: the draft's version stays, or the entry's now. */
+  function settleConflict(id: string, keep: "mine" | "theirs") {
+    const group = conflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!group || !currentFields) return;
+    const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
+    const settled = settle({ fields, base }, currentFields, group);
+    setFields(settled.fields);
+    setBase(settled.base);
+    setCommitError(null);
+  }
+
   useImperativeHandle(ref, () => ({
-    commitBeforeSwitch: () => commit("switch"),
+    commitBeforeSwitch: () => {
+      if (settledRef.current) return true;
+      const committed = commit("switch");
+      if (committed) settle();
+      return committed;
+    },
+    leave: () => {
+      if (settledRef.current) return;
+      const latest = readLatest();
+      // A changed field nobody settled keeps the draft, as an invalid one is.
+      const result =
+        latest.conflicts.length > 0
+          ? ({ kind: "invalid" } as const)
+          : commitTimeEntryDraft(latest.editor, "switch");
+      // An invalid draft stays kept, for the next opening.
+      if (result.kind === "save") {
+        writeEntry(result.values, { latest });
+        dropComposerDraft(draftKey);
+      }
+      settledRef.current = true;
+    },
+    keepDraft: () => {
+      settledRef.current = true;
+    },
   }));
+
+  /** The draft is done: saved, or discarded on purpose. */
+  function settle() {
+    settledRef.current = true;
+    dropComposerDraft(draftKey);
+  }
+
+  /** Closes after a save or an action, or on Cancel and ×, ending the draft. */
+  function finish() {
+    settle();
+    onClose();
+  }
+
+  /** Escape: closes and keeps the draft for the next opening. */
+  function dismiss() {
+    settledRef.current = true;
+    onClose();
+  }
 
   useEffect(() => {
     const first = rootRef.current?.querySelector<HTMLElement>(
@@ -255,20 +571,62 @@ export function TimeEntryEditorForm({
   function updateFields(patch: Partial<TimeEntryEditorFields>) {
     setFields((current) => ({ ...current, ...patch }));
     setCommitError(null);
+    settledRef.current = false;
   }
 
-  /** Writes the draft when it has something to save. Returns false when it is blocked. */
-  function commit(reason: TimeEntryDraftCommitReason) {
-    const result = commitTimeEntryDraft(editor, reason);
+  /**
+   * Writes the draft when it has something to save, with the Undo toast
+   * unless `offerUndo` is false. Returns false when it is blocked.
+   */
+  function commit(
+    reason: TimeEntryDraftCommitReason,
+    { offerUndo = true }: { offerUndo?: boolean } = {},
+  ) {
+    const latest = readLatest();
+    // A change that landed since the last render counts, and shows as a
+    // conflict, rather than being written over.
+    if (!recordsEqual(latest.draft.fields, fields)) {
+      setFields(latest.draft.fields);
+    }
+    if (!recordsEqual(latest.draft.base, base)) setBase(latest.draft.base);
+    if (latest.conflicts.length > 0) {
+      setCommitError(RESOLVE_CONFLICTS_FIRST);
+      return false;
+    }
+    const result = commitTimeEntryDraft(latest.editor, reason);
     if (result.kind === "invalid") {
       setCommitError(result.error);
       return false;
     }
 
     if (result.kind === "save") {
-      writeEntry(result.values);
+      writeEntry(result.values, { offerUndo, latest });
     }
     return true;
+  }
+
+  /**
+   * The draft against the record as the store holds it this moment, not as the
+   * last render saw it: a save from another window can land between the two.
+   */
+  function readLatest() {
+    const latestRecord = readCurrentRecord(
+      localStore.snapshot(),
+      target,
+      openedDurationMs,
+    );
+    const latestFields = latestRecord.fields;
+    const draft = latestFields
+      ? reconcileDraft({ fields, base }, latestFields, DRAFT_FIELD_GROUPS)
+      : { fields, base };
+    return {
+      record: latestRecord,
+      draft,
+      conflicts: latestFields
+        ? findDraftConflicts(draft, latestFields, DRAFT_FIELD_GROUPS)
+        : [],
+      editor: evaluateDraft(draft.fields, latestRecord.original ?? original),
+    };
   }
 
   /** Records, on the save's event, where the form sits. */
@@ -276,10 +634,29 @@ export function TimeEntryEditorForm({
     set(fields: { time_entry: { host: typeof host } }): unknown;
   }) => unit.set({ time_entry: { host } });
 
-  function writeEntry(values: TimeEntryValues) {
+  /**
+   * Saves the draft's values, with the Undo toast. Stop and Continue pass
+   * `offerUndo: false`: the entry changes again at once, so that Undo
+   * could only be refused.
+   */
+  function writeEntry(
+    values: TimeEntryValues,
+    {
+      offerUndo = true,
+      latest,
+    }: { offerUndo?: boolean; latest: ReturnType<typeof readLatest> },
+  ) {
+    const {
+      entry,
+      timer: runningTimer,
+      original: runningOriginal,
+    } = latest.record;
+    const { editor } = latest;
+    const offer = (token: string | null, title: string) =>
+      offerUndo ? offerTimeEntryUndo(token, title) : skipUndo(token);
     return withEventAttribution({ surface: editorSurface }, () => {
       if (runningTimer) {
-        runStoreCommandWith(
+        const token = runStoreCommandWith(
           "editRunningEntry",
           [
             runningTimer._id,
@@ -294,26 +671,36 @@ export function TimeEntryEditorForm({
           ],
           recordHost,
         );
+        offer(token, "Entry saved");
         return;
       }
 
       if (entry) {
         if (values.localDate === entry.localDate) {
-          runStoreCommandWith(
-            "updateTimesheetEntry",
-            [entry._id, values],
-            recordHost,
+          offer(
+            runStoreCommandWith(
+              "updateTimesheetEntry",
+              [entry._id, values],
+              recordHost,
+            ),
+            "Entry saved",
           );
         } else {
-          localStore.moveTimesheetEntry(entry._id, values);
+          offer(
+            localStore.moveTimesheetEntry(entry._id, values),
+            `Moved to ${formatToastDay(values.localDate)}`,
+          );
         }
         return;
       }
 
-      runStoreCommandWith(
-        "saveManualTimeEntry",
-        [{ ...values, workItemId }],
-        recordHost,
+      offer(
+        runStoreCommandWith(
+          "saveManualTimeEntry",
+          [{ ...values, workItemId }],
+          recordHost,
+        ),
+        "Entry created",
       );
       // Logged time changes the backlog item's estimates, so push them to its source.
       const workItem = workItemId
@@ -337,7 +724,8 @@ export function TimeEntryEditorForm({
     );
     const savedId = entry?._id ?? runningTimer?.entryId;
     if (!write()) return;
-    onClose();
+    // Ends the draft as well as closing: a written draft is not kept.
+    finish();
     focusWhenLost(() => {
       const id =
         localStore
@@ -370,23 +758,23 @@ export function TimeEntryEditorForm({
         accumulatedDurationMs: durationMs,
       }),
     );
-    onClose();
+    finish();
   }
 
   /** Saves draft changes, then continues the entry's work (see Continue in GLOSSARY.md). */
   function continueEntry() {
-    if (!entry || !commit("save")) return;
+    if (!entry || !commit("save", { offerUndo: false })) return;
     withEventAttribution({ surface: editorSurface }, () =>
       localStore.continueTimesheetEntry(entry._id),
     );
-    onClose();
+    finish();
   }
 
   /** Saves draft changes to the running entry, then stops it. */
   function stop() {
     if (!runningTimer) return;
     closeOnEntry(() => {
-      if (!commit("save")) return false;
+      if (!commit("save", { offerUndo: false })) return false;
       withEventAttribution({ surface: editorSurface }, () =>
         localStore.saveTimer(runningTimer._id),
       );
@@ -441,7 +829,7 @@ export function TimeEntryEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      dismiss();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
@@ -456,7 +844,13 @@ export function TimeEntryEditorForm({
     ) {
       return;
     }
+    // Cmd/Ctrl+Enter is the form's: it presses the main button whatever it reads.
+    if (event.metaKey || event.ctrlKey) return;
     event.preventDefault();
+    if (!enterPressesPrimaryAction(primary, { isAnotherEntryRunning })) {
+      setCommitError(START_STOPS_RUNNING_HINT);
+      return;
+    }
     submit();
   }
 
@@ -500,7 +894,7 @@ export function TimeEntryEditorForm({
             size="icon"
             onClick={(event) => {
               ignoreSecondClick(event);
-              onClose();
+              finish();
             }}
           />
         }
@@ -541,6 +935,12 @@ export function TimeEntryEditorForm({
           ) : null}
         </>
       )}
+
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => settleConflict(id, "mine")}
+        onUseTheirs={(id) => settleConflict(id, "theirs")}
+      />
 
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
       <fieldset
@@ -596,17 +996,18 @@ export function TimeEntryEditorForm({
             Stop
           </Button>
         ) : null}
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={finish}>
           Cancel
         </Button>
         <Button
           type="button"
           disabled={
-            primary.kind === "start"
+            conflicts.length > 0 ||
+            (primary.kind === "start"
               ? editor.durationMs === null
               : primary.kind === "continue"
                 ? false
-                : !editor.canSave
+                : !editor.canSave)
           }
           onClick={submit}
         >

@@ -120,7 +120,21 @@ import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-f
 import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
+import { recordsEqual } from "@/domain/records-equal";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import {
+  describeTaskConflicts,
+  getTaskDraftConflicts,
+  reconcileTaskDraft,
+  resumeTaskDraft,
+  settleTaskConflict,
+  type KeptTaskDraft,
+} from "@/features/projects/project-task-draft";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
 import {
   MergeTaskDialog,
   TaskMergeSuggestionRow,
@@ -176,6 +190,8 @@ type TaskEditorSession = {
   /** The saved task being edited. Absent for a new task. */
   taskId?: string;
   fields: ProjectTaskEditorFields;
+  /** The task's fields when the draft started, to tell what changed since. */
+  base: ProjectTaskEditorFields;
   /**
    * The task's slot when the panel opened. Save writes the slot only if the
    * draft changed it, so a slot moved from a menu meanwhile is not undone.
@@ -1724,10 +1740,45 @@ function restoreTask(projectId: string, taskId: string) {
   if (refusal) showToast(formatRestoreRefusal(refusal));
 }
 
+/** Where a task composer's unsaved draft is kept between openings. */
+function getTaskDraftKey(session: { projectId: string; taskId?: string }) {
+  return `task:${session.projectId}:${session.taskId ?? "new"}`;
+}
+
+/**
+ * The task draft against the task as the store holds it this moment, not as
+ * the last render saw it: a save from another window can land between the two.
+ * A field the user did not change takes the task's value, so Save never writes
+ * an old one back.
+ */
+function readLatestTaskDraft(session: TaskEditorSession) {
+  const task = session.taskId
+    ? localStore
+        .snapshot()
+        .projects.find((project) => project._id === session.projectId)
+        ?.tasks.find((candidate) => candidate._id === session.taskId)
+    : undefined;
+  if (!task) {
+    return {
+      session,
+      editor: evaluateProjectTaskEditor(session.fields, undefined),
+      conflicted: false,
+    };
+  }
+  const current = createProjectTaskEditorFields(task);
+  const draft = reconcileTaskDraft(session, current);
+  return {
+    session: { ...session, ...draft },
+    editor: evaluateProjectTaskEditor(draft.fields, task),
+    conflicted: getTaskDraftConflicts(draft, current).length > 0,
+  };
+}
+
 function writeProjectTask(
   session: TaskEditorSession,
   values: ProjectTaskValues,
 ) {
+  dropComposerDraft(getTaskDraftKey(session));
   if (session.taskId) {
     const { pinnedSlot, ...otherValues } = values;
     localStore.updateProjectTask(
@@ -1866,6 +1917,31 @@ export function ProjectsPage() {
   const taskEditorState = taskEditor
     ? evaluateProjectTaskEditor(taskEditor.fields, taskEditorTask)
     : null;
+  // Fields of a resumed draft that the task changed too, until settled.
+  const taskCurrentFields = useMemo(
+    () =>
+      taskEditorTask
+        ? createProjectTaskEditorFields(taskEditorTask)
+        : undefined,
+    [taskEditorTask],
+  );
+  // A field the user did not change follows the task while its editor stays
+  // open; a field both changed stays as typed, in conflict, until settled.
+  useEffect(() => {
+    if (!taskEditor || !taskCurrentFields) return;
+    const next = reconcileTaskDraft(taskEditor, taskCurrentFields);
+    if (
+      recordsEqual(next.fields, taskEditor.fields) &&
+      recordsEqual(next.base, taskEditor.base)
+    ) {
+      return;
+    }
+    setTaskEditor({ ...taskEditor, ...next });
+  }, [taskEditor, taskCurrentFields]);
+  const taskConflictGroups =
+    taskEditor && taskCurrentFields
+      ? getTaskDraftConflicts(taskEditor, taskCurrentFields)
+      : [];
   const draggedProject = projectDragState
     ? (activeProjects.find(
         (project) => project._id === projectDragState.projectId,
@@ -1883,16 +1959,36 @@ export function ProjectsPage() {
     }
   }, [isTaskEditorTargetEditable, taskEditor]);
 
+  // The task composer's draft is kept while it holds a change, so Escape,
+  // or leaving the project, never loses it; Save, Cancel and × end it.
+  const taskDraftChanged = taskEditorState?.hasChanges ?? false;
+  useEffect(() => {
+    if (!taskEditor) return;
+    const key = getTaskDraftKey(taskEditor);
+    if (taskDraftChanged) {
+      keepComposerDraft(key, {
+        fields: taskEditor.fields,
+        base: taskEditor.base,
+      } satisfies KeptTaskDraft);
+    } else dropComposerDraft(key);
+  }, [taskEditor, taskDraftChanged]);
+
   // Every in-page path out of a project goes through `leaveProject`. Route changes
   // the page cannot guard, such as the browser's back button, land here after the
-  // fact: a valid draft is saved, and an invalid one can only be dropped.
+  // fact: a valid draft is saved, and an invalid one stays kept for the next
+  // opening of its task.
   const taskEditorDraftRef = useRef<{
     session: TaskEditorSession;
     editor: ProjectTaskEditorState;
+    conflicted: boolean;
   } | null>(null);
   taskEditorDraftRef.current =
     taskEditor && taskEditorState
-      ? { session: taskEditor, editor: taskEditorState }
+      ? {
+          session: taskEditor,
+          editor: taskEditorState,
+          conflicted: taskConflictGroups.length > 0,
+        }
       : null;
   useEffect(() => {
     const draft = taskEditorDraftRef.current;
@@ -1900,9 +1996,13 @@ export function ProjectsPage() {
       return;
     }
 
-    const result = commitProjectTaskDraft(draft.editor, "switch");
+    const latest = readLatestTaskDraft(draft.session);
+    // A changed field nobody settled keeps the draft, as an invalid one does.
+    const result = latest.conflicted
+      ? ({ kind: "invalid" } as const)
+      : commitProjectTaskDraft(latest.editor, "switch");
     if (result.kind === "save") {
-      writeProjectTask(draft.session, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     setTaskEditor(null);
   }, [selectedProjectId]);
@@ -2189,15 +2289,21 @@ export function ProjectsPage() {
     if (!taskEditor || !taskEditorState) {
       return true;
     }
+    const latest = readLatestTaskDraft(taskEditor);
+    // A changed field nobody settled holds the editor open: the notice says which.
+    if (latest.conflicted) {
+      setTaskEditor(latest.session);
+      return false;
+    }
 
-    const result = commitProjectTaskDraft(taskEditorState, "switch");
+    const result = commitProjectTaskDraft(latest.editor, "switch");
     if (result.kind === "invalid") {
-      setTaskEditor({ ...taskEditor, showErrors: true });
+      setTaskEditor({ ...latest.session, showErrors: true });
       return false;
     }
 
     if (result.kind === "save") {
-      writeProjectTask(taskEditor, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     return true;
   };
@@ -2211,10 +2317,19 @@ export function ProjectsPage() {
       return;
     }
 
+    // Escape kept the draft of this task, or of a new one, for this opening,
+    // brought up to the task as it is now.
+    const resumed = resumeTaskDraft(
+      getComposerDraft<KeptTaskDraft>(
+        getTaskDraftKey({ projectId, taskId: task?._id }),
+      ),
+      createProjectTaskEditorFields(task),
+      !task,
+    );
     setTaskEditor({
       projectId,
       taskId: task?._id,
-      fields: createProjectTaskEditorFields(task),
+      ...resumed,
       openedPinnedSlot: task?.pinnedSlot,
       showErrors: false,
     });
@@ -2227,15 +2342,20 @@ export function ProjectsPage() {
     if (!taskEditor || !taskEditorState) {
       return;
     }
+    const latest = readLatestTaskDraft(taskEditor);
+    if (latest.conflicted) {
+      setTaskEditor(latest.session);
+      return;
+    }
 
-    const result = commitProjectTaskDraft(taskEditorState, "save");
+    const result = commitProjectTaskDraft(latest.editor, "save");
     if (result.kind === "invalid") {
-      setTaskEditor({ ...taskEditor, showErrors: true });
+      setTaskEditor({ ...latest.session, showErrors: true });
       return;
     }
 
     if (result.kind === "save") {
-      writeProjectTask(taskEditor, result.values);
+      writeProjectTask(latest.session, result.values);
     }
     if (!taskEditor.taskId && result.kind === "save") {
       if (createMoreTasks) {
@@ -2244,6 +2364,7 @@ export function ProjectsPage() {
         setTaskEditor({
           projectId: taskEditor.projectId,
           fields: createProjectTaskEditorFields(),
+          base: createProjectTaskEditorFields(),
           openedPinnedSlot: undefined,
           showErrors: false,
           createdInRow: (taskEditor.createdInRow ?? 0) + 1,
@@ -2254,6 +2375,21 @@ export function ProjectsPage() {
       focusNewTaskAfterClose();
     }
     setTaskEditor(null);
+  };
+
+  /** Settles a changed field of the task draft: the draft's version, or the task's now. */
+  const settleTaskEditorConflict = (id: string, keep: "mine" | "theirs") => {
+    const group = taskConflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!taskEditor || !taskCurrentFields || !group) return;
+    const settled = settleTaskConflict(
+      taskEditor,
+      taskCurrentFields,
+      group,
+      keep,
+    );
+    setTaskEditor({ ...taskEditor, ...settled });
   };
 
   const updateTaskEditorFields = (patch: Partial<ProjectTaskEditorFields>) => {
@@ -2450,9 +2586,25 @@ export function ProjectsPage() {
               }
             : undefined
         }
+        conflicts={
+          taskCurrentFields
+            ? describeTaskConflicts(
+                taskConflictGroups,
+                visibleTaskEditor.fields,
+                taskCurrentFields,
+              )
+            : []
+        }
+        onKeepMine={(id) => settleTaskEditorConflict(id, "mine")}
+        onUseTheirs={(id) => settleTaskEditorConflict(id, "theirs")}
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
-        onClose={() => setTaskEditor(null)}
+        // Cancel and × discard the draft; Escape keeps it.
+        onClose={() => {
+          dropComposerDraft(getTaskDraftKey(visibleTaskEditor));
+          setTaskEditor(null);
+        }}
+        onDismiss={() => setTaskEditor(null)}
         titleAs={DialogTitle}
       />
     ) : null;

@@ -9,6 +9,10 @@ import {
   RiCloseLine as X,
   RiMoneyDollarCircleLine as BillableIcon,
 } from "@remixicon/react";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -52,7 +56,8 @@ function formatBudgetFigure(value: string) {
  * The form for creating and editing a task: name, billable, budget, adjustment,
  * the pinned slot, and a section per active plugin that adds task properties.
  * It follows the entry editor's rules. Save: the Save button, Enter in a text field,
- * or Cmd/Ctrl+Enter anywhere in the form. Escape, Cancel or × discard the draft.
+ * or Cmd/Ctrl+Enter anywhere in the form. Escape closes it through `onDismiss`,
+ * which keeps the draft; Cancel or × discard it through `onClose`.
  *
  * The host owns the draft, so the side panel and the narrow-view dialog can swap
  * mid-edit without losing it.
@@ -72,9 +77,13 @@ export function ProjectTaskEditorForm({
   onFieldsChange,
   onSave,
   onClose,
+  onDismiss,
   titleAs: Title = "h2",
   className,
   createMore,
+  conflicts = [],
+  onKeepMine,
+  onUseTheirs,
 }: {
   fields: ProjectTaskEditorFields;
   editor: ProjectTaskEditorState;
@@ -101,7 +110,10 @@ export function ProjectTaskEditorForm({
   sourceLock?: { label: string | undefined };
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
+  /** Cancel and ×: the draft is discarded. */
   onClose: () => void;
+  /** Escape: the host keeps the draft. Without it, Escape is `onClose`. */
+  onDismiss?: () => void;
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
   className?: string;
@@ -113,6 +125,13 @@ export function ProjectTaskEditorForm({
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
   };
+  /**
+   * Fields of a kept draft that the saved task changed too. Save waits for
+   * each to be settled (`DraftConflictNotice`).
+   */
+  conflicts?: readonly DraftConflictView[];
+  onKeepMine?: (id: string) => void;
+  onUseTheirs?: (id: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lockId = useId();
@@ -131,7 +150,7 @@ export function ProjectTaskEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      (onDismiss ?? onClose)();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       onSave();
@@ -175,6 +194,12 @@ export function ProjectTaskEditorForm({
       >
         <X />
       </TooltipButton>
+
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => onKeepMine?.(id)}
+        onUseTheirs={(id) => onUseTheirs?.(id)}
+      />
 
       {/* A composer, as the backlog editor's: the name to write in, then
           the task's properties as chips (forms council round 6). */}
@@ -325,7 +350,11 @@ export function ProjectTaskEditorForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="button" disabled={!editor.canSave} onClick={onSave}>
+        <Button
+          type="button"
+          disabled={!editor.canSave || conflicts.length > 0}
+          onClick={onSave}
+        >
           {editor.isNew ? "Create task" : "Save"}
         </Button>
       </footer>

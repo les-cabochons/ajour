@@ -1701,10 +1701,21 @@ When(
       .fill(title);
   },
 );
+When("I save the open Backlog editor", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
+    .getByRole("button", { name: SAVE_OR_CREATE })
+    .click();
+});
 Then("the Backlog editor is closed", async ({ page }) => {
   await expect(
     page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
+});
+Then("the saved subitem title is {string}", async ({ page }, title: string) => {
+  await expect(
+    page.locator('[data-work-item-id="child"] .backlog-item-title'),
+  ).toHaveText(title);
 });
 When(
   "I press {string} on the other Backlog row",
@@ -2404,7 +2415,7 @@ When(
       .click();
     await page
       .getByRole("textbox", { name: "Title", exact: true })
-      .fill("Cancelled title");
+      .fill("Escaped title");
     await page.keyboard.press("Escape");
 
     await page
@@ -2418,25 +2429,33 @@ When(
     await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
-      .fill("Cancelled description");
+      .fill("Escaped description");
     await page.keyboard.press("Escape");
     await expect(
-      page.getByRole("heading", { name: "Backlog parent", level: 1 }),
+      page.getByRole("heading", { name: "Escaped title", level: 1 }),
     ).toBeVisible();
   },
 );
 Then(
-  "the Backlog parent keeps its saved title, estimate and description",
+  "the Backlog parent has the title, estimate and description I typed",
   async ({ page }) => {
-    const { workItems } = await readBacklogState(page);
-    const parent = workItems.find(
-      (item: { _id: string }) => item._id === "parent",
-    );
-    expect(parent).toMatchObject({
-      title: "Backlog parent",
-      remainingEstimateHours: 3,
-    });
-    expect(parent.description).toBeUndefined();
+    await expect
+      .poll(async () => {
+        const { workItems } = await readBacklogState(page);
+        const parent = workItems.find(
+          (item: { _id: string }) => item._id === "parent",
+        );
+        return {
+          title: parent.title,
+          remainingEstimateHours: parent.remainingEstimateHours,
+          description: parent.description,
+        };
+      })
+      .toEqual({
+        title: "Escaped title",
+        remainingEstimateHours: 9,
+        description: "Escaped description",
+      });
   },
 );
 Given("the Backlog parent is synced", async ({ page }) => {
@@ -2874,3 +2893,34 @@ Then("the item page's actions fit inside the window", async ({ page }) => {
     expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width);
   }
 });
+
+When(
+  "I open the page of the Backlog item {string}",
+  async ({ page }, title: string) => {
+    // In the narrow view a row opens the item's page, in this window.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("main").getByText(title, { exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+  },
+);
+Then("no Backlog item has a missing parent", async ({ page }) => {
+  const { workItems } = await readBacklogState(page);
+  const ids = new Set(workItems.map((item: { _id: string }) => item._id));
+  expect(
+    workItems.filter(
+      (item: { parentWorkItemId?: string }) =>
+        item.parentWorkItemId !== undefined && !ids.has(item.parentWorkItemId),
+    ),
+  ).toEqual([]);
+});
+Then(
+  "the Backlog page of {string} still lists {string}",
+  async ({ page }, title: string, subitem: string) => {
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: subitem })).toBeVisible();
+  },
+);

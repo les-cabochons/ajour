@@ -20,8 +20,19 @@ interface ToastData {
 /** One manager for the app, so feature code can show toasts outside React. */
 const toastManager = ToastPrimitive.createToastManager<ToastData>();
 
-/** The open Undo toast. Only the last action can be undone, so a new one replaces it. */
+/** The open Undo toast. Only the newest action shows one, so a new one replaces it. */
 let undoToastId: string | undefined;
+
+/**
+ * Cmd+Z / Ctrl+Z when no Undo toast shows: undoes an earlier action, newest
+ * first. Returns false when there is nothing left to undo.
+ */
+let undoShortcutFallback: (() => boolean) | undefined;
+
+/** Sets what Cmd+Z / Ctrl+Z does once the Undo toasts have closed. */
+export function setUndoShortcutFallback(fallback: () => boolean) {
+  undoShortcutFallback = fallback;
+}
 
 /**
  * Shows a toast with an Undo button for an action that already happened.
@@ -170,7 +181,8 @@ function isTextField(target: EventTarget | null) {
 function ToastList() {
   const { toasts } = ToastPrimitive.useToastManager<ToastData>();
 
-  // Cmd+Z / Ctrl+Z presses Undo on the newest Undo toast still showing.
+  // Cmd+Z / Ctrl+Z presses Undo on the newest Undo toast still showing, and
+  // with none showing, undoes the newest earlier action still kept.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (
@@ -190,7 +202,13 @@ function ToastList() {
           toast.transitionStatus !== "ending" &&
           !toast.limited,
       );
-      if (!undoToast) return;
+      if (!undoToast) {
+        const fallback = undoShortcutFallback;
+        if (!fallback) return;
+        const undid = withEventAttribution({ surface: "shortcut" }, fallback);
+        if (undid) event.preventDefault();
+        return;
+      }
 
       event.preventDefault();
       withEventAttribution({ surface: "shortcut" }, () =>
@@ -206,6 +224,9 @@ function ToastList() {
     <ToastPrimitive.Root
       key={toast.id}
       toast={toast}
+      // A toast on its way out, such as one a newer Undo replaced, leaves
+      // the accessibility tree at once, so only the newest Undo is found.
+      aria-hidden={toast.transitionStatus === "ending" ? true : undefined}
       className={cn(
         "flex w-full items-center gap-3 rounded-[var(--radius-md)] border border-border bg-popover py-2 pr-2 pl-4 text-[length:var(--control-font-size)] text-popover-foreground shadow-[var(--shadow-popup)] transition-[opacity,transform] duration-150 data-ending-style:opacity-0 data-limited:hidden data-starting-style:translate-y-2 data-starting-style:opacity-0",
         toast.type === "error" && "items-start border-destructive/50",

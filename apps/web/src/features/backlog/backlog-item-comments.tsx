@@ -1077,7 +1077,10 @@ function CommentItem({
                   value={draft}
                   onChange={setDraft}
                   onSubmit={(value) => void save(value)}
-                  onCancel={() => setEditing(false)}
+                  // Escape saves the edit; Cancel discards it.
+                  onCancel={() =>
+                    draft.trim() ? void save(draft) : setEditing(false)
+                  }
                   minLines={2}
                   mentions={mentions}
                 />

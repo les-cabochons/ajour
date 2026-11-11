@@ -337,7 +337,9 @@ export const rendererEvents = {
   "undo.restore": command(
     {
       undo: {
-        result: operational<"restored" | "stale" | "expired">(),
+        result: operational<
+          "restored" | "stale" | "expired" | "has_dependents"
+        >(),
       },
     },
     {
@@ -346,6 +348,7 @@ export const rendererEvents = {
         "changed_since",
         "two_running_entries",
         "would_lock_week",
+        "has_dependents",
       ],
     },
   ),

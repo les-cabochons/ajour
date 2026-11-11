@@ -71,7 +71,6 @@ import {
   createBacklogTaskEditorFields,
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
-  followChangedItem,
   parseEstimateInput,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
@@ -94,7 +93,24 @@ import {
   useLocalState,
   useLocalWorkItems,
 } from "@/lib/local-hooks";
-import { offerUndo } from "@/features/feedback/undo-toast";
+import { keepUndo, offerUndo } from "@/features/feedback/undo-toast";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
+import {
+  findDraftConflicts,
+  keepMineInDraft,
+  reconcileDraft,
+  useTheirsInDraft,
+  type DraftFieldGroup,
+} from "@/domain/draft-reconcile";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
+import { recordsEqual } from "@/domain/records-equal";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { DescriptionText } from "@/features/backlog/description-links";
@@ -129,6 +145,95 @@ const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
   remainingEstimateHours: "Remaining",
   completedEstimateHours: "Completed",
 };
+
+/** Where a form's unsaved draft is kept between openings (`lib/composer-drafts.ts`). */
+export function getBacklogItemDraftKey(target: BacklogTaskEditorTarget) {
+  return target.kind === "edit"
+    ? `backlog-item:${target.workItem._id}`
+    : `backlog-item:new:${target.parent?._id ?? ""}`;
+}
+
+/** The project and its task change together, as one pick. */
+const DRAFT_FIELD_GROUPS: readonly DraftFieldGroup<BacklogTaskEditorFields>[] =
+  [["projectId", "taskId"]];
+
+const CONFLICT_LABELS: Record<keyof BacklogTaskEditorFields, string> = {
+  title: "Title",
+  description: "Description",
+  priority: "Priority",
+  workflowStateId: "Status",
+  parentWorkItemId: "Parent",
+  projectId: "Project",
+  taskId: "Project",
+  originalEstimateHours: "Original estimate",
+  remainingEstimateHours: "Remaining estimate",
+  completedEstimateHours: "Completed estimate",
+  keepWhenMissingFromSync: "Keep when missing from sync",
+};
+
+/** A changed field's value as the editor shows it, such as a status by its name. */
+function describeConflictValue(
+  key: keyof BacklogTaskEditorFields,
+  values: BacklogTaskEditorFields,
+  context: {
+    projects: readonly {
+      _id: string;
+      name: string;
+      displayName?: string;
+      tasks: readonly { _id: string; name: string }[];
+    }[];
+    workItems: readonly LocalWorkItem[];
+    workflowStates: readonly { _id: string; name: string }[];
+  },
+) {
+  switch (key) {
+    case "projectId":
+    case "taskId": {
+      const project = context.projects.find(
+        (candidate) => candidate._id === values.projectId,
+      );
+      const task = project?.tasks.find(
+        (candidate) => candidate._id === values.taskId,
+      );
+      return [project?.displayName?.trim() || project?.name, task?.name]
+        .filter(Boolean)
+        .join(" / ");
+    }
+    case "workflowStateId":
+      return (
+        context.workflowStates.find(
+          (candidate) => candidate._id === values.workflowStateId,
+        )?.name ?? ""
+      );
+    case "parentWorkItemId":
+      return (
+        context.workItems.find(
+          (candidate) => candidate._id === values.parentWorkItemId,
+        )?.title ?? ""
+      );
+    case "keepWhenMissingFromSync":
+      return values.keepWhenMissingFromSync ? "on" : "off";
+    default:
+      return values[key];
+  }
+}
+
+/** A kept draft, with the item's fields it started from, so a sync since is followed. */
+interface KeptBacklogItemDraft {
+  fields: BacklogTaskEditorFields;
+  base: BacklogTaskEditorFields;
+}
+
+/** Text the user typed in a new item, which Escape must not lose. */
+function hasTypedText(fields: BacklogTaskEditorFields) {
+  return [
+    fields.title,
+    fields.description,
+    fields.originalEstimateHours,
+    fields.remainingEstimateHours,
+    fields.completedEstimateHours,
+  ].some((value) => value.trim() !== "");
+}
 
 /** A typed estimate as figures show it ("8h", "2h30"), or null if it isn't one. */
 function formatEstimateFigure(value: string) {
@@ -186,7 +291,9 @@ function getSourceMetaLabel(workItem: LocalWorkItem) {
  * The one form for creating and editing a backlog item. Hosts (the side panel, the
  * narrow dialog) only supply the container, so keys, buttons and save rules stay the
  * same everywhere. Save: the Save button, Enter in the title, or Cmd/Ctrl+Enter.
- * Escape, Cancel or × discard the draft.
+ * Escape closes and keeps the draft for the next opening of the same item, or
+ * of a new item under the same parent; Cancel or × discard it. Creating an
+ * item shows the Undo toast.
  *
  * The draft is seeded once, on mount, so hosts key the form by target. A host that can
  * swap containers mid-edit passes the draft back in through `initialFields`.
@@ -255,13 +362,20 @@ export function BacklogItemEditorForm({
     descriptionWritesToSource,
   );
   const parent = target.kind === "create" ? target.parent : undefined;
+  // Escape keeps the draft for the same target; the next opening resumes it.
+  const [draftKey] = useState(() => getBacklogItemDraftKey(target));
+  const [kept] = useState(() =>
+    getComposerDraft<KeptBacklogItemDraft>(draftKey),
+  );
   const [fields, setFields] = useState(
-    () => initialFields ?? createBacklogTaskEditorSeed(target),
+    () => kept?.fields ?? initialFields ?? createBacklogTaskEditorSeed(target),
   );
   // The item's fields when the draft started. A sync can change the item under
   // an open draft: a field the user has not touched follows it, and only the
   // fields the user changed are saved.
-  const [base, setBase] = useState(() => createBacklogTaskEditorSeed(target));
+  const [base, setBase] = useState(
+    () => kept?.base ?? createBacklogTaskEditorSeed(target),
+  );
   const currentFields = useMemo(
     () =>
       target.kind === "edit" && currentItem
@@ -271,42 +385,66 @@ export function BacklogItemEditorForm({
   );
   useEffect(() => {
     if (!currentFields) return;
-    const keys = Object.keys(
-      currentFields,
-    ) as (keyof BacklogTaskEditorFields)[];
-    if (keys.every((key) => currentFields[key] === base[key])) return;
+    let draft = { fields, base };
     // A description written to its source takes the source's change in, so
-    // saving it never reverts that change.
-    const draftDescription = fields.description;
-    const description =
+    // saving it never reverts that change. A change it conflicts with is
+    // recorded for Sync review, and the draft keeps its text.
+    if (
       descriptionWritesToSource &&
       workItem &&
-      draftDescription !== base.description &&
+      fields.description !== base.description &&
       currentFields.description !== base.description
-        ? followDescriptionDraft(
+    ) {
+      draft = {
+        fields: {
+          ...fields,
+          description: followDescriptionDraft(
             workItem._id,
             base.description,
-            draftDescription,
+            fields.description,
             currentFields.description,
-          )
-        : undefined;
-    setFields((current) => {
-      const next = followChangedItem(current, base, currentFields);
-      return description !== undefined &&
-        current.description === draftDescription
-        ? { ...next, description }
-        : next;
-    });
-    setBase(currentFields);
-  }, [
-    currentFields,
-    base,
-    fields.description,
-    descriptionWritesToSource,
-    workItem,
-  ]);
+          ),
+        },
+        base: { ...base, description: currentFields.description },
+      };
+    }
+    // A field the user did not change follows the item. A field both
+    // changed stays as typed and shows as a conflict until it is settled.
+    const next = reconcileDraft(draft, currentFields, DRAFT_FIELD_GROUPS);
+    if (!recordsEqual(next.fields, fields)) setFields(next.fields);
+    if (!recordsEqual(next.base, base)) setBase(next.base);
+  }, [currentFields, base, fields, descriptionWritesToSource, workItem]);
+  const conflictGroups = currentFields
+    ? findDraftConflicts({ fields, base }, currentFields, DRAFT_FIELD_GROUPS)
+    : [];
+  const conflicts = conflictGroups.map((group): DraftConflictView => {
+    const describe = (values: BacklogTaskEditorFields) =>
+      describeConflictValue(group[0]!, values, {
+        projects,
+        workItems,
+        workflowStates: state.workflowStates,
+      });
+    return {
+      id: group.join(","),
+      label: CONFLICT_LABELS[group[0]!],
+      theirs: describe(currentFields!),
+      mine: describe(fields),
+    };
+  });
+
+  /** Settles a changed field: the draft's version stays, or the item's now. */
+  function settleConflict(id: string, keep: "mine" | "theirs") {
+    const group = conflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!group || !currentFields) return;
+    const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
+    const settled = settle({ fields, base }, currentFields, group);
+    setFields(settled.fields);
+    setBase(settled.base);
+  }
   // A new draft starts without a conflict; a draft carried here keeps its own.
-  const startedFresh = useRef(!initialFields);
+  const startedFresh = useRef(!initialFields && !kept);
   const openedItemId = useRef(workItem?._id);
   useEffect(() => {
     if (startedFresh.current && openedItemId.current) {
@@ -391,8 +529,38 @@ export function BacklogItemEditorForm({
     });
   }, [state.workflowStates]);
 
+  // The draft is kept while it holds something to save, until it is saved
+  // or discarded.
+  const holdsDraft =
+    target.kind === "edit" ? editor.hasChanges : hasTypedText(fields);
+  const settledRef = useRef(false);
+  useEffect(() => {
+    if (settledRef.current) return;
+    if (holdsDraft) {
+      keepComposerDraft(draftKey, {
+        fields,
+        base,
+      } satisfies KeptBacklogItemDraft);
+    } else {
+      dropComposerDraft(draftKey);
+    }
+  }, [base, draftKey, fields, holdsDraft]);
+
+  /** Closes after a save, or on Cancel and ×, ending the draft. */
+  function finish() {
+    settledRef.current = true;
+    dropComposerDraft(draftKey);
+    onClose();
+  }
+
   useImperativeHandle(ref, () => ({
-    commitBeforeSwitch: () => commit("switch"),
+    commitBeforeSwitch: async () => {
+      // A changed field nobody settled keeps the draft for the next opening.
+      if (conflicts.length > 0) return true;
+      const committed = await commit("switch");
+      if (committed) dropComposerDraft(draftKey);
+      return committed;
+    },
   }));
 
   useEffect(() => {
@@ -401,6 +569,7 @@ export function BacklogItemEditorForm({
 
   function updateFields(patch: Partial<BacklogTaskEditorFields>) {
     setFields((current) => ({ ...current, ...patch }));
+    settledRef.current = false;
   }
 
   /**
@@ -453,6 +622,8 @@ export function BacklogItemEditorForm({
     /** Losses the user already allowed in a save that asked. */
     allowedBefore: readonly string[] = [],
   ): Promise<boolean> {
+    // A changed field nobody settled blocks the save: the notice says which.
+    if (conflicts.length > 0) return false;
     const result = commitBacklogTaskDraft(editor, reason);
     switch (result.kind) {
       case "invalid":
@@ -468,7 +639,7 @@ export function BacklogItemEditorForm({
         )
           ? result.draft.workflowStateId
           : undefined;
-        const { undoToken } = withEventAttribution(
+        const { undoToken, createdUndoToken } = withEventAttribution(
           { surface: editorSurface },
           () =>
             localStore.saveNewWorkItem(
@@ -481,12 +652,23 @@ export function BacklogItemEditorForm({
         const doneName = workflowStates.find(
           (state) => state._id === closeIn,
         )?.name;
-        offerUndo(undoToken, {
-          title: doneName
-            ? `Closed in ${doneName}`
-            : "Project and task set from the description",
+        // Two steps back: what the description or a done state did, then
+        // the item itself. The toast shows the newest.
+        const created = {
+          title: editor.isSubitem ? "Subitem created" : "Backlog item created",
           subject: "backlog item",
-        });
+        };
+        if (undoToken) {
+          keepUndo(createdUndoToken, created);
+          offerUndo(undoToken, {
+            title: doneName
+              ? `Closed in ${doneName}`
+              : "Project and task set from the description",
+            subject: "backlog item",
+          });
+        } else {
+          offerUndo(createdUndoToken, created);
+        }
         return true;
       }
       case "update":
@@ -566,7 +748,7 @@ export function BacklogItemEditorForm({
 
   async function save() {
     if (await commit("save")) {
-      onClose();
+      finish();
     }
   }
 
@@ -594,6 +776,8 @@ export function BacklogItemEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
+      // The draft stays kept for the next opening.
+      settledRef.current = true;
       onClose();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -714,7 +898,7 @@ export function BacklogItemEditorForm({
         ) : null}
         <TooltipButton
           label="Close"
-          render={<Button variant="ghost" size="icon" onClick={onClose} />}
+          render={<Button variant="ghost" size="icon" onClick={finish} />}
         >
           <X />
         </TooltipButton>
@@ -761,6 +945,12 @@ export function BacklogItemEditorForm({
           Estimate sync needs review in Sync review.
         </p>
       ) : null}
+
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => settleConflict(id, "mine")}
+        onUseTheirs={(id) => settleConflict(id, "theirs")}
+      />
 
       {/* A composer, as Linear's: the title and description are text to
           write in, not boxes, and the properties are chips that say their
@@ -953,10 +1143,14 @@ export function BacklogItemEditorForm({
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={finish}>
           Cancel
         </Button>
-        <Button type="button" disabled={!validation.canSave} onClick={save}>
+        <Button
+          type="button"
+          disabled={!validation.canSave || conflicts.length > 0}
+          onClick={save}
+        >
           {/* A new record's button names what it makes (forms council round 3). */}
           {target.kind === "create"
             ? editor.isSubitem

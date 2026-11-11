@@ -18,9 +18,9 @@ import type { ShortcutActionId } from "@/lib/shortcuts";
  * dock. Without `children` it renders no trigger and shows at `anchor`: the
  * titlebar's new entry host anchors to the row New entry… came from, the dock's
  * "+" or the titlebar's totals. Like every host, it only supplies the
- * container. Clicking outside does nothing; Escape, ×, Cancel or the trigger
- * close it and drop the draft. The form mounts each time the popover opens, so
- * every opening starts fresh.
+ * container. Clicking outside does nothing; Escape or the trigger close it and
+ * keep the draft for the next opening of the same target, and × or Cancel
+ * discard it (`lib/composer-drafts.ts`).
  */
 export function TimeEntryEditorPopover({
   target,
