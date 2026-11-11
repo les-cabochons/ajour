@@ -551,6 +551,22 @@ export function TimeEntryEditorForm({
     onClose();
   }
 
+  /**
+   * Cancel and ×: close without saving, and put focus back on the entry's
+   * row when it fell to the page, as Save does. The narrow view's dialog left
+   * it on the page (Sol's review of #676).
+   */
+  function cancel() {
+    const entryId = entry?._id ?? runningTimer?.entryId;
+    finish();
+    if (!entryId) return;
+    focusWhenLost(() =>
+      document.querySelector<HTMLElement>(
+        `[data-entry-id="${CSS.escape(entryId)}"][data-focus-column]`,
+      ),
+    );
+  }
+
   /** Escape: closes and keeps the draft for the next opening. */
   function dismiss() {
     settledRef.current = true;
@@ -894,7 +910,7 @@ export function TimeEntryEditorForm({
             size="icon"
             onClick={(event) => {
               ignoreSecondClick(event);
-              finish();
+              cancel();
             }}
           />
         }
@@ -996,7 +1012,7 @@ export function TimeEntryEditorForm({
             Stop
           </Button>
         ) : null}
-        <Button type="button" variant="ghost" onClick={finish}>
+        <Button type="button" variant="ghost" onClick={cancel}>
           Cancel
         </Button>
         <Button

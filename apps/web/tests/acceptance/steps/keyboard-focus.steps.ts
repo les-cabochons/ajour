@@ -724,3 +724,34 @@ Then(
     );
   },
 );
+
+/* ── Closing an entry ────────────────────────────────────────── */
+
+const mondayRow = (page: Page, note: string) =>
+  page.locator(".time-entry-row").filter({ hasText: note }).first();
+
+When("I click Monday's {string} entry", async ({ page }, note: string) => {
+  // In the narrow view a click opens the entry.
+  await mondayRow(page, note).click();
+  await expect(timeEntryEditor(page)).toBeVisible();
+});
+
+When(
+  "I double-click Monday's {string} entry",
+  async ({ page }, note: string) => {
+    await mondayRow(page, note).dblclick();
+    await expect(timeEntryEditor(page)).toBeVisible();
+  },
+);
+
+When("I close the entry editor with its ×", async ({ page }) => {
+  await timeEntryEditor(page).getByRole("button", { name: "Close" }).click();
+  await expect(timeEntryEditor(page)).toHaveCount(0);
+});
+
+When("I cancel the entry editor", async ({ page }) => {
+  await timeEntryEditor(page)
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(timeEntryEditor(page)).toHaveCount(0);
+});
