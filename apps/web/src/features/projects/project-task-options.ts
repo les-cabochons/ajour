@@ -1,12 +1,12 @@
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { LocalProjectTask } from "@/domain/local-state";
 import {
-  isTaskNotAssigned,
+  isTaskAssignedToUser,
   sortAssignedTasksFirst,
 } from "@/domain/projects/task-assignment";
 
-/** The muted hint on a task its project source assigns to someone else. */
-export const NOT_ASSIGNED_HINT = "Not assigned";
+/** The accent chip on a task its project source assigns to the user. */
+export const ASSIGNED_TO_YOU_LABEL = "Assigned to you";
 
 export function isProjectTaskBillable(
   task: Pick<LocalProjectTask, "billable">,
@@ -26,7 +26,7 @@ export function getProjectTaskBillableValueLabel(
   return isProjectTaskBillable(task) ? "Billable" : "Non-billable";
 }
 
-/** A task picker's options: the active tasks, Not assigned ones last in their group. */
+/** A task picker's options: the active tasks, the ones assigned to the user first in their group. */
 export function buildProjectTaskOptions(
   tasks: LocalProjectTask[],
 ): SearchableSelectOption[] {
@@ -41,7 +41,7 @@ export function buildProjectTaskOptions(
       keywords: isBillable
         ? [task.name, "billable"]
         : [task.name, "non-billable", "non billable"],
-      ...(isTaskNotAssigned(task) ? { hint: NOT_ASSIGNED_HINT } : {}),
+      ...(isTaskAssignedToUser(task) ? { badge: ASSIGNED_TO_YOU_LABEL } : {}),
     };
   });
 }

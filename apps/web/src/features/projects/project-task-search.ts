@@ -1,7 +1,7 @@
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import {
-  isTaskNotAssigned,
+  isTaskAssignedToUser,
   sortAssignedTasksFirst,
 } from "@/domain/projects/task-assignment";
 import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
@@ -136,8 +136,9 @@ export function findMatchingProjectTasks(
       (left, right) =>
         left.rank - right.rank ||
         left.projectIndex - right.projectIndex ||
-        Number(isTaskNotAssigned(left.match.task)) -
-          Number(isTaskNotAssigned(right.match.task)) ||
+        // Among equal matches of a project, the user's tasks come first.
+        Number(isTaskAssignedToUser(right.match.task)) -
+          Number(isTaskAssignedToUser(left.match.task)) ||
         left.taskIndex - right.taskIndex,
     );
 
