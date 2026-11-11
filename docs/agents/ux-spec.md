@@ -287,7 +287,8 @@ The menu list grows to 30rem when space permits, and scrolls within the availabl
 - A favorite is a task or a project the user starred. It is personal, like a pinned slot: a shared project's favorites stay on this computer. A task can be a favorite and a pinned task.
 - The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu. Removing a star, from the menu or the action sets, shows the Undo toast, because on the Favorites page the row leaves.
 - Add to favorites and Remove from favorites are also in the task and project action sets, with F on a focused task or project.
-- The start view lists, without a search: No project, Favorites, Recent tasks, then All projects. An empty section is hidden.
+- The start view lists, without a search: Favorites, Recent tasks, then All projects, with no separators between them. An empty section is hidden. Rows are 28px and headings 24px, so a phone shows the three sections without scrolling.
+- "No project" is a button at the end of the search field, shown while a project is chosen and the picker allows none. Pressing it clears the project and the task and closes the menu.
 - Favorites mixes tasks and projects, newest star first. The first 3 show, then "N more favorites" opens a Favorites page with all of them. The page works like a project's tasks: Back to projects at the top, Backspace on an empty search goes back, and typing filters the page.
 - A favorite task row shows its project's icon. A favorite project opens its tasks.
 - An archived task, or anything in an archived project, keeps its star but leaves Favorites until it is restored.

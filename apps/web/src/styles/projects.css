@@ -615,3 +615,20 @@
     pointer-events: auto;
   }
 }
+
+/* -- The project and task picker ----------------------------------- */
+
+/* The menu is dense: 28px rows and 24px headings, with no separators in
+   the start view, so a phone shows the favorites, the recent tasks and
+   All projects without scrolling. "No project" is the button at the end of
+   the search field, not a section. Unlayered, so it wins over the Command
+   rows' own utility classes. */
+.project-task-picker-popover [cmdk-item] {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.project-task-picker-popover [cmdk-group-heading] {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}

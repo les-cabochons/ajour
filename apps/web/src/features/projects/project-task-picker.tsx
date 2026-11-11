@@ -22,6 +22,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { InputGroupButton } from "@/components/ui/input-group";
 import {
   Popover,
   PopoverContent,
@@ -467,7 +468,17 @@ export function ProjectTaskPicker({
             value={query}
             onValueChange={setQuery}
             onKeyDown={handleSearchKeyDown}
-          />
+          >
+            {allowNoProject && projectId ? (
+              <InputGroupButton
+                aria-label="No project"
+                title="No project"
+                onClick={() => commitSelection("")}
+              >
+                <NoProject className="size-4" />
+              </InputGroupButton>
+            ) : null}
+          </CommandInput>
           <CommandList
             ref={setListElement}
             // A row the pointer highlights, Back to projects too, keeps it.
@@ -478,23 +489,6 @@ export function ProjectTaskPicker({
           >
             {view.kind === "projects" ? (
               <>
-                {!hasQuery && allowNoProject ? (
-                  <>
-                    <CommandGroup heading="Selection">
-                      <CommandItem
-                        value="no-project"
-                        className="rounded-[var(--control-radius)]"
-                        data-checked={!projectId ? "true" : undefined}
-                        onSelect={() => commitSelection("")}
-                      >
-                        <NoProject className="size-4 text-[var(--text-tertiary)]" />
-                        <span className="flex-1">No project</span>
-                      </CommandItem>
-                    </CommandGroup>
-                    <CommandSeparator />
-                  </>
-                ) : null}
-
                 {!hasQuery && favorites.length > 0 ? (
                   <>
                     <CommandGroup heading="Favorites">
@@ -512,7 +506,6 @@ export function ProjectTaskPicker({
                         </PickerMoreRow>
                       ) : null}
                     </CommandGroup>
-                    <CommandSeparator />
                   </>
                 ) : null}
 
@@ -529,7 +522,6 @@ export function ProjectTaskPicker({
                         </PickerMoreRow>
                       ) : null}
                     </CommandGroup>
-                    <CommandSeparator />
                   </>
                 ) : null}
 
