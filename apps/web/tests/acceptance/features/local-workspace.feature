@@ -461,6 +461,33 @@ Feature: Open the local time workspace
     And I create project "ccc new" in the project form
     Then project "ccc new" is open
 
+  Scenario: A kept task draft shows a field another tab changed too
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I rename task "111 000" to "111 draft" and press Escape
+    And another tab renames task "task-111" to "111 elsewhere"
+    And I open task "111 elsewhere"
+    Then the task editor's name reads "111 draft"
+    And the task editor says "Name changed"
+    And the task editor says "Now 111 elsewhere. Your draft has 111 draft."
+    And the task editor's Save is disabled
+    When I press "Use theirs" in the task editor
+    Then the task editor's name reads "111 elsewhere"
+
+  Scenario: A kept project draft shows a field another tab changed too
+    Given I have projects with searchable tasks
+    When I go to the Projects list
+    And I open the project form of "aaa xyz" from its row menu
+    And I type "aaa draft" as the project's full name and press Escape
+    And another tab renames project "project-aaa" to "aaa elsewhere"
+    And I open the project form of "aaa elsewhere" from its row menu
+    Then the project form's full name reads "aaa draft"
+    And the project form says "Full name changed"
+    And the project form says "Now aaa elsewhere. Your draft has aaa draft."
+    And the project form's Save is disabled
+    When I press "Keep mine" in the project form
+    Then the project form's Save is enabled
+
   Scenario: Edit a task in the side panel with explicit Save
     Given I have projects with searchable tasks
     When I open project "aaa xyz"

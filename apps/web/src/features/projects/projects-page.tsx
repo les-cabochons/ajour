@@ -122,6 +122,13 @@ import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
+  describeTaskConflicts,
+  getTaskDraftConflicts,
+  resumeTaskDraft,
+  settleTaskConflict,
+  type KeptTaskDraft,
+} from "@/features/projects/project-task-draft";
+import {
   dropComposerDraft,
   getComposerDraft,
   keepComposerDraft,
@@ -181,6 +188,8 @@ type TaskEditorSession = {
   /** The saved task being edited. Absent for a new task. */
   taskId?: string;
   fields: ProjectTaskEditorFields;
+  /** The task's fields when the draft started, to tell what changed since. */
+  base: ProjectTaskEditorFields;
   /**
    * The task's slot when the panel opened. Save writes the slot only if the
    * draft changed it, so a slot moved from a menu meanwhile is not undone.
@@ -1877,6 +1886,14 @@ export function ProjectsPage() {
   const taskEditorState = taskEditor
     ? evaluateProjectTaskEditor(taskEditor.fields, taskEditorTask)
     : null;
+  // Fields of a resumed draft that the task changed too, until settled.
+  const taskCurrentFields = taskEditorTask
+    ? createProjectTaskEditorFields(taskEditorTask)
+    : undefined;
+  const taskConflictGroups =
+    taskEditor && taskCurrentFields
+      ? getTaskDraftConflicts(taskEditor, taskCurrentFields)
+      : [];
   const draggedProject = projectDragState
     ? (activeProjects.find(
         (project) => project._id === projectDragState.projectId,
@@ -1900,8 +1917,12 @@ export function ProjectsPage() {
   useEffect(() => {
     if (!taskEditor) return;
     const key = getTaskDraftKey(taskEditor);
-    if (taskDraftChanged) keepComposerDraft(key, taskEditor.fields);
-    else dropComposerDraft(key);
+    if (taskDraftChanged) {
+      keepComposerDraft(key, {
+        fields: taskEditor.fields,
+        base: taskEditor.base,
+      } satisfies KeptTaskDraft);
+    } else dropComposerDraft(key);
   }, [taskEditor, taskDraftChanged]);
 
   // Every in-page path out of a project goes through `leaveProject`. Route changes
@@ -1911,10 +1932,15 @@ export function ProjectsPage() {
   const taskEditorDraftRef = useRef<{
     session: TaskEditorSession;
     editor: ProjectTaskEditorState;
+    conflicted: boolean;
   } | null>(null);
   taskEditorDraftRef.current =
     taskEditor && taskEditorState
-      ? { session: taskEditor, editor: taskEditorState }
+      ? {
+          session: taskEditor,
+          editor: taskEditorState,
+          conflicted: taskConflictGroups.length > 0,
+        }
       : null;
   useEffect(() => {
     const draft = taskEditorDraftRef.current;
@@ -1922,7 +1948,10 @@ export function ProjectsPage() {
       return;
     }
 
-    const result = commitProjectTaskDraft(draft.editor, "switch");
+    // A changed field nobody settled keeps the draft, as an invalid one does.
+    const result = draft.conflicted
+      ? ({ kind: "invalid" } as const)
+      : commitProjectTaskDraft(draft.editor, "switch");
     if (result.kind === "save") {
       writeProjectTask(draft.session, result.values);
     }
@@ -2211,6 +2240,10 @@ export function ProjectsPage() {
     if (!taskEditor || !taskEditorState) {
       return true;
     }
+    // A changed field nobody settled holds the editor open: the notice says which.
+    if (taskConflictGroups.length > 0) {
+      return false;
+    }
 
     const result = commitProjectTaskDraft(taskEditorState, "switch");
     if (result.kind === "invalid") {
@@ -2233,14 +2266,19 @@ export function ProjectsPage() {
       return;
     }
 
+    // Escape kept the draft of this task, or of a new one, for this opening,
+    // brought up to the task as it is now.
+    const resumed = resumeTaskDraft(
+      getComposerDraft<KeptTaskDraft>(
+        getTaskDraftKey({ projectId, taskId: task?._id }),
+      ),
+      createProjectTaskEditorFields(task),
+      !task,
+    );
     setTaskEditor({
       projectId,
       taskId: task?._id,
-      // Escape kept the draft of this task, or of a new one, for this opening.
-      fields:
-        getComposerDraft<ProjectTaskEditorFields>(
-          getTaskDraftKey({ projectId, taskId: task?._id }),
-        ) ?? createProjectTaskEditorFields(task),
+      ...resumed,
       openedPinnedSlot: task?.pinnedSlot,
       showErrors: false,
     });
@@ -2250,7 +2288,7 @@ export function ProjectsPage() {
   };
 
   const saveTaskEditor = () => {
-    if (!taskEditor || !taskEditorState) {
+    if (!taskEditor || !taskEditorState || taskConflictGroups.length > 0) {
       return;
     }
 
@@ -2270,6 +2308,7 @@ export function ProjectsPage() {
         setTaskEditor({
           projectId: taskEditor.projectId,
           fields: createProjectTaskEditorFields(),
+          base: createProjectTaskEditorFields(),
           openedPinnedSlot: undefined,
           showErrors: false,
           createdInRow: (taskEditor.createdInRow ?? 0) + 1,
@@ -2280,6 +2319,21 @@ export function ProjectsPage() {
       focusNewTaskAfterClose();
     }
     setTaskEditor(null);
+  };
+
+  /** Settles a changed field of the task draft: the draft's version, or the task's now. */
+  const settleTaskEditorConflict = (id: string, keep: "mine" | "theirs") => {
+    const group = taskConflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!taskEditor || !taskCurrentFields || !group) return;
+    const settled = settleTaskConflict(
+      taskEditor,
+      taskCurrentFields,
+      group,
+      keep,
+    );
+    setTaskEditor({ ...taskEditor, ...settled });
   };
 
   const updateTaskEditorFields = (patch: Partial<ProjectTaskEditorFields>) => {
@@ -2476,6 +2530,17 @@ export function ProjectsPage() {
               }
             : undefined
         }
+        conflicts={
+          taskCurrentFields
+            ? describeTaskConflicts(
+                taskConflictGroups,
+                visibleTaskEditor.fields,
+                taskCurrentFields,
+              )
+            : []
+        }
+        onKeepMine={(id) => settleTaskEditorConflict(id, "mine")}
+        onUseTheirs={(id) => settleTaskEditorConflict(id, "theirs")}
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         // Cancel and × discard the draft; Escape keeps it.

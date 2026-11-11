@@ -470,3 +470,119 @@ When(
       .click();
   },
 );
+
+When(
+  "another tab renames task {string} to {string}",
+  async ({ page }, taskId: string, name: string) => {
+    await page.evaluate(
+      ({ taskId, name }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        for (const project of state.projects) {
+          for (const task of project.tasks) {
+            if (task._id === taskId) task.name = name;
+          }
+        }
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+      },
+      { taskId, name },
+    );
+  },
+);
+
+Then("the task editor's Save is disabled", async ({ page }) => {
+  await expect(
+    taskComposer(page).getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+});
+
+When("I press {string} in the task editor", async ({ page }, label: string) => {
+  await taskComposer(page)
+    .getByRole("button", { name: label, exact: true })
+    .click();
+});
+
+When("I go to the Projects list", async ({ page }) => {
+  await page.goto("/projects");
+  await expect(page.getByRole("link", { name: "aaa xyz" })).toBeVisible();
+});
+
+function projectForm(page: Page) {
+  return page.getByRole("dialog", { name: /^(New|Edit) project$/ });
+}
+
+When(
+  "I open the project form of {string} from its row menu",
+  async ({ page }, name: string) => {
+    await page.getByRole("link", { name, exact: true }).click({
+      button: "right",
+    });
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+    await expect(projectForm(page)).toBeVisible();
+  },
+);
+
+When(
+  "I type {string} as the project's full name and press Escape",
+  async ({ page }, name: string) => {
+    const field = projectForm(page).getByRole("textbox", { name: "Full name" });
+    await field.fill(name);
+    await field.press("Escape");
+    await expect(projectForm(page)).toHaveCount(0);
+  },
+);
+
+When(
+  "another tab renames project {string} to {string}",
+  async ({ page }, projectId: string, name: string) => {
+    await page.evaluate(
+      ({ projectId, name }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        const project = state.projects.find(
+          (candidate: { _id: string }) => candidate._id === projectId,
+        );
+        project.name = name;
+        project.displayName = name;
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+      },
+      { projectId, name },
+    );
+  },
+);
+
+Then(
+  "the project form's full name reads {string}",
+  async ({ page }, name: string) => {
+    await expect(
+      projectForm(page).getByRole("textbox", { name: "Full name" }),
+    ).toHaveValue(name);
+  },
+);
+
+Then("the project form says {string}", async ({ page }, text: string) => {
+  await expect(projectForm(page)).toContainText(text);
+});
+
+Then("the project form's Save is disabled", async ({ page }) => {
+  await expect(
+    projectForm(page).getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+});
+
+Then("the project form's Save is enabled", async ({ page }) => {
+  await expect(
+    projectForm(page).getByRole("button", { name: "Save", exact: true }),
+  ).toBeEnabled();
+});
+
+When(
+  "I press {string} in the project form",
+  async ({ page }, label: string) => {
+    await projectForm(page)
+      .getByRole("button", { name: label, exact: true })
+      .click();
+  },
+);

@@ -14,6 +14,18 @@ import {
   getComposerDraft,
   keepComposerDraft,
 } from "@/lib/composer-drafts";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
+import {
+  findDraftConflicts,
+  keepMineInDraft,
+  reconcileDraft,
+  useTheirsInDraft,
+  type DraftFieldGroup,
+  type ReconciledDraft,
+} from "@/domain/draft-reconcile";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -50,6 +62,34 @@ import {
 } from "@/components/ui/popover";
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 
+/** A kept draft, with the project's fields it started from. */
+type KeptProjectDraft = ReconciledDraft<ProjectFormFields>;
+
+/** The name and the display name that follows it change together, as the code does. */
+const DRAFT_FIELD_GROUPS: readonly DraftFieldGroup<ProjectFormFields>[] = [
+  ["name", "displayName"],
+  ["code", "savedCode"],
+];
+
+const CONFLICT_LABELS: Partial<Record<keyof ProjectFormFields, string>> = {
+  name: "Full name",
+  code: "Code",
+  color: "Color",
+  icon: "Icon",
+};
+
+function describeProjectField(
+  key: keyof ProjectFormFields,
+  fields: ProjectFormFields,
+) {
+  if (key === "icon") {
+    return fields.icon.kind === "upload"
+      ? "an uploaded icon"
+      : fields.icon.name;
+  }
+  return String(fields[key] ?? "");
+}
+
 /**
  * The project form, opened by "New project" and by Edit in the project's action set.
  * Save: the Save button or Enter in a text field. Escape closes it and keeps the
@@ -73,17 +113,50 @@ export function ProjectFormDialog({
 }) {
   const [draftKey] = useState(() => `project:${project?._id ?? "new"}`);
   const [seed] = useState(() => createProjectFormFields(project));
-  const [kept] = useState(() => getComposerDraft<ProjectFormFields>(draftKey));
-  const [fields, setFields] = useState(() => kept ?? seed);
+  const [kept] = useState(() => getComposerDraft<KeptProjectDraft>(draftKey));
+  // A kept draft of a saved project is brought up to the project as it is
+  // now: a field the user did not change takes its value, and a field both
+  // changed stays as typed, in conflict.
+  const [resumed] = useState(() =>
+    !kept
+      ? { fields: seed, base: seed }
+      : project
+        ? reconcileDraft(kept, seed, DRAFT_FIELD_GROUPS)
+        : { fields: kept.fields, base: seed },
+  );
+  const [fields, setFields] = useState(resumed.fields);
+  const [base, setBase] = useState(resumed.base);
+  const conflictGroups = project
+    ? findDraftConflicts({ fields, base }, seed, DRAFT_FIELD_GROUPS)
+    : [];
+  const conflicts = conflictGroups.map((group): DraftConflictView => ({
+    id: group.join(","),
+    label: CONFLICT_LABELS[group[0]!] ?? String(group[0]),
+    theirs: describeProjectField(group[0]!, seed),
+    mine: describeProjectField(group[0]!, fields),
+  }));
+
+  /** Settles a changed field: the draft's version stays, or the project's now. */
+  function settleConflict(id: string, keep: "mine" | "theirs") {
+    const group = conflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!group) return;
+    const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
+    const settled = settle({ fields, base }, seed, group);
+    setFields(settled.fields);
+    setBase(settled.base);
+  }
   // The full name's error shows once the user typed in it, not on a new form.
   const [nameEdited, setNameEdited] = useState(Boolean(kept));
   // The draft is kept while it differs from what the form opened on, until
   // it is saved or discarded.
   const changed = JSON.stringify(fields) !== JSON.stringify(seed);
   useEffect(() => {
-    if (changed) keepComposerDraft(draftKey, fields);
-    else dropComposerDraft(draftKey);
-  }, [changed, draftKey, fields]);
+    if (changed) {
+      keepComposerDraft(draftKey, { fields, base } satisfies KeptProjectDraft);
+    } else dropComposerDraft(draftKey);
+  }, [base, changed, draftKey, fields]);
 
   /** Cancel and ×: the draft is discarded. */
   function discard() {
@@ -109,7 +182,7 @@ export function ProjectFormDialog({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (values) {
+    if (values && conflicts.length === 0) {
       dropComposerDraft(draftKey);
       onSubmit(values);
     }
@@ -159,6 +232,12 @@ export function ProjectFormDialog({
           {/* A composer, as Linear's new project: the icon as an avatar
               beside the name and short name to write in, then the code and
               color as chips (forms council rounds 6 and 13). */}
+          <DraftConflictNotice
+            conflicts={conflicts}
+            onKeepMine={(id) => settleConflict(id, "mine")}
+            onUseTheirs={(id) => settleConflict(id, "theirs")}
+          />
+
           <FieldGroup className="composer gap-2">
             {/* The icon is the project's avatar, beside its name, tinted
                 in its color, as a workspace logo (forms council round 13). */}
@@ -293,7 +372,7 @@ export function ProjectFormDialog({
             <Button type="button" variant="ghost" onClick={discard}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!values}>
+            <Button type="submit" disabled={!values || conflicts.length > 0}>
               {isCreate ? "Create project" : "Save"}
             </Button>
           </DialogFooter>

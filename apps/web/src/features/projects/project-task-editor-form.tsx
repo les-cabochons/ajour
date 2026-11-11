@@ -9,6 +9,10 @@ import {
   RiCloseLine as X,
   RiMoneyDollarCircleLine as BillableIcon,
 } from "@remixicon/react";
+import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -77,6 +81,9 @@ export function ProjectTaskEditorForm({
   titleAs: Title = "h2",
   className,
   createMore,
+  conflicts = [],
+  onKeepMine,
+  onUseTheirs,
 }: {
   fields: ProjectTaskEditorFields;
   editor: ProjectTaskEditorState;
@@ -118,6 +125,13 @@ export function ProjectTaskEditorForm({
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
   };
+  /**
+   * Fields of a kept draft that the saved task changed too. Save waits for
+   * each to be settled (`DraftConflictNotice`).
+   */
+  conflicts?: readonly DraftConflictView[];
+  onKeepMine?: (id: string) => void;
+  onUseTheirs?: (id: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const lockId = useId();
@@ -180,6 +194,12 @@ export function ProjectTaskEditorForm({
       >
         <X />
       </TooltipButton>
+
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => onKeepMine?.(id)}
+        onUseTheirs={(id) => onUseTheirs?.(id)}
+      />
 
       {/* A composer, as the backlog editor's: the name to write in, then
           the task's properties as chips (forms council round 6). */}
@@ -330,7 +350,11 @@ export function ProjectTaskEditorForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="button" disabled={!editor.canSave} onClick={onSave}>
+        <Button
+          type="button"
+          disabled={!editor.canSave || conflicts.length > 0}
+          onClick={onSave}
+        >
           {editor.isNew ? "Create task" : "Save"}
         </Button>
       </footer>

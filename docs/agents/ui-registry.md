@@ -67,6 +67,7 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - Settings pages of rows (General, Plugins, Vault, MCP, Agents, Backlog, Calendar) keep `settings-measure`, 672px, so labels and controls stay close; and so do Workflow, Projects, Time entries and Sync review since forms council round 5; Workflow's Remove is a trash icon with a tooltip.
 - Status, empty, and warning messages use `MessagePanel` from `apps/web/src/components/app-surface.tsx`. Keep `message-panel` class ownership inside that module.
 - Icon/title/body callouts use `SurfaceCallout` from `apps/web/src/components/app-surface.tsx`.
+- A composer that resumes a kept draft shows the fields the saved record changed too with `DraftConflictNotice` (`apps/web/src/components/draft-conflict-notice.tsx`): a warning `MessagePanel`, "<Field> changed. Now X. Your draft has Y.", Keep mine and Use theirs. The pure rule is `domain/draft-reconcile.ts`.
 
 ## Controls
 
