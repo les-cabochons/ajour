@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { SidePanel } from "@/components/side-panel";
@@ -261,6 +261,24 @@ export function TimePage({ date }: { date: string }) {
       ),
     [],
   );
+  // Every other way of closing the editor by leaving it, such as a sidebar
+  // link or Back, saves a valid draft with the Undo toast and keeps an
+  // invalid one for the next opening; it never holds the user back. The
+  // page's own moves above already saved or kept the draft.
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => {
+      const showing = current.search as Record<string, unknown>;
+      const shown = next.search as Record<string, unknown>;
+      const keepsEditor =
+        next.pathname === current.pathname &&
+        (["entry", "timer", "project", "task"] as const).every(
+          (key) => shown[key] === showing[key],
+        );
+      if (!keepsEditor) editorFormRef.current?.leave();
+      return false;
+    },
+    enableBeforeUnload: false,
+  });
 
   function clearGridCells() {
     setGridCell(null);

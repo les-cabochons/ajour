@@ -541,14 +541,20 @@ export function WeekGrid({
     invalidEditRef.current = null;
 
     if (result.kind === "create") {
-      runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
-        unit.set({ time_entry: { host: "grid_cell" } }),
+      offerTimeEntryUndo(
+        runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
+          unit.set({ time_entry: { host: "grid_cell" } }),
+        ),
+        "Entry created",
       );
     } else if (result.kind === "update") {
-      runStoreCommandWith(
-        "updateTimesheetEntry",
-        [result.entryId, result.values],
-        (unit) => unit.set({ time_entry: { host: "grid_cell" } }),
+      offerTimeEntryUndo(
+        runStoreCommandWith(
+          "updateTimesheetEntry",
+          [result.entryId, result.values],
+          (unit) => unit.set({ time_entry: { host: "grid_cell" } }),
+        ),
+        "Entry saved",
       );
     } else if (result.kind === "delete") {
       offerTimeEntryUndo(

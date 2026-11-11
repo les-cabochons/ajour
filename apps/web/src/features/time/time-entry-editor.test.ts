@@ -3,6 +3,7 @@ import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
+  enterPressesPrimaryAction,
   evaluateTimeEntryEditor,
   getTimeEntryPrimaryAction,
 } from "./time-entry-editor";
@@ -464,6 +465,29 @@ describe("time-entry editor", () => {
           isRunning: true,
         }),
       ).toEqual({ kind: "save", label: "Save" });
+    });
+  });
+
+  describe("Enter", () => {
+    const start = { kind: "start", label: "Start" } as const;
+    const create = { kind: "create", label: "Create entry" } as const;
+
+    it("presses Start when nothing else runs", () => {
+      expect(
+        enterPressesPrimaryAction(start, { isAnotherEntryRunning: false }),
+      ).toBe(true);
+    });
+
+    it("does not press Start over another running entry", () => {
+      expect(
+        enterPressesPrimaryAction(start, { isAnotherEntryRunning: true }),
+      ).toBe(false);
+    });
+
+    it("still creates an entry with hours while another runs", () => {
+      expect(
+        enterPressesPrimaryAction(create, { isAnotherEntryRunning: true }),
+      ).toBe(true);
     });
   });
 });

@@ -29,19 +29,29 @@ import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
+  enterPressesPrimaryAction,
   evaluateTimeEntryEditor,
   getTimeEntryPrimaryAction,
   START_OR_ENTER_HOURS_HINT,
+  START_STOPS_RUNNING_HINT,
   type TimeEntryDraftCommitReason,
   type TimeEntryEditorFields,
   type TimeEntryValues,
 } from "@/features/time/time-entry-editor";
 import {
+  formatToastDay,
+  offerTimeEntryUndo,
   useTimeEntryActions,
   type TimeEntryActionTarget,
 } from "@/features/time/time-entry-actions";
+import { skipUndo } from "@/features/feedback/undo-toast";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
+import {
+  dropComposerDraft,
+  getComposerDraft,
+  keepComposerDraft,
+} from "@/lib/composer-drafts";
 import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
 import { ignoreSecondClick } from "@/lib/double-click-guard";
 import { focusWhenLost } from "@/lib/focus-return";
@@ -73,6 +83,53 @@ export type TimeEntryEditorTarget =
 export interface TimeEntryEditorFormHandle {
   /** Saves a valid draft. Returns false, and shows the error, when the draft blocks the switch. */
   commitBeforeSwitch: () => boolean;
+  /**
+   * The page is leaving the form by any way, such as a sidebar link: a valid
+   * draft is saved, with the Undo toast, and an invalid one is kept.
+   */
+  leave: () => void;
+}
+
+/** Where a form's unsaved draft is kept between openings (`lib/composer-drafts.ts`). */
+export function getTimeEntryDraftKey(target: TimeEntryEditorTarget) {
+  switch (target.kind) {
+    case "edit":
+      return `time-entry:${target.entry._id}`;
+    case "running":
+      return `time-entry:running:${target.timer._id}`;
+    case "create": {
+      const values = target.initialValues;
+      return [
+        "time-entry:new",
+        target.localDate,
+        values?.projectId ?? "",
+        values?.taskId ?? "",
+        values?.workItemId ?? "",
+      ].join(":");
+    }
+  }
+}
+
+/**
+ * A kept draft. The running entry's Hours shows the time counted when the form
+ * opens, so its draft keeps typed hours only.
+ */
+interface KeptTimeEntryDraft {
+  fields: TimeEntryEditorFields;
+  hoursTyped: boolean;
+}
+
+/** The draft to resume for `key`, with the running entry's hours counted afresh. */
+function resumeKeptDraft(
+  key: string,
+  seed: TimeEntryEditorFields,
+  isRunning: boolean,
+): TimeEntryEditorFields | undefined {
+  const kept = getComposerDraft<KeptTimeEntryDraft>(key);
+  if (!kept) return undefined;
+  return isRunning && !kept.hoursTyped
+    ? { ...kept.fields, durationHours: seed.durationHours }
+    : kept.fields;
 }
 
 function formatEntryDate(localDate: string) {
@@ -141,9 +198,11 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * (`getTimeEntryPrimaryAction`): Start or Create entry on a new entry, Continue or
  * Save on a saved one, "Start today" when Start or Continue would count on another
  * day than the form's. Start also stops another running entry. Enter in Hours or
- * Note, and Cmd/Ctrl+Enter, press the main button. Escape, Cancel or × discard the
- * draft. Save on the running entry keeps it running. An entry of a submitted week
- * opens read-only, with the lock under Date.
+ * Note, and Cmd/Ctrl+Enter, press the main button, except that Enter does not
+ * Start over another running entry. Escape closes and keeps the draft for the
+ * next opening of the same target; Cancel or × discard it. Every save shows the
+ * Undo toast. Save on the running entry keeps it running. An entry of a
+ * submitted week opens read-only, with the lock under Date.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
  * A host that can swap containers mid-edit (side panel and dialog across a
@@ -193,7 +252,17 @@ export function TimeEntryEditorForm({
   const [seed] = useState(() => seedEditor(target));
   const runningOriginal = seed.runningOriginal;
   const original: TimeEntryValues | undefined = entry ?? runningOriginal;
-  const [fields, setFields] = useState(() => initialFields ?? seed.fields);
+  // Escape, or leaving the page, keeps the draft for the same target.
+  const [draftKey] = useState(() => getTimeEntryDraftKey(target));
+  const [fields, setFields] = useState(
+    () =>
+      initialFields ??
+      resumeKeptDraft(draftKey, seed.fields, Boolean(runningTimer)) ??
+      seed.fields,
+  );
+  // Set once the draft was saved, kept or discarded on purpose, so leaving
+  // the page afterwards writes nothing more.
+  const settledRef = useRef(false);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -219,7 +288,7 @@ export function TimeEntryEditorForm({
   });
   const entryActions = useTimeEntryActions({
     onEdit: () => undefined,
-    onAfterAction: onClose,
+    onAfterAction: () => finish(),
   });
   const actionTarget: TimeEntryActionTarget | null = entry
     ? { kind: "entry", entry }
@@ -237,9 +306,57 @@ export function TimeEntryEditorForm({
     today,
   });
 
+  // The draft is kept while it holds something to save, until it is saved
+  // or discarded.
+  const holdsDraft = editor.isNew ? editor.hasContent : editor.hasChanges;
+  useEffect(() => {
+    if (settledRef.current) return;
+    if (holdsDraft) {
+      keepComposerDraft(draftKey, {
+        fields,
+        hoursTyped: fields.durationHours !== seed.fields.durationHours,
+      } satisfies KeptTimeEntryDraft);
+    } else {
+      dropComposerDraft(draftKey);
+    }
+  }, [draftKey, fields, holdsDraft, seed.fields.durationHours]);
+
   useImperativeHandle(ref, () => ({
-    commitBeforeSwitch: () => commit("switch"),
+    commitBeforeSwitch: () => {
+      if (settledRef.current) return true;
+      const committed = commit("switch");
+      if (committed) settle();
+      return committed;
+    },
+    leave: () => {
+      if (settledRef.current) return;
+      const result = commitTimeEntryDraft(editor, "switch");
+      // An invalid draft stays kept, for the next opening.
+      if (result.kind === "save") {
+        writeEntry(result.values);
+        dropComposerDraft(draftKey);
+      }
+      settledRef.current = true;
+    },
   }));
+
+  /** The draft is done: saved, or discarded on purpose. */
+  function settle() {
+    settledRef.current = true;
+    dropComposerDraft(draftKey);
+  }
+
+  /** Closes after a save or an action, or on Cancel and ×, ending the draft. */
+  function finish() {
+    settle();
+    onClose();
+  }
+
+  /** Escape: closes and keeps the draft for the next opening. */
+  function dismiss() {
+    settledRef.current = true;
+    onClose();
+  }
 
   useEffect(() => {
     const first = rootRef.current?.querySelector<HTMLElement>(
@@ -255,10 +372,17 @@ export function TimeEntryEditorForm({
   function updateFields(patch: Partial<TimeEntryEditorFields>) {
     setFields((current) => ({ ...current, ...patch }));
     setCommitError(null);
+    settledRef.current = false;
   }
 
-  /** Writes the draft when it has something to save. Returns false when it is blocked. */
-  function commit(reason: TimeEntryDraftCommitReason) {
+  /**
+   * Writes the draft when it has something to save, with the Undo toast
+   * unless `offerUndo` is false. Returns false when it is blocked.
+   */
+  function commit(
+    reason: TimeEntryDraftCommitReason,
+    { offerUndo = true }: { offerUndo?: boolean } = {},
+  ) {
     const result = commitTimeEntryDraft(editor, reason);
     if (result.kind === "invalid") {
       setCommitError(result.error);
@@ -266,7 +390,7 @@ export function TimeEntryEditorForm({
     }
 
     if (result.kind === "save") {
-      writeEntry(result.values);
+      writeEntry(result.values, { offerUndo });
     }
     return true;
   }
@@ -276,10 +400,20 @@ export function TimeEntryEditorForm({
     set(fields: { time_entry: { host: typeof host } }): unknown;
   }) => unit.set({ time_entry: { host } });
 
-  function writeEntry(values: TimeEntryValues) {
+  /**
+   * Saves the draft's values, with the Undo toast. Stop and Continue pass
+   * `offerUndo: false`: the entry changes again at once, so that Undo
+   * could only be refused.
+   */
+  function writeEntry(
+    values: TimeEntryValues,
+    { offerUndo = true }: { offerUndo?: boolean } = {},
+  ) {
+    const offer = (token: string | null, title: string) =>
+      offerUndo ? offerTimeEntryUndo(token, title) : skipUndo(token);
     return withEventAttribution({ surface: editorSurface }, () => {
       if (runningTimer) {
-        runStoreCommandWith(
+        const token = runStoreCommandWith(
           "editRunningEntry",
           [
             runningTimer._id,
@@ -294,26 +428,36 @@ export function TimeEntryEditorForm({
           ],
           recordHost,
         );
+        offer(token, "Entry saved");
         return;
       }
 
       if (entry) {
         if (values.localDate === entry.localDate) {
-          runStoreCommandWith(
-            "updateTimesheetEntry",
-            [entry._id, values],
-            recordHost,
+          offer(
+            runStoreCommandWith(
+              "updateTimesheetEntry",
+              [entry._id, values],
+              recordHost,
+            ),
+            "Entry saved",
           );
         } else {
-          localStore.moveTimesheetEntry(entry._id, values);
+          offer(
+            localStore.moveTimesheetEntry(entry._id, values),
+            `Moved to ${formatToastDay(values.localDate)}`,
+          );
         }
         return;
       }
 
-      runStoreCommandWith(
-        "saveManualTimeEntry",
-        [{ ...values, workItemId }],
-        recordHost,
+      offer(
+        runStoreCommandWith(
+          "saveManualTimeEntry",
+          [{ ...values, workItemId }],
+          recordHost,
+        ),
+        "Entry created",
       );
       // Logged time changes the backlog item's estimates, so push them to its source.
       const workItem = workItemId
@@ -337,7 +481,8 @@ export function TimeEntryEditorForm({
     );
     const savedId = entry?._id ?? runningTimer?.entryId;
     if (!write()) return;
-    onClose();
+    // Ends the draft as well as closing: a written draft is not kept.
+    finish();
     focusWhenLost(() => {
       const id =
         localStore
@@ -370,23 +515,23 @@ export function TimeEntryEditorForm({
         accumulatedDurationMs: durationMs,
       }),
     );
-    onClose();
+    finish();
   }
 
   /** Saves draft changes, then continues the entry's work (see Continue in GLOSSARY.md). */
   function continueEntry() {
-    if (!entry || !commit("save")) return;
+    if (!entry || !commit("save", { offerUndo: false })) return;
     withEventAttribution({ surface: editorSurface }, () =>
       localStore.continueTimesheetEntry(entry._id),
     );
-    onClose();
+    finish();
   }
 
   /** Saves draft changes to the running entry, then stops it. */
   function stop() {
     if (!runningTimer) return;
     closeOnEntry(() => {
-      if (!commit("save")) return false;
+      if (!commit("save", { offerUndo: false })) return false;
       withEventAttribution({ surface: editorSurface }, () =>
         localStore.saveTimer(runningTimer._id),
       );
@@ -441,7 +586,7 @@ export function TimeEntryEditorForm({
 
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      dismiss();
     } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
@@ -456,7 +601,13 @@ export function TimeEntryEditorForm({
     ) {
       return;
     }
+    // Cmd/Ctrl+Enter is the form's: it presses the main button whatever it reads.
+    if (event.metaKey || event.ctrlKey) return;
     event.preventDefault();
+    if (!enterPressesPrimaryAction(primary, { isAnotherEntryRunning })) {
+      setCommitError(START_STOPS_RUNNING_HINT);
+      return;
+    }
     submit();
   }
 
@@ -500,7 +651,7 @@ export function TimeEntryEditorForm({
             size="icon"
             onClick={(event) => {
               ignoreSecondClick(event);
-              onClose();
+              finish();
             }}
           />
         }
@@ -596,7 +747,7 @@ export function TimeEntryEditorForm({
             Stop
           </Button>
         ) : null}
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={finish}>
           Cancel
         </Button>
         <Button

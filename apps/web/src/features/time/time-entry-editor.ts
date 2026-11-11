@@ -68,6 +68,9 @@ export interface TimeEntryEditorState {
 
 /** Shown under Hours, and as the blocked Save reason, for a new entry with no hours. */
 export const START_OR_ENTER_HOURS_HINT = "Enter hours, or press Start";
+/** Shown under Hours when Enter would start a new entry over a running one. */
+export const START_STOPS_RUNNING_HINT =
+  "Enter hours, or press Start. Start stops the running entry.";
 const NON_POSITIVE_DURATION_ERROR = "Enter a positive duration";
 
 /** Seeds the draft shared by every entry editor host. */
@@ -250,4 +253,17 @@ export function commitTimeEntryDraft(
       editor.dateError ??
       (editor.isNew ? START_OR_ENTER_HOURS_HINT : NON_POSITIVE_DURATION_ERROR),
   };
+}
+
+/**
+ * Whether Enter in Hours or Note presses the main button. It does, whatever
+ * the button reads, except Start over another running entry: a note typed
+ * before the hours would stop that entry by accident. The Start button and
+ * Cmd/Ctrl+Enter still start.
+ */
+export function enterPressesPrimaryAction(
+  primary: TimeEntryPrimaryAction,
+  context: { isAnotherEntryRunning: boolean },
+) {
+  return !(primary.kind === "start" && context.isAnotherEntryRunning);
 }
