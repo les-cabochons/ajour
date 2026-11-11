@@ -49,6 +49,46 @@ describe("createWorkItemSearch", () => {
     ).toBe(true);
   });
 
+  it("matches the number a row shows when the plugin gave no external id", () => {
+    // Synced before Ajour kept the external id: the row reads the number from
+    // the link, or the key from a Jira source id.
+    const azure = {
+      title: "Week grid: keyboard editing of cells",
+      source: "azure_devops" as const,
+      sourceId: "48190",
+      sourceUrl: "https://dev.azure.com/contoso/atlas/_workitems/edit/48190",
+    };
+    const jira = {
+      title: "Harbor: offline sync conflict dialog",
+      source: "jira" as const,
+      sourceId: "HRB-412",
+      sourceUrl: "https://contoso.atlassian.net/browse/HRB-412",
+    };
+
+    expect(createWorkItemSearch("48190", projects).matches(azure)).toBe(true);
+    expect(createWorkItemSearch("4819", projects).matches(azure)).toBe(true);
+    expect(createWorkItemSearch("HRB-412", projects).matches(jira)).toBe(true);
+    expect(createWorkItemSearch("hrb-41", projects).matches(jira)).toBe(true);
+    expect(createWorkItemSearch("HRB-412", projects).matches(azure)).toBe(
+      false,
+    );
+  });
+
+  it("reads a number written with its #, as rows and pull requests write it", () => {
+    expect(createWorkItemSearch("#3311", projects).matches(billet)).toBe(true);
+    expect(createWorkItemSearch("#150", projects).matches(billet)).toBe(false);
+  });
+
+  it("matches words typed without their space, such as weekgrid", () => {
+    const item = { title: "Week grid: keyboard editing of cells" };
+
+    expect(createWorkItemSearch("weekgrid", projects).matches(item)).toBe(true);
+    expect(createWorkItemSearch("gridkey", projects).matches(item)).toBe(true);
+    expect(createWorkItemSearch("weekcells", projects).matches(item)).toBe(
+      false,
+    );
+  });
+
   it("matches the title or the project, ignoring case and accents", () => {
     expect(createWorkItemSearch("RESERVER", projects).matches(billet)).toBe(
       true,
