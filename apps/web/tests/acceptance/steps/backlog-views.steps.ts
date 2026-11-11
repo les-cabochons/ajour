@@ -334,7 +334,7 @@ When("I open the parent from the subitem's sidebar arrow", async ({ page }) => {
   await arrow.hover();
   await expect(
     page.locator('[data-slot="tooltip-content"][data-open]'),
-  ).toHaveText("Backlog parent");
+  ).toHaveText(/^Backlog parent\s*(Shift\+Enter|⇧↩)$/);
   await arrow.click();
 });
 Then("the Backlog parent page is open", async ({ page }) => {

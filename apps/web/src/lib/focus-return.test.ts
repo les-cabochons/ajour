@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { findTypeaheadMatch } from "@/components/ui/dropdown-menu";
 import { ignoreSecondClick } from "@/lib/double-click-guard";
+import { focusWhenLost } from "@/lib/focus-return";
 import { captureItemFocus } from "@/lib/item-keys";
 
 /** Lets the focus return's first try, a microtask, run. */
@@ -129,5 +130,55 @@ describe("ignoreSecondClick", () => {
     ignoreSecondClick({ detail: 0 });
     click(row, 2);
     expect(seen).toEqual(["click"]);
+  });
+});
+
+describe("findTypeaheadMatch cycling", () => {
+  const items = ["Start entry", "Snooze…", "Settle", "Delete"].map((name) => ({
+    name,
+    text: name.toLocaleLowerCase(),
+  }));
+
+  it("moves to the next match when the same letter repeats", () => {
+    expect(findTypeaheadMatch(items, "s", 0)?.name).toBe("Snooze…");
+    expect(findTypeaheadMatch(items, "ss", 1)?.name).toBe("Settle");
+    expect(findTypeaheadMatch(items, "sss", 2)?.name).toBe("Start entry");
+  });
+
+  it("starts at the first match when nothing is highlighted", () => {
+    expect(findTypeaheadMatch(items, "s")?.name).toBe("Start entry");
+  });
+
+  it("still matches a typed word from the start", () => {
+    expect(findTypeaheadMatch(items, "se", 0)?.name).toBe("Settle");
+    expect(findTypeaheadMatch(items, "st", 2)?.name).toBe("Start entry");
+  });
+});
+
+describe("focusWhenLost", () => {
+  function press(type: string, detail: number) {
+    window.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, detail }),
+    );
+  }
+
+  it("keeps returning focus through the second press of a double-click", async () => {
+    const { row } = renderRows(["a"]);
+    ignoreSecondClick({ detail: 1 });
+    focusWhenLost(() => row("a"));
+    // The guard drops this press, so it is not the user's next action.
+    press("mousedown", 2);
+    window.dispatchEvent(new Event("pointerdown"));
+    await settle();
+    expect(document.activeElement).toBe(row("a"));
+  });
+
+  it("stops at a press the guard lets through", async () => {
+    const { row } = renderRows(["a"]);
+    focusWhenLost(() => row("a"));
+    press("mousedown", 1);
+    window.dispatchEvent(new Event("pointerdown"));
+    await settle();
+    expect(document.activeElement).not.toBe(row("a"));
   });
 });

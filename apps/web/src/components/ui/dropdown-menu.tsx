@@ -41,16 +41,25 @@ function listItems(popup: HTMLElement) {
 
 /**
  * The item typed letters pick: the first whose name starts with them, else
- * the first with a word that does, so "rev" finds "In review".
+ * the first with a word that does, so "rev" finds "In review". One letter
+ * typed again and again cycles instead, as native menus and listboxes do: each
+ * press moves to the next item that starts with it after `currentIndex`, the
+ * highlighted item, and wraps at the end.
  */
 export function findTypeaheadMatch<T extends { text: string }>(
   items: readonly T[],
   typed: string,
+  currentIndex = -1,
 ): T | undefined {
-  const query = typed.toLocaleLowerCase();
+  const typedLower = typed.toLocaleLowerCase();
+  const cycles = [...typedLower].every((letter) => letter === typedLower[0]);
+  const query = cycles ? typedLower.slice(0, 1) : typedLower;
+  const ordered = cycles
+    ? [...items.slice(currentIndex + 1), ...items.slice(0, currentIndex + 1)]
+    : items;
   return (
-    items.find(({ text }) => text.startsWith(query)) ??
-    items.find(({ text }) =>
+    ordered.find(({ text }) => text.startsWith(query)) ??
+    ordered.find(({ text }) =>
       text.split(/\s+/).some((word) => word.startsWith(query)),
     )
   );
@@ -109,10 +118,11 @@ function useWordTypeahead() {
     typed.current = { text: previous + event.key, at: now };
     event.preventDefault();
     event.stopPropagation();
-    findTypeaheadMatch(
-      listItems(event.currentTarget),
-      typed.current.text,
-    )?.item.focus();
+    const items = listItems(event.currentTarget);
+    const current = items.findIndex(
+      ({ item }) => item === event.currentTarget.ownerDocument.activeElement,
+    );
+    findTypeaheadMatch(items, typed.current.text, current)?.item.focus();
   };
 }
 

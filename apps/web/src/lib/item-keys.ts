@@ -12,12 +12,16 @@ import type {
 import {
   ITEM_SHORTCUTS,
   getShortcutPlatform,
+  isModifierPress,
   resolveShortcut,
   type ShortcutActionId,
   type ShortcutKeyEvent,
   type ShortcutPlatform,
 } from "@/lib/shortcuts";
-import { isShortcutSequencePending } from "@/lib/shortcut-handlers";
+import {
+  isDraftOpen,
+  isShortcutSequencePending,
+} from "@/lib/shortcut-handlers";
 import { withEventAttribution } from "@/lib/wide-events";
 
 /**
@@ -78,11 +82,23 @@ export const OPEN_BACKLOG_ITEM_ACTION = {
   label: "Open",
 } as const satisfies ObjectAction<"open">;
 
+/**
+ * The action a subitem's row adds, so Shift+Enter opens its parent. The
+ * sidebar's parent arrow has no Tab stop, so this is its keyboard route.
+ */
+export const OPEN_PARENT_ACTION = {
+  id: "open-parent",
+  label: "Open parent",
+} as const satisfies ObjectAction<"open-parent">;
+
 /** Keys on a backlog item row: Enter opens the item page instead of Edit. */
-export const BACKLOG_ITEM_ROW_KEYS: ActionKeys<BacklogItemActionId | "open"> = {
+export const BACKLOG_ITEM_ROW_KEYS: ActionKeys<
+  BacklogItemActionId | "open" | "open-parent"
+> = {
   ...BACKLOG_ITEM_ACTION_KEYS,
   edit: undefined,
   open: "item.edit",
+  "open-parent": "item.open-parent",
 };
 
 /** Tasks have no Delete: the Delete key archives them, with Undo. */
@@ -400,6 +416,18 @@ export function handleItemKeyDown<Id extends string>(
     event.target !== item ||
     event.nativeEvent.isComposing ||
     isShortcutSequencePending()
+  ) {
+    return;
+  }
+
+  // A row's letter keys stay quiet behind an open draft, as on the window: E
+  // on a sidebar row opened Settle over an unsaved entry editor. Arrows, Enter,
+  // Delete and the modifier chords keep working.
+  if (
+    event.key.length === 1 &&
+    event.key !== " " &&
+    !isModifierPress(event, platform) &&
+    isDraftOpen()
   ) {
     return;
   }

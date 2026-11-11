@@ -433,7 +433,7 @@ Decided in [Keyboard model and command palette](https://github.com/les-cabochons
 
 ### Style
 
-Frequent in-app actions use single keys. They only work when focus is not in a text field, and not while an entry editor or a floating composer is open, even once focus left it for the page behind: a key there acted on the page under the open draft, such as N opening a time entry over New project, or S stopping the timer from a Grid cell (usability testing, 2026-11-06). Escape closes the editor first. Modifier shortcuts are kept for OS conventions and app-wide commands: Cmd+K, Cmd+B, Cmd+Z, Cmd+, and Cmd+Enter. Cmd means Ctrl on Windows. The web build uses the same keys.
+Frequent in-app actions use single keys. They only work when focus is not in a text field, and not while an entry editor or a floating composer is open, even once focus left it for the page behind: a key there acted on the page under the open draft, such as N opening a time entry over New project, or S stopping the timer from a Grid cell (usability testing, 2026-11-06). The same holds for a focused row: its letter keys (S, B, E, M, F, P, Shift+S, "." and the rest) do nothing behind an open editor or composer, so E on a sidebar row never opens Settle over an unsaved entry. Arrows, Enter, Delete and the modifier chords still work on a row. Escape closes the editor first. Modifier shortcuts are kept for OS conventions and app-wide commands: Cmd+K, Cmd+B, Cmd+Z, Cmd+, and Cmd+Enter. Cmd means Ctrl on Windows. The web build uses the same keys.
 
 ### Global shortcuts
 
@@ -469,6 +469,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - On a focused task or project, F adds it to favorites or removes it.
+- On a focused subitem row in the sidebar, Shift+Enter opens its parent, as the parent arrow at the end of the row does. The arrow takes no Tab stop, so this is its keyboard route, and its tooltip shows the key. A row with no parent in the workspace ignores it.
 - The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. On a Grid cell that edits in place, "." starts typing hours instead. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts. Touch screens and the narrow view show no keys, in menus or tooltips, since a phone has none to press (usability testing, 2026-11-06).
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.
@@ -478,14 +479,14 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 Usability testing on 2026-11-06 found focus falling to the page after an edit, a pick or a move, so the next single key acted on the page, or on the wrong item. Focus now keeps the user's place.
 
 - Skip to content is the first Tab stop of every page. It shows while it has focus, and Enter moves focus to the page's first row or card, or to the page itself when it has none.
-- A sidebar backlog row is one Tab stop. Its hover actions take none, since the focused row's S, B and E do the same.
+- A sidebar backlog row is one Tab stop. Its hover actions take none, since the focused row's S, B and E do the same, and Shift+Enter does what the parent arrow of a subitem does.
 - A picker on a Backlog row, P for priority or Shift+S for state, gives focus back to the row when it closes, by a pick or by Escape, so ↓, Shift+S and Alt+→ keep working.
 - An action that draws the row again elsewhere, such as Alt+→ into the next state's group, keeps focus on the row there. One that takes it off the list, such as E, keeps focus in its place: on the row that took its place, or the one before at the end, as Delete does.
 - An editor or composer gives focus back to the row or button it came from. When it came from the page itself, as with N, or its row is gone, focus goes to the row of the entry or item it wrote: the new row after Create, the saved entry's row after Stop. Stop from the sidebar's timer card, which goes away with it, moves focus to the card's Start.
 - An entry moved to another day by Move to… or by its Date leaves the shown day: focus goes to the row that took its place.
 - Closing a dialog gives focus back to where it was. "Week complete" asks once the editor that reached the target has closed, so Escape returns to the entry's row.
 - Clicking the trigger of an open composer again, such as New project, focuses the composer's first field.
-- A double-click whose first click closed an editor, or started or stopped an entry from a row's ▶, does nothing more: its second click would land on the row the first one uncovered and open it.
+- A double-click whose first click closed an editor, or started or stopped an entry from a row's ▶, does nothing more: its second click would land on the row the first one uncovered and open it. Its second press also leaves the focus return alone, so focus still lands on the new row after Create entry.
 
 ### Selecting, copying and pasting entries
 
@@ -709,7 +710,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - ←/→ move focus between columns, ↑/↓ within a column or list.
 - Alt+←/→ move the focused card to the previous or next workflow state. Alt+↑/↓ reorder, as before.
 - Shift+S opens the state picker and P the priority picker. S stays the global start or stop key.
-- The state and priority menus, on rows, cards and the item page, check the current value and open on it, so ↓ moves from it. Typing the start of any word of a name highlights it, such as "rev" for In review, and Enter picks it.
+- The state and priority menus, on rows, cards and the item page, check the current value and open on it, so ↓ moves from it. Typing the start of any word of a name highlights it, such as "rev" for In review, and Enter picks it. Pressing one letter again, at once or after a pause, moves to the next item that starts with it and wraps at the end, as native menus do: S, S, S in a row's "…" menu goes Snooze…, Settle, then back to Start entry.
 - Space toggles the peek. Enter opens the item page. E, B, M and "." keep their meaning.
 
 ### Editing

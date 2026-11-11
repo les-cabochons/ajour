@@ -86,6 +86,7 @@ import {
   BACKLOG_ITEM_ACTION_KEYS,
   BACKLOG_ITEM_ROW_KEYS,
   OPEN_BACKLOG_ITEM_ACTION,
+  OPEN_PARENT_ACTION,
   handleItemKeyDown,
 } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
@@ -599,7 +600,12 @@ interface ItemRowProps {
  * rows. Under Custom and Priority ordering, dragging a row or Alt+Up and
  * Alt+Down move it.
  */
-function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
+function useItemRowHandlers({
+  workItem,
+  parent,
+  subitemCount,
+  rows,
+}: ItemRowProps) {
   const actions = rows.actionsFor(workItem, subitemCount);
   return {
     actions,
@@ -612,14 +618,21 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
       rows.pointerDown(workItem, event),
     onKeyDown: (event: KeyboardEvent<HTMLElement>) =>
       handleItemKeyDown(event, {
-        actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
+        actions: [
+          ...actions,
+          OPEN_BACKLOG_ITEM_ACTION,
+          ...(parent ? [OPEN_PARENT_ACTION] : []),
+        ],
         keys: BACKLOG_ITEM_ROW_KEYS,
-        onAction: (actionId, { shortcutId }) =>
-          actionId === "open"
-            ? rows.open(workItem)
-            : rows.run(workItem, actionId, {
-                askToSettle: shortcutId === "item.settle-ask",
-              }),
+        onAction: (actionId, { shortcutId }) => {
+          if (actionId === "open") rows.open(workItem);
+          else if (actionId === "open-parent") {
+            if (parent) rows.open(parent);
+          } else
+            rows.run(workItem, actionId, {
+              askToSettle: shortcutId === "item.settle-ask",
+            });
+        },
         onReorder: rows.canReorder(workItem)
           ? (direction) => rows.step(workItem, direction)
           : undefined,
@@ -657,8 +670,10 @@ function ParentLink({
   return (
     <TooltipButton
       label={parent.title}
+      shortcut="item.open-parent"
       aria-label={`Open parent: ${parent.title}`}
-      // No Tab stop, like the row's other hover controls.
+      // No Tab stop, like the row's other hover controls. Shift+Enter on the
+      // focused row is its keyboard route.
       tabIndex={-1}
       className={cn(className, "hover:text-foreground")}
       onClick={(event) => {

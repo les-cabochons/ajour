@@ -6,6 +6,8 @@
  * 2026-11-06). See "Focus after an action" in docs/agents/ux-spec.md.
  */
 
+import { isIgnoredPress } from "@/lib/double-click-guard";
+
 /** How long a dialog or popover may take to give focus back as it closes. */
 const SETTLE_MS = 400;
 
@@ -20,7 +22,8 @@ export function isFocusLost(doc: Document = document) {
  * the page meanwhile. Focus the user, a dialog or a field put elsewhere stays
  * there. It checks again on each frame for a short while, since a closing
  * dialog can give focus back to a removed element after React has rendered,
- * and stops at the user's next key or press.
+ * and stops at the user's next key or press, except the second press of a
+ * double-click that `ignoreSecondClick` drops.
  */
 export function focusWhenLost(find: () => HTMLElement | null | undefined) {
   const doc = document;
@@ -30,10 +33,15 @@ export function focusWhenLost(find: () => HTMLElement | null | undefined) {
   const stop = () => {
     done = true;
     view.removeEventListener("keydown", stop, true);
-    view.removeEventListener("pointerdown", stop, true);
+    view.removeEventListener("mousedown", stopAtPress, true);
+  };
+  // A press is a mousedown, which carries the click count the double-click
+  // guard needs; a pointerdown does not.
+  const stopAtPress = (event: MouseEvent) => {
+    if (!isIgnoredPress(event)) stop();
   };
   view.addEventListener("keydown", stop, true);
-  view.addEventListener("pointerdown", stop, true);
+  view.addEventListener("mousedown", stopAtPress, true);
 
   const attempt = () => {
     if (done) return;

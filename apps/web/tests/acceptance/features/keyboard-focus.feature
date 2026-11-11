@@ -148,3 +148,36 @@ Feature: Keyboard focus keeps the user's place
     When I open the backlog item "Fix export rounding"
     And I press the "Shift+E" key
     Then the Settle dialog has focus on its State
+
+  Scenario: A double-click on Create entry puts focus on its new row
+    When I open today's Day view for keyboard work
+    And I press the "n" key
+    And I type "0:20" in the open editor's Hours
+    And I type "Double click" in the open editor's Note
+    And I double-click the open editor's "Create entry" button
+    Then focus is on today's entry row "Double click"
+
+  Scenario: A sidebar row's keys stay quiet while an entry editor is open
+    When I open today's Day view for keyboard work
+    And I press the "n" key
+    And I focus the sidebar row "Fix the login form"
+    And I press the "e" key
+    Then an entry editor is still open
+    And the sidebar row "Fix the login form" is still there
+
+  Scenario: Shift+Enter on a sidebar subitem opens its parent
+    Given a subitem "Type a digit to edit hours" of "Fix the login form"
+    When I open today's Day view for keyboard work
+    And I focus the sidebar row "Type a digit to edit hours"
+    And I press the "Shift+Enter" key
+    Then the backlog item page "Fix the login form" is open
+
+  Scenario: Pressing a letter again moves to the next menu item that starts with it
+    When I focus the Backlog row "Fix the login form"
+    And I press the "." key
+    And I press the "s" key
+    And I press the "s" key
+    Then the open menu highlights the item "Settle"
+    When I wait for the menu's typed letters to reset
+    And I press the "s" key
+    Then the open menu highlights the item "Start entry"

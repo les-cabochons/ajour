@@ -28,6 +28,15 @@ function swallow(event: MouseEvent) {
 }
 
 /**
+ * True for a mouse press that `ignoreSecondClick` drops: the second press of
+ * the double-click it was armed by. It is not the user's next action, so
+ * `focusWhenLost` keeps working through it.
+ */
+export function isIgnoredPress(event: { detail: number }) {
+  return event.detail >= 2 && performance.now() <= armedUntil;
+}
+
+/**
  * Ignores the second click of the double-click whose first click is `event`.
  * A keyboard press (detail 0) or a later click of a sequence does nothing.
  */

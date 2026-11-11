@@ -74,6 +74,15 @@ const ShortcutContext = createContext<ShortcutHandlerRegistry | null>(null);
 let sequencePending = false;
 
 /**
+ * True while an entry editor in any host or a floating composer is open, even
+ * once focus left it. Single keys, on the window and on a focused row, stay
+ * quiet then, so a key never acts on the page under an open draft.
+ */
+export function isDraftOpen() {
+  return isEntryEditorOpen() || isFloatingComposerOpen();
+}
+
+/**
  * Whether the app listener is waiting for the second key of a sequence. Focused
  * rows leave their keys alone then, so "G then B" goes to Backlog instead of
  * snoozing the focused backlog item.
@@ -112,9 +121,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
       // host, or a floating composer, even once focus left it.
       if (
         !isModifierPress(event, platform) &&
-        (blocksSingleKeyShortcuts(document.activeElement) ||
-          isEntryEditorOpen() ||
-          isFloatingComposerOpen())
+        (blocksSingleKeyShortcuts(document.activeElement) || isDraftOpen())
       ) {
         clearPrefix();
         return;

@@ -702,3 +702,68 @@ Then("the Settle dialog has focus on its State", async ({ page }) => {
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("combobox", { name: "State" })).toBeFocused();
 });
+
+When(
+  "I type {string} in the open editor's Note",
+  async ({ page }, note: string) => {
+    await timeEntryEditor(page).getByLabel("Note").fill(note);
+  },
+);
+
+Then("an entry editor is still open", async ({ page }) => {
+  await page.waitForTimeout(300);
+  await expect(timeEntryEditor(page)).toBeVisible();
+});
+
+Then(
+  "the sidebar row {string} is still there",
+  async ({ page }, title: string) => {
+    await expect(
+      page
+        .getByRole("navigation", { name: "Primary navigation" })
+        .locator("[data-backlog-item-id]", {
+          has: page.locator("[data-row-title]", { hasText: title }),
+        }),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  },
+);
+
+Given(
+  "a subitem {string} of {string}",
+  async ({ page }, title: string, parent: string) => {
+    await changeSeed(
+      page,
+      "keyboard-focus-subitem",
+      `state.workItems.push({
+         _id: "item-subitem", title: arg.title, source: "manual", status: "active",
+         workflowStateId: "todo", priority: 2, projectId: "p-atlas",
+         taskId: "t-atlas-dev", parentWorkItemId: arg.parentId,
+         createdAt: 1 });`,
+      { title, parentId: ITEM_IDS[parent] },
+    );
+  },
+);
+
+Then(
+  "the backlog item page {string} is open",
+  async ({ page }, title: string) => {
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+  },
+);
+
+When("I wait for the menu's typed letters to reset", async ({ page }) => {
+  // Longer than the menu's 500ms type-ahead window.
+  await page.waitForTimeout(700);
+});
+
+Then(
+  "the open menu highlights the item {string}",
+  async ({ page }, name: string) => {
+    await expect(page.locator('[role^="menuitem"]:focus')).toHaveText(
+      new RegExp(`^${name}`),
+    );
+  },
+);

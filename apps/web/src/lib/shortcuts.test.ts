@@ -101,6 +101,7 @@ describe("shortcut registry", () => {
 
     expect(keys("mac")).toEqual([
       "↩",
+      "⇧↩",
       "E",
       "⇧E",
       "B",
@@ -124,6 +125,7 @@ describe("shortcut registry", () => {
     ]);
     expect(keys("other")).toEqual([
       "Enter",
+      "Shift+Enter",
       "E",
       "Shift+E",
       "B",
@@ -305,6 +307,7 @@ describe("resolveShortcut", () => {
     };
 
     expect(itemId(press("Enter"))).toBe("item.edit");
+    expect(itemId(press("Enter", { shiftKey: true }))).toBe("item.open-parent");
     expect(itemId(press("e"))).toBe("item.settle");
     expect(itemId(press("b"))).toBe("item.snooze");
     expect(itemId(press("Delete"))).toBe("item.delete");
