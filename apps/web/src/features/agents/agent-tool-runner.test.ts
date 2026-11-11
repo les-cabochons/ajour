@@ -1089,17 +1089,19 @@ describe("agent delete, discard and undo tools", () => {
         .timesheetEntries.some((entry) => entry._id === entryId),
     ).toBe(false);
 
-    // The user edits the entry the agent edited, which keeps no Undo.
+    // The user edits the entry the agent edited, and that edit's Undo ends.
     const added = localStore.snapshot().timesheetEntries[0]!;
     const edited = (await call("edit_entry", {
       entryId: added._id,
       minutes: 45,
     })) as { output: { undoToken: string } };
-    localStore.updateTimesheetEntry(added._id, {
-      projectId: project._id,
-      taskId: task("Build")._id,
-      durationMs: 60 * 60_000,
-    });
+    localStore.forgetUndo(
+      localStore.updateTimesheetEntry(added._id, {
+        projectId: project._id,
+        taskId: task("Build")._id,
+        durationMs: 60 * 60_000,
+      })!,
+    );
     expect(
       await call("undo", { undoToken: edited.output.undoToken }),
     ).toMatchObject({

@@ -1418,11 +1418,35 @@ function updateStateWithResult<T>(
   return result;
 }
 
+/** The most undoable actions kept, newest first; the oldest are dropped. */
+export const UNDO_STACK_LIMIT = 30;
+
 /**
- * The last undoable action. Only one action can be undone, so a new one
- * replaces it. It lives in memory: the Undo toast does not survive a reload.
+ * An undoable action. `windowOpen` while its Undo toast shows. Once the
+ * window closes, the action stays undoable from Cmd+Z unless it reached
+ * outside this window, as a delayed source write or a team project does.
  */
-let lastUndo: { token: string; undo: LocalStateUndo } | undefined;
+interface KeptUndo {
+  token: string;
+  undo: LocalStateUndo;
+  windowOpen: boolean;
+  /** It changes a team project, which a team sync sends once the window closes. */
+  reachesTeam: boolean;
+}
+
+/**
+ * The undoable actions, oldest first, so Cmd+Z walks back through them in
+ * order. They live in memory: Undo does not survive a reload.
+ */
+let undoStack: KeptUndo[] = [];
+
+function findUndo(token: string) {
+  return undoStack.find((kept) => kept.token === token);
+}
+
+function dropUndo(token: string) {
+  undoStack = undoStack.filter((kept) => kept.token !== token);
+}
 
 /** How many `runWithUndo` calls are running, one inside another. */
 let undoGroupDepth = 0;
@@ -1540,7 +1564,6 @@ const TEAM_PUSH_HOLD_MS = 60_000;
  * from team syncs in every window until its Undo window closes.
  */
 function rememberUndo(token: string, undo: LocalStateUndo) {
-  lastUndo = { token, undo };
   // Inside `runWithUndo`, the group's own capture counts the change, once.
   if (undoGroupDepth === 0) {
     countUndoChanges(undo);
@@ -1560,6 +1583,10 @@ function rememberUndo(token: string, undo: LocalStateUndo) {
         change.after?.team !== undefined,
     )
     .map((change) => change.key);
+  undoStack = [
+    ...undoStack.slice(-(UNDO_STACK_LIMIT - 1)),
+    { token, undo, windowOpen: true, reachesTeam: held.length > 0 },
+  ];
   if (held.length > 0) {
     writeState({
       ...state,
@@ -1756,7 +1783,11 @@ const store = {
    * team sync waits for them.
    */
   pendingUndoProjectIds() {
-    const ids = getUndoProjectIds(lastUndo?.undo);
+    const ids = new Set(
+      undoStack
+        .filter((kept) => kept.windowOpen)
+        .flatMap((kept) => [...getUndoProjectIds(kept.undo)]),
+    );
     const hold = readState().teamPushHold;
     if (hold && hold.until > Date.now()) {
       for (const projectId of hold.projectIds) ids.add(projectId);
@@ -2496,14 +2527,18 @@ const store = {
     );
     describeTimerStart(before, after);
   },
-  /** Saves the running entry's form. It keeps running. */
+  /**
+   * Saves the running entry's form. It keeps running. Returns an undo token,
+   * or null when nothing changed.
+   */
   editRunningEntry(timerId: string, edit: RunningEntryEdit) {
     const timer = readState().timers.find((item) => item._id === timerId);
     const now = Date.now();
-    updateState((state) =>
+    const undoToken = updateStateWithUndo((state) =>
       applyEditRunningEntry(state, timerId, edit, { now: Date.now }),
     );
     describeRunningEntryEdit(timer, edit, now);
+    return undoToken;
   },
   /** Discards the running entry. Returns an undo token, or null when nothing changed. */
   cancelTimer(timerId: string) {
@@ -2522,13 +2557,14 @@ const store = {
     durationMs: number;
   }) {
     const before = readState();
-    const after = updateState((state) =>
+    const undoToken = updateStateWithUndo((state) =>
       saveManualTimesheetEntry(state, values, {
         createId,
         now: Date.now,
       }),
     );
-    describeEntryCreate(before, after);
+    describeEntryCreate(before, readState());
+    return undoToken;
   },
   stageTimesheetImportRows(rows: TimesheetImportRow[]) {
     const before = readState();
@@ -2897,17 +2933,17 @@ const store = {
     );
   },
   /**
-   * Creates the backlog editor's new item, which has no Undo, then applies
+   * Creates the backlog editor's new item, with its own undo, then applies
    * its description's timelog and, for an item made in a done state, closes
-   * it, under one Undo. Undo leaves the item and its description, and takes
-   * back what the timelog set and created and the close. The token is null
-   * when neither happened.
+   * it, under a second Undo. That one leaves the item and its description,
+   * and takes back what the timelog set and created and the close; its token
+   * is null when neither happened. `createdUndoToken` removes the item.
    */
   saveNewWorkItem(draft: LocalWorkItemDraft, closeIn?: string) {
     const factories = { createId, now: Date.now };
     const current = readState();
     const added = applyAddWorkItem(current, draft, factories);
-    writeState(added.state);
+    const createdUndoToken = updateStateWithUndo(() => added.state);
     const workItemId = added.result;
     const undoToken = updateStateWithUndo((state) => {
       // Compared with the state before the item existed, so it reads as new.
@@ -2919,7 +2955,7 @@ const store = {
           })
         : mapped;
     });
-    return { workItemId, undoToken };
+    return { workItemId, undoToken, createdUndoToken };
   },
   /**
    * Sets the item's project and task from its description's timelog, creating
@@ -3042,13 +3078,16 @@ const store = {
         createId,
         now: Date.now,
       });
-      if (sentItems && lastUndo) {
-        lastUndo.undo = completeSourceWriteInUndo(
-          lastUndo.undo,
-          state,
-          workItemId,
-          sentItems,
-        );
+      if (sentItems) {
+        undoStack = undoStack.map((kept) => ({
+          ...kept,
+          undo: completeSourceWriteInUndo(
+            kept.undo,
+            state,
+            workItemId,
+            sentItems,
+          ),
+        }));
       }
       return next;
     });
@@ -3194,13 +3233,14 @@ const store = {
     const entry = readState().timesheetEntries.find(
       (item) => item._id === entryId,
     );
-    updateState((state) =>
+    const undoToken = updateStateWithUndo((state) =>
       applyUpdateTimesheetEntry(state, entryId, values, {
         createId,
         now: Date.now,
       }),
     );
     describeEntryUpdate(entry, values);
+    return undoToken;
   },
   /** Deletes an entry. Returns an undo token, or null when nothing changed. */
   deleteTimesheetEntry(entryId: string) {
@@ -3320,19 +3360,21 @@ const store = {
     return { undoToken, movedIds: result };
   },
   /**
-   * Undoes the action that returned `token`, if it is still the last one.
-   * Restored records keep their ids, values, committed copies and order.
+   * Undoes the action that returned `token`, while it is kept. Restored
+   * records keep their ids, values, committed copies and order. An action
+   * whose records changed since is "stale", and is no longer kept.
    */
   undo(token: string): UndoResult {
-    if (lastUndo?.token !== token) {
+    const kept = findUndo(token);
+    if (!kept) {
       describeStoreCommand("undo.restore", { undo: { result: "expired" } });
       refuseStoreCommand("expired");
       return "expired";
     }
 
-    const kept = lastUndo;
     const { undo } = kept;
-    lastUndo = undefined;
+    const index = undoStack.indexOf(kept);
+    dropUndo(token);
     try {
       releaseTeamPushHold();
       const result = updateStateWithResult((state) => {
@@ -3355,30 +3397,73 @@ const store = {
       // Another window wrote first. The refusal reloaded this window, so keep
       // the undo: a retry runs it against the fresh state, which says "stale"
       // only when the undo itself no longer applies.
-      if (error instanceof StaleWindowError) lastUndo ??= kept;
+      if (error instanceof StaleWindowError && !findUndo(token)) {
+        undoStack = [
+          ...undoStack.slice(0, index),
+          kept,
+          ...undoStack.slice(index),
+        ];
+      }
       throw error;
     }
   },
-  /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
+  /**
+   * Drops the undo for `token`: the action is no longer undoable at all, as
+   * when its caller offers no Undo.
+   */
   forgetUndo(token: string) {
-    if (lastUndo?.token === token) {
-      lastUndo = undefined;
-      releaseTeamPushHold();
+    const kept = findUndo(token);
+    if (!kept) return;
+    dropUndo(token);
+    if (kept.windowOpen) releaseTeamPushHold();
+  },
+  /**
+   * The Undo toast of `token` closed. The action stays undoable from
+   * Cmd+Z, unless `keep` is false, as for a write to the source sent when
+   * the toast closes, or it changed a team project, which a team sync may
+   * now send.
+   */
+  closeUndoWindow(token: string, { keep = true }: { keep?: boolean } = {}) {
+    const kept = findUndo(token);
+    if (!kept) return;
+    if (kept.windowOpen) releaseTeamPushHold();
+    if (!keep || kept.reachesTeam) {
+      dropUndo(token);
+      return;
     }
+    undoStack = undoStack.map((candidate) =>
+      candidate === kept ? { ...candidate, windowOpen: false } : candidate,
+    );
+  },
+  /** The kept undo tokens, newest first: the order Cmd+Z walks back through. */
+  keptUndoTokens(): string[] {
+    return undoStack.map((kept) => kept.token).reverse();
+  },
+  /**
+   * Whether `token` is the newest action and its Undo toast still shows,
+   * the only undo an agent may press.
+   */
+  isLatestOpenUndo(token: string) {
+    const latest = undoStack.at(-1);
+    return latest?.token === token && latest.windowOpen;
   },
   /**
    * Runs store commands as one undoable action, for callers such as agent
    * tools whose commands keep no undo of their own. The undo covers every
-   * record the commands changed. Replaces the last undo, like any action.
+   * record the commands changed, and replaces the commands' own undos.
    */
   runWithUndo<T>(run: () => T): { result: T; undoToken: string | null } {
     const before = readState();
+    const keptBefore = new Set(undoStack.map((kept) => kept.token));
     undoGroupDepth += 1;
     let result: T;
     try {
       result = run();
     } finally {
       undoGroupDepth -= 1;
+      if (undoGroupDepth === 0) {
+        undoStack = undoStack.filter((kept) => keptBefore.has(kept.token));
+      }
     }
     const after = readState();
     if (after === before) return { result, undoToken: null };
@@ -3599,7 +3684,12 @@ const taskIdsFirst = {
 
 /** The store's reads: they change nothing, so they emit no event. */
 type StoreRead =
-  "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
+  | "subscribe"
+  | "snapshot"
+  | "pendingUndoProjectIds"
+  | "getTimeline"
+  | "keptUndoTokens"
+  | "isLatestOpenUndo";
 
 /**
  * Each store command's wide event name, and how it reads its fields: from
@@ -4187,6 +4277,7 @@ export const STORE_COMMANDS = {
   },
   undo: "undo.restore",
   forgetUndo: { name: "undo.expire", trigger: "system" },
+  closeUndoWindow: { name: "undo.expire", trigger: "system" },
   // Only agent tools group their writes under one Undo today.
   runWithUndo: { name: UNDO_GROUP, trigger: "agent" },
   saveTimer: "time_entry.stop",

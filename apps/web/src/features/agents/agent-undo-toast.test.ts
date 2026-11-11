@@ -98,12 +98,14 @@ describe("the toast of an agent write the undo tool refuses", () => {
     })) as { output: { undoToken: string } };
     expect(toastCalls).toEqual(["shown"]);
 
-    // The user edits the entry again, which keeps no Undo of its own.
-    localStore.updateTimesheetEntry(entry._id, {
-      projectId: project._id,
-      taskId: task._id,
-      durationMs: 60 * 60_000,
-    });
+    // The user edits the entry again, and that edit's Undo ends.
+    localStore.forgetUndo(
+      localStore.updateTimesheetEntry(entry._id, {
+        projectId: project._id,
+        taskId: task._id,
+        durationMs: 60 * 60_000,
+      })!,
+    );
     const { undoToken } = edited.output;
     expect(await run("undo", { undoToken })).toMatchObject({
       ok: false,

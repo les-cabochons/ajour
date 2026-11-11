@@ -6,8 +6,9 @@ import { localStore } from "@/lib/local-store";
 
 /**
  * The `undo` tool: an agent presses the Undo of one of its own writes, as
- * the user would in its toast. The store keeps only the last action's undo,
- * so this keeps only the last agent write's description, for the answer and
+ * the user would in its toast, and only the newest action's while its toast
+ * shows. The store keeps earlier undos for Cmd+Z, but an agent's reach stops
+ * at the newest, so this keeps only the last agent write's description, for the answer and
  * the refusal. The write belongs to the client that made it: another client
  * holding its token is refused as if the token had expired, so a client learns
  * nothing about another's tokens.
@@ -55,6 +56,11 @@ export function runAgentUndo(
   const write = lastAgentWrite;
   // Only this client's own write: a token it never got is refused too.
   if (write?.token !== undoToken || write.clientId !== clientId) {
+    throw new AgentToolRefusal(EXPIRED);
+  }
+  // The window keeps earlier actions for Cmd+Z, but an agent presses only
+  // the Undo of the newest action while its toast shows.
+  if (!localStore.isLatestOpenUndo(undoToken)) {
     throw new AgentToolRefusal(EXPIRED);
   }
   const result = localStore.undo(undoToken);

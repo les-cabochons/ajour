@@ -2178,7 +2178,7 @@ describe("localStore workflow state sync", () => {
     });
   });
 
-  it("undoes only the last time entry action, once, while its token is kept", async () => {
+  it("undoes each kept time entry action once, newest first", async () => {
     const { localStore } = await import("./local-store");
     localStore.saveManualTimeEntry({
       localDate: "2026-10-07",
@@ -2199,21 +2199,70 @@ describe("localStore workflow state sync", () => {
       note: "Second",
       durationMs: 60_000,
     })!;
+    // The newest action comes first, and a closed toast keeps its action.
+    localStore.closeUndoWindow(deleteToken);
+    expect(localStore.keptUndoTokens().slice(0, 2)).toEqual([
+      moveToken,
+      deleteToken,
+    ]);
+    expect(localStore.isLatestOpenUndo(moveToken)).toBe(true);
+    expect(localStore.isLatestOpenUndo(deleteToken)).toBe(false);
 
-    expect(localStore.undo(deleteToken)).toBe("expired");
     expect(localStore.undo(moveToken)).toBe("restored");
     expect(localStore.undo(moveToken)).toBe("expired");
-
-    const nextDelete = localStore.deleteTimesheetEntry(first!._id)!;
-    localStore.forgetUndo(nextDelete);
-    expect(localStore.undo(nextDelete)).toBe("expired");
-
-    const finalDelete = localStore.deleteTimesheetEntry(second!._id)!;
-    expect(localStore.undo(finalDelete)).toBe("restored");
+    expect(localStore.undo(deleteToken)).toBe("restored");
     expect(
       JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!)
         .timesheetEntries,
-    ).toEqual(JSON.parse(JSON.stringify(before.slice(1))));
+    ).toEqual(JSON.parse(JSON.stringify(before)));
+
+    const forgotten = localStore.deleteTimesheetEntry(first!._id)!;
+    localStore.forgetUndo(forgotten);
+    expect(localStore.undo(forgotten)).toBe("expired");
+
+    // A write sent when the toast closes leaves nothing to undo.
+    const sent = localStore.deleteTimesheetEntry(second!._id)!;
+    localStore.closeUndoWindow(sent, { keep: false });
+    expect(localStore.undo(sent)).toBe("expired");
+  });
+
+  it("keeps at most the newest undoable actions", async () => {
+    const { localStore, UNDO_STACK_LIMIT } = await import("./local-store");
+    const tokens: string[] = [];
+    for (let index = 0; index <= UNDO_STACK_LIMIT; index += 1) {
+      tokens.push(
+        localStore.saveManualTimeEntry({
+          localDate: "2026-10-07",
+          note: `Entry ${index}`,
+          durationMs: 60_000,
+        })!,
+      );
+    }
+    expect(localStore.keptUndoTokens()).toHaveLength(UNDO_STACK_LIMIT);
+    expect(localStore.undo(tokens[0]!)).toBe("expired");
+    expect(localStore.undo(tokens.at(-1)!)).toBe("restored");
+  });
+
+  it("refuses an undo whose records changed since, and drops it", async () => {
+    const { localStore } = await import("./local-store");
+    const created = localStore.saveManualTimeEntry({
+      localDate: "2026-10-07",
+      note: "First",
+      durationMs: 60_000,
+    })!;
+    const [entry] = localStore.snapshot().timesheetEntries;
+    localStore.updateTimesheetEntry(entry!._id, {
+      note: "Edited",
+      durationMs: 60_000,
+    });
+    const edited = localStore.keptUndoTokens()[0]!;
+    expect(localStore.undo(edited)).toBe("restored");
+    localStore.updateTimesheetEntry(entry!._id, {
+      note: "Changed since",
+      durationMs: 60_000,
+    });
+    expect(localStore.undo(created)).toBe("stale");
+    expect(localStore.keptUndoTokens()).not.toContain(created);
   });
 
   it("hydrates committed entries from desktop bootstrap state when the current profile was reset", async () => {
