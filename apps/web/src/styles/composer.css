@@ -15,8 +15,18 @@
   outline: none;
 }
 
-.composer .composer-title::placeholder {
+/* A composer placeholder says what to type, never a value. Italic, light
+   and in the tertiary color, it stands apart from a value in the
+   foreground. An empty chip that names its field ("Project", "Priority",
+   "Assignee", "Pick a date") reads the same: it names the field, not "No
+   priority" (forms council round 19). Snooze's chips sit outside a
+   .composer, and CodeMirror's own theme needs the longer selector. */
+:is(.composer, .composer-chips) :is(input, textarea)::placeholder,
+.composer .composer-body .cm-placeholder,
+.composer-chips span[data-placeholder] {
   color: var(--text-tertiary);
+  font-style: italic;
+  font-weight: 300;
 }
 
 .composer .composer-title[aria-invalid="true"]::placeholder {
@@ -32,10 +42,6 @@
 
 .composer .composer-body:focus-within {
   box-shadow: none;
-}
-
-.composer .composer-body .cm-placeholder {
-  color: var(--text-tertiary);
 }
 
 .composer-chips {
@@ -106,10 +112,6 @@
   color: var(--foreground);
 }
 
-.composer-chips .composer-pill [data-placeholder] {
-  color: var(--muted-foreground);
-}
-
 .composer-chips .searchable-select-leading {
   padding-inline-start: 9px;
   color: var(--muted-foreground);
@@ -144,10 +146,6 @@
   font-weight: 500;
 }
 
-.composer-chips .searchable-select-input::placeholder {
-  color: var(--muted-foreground);
-}
-
 .composer-chips .composer-estimate {
   display: inline-flex;
   align-items: center;
@@ -174,10 +172,6 @@
   outline: none;
 }
 
-.composer-chips .composer-estimate-input::placeholder {
-  color: var(--text-tertiary);
-}
-
 .composer .composer-subtitle {
   width: 100%;
   border: 0;
@@ -187,10 +181,6 @@
   font-size: 14px;
   line-height: 1.5;
   outline: none;
-}
-
-.composer .composer-subtitle::placeholder {
-  color: var(--text-tertiary);
 }
 
 .composer-chips .composer-color {
@@ -216,6 +206,14 @@
   font-family: var(--font-mono);
 }
 
+/* A time's placeholder is its format, "0:00", "0h" or "9:00". As figures
+   it already reads as empty, so it stays upright, faint and light. */
+.composer .composer-hours::placeholder,
+.inline-figure .inline-figure-input::placeholder,
+.composer-chips .composer-time-input::placeholder {
+  font-style: normal;
+}
+
 .composer textarea.composer-note {
   width: 100%;
   min-height: 1lh;
@@ -225,10 +223,6 @@
   font-size: 14px;
   line-height: 1.5;
   outline: none;
-}
-
-.composer textarea.composer-note::placeholder {
-  color: var(--text-tertiary);
 }
 
 /* The task picker and the date as chips. */
@@ -420,7 +414,7 @@
   padding-inline-end: 10px;
 }
 
-/* A project's code keeps room for its placeholder, such as "ATL": an empty
+/* A project's code keeps room for its placeholder, "Add": an empty
    estimate collapses to its label, but an empty code read as no field at
    all (usability council U1). */
 .composer-chips
@@ -486,10 +480,6 @@
 .inline-figure-input:focus-visible {
   border-bottom: 1px solid var(--ring);
   background: oklch(from var(--foreground) l c h / 8%);
-}
-
-.inline-figure-input::placeholder {
-  color: var(--text-tertiary);
 }
 
 .inline-figure[data-invalid="true"] .inline-figure-input {
@@ -644,11 +634,4 @@
     min-width: 32px;
     min-height: 32px;
   }
-}
-
-/* An empty select chip names its field in muted text, as an empty Project
-   or State chip does: "Priority", not "No priority" (forms council round
-   19). */
-.composer-chips [data-slot="select-trigger"] [data-placeholder] {
-  color: var(--muted-foreground);
 }

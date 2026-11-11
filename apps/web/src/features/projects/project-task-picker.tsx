@@ -424,6 +424,8 @@ export function ProjectTaskPicker({
           />
         )}
         <span
+          // Empty, a composer chip draws it as a placeholder (composer.css).
+          data-placeholder={selectedProject ? undefined : ""}
           className={cn(
             "min-w-0 flex-1 truncate",
             !selectedProject && "text-[var(--text-tertiary)]",

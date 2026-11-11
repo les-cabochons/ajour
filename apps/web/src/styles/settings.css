@@ -268,6 +268,12 @@
   font-weight: 300;
 }
 
+/* A time's placeholder is its format, "0:00": as figures it already reads
+   as empty, so it stays upright. */
+.settings-content .settings-time-input::placeholder {
+  font-style: normal;
+}
+
 @media (max-width: 1600px) {
   .settings-layout {
     display: flex;

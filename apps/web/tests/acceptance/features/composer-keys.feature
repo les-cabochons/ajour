@@ -21,7 +21,7 @@ Feature: Save a composer from any of its fields
     Given I have projects with searchable tasks
     When I open the Projects workspace
     And I open the New project composer
-    Then its empty Code field shows its "ATL" placeholder
+    Then its empty Code field shows its "Add" placeholder
     When I name the new project "Northwind" and press Ctrl+Enter
     Then the project composer is closed
 

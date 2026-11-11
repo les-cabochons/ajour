@@ -39,6 +39,7 @@ function InlineFigure({
   /** The number as figures show it, or null to show the typed text. */
   format?: (value: string) => string | null;
   invalid?: boolean;
+  /** Shown while empty: the format to type, as "0h". */
   placeholder?: string;
   /** A control after the word, such as a reset. */
   trailing?: ReactNode;

@@ -288,7 +288,9 @@ export function TaskPropertyFields({
                     value={picked}
                     options={taskNameOptions(otherTaskNames, picked)}
                     onChange={set}
-                    placeholder={defaultValue || "None"}
+                    // The task's own name is a value; "Same name" says where an
+                    // empty field comes from, as the clear option does.
+                    placeholder="Same name"
                     clearLabel={`Same name${defaultValue ? `: ${defaultValue}` : ""}`}
                     emptyMessage="No matching tasks"
                     ariaLabel={field.label}
@@ -298,7 +300,7 @@ export function TaskPropertyFields({
                     id={id}
                     value={picked}
                     maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
-                    placeholder={defaultValue || "None"}
+                    placeholder="None"
                     onChange={(event) => set(event.target.value)}
                   />
                 )}
