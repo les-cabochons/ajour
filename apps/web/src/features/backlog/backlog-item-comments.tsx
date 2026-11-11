@@ -843,7 +843,8 @@ function CommentComposer({
               {text}
             </span>
           ) : (
-            "Leave a comment…"
+            // Drawn as the editor's placeholder, which replaces it on click.
+            <span data-placeholder="">Leave a comment…</span>
           )}
         </button>
       )}

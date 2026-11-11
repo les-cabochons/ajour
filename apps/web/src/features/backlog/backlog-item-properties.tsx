@@ -93,7 +93,7 @@ export function BacklogItemProperties({
                 value: p._id,
                 label: getLocalProjectDisplayName(p),
               }))}
-            placeholder="No project"
+            placeholder="Pick a project"
             emptyMessage="No projects"
             ariaLabel="Project"
             clearLabel="No project"
@@ -117,7 +117,7 @@ export function BacklogItemProperties({
             options={(project?.tasks ?? [])
               .filter((t) => t.status === "active" || t._id === item.taskId)
               .map((t) => ({ value: t._id, label: t.name }))}
-            placeholder="No task"
+            placeholder={project ? "Pick a task" : "Pick a project first"}
             emptyMessage="No tasks"
             ariaLabel="Task"
             clearLabel="No task"

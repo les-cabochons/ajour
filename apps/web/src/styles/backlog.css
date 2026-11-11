@@ -1214,6 +1214,25 @@
   }
 }
 
+/* A placeholder on the item page says what to type, never a value, as in
+   composers and Settings: italic, light and in the tertiary color. An
+   empty State or Priority picker reads the same. Unlayered, so it wins
+   over the inputs' `placeholder:text-muted-foreground`; CodeMirror's own
+   theme needs the longer selector. */
+.backlog-item-page :is(input, textarea)::placeholder,
+.backlog-item-page .cm-editor .cm-placeholder,
+.backlog-item-page span[data-placeholder] {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-weight: 300;
+}
+
+/* A time's placeholder is its format, "0h": as figures it already reads as
+   empty, so it stays upright. */
+.backlog-item-page .backlog-item-estimate-input::placeholder {
+  font-style: normal;
+}
+
 /* The narrow view: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. */
 @media (width < 768px) {
   /* The toolbar starts right under the titlebar, as the page's first row. */
