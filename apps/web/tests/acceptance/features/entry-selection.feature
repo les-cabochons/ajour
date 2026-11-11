@@ -267,3 +267,18 @@ Feature: Select time entries like a file explorer
     Then Monday's tab in the day strip is not a drop target
     When I release the mouse
     Then the Day list reads "Login form", "API", "Code review"
+
+  Scenario: A tap opens an entry on a touch screen
+    Given I have a week of saved entries
+    When I open Monday's Day list on a touch screen
+    And I tap the "API" entry
+    Then the editor shows the "API" entry
+    When I close the entry editor
+    And I tap the "Login form" entry in a browser whose clicks name no pointer
+    Then the editor shows the "Login form" entry
+
+  Scenario: A click opens an entry in the narrow view
+    Given I have a week of saved entries
+    When I open Monday's Day list in a narrow window
+    And I click the "API" entry
+    Then the entry editor opens in a full-width dialog

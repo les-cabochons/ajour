@@ -543,3 +543,70 @@ When(
     await expect(stripTab(page, "Monday")).toBeVisible();
   },
 );
+
+// A phone has no double click: a tap opens the entry, as the narrow view's
+// click does (usability testing, 2026-11-06).
+When("I open Monday's Day list on a touch screen", async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 1,
+  });
+  await page.goto("/time/2026-10-05");
+  await expect(dayRow(page, "API")).toBeVisible();
+});
+
+/** A quick touch on the row's middle, sent as raw touch events. */
+async function tapRow(page: Page, text: string) {
+  const box = await dayRow(page, text).boundingBox();
+  if (!box) throw new Error(`The ${text} entry is not rendered`);
+  const point = { x: box.x + 40, y: box.y + box.height / 2 };
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [point],
+  });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+}
+
+When("I tap the {string} entry", async ({ page }, text: string) => {
+  await tapRow(page, text);
+});
+
+// Safari's click is a MouseEvent with no pointerType: only the press says
+// the finger was there.
+When(
+  "I tap the {string} entry in a browser whose clicks name no pointer",
+  async ({ page }, text: string) => {
+    const row = dayRow(page, text);
+    await row.dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      isPrimary: true,
+      button: 0,
+      bubbles: true,
+    });
+    await row.dispatchEvent("pointerup", {
+      pointerType: "touch",
+      isPrimary: true,
+      button: 0,
+      bubbles: true,
+    });
+    await row.evaluate((element) =>
+      element.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      ),
+    );
+  },
+);
+
+Then("the editor shows the {string} entry", async ({ page }, note: string) => {
+  await expect(page.getByRole("textbox", { name: "Note" })).toHaveValue(note);
+});
+
+When("I close the entry editor", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Note" })).toHaveCount(0);
+});

@@ -533,6 +533,20 @@ Feature: Backlog list and board views
     When I show earlier comments
     Then all seven comments show, oldest first
 
+  Scenario: A synced item's page scrolls as one page on a phone
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I narrow the Backlog window
+    And I open the Backlog parent page
+    And I scroll the item page far past its end with the mouse wheel
+    Then the item page stops at its end, with the titlebar and the bottom bar in place
+
+  Scenario: The item's actions fit a 360-pixel phone
+    Given the Backlog parent is synced
+    When the window is 360 pixels wide
+    And I open the Backlog parent page
+    Then the item page's actions fit inside the window
+
   Scenario: Switching items from the sidebar replaces the synced item's page
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

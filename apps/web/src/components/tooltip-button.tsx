@@ -73,7 +73,7 @@ export function ShortcutTooltipLabel({
     <>
       {label}
       {shortcut ? (
-        <kbd className="ajour-tooltip-shortcut">
+        <kbd className="ajour-tooltip-shortcut touch-or-narrow:hidden">
           {formatShortcutKeys(getShortcut(shortcut), platform).join(" ")}
         </kbd>
       ) : null}

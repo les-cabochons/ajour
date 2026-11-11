@@ -707,3 +707,54 @@ Then(
       });
   },
 );
+
+// At 360 the indicator's dot sat on the Commit label, and at 320 the toggle
+// ran past the window (usability testing, 2026-11-06).
+When(
+  "I open the app on a {int}-pixel phone",
+  async ({ page }, width: number) => {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto("/");
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeVisible();
+  },
+);
+Then(
+  "the navigation toggle and the agent indicator fit the window side by side",
+  async ({ page }) => {
+    const width = page.viewportSize()!.width;
+    const indicator = page.getByRole("button", { name: /^Agents:/ });
+    await expect(indicator).toBeVisible();
+    // Let a label that grows on open settle first.
+    await page.waitForTimeout(300);
+    const toggle = (await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .boundingBox())!;
+    const dot = (await indicator.boundingBox())!;
+    expect(toggle.x).toBeGreaterThanOrEqual(0);
+    expect(dot.x + dot.width).toBeLessThanOrEqual(width);
+    expect(toggle.x + toggle.width).toBeLessThanOrEqual(dot.x);
+  },
+);
+Then(
+  "every section in the navigation toggle shows its whole name",
+  async ({ page }) => {
+    const toggle = page.getByRole("navigation", { name: "Primary navigation" });
+    const box = (await toggle.boundingBox())!;
+    for (const name of ["Time", "Backlog", "Settings", "Commit"]) {
+      const label = toggle.getByText(name, { exact: true });
+      await expect(label).toBeVisible();
+      const labelBox = (await label.boundingBox())!;
+      expect(labelBox.x).toBeGreaterThanOrEqual(box.x);
+      expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(
+        box.x + box.width,
+      );
+      expect(
+        await label.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth + 0.5,
+        ),
+      ).toBe(true);
+    }
+  },
+);
