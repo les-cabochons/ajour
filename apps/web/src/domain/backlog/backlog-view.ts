@@ -160,6 +160,107 @@ export function showsArchiveFilter(filters: readonly BacklogFilter[]) {
 }
 
 /**
+ * What a new item takes from the filters on, so it lands where the user is
+ * looking: each of state, priority, project and task filtered to exactly one
+ * value the item can start with. Values are the filter's, so "" means No
+ * state, No priority or No project. A done state, the Archived state, an
+ * archived project and a task outside the filtered project are left out, and
+ * a task brings its project. Filters a new item can't take, such as Running,
+ * are ignored; the item may still be hidden (`getFilterFieldsHiding`).
+ */
+export function getNewItemFilterPreset(
+  state: Pick<LocalAppState, "workflowStates" | "projects">,
+  filters: readonly BacklogFilter[],
+): {
+  workflowStateId?: string;
+  priority?: string;
+  projectId?: string;
+  taskId?: string;
+} {
+  const only = (field: BacklogFilterField) => {
+    const values = filters.filter((filter) => filter.field === field);
+    return values.length === 1 ? values[0]!.value : undefined;
+  };
+  const preset: ReturnType<typeof getNewItemFilterPreset> = {};
+
+  const stateId = only("state");
+  if (
+    stateId === "" ||
+    (stateId !== undefined &&
+      state.workflowStates.some((candidate) => candidate._id === stateId) &&
+      !isDoneWorkflowState(state.workflowStates, stateId))
+  ) {
+    preset.workflowStateId = stateId;
+  }
+
+  const priority = only("priority");
+  if (
+    priority === "" ||
+    PRIORITY_LEVELS.some(({ level }) => String(level) === priority)
+  ) {
+    preset.priority = priority;
+  }
+
+  const activeProjects = state.projects.filter(
+    (project) => project.status === "active",
+  );
+  const projectId = only("project");
+  if (
+    projectId === "" ||
+    activeProjects.some((project) => project._id === projectId)
+  ) {
+    preset.projectId = projectId;
+  }
+
+  const taskId = only("task");
+  const taskProject = taskId
+    ? activeProjects.find((project) =>
+        project.tasks.some(
+          (task) => task._id === taskId && task.status === "active",
+        ),
+      )
+    : undefined;
+  if (
+    taskId &&
+    taskProject &&
+    (preset.projectId === undefined || preset.projectId === taskProject._id)
+  ) {
+    preset.projectId = taskProject._id;
+    preset.taskId = taskId;
+  }
+  return preset;
+}
+
+/**
+ * The filter fields that hide the item `itemId`, in the order they were
+ * added, so a page can offer to remove just those. Empty when the filters
+ * show it.
+ */
+export function getFilterFieldsHiding(
+  state: Pick<LocalAppState, "workItems" | "workflowStates" | "projects">,
+  settings: BacklogViewSettings,
+  filters: readonly BacklogFilter[],
+  context: BacklogViewContext,
+  itemId: string,
+): BacklogFilterField[] {
+  const workItem = state.workItems.find(
+    (candidate) => candidate._id === itemId,
+  );
+  if (!workItem) return [];
+  const one = { ...state, workItems: [workItem] };
+  const fields = [...new Set(filters.map((filter) => filter.field))];
+  return fields.filter(
+    (field) =>
+      selectBacklogViewItems(
+        one,
+        settings,
+        filters.filter((filter) => filter.field === field),
+        context,
+      ).length === 0,
+  );
+}
+
+/**
  * The items the page shows. Archived items show only in a done state and
  * within the done window, unless the Archived state filter asks for all of
  * them; items archived for leaving the sync show only under that filter.

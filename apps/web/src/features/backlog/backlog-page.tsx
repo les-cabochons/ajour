@@ -17,6 +17,7 @@ import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
 import { BacklogRefresh } from "./backlog-refresh";
 import { BacklogSearch } from "./backlog-search";
+import { offerToShowHiddenNewItem } from "./hidden-new-item";
 import { createWorkItemSearch } from "@/domain/backlog/work-item-search";
 import { useBacklogSearch } from "@/lib/backlog-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -78,6 +79,7 @@ import {
 } from "@/features/backlog/use-backlog-drag";
 import {
   ARCHIVED_STATE_FILTER,
+  getNewItemFilterPreset,
   groupBacklogItems,
   isBacklogReorderPeer,
   orderBacklogItems,
@@ -94,7 +96,11 @@ import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { withEventAttribution } from "@/lib/wide-events";
-import { updateBacklogView, useBacklogView } from "@/lib/backlog-view-settings";
+import {
+  readBacklogView,
+  updateBacklogView,
+  useBacklogView,
+} from "@/lib/backlog-view-settings";
 import { useNow } from "@/lib/use-now";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useActionRequest } from "@/lib/action-request";
@@ -626,7 +632,12 @@ export function BacklogPage() {
       !canUseProjectGroup(lane, current)
     )
       return;
-    const preset: Partial<BacklogTaskEditorFields> = {};
+    // The filters' values first, so the item lands in the list on screen;
+    // the group or lane the user added from wins over them.
+    const preset: Partial<BacklogTaskEditorFields> = getNewItemFilterPreset(
+      current,
+      view.filters,
+    );
     if (group?.kind === "state")
       preset.workflowStateId = group.workflowStateId ?? "";
     if (group?.kind === "priority")
@@ -645,7 +656,13 @@ export function BacklogPage() {
       if (editorOpenRef.current) return false;
       showEditorRef.current({
         kind: "create",
-        preset: projectId ? { projectId } : {},
+        preset: {
+          ...getNewItemFilterPreset(
+            localStore.snapshot(),
+            readBacklogView().filters,
+          ),
+          ...(projectId ? { projectId } : {}),
+        },
       });
       return true;
     }, []),
@@ -773,6 +790,7 @@ export function BacklogPage() {
         onFieldsChange={(fields) => {
           draft.current = fields;
         }}
+        onCreated={offerToShowHiddenNewItem}
         onClose={closeEditor}
         onAction={runCommittedAction}
         onOpenPage={

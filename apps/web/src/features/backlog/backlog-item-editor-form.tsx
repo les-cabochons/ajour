@@ -309,6 +309,7 @@ export function BacklogItemEditorForm({
   initialFields,
   onFieldsChange,
   onOpenPage,
+  onCreated,
 }: {
   target: BacklogTaskEditorTarget;
   onClose: () => void;
@@ -331,6 +332,8 @@ export function BacklogItemEditorForm({
    * long description shows its first lines (forms council rounds 12 and 13).
    */
   onOpenPage?: () => void;
+  /** Called with the new item's id once a new item is saved. */
+  onCreated?: (workItemId: string) => void;
 }) {
   const editorSurface = surface;
   // Unique per mounted form: the sidebar's New backlog item dialog can open
@@ -639,7 +642,7 @@ export function BacklogItemEditorForm({
         )
           ? result.draft.workflowStateId
           : undefined;
-        const { undoToken, createdUndoToken } = withEventAttribution(
+        const { workItemId, undoToken, createdUndoToken } = withEventAttribution(
           { surface: editorSurface },
           () =>
             localStore.saveNewWorkItem(
@@ -669,6 +672,7 @@ export function BacklogItemEditorForm({
         } else {
           offerUndo(createdUndoToken, created);
         }
+        onCreated?.(workItemId);
         return true;
       }
       case "update":

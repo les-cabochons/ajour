@@ -141,6 +141,11 @@ export function updateBacklogView(patch: Partial<BacklogViewPreferences>) {
   listeners.forEach((listener) => listener());
 }
 
+/** The display options and filters as they are now, for code outside React. */
+export function readBacklogView(): BacklogViewPreferences {
+  return get();
+}
+
 export function useBacklogView() {
   return useSyncExternalStore(
     (listener) => {
