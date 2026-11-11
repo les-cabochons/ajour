@@ -552,6 +552,21 @@ export function blocksSingleKeyShortcuts(target: unknown) {
 }
 
 /**
+ * A floating composer: a card over a live page, such as New project or the
+ * Backlog's item composer (`.composer-floating`, composer.css).
+ */
+const FLOATING_COMPOSER_SELECTOR = ".composer-floating";
+
+/**
+ * True while a floating composer is open. Focus can leave it for the page
+ * behind, and a single key there acted on the page under the open draft, such
+ * as N opening a time entry over New project (usability testing, 2026-11-06).
+ */
+export function isFloatingComposerOpen(doc: Document = document) {
+  return doc.querySelector(FLOATING_COMPOSER_SELECTOR) !== null;
+}
+
+/**
  * Week Grid cells carry this attribute. A focused cell keeps the digits for
  * its hours, so pinned task digits do nothing there, even on a cell that does
  * not edit in place. See "Pinned tasks" in the UX spec.

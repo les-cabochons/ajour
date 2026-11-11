@@ -16,6 +16,7 @@ import {
   blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   getShortcutPlatform,
+  isFloatingComposerOpen,
   isModifierPress,
   resolveShortcut,
   type ShortcutActionId,
@@ -84,8 +85,8 @@ export function isShortcutSequencePending() {
 /**
  * Listens for every registered shortcut on the window and runs the handler that
  * `useShortcut` registered for it. Single keys stay quiet while focus is in a
- * text field, menu or dialog. Pinned task digits also stay quiet while an entry
- * editor is open or a Week Grid cell has focus. A shortcut with no mounted
+ * text field, menu or dialog, and while an entry editor or a floating composer
+ * is open. Pinned task digits also stay quiet while a Week Grid cell has focus. A shortcut with no mounted
  * handler does nothing and leaves the key event alone.
  */
 export function ShortcutProvider({ children }: { children: ReactNode }) {
@@ -107,9 +108,13 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Single keys never act behind an open draft: an entry editor in any
+      // host, or a floating composer, even once focus left it.
       if (
         !isModifierPress(event, platform) &&
-        blocksSingleKeyShortcuts(document.activeElement)
+        (blocksSingleKeyShortcuts(document.activeElement) ||
+          isEntryEditorOpen() ||
+          isFloatingComposerOpen())
       ) {
         clearPrefix();
         return;
