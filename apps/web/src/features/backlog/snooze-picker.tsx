@@ -232,7 +232,7 @@ export function SnoozePickerHost() {
               <input
                 id="snooze-custom-time"
                 aria-label="Custom time"
-                className="composer-estimate-input"
+                className="composer-estimate-input composer-time-input"
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="9:00"

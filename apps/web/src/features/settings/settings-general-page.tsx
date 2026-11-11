@@ -110,7 +110,7 @@ function CapacityInput({
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Input
         id={id}
-        className="font-mono"
+        className="settings-time-input font-mono"
         value={draft}
         // The format to type, as every hours field shows it.
         placeholder="0:00"

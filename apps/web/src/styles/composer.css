@@ -206,6 +206,14 @@
   font-family: var(--font-mono);
 }
 
+/* A time's placeholder is its format, "0:00", "0h" or "9:00". As figures
+   it already reads as empty, so it stays upright, faint and light. */
+.composer .composer-hours::placeholder,
+.inline-figure .inline-figure-input::placeholder,
+.composer-chips .composer-time-input::placeholder {
+  font-style: normal;
+}
+
 .composer textarea.composer-note {
   width: 100%;
   min-height: 1lh;
