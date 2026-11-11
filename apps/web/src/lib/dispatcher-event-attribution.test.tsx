@@ -447,7 +447,7 @@ describe("the backlog item editor", () => {
     ]);
   });
 
-  it("marks a save in the wide page's floating composer as dialog", async () => {
+  it("marks a save in the wide page's editor dialog as dialog", async () => {
     expect(await saveNewItem(false)).toBe(true);
     expect(commands("backlog_item.create")).toEqual([
       { name: "backlog_item.create", trigger: "user", surface: "dialog" },

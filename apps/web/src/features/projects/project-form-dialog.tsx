@@ -3,9 +3,6 @@ import {
   RiHashtag as CodeIcon,
   RiPencilLine as EditIcon,
 } from "@remixicon/react";
-import { placeFloatingComposer } from "@/lib/floating-composer";
-import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -89,7 +86,6 @@ export function ProjectFormDialog({
     }
   }
 
-  const narrow = useIsNarrowView();
   const iconLabel =
     fields.icon.kind === "upload"
       ? "Uploaded favicon"
@@ -99,21 +95,14 @@ export function ProjectFormDialog({
         )?.label ?? "Preset");
 
   return (
+    // A modal dialog, centered in the window at every width, as every
+    // composer.
     <Dialog
       open
-      // Floating on a wide window, as every composer (forms council round 10).
-      modal={narrow}
       disablePointerDismissal
       onOpenChange={(open) => !open && onClose()}
     >
-      <DialogContent
-        className={cn(
-          "max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto",
-          !narrow && "composer-floating",
-        )}
-        overlay={narrow}
-        ref={narrow ? undefined : placeProjectComposer}
-      >
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto">
         <form
           className="flex flex-col gap-4"
           onSubmit={handleSubmit}
@@ -278,15 +267,4 @@ export function ProjectFormDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-/**
- * Places the floating card before it paints: below the Projects list's
- * column headers when the list shows, as the entry composer rests below the
- * Time page's day strip.
- */
-function placeProjectComposer(popup: HTMLDivElement | null) {
-  placeFloatingComposer(popup, null, {
-    restBelow: document.querySelector("main .project-list-table thead"),
-  });
 }

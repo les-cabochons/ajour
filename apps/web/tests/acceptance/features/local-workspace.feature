@@ -217,20 +217,23 @@ Feature: Open the local time workspace
     And I double-click Monday's first entry
     Then the side panel edits that entry beside the entries, which it hides none of
 
-  Scenario: The new project composer opens below the Projects column headers
+  Scenario: The New project composer opens centered over the page
     Given I have projects with searchable tasks
     When I open the Projects workspace
-    And I open New project while watching its composer
-    Then the project composer opened below the Projects column headers without sliding
+    And I open the New project composer
+    Then the "New project" dialog is centered in the window over a backdrop
 
-  Scenario: An open composer centers when the window narrows, and floats again when it widens
+  Scenario: The task editor opens centered over the project page
     Given I have projects with searchable tasks
-    When I open the Projects workspace
-    And I open New project while watching its composer
-    And the window is 390 pixels wide
-    Then the project composer is centered in the window
-    When the window is 1440 pixels wide
-    Then the project composer floats below the Projects column headers
+    When I open project "aaa xyz"
+    And I open task "111 000"
+    Then the "Edit task" dialog is centered in the window over a backdrop
+
+  Scenario: The backlog item editor opens centered over the Backlog
+    Given I have no saved Ajour workspace
+    When I open the Backlog workspace
+    And I start a new backlog item on the Backlog page
+    Then the "New backlog item" dialog is centered in the window over a backdrop
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
@@ -380,14 +383,6 @@ Feature: Open the local time workspace
     Then the New backlog item dialog opens over the open entry
     When I cancel the New backlog item dialog
     Then the open entry still shows "2:00" hours with the note
-
-  Scenario: Create a backlog item from the sidebar header while the Backlog page creates one
-    Given I have no saved Ajour workspace
-    When I open the Backlog workspace
-    And I start a new backlog item on the Backlog page
-    And I create the backlog item "Write release notes" from the sidebar header
-    Then the sidebar lists "Write release notes"
-    And the Backlog page's new item editor is still open
 
   Scenario: Hide the sidebar while the New backlog item dialog is open
     Given I have no saved Ajour workspace

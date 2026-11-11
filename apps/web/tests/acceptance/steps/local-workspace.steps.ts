@@ -1878,11 +1878,7 @@ When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
 
 /** The dialog that the sidebar's "+" opens over the current page. */
 function newBacklogItemDialog(page: Page) {
-  // The sidebar's dialog, not the Backlog page's floating composer of the
-  // same name.
-  return page
-    .getByRole("dialog", { name: "New backlog item", exact: true })
-    .and(page.locator(":not(.composer-floating)"));
+  return page.getByRole("dialog", { name: "New backlog item", exact: true });
 }
 
 /** The "+" beside Search and the project filter, at the top of the sidebar. */
@@ -1897,14 +1893,9 @@ When(
   "I create the backlog item {string} from the sidebar header",
   async ({ page }, title: string) => {
     await pressNewBacklogItem(page);
-    // On the Backlog page with no editor open, the "+" opens the page's own
-    // panel; anywhere else it opens the dialog over the page.
-    const dialog = newBacklogItemDialog(page);
-    const panel = page.getByRole("dialog", {
-      name: /^(New|Edit) (backlog item|subitem)$/,
-    });
-    await dialog.or(panel).first().waitFor();
-    const form = (await dialog.isVisible()) ? dialog : panel;
+    // On the Backlog page, the "+" opens the page's own editor; anywhere
+    // else it opens the dialog over the page. Both are named New backlog item.
+    const form = newBacklogItemDialog(page);
     await form.getByRole("textbox", { name: "Item", exact: true }).fill(title);
     await form.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(form).toBeHidden();
@@ -1916,14 +1907,6 @@ When("I start a new backlog item on the Backlog page", async ({ page }) => {
     .locator("main")
     .getByRole("button", { name: "New backlog item", exact: true })
     .click();
-});
-
-Then("the Backlog page's new item editor is still open", async ({ page }) => {
-  await expect(
-    page
-      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
-      .getByRole("textbox", { name: "Item", exact: true }),
-  ).toBeVisible();
 });
 
 Then("the time workspace is still open", async ({ page }) => {
@@ -3298,85 +3281,24 @@ Then(
 );
 
 /**
- * Records the floating composer's top edge on every frame from now until it
- * has settled, so a scenario can tell a card that opens in place from one
- * that slides there.
+ * The dialog sits in the middle of the window, over the backdrop that keeps
+ * the page behind it out of reach. Its open animation scales it about its
+ * center, so it is centered from its first frame.
  */
-async function watchComposerFrames(page: Page) {
-  await page.evaluate(() => {
-    const frames: number[] = [];
-    (window as unknown as { composerFrames: number[] }).composerFrames = frames;
-    const started = performance.now();
-    const tick = () => {
-      const card = document.querySelector(".composer-floating");
-      if (card) frames.push(card.getBoundingClientRect().top);
-      if (performance.now() - started < 1500) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-}
-
-/**
- * Waits for the composer to settle and checks it never moved on the way: its
- * open animation scales it about its center from 95%, so its top edge may
- * start up to 2.5% of its height lower, never higher.
- */
-async function expectComposerOpenedInPlace(page: Page, name: RegExp) {
-  const composer = page.getByRole("dialog", { name });
-  await expect(composer).toBeVisible();
-  await page.waitForTimeout(1600);
-  const frames = await page.evaluate(
-    () => (window as unknown as { composerFrames: number[] }).composerFrames,
-  );
-  const settled = (await composer.boundingBox())!;
-  expect(frames.length).toBeGreaterThan(0);
-  for (const top of frames) {
-    expect(top).toBeGreaterThanOrEqual(settled.y - 1);
-    expect(top).toBeLessThanOrEqual(settled.y + settled.height * 0.025 + 1);
-  }
-  return settled;
-}
-
-When("I open New project while watching its composer", async ({ page }) => {
-  await expect(page.locator("main .project-list-table thead")).toBeVisible();
-  await watchComposerFrames(page);
-  await page.getByRole("button", { name: "New project" }).first().click();
-});
-
 Then(
-  "the project composer opened below the Projects column headers without sliding",
-  async ({ page }) => {
-    const header = (await page
-      .locator("main .project-list-table thead")
-      .boundingBox())!;
-    const settled = await expectComposerOpenedInPlace(page, /^New project$/);
-    expect(settled.y).toBeGreaterThanOrEqual(header.y + header.height);
-  },
-);
-
-Then("the project composer is centered in the window", async ({ page }) => {
-  const composer = page.getByRole("dialog", { name: "New project" });
-  await expect(composer).not.toHaveClass(/composer-floating/);
-  // Its open animation has ended; the narrow dialog has none to wait for.
-  await page.waitForTimeout(300);
-  const box = (await composer.boundingBox())!;
-  const window = page.viewportSize()!;
-  const above = box.y;
-  const below = window.height - (box.y + box.height);
-  expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
-});
-
-Then(
-  "the project composer floats below the Projects column headers",
-  async ({ page }) => {
-    const composer = page.getByRole("dialog", { name: "New project" });
-    await expect(composer).toHaveClass(/composer-floating/);
-    await page.waitForTimeout(300);
-    const header = (await page
-      .locator("main .project-list-table thead")
-      .boundingBox())!;
-    const box = (await composer.boundingBox())!;
-    expect(box.y).toBeGreaterThanOrEqual(header.y + header.height);
+  "the {string} dialog is centered in the window over a backdrop",
+  async ({ page }, name: string) => {
+    const dialog = page.getByRole("dialog", { name, exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('[data-slot="dialog-overlay"]')).toBeVisible();
+    const box = (await dialog.boundingBox())!;
+    const window = page.viewportSize()!;
+    const left = box.x;
+    const right = window.width - (box.x + box.width);
+    const above = box.y;
+    const below = window.height - (box.y + box.height);
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
+    expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
   },
 );
 

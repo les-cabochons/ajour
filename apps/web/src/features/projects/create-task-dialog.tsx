@@ -164,7 +164,7 @@ function CreateTaskForm({
   }
 
   return (
-    <DialogContent className="composer-nested max-w-md gap-4">
+    <DialogContent className="max-w-md gap-4">
       <DialogHeader className="sr-only">
         <DialogTitle className="sr-only">Create task</DialogTitle>
         <DialogDescription className="sr-only">
