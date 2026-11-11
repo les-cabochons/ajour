@@ -28,6 +28,14 @@ When("I press Ctrl+Enter in the new item's description", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+Enter");
 });
 
+When("I press Enter in the new item's estimate", async ({ page }) => {
+  const estimate = newItemComposer(page).getByLabel("estimated", {
+    exact: true,
+  });
+  await expect(estimate).toBeFocused();
+  await page.keyboard.press("Enter");
+});
+
 Then("the new item composer is closed", async ({ page }) => {
   await expect(newItemComposer(page)).toHaveCount(0);
 });
