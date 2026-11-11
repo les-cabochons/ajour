@@ -2589,6 +2589,7 @@ When(
       timeout: 15_000,
     });
     await page
+      .getByRole("navigation", { name: "Primary navigation" })
       .getByRole("button", { name: "Commit week", exact: true })
       .click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/commit\?view=week/);
@@ -2620,6 +2621,7 @@ When(
     await viewLink(page, "Backlog").press("Enter");
     await expect(page).toHaveURL(/\/backlog$/);
     await page
+      .getByRole("navigation", { name: "Primary navigation" })
       .getByRole("button", { name: "Commit week", exact: true })
       .click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
@@ -2635,6 +2637,7 @@ When(
       .fill("Unsaved submission note");
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
     await page
+      .getByRole("navigation", { name: "Primary navigation" })
       .getByRole("button", { name: "Commit week", exact: true })
       .click();
   },

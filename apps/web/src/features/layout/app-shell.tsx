@@ -747,15 +747,6 @@ export function AppShell() {
                     className={cn(isDesktopShell && "desktop-no-drag")}
                   />
                 )}
-                {/* Commit week lives in the sidebar foot. While the sidebar
-                    is hidden on a Time page, it sits here, after Show
-                    sidebar. Other pages do without it. */}
-                {isNarrowView || isSidebarInline || !isTimeActive ? null : (
-                  <CommitWeekButton
-                    selectedTimeDate={selectedTimeDate}
-                    className={cn(isDesktopShell && "desktop-no-drag")}
-                  />
-                )}
                 <AppMenuBar />
                 {/* The narrow titlebar names the page: the day on Time, the
                     section elsewhere (council round 6). It is hidden on

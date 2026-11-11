@@ -87,7 +87,7 @@ Feature: Commit the week
   Scenario: Open the Commit page from the sidebar
     Given I have a committed week of entries
     When I open Monday's Day list
-    And I press "Commit week"
+    And I press Commit week in the sidebar
     Then the Commit page says everything is committed
 
   Scenario: Open the Commit page from the top bar while the sidebar is hidden

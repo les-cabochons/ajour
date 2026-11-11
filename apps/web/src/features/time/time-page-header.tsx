@@ -1,4 +1,5 @@
 import {
+  RiCalendarCheckLine as CommitIcon,
   RiCalendarLine as CalendarIcon,
   RiArrowGoBackLine as ReturnIcon,
   RiArrowLeftSLine as ChevronLeft,
@@ -34,7 +35,8 @@ export function formatWeekRange(weekDates: string[]) {
 
 /**
  * The Time page's top bar: previous and next, the day (a calendar trigger) or
- * the week's range, a Today chip or the way back to today, then Day | Week.
+ * the week's range, a Today chip or the way back to today, then Commit week,
+ * in words so the way to submit the week is in sight, and Day | Week.
  */
 export function TimePageHeader({
   date,
@@ -44,6 +46,7 @@ export function TimePageHeader({
   weekAvailable,
   onSelectDate,
   onChangeView,
+  onCommitWeek,
   calendar,
 }: {
   date: string;
@@ -54,6 +57,8 @@ export function TimePageHeader({
   weekAvailable: boolean;
   onSelectDate: (date: string) => void;
   onChangeView: (view: TimeView) => void;
+  /** Opens the Commit page for the week on screen. */
+  onCommitWeek: () => void;
   /** The Calendar button, shown while a calendar plugin is on. */
   calendar?: { count: number; open: boolean; onToggle: () => void };
 }) {
@@ -77,6 +82,10 @@ export function TimePageHeader({
               {calendar.count > 0 ? `Calendar · ${calendar.count}` : "Calendar"}
             </Button>
           ) : null}
+          <Button variant="outline" onClick={onCommitWeek}>
+            <CommitIcon data-icon="inline-start" />
+            Commit week
+          </Button>
           {weekAvailable ? (
             <ToggleGroup
               value={[view]}
