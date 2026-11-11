@@ -9,6 +9,7 @@ import {
   splitBacklogShelves,
   getSubitemHoursLeft,
   getSubitemProgress,
+  getDisplaySettingsHiding,
   getFilterFieldsHiding,
   getNewItemFilterPreset,
 } from "./backlog-view";
@@ -524,7 +525,6 @@ describe("a new item under the filters", () => {
     expect(
       getFilterFieldsHiding(
         { ...state, workItems: [hidden] },
-        defaults,
         filters,
         { now },
         "new",
@@ -533,11 +533,50 @@ describe("a new item under the filters", () => {
     expect(
       getFilterFieldsHiding(
         { ...state, workItems: [{ ...hidden, priority: 2 }] },
-        defaults,
         filters,
         { now },
         "new",
       ),
     ).toEqual([]);
+  });
+
+  it("names only the filters an item fails, whatever the display settings hide", () => {
+    const child = item("child", { parentWorkItemId: "parent", projectId: "q" });
+    const filters = [
+      { field: "project" as const, value: "q" },
+      { field: "priority" as const, value: "1" },
+    ];
+    const hiddenSubitems = { ...defaults, showSubitems: false };
+
+    // Subitems are off, so selection hides the child: that is the display
+    // setting's doing, and the matching Project filter stays.
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [child] },
+        filters,
+        { now },
+        "child",
+      ),
+    ).toEqual(["priority"]);
+    expect(
+      getFilterFieldsHiding(
+        { ...state, workItems: [child] },
+        [filters[0]!],
+        { now },
+        "child",
+      ),
+    ).toEqual([]);
+  });
+
+  it("names the display settings that hide an item", () => {
+    const child = item("child", { parentWorkItemId: "parent" });
+    const settled = item("settled", { status: "settled" });
+    const plain = item("plain");
+    const off = { ...defaults, showSubitems: false, showSettled: false };
+
+    expect(getDisplaySettingsHiding(off, child)).toEqual(["showSubitems"]);
+    expect(getDisplaySettingsHiding(off, settled)).toEqual(["showSettled"]);
+    expect(getDisplaySettingsHiding(off, plain)).toEqual([]);
+    expect(getDisplaySettingsHiding(defaults, child)).toEqual([]);
   });
 });

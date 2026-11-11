@@ -253,3 +253,35 @@ Then("the Backlog has no filters", async ({ page }) => {
     page.getByRole("button", { name: /^Remove .* filter$/ }),
   ).toHaveCount(0);
 });
+
+When("I turn off Show subitems in Display", async ({ page }) => {
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Show subitems" }).uncheck();
+  await page.keyboard.press("Escape");
+});
+
+When(
+  "I add the subitem {string} to {string}",
+  async ({ page }, title: string, parent: string) => {
+    // The filter menu stays open while values are picked.
+    await page.keyboard.press("Escape");
+    await expect(filterMenu(page)).toHaveCount(0);
+    await backlogRows(page)
+      .filter({ hasText: new RegExp(`^${parent}$`) })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Add subitem/ }).click();
+    const titleBox = page.getByPlaceholder("Subitem title");
+    await expect(titleBox).toBeFocused();
+    await titleBox.fill(title);
+    await titleBox.press("Enter");
+  },
+);
+
+Then(
+  "the Backlog still filters by {string}",
+  async ({ page }, field: string) => {
+    await expect(
+      page.getByRole("button", { name: `Remove ${field} filter` }),
+    ).toHaveCount(1);
+  },
+);

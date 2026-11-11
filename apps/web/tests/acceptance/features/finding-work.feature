@@ -67,3 +67,13 @@ Feature: Finding backlog items and making new ones
     When I press Show in the toast
     Then the Backlog page shows "Hidden new"
     And the Backlog has no filters
+
+  Scenario: Show on a new subitem that Display hides leaves the matching filter
+    When I open the Backlog filters
+    And I pick the "Project" filter "Atlas platform"
+    And I turn off Show subitems in Display
+    And I add the subitem "Hidden child" to "Week grid: keyboard editing of cells"
+    Then a toast says "“Hidden child” is hidden by the"
+    When I press Show in the toast
+    Then the Backlog page shows "Hidden child"
+    And the Backlog still filters by "Project"

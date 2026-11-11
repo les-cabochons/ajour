@@ -233,12 +233,13 @@ export function getNewItemFilterPreset(
 
 /**
  * The filter fields that hide the item `itemId`, in the order they were
- * added, so a page can offer to remove just those. Empty when the filters
- * show it.
+ * added, so a page can offer to remove just those. Each field's filters are
+ * judged alone, so a display setting that hides the item (see
+ * `getDisplaySettingsHiding`) never blames a filter that matches it. Empty
+ * when the filters show it.
  */
 export function getFilterFieldsHiding(
   state: Pick<LocalAppState, "workItems" | "workflowStates" | "projects">,
-  settings: BacklogViewSettings,
   filters: readonly BacklogFilter[],
   context: BacklogViewContext,
   itemId: string,
@@ -247,17 +248,49 @@ export function getFilterFieldsHiding(
     (candidate) => candidate._id === itemId,
   );
   if (!workItem) return [];
-  const one = { ...state, workItems: [workItem] };
+  const workflowStateIds = new Set(
+    state.workflowStates.map((workflowState) => workflowState._id),
+  );
+  const taskIdsByProject = new Map(
+    state.projects.map((project) => [
+      project._id,
+      new Set(project.tasks.map((task) => task._id)),
+    ]),
+  );
   const fields = [...new Set(filters.map((filter) => filter.field))];
   return fields.filter(
     (field) =>
-      selectBacklogViewItems(
-        one,
-        settings,
-        filters.filter((filter) => filter.field === field),
-        context,
-      ).length === 0,
+      !filters.some(
+        (filter) =>
+          filter.field === field &&
+          matchesFilter(
+            workItem,
+            filter,
+            context,
+            workflowStateIds,
+            taskIdsByProject,
+          ),
+      ),
   );
+}
+
+/**
+ * The Display settings that hide `workItem` whatever the filters say: Show
+ * subitems off hides a subitem, and Show settled off hides a settled item.
+ * Turning them on shows the item.
+ */
+export function getDisplaySettingsHiding(
+  settings: Pick<BacklogViewSettings, "showSubitems" | "showSettled">,
+  workItem: LocalWorkItem,
+): ("showSubitems" | "showSettled")[] {
+  const hiding: ("showSubitems" | "showSettled")[] = [];
+  if (!settings.showSubitems && isSubtaskWorkItem(workItem)) {
+    hiding.push("showSubitems");
+  }
+  if (!settings.showSettled && workItem.status === "settled") {
+    hiding.push("showSettled");
+  }
+  return hiding;
 }
 
 /**
