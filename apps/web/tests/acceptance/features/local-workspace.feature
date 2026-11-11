@@ -478,7 +478,8 @@ Feature: Open the local time workspace
     Then project "aaa renamed" is open with code "ZZZ"
     When I add a task from the New task row
     Then the task editor opens for a new task
-    When I archive the project from its properties
+    When I cancel the task editor
+    And I archive the project from its properties
     Then the project properties offer Restore
 
   Scenario: Pin tasks to number keys

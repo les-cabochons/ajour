@@ -565,6 +565,14 @@ Then("the other peek can start an entry", async ({ page }) => {
 When(
   "I stop the Backlog running entry from the timer dock",
   async ({ page }) => {
+    // The backlog item editor is modal: close it to reach the dock.
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
+    });
+    if ((await editor.count()) > 0) {
+      await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(editor).toHaveCount(0);
+    }
     await page
       .getByRole("button", { name: "Edit the running entry", exact: true })
       .click();
@@ -758,10 +766,12 @@ async function inspectBacklogStart(
         name: /^(New|Edit) (backlog item|subitem)$/,
       });
       if ((await editor.count()) === 0) {
-        await page
-          .getByRole("complementary", { name: "Backlog item peek" })
-          .getByRole("button", { name: "Edit", exact: true })
-          .click();
+        // The peek closes behind the editor, so it may need opening again.
+        const peek = page.getByRole("complementary", {
+          name: "Backlog item peek",
+        });
+        if ((await peek.count()) === 0) await openPeek(page, "parent");
+        await peek.getByRole("button", { name: "Edit", exact: true }).click();
       }
       await editor
         .getByRole("button", {
@@ -1691,21 +1701,10 @@ When(
       .fill(title);
   },
 );
-When("I save the open Backlog editor", async ({ page }) => {
-  await page
-    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
-    .getByRole("button", { name: SAVE_OR_CREATE })
-    .click();
-});
 Then("the Backlog editor is closed", async ({ page }) => {
   await expect(
     page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
-});
-Then("the saved subitem title is {string}", async ({ page }, title: string) => {
-  await expect(
-    page.locator('[data-work-item-id="child"] .backlog-item-title'),
-  ).toHaveText(title);
 });
 When(
   "I press {string} on the other Backlog row",
@@ -2057,107 +2056,6 @@ Given("the Backlog has an unmapped source state", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "1 unmapped source state", exact: true }),
   ).toBeVisible();
-});
-When(
-  "I follow the unmapped-state settings link with {string}",
-  async ({ page }, activation: string) => {
-    const link = page.getByRole("link", {
-      name: "1 unmapped source state",
-      exact: true,
-    });
-    if (activation === "Enter") {
-      await link.focus();
-      await link.press("Enter");
-    } else await link.click();
-  },
-);
-Then(
-  "workflow settings opens with the other item's draft saved",
-  async ({ page }) => {
-    await expect(page).toHaveURL(/\/settings\/workflow$/);
-    const title = await page.evaluate(
-      () =>
-        JSON.parse(
-          localStorage.getItem("ajour.local-state.v2")!,
-        ).workItems.find((item: { _id: string }) => item._id === "other").title,
-    );
-    expect(title).toBe("Saved settings draft");
-  },
-);
-When(
-  "I open the unmapped-state settings link with {string} held",
-  async ({ page }, modifier: "Control" | "Shift") => {
-    const link = page.getByRole("link", {
-      name: "1 unmapped source state",
-      exact: true,
-    });
-    const [settings] = await Promise.all([
-      page.context().waitForEvent("page", { timeout: 5000 }),
-      // macOS turns Ctrl-click into a right-click, so press Cmd there.
-      link.click({
-        modifiers: [modifier === "Control" ? "ControlOrMeta" : modifier],
-      }),
-    ]);
-    await expect(settings).toHaveURL(/\/settings\/workflow$/);
-    await settings.close();
-  },
-);
-Then(
-  "Backlog keeps its unsaved draft in the original page",
-  async ({ page }) => {
-    await expect(page).toHaveURL(/\/backlog$/);
-    const editor = page.getByRole("dialog", {
-      name: /^(New|Edit) (backlog item|subitem)$/,
-    });
-    await expect(
-      editor.getByRole("textbox", { name: "Item", exact: true }),
-    ).toHaveValue("Separate settings draft");
-    const title = await page.evaluate(
-      () =>
-        JSON.parse(
-          localStorage.getItem("ajour.local-state.v2")!,
-        ).workItems.find((item: { _id: string }) => item._id === "other").title,
-    );
-    expect(title).toBe("Other backlog item");
-  },
-);
-Then(
-  "Backlog keeps the invalid draft and its validation error",
-  async ({ page }) => {
-    await expect(page).toHaveURL(/\/backlog$/);
-    const editor = page.getByRole("dialog", {
-      name: /^(New|Edit) (backlog item|subitem)$/,
-    });
-    await expect(
-      editor.getByRole("textbox", { name: "Item", exact: true }),
-    ).toHaveValue("");
-    await expect(
-      editor.getByText("Enter an item name", { exact: true }),
-    ).toBeVisible();
-    const title = await page.evaluate(
-      () =>
-        JSON.parse(
-          localStorage.getItem("ajour.local-state.v2")!,
-        ).workItems.find((item: { _id: string }) => item._id === "other").title,
-    );
-    expect(title).toBe("Other backlog item");
-  },
-);
-Then("Backlog keeps the pending settings draft", async ({ page }) => {
-  await expect(page).toHaveURL(/\/backlog$/);
-  const editor = page.getByRole("dialog", {
-    name: /^(New|Edit) (backlog item|subitem)$/,
-  });
-  await expect(
-    editor.getByRole("textbox", { name: "Item", exact: true }),
-  ).toHaveValue("Pending settings draft");
-  const title = await page.evaluate(
-    () =>
-      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
-        (item: { _id: string }) => item._id === "parent",
-      ).title,
-  );
-  expect(title).toBe("Backlog parent");
 });
 When(
   "I choose {string} in the Backlog editor actions",

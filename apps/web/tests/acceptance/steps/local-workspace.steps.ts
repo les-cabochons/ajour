@@ -878,6 +878,12 @@ Then("the task editor opens for a new task", async ({ page }) => {
   await expect(editor.getByRole("textbox", { name: "Name" })).toBeFocused();
 });
 
+When("I cancel the task editor", async ({ page }) => {
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+});
+
 When("I archive the project from its properties", async ({ page }) => {
   await projectProperties(page)
     .getByRole("button", { name: "Archive" })
