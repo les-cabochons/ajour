@@ -414,3 +414,59 @@ When(
       .click();
   },
 );
+
+When(
+  "another tab sets the subitem's {word} to {string}",
+  async ({ page }, field: string, value: string) => {
+    await page.evaluate(
+      ({ field, value }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(window.localStorage.getItem(key)!);
+        const child = state.workItems.find(
+          (item: { _id: string }) => item._id === "child",
+        );
+        child[field] = value;
+        window.localStorage.setItem(key, JSON.stringify(state));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+      },
+      { field, value },
+    );
+  },
+);
+
+Then(
+  "the open Backlog editor's description reads {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      backlogEditor(page).getByRole("textbox", { name: "Description" }),
+    ).toContainText(text);
+  },
+);
+
+Then("the open Backlog editor shows no changed field", async ({ page }) => {
+  await expect(
+    backlogEditor(page).getByRole("group", { name: "Changed elsewhere" }),
+  ).toHaveCount(0);
+});
+
+Then(
+  "the open Backlog editor says {string}",
+  async ({ page }, text: string) => {
+    await expect(backlogEditor(page)).toContainText(text);
+  },
+);
+
+Then("the open Backlog editor's Save is disabled", async ({ page }) => {
+  await expect(
+    backlogEditor(page).getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+});
+
+When(
+  "I press {string} in the open Backlog editor",
+  async ({ page }, label: string) => {
+    await backlogEditor(page)
+      .getByRole("button", { name: label, exact: true })
+      .click();
+  },
+);

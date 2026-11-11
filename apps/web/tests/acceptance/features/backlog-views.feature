@@ -510,6 +510,30 @@ Feature: Backlog list and board views
     When I edit the subitem from its peek
     Then the open Backlog editor's title reads "Renamed in a draft"
 
+  Scenario: A kept item draft takes in a field another tab changed
+    When I edit the subitem from its peek
+    And I rename the open editor draft to "Renamed in a draft"
+    And I press Escape in the open Backlog editor
+    And another tab sets the subitem's description to "Written elsewhere"
+    And I edit the subitem from its peek
+    Then the open Backlog editor's title reads "Renamed in a draft"
+    And the open Backlog editor's description reads "Written elsewhere"
+    And the open Backlog editor shows no changed field
+
+  Scenario: A kept item draft shows a field another tab changed too
+    When I edit the subitem from its peek
+    And I rename the open editor draft to "Renamed in a draft"
+    And I press Escape in the open Backlog editor
+    And another tab sets the subitem's title to "Renamed elsewhere"
+    And I edit the subitem from its peek
+    Then the open Backlog editor's title reads "Renamed in a draft"
+    And the open Backlog editor says "Title changed"
+    And the open Backlog editor says "Now Renamed elsewhere. Your draft has Renamed in a draft."
+    And the open Backlog editor's Save is disabled
+    When I press "Keep mine" in the open Backlog editor
+    And I save the open Backlog editor
+    Then the saved subitem title is "Renamed in a draft"
+
   Scenario: Read a synced item's comments on its page
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

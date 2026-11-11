@@ -71,7 +71,6 @@ import {
   createBacklogTaskEditorFields,
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
-  followChangedItem,
   parseEstimateInput,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
@@ -96,10 +95,22 @@ import {
 } from "@/lib/local-hooks";
 import { keepUndo, offerUndo } from "@/features/feedback/undo-toast";
 import {
+  DraftConflictNotice,
+  type DraftConflictView,
+} from "@/components/draft-conflict-notice";
+import {
+  findDraftConflicts,
+  keepMineInDraft,
+  reconcileDraft,
+  useTheirsInDraft,
+  type DraftFieldGroup,
+} from "@/domain/draft-reconcile";
+import {
   dropComposerDraft,
   getComposerDraft,
   keepComposerDraft,
 } from "@/lib/composer-drafts";
+import { recordsEqual } from "@/domain/records-equal";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { DescriptionText } from "@/features/backlog/description-links";
@@ -140,6 +151,71 @@ export function getBacklogItemDraftKey(target: BacklogTaskEditorTarget) {
   return target.kind === "edit"
     ? `backlog-item:${target.workItem._id}`
     : `backlog-item:new:${target.parent?._id ?? ""}`;
+}
+
+/** The project and its task change together, as one pick. */
+const DRAFT_FIELD_GROUPS: readonly DraftFieldGroup<BacklogTaskEditorFields>[] =
+  [["projectId", "taskId"]];
+
+const CONFLICT_LABELS: Record<keyof BacklogTaskEditorFields, string> = {
+  title: "Title",
+  description: "Description",
+  priority: "Priority",
+  workflowStateId: "Status",
+  parentWorkItemId: "Parent",
+  projectId: "Project",
+  taskId: "Project",
+  originalEstimateHours: "Original estimate",
+  remainingEstimateHours: "Remaining estimate",
+  completedEstimateHours: "Completed estimate",
+  keepWhenMissingFromSync: "Keep when missing from sync",
+};
+
+/** A changed field's value as the editor shows it, such as a status by its name. */
+function describeConflictValue(
+  key: keyof BacklogTaskEditorFields,
+  values: BacklogTaskEditorFields,
+  context: {
+    projects: readonly {
+      _id: string;
+      name: string;
+      displayName?: string;
+      tasks: readonly { _id: string; name: string }[];
+    }[];
+    workItems: readonly LocalWorkItem[];
+    workflowStates: readonly { _id: string; name: string }[];
+  },
+) {
+  switch (key) {
+    case "projectId":
+    case "taskId": {
+      const project = context.projects.find(
+        (candidate) => candidate._id === values.projectId,
+      );
+      const task = project?.tasks.find(
+        (candidate) => candidate._id === values.taskId,
+      );
+      return [project?.displayName?.trim() || project?.name, task?.name]
+        .filter(Boolean)
+        .join(" / ");
+    }
+    case "workflowStateId":
+      return (
+        context.workflowStates.find(
+          (candidate) => candidate._id === values.workflowStateId,
+        )?.name ?? ""
+      );
+    case "parentWorkItemId":
+      return (
+        context.workItems.find(
+          (candidate) => candidate._id === values.parentWorkItemId,
+        )?.title ?? ""
+      );
+    case "keepWhenMissingFromSync":
+      return values.keepWhenMissingFromSync ? "on" : "off";
+    default:
+      return values[key];
+  }
 }
 
 /** A kept draft, with the item's fields it started from, so a sync since is followed. */
@@ -309,40 +385,64 @@ export function BacklogItemEditorForm({
   );
   useEffect(() => {
     if (!currentFields) return;
-    const keys = Object.keys(
-      currentFields,
-    ) as (keyof BacklogTaskEditorFields)[];
-    if (keys.every((key) => currentFields[key] === base[key])) return;
+    let draft = { fields, base };
     // A description written to its source takes the source's change in, so
-    // saving it never reverts that change.
-    const draftDescription = fields.description;
-    const description =
+    // saving it never reverts that change. A change it conflicts with is
+    // recorded for Sync review, and the draft keeps its text.
+    if (
       descriptionWritesToSource &&
       workItem &&
-      draftDescription !== base.description &&
+      fields.description !== base.description &&
       currentFields.description !== base.description
-        ? followDescriptionDraft(
+    ) {
+      draft = {
+        fields: {
+          ...fields,
+          description: followDescriptionDraft(
             workItem._id,
             base.description,
-            draftDescription,
+            fields.description,
             currentFields.description,
-          )
-        : undefined;
-    setFields((current) => {
-      const next = followChangedItem(current, base, currentFields);
-      return description !== undefined &&
-        current.description === draftDescription
-        ? { ...next, description }
-        : next;
-    });
-    setBase(currentFields);
-  }, [
-    currentFields,
-    base,
-    fields.description,
-    descriptionWritesToSource,
-    workItem,
-  ]);
+          ),
+        },
+        base: { ...base, description: currentFields.description },
+      };
+    }
+    // A field the user did not change follows the item. A field both
+    // changed stays as typed and shows as a conflict until it is settled.
+    const next = reconcileDraft(draft, currentFields, DRAFT_FIELD_GROUPS);
+    if (!recordsEqual(next.fields, fields)) setFields(next.fields);
+    if (!recordsEqual(next.base, base)) setBase(next.base);
+  }, [currentFields, base, fields, descriptionWritesToSource, workItem]);
+  const conflictGroups = currentFields
+    ? findDraftConflicts({ fields, base }, currentFields, DRAFT_FIELD_GROUPS)
+    : [];
+  const conflicts = conflictGroups.map((group): DraftConflictView => {
+    const describe = (values: BacklogTaskEditorFields) =>
+      describeConflictValue(group[0]!, values, {
+        projects,
+        workItems,
+        workflowStates: state.workflowStates,
+      });
+    return {
+      id: group.join(","),
+      label: CONFLICT_LABELS[group[0]!],
+      theirs: describe(currentFields!),
+      mine: describe(fields),
+    };
+  });
+
+  /** Settles a changed field: the draft's version stays, or the item's now. */
+  function settleConflict(id: string, keep: "mine" | "theirs") {
+    const group = conflictGroups.find(
+      (candidate) => candidate.join(",") === id,
+    );
+    if (!group || !currentFields) return;
+    const settle = keep === "mine" ? keepMineInDraft : useTheirsInDraft;
+    const settled = settle({ fields, base }, currentFields, group);
+    setFields(settled.fields);
+    setBase(settled.base);
+  }
   // A new draft starts without a conflict; a draft carried here keeps its own.
   const startedFresh = useRef(!initialFields && !kept);
   const openedItemId = useRef(workItem?._id);
@@ -455,6 +555,8 @@ export function BacklogItemEditorForm({
 
   useImperativeHandle(ref, () => ({
     commitBeforeSwitch: async () => {
+      // A changed field nobody settled keeps the draft for the next opening.
+      if (conflicts.length > 0) return true;
       const committed = await commit("switch");
       if (committed) dropComposerDraft(draftKey);
       return committed;
@@ -520,6 +622,8 @@ export function BacklogItemEditorForm({
     /** Losses the user already allowed in a save that asked. */
     allowedBefore: readonly string[] = [],
   ): Promise<boolean> {
+    // A changed field nobody settled blocks the save: the notice says which.
+    if (conflicts.length > 0) return false;
     const result = commitBacklogTaskDraft(editor, reason);
     switch (result.kind) {
       case "invalid":
@@ -842,6 +946,12 @@ export function BacklogItemEditorForm({
         </p>
       ) : null}
 
+      <DraftConflictNotice
+        conflicts={conflicts}
+        onKeepMine={(id) => settleConflict(id, "mine")}
+        onUseTheirs={(id) => settleConflict(id, "theirs")}
+      />
+
       {/* A composer, as Linear's: the title and description are text to
           write in, not boxes, and the properties are chips that say their
           value (forms council round 6). */}
@@ -1036,7 +1146,11 @@ export function BacklogItemEditorForm({
         <Button type="button" variant="ghost" onClick={finish}>
           Cancel
         </Button>
-        <Button type="button" disabled={!validation.canSave} onClick={save}>
+        <Button
+          type="button"
+          disabled={!validation.canSave || conflicts.length > 0}
+          onClick={save}
+        >
           {/* A new record's button names what it makes (forms council round 3). */}
           {target.kind === "create"
             ? editor.isSubitem
