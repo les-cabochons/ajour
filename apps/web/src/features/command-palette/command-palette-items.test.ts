@@ -159,6 +159,45 @@ describe("buildSearchResults", () => {
     });
   });
 
+  it("finds a backlog item by its number with its #, or by its source key", () => {
+    const azure = workItem("w2", "Week grid: keyboard editing of cells", {
+      source: "azure_devops",
+      sourceId: "48190",
+      sourceUrl: "https://dev.azure.com/contoso/atlas/_workitems/edit/48190",
+      projectId: "atlas",
+    });
+    const jira = workItem("w4", "Harbor: offline sync conflict dialog", {
+      source: "jira",
+      sourceId: "HRB-412",
+      sourceUrl: "https://contoso.atlassian.net/browse/HRB-412",
+    });
+    const find = (query: string) =>
+      buildSearchResults(input({ query, workItems: [azure, jira] })).map(
+        (item) => item.id,
+      );
+
+    expect(find("#48190")).toEqual(["backlog-item:w2"]);
+    expect(find("48190")).toEqual(["backlog-item:w2"]);
+    expect(find("HRB-412")).toEqual(["backlog-item:w4"]);
+    expect(find("hrb-4")).toEqual(["backlog-item:w4"]);
+    expect(
+      buildSearchResults(input({ query: "HRB-412", workItems: [jira] }))[0]!
+        .detail,
+    ).toBe("HRB-412 · Backlog");
+  });
+
+  it("opens a backlog item's page when it is chosen, as Linear opens an issue", () => {
+    const item = workItem("item-1", "Fix login");
+    const [result] = buildSearchResults(
+      input({ query: "login", workItems: [item] }),
+    );
+
+    expect(result!.command).toEqual({
+      kind: "open-backlog-item",
+      workItemId: "item-1",
+    });
+  });
+
   it("leaves out archived tasks and items, and ranks archived projects lower", () => {
     const archived = project("old", "Atlas legacy", ["Development"], {
       status: "archived",
@@ -218,6 +257,23 @@ describe("buildPaletteSections", () => {
     ).toEqual(["G", "T"]);
   });
 
+  it("offers New backlog item and Commit week, which submit and lock find", () => {
+    const byId = labels(buildPaletteSections(input()));
+    expect(byId.actions).toContain("New backlog item");
+    expect(byId.actions).toContain("Commit week");
+
+    for (const query of ["commit", "submit", "lock"]) {
+      expect(labels(buildPaletteSections(input({ query }))).actions?.[0]).toBe(
+        "Commit week",
+      );
+    }
+    expect(
+      buildPaletteSections(input({ query: "new backlog" }))
+        .flatMap((section) => section.items)
+        .find((item) => item.label === "New backlog item")!.command,
+    ).toEqual({ kind: "new-backlog-item" });
+  });
+
   it("lists only shortcuts whose handler is mounted", () => {
     const byId = labels(
       buildPaletteSections(
@@ -268,7 +324,7 @@ describe("buildPaletteSections", () => {
     });
     const [section] = buildPaletteSections(
       input({
-        view: { kind: "backlog-item", workItemId: "parent" },
+        focused: { kind: "backlog-item", workItemId: "parent" },
         workItems: [parent, child],
       }),
     );
@@ -281,6 +337,8 @@ describe("buildPaletteSections", () => {
       "Snooze…",
       "Pin",
       "Settle",
+      "Move up",
+      "Move down",
       "Delete (and 1 subitem)",
     ]);
   });
@@ -451,22 +509,15 @@ describe("buildPaletteSections", () => {
     });
   });
 
-  it.each(["focused", "item"] as const)(
+  it.each(["focused"] as const)(
     "passes running ownership to the %s backlog action section",
-    (location) => {
+    () => {
       const backlog = workItem("backlog", "Atlas release");
       const list = (runningId?: string) =>
         buildPaletteSections(
           input({
             workItems: [backlog],
-            focused:
-              location === "focused"
-                ? { kind: "backlog-item", workItemId: backlog._id }
-                : null,
-            view:
-              location === "item"
-                ? { kind: "backlog-item", workItemId: backlog._id }
-                : { kind: "root" },
+            focused: { kind: "backlog-item", workItemId: backlog._id },
             timer: runningId
               ? {
                   _id: "timer",

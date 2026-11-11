@@ -24,6 +24,8 @@ import { getSettingsPages } from "@/features/settings/settings-navigation";
 import { useOpenSettings } from "@/features/settings/settings-link";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { requestNewBacklogItem } from "@/features/backlog/new-backlog-item-dialog";
+import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
 import { withEventAttribution } from "@/lib/wide-events";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ActionRequest } from "@/lib/action-request";
@@ -38,21 +40,39 @@ import {
 } from "@/features/projects/favorites";
 import { localStore } from "@/lib/local-store";
 import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
-import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
+import {
+  SHORTCUTS,
+  getShortcut,
+  getShortcutPlatform,
+  matchesChord,
+} from "@/lib/shortcuts";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 import { selectSortableDayEntryIds } from "@/domain/time/timesheet-entry";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn } from "@/lib/utils";
+import { cn, todayIsoDate } from "@/lib/utils";
 
 const platform = getShortcutPlatform();
 const ROOT_VIEW: PaletteView = { kind: "root" };
+const [PALETTE_CHORD] = getShortcut("app.command-palette").keys;
+
+/**
+ * The backlog item whose page is open, when focus is on no object: the
+ * palette opened there lists that item's actions first.
+ */
+function getOpenItemPageObject(pathname: string): FocusedObjectRef | null {
+  const itemId = /^\/backlog\/([^/]+)$/.exec(pathname)?.[1];
+  return itemId
+    ? { kind: "backlog-item", workItemId: decodeURIComponent(itemId) }
+    : null;
+}
 
 /**
  * The app-wide command palette (Cmd+K, Ctrl+K elsewhere). It lists the focused
  * object's actions, search results across tasks, backlog items and projects,
  * the registry's global actions with their keys, and navigation. Choosing a
- * task or a backlog item lists its actions.
+ * task lists its actions; choosing a backlog item opens its page, where the
+ * palette lists the item's actions first. Cmd+K again closes it.
  *
  * Start entry and New entry… run here, so they work from any page. New entry…
  * opens the titlebar's entry editor popover, anchored to the object's row when
@@ -64,7 +84,12 @@ const ROOT_VIEW: PaletteView = { kind: "root" };
  * palette has closed and given focus back, so shortcuts that read focus, such
  * as Continue, see the row.
  */
-export function CommandPalette() {
+export function CommandPalette({
+  selectedTimeDate,
+}: {
+  /** The day the Time pages show, whose week Commit week opens elsewhere. */
+  selectedTimeDate?: string;
+} = {}) {
   const navigate = useNavigate();
   const openSettings = useOpenSettings();
   const router = useRouter();
@@ -72,6 +97,7 @@ export function CommandPalette() {
   const isNarrowView = useIsNarrowView();
   const hasCalendar = useCalendarSources().length > 0;
   const shortcutRunner = useShortcutRunner();
+  const openCommitPage = useOpenCommitPage(selectedTimeDate ?? todayIsoDate());
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<PaletteView>(ROOT_VIEW);
@@ -119,11 +145,14 @@ export function CommandPalette() {
         ? document.activeElement
         : null;
     originRef.current = origin;
-    setFocused(resolveFocusedObject(origin));
+    setFocused(
+      resolveFocusedObject(origin) ??
+        getOpenItemPageObject(router.state.location.pathname),
+    );
     setQuery("");
     setView(ROOT_VIEW);
     setIsOpen(true);
-  }, []);
+  }, [router]);
 
   useShortcut(
     "app.command-palette",
@@ -209,6 +238,19 @@ export function CommandPalette() {
         requestProjectsPage({ action: "create-project" }, undefined, () =>
           setIsCreatingProject(true),
         );
+        return;
+      case "open-backlog-item":
+        void navigate({
+          to: "/backlog/$itemId",
+          params: { itemId: command.workItemId },
+        });
+        return;
+      case "new-backlog-item":
+        // The Backlog page's panel while it is open, else the dialog.
+        requestNewBacklogItem();
+        return;
+      case "commit-week":
+        openCommitPage();
         return;
       case "time-entry": {
         const entry = snapshot.timesheetEntries.find(
@@ -424,6 +466,16 @@ export function CommandPalette() {
           shouldFilter={false}
           loop
           onKeyDown={(event) => {
+            // Cmd+K closes the palette it opened, as in Linear. The list's own
+            // Ctrl+K would move the highlight up instead.
+            if (
+              PALETTE_CHORD &&
+              matchesChord(event.nativeEvent, PALETTE_CHORD, platform)
+            ) {
+              event.preventDefault();
+              setIsOpen(false);
+              return;
+            }
             // Backspace in an empty field goes back to the main list.
             if (
               event.key === "Backspace" &&

@@ -680,7 +680,7 @@ export function AppShell() {
       <SyncConflictToasts />
       <LossySaveDialogHost />
       <AgentIndicator />
-      <CommandPalette />
+      <CommandPalette selectedTimeDate={selectedTimeDate} />
       <SnoozePickerHost />
       <SettleDialogHost />
       <NewBacklogItemDialogHost />
