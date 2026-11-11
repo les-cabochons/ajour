@@ -17,6 +17,14 @@ import { useRetryWhilePluginApiMissing } from "@/lib/use-plugin-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { WorkflowSourceMapping } from "@/features/settings/workflow-source-mapping";
+import {
+  RemoveWorkflowStateDialog,
+  type WorkflowStateRemoval,
+} from "@/features/settings/remove-workflow-state-dialog";
+import {
+  countWorkItemsInWorkflowState,
+  getWorkflowStateMoveTargets,
+} from "@/domain/backlog/workflow-states";
 
 const DEFAULT_NEW_STATE_COLOR = "#64748b";
 
@@ -37,6 +45,7 @@ export function SettingsWorkflowPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [removal, setRemoval] = useState<WorkflowStateRemoval | null>(null);
   // Synced statuses come from plugins, so the web build hides that section.
   const [pluginApiMissing, setPluginApiMissing] = useState(false);
 
@@ -141,10 +150,50 @@ export function SettingsWorkflowPage() {
     }
   }
 
+  /**
+   * Removes a workflow state at once when no item is in it. Otherwise asks
+   * first, naming how many items are in it and where they go.
+   */
   function handleDeleteStatus(statusId: string) {
+    const status = state.workflowStates.find(
+      (candidate) => candidate._id === statusId,
+    );
+    if (!status) return;
+    const itemCount = countWorkItemsInWorkflowState(state, statusId);
+    if (itemCount === 0) {
+      deleteStatus(status, undefined, 0);
+      return;
+    }
+    const targets = getWorkflowStateMoveTargets(state, statusId);
+    const index = state.workflowStates.indexOf(status);
+    const before = targets.filter(
+      (target) => state.workflowStates.indexOf(target) < index,
+    );
+    setRemoval({
+      state: status,
+      itemCount,
+      targets,
+      defaultTargetId: (before.at(-1) ?? targets[0])?._id,
+    });
+  }
+
+  function deleteStatus(
+    status: { _id: string; name: string },
+    moveItemsTo: string | undefined,
+    itemCount: number,
+  ) {
+    const target = state.workflowStates.find(
+      (candidate) => candidate._id === moveItemsTo,
+    );
+    const moved = itemCount === 1 ? "1 item" : `${itemCount} items`;
     try {
-      offerUndo(localStore.deleteWorkflowState(statusId), {
-        title: "Workflow state deleted",
+      offerUndo(localStore.deleteWorkflowState(status._id, moveItemsTo), {
+        title:
+          itemCount === 0
+            ? "Workflow state deleted"
+            : target
+              ? `${status.name} removed. ${moved} moved to ${target.name}.`
+              : `${status.name} removed. ${moved} ${itemCount === 1 ? "has" : "have"} no state now.`,
         subject: "workflow state",
       });
       setError(null);
@@ -373,6 +422,16 @@ export function SettingsWorkflowPage() {
 
       {message ? <MessagePanel>{message}</MessagePanel> : null}
       {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
+      <RemoveWorkflowStateDialog
+        removal={removal}
+        onCancel={() => setRemoval(null)}
+        onRemove={(moveItemsTo) => {
+          if (removal) {
+            deleteStatus(removal.state, moveItemsTo, removal.itemCount);
+          }
+          setRemoval(null);
+        }}
+      />
     </div>
   );
 }

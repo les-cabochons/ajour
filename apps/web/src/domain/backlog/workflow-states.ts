@@ -644,6 +644,18 @@ function isLastDoneState(state: LocalAppState, statusId: string) {
   return doneStates.length === 1 && doneStates[0]!._id === statusId;
 }
 
+/**
+ * What a deleted workflow state's references become. With `moveTo`, every
+ * reference to the deleted state points there instead. Without it, an item
+ * closed by hand into a deleted done state takes the first done state left,
+ * and every other reference clears.
+ */
+interface DeletedStateReplacement {
+  statusId: string;
+  moveTo?: string;
+  replacementDoneId?: string;
+}
+
 function clearDeletedWorkflowReferences<
   T extends Pick<
     LocalWorkItem,
@@ -652,33 +664,79 @@ function clearDeletedWorkflowReferences<
     | "workflowStateIdBeforeClose"
     | "archivedByMissingSync"
   > & { status?: LocalWorkItem["status"] },
->(snapshot: T, statusId: string, replacementDoneId?: string): T {
+>(
+  snapshot: T,
+  { statusId, moveTo, replacementDoneId }: DeletedStateReplacement,
+): T {
   return {
     ...snapshot,
     ...(snapshot.workflowStateId === statusId
       ? {
           workflowStateId:
-            snapshot.status === "archived" && !snapshot.archivedByMissingSync
+            moveTo ??
+            (snapshot.status === "archived" && !snapshot.archivedByMissingSync
               ? replacementDoneId
-              : undefined,
+              : undefined),
         }
       : {}),
     ...(snapshot.importedWorkflowStateId === statusId
-      ? { importedWorkflowStateId: undefined }
+      ? { importedWorkflowStateId: moveTo }
       : {}),
     ...(snapshot.workflowStateIdBeforeClose === statusId
-      ? { workflowStateIdBeforeClose: undefined }
+      ? { workflowStateIdBeforeClose: moveTo }
       : {}),
   };
 }
 
-/** Deletes a workflow state. The last done state can't be deleted. */
+/** How many backlog items, archived ones included, are in the workflow state. */
+export function countWorkItemsInWorkflowState(
+  state: Pick<LocalAppState, "workItems">,
+  statusId: string,
+) {
+  return state.workItems.filter((item) => item.workflowStateId === statusId)
+    .length;
+}
+
+/**
+ * The states that can take a deleted state's items: the other states of its
+ * kind, open or done, so moving them never closes or reopens one.
+ */
+export function getWorkflowStateMoveTargets(
+  state: Pick<LocalAppState, "workflowStates">,
+  statusId: string,
+): LocalWorkflowState[] {
+  const deleted = state.workflowStates.find(
+    (status) => status._id === statusId,
+  );
+  if (!deleted) return [];
+  return state.workflowStates.filter(
+    (status) =>
+      status._id !== statusId && Boolean(status.done) === Boolean(deleted.done),
+  );
+}
+
+/**
+ * Deletes a workflow state. The last done state can't be deleted. With
+ * `moveItemsTo`, a state of the same kind (see `getWorkflowStateMoveTargets`),
+ * its items and its source state mappings move there. Without it, its items
+ * go to No state, except those closed by hand into a deleted done state,
+ * which take the first done state left, and its mappings go.
+ */
 export function deleteWorkflowState(
   state: LocalAppState,
   statusId: string,
+  { moveItemsTo }: { moveItemsTo?: string } = {},
 ): LocalAppState {
   if (isLastDoneState(state, statusId)) {
     throw new Error(LAST_DONE_STATE_MESSAGE);
+  }
+  if (
+    moveItemsTo !== undefined &&
+    !getWorkflowStateMoveTargets(state, statusId).some(
+      (status) => status._id === moveItemsTo,
+    )
+  ) {
+    throw new Error("Pick another state of the same kind for its items.");
   }
   const replacementDoneId = isDoneWorkflowState(state.workflowStates, statusId)
     ? getFirstDoneWorkflowState(
@@ -687,51 +745,44 @@ export function deleteWorkflowState(
         ),
       )?._id
     : undefined;
+  const replacement: DeletedStateReplacement = {
+    statusId,
+    moveTo: moveItemsTo,
+    replacementDoneId,
+  };
 
   return reconcileImportedWorkflowStates({
     ...state,
     workflowStates: state.workflowStates.filter(
       (status) => status._id !== statusId,
     ),
-    workflowStateMappings: state.workflowStateMappings.filter(
-      (mapping) => mapping.workflowStateId !== statusId,
-    ),
+    workflowStateMappings: moveItemsTo
+      ? state.workflowStateMappings.map((mapping) =>
+          mapping.workflowStateId === statusId
+            ? { ...mapping, workflowStateId: moveItemsTo }
+            : mapping,
+        )
+      : state.workflowStateMappings.filter(
+          (mapping) => mapping.workflowStateId !== statusId,
+        ),
     workflowStateWriteRules: state.workflowStateWriteRules.filter(
       (rule) => rule.workflowStateId !== statusId,
     ),
     workItems: state.workItems.map((workItem) => ({
-      ...workItem,
-      workflowStateId:
-        workItem.workflowStateId === statusId
-          ? workItem.status === "archived" &&
-            !workItem.archivedByMissingSync &&
-            isDoneWorkflowState(state.workflowStates, statusId)
-            ? replacementDoneId
-            : undefined
-          : workItem.workflowStateId,
-      workflowStateIdBeforeClose:
-        workItem.workflowStateIdBeforeClose === statusId
-          ? undefined
-          : workItem.workflowStateIdBeforeClose,
-      importedWorkflowStateId:
-        workItem.importedWorkflowStateId === statusId
-          ? undefined
-          : workItem.importedWorkflowStateId,
+      ...clearDeletedWorkflowReferences(workItem, replacement),
       pendingSourceWrite: workItem.pendingSourceWrite
         ? {
             ...workItem.pendingSourceWrite,
             previous: {
               ...clearDeletedWorkflowReferences(
                 workItem.pendingSourceWrite.previous,
-                statusId,
-                replacementDoneId,
+                replacement,
               ),
               ...(workItem.pendingSourceWrite.previous.lifecycle
                 ? {
                     lifecycle: clearDeletedWorkflowReferences(
                       workItem.pendingSourceWrite.previous.lifecycle,
-                      statusId,
-                      replacementDoneId,
+                      replacement,
                     ),
                   }
                 : {}),
@@ -743,13 +794,11 @@ export function deleteWorkflowState(
                           ...child,
                           before: clearDeletedWorkflowReferences(
                             child.before,
-                            statusId,
-                            replacementDoneId,
+                            replacement,
                           ),
                           after: clearDeletedWorkflowReferences(
                             child.after,
-                            statusId,
-                            replacementDoneId,
+                            replacement,
                           ),
                         }),
                       ),

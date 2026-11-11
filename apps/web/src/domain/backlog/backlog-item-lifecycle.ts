@@ -1685,11 +1685,19 @@ function orderSidebarBacklogItems(
       getWorkItemLookupKeys(workItem).map((key) => [key, index] as const),
     ),
   );
+  // An archived project's items leave the sidebar with it, as its tasks
+  // leave the task menu.
+  const archivedProjectIds = new Set(
+    state.projects
+      .filter((project) => project.status === "archived")
+      .map((project) => project._id),
+  );
   const listed = state.workItems.filter(
     (workItem) =>
       workItem.status === "active" &&
       !isBacklogItemSnoozed(workItem, now) &&
-      (!isSubtaskWorkItem(workItem) || workItem.priority !== undefined),
+      (!isSubtaskWorkItem(workItem) || workItem.priority !== undefined) &&
+      !(workItem.projectId && archivedProjectIds.has(workItem.projectId)),
   );
   const ownIndex = (workItem: LocalWorkItem) => indexById.get(workItem._id)!;
 

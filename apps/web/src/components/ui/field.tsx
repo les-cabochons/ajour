@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { RiErrorWarningLine } from "@remixicon/react";
 
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -225,8 +226,38 @@ function FieldError({
   );
 }
 
+/**
+ * A warning under a field that does not block saving, such as a name
+ * another record already has: amber icon, secondary text.
+ */
+function FieldWarning({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"p">) {
+  if (!children) return null;
+  return (
+    <p
+      role="status"
+      data-slot="field-warning"
+      className={cn(
+        "flex items-center gap-1 text-xs text-[var(--text-secondary)]",
+        className,
+      )}
+      {...props}
+    >
+      <RiErrorWarningLine
+        aria-hidden
+        className="size-3.5 shrink-0 text-[var(--warning)]"
+      />
+      {children}
+    </p>
+  );
+}
+
 export {
   Field,
+  FieldWarning,
   FieldLabel,
   FieldDescription,
   FieldError,

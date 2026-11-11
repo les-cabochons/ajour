@@ -8,6 +8,8 @@ import {
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
   addWorkflowState,
+  countWorkItemsInWorkflowState,
+  getWorkflowStateMoveTargets,
   deleteWorkflowState,
   findMappedWorkflowStateId,
   getSourceStatesMappedTo,
@@ -810,4 +812,121 @@ it("does not write a source state remapped away from the destination", () => {
       ["Resolved"],
     ),
   ).toEqual({ kind: "none" });
+});
+
+describe("deleting a workflow state that items use", () => {
+  const workflow = (overrides: Partial<LocalAppState> = {}) =>
+    createState({
+      workflowStates: [
+        { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+        { _id: "doing", name: "In progress", color: "#2563eb", createdAt: 1 },
+        { _id: "review", name: "In review", color: "#9333ea", createdAt: 1 },
+        {
+          _id: "done",
+          name: "Done",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      ...overrides,
+    });
+
+  it("counts every item in the state, archived ones included", () => {
+    const state = workflow({
+      workItems: [
+        createImportedWorkItem({ _id: "a", workflowStateId: "doing" }),
+        createImportedWorkItem({
+          _id: "b",
+          workflowStateId: "doing",
+          status: "archived",
+        }),
+        createImportedWorkItem({ _id: "c", workflowStateId: "todo" }),
+      ],
+    });
+
+    expect(countWorkItemsInWorkflowState(state, "doing")).toBe(2);
+  });
+
+  it("offers the other states of the same kind as targets", () => {
+    expect(
+      getWorkflowStateMoveTargets(workflow(), "doing").map((s) => s._id),
+    ).toEqual(["todo", "review"]);
+    expect(
+      getWorkflowStateMoveTargets(
+        workflow({
+          workflowStates: [
+            ...workflow().workflowStates,
+            {
+              _id: "canceled",
+              name: "Canceled",
+              color: "#334155",
+              done: true,
+              createdAt: 1,
+            },
+          ],
+        }),
+        "done",
+      ).map((s) => s._id),
+    ).toEqual(["canceled"]);
+  });
+
+  it("moves its items and source state mappings to the picked state", () => {
+    const state = workflow({
+      workItems: [
+        createImportedWorkItem({
+          _id: "a",
+          workflowStateId: "doing",
+          importedWorkflowStateId: "doing",
+        }),
+        createImportedWorkItem({ _id: "b", workflowStateId: "todo" }),
+      ],
+      workflowStateMappings: [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "active",
+          workflowStateId: "doing",
+        },
+      ],
+    });
+
+    const deleted = deleteWorkflowState(state, "doing", {
+      moveItemsTo: "review",
+    });
+
+    expect(deleted.workflowStates.map((s) => s._id)).toEqual([
+      "todo",
+      "review",
+      "done",
+    ]);
+    expect(deleted.workItems.map((item) => item.workflowStateId)).toEqual([
+      "review",
+      "todo",
+    ]);
+    expect(deleted.workItems[0]?.importedWorkflowStateId).toBe("review");
+    expect(deleted.workflowStateMappings).toEqual([
+      expect.objectContaining({
+        sourceStatusKey: "active",
+        workflowStateId: "review",
+      }),
+    ]);
+  });
+
+  it("refuses a target of the other kind, which would close or reopen items", () => {
+    expect(() =>
+      deleteWorkflowState(workflow(), "doing", { moveItemsTo: "done" }),
+    ).toThrow("Pick another state of the same kind for its items.");
+  });
+
+  it("still leaves its items with no state when no target is given", () => {
+    const deleted = deleteWorkflowState(
+      workflow({
+        workItems: [createImportedWorkItem({ workflowStateId: "doing" })],
+      }),
+      "doing",
+    );
+
+    expect(deleted.workItems[0]?.workflowStateId).toBeUndefined();
+  });
 });

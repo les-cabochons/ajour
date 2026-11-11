@@ -813,6 +813,9 @@
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.3;
+    /* A title with no spaces, such as a pasted URL, breaks inside its
+       column instead of running under the actions. */
+    overflow-wrap: anywhere;
   }
 
   .backlog-item-page-meta {

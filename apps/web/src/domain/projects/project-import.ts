@@ -5,6 +5,7 @@ import type {
   LocalProjectTaskDraft,
 } from "@/domain/local-state";
 import type { ProjectDataShapeImportProject } from "@ajour/shared";
+import { normalizeHexColor } from "@/domain/hex-color";
 import {
   getProjectRestoreRefusal,
   getTaskRestoreRefusal,
@@ -42,6 +43,12 @@ export interface ProjectWorkbookImportResult {
   mergedProjectCount: number;
   addedTaskCount: number;
   updatedTaskCount: number;
+  /**
+   * What the import changed or skipped that the counts don't say, one
+   * sentence each: a project renamed by its merge, a negative budget or a
+   * color it skipped, task rows it merged.
+   */
+  notes: string[];
 }
 
 interface ProjectImportFactories {
@@ -81,7 +88,7 @@ interface ImportedTask {
 
 /**
  * Adds `task` to `tasks`, or merges it into the task of the same name: its
- * fields win, except those it leaves out.
+ * fields win, except those it leaves out. Returns whether it merged.
  */
 function addImportedTask(tasks: ImportedTask[], task: ImportedTask) {
   const taskKey = normalizeTaskImportName(task.name);
@@ -90,7 +97,7 @@ function addImportedTask(tasks: ImportedTask[], task: ImportedTask) {
   );
   if (existingTaskIndex < 0) {
     tasks.push(task);
-    return;
+    return false;
   }
   tasks[existingTaskIndex] = {
     ...tasks[existingTaskIndex]!,
@@ -98,6 +105,7 @@ function addImportedTask(tasks: ImportedTask[], task: ImportedTask) {
       Object.entries(task).filter(([, value]) => value !== undefined),
     ),
   };
+  return true;
 }
 
 /** A task the file names commits as its name, unless it is Local only. */
@@ -294,7 +302,12 @@ function mergeImportedTasks(
   return { tasks, addedTaskCount, updatedTaskCount };
 }
 
-function groupWorkbookRows(rows: ProjectTransferRow[]) {
+/** "1 repeated task row" or "2 repeated task rows". */
+function formatRepeatedRows(count: number) {
+  return count === 1 ? "1 repeated task row" : `${count} repeated task rows`;
+}
+
+function groupWorkbookRows(rows: ProjectTransferRow[], notes: string[]) {
   const grouped = new Map<
     string,
     {
@@ -305,6 +318,7 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
       tasks: ImportedTask[];
     }
   >();
+  const repeatedRows: string[] = [];
 
   for (const row of rows) {
     const projectName = formatTaskImportName(row.project);
@@ -322,27 +336,51 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
 
     group.projectName = projectName;
     group.code = formatTaskImportName(row.code) || group.code;
-    group.color = formatTaskImportName(row.color) || group.color;
+    const typedColor = formatTaskImportName(row.color);
+    if (typedColor) {
+      const color = normalizeHexColor(typedColor);
+      if (color) {
+        group.color = color;
+      } else {
+        notes.push(
+          `Skipped color "${typedColor}" of ${projectName}: use a hex color such as #4f46e5.`,
+        );
+      }
+    }
     group.status = row.status;
 
     const taskName = formatTaskImportName(row.task);
     if (taskName) {
-      addImportedTask(group.tasks, {
+      const budgetMs = durationHoursValueToMs(
+        typeof row.budgetHours === "number" ? row.budgetHours : undefined,
+      );
+      // A negative budget means nothing; the task keeps the budget it has.
+      if (budgetMs !== undefined && budgetMs < 0) {
+        notes.push(
+          `Skipped the negative budget of ${projectName} · ${taskName}.`,
+        );
+      }
+      const merged = addImportedTask(group.tasks, {
         name: taskName,
         status: row.taskStatus || undefined,
         billable: row.billable ? row.billable === "billable" : undefined,
-        budgetMs: durationHoursValueToMs(
-          typeof row.budgetHours === "number" ? row.budgetHours : undefined,
-        ),
+        budgetMs: budgetMs !== undefined && budgetMs < 0 ? undefined : budgetMs,
         adjustmentMs: durationHoursValueToMs(
           typeof row.adjustmentHours === "number"
             ? row.adjustmentHours
             : undefined,
         ),
       });
+      if (merged) repeatedRows.push(`${projectName} · ${taskName}`);
     }
 
     grouped.set(key, group);
+  }
+
+  if (repeatedRows.length > 0) {
+    notes.push(
+      `Merged ${formatRepeatedRows(repeatedRows.length)}: ${repeatedRows.join(", ")}.`,
+    );
   }
 
   return Array.from(grouped.values());
@@ -430,10 +468,13 @@ export function importProjectWorkbookRows(
     mergedProjectCount: 0,
     addedTaskCount: 0,
     updatedTaskCount: 0,
+    notes: [],
   };
   const nextProjects = [...projects];
+  const groups = groupWorkbookRows(rows, result.notes);
+  const renames: string[] = [];
 
-  for (const group of groupWorkbookRows(rows)) {
+  for (const group of groups) {
     const existingProject = findProjectByName(nextProjects, group.projectName);
 
     if (!existingProject) {
@@ -462,6 +503,11 @@ export function importProjectWorkbookRows(
       (project) => project._id === existingProject._id,
     );
     if (projectIndex >= 0) {
+      if (!managed && existingProject.name !== group.projectName) {
+        renames.push(
+          `Renamed ${existingProject.name} to ${group.projectName}.`,
+        );
+      }
       nextProjects[projectIndex] = {
         ...existingProject,
         // A managed project's full name and code are its source's.
@@ -487,6 +533,8 @@ export function importProjectWorkbookRows(
     }
   }
 
+  // Renames lead: they change what the user sees most.
+  result.notes.unshift(...renames);
   return { projects: nextProjects, result };
 }
 
