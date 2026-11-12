@@ -508,6 +508,9 @@ export function describeConnectionDelete(
         after.projects.filter(
           (project) => project.source?.connectionId === connectionId,
         ).length,
+      synced_copy_count:
+        Object.keys(before.timeSyncs?.[connectionId]?.copies ?? {}).length -
+        Object.keys(after.timeSyncs?.[connectionId]?.copies ?? {}).length,
     },
   });
 }

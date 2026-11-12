@@ -56,6 +56,7 @@ export const APP_API_CLIENT = {
   createTeam: "team.create",
   runTeamSyncRound: "team.sync",
   syncProjectSource: "project_source.sync",
+  syncTimeEntries: "time_sync.round",
   syncBacklogConnection: "backlog.sync",
   listBacklogSettleStates: "source_state.list",
   searchBacklogAssignees: "assignee.search",

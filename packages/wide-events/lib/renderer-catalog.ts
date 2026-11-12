@@ -140,6 +140,8 @@ const connectionData = {
     team_project_count: operational<number>(),
     /** Managed projects that became local projects. */
     managed_project_count: operational<number>(),
+    /** Synced copies of a time sync dropped. The other system keeps its entries. */
+    synced_copy_count: operational<number>(),
   },
 };
 const importCounts = {
@@ -587,6 +589,16 @@ export const rendererEvents = {
   "project_source.answer_waiting": command({
     ...projectId,
     project_source: { matched_count: operational<number>() },
+  }),
+  /**
+   * Time syncs started or stopped to match the Time entries switches
+   * (#692). Not undoable.
+   */
+  "time_sync.reconcile": command({}),
+  /** A time sync round's answer, or its failure, kept. It folds into the round's job. */
+  "time_sync.apply_round": command({
+    plugin: { id: operational() },
+    connection: { id: operational() },
   }),
   "connection.delete": command(connectionData, {
     kinds: ["command", "request"],

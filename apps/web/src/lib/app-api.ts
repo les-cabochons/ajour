@@ -31,6 +31,10 @@ import {
   projectSourceSyncRouteResponseSchema,
   type ProjectSourceSyncRouteRequest,
   type ProjectSourceSyncRouteResponse,
+  timeSyncRequestSchema,
+  timeSyncRouteResponseSchema,
+  type TimeSyncRequest,
+  type TimeSyncRouteResponse,
   type BacklogSettleWriteRequest,
   type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
@@ -975,6 +979,7 @@ export async function deletePluginConnection(
       localStore.removeConnectionCalendarData(pluginId, connectionId);
       localStore.removeConnectionTeamData(connectionId);
       localStore.removeConnectionProjectSource(connectionId);
+      localStore.removeConnectionTimeSync(connectionId);
       describeConnectionDelete(
         before,
         localStore.snapshot(),
@@ -1239,6 +1244,25 @@ export async function syncProjectSource(
   );
   replaceCachedConnection(pluginId, result.connection);
   return result;
+}
+
+/**
+ * One time sync round (#692): the changes to apply, then the window to
+ * list. `lib/time-sync.ts` plans the round and keeps what it answers. The
+ * local API keeps nothing of it.
+ */
+export function syncTimeEntries(
+  pluginId: string,
+  connectionId: string,
+  request: TimeSyncRequest,
+): Promise<TimeSyncRouteResponse> {
+  const payload = timeSyncRequestSchema.parse(request);
+  return appApiRequest(
+    "syncTimeEntries",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync-time-entries`,
+    { method: "POST", body: JSON.stringify(payload) },
+    timeSyncRouteResponseSchema,
+  );
 }
 
 /** Puts a connection's summary from a sync's answer in the cached overview. */

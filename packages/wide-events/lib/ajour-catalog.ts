@@ -2131,11 +2131,12 @@ export const catalog = defineCatalog({
       },
     },
     /**
-     * One time sync round (#691): the route and the plugin method. Counts
-     * only: the entries' tasks and projects stay out.
+     * One time sync round: the route and the plugin method (#691), and in
+     * the renderer the whole round, from its plan to what it kept (#692).
+     * Counts only: the entries' days, tasks, projects and notes stay out.
      */
     "time_sync.round": {
-      kinds: ["request", "plugin_operation"],
+      kinds: ["job", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
@@ -2143,11 +2144,25 @@ export const catalog = defineCatalog({
         time_sync_round: {
           /** The changes Ajour sent. */
           change_count: operational<number>(),
+          /** The changes the other system took: the status line's "sent". */
           synced_count: operational<number>(),
           refused_count: operational<number>(),
           failed_count: operational<number>(),
           /** The remote entries the plugin listed in the window. */
           entry_count: operational<number>(),
+          // In the renderer, for the whole round.
+          /**
+           * What started it: a store write, the 60-second poll, changes
+           * left over from the last round, or a retry after a failure.
+           */
+          trigger: operational<"change" | "poll" | "more" | "retry">(),
+          /** Changes beyond this round's 20, for the next one. */
+          waiting_count: operational<number>(),
+          /**
+           * Why the answer was not kept: the connection was saved again, or
+           * Time entries went off while the round ran.
+           */
+          discarded: operational<"connection_changed" | "time_sync_stopped">(),
         },
       },
     },

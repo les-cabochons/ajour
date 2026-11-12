@@ -15,6 +15,7 @@ import type {
   TeamProjectFields,
   TeamSettings,
   TeamTaskFields,
+  TimeSyncEntryValues,
 } from "@ajour/shared";
 import type { PriorityLevel } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
@@ -113,6 +114,77 @@ export interface LocalProjectSource {
    * keep it current meanwhile.
    */
   held: ProjectSourceProject[];
+}
+
+/**
+ * What a time sync connection keeps between rounds (#692, ADR 0018). None of
+ * it is part of Undo. Turning Time entries off or removing the connection
+ * drops it; the other system keeps its entries. See
+ * domain/projects/time-sync.ts.
+ */
+export interface LocalTimeSync {
+  pluginId: string;
+  /** The Monday of the week Time entries went on. Ajour never sends an older entry. */
+  startWeek: string;
+  /**
+   * When Ajour started syncing the connection. A round that began before a
+   * stop and a new start applies nothing.
+   */
+  startedAt: number;
+  /** The synced copies, by sync key. See `LocalSyncedCopy`. */
+  copies: Record<string, LocalSyncedCopy>;
+  /**
+   * Changes the other system refused, by sync key. Ajour sends the entry
+   * again only once its change differs from the one refused.
+   */
+  refusals: Record<string, LocalTimeSyncRefusal>;
+  /** What the last round that reached the plugin did. */
+  lastRound?: LocalTimeSyncRound;
+  /** Why the last round failed, until a round goes through. */
+  error?: { at: number; message: string };
+}
+
+/**
+ * A synced copy: the values of one entry that Ajour and the other system
+ * last agreed on. It is not the committed copy. A synced copy whose entry
+ * is gone is the delete's tombstone until the delete is synced.
+ */
+export interface LocalSyncedCopy {
+  /** The entry's id in the other system. */
+  remoteId: string;
+  /** The values both sides last agreed on, in whole minutes, without the note. */
+  agreed: TimeSyncEntryValues;
+  /** When the other system last changed the entry, as it last said. */
+  remoteUpdatedAt: string;
+  /**
+   * When Ajour first saw the entry differ from `agreed`. Cleared once both
+   * sides agree again. The later of it and `remoteUpdatedAt` wins a conflict.
+   */
+  changedAt?: number;
+}
+
+/** A change the other system refused, with its message for the user. */
+export interface LocalTimeSyncRefusal {
+  message: string;
+  /** The values refused, or "delete" for a refused delete. */
+  change: TimeSyncEntryValues | "delete";
+  at: number;
+}
+
+/** What one round did, in counts, for the connection's status line. */
+export interface LocalTimeSyncRound {
+  /**
+   * When the round ran. A later round that changes nothing keeps it, so the
+   * 60-second poll writes nothing.
+   */
+  at: number;
+  /** Changes the other system took. */
+  synced: number;
+  refused: number;
+  /** Changes that failed, and are sent again next round. */
+  failed: number;
+  /** The message of the first failed change. */
+  failedMessage?: string;
 }
 
 /**
@@ -886,6 +958,8 @@ export interface LocalAppState {
   teamConnections?: Record<string, LocalTeamConnection>;
   /** What each project source connection keeps, by connection ID. */
   projectSources?: Record<string, LocalProjectSource>;
+  /** What each time sync connection keeps, by connection ID. */
+  timeSyncs?: Record<string, LocalTimeSync>;
   /**
    * Shared projects the last action changed while its Undo is open, so a team
    * sync in any window waits for them. The acting window clears it when the

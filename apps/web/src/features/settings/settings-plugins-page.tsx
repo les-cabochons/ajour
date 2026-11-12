@@ -71,6 +71,7 @@ import {
   pluginConnectionFormFields,
   pluginHasBacklog,
   pluginHasProjectSource,
+  pluginHasTimeSync,
   pluginHasTeam,
   pluginRunsCode,
   syncsPullRequestsAutomatically,
@@ -97,6 +98,7 @@ import {
 } from "./connection-status-ui";
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { HeldSourceProjectsLine } from "./project-source-review";
+import { TimeSyncStatusLine } from "./time-sync-status";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
   CatalogAccessSection,
@@ -1199,6 +1201,11 @@ export function SettingsPluginsPage({
                               state.projectSources?.[connection.id]?.held
                                 .length ?? 0
                             }
+                          />
+                        ) : null}
+                        {pluginHasTimeSync(group.plugin) ? (
+                          <TimeSyncStatusLine
+                            timeSync={state.timeSyncs?.[connection.id]}
                           />
                         ) : null}
                         <HeldEditsLine

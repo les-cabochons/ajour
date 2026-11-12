@@ -1062,13 +1062,23 @@ Decided in [the managed projects spec](https://github.com/les-cabochons/ajour/is
 
 ### Time sync
 
-Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/685) and [ADR 0018](../adr/0018-time-entries-sync-both-ways-through-a-time-sync-plugin.md). The switch since [#691](https://github.com/les-cabochons/ajour/issues/691).
+Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/685) and [ADR 0018](../adr/0018-time-entries-sync-both-ways-through-a-time-sync-plugin.md). The switch since [#691](https://github.com/les-cabochons/ajour/issues/691), saved entries sent since [#692](https://github.com/les-cabochons/ajour/issues/692).
 
 - A plugin with a time sync always has a project source too, so its page has a Capabilities section with a "Time entries" switch, described "Keep a live copy of your time entries there, both ways. Notes stay in Ajour."
 - Time entries is the one switch that starts off: on a new install, and after an update that adds it. The plugin's other switches start on, as before.
 - Turning it on first checks each of the plugin's connections with Time entries on, so the plugin can refuse a token that can only read. A refusal keeps the switch off, and the page shows the connection's name and the plugin's sentence, such as "Planner: Time entries need a token that can write. This one can only read." With the plugin off, the switch is disabled. Turning it off checks nothing.
 - While it is on, saving a connection checks Time entries too, so the plugin can refuse the token there.
-- Nothing is sent yet: the rounds arrive with [#692](https://github.com/les-cabochons/ajour/issues/692).
+- The start week is the week the switch went on. Ajour never sends an entry from an older week.
+- A saved entry takes part when its project is managed by the same connection, it has a task, neither the task nor the project is Local only, its day is from the start week and not after today, and it lasts at least 30 seconds. An entry dated after today waits for its day.
+- Ajour sends the entry's day, its time to the nearest whole minute and never less than 1, its project, and its task under the commit name the Commit page uses, under its Names choice. A Not known yet task goes under its own name. The note never leaves Ajour.
+- Ajour keeps a synced copy per entry and connection: the values both sides last agreed on. It sends only what differs from it, compared in whole minutes, so seconds never make a change. An entry that stops taking part, such as one moved to a Local only task, to a project the connection doesn't manage or to a later day, is deleted there. Merge into sends each moved entry with its new task, and an Undo's result is sent like any other change.
+- A round goes 2 seconds after a write to the local state, from any window, and every 60 seconds while the switch is on and the plugin is active, one at a time per connection. It sends at most 20 changes, and the next round goes at once while more wait. A write that leaves nothing to send starts no round.
+- Each change comes back synced, refused or failed. Synced updates the synced copy. Refused keeps the plugin's message and is not sent again until the entry changes. Failed is sent again next round.
+- The connection's row in Settings says what the last round did: "Time entries · 2 sent", or "Time entries · up to date". Refusals that stand add "1 refused", with each plugin message once under it, such as "The example planner refuses an entry over 24 hours."; a failed change adds "1 failed" and its message. The row says nothing before the first round.
+- A round that fails as a whole changes nothing and keeps the changes waiting. It shows the connection's one failure toast, "Planner sync failed", whose line for it reads "Time entries:" when another sync of the connection failed too, and the row says "Time entries · Last sync failed" with the reason in red, until a round goes through. Ajour tries again after 5 seconds, then 15, 30, 60, 120, and every 5 minutes after that.
+- Turning the switch off, or removing the connection, stops the rounds and drops the synced copies. The other system keeps its entries. Turning it on again starts a new start week and sends every entry that takes part; the plugin's client reference keeps them from arriving twice. Turning the plugin off pauses the rounds and keeps the copies.
+- A round is not a commit: Commit and Submit week behave as before, and a round never marks an entry committed. Synced copies are not part of Undo, and a round adds no Undo toast.
+- Each round still lists the other system's window, the current week and the 4 before it, never before the start week. Ajour keeps only the time each synced entry last changed there. The running entry arrives with [#693](https://github.com/les-cabochons/ajour/issues/693), and taking the other system's changes with [#694](https://github.com/les-cabochons/ajour/issues/694).
 
 ## Settings
 

@@ -73,7 +73,7 @@ Ajour never deletes a project, so your past entries always keep their project.
 
 ## Managed projects
 
-A plugin with **Managed projects**, connected in **Settings › Plugins**, brings your projects and tasks from the system that holds them, such as your company's planning tool. Those projects are managed: their source keeps them up to date every 15 minutes, and Ajour never writes back to it.
+A plugin with **Managed projects**, connected in **Settings › Plugins**, brings your projects and tasks from the system that holds them, such as your company's planning tool. Those projects are managed: their source keeps them up to date every 15 minutes, and Ajour never writes back to it. The one exception is your time entries, when the plugin has **Time entries** and you turn it on: see [Time sync](/time/time-sync).
 
 - **"From" and the source's name** sit next to the title, such as **From Example planner**. Rest the pointer on it to see when the project last synced.
 - **Full name**, **Code**, **Client** and **Dates** show a lock in the properties card: the source sets them, so they change there, not in Ajour. **Client** and **Dates** show only when the source gives them. Once a project's last day has passed, the card says **Ended on** and the date. The display name, color, icon, favorites and pins stay yours.

@@ -1,6 +1,7 @@
 import {
   pluginHasProjectProperties,
   pluginHasTaskProperties,
+  type PluginsOverview,
 } from "@ajour/shared";
 import {
   NO_PROPERTY_PLUGINS,
@@ -10,39 +11,43 @@ import {
 } from "@/domain/projects/plugin-properties";
 import { getPluginsOverview, isPluginApiMissing } from "@/lib/app-api";
 
+/** The active plugins that add project or task properties, in `overview`. */
+export function propertyPluginsOf(overview: PluginsOverview): PropertyPlugins {
+  if (overview.pluginsEnabled === false) return NO_PROPERTY_PLUGINS;
+  const active = overview.connectionGroups
+    .filter((group) => group.enabled && !group.plugin.unavailableReason)
+    .map((group) => group.plugin);
+  return {
+    projects: active.flatMap((plugin): ProjectPropertyPlugin[] =>
+      pluginHasProjectProperties(plugin)
+        ? [
+            {
+              pluginId: plugin.id,
+              capability: plugin.capabilities.projectProperties!,
+            },
+          ]
+        : [],
+    ),
+    tasks: active.flatMap((plugin): TaskPropertyPlugin[] =>
+      pluginHasTaskProperties(plugin)
+        ? [
+            {
+              pluginId: plugin.id,
+              capability: plugin.capabilities.taskProperties!,
+            },
+          ]
+        : [],
+    ),
+  };
+}
+
 /**
  * The active plugins that add project or task properties, from one plugins
  * overview. Empty without the local API, as in the web build.
  */
 export async function listPropertyPlugins(): Promise<PropertyPlugins> {
   try {
-    const overview = await getPluginsOverview();
-    if (overview.pluginsEnabled === false) return NO_PROPERTY_PLUGINS;
-    const active = overview.connectionGroups
-      .filter((group) => group.enabled && !group.plugin.unavailableReason)
-      .map((group) => group.plugin);
-    return {
-      projects: active.flatMap((plugin): ProjectPropertyPlugin[] =>
-        pluginHasProjectProperties(plugin)
-          ? [
-              {
-                pluginId: plugin.id,
-                capability: plugin.capabilities.projectProperties!,
-              },
-            ]
-          : [],
-      ),
-      tasks: active.flatMap((plugin): TaskPropertyPlugin[] =>
-        pluginHasTaskProperties(plugin)
-          ? [
-              {
-                pluginId: plugin.id,
-                capability: plugin.capabilities.taskProperties!,
-              },
-            ]
-          : [],
-      ),
-    };
+    return propertyPluginsOf(await getPluginsOverview());
   } catch (error) {
     if (isPluginApiMissing(error)) return NO_PROPERTY_PLUGINS;
     throw error;

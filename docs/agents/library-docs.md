@@ -60,6 +60,7 @@ Use this file as the local index for important library choices. Check official d
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`
 - Project task budgets and consumption: `apps/web/src/domain/projects/task-budget.ts`
 - What a task commits as (sent, Not known yet, Local only), the one resolver the Commit page and agent tools read: `apps/web/src/domain/projects/commit-target.ts`
+- The time sync rules (#692, ADR 0018): which saved entries take part, the sync key, a round's changes from the synced copies, applying its answer, starting and stopping with the Time entries switches, normalization and the connection's status line: `apps/web/src/domain/projects/time-sync.ts`. The runner beside the project source runner, which plans, sends and keeps each round as a `time_sync.round` job, and times the rounds (2 s after a store write, every 60 s, at once while changes wait, backing off after a failure): `apps/web/src/lib/time-sync.ts`. `features/layout/backlog-auto-sync-scheduler.tsx` starts it and shows its failures in the connection's toast.
 - A managed project's budget card figures (Not counted yet, estimated Remaining, reconciliation): `apps/web/src/domain/projects/project-budget.ts`
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`
 - Project task/workbook import transitions and the canonical transfer-row contract: `apps/web/src/domain/projects/project-import.ts`
@@ -226,6 +227,9 @@ The backlog editor module is feature-local because its vocabulary and commands b
   validates each connection with `timeSync` on first
   (`checkConnectionsWith` in `apps/api/src/server.ts`). The example plugin
   answers rounds from an in-memory remote, `packages/example/plugin/time-sync.ts`.
+  The window runs the rounds and keeps their state per connection
+  (`LocalAppState.timeSyncs`): see the time sync rules under Web Domain
+  Modules.
 - Sync reports each item's `stateCategory` and `stateDone`. The plugin decides
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages
