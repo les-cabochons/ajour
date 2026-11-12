@@ -28,10 +28,12 @@ function installWindow() {
     setItem: (key: string, value: string) => void storage.set(key, value),
     removeItem: (key: string) => void storage.delete(key),
   };
+  // Real events, so the runner hears the store's writes.
+  const events = new EventTarget();
   vi.stubGlobal("window", {
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
     setTimeout,
     clearTimeout,
     localStorage,
@@ -217,6 +219,51 @@ describe("a time sync round", () => {
       localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
     ).toMatchObject({ agreed: { minutes: 90 } });
   });
+
+  it("waits before the next round when changes failed, even with more waiting", async () => {
+    const { appApi, localStore, connectionId, entryId } = await load();
+    const entry = localStore
+      .snapshot()
+      .timesheetEntries.find((candidate) => candidate._id === entryId)!;
+    // 21 entries: a round sends 20, and 1 waits.
+    for (let index = 0; index < 20; index += 1) {
+      localStore.saveManualTimeEntry({ ...entry, durationMs: HOUR / 2 });
+    }
+    const summary = (await appApi.getPluginsOverview()).connectionGroups
+      .flatMap((group) => group.connections)
+      .find((connection) => connection.id === connectionId)!;
+    // The plugin answers every change failed, as when its service is slow.
+    let rounds = 0;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (!String(url).endsWith("/sync-time-entries")) {
+        return fetchAsTheApp(url, init);
+      }
+      rounds += 1;
+      const { changes } = JSON.parse(String(init?.body)) as {
+        changes: { syncKey: string }[];
+      };
+      return Response.json({
+        connection: summary,
+        results: changes.map(({ syncKey }) => ({
+          syncKey,
+          status: "failed",
+          message: "The planner timed out.",
+        })),
+        entries: [],
+      });
+    });
+    const { startTimeSyncRunner } = await import("@/lib/time-sync");
+
+    // Its first write, starting the time sync, sends a round 2 s later.
+    const stop = startTimeSyncRunner({ failed: vi.fn(), succeeded: vi.fn() });
+    await vi.waitFor(() => expect(rounds).toBeGreaterThan(0), {
+      timeout: 5_000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    stop();
+
+    expect(rounds).toBe(1);
+  }, 15_000);
 
   it("drops the synced copies when Time entries goes off", async () => {
     const { appApi, localStore, connectionId, round } = await load();

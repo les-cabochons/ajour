@@ -304,26 +304,36 @@ export function startTimeSyncRunner(
     }
     slot.running = true;
     let next: TimeSyncTrigger | undefined;
+    /** Waits longer after each failure in a row, then retries. */
+    const backOff = () => {
+      slot.failures += 1;
+      const delay =
+        TIME_SYNC_RETRY_DELAYS_MS[
+          Math.min(slot.failures, TIME_SYNC_RETRY_DELAYS_MS.length) - 1
+        ]!;
+      slot.retryAt = Date.now() + delay;
+      clearTimeout(slot.retryTimer);
+      slot.retryTimer = setTimeout(() => run(connection, "retry"), delay);
+    };
     runTimeSyncRound(connection.pluginId, connection.connectionId, trigger)
       .then(
         (outcome) => {
           if (outcome.kind === "idle") return;
+          listener.succeeded(connection);
+          // Changes that failed are sent again after a wait, as after a
+          // failed round, never at once, or the same ones would loop.
+          if (outcome.kind === "applied" && outcome.failed > 0) {
+            backOff();
+            return;
+          }
           slot.failures = 0;
           slot.retryAt = undefined;
           clearTimeout(slot.retryTimer);
-          listener.succeeded(connection);
           if (outcome.kind === "applied" && outcome.waiting > 0) next = "more";
         },
         (error: unknown) => {
           // The round's own event records the failure.
-          slot.failures += 1;
-          const delay =
-            TIME_SYNC_RETRY_DELAYS_MS[
-              Math.min(slot.failures, TIME_SYNC_RETRY_DELAYS_MS.length) - 1
-            ]!;
-          slot.retryAt = Date.now() + delay;
-          clearTimeout(slot.retryTimer);
-          slot.retryTimer = setTimeout(() => run(connection, "retry"), delay);
+          backOff();
           listener.failed(
             connection,
             error instanceof Error ? error.message : "Unknown error",
