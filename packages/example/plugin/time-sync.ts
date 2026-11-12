@@ -111,3 +111,45 @@ export function runRound(
     );
   return { results, entries };
 }
+
+/*
+ * Another tool's hand on the remote, for Ajour's tests: an entry logged,
+ * edited or deleted there, as a timer in a planning tool would. Ajour takes
+ * these changes on its next round. Each one stamps `updatedAt` now.
+ */
+
+/** Logs an entry as another tool would: without a client reference. */
+export function logElsewhere(
+  connectionId: string,
+  values: Omit<TimeSyncEntryValues, "running" | "countingSince">,
+): TimeSyncRemoteEntry {
+  const remote = remoteOf(connectionId);
+  const entry = stored(`example-${remote.nextId++}`, undefined, {
+    ...values,
+    running: false,
+  });
+  remote.entries.set(entry.remoteId, entry);
+  return entry;
+}
+
+/** Edits an entry as another tool would, keeping what it doesn't name. */
+export function editElsewhere(
+  connectionId: string,
+  remoteId: string,
+  values: Partial<Omit<TimeSyncEntryValues, "running" | "countingSince">>,
+): TimeSyncRemoteEntry {
+  const remote = remoteOf(connectionId);
+  const existing = remote.entries.get(remoteId);
+  if (!existing) throw new Error(`The remote has no entry ${remoteId}.`);
+  const entry = stored(remoteId, existing.clientRef, {
+    ...existing,
+    ...values,
+  });
+  remote.entries.set(remoteId, entry);
+  return entry;
+}
+
+/** Deletes an entry as another tool would. */
+export function deleteElsewhere(connectionId: string, remoteId: string) {
+  remoteOf(connectionId).entries.delete(remoteId);
+}
