@@ -27,6 +27,11 @@ export interface CreateTimesheetEntryValues {
   durationMs: number;
   sourceBlockIds: string[];
   entryId?: string;
+  /**
+   * The time sync key the entry keeps, such as the running entry's it was
+   * saved from. Stored only when it is not the entry's id.
+   */
+  syncKey?: string;
 }
 
 export interface UpdateTimesheetEntryValues {
@@ -78,6 +83,7 @@ export function normalizeTimesheetEntry(
     submittedAt,
     submittedFingerprint: _submittedFingerprint,
     previousSubmittedAt: _previousSubmittedAt,
+    syncKey,
     ...entry
   } = stored;
   const normalized: LocalTimesheetEntry = {
@@ -85,6 +91,8 @@ export function normalizeTimesheetEntry(
     sourceBlockIds: Array.isArray(entry.sourceBlockIds)
       ? entry.sourceBlockIds
       : [],
+    // A broken key would fail every time sync round, so it reads as none.
+    ...(typeof syncKey === "string" && syncKey ? { syncKey } : {}),
   };
   const commit =
     normalizeTimesheetEntryCommit(storedCommit) ??
@@ -100,8 +108,9 @@ export function createTimesheetEntry(
   values: CreateTimesheetEntryValues,
   factories: TimesheetEntryFactories,
 ): LocalTimesheetEntry {
+  const _id = values.entryId ?? factories.createId("timesheet");
   return {
-    _id: values.entryId ?? factories.createId("timesheet"),
+    _id,
     localDate: values.localDate,
     workItemId: values.workItemId,
     projectId: values.projectId,
@@ -111,6 +120,9 @@ export function createTimesheetEntry(
     durationMs: values.durationMs,
     sourceBlockIds: values.sourceBlockIds,
     committedAt: factories.now(),
+    ...(values.syncKey && values.syncKey !== _id
+      ? { syncKey: values.syncKey }
+      : {}),
   };
 }
 
@@ -165,6 +177,7 @@ export function updateTimesheetEntry(
       durationMs: values.durationMs,
       sourceBlockIds: entry.sourceBlockIds,
       entryId: entry._id,
+      syncKey: entry.syncKey,
     },
     factories,
   );

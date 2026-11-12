@@ -12,6 +12,7 @@ import type {
   LocalAppState,
   LocalProject,
   LocalSyncedCopy,
+  LocalTimer,
   LocalTimeSync,
   LocalTimeSyncRefusal,
   LocalTimesheetEntry,
@@ -30,31 +31,34 @@ import {
 } from "@/domain/time/timesheet-submission";
 
 /*
- * The time sync rules (#692, ADR 0018). A time sync keeps a live copy of
- * the user's time entries in another system. This module decides which
- * saved entries take part, builds a round's changes from the synced copies,
- * and applies the round's answer to them. It never changes an entry: a
- * round is not a commit, and it is not part of Undo.
+ * The time sync rules (#692, #693, ADR 0018). A time sync keeps a live copy
+ * of the user's time entries in another system. This module decides which
+ * saved entries and which running entry take part, builds a round's changes
+ * from the synced copies, and applies the round's answer to them. It never
+ * changes an entry: a round is not a commit, and it is not part of Undo.
  *
- * Saved entries only, for now: the running entry is #693, and taking the
- * other system's changes into Ajour is #694. Each round still lists the
- * remote window; Ajour keeps only `updatedAt` from it, for the entries it
- * holds a synced copy of.
+ * Taking the other system's changes into Ajour is #694. Each round still
+ * lists the remote window; Ajour keeps only `updatedAt` from it, for the
+ * entries it holds a synced copy of.
  */
 
 export type TimeSyncState = Pick<
   LocalAppState,
-  "projects" | "timesheetEntries"
+  "projects" | "timers" | "timesheetEntries"
 > & {
   timeSyncs: Record<string, LocalTimeSync>;
 };
 
 /** The part of the local state the time sync rules read and write. */
 export function timeSyncStateOf(
-  state: Pick<LocalAppState, "projects" | "timesheetEntries" | "timeSyncs">,
+  state: Pick<
+    LocalAppState,
+    "projects" | "timers" | "timesheetEntries" | "timeSyncs"
+  >,
 ): TimeSyncState {
   return {
     projects: state.projects,
+    timers: state.timers,
     timesheetEntries: state.timesheetEntries,
     timeSyncs: state.timeSyncs ?? {},
   };
@@ -78,7 +82,10 @@ export interface TimeSyncContext {
   namesSource: string | undefined;
 }
 
-/** An entry shorter than this stays local, so a mis-click never leaves Ajour. */
+/**
+ * An entry shorter than this stays local, so a mis-click never leaves Ajour.
+ * A running entry waits until it has run this long.
+ */
 export const TIME_SYNC_MIN_DURATION_MS = 30_000;
 
 /** The window lists the current week and this many weeks before it. */
@@ -89,13 +96,17 @@ const MINUTE_MS = 60_000;
 const TASK_NAME_MAX_LENGTH = 240;
 
 /**
- * The sync key of a saved entry: the one rule. The other system keeps it as
- * its client reference, so it must outlive Time entries going off and on.
- * It is the entry's id. #693 lets a running entry hand its key to the entry
- * it saves as, so both share one.
+ * The sync key of a saved or running entry: the one rule. The other system
+ * keeps it as its client reference, so it lives in the entry itself and
+ * outlives Time entries going off and on. It is the stored key, else the id.
+ * A running entry and the entry it saves as share one: Stop hands the
+ * running entry's key to a new entry, and a Continue on today's entry keeps
+ * that entry's key (domain/time/timer-transitions.ts).
  */
-export function entrySyncKey(entry: Pick<LocalTimesheetEntry, "_id">) {
-  return entry._id;
+export function entrySyncKey(
+  entry: Pick<LocalTimesheetEntry | LocalTimer, "_id" | "syncKey">,
+) {
+  return entry.syncKey ?? entry._id;
 }
 
 function recordOf(
@@ -185,28 +196,75 @@ export function reconcileTimeSyncs(
   return next;
 }
 
-/** Whether two sets of entry values agree, field by field. */
+/**
+ * Whether two counting-since instants agree. Both sides compare in whole
+ * minutes, so a count corrected by a few seconds, or stored without its
+ * seconds, is no change.
+ */
+function sameCountingSince(
+  left: string | undefined,
+  right: string | undefined,
+) {
+  if (left === undefined || right === undefined) return left === right;
+  return Math.abs(Date.parse(left) - Date.parse(right)) < MINUTE_MS;
+}
+
+/**
+ * Whether two sets of entry values agree, field by field. Two running
+ * entries compare when their count started, not their minutes, which grow
+ * as time passes; so a running entry is not sent again every round.
+ */
 export function sameEntryValues(
   left: TimeSyncEntryValues,
   right: TimeSyncEntryValues,
 ) {
   return (
     left.localDate === right.localDate &&
-    left.minutes === right.minutes &&
     left.running === right.running &&
-    left.countingSince === right.countingSince &&
+    (left.running || left.minutes === right.minutes) &&
+    sameCountingSince(left.countingSince, right.countingSince) &&
     left.projectRemoteId === right.projectRemoteId &&
     left.taskName === right.taskName &&
     left.taskRemoteId === right.taskRemoteId
   );
 }
 
-/** Reads the entries of one connection's time sync against the state. */
+/**
+ * What a saved or running entry is, for the rules: its day, work and
+ * counted time, and when its count would have started from zero when it
+ * runs.
+ */
+interface SyncSource {
+  localDate: string;
+  projectId?: string;
+  taskId?: string;
+  durationMs: number;
+  /** Only for the running entry, in epoch milliseconds. */
+  countingSince?: number;
+}
+
+/** A running entry as the rules read it at `now`. */
+function runningSourceOf(timer: LocalTimer, now: number): SyncSource {
+  return {
+    localDate: timer.localDate,
+    projectId: timer.projectId,
+    taskId: timer.taskId,
+    durationMs:
+      timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt),
+    countingSince: timer.startedAt - timer.accumulatedDurationMs,
+  };
+}
+
+/**
+ * Reads the saved and running entries of one connection's time sync against
+ * the state, with the running entries counted up to `now`.
+ */
 function createReader(
   state: TimeSyncState,
   connection: TimeSyncConnectionRef,
   record: LocalTimeSync,
   context: TimeSyncContext,
+  now: number,
 ) {
   const projects = new Map(
     state.projects.map((project) => [project._id, project]),
@@ -221,16 +279,31 @@ function createReader(
     project.source?.pluginId === connection.pluginId &&
     project.source.connectionId === connection.connectionId;
 
+  /** The sync keys of the running entries. */
+  const runningKeys = new Set(state.timers.map(entrySyncKey));
+  /**
+   * Whether the other system shows a running entry that no longer runs in
+   * Ajour, such as the first entry of a switch. A running entry then takes
+   * over from it at once, in the same round as its stop, instead of after
+   * 30 seconds.
+   */
+  const takesOver = Object.entries(record.copies).some(
+    ([syncKey, copy]) => copy.agreed.running && !runningKeys.has(syncKey),
+  );
+
   /**
    * What the entry sends, or undefined when it doesn't take part: its
    * project is managed by this connection, neither the project nor the task
    * is Local only, its day is from the start week and not after today, and
-   * it lasts at least 30 seconds. The task name is the commit name the
-   * Commit page uses; a Not known yet task sends its own name. The note
-   * never leaves Ajour.
+   * it lasts at least 30 seconds. A running entry the other system doesn't
+   * show yet waits until it has run 30 seconds, unless it takes over from
+   * one shown running there; once shown, it stays until it stops. The task
+   * name is the commit name the Commit page uses; a Not known yet task sends
+   * its own name. The note never leaves Ajour.
    */
   const valuesOf = (
-    entry: LocalTimesheetEntry,
+    entry: SyncSource,
+    shown: boolean,
   ): TimeSyncEntryValues | undefined => {
     const project = entry.projectId ? projects.get(entry.projectId) : undefined;
     if (!project?.source || !isManagedHere(project)) return undefined;
@@ -243,7 +316,13 @@ function createReader(
     if (entry.localDate < record.startWeek || entry.localDate > context.today) {
       return undefined;
     }
-    if (entry.durationMs < TIME_SYNC_MIN_DURATION_MS) return undefined;
+    const running = entry.countingSince !== undefined;
+    if (
+      entry.durationMs < TIME_SYNC_MIN_DURATION_MS &&
+      !(running && (shown || takesOver))
+    ) {
+      return undefined;
+    }
     const taskName = (
       target === "waiting"
         ? task.name
@@ -261,16 +340,28 @@ function createReader(
       // To the nearest whole minute, and never 0: a time sync takes 1 to
       // 1,440 minutes, and the 30 second floor rounds to 1.
       minutes: Math.max(1, Math.round(entry.durationMs / MINUTE_MS)),
-      running: false,
+      running,
+      ...(running
+        ? { countingSince: new Date(entry.countingSince!).toISOString() }
+        : {}),
       projectRemoteId: project.source.remoteId,
       taskName,
       ...(task.source ? { taskRemoteId: task.source.remoteId } : {}),
     };
   };
 
-  const entries = new Map(
-    state.timesheetEntries.map((entry) => [entrySyncKey(entry), entry]),
-  );
+  /**
+   * The entry under each sync key. A running entry that resumed today's
+   * entry shares its key, and counts for it until it stops.
+   */
+  const entries = new Map<string, SyncSource>([
+    ...state.timesheetEntries.map(
+      (entry) => [entrySyncKey(entry), entry] as const,
+    ),
+    ...state.timers.map(
+      (timer) => [entrySyncKey(timer), runningSourceOf(timer, now)] as const,
+    ),
+  ]);
 
   /**
    * The change one sync key needs against its synced copy, refused or not:
@@ -279,10 +370,10 @@ function createReader(
    */
   const changeFor = (syncKey: string): TimeSyncChange | undefined => {
     const entry = entries.get(syncKey);
-    const values = entry ? valuesOf(entry) : undefined;
     const copy = Object.hasOwn(record.copies, syncKey)
       ? record.copies[syncKey]
       : undefined;
+    const values = entry ? valuesOf(entry, copy !== undefined) : undefined;
     const known = copy ? { remoteId: copy.remoteId, agreed: copy.agreed } : {};
     if (values) {
       return copy && sameEntryValues(copy.agreed, values)
@@ -296,7 +387,7 @@ function createReader(
   const syncKeys = () =>
     new Set([...entries.keys(), ...Object.keys(record.copies)]);
 
-  return { entries, changeFor, syncKeys };
+  return { changeFor, syncKeys };
 }
 
 /** Whether the other system already refused this very change. */
@@ -318,6 +409,14 @@ function dayOf(change: TimeSyncChange) {
     : (change.agreed?.localDate ?? "");
 }
 
+/**
+ * Sends a running entry after the other changes of its day, so a switch
+ * stops the first entry before the second starts.
+ */
+function runsLast(change: TimeSyncChange) {
+  return change.kind === "upsert" && change.values.running ? 1 : 0;
+}
+
 /** One round to send: its request, and what waits for the next one. */
 export interface TimeSyncPlan {
   connection: TimeSyncConnectionRef;
@@ -331,10 +430,11 @@ export interface TimeSyncPlan {
 }
 
 /**
- * The next round of a connection, or undefined when it has no time sync.
- * It sends what differs from the synced copies, at most 20 changes in day
- * order, skipping a change the other system already refused. The window is
- * the current week and the 4 before it, never before the start week.
+ * The next round of a connection at `now`, or undefined when it has no time
+ * sync. It sends what differs from the synced copies, at most 20 changes in
+ * day order with the running entry last, skipping a change the other system
+ * already refused. The window is the current week and the 4 before it,
+ * never before the start week.
  */
 export function planTimeSyncRound(
   state: TimeSyncState,
@@ -344,7 +444,7 @@ export function planTimeSyncRound(
 ): TimeSyncPlan | undefined {
   const record = recordOf(state.timeSyncs, connection);
   if (!record) return undefined;
-  const reader = createReader(state, connection, record, context);
+  const reader = createReader(state, connection, record, context, now);
   const changes = [...reader.syncKeys()]
     .flatMap((syncKey) => {
       const change = reader.changeFor(syncKey);
@@ -361,6 +461,7 @@ export function planTimeSyncRound(
     .sort(
       (left, right) =>
         dayOf(left).localeCompare(dayOf(right)) ||
+        runsLast(left) - runsLast(right) ||
         left.syncKey.localeCompare(right.syncKey),
     );
   const currentWeek = getWeekOf(context.today);
@@ -394,7 +495,7 @@ function noteLocalChanges(
   context: TimeSyncContext,
   seenAt: number,
 ): LocalTimeSync {
-  const reader = createReader(state, connection, record, context);
+  const reader = createReader(state, connection, record, context, seenAt);
   let copies = record.copies;
   for (const [syncKey, copy] of Object.entries(record.copies)) {
     const changed = reader.changeFor(syncKey) !== undefined;

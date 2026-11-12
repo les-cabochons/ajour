@@ -538,6 +538,45 @@ describe("timesheet entry lifecycle", () => {
     expect(moved.workItems).toEqual(state.workItems);
   });
 
+  it("keeps an entry's time sync key through an edit and a move, and gives a duplicate its own", () => {
+    // Saved from a running entry, so it carries that entry's key (#693).
+    const entry: LocalTimesheetEntry = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      durationMs: 60 * 60 * 1000,
+      sourceBlockIds: [],
+      committedAt: 10,
+      syncKey: "timer-1",
+    };
+    const state = createState({ timesheetEntries: [entry] });
+    const values = {
+      localDate: "2026-07-31",
+      projectId: "project-1",
+      taskId: "task-1",
+      durationMs: 30 * 60 * 1000,
+    };
+
+    expect(
+      updateTimesheetEntry(state, "entry-1", values, factories)
+        .timesheetEntries[0],
+    ).toMatchObject({ syncKey: "timer-1", durationMs: 30 * 60 * 1000 });
+    expect(
+      moveTimesheetEntry(state, "entry-1", values, factories)
+        .timesheetEntries[0],
+    ).toMatchObject({ syncKey: "timer-1", localDate: "2026-07-31" });
+    expect(
+      duplicateTimesheetEntry(state, "entry-1", values, factories)
+        .timesheetEntries[1],
+    ).not.toHaveProperty("syncKey");
+    expect(normalizeTimesheetEntry(entry)).toEqual(entry);
+    expect(
+      normalizeTimesheetEntry({ ...entry, syncKey: 7 as unknown as string }),
+    ).not.toHaveProperty("syncKey");
+  });
+
   it("reorders one day by exchanging committed-time slots", () => {
     const state = createState({
       timesheetEntries: [
