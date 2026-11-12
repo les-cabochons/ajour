@@ -16,7 +16,6 @@ import {
 } from "@/domain/projects/time-sync";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 import {
-  asPoll,
   connectionGeneration,
   getCachedPluginsOverview,
   getPluginsOverview,
@@ -273,7 +272,7 @@ export function startTimeSyncRunner(
   listener: TimeSyncRunnerListener,
 ): () => void {
   let stopped = false;
-  let overview = getCachedPluginsOverview();
+  let overview: PluginsOverview | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   const slots = new Map<string, ConnectionSlot>();
@@ -339,10 +338,29 @@ export function startTimeSyncRunner(
       });
   };
 
-  /** Follows the switches, and forgets the connections that stopped. */
+  /** Sends each active connection's poll round, then waits for the next. */
+  const poll = () => {
+    if (stopped) return;
+    clearTimeout(pollTimer);
+    for (const connection of active()) run(connection, "poll");
+    pollTimer = setTimeout(poll, TIME_SYNC_POLL_INTERVAL_MS);
+  };
+
+  /**
+   * Follows the switches, forgets the connections that stopped, and starts
+   * polling with the first overview. The runner reads no overview of its
+   * own: the sync scheduler refreshes it every 30 seconds, and each round
+   * reads a fresh one before it sends.
+   */
   const receive = (next: PluginsOverview) => {
+    const first = overview === undefined;
     overview = next;
-    followTimeSyncSwitches(next);
+    try {
+      followTimeSyncSwitches(next);
+    } catch {
+      // Another window wrote first: its event records the refusal, and the
+      // next overview tries again. The overview's other readers go on.
+    }
     const keys = new Set(active().map(keyOf));
     for (const [key, slot] of slots) {
       if (!keys.has(key) && !slot.running) {
@@ -350,19 +368,7 @@ export function startTimeSyncRunner(
         slots.delete(key);
       }
     }
-  };
-
-  const poll = async () => {
-    if (stopped) return;
-    try {
-      // The poll itself is no unit of work: only its rounds emit.
-      receive(await asPoll(() => getPluginsOverview()));
-      for (const connection of active()) run(connection, "poll");
-    } catch {
-      // The overview could not be read: the next poll tries again.
-    } finally {
-      if (!stopped) pollTimer = setTimeout(poll, TIME_SYNC_POLL_INTERVAL_MS);
-    }
+    if (first) poll();
   };
 
   const unsubscribeOverview = subscribePluginsOverview(receive);
@@ -372,7 +378,8 @@ export function startTimeSyncRunner(
       for (const connection of active()) run(connection, "change");
     }, TIME_SYNC_DEBOUNCE_MS);
   });
-  void poll();
+  const cached = getCachedPluginsOverview();
+  if (cached) receive(cached);
 
   return () => {
     stopped = true;
