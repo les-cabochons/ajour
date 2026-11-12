@@ -1299,6 +1299,46 @@ describe("taking the other system's changes", () => {
     ).toMatchObject({ durationMs: 45 * MINUTE });
   });
 
+  it("dates an edit made after its round's change synced from now, so it wins over an older edit there", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const at120 = {
+      ...synced,
+      timesheetEntries: [entry("e1", { durationMs: 120 * MINUTE })],
+    };
+    // Planned at 14:30 and synced there at 14:40; edited to 45 there at
+    // 15:00, and to 2:30 in Ajour at 15:30; answered at 16:00.
+    const round = {
+      ...plan(at120),
+      plannedAt: Date.parse("2026-11-12T14:30:00.000Z"),
+    };
+    const [sent] = syncEverything(
+      round,
+      at120,
+      "2026-11-12T14:40:00.000Z",
+    ).results;
+    const at150 = {
+      ...at120,
+      timesheetEntries: [entry("e1", { durationMs: 150 * MINUTE })],
+    };
+
+    const applied = applyTimeSyncRound(
+      at150,
+      round,
+      { results: [sent!], entries: [remoteE1({ minutes: 45 })] },
+      CONTEXT,
+      factoriesAt(Date.parse("2026-11-12T16:00:00.000Z")),
+    );
+
+    expect(entriesOf(applied.state)).toEqual([
+      expect.objectContaining({ durationMs: 150 * MINUTE }),
+    ]);
+    expect(plan(applied.state).request.changes).toEqual([
+      expect.objectContaining({
+        values: expect.objectContaining({ minutes: 150 }),
+      }),
+    ]);
+  });
+
   it("never reads an entry as deleted while its change of the round failed or was refused", () => {
     const synced = runRound(stateWith([entry("e1"), entry("e2")])).state;
     const edited = {

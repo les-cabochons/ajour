@@ -487,11 +487,13 @@ export interface TimeSyncPlan {
   /** Changes beyond this round's limit, for the next round. */
   waiting: number;
   /**
-   * The copied entries that differed from their copy at planning, sent or
-   * not. Their change is no newer than `plannedAt`, which a conflict reads
-   * when the copy has no `changedAt` yet.
+   * The agreed values of each copied entry that differed from its copy at
+   * planning, sent or not, by sync key. While the copy still agrees on these
+   * values, that difference is no newer than `plannedAt`, which a conflict
+   * reads when the copy has no `changedAt` yet. Once they change, such as
+   * when the change synced, a difference left is newer than the plan.
    */
-  changedAtPlanning: string[];
+  changedAtPlanning: Record<string, TimeSyncEntryValues>;
 }
 
 /**
@@ -546,9 +548,13 @@ export function planTimeSyncRound(
       changes: changes.slice(0, TIME_SYNC_MAX_CHANGES),
     },
     waiting: Math.max(0, changes.length - TIME_SYNC_MAX_CHANGES),
-    changedAtPlanning: pending
-      .filter((change) => Object.hasOwn(record.copies, change.syncKey))
-      .map((change) => change.syncKey),
+    changedAtPlanning: Object.fromEntries(
+      pending.flatMap((change) =>
+        Object.hasOwn(record.copies, change.syncKey)
+          ? [[change.syncKey, record.copies[change.syncKey]!.agreed]]
+          : [],
+      ),
+    ),
   };
 }
 
@@ -771,7 +777,6 @@ function takeListing(
     remote.localDate <= context.today &&
     !isDateLocked(state, remote.localDate);
   const reader = createReader(state, connection, record, context, now);
-  const changedAtPlanning = new Set(plan.changedAtPlanning);
   /** The saved entries by sync key. */
   const saved = new Map(
     state.timesheetEntries.map((entry) => [entrySyncKey(entry), entry]),
@@ -856,11 +861,17 @@ function takeListing(
     }
     // Ajour deleted it, or it stopped taking part: the delete wins.
     if (deletedHere) continue;
-    // Both changed: Ajour's change wins when it is the later one. One seen
-    // first at this round's planning is no newer than it; one made since,
-    // no newer than now.
+    // Both changed: Ajour's change wins when it is the later one. A
+    // difference the plan saw against the same agreed values is no newer
+    // than the plan; one against values agreed since, no newer than now.
+    const plannedAgainst = Object.hasOwn(plan.changedAtPlanning, syncKey)
+      ? plan.changedAtPlanning[syncKey]
+      : undefined;
     const localAt =
-      copy.changedAt ?? (changedAtPlanning.has(syncKey) ? plan.plannedAt : now);
+      copy.changedAt ??
+      (plannedAgainst && sameEntryValues(plannedAgainst, copy.agreed)
+        ? plan.plannedAt
+        : now);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
