@@ -30,6 +30,7 @@ const INSTALLABLE_CAPABILITIES = new Set([
   "calendar",
   "team",
   "projectSource",
+  "timeSync",
   "agentTask",
   "schema",
 ]);
