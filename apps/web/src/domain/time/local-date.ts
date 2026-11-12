@@ -32,6 +32,16 @@ export function getWeekOf(localDate: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * The day `days` after `localDate`, or before it for a negative count, in
+ * UTC on the date alone like `getWeekOf`. Pass a valid date.
+ */
+export function addLocalDays(localDate: string, days: number): string {
+  const date = new Date(`${localDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 /** The seven days of the week that holds `localDate`, Monday first. */
 export function getWeekDates(localDate: string): string[] {
   const monday = new Date(`${getWeekOf(localDate)}T00:00:00Z`);
