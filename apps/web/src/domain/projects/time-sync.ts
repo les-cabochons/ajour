@@ -3,7 +3,9 @@ import {
   TIME_SYNC_MAX_CHANGES,
   type PluginsOverview,
   type TimeSyncChange,
+  type TimeSyncChangeResult,
   type TimeSyncEntryValues,
+  type TimeSyncRemoteEntry,
   type TimeSyncRequest,
   type TimeSyncResult,
   timeSyncEntryValuesSchema,
@@ -11,55 +13,71 @@ import {
 import type {
   LocalAppState,
   LocalProject,
+  LocalProjectTask,
   LocalSyncedCopy,
   LocalTimer,
   LocalTimeSync,
+  LocalTimeSyncHold,
   LocalTimeSyncRefusal,
   LocalTimesheetEntry,
+  TimeSyncHoldReason,
 } from "@/domain/local-state";
 import { getCommitTarget } from "@/domain/projects/commit-target";
 import { recordsEqual } from "@/domain/records-equal";
 import type { PropertyPlugins } from "@/domain/projects/plugin-properties";
+import { createProjectTask } from "@/domain/projects/project-transitions";
+import {
+  formatTaskImportName,
+  normalizeTaskImportName,
+} from "@/domain/projects/task-import";
 import {
   addLocalDays,
   getWeekOf,
   isValidLocalDate,
 } from "@/domain/time/local-date";
+import { isDateLocked } from "@/domain/time/locked-weeks";
+import {
+  deleteTimesheetEntry,
+  moveTimesheetEntry,
+  saveManualTimesheetEntry,
+  updateTimesheetEntry,
+  type TimesheetEntryFactories,
+  type TimesheetEntryState,
+} from "@/domain/time/timesheet-entry";
 import {
   resolveCommitTaskName,
   resolveLineNameSource,
 } from "@/domain/time/timesheet-submission";
 
 /*
- * The time sync rules (#692, #693, ADR 0018). A time sync keeps a live copy
- * of the user's time entries in another system. This module decides which
- * saved entries and which running entry take part, builds a round's changes
- * from the synced copies, and applies the round's answer to them. It never
- * changes an entry: a round is not a commit, and it is not part of Undo.
+ * The time sync rules (#692, #693, #694, ADR 0018). A time sync keeps a
+ * live copy of the user's time entries in another system. This module
+ * decides which saved entries and which running entry take part, builds a
+ * round's changes from the synced copies, and applies the round's answer:
+ * to the copies, and to the entries, with what changed in the other
+ * system's window. It changes entries only through the entry transitions.
+ * A round is not a commit, and it is not part of Undo.
  *
- * Taking the other system's changes into Ajour is #694. Each round still
- * lists the remote window; Ajour keeps only `updatedAt` from it, for the
- * entries it holds a synced copy of.
+ * A remote running entry is #695, and submitted weeks #696. Until then a
+ * round skips a remote running entry and leaves a submitted week as it is.
  */
 
-export type TimeSyncState = Pick<
-  LocalAppState,
-  "projects" | "timers" | "timesheetEntries"
-> & {
-  timeSyncs: Record<string, LocalTimeSync>;
-};
+export type TimeSyncState = TimesheetEntryState &
+  Pick<LocalAppState, "lockedWeeks"> & {
+    timeSyncs: Record<string, LocalTimeSync>;
+  };
 
 /** The part of the local state the time sync rules read and write. */
 export function timeSyncStateOf(
-  state: Pick<
-    LocalAppState,
-    "projects" | "timers" | "timesheetEntries" | "timeSyncs"
-  >,
+  state: TimesheetEntryState & Pick<LocalAppState, "lockedWeeks" | "timeSyncs">,
 ): TimeSyncState {
   return {
     projects: state.projects,
-    timers: state.timers,
     timesheetEntries: state.timesheetEntries,
+    timesheetTombstones: state.timesheetTombstones,
+    timers: state.timers,
+    workItems: state.workItems,
+    lockedWeeks: state.lockedWeeks,
     timeSyncs: state.timeSyncs ?? {},
   };
 }
@@ -139,13 +157,14 @@ export function startTimeSync(
       startedAt: now,
       copies: {},
       refusals: {},
+      held: [],
     },
   };
 }
 
 /**
- * Drops a connection's time sync: its copies, refusals and status. The other
- * system keeps its entries.
+ * Drops a connection's time sync: its copies, refusals, held entries and
+ * status. The other system keeps its entries.
  */
 export function stopTimeSync(
   timeSyncs: Record<string, LocalTimeSync>,
@@ -256,18 +275,18 @@ function runningSourceOf(timer: LocalTimer, now: number): SyncSource {
 }
 
 /**
- * Reads the saved and running entries of one connection's time sync against
- * the state, with the running entries counted up to `now`.
+ * Reads what entries send for one connection's time sync, against the
+ * projects and the running entries. Built again once a round adds a task.
  */
-function createReader(
-  state: TimeSyncState,
+function createValuesReader(
+  projectList: readonly LocalProject[],
+  timers: readonly LocalTimer[],
   connection: TimeSyncConnectionRef,
-  record: LocalTimeSync,
+  record: Pick<LocalTimeSync, "startWeek" | "copies">,
   context: TimeSyncContext,
-  now: number,
 ) {
   const projects = new Map(
-    state.projects.map((project) => [project._id, project]),
+    projectList.map((project) => [project._id, project]),
   );
   const namesPluginId = resolveLineNameSource(
     context.namesSource,
@@ -280,7 +299,7 @@ function createReader(
     project.source.connectionId === connection.connectionId;
 
   /** The sync keys of the running entries. */
-  const runningKeys = new Set(state.timers.map(entrySyncKey));
+  const runningKeys = new Set(timers.map(entrySyncKey));
   /**
    * Whether the other system shows a running entry that no longer runs in
    * Ajour, such as the first entry of a switch. A running entry then takes
@@ -292,14 +311,29 @@ function createReader(
   );
 
   /**
+   * The name the task goes under: the commit name the Commit page uses, or
+   * a Not known yet task's own name. Empty for a blank name.
+   */
+  const sentTaskName = (project: LocalProject, task: LocalProjectTask) =>
+    (getCommitTarget(project, task) === "waiting"
+      ? task.name
+      : resolveCommitTaskName({
+          task,
+          plugins: context.plugins,
+          namesPluginId,
+        })
+    )
+      .trim()
+      .slice(0, TASK_NAME_MAX_LENGTH);
+
+  /**
    * What the entry sends, or undefined when it doesn't take part: its
    * project is managed by this connection, neither the project nor the task
    * is Local only, its day is from the start week and not after today, and
    * it lasts at least 30 seconds. A running entry the other system doesn't
    * show yet waits until it has run 30 seconds, unless it takes over from
-   * one shown running there; once shown, it stays until it stops. The task
-   * name is the commit name the Commit page uses; a Not known yet task sends
-   * its own name. The note never leaves Ajour.
+   * one shown running there; once shown, it stays until it stops. The note
+   * never leaves Ajour.
    */
   const valuesOf = (
     entry: SyncSource,
@@ -311,8 +345,7 @@ function createReader(
       ? project.tasks.find((candidate) => candidate._id === entry.taskId)
       : undefined;
     if (!task) return undefined;
-    const target = getCommitTarget(project, task);
-    if (target === "local") return undefined;
+    if (getCommitTarget(project, task) === "local") return undefined;
     if (entry.localDate < record.startWeek || entry.localDate > context.today) {
       return undefined;
     }
@@ -323,23 +356,11 @@ function createReader(
     ) {
       return undefined;
     }
-    const taskName = (
-      target === "waiting"
-        ? task.name
-        : resolveCommitTaskName({
-            task,
-            plugins: context.plugins,
-            namesPluginId,
-          })
-    )
-      .trim()
-      .slice(0, TASK_NAME_MAX_LENGTH);
+    const taskName = sentTaskName(project, task);
     if (!taskName) return undefined;
     return {
       localDate: entry.localDate,
-      // To the nearest whole minute, and never 0: a time sync takes 1 to
-      // 1,440 minutes, and the 30 second floor rounds to 1.
-      minutes: Math.max(1, Math.round(entry.durationMs / MINUTE_MS)),
+      minutes: wholeMinutes(entry.durationMs),
       running,
       ...(running
         ? { countingSince: new Date(entry.countingSince!).toISOString() }
@@ -349,6 +370,36 @@ function createReader(
       ...(task.source ? { taskRemoteId: task.source.remoteId } : {}),
     };
   };
+
+  return { isManagedHere, sentTaskName, valuesOf };
+}
+
+/**
+ * To the nearest whole minute, and never 0: a time sync takes 1 to 1,440
+ * minutes, and the 30 second floor rounds to 1.
+ */
+function wholeMinutes(durationMs: number) {
+  return Math.max(1, Math.round(durationMs / MINUTE_MS));
+}
+
+/**
+ * Reads the saved and running entries of one connection's time sync against
+ * the state, with the running entries counted up to `now`.
+ */
+function createReader(
+  state: Pick<TimeSyncState, "projects" | "timers" | "timesheetEntries">,
+  connection: TimeSyncConnectionRef,
+  record: Pick<LocalTimeSync, "startWeek" | "copies">,
+  context: TimeSyncContext,
+  now: number,
+) {
+  const { valuesOf } = createValuesReader(
+    state.projects,
+    state.timers,
+    connection,
+    record,
+    context,
+  );
 
   /**
    * The entry under each sync key. A running entry that resumed today's
@@ -529,27 +580,375 @@ export type TimeSyncRoundResult =
       failed: number;
       /** Changes left for the next round. */
       waiting: number;
+      /** Entries Ajour took from the other system: added, edited or deleted. */
+      received: number;
+      /** Entries of the other system Ajour holds after the round. */
+      held: number;
     }
   /** Time entries went off, or off and on, while the round ran. */
   | { kind: "discarded" };
+
+/** The values of a remote entry, as Ajour compares and sends them. */
+function remoteValuesOf(remote: TimeSyncRemoteEntry): TimeSyncEntryValues {
+  const { remoteId: _id, clientRef: _ref, updatedAt: _at, ...values } = remote;
+  return values;
+}
+
+/**
+ * Whether the other system's entry holds what both sides agreed on, for
+ * what Ajour takes from it: the day, the whole minutes, the project, and
+ * the task's name as task names compare. A task id it doesn't keep, or a
+ * name in another case, is not a change.
+ */
+function sameAsAgreed(
+  agreed: TimeSyncEntryValues,
+  remote: TimeSyncRemoteEntry,
+) {
+  return (
+    agreed.localDate === remote.localDate &&
+    agreed.minutes === remote.minutes &&
+    agreed.projectRemoteId === remote.projectRemoteId &&
+    normalizeTaskImportName(agreed.taskName) ===
+      normalizeTaskImportName(remote.taskName)
+  );
+}
+
+/** The task of a list that wins a match: an active one first. */
+function firstActive(tasks: readonly LocalProjectTask[]) {
+  return tasks.find((task) => task.status === "active") ?? tasks[0];
+}
+
+/** Where a remote entry lands in Ajour, or why Ajour holds it. */
+type Placement =
+  | {
+      kind: "placed";
+      /** The projects, with the task Ajour added for it, if any. */
+      projects: LocalProject[];
+      projectId: string;
+      taskId: string;
+    }
+  | { kind: "held"; reason: TimeSyncHoldReason };
+
+/**
+ * Places a remote entry: its project by its remote id among the projects
+ * this connection manages, its task by the name it commits as, then by its
+ * own name, compared as the project source compares task names, an active
+ * task first. With no match, a new task of that name, Not known yet, so its
+ * time waits for the user to pick what it commits as. A project this
+ * connection doesn't manage, or a Local only project or task, holds it.
+ */
+function placeRemoteEntry(
+  projects: LocalProject[],
+  remote: TimeSyncRemoteEntry,
+  reader: ReturnType<typeof createValuesReader>,
+  factories: TimesheetEntryFactories,
+): Placement {
+  const project = projects.find(
+    (candidate) =>
+      reader.isManagedHere(candidate) &&
+      candidate.source?.remoteId === remote.projectRemoteId,
+  );
+  if (!project) return { kind: "held", reason: "unmanagedProject" };
+  if (project.localOnly) return { kind: "held", reason: "localOnlyProject" };
+  const key = normalizeTaskImportName(remote.taskName);
+  const task =
+    firstActive(
+      project.tasks.filter(
+        (candidate) =>
+          normalizeTaskImportName(reader.sentTaskName(project, candidate)) ===
+          key,
+      ),
+    ) ??
+    firstActive(
+      project.tasks.filter(
+        (candidate) => normalizeTaskImportName(candidate.name) === key,
+      ),
+    );
+  if (task) {
+    return getCommitTarget(project, task) === "local"
+      ? { kind: "held", reason: "localOnlyTask" }
+      : { kind: "placed", projects, projectId: project._id, taskId: task._id };
+  }
+  const created = createProjectTask(
+    { name: formatTaskImportName(remote.taskName), commitAs: "waiting" },
+    factories,
+  );
+  return {
+    kind: "placed",
+    projects: projects.map((candidate) =>
+      candidate === project
+        ? { ...candidate, tasks: [...candidate.tasks, created] }
+        : candidate,
+    ),
+    projectId: project._id,
+    taskId: created._id,
+  };
+}
+
+function holdOf(
+  remote: TimeSyncRemoteEntry,
+  reason: TimeSyncHoldReason,
+): LocalTimeSyncHold {
+  return {
+    remoteId: remote.remoteId,
+    localDate: remote.localDate,
+    minutes: remote.minutes,
+    projectRemoteId: remote.projectRemoteId,
+    taskName: remote.taskName,
+    reason,
+  };
+}
+
+/** What a round took from the listing. */
+interface TakenListing {
+  state: TimeSyncState;
+  copies: Record<string, LocalSyncedCopy>;
+  held: LocalTimeSyncHold[];
+  received: number;
+}
+
+/**
+ * Takes what changed in the other system's window into Ajour, through the
+ * entry transitions, and keeps the synced copies in line:
+ *
+ * - A copy whose remote entry is missing, while its day is in the window,
+ *   was deleted there: the entry is deleted, even when Ajour changed it, so
+ *   a delete wins over an edit. Gone on both sides, the copy just goes.
+ * - A copy whose remote entry changed since the last round, and holds other
+ *   values than agreed, was edited there. When Ajour changed it too, the
+ *   later of `changedAt` and the remote `updatedAt` wins, and a delete in
+ *   Ajour wins over the edit.
+ * - A listed entry with neither a copy nor a client reference was logged
+ *   elsewhere: Ajour adds it. One with a client reference is Ajour's own,
+ *   such as one a send whose answer was lost made, and the next send
+ *   adopts it.
+ *
+ * A copy whose change this round failed or was refused is left as it is,
+ * since the change is sent again. A remote running entry (#695), a day in a
+ * submitted week (#696), the copy of the running entry, which a Continue
+ * shares with today's entry (#693), and a remote entry that can't take
+ * part yet, such as one dated after today, are left for a later round. A taken entry's copy agrees on Ajour's values
+ * for it, so nothing is sent back.
+ */
+function takeListing(
+  state: TimeSyncState,
+  connection: TimeSyncConnectionRef,
+  record: LocalTimeSync,
+  plan: TimeSyncPlan,
+  answer: TimeSyncResult,
+  outcomes: ReadonlyMap<string, TimeSyncChangeResult["status"]>,
+  context: TimeSyncContext,
+  factories: TimesheetEntryFactories,
+): TakenListing {
+  const { from, to } = plan.request;
+  const now = factories.now();
+  const inWindow = (localDate: string) => localDate >= from && localDate <= to;
+  /** Whether Ajour may write the day now: unlocked, and an entry there takes part. */
+  const canTake = (remote: TimeSyncRemoteEntry) =>
+    !remote.running &&
+    remote.minutes >= 1 &&
+    remote.localDate >= record.startWeek &&
+    remote.localDate <= context.today &&
+    !isDateLocked(state, remote.localDate);
+  const reader = createReader(state, connection, record, context, now);
+  /** The saved entries by sync key. */
+  const saved = new Map(
+    state.timesheetEntries.map((entry) => [entrySyncKey(entry), entry]),
+  );
+  /** The running entries' keys: the running entry's copy is #693's and #695's. */
+  const running = new Set(state.timers.map(entrySyncKey));
+  const listed = new Map(
+    answer.entries.map((entry) => [entry.remoteId, entry]),
+  );
+  let current = state;
+  let values = createValuesReader(
+    state.projects,
+    state.timers,
+    connection,
+    record,
+    context,
+  );
+  const copies = { ...record.copies };
+  const held: LocalTimeSyncHold[] = [];
+  let received = 0;
+
+  /** The copy of a taken entry: Ajour's values for it, so nothing goes back. */
+  const copyOf = (
+    entryId: string,
+    remote: TimeSyncRemoteEntry,
+  ): LocalSyncedCopy => {
+    const entry = current.timesheetEntries.find((item) => item._id === entryId);
+    return {
+      remoteId: remote.remoteId,
+      agreed: (entry && values.valuesOf(entry, true)) ?? remoteValuesOf(remote),
+      remoteUpdatedAt: remote.updatedAt,
+    };
+  };
+
+  /** Moves to a placement's projects, and reads values against them. */
+  const placeIn = (placement: Extract<Placement, { kind: "placed" }>) => {
+    if (placement.projects !== current.projects) {
+      current = { ...current, projects: placement.projects };
+      values = createValuesReader(
+        current.projects,
+        current.timers,
+        connection,
+        record,
+        context,
+      );
+    }
+  };
+
+  for (const [syncKey, copy] of Object.entries(record.copies)) {
+    const outcome = outcomes.get(syncKey);
+    if (outcome === "failed" || outcome === "refused" || running.has(syncKey)) {
+      continue;
+    }
+    const remote = listed.get(copy.remoteId);
+    const entry = saved.get(syncKey);
+    const local = reader.changeFor(syncKey);
+    const deletedHere = !entry || local?.kind === "delete";
+    if (!remote) {
+      // Outside the window, a missing entry is only not listed.
+      if (!inWindow(copy.agreed.localDate)) continue;
+      if (deletedHere) {
+        delete copies[syncKey];
+        continue;
+      }
+      if (isDateLocked(state, entry.localDate)) continue;
+      current = deleteTimesheetEntry(current, entry._id);
+      delete copies[syncKey];
+      received += 1;
+      continue;
+    }
+    if (remote.running || remote.updatedAt === copy.remoteUpdatedAt) continue;
+    if (sameAsAgreed(copy.agreed, remote)) {
+      copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
+      continue;
+    }
+    // Ajour deleted it, or it stopped taking part: the delete wins.
+    if (deletedHere) continue;
+    // Both changed: Ajour's change wins when it is the later one.
+    if (local && (copy.changedAt ?? now) >= Date.parse(remote.updatedAt)) {
+      copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
+      continue;
+    }
+    if (!canTake(remote) || isDateLocked(state, entry.localDate)) continue;
+    const keepsPlace =
+      !local &&
+      remote.projectRemoteId === copy.agreed.projectRemoteId &&
+      normalizeTaskImportName(remote.taskName) ===
+        normalizeTaskImportName(copy.agreed.taskName);
+    const placement: Placement = keepsPlace
+      ? {
+          kind: "placed",
+          projects: current.projects,
+          projectId: entry.projectId!,
+          taskId: entry.taskId!,
+        }
+      : placeRemoteEntry(current.projects, remote, values, factories);
+    if (placement.kind === "held") {
+      held.push(holdOf(remote, placement.reason));
+      continue;
+    }
+    placeIn(placement);
+    const edit = {
+      projectId: placement.projectId,
+      taskId: placement.taskId,
+      // Seconds stay when the whole minutes agree.
+      durationMs:
+        wholeMinutes(entry.durationMs) === remote.minutes
+          ? entry.durationMs
+          : remote.minutes * MINUTE_MS,
+    };
+    const changed =
+      edit.projectId !== entry.projectId ||
+      edit.taskId !== entry.taskId ||
+      edit.durationMs !== entry.durationMs ||
+      remote.localDate !== entry.localDate;
+    if (changed) {
+      current =
+        remote.localDate === entry.localDate
+          ? updateTimesheetEntry(current, entry._id, edit, factories)
+          : moveTimesheetEntry(
+              current,
+              entry._id,
+              { ...edit, localDate: remote.localDate, note: entry.note },
+              factories,
+            );
+      received += 1;
+    }
+    copies[syncKey] = copyOf(entry._id, remote);
+  }
+
+  const known = new Set(Object.values(copies).map((copy) => copy.remoteId));
+  // A delete synced this round, should the listing still show it.
+  for (const change of plan.request.changes) {
+    if (change.kind === "delete" && change.remoteId) known.add(change.remoteId);
+  }
+  for (const remote of answer.entries) {
+    if (
+      known.has(remote.remoteId) ||
+      remote.clientRef !== undefined ||
+      !inWindow(remote.localDate) ||
+      !canTake(remote)
+    ) {
+      continue;
+    }
+    known.add(remote.remoteId);
+    const placement = placeRemoteEntry(
+      current.projects,
+      remote,
+      values,
+      factories,
+    );
+    if (placement.kind === "held") {
+      held.push(holdOf(remote, placement.reason));
+      continue;
+    }
+    placeIn(placement);
+    current = saveManualTimesheetEntry(
+      current,
+      {
+        localDate: remote.localDate,
+        projectId: placement.projectId,
+        taskId: placement.taskId,
+        durationMs: remote.minutes * MINUTE_MS,
+      },
+      factories,
+    );
+    const created = current.timesheetEntries.at(-1)!;
+    copies[entrySyncKey(created)] = copyOf(created._id, remote);
+    received += 1;
+  }
+
+  held.sort(
+    (left, right) =>
+      left.localDate.localeCompare(right.localDate) ||
+      left.remoteId.localeCompare(right.remoteId),
+  );
+  return { state: current, copies, held, received };
+}
 
 /**
  * Applies a round's answer. A synced change updates its copy, or drops it
  * for a delete. A refused one keeps its message and is not sent again until
  * the entry changes. A failed one changes nothing and is sent again next
- * round. From the listing, a copy takes only the remote `updatedAt`.
+ * round. Then Ajour takes what changed in the listing, as `takeListing`
+ * says, and holds what it can't take. It returns the state the round leaves.
  */
 export function applyTimeSyncRound(
   state: TimeSyncState,
   plan: TimeSyncPlan,
   answer: TimeSyncResult,
   context: TimeSyncContext,
-  now: number,
-): { timeSyncs: Record<string, LocalTimeSync>; result: TimeSyncRoundResult } {
+  factories: TimesheetEntryFactories,
+): { state: TimeSyncState; result: TimeSyncRoundResult } {
   const record = recordOf(state.timeSyncs, plan.connection);
   if (!record || record.startedAt !== plan.startedAt) {
-    return { timeSyncs: state.timeSyncs, result: { kind: "discarded" } };
+    return { state, result: { kind: "discarded" } };
   }
+  const now = factories.now();
   const sent = new Map(
     plan.request.changes.map((change) => [change.syncKey, change]),
   );
@@ -557,12 +956,14 @@ export function applyTimeSyncRound(
   const refusals: Record<string, LocalTimeSyncRefusal> = {
     ...record.refusals,
   };
+  const outcomes = new Map<string, TimeSyncChangeResult["status"]>();
   const counts = { synced: 0, refused: 0, failed: 0 };
   let failedMessage: string | undefined;
   for (const outcome of answer.results) {
     const change = sent.get(outcome.syncKey);
     if (!change) continue;
     const { syncKey } = outcome;
+    outcomes.set(syncKey, outcome.status);
     if (outcome.status === "failed") {
       counts.failed += 1;
       failedMessage ??= outcome.message;
@@ -583,8 +984,8 @@ export function applyTimeSyncRound(
       delete copies[syncKey];
     } else if (outcome.entry) {
       // The values sent are what both sides agreed on. Should the other
-      // system store them otherwise, its listing shows it, and taking its
-      // changes (#694) brings Ajour in line instead of sending forever.
+      // system store them otherwise, its listing shows it with the same
+      // `updatedAt`, which is no change to take.
       copies[syncKey] = {
         remoteId: outcome.entry.remoteId,
         agreed: change.values,
@@ -592,44 +993,59 @@ export function applyTimeSyncRound(
       };
     }
   }
-  const listed = new Map(
-    answer.entries.map((entry) => [entry.remoteId, entry.updatedAt]),
+  const taken = takeListing(
+    state,
+    plan.connection,
+    { ...record, copies },
+    plan,
+    answer,
+    outcomes,
+    context,
+    factories,
   );
-  for (const [syncKey, copy] of Object.entries(copies)) {
-    const updatedAt = listed.get(copy.remoteId);
-    if (updatedAt !== undefined && updatedAt !== copy.remoteUpdatedAt) {
-      copies[syncKey] = { ...copy, remoteUpdatedAt: updatedAt };
-    }
-  }
   const { error: _cleared, ...rest } = record;
   const next = noteLocalChanges(
-    state,
+    taken.state,
     plan.connection,
     {
       ...rest,
-      copies,
+      copies: taken.copies,
       refusals,
+      held: taken.held,
       lastRound: {
         at: now,
         ...counts,
+        received: taken.received,
         ...(failedMessage ? { failedMessage } : {}),
       },
     },
     context,
     plan.plannedAt,
   );
-  const result = { kind: "applied" as const, ...counts, waiting: plan.waiting };
+  const result = {
+    kind: "applied" as const,
+    ...counts,
+    waiting: plan.waiting,
+    received: taken.received,
+    held: taken.held.length,
+  };
   // A round that brought nothing new keeps the record, so the poll writes
   // nothing: the status line doesn't show when the round ran.
   const withoutRoundTime = (candidate: LocalTimeSync) => ({
     ...candidate,
     lastRound: candidate.lastRound && { ...candidate.lastRound, at: 0 },
   });
-  if (recordsEqual(withoutRoundTime(record), withoutRoundTime(next))) {
-    return { timeSyncs: state.timeSyncs, result };
+  if (
+    taken.state === state &&
+    recordsEqual(withoutRoundTime(record), withoutRoundTime(next))
+  ) {
+    return { state, result };
   }
   return {
-    timeSyncs: { ...state.timeSyncs, [plan.connection.connectionId]: next },
+    state: {
+      ...taken.state,
+      timeSyncs: { ...state.timeSyncs, [plan.connection.connectionId]: next },
+    },
     result,
   };
 }
@@ -675,7 +1091,7 @@ export function failTimeSyncRound(
 
 /** What a connection's row says about its time sync. */
 export interface TimeSyncStatus {
-  /** Such as "Time entries · 2 sent" or "Time entries · up to date". */
+  /** Such as "Time entries · 2 sent · 1 received · 1 held" or "Time entries · up to date". */
   summary: string;
   /** Why the last round failed, until a round goes through. */
   error?: string;
@@ -684,9 +1100,9 @@ export interface TimeSyncStatus {
 }
 
 /**
- * The status line of a connection's time sync: what the last round sent,
- * the refusals that stand, and the last round's failure. Nothing before the
- * first round.
+ * The status line of a connection's time sync: what the last round sent and
+ * received, the entries held and the refusals that stand, and the last
+ * round's failure. Nothing before the first round.
  */
 export function describeTimeSyncStatus(
   record: LocalTimeSync | undefined,
@@ -706,6 +1122,8 @@ export function describeTimeSyncStatus(
   if (round.failedMessage) messages.add(round.failedMessage);
   const parts = [
     round.synced ? `${round.synced} sent` : undefined,
+    round.received ? `${round.received} received` : undefined,
+    record.held.length ? `${record.held.length} held` : undefined,
     refusals.length ? `${refusals.length} refused` : undefined,
     round.failed ? `${round.failed} failed` : undefined,
   ].filter((part) => part !== undefined);
@@ -716,6 +1134,24 @@ export function describeTimeSyncStatus(
     notes: [...messages],
   };
 }
+
+/** Why Ajour holds an entry, as Sync review says it. */
+export function describeTimeSyncHoldReason(reason: TimeSyncHoldReason) {
+  switch (reason) {
+    case "unmanagedProject":
+      return "The connection doesn't manage this project.";
+    case "localOnlyProject":
+      return "The project is Local only here.";
+    case "localOnlyTask":
+      return "The task is Local only here.";
+  }
+}
+
+const HOLD_REASONS: readonly TimeSyncHoldReason[] = [
+  "unmanagedProject",
+  "localOnlyProject",
+  "localOnlyTask",
+];
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -751,6 +1187,30 @@ function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
     agreed,
     remoteUpdatedAt: copy.remoteUpdatedAt,
     ...(finiteNumber(copy.changedAt) ? { changedAt: copy.changedAt } : {}),
+  };
+}
+
+function normalizeHold(value: unknown): LocalTimeSyncHold | undefined {
+  const hold = asRecord(value);
+  if (
+    !hold ||
+    !nonEmptyString(hold.remoteId) ||
+    typeof hold.localDate !== "string" ||
+    !isValidLocalDate(hold.localDate) ||
+    !finiteNumber(hold.minutes) ||
+    !nonEmptyString(hold.projectRemoteId) ||
+    !nonEmptyString(hold.taskName) ||
+    !HOLD_REASONS.includes(hold.reason as TimeSyncHoldReason)
+  ) {
+    return undefined;
+  }
+  return {
+    remoteId: hold.remoteId,
+    localDate: hold.localDate,
+    minutes: hold.minutes,
+    projectRemoteId: hold.projectRemoteId,
+    taskName: hold.taskName,
+    reason: hold.reason as TimeSyncHoldReason,
   };
 }
 
@@ -810,6 +1270,9 @@ export function normalizeTimeSyncs(
       startedAt: record.startedAt,
       copies: normalizeRecords(record.copies, normalizeCopy),
       refusals: normalizeRecords(record.refusals, normalizeRefusal),
+      held: Array.isArray(record.held)
+        ? record.held.flatMap((hold) => normalizeHold(hold) ?? [])
+        : [],
       ...(lastRound &&
       finiteNumber(lastRound.at) &&
       finiteNumber(lastRound.synced) &&
@@ -819,6 +1282,10 @@ export function normalizeTimeSyncs(
             lastRound: {
               at: lastRound.at,
               synced: lastRound.synced,
+              // A round stored before #694 received nothing.
+              received: finiteNumber(lastRound.received)
+                ? lastRound.received
+                : 0,
               refused: lastRound.refused,
               failed: lastRound.failed,
               ...(nonEmptyString(lastRound.failedMessage)

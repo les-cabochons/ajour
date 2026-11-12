@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TimeSyncResult } from "@ajour/shared";
+import type { TimeSyncRemoteEntry, TimeSyncResult } from "@ajour/shared";
 import type {
   LocalAppState,
   LocalProject,
@@ -113,9 +113,21 @@ function stateWith(
 ): TimeSyncState {
   return {
     projects,
-    timers: [],
     timesheetEntries: entries,
+    timesheetTombstones: [],
+    timers: [],
+    workItems: [],
+    lockedWeeks: [],
     timeSyncs: startTimeSync({}, CONNECTION, TODAY, 100),
+  };
+}
+
+/** Ids in order, and a clock that reads `now`, for what a round creates. */
+function factoriesAt(now: number) {
+  let next = 0;
+  return {
+    createId: (prefix: string) => `${prefix}-${++next}`,
+    now: () => now,
   };
 }
 
@@ -277,9 +289,15 @@ describe("planning a round", () => {
   });
 });
 
-/** A plugin's answer that syncs every change, as the example planner does. */
+/**
+ * A plugin's answer that syncs every change, as the example planner does.
+ * Its listing has the entries it synced, and, given the state, the others
+ * its copies agree on, as the other system holds them when nothing changed
+ * there.
+ */
 function syncEverything(
   round: TimeSyncPlan,
+  state?: TimeSyncState,
   updatedAt = "2026-11-12T14:00:00.000Z",
 ): TimeSyncResult {
   const results = round.request.changes.map((change, index) =>
@@ -296,27 +314,50 @@ function syncEverything(
         }
       : { syncKey: change.syncKey, status: "synced" as const },
   );
+  const sent = new Set(round.request.changes.map((change) => change.syncKey));
+  const unchanged = Object.entries(
+    state?.timeSyncs[CONNECTION.connectionId]?.copies ?? {},
+  ).flatMap(([syncKey, copy]) =>
+    sent.has(syncKey)
+      ? []
+      : [
+          {
+            remoteId: copy.remoteId,
+            clientRef: syncKey,
+            ...copy.agreed,
+            updatedAt: copy.remoteUpdatedAt,
+          },
+        ],
+  );
   return {
     results,
-    entries: results.flatMap((result) =>
-      "entry" in result && result.entry ? [result.entry] : [],
-    ),
+    entries: [
+      ...results.flatMap((result) =>
+        "entry" in result && result.entry ? [result.entry] : [],
+      ),
+      ...unchanged,
+    ],
   };
 }
 
 /** Plans a round, answers it with `answer`, and returns the state after. */
 function runRound(
   state: TimeSyncState,
-  answer: (round: TimeSyncPlan) => TimeSyncResult = syncEverything,
+  answer: (
+    round: TimeSyncPlan,
+    state: TimeSyncState,
+  ) => TimeSyncResult = syncEverything,
   now = 300,
 ) {
   const round = plan(state);
-  const applied = applyTimeSyncRound(state, round, answer(round), CONTEXT, now);
-  return {
+  const applied = applyTimeSyncRound(
+    state,
     round,
-    result: applied.result,
-    state: { ...state, timeSyncs: applied.timeSyncs },
-  };
+    answer(round, state),
+    CONTEXT,
+    factoriesAt(now),
+  );
+  return { round, result: applied.result, state: applied.state };
 }
 
 function recordIn(state: TimeSyncState): LocalTimeSync {
@@ -332,6 +373,8 @@ describe("applying a round", () => {
       refused: 0,
       failed: 0,
       waiting: 0,
+      received: 0,
+      held: 0,
     });
     expect(recordIn(first.state).copies.e1).toEqual({
       remoteId: "remote-1",
@@ -452,45 +495,6 @@ describe("applying a round", () => {
     ]);
   });
 
-  it("takes only the remote updatedAt from the listing, for the entries it holds a copy of", () => {
-    const synced = runRound(stateWith([entry("e1")])).state;
-    const listing = (): TimeSyncResult => ({
-      results: [],
-      entries: [
-        {
-          remoteId: "remote-1",
-          clientRef: "e1",
-          localDate: TODAY,
-          minutes: 120,
-          running: false,
-          projectRemoteId: "ACME-SUP",
-          taskName: "Ticket #102 - Export",
-          updatedAt: "2026-11-12T15:00:00.000Z",
-        },
-        {
-          remoteId: "logged-elsewhere",
-          localDate: TODAY,
-          minutes: 30,
-          running: false,
-          projectRemoteId: "ACME-SUP",
-          taskName: "Ticket #101 - Login",
-          updatedAt: "2026-11-12T15:00:00.000Z",
-        },
-      ],
-    });
-
-    const { state } = runRound(synced, listing);
-
-    expect(recordIn(state).copies).toEqual({
-      e1: {
-        remoteId: "remote-1",
-        agreed: expect.objectContaining({ minutes: 90 }),
-        remoteUpdatedAt: "2026-11-12T15:00:00.000Z",
-      },
-    });
-    expect(state.timesheetEntries).toEqual(synced.timesheetEntries);
-  });
-
   it("notes when it first saw a local change, until both sides agree again", () => {
     const synced = runRound(stateWith([entry("e1")])).state;
     const edited = {
@@ -519,14 +523,15 @@ describe("applying a round", () => {
       round,
       syncEverything(round),
       CONTEXT,
-      510,
+      factoriesAt(510),
     );
-    const record = applied.timeSyncs[CONNECTION.connectionId]!;
+    const record = recordIn(applied.state);
     expect(record.copies.e1).not.toHaveProperty("changedAt");
     expect(record.error).toBeUndefined();
     expect(record.lastRound).toEqual({
       at: 510,
       synced: 1,
+      received: 0,
       refused: 0,
       failed: 0,
     });
@@ -550,11 +555,11 @@ describe("applying a round", () => {
       round,
       syncEverything(round),
       CONTEXT,
-      300,
+      factoriesAt(300),
     );
 
     expect(applied.result).toEqual({ kind: "discarded" });
-    expect(applied.timeSyncs).toBe(restarted.timeSyncs);
+    expect(applied.state).toBe(restarted);
   });
 
   it("keeps no failure of a round that began before Time entries went off and on", () => {
@@ -659,11 +664,11 @@ describe("the running entry", () => {
     const applied = applyTimeSyncRound(
       state,
       round,
-      syncEverything(round),
+      syncEverything(round, state),
       CONTEXT,
-      now,
+      factoriesAt(now),
     );
-    return { round, state: { ...state, timeSyncs: applied.timeSyncs } };
+    return { round, state: applied.state };
   }
 
   it("sends the running entry as running, counting since its count would have started from zero", () => {
@@ -875,6 +880,472 @@ describe("the running entry", () => {
   });
 });
 
+/** An entry as the other system lists it: 45 minutes today on Ticket #101 - Login. */
+function remoteEntry(
+  remoteId: string,
+  overrides: Partial<TimeSyncRemoteEntry> = {},
+): TimeSyncRemoteEntry {
+  return {
+    remoteId,
+    localDate: TODAY,
+    minutes: 45,
+    running: false,
+    projectRemoteId: "ACME-SUP",
+    taskName: "Ticket #101 - Login",
+    updatedAt: LATER,
+    ...overrides,
+  };
+}
+
+/** An answer that syncs every change, and lists exactly `entries`. */
+function listing(...entries: TimeSyncRemoteEntry[]) {
+  return (round: TimeSyncPlan): TimeSyncResult => ({
+    results: syncEverything(round).results,
+    entries,
+  });
+}
+
+/** Synced at 14:00; the other system changes things at 15:00. */
+const LATER = "2026-11-12T15:00:00.000Z";
+
+/** e1, synced as remote-1, as the other system lists it with `overrides`. */
+function remoteE1(overrides: Partial<TimeSyncRemoteEntry> = {}) {
+  return remoteEntry("remote-1", {
+    clientRef: "e1",
+    minutes: 90,
+    taskRemoteId: "1001",
+    ...overrides,
+  });
+}
+
+function entriesOf(state: TimeSyncState) {
+  return state.timesheetEntries;
+}
+
+describe("taking the other system's changes", () => {
+  it("adds an entry logged elsewhere on the task it names, with a copy that sends nothing back", () => {
+    const { state, result } = runRound(
+      stateWith([]),
+      listing(remoteEntry("logged", { taskName: "ticket #101 -  LOGIN" })),
+    );
+
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({
+        localDate: TODAY,
+        projectId: "acme",
+        taskId: "login",
+        durationMs: 45 * MINUTE,
+        note: undefined,
+      }),
+    ]);
+    const added = entriesOf(state)[0]!;
+    expect(recordIn(state).copies[entrySyncKey(added)]).toEqual({
+      remoteId: "logged",
+      agreed: expect.objectContaining({
+        minutes: 45,
+        taskName: "Ticket #101 - Login",
+        taskRemoteId: "1001",
+      }),
+      remoteUpdatedAt: LATER,
+    });
+    expect(result).toMatchObject({ received: 1, held: 0 });
+    expect(plan(state).request.changes).toEqual([]);
+    expect(describeTimeSyncStatus(recordIn(state))?.summary).toBe(
+      "Time entries · 1 received",
+    );
+  });
+
+  it("finds the task by the name it commits as, then by its own name, else adds a Not known yet task once", () => {
+    const workday: PropertyPlugins = {
+      projects: [],
+      tasks: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "name" },
+            ],
+          },
+        },
+      ],
+    };
+    const project = managedProject();
+    project.tasks[1] = {
+      ...project.tasks[1]!,
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    };
+    const state = stateWith([], [project]);
+    const context = { ...CONTEXT, plugins: workday };
+    const round = plan(state, context);
+
+    const applied = applyTimeSyncRound(
+      state,
+      round,
+      listing(
+        remoteEntry("by-commit-name", { taskName: "07 run" }),
+        remoteEntry("by-own-name", { taskName: "Ad hoc support" }),
+        remoteEntry("new-1", { taskName: "Code review" }),
+        remoteEntry("new-2", { taskName: "code  review" }),
+      )(round),
+      context,
+      factoriesAt(300),
+    );
+
+    const codeReview = applied.state.projects[0]!.tasks.filter(
+      (task) => task.name === "Code review",
+    );
+    expect(codeReview).toEqual([
+      expect.objectContaining({ commitAs: "waiting", status: "active" }),
+    ]);
+    expect(entriesOf(applied.state).map((entry) => entry.taskId)).toEqual([
+      "ad-hoc",
+      "ad-hoc",
+      codeReview[0]!._id,
+      codeReview[0]!._id,
+    ]);
+    expect(applied.result).toMatchObject({ received: 4 });
+    // A Not known yet task goes under its own name, as the remote has it.
+    expect(plan(applied.state, context).request.changes).toEqual([]);
+  });
+
+  it("takes an edit made there, keeping the seconds when the whole minutes agree", () => {
+    const synced = runRound(
+      stateWith([entry("e1", { durationMs: 90 * MINUTE + 20_000 })]),
+    ).state;
+
+    const retasked = runRound(
+      synced,
+      listing(
+        remoteE1({ taskName: "Ad hoc support", taskRemoteId: undefined }),
+      ),
+    );
+    expect(entriesOf(retasked.state)).toEqual([
+      expect.objectContaining({
+        taskId: "ad-hoc",
+        durationMs: 90 * MINUTE + 20_000,
+        note: "Fixed the redirect for ACME",
+      }),
+    ]);
+    expect(retasked.result).toMatchObject({ received: 1 });
+    expect(plan(retasked.state).request.changes).toEqual([]);
+
+    const moved = runRound(
+      synced,
+      listing(remoteE1({ localDate: "2026-11-10", minutes: 120 })),
+    ).state;
+    expect(entriesOf(moved)).toEqual([
+      expect.objectContaining({
+        localDate: "2026-11-10",
+        taskId: "login",
+        durationMs: 120 * MINUTE,
+      }),
+    ]);
+    expect(recordIn(moved).copies.e1).toEqual({
+      remoteId: "remote-1",
+      agreed: expect.objectContaining({
+        localDate: "2026-11-10",
+        minutes: 120,
+      }),
+      remoteUpdatedAt: LATER,
+    });
+    expect(plan(moved).request.changes).toEqual([]);
+  });
+
+  it("is no edit when only the time it changed there moves, or values it doesn't keep differ", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+
+    const { state, result } = runRound(
+      synced,
+      listing(
+        remoteE1({ taskName: "TICKET #101 - LOGIN", taskRemoteId: undefined }),
+      ),
+    );
+
+    expect(entriesOf(state)).toEqual(entriesOf(synced));
+    expect(result).toMatchObject({ received: 0 });
+    expect(recordIn(state).copies.e1?.remoteUpdatedAt).toBe(LATER);
+    expect(plan(state).request.changes).toEqual([]);
+  });
+
+  it("deletes an entry deleted there, and a committed one leaves its tombstone", () => {
+    const commit = {
+      at: 50,
+      localDate: TODAY,
+      projectId: "acme",
+      taskId: "login",
+      note: "Fixed the redirect for ACME",
+      durationMs: 90 * MINUTE,
+    };
+    const synced = runRound(stateWith([entry("e1", { commit })])).state;
+
+    const { state, result } = runRound(synced, listing());
+
+    expect(entriesOf(state)).toEqual([]);
+    expect(state.timesheetTombstones).toEqual([{ entryId: "e1", commit }]);
+    expect(recordIn(state).copies).toEqual({});
+    expect(result).toMatchObject({ received: 1 });
+    expect(plan(state).request.changes).toEqual([]);
+  });
+
+  it("lets a delete there win over an edit in Ajour", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const edited = {
+      ...synced,
+      timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+    };
+    // The round planned before the edit, so the edit waits for the next one.
+    const round = plan(synced);
+
+    const applied = applyTimeSyncRound(
+      edited,
+      round,
+      listing()(round),
+      CONTEXT,
+      factoriesAt(300),
+    );
+
+    expect(entriesOf(applied.state)).toEqual([]);
+    expect(recordIn(applied.state).copies).toEqual({});
+  });
+
+  it("lets a delete in Ajour win over an edit there", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const deleted = { ...synced, timesheetEntries: [] };
+    const round = plan(synced);
+
+    const applied = applyTimeSyncRound(
+      deleted,
+      round,
+      listing(remoteE1({ minutes: 120 }))(round),
+      CONTEXT,
+      factoriesAt(300),
+    );
+
+    expect(entriesOf(applied.state)).toEqual([]);
+    expect(plan(applied.state).request.changes).toEqual([
+      expect.objectContaining({ kind: "delete", syncKey: "e1" }),
+    ]);
+  });
+
+  describe("when both sides changed the entry", () => {
+    /** e1 synced, then edited to 2:00 in Ajour, first seen at `changedAt`. */
+    function editedBothWays(changedAt: string) {
+      const synced = runRound(stateWith([entry("e1")])).state;
+      const record = recordIn(synced);
+      const edited: TimeSyncState = {
+        ...synced,
+        timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+        timeSyncs: {
+          [CONNECTION.connectionId]: {
+            ...record,
+            copies: {
+              e1: { ...record.copies.e1!, changedAt: Date.parse(changedAt) },
+            },
+          },
+        },
+      };
+      // A round planned before the edit: the change waits, as a refused or a
+      // 21st change does.
+      const round = plan(synced);
+      return applyTimeSyncRound(
+        edited,
+        round,
+        listing(remoteE1({ minutes: 45 }))(round),
+        CONTEXT,
+        factoriesAt(Date.parse("2026-11-12T17:00:00.000Z")),
+      );
+    }
+
+    it("keeps Ajour's change when it is the later one, and sends it", () => {
+      const { state, result } = editedBothWays("2026-11-12T16:00:00.000Z");
+
+      expect(entriesOf(state)).toEqual([
+        expect.objectContaining({ durationMs: 2 * 60 * MINUTE }),
+      ]);
+      expect(result).toMatchObject({ received: 0 });
+      expect(plan(state).request.changes).toEqual([
+        expect.objectContaining({
+          kind: "upsert",
+          syncKey: "e1",
+          values: expect.objectContaining({ minutes: 120 }),
+        }),
+      ]);
+    });
+
+    it("takes the other system's change when it is the later one", () => {
+      const { state, result } = editedBothWays("2026-11-12T14:30:00.000Z");
+
+      expect(entriesOf(state)).toEqual([
+        expect.objectContaining({ durationMs: 45 * MINUTE }),
+      ]);
+      expect(result).toMatchObject({ received: 1 });
+      expect(recordIn(state).copies.e1).not.toHaveProperty("changedAt");
+      expect(plan(state).request.changes).toEqual([]);
+    });
+  });
+
+  it("never reads an entry as deleted while its change of the round failed or was refused", () => {
+    const synced = runRound(stateWith([entry("e1"), entry("e2")])).state;
+    const edited = {
+      ...synced,
+      timesheetEntries: [
+        entry("e1", { durationMs: 2 * 60 * MINUTE }),
+        entry("e2", { durationMs: 25 * 60 * MINUTE }),
+      ],
+    };
+    // Continue made the plugin delete e1 there, then the start failed; e2
+    // is over 24 hours. Neither is listed.
+    const answer = (): TimeSyncResult => ({
+      results: [
+        { syncKey: "e1", status: "failed", message: "The planner timed out." },
+        {
+          syncKey: "e2",
+          status: "refused",
+          message: "The planner refuses an entry over 24 hours.",
+        },
+      ],
+      entries: [],
+    });
+
+    const { state } = runRound(edited, answer);
+
+    expect(entriesOf(state).map((item) => item._id)).toEqual(["e1", "e2"]);
+    expect(Object.keys(recordIn(state).copies)).toEqual(["e1", "e2"]);
+    expect(plan(state).request.changes).toEqual([
+      expect.objectContaining({ kind: "upsert", syncKey: "e1" }),
+    ]);
+  });
+
+  it("keeps Ajour's values on the first round: an entry it made is its own, not a new one", () => {
+    // Made before Time entries went off and on, and changed there since.
+    const before = remoteEntry("remote-old", { clientRef: "e1", minutes: 30 });
+    const first = (round: TimeSyncPlan): TimeSyncResult => ({
+      results: [
+        { syncKey: "e1", status: "failed", message: "The planner timed out." },
+      ],
+      entries: [before],
+    });
+
+    const failed = runRound(stateWith([entry("e1")]), first).state;
+    expect(entriesOf(failed)).toEqual([entry("e1")]);
+    expect(recordIn(failed).copies).toEqual({});
+
+    // The plugin adopts it by its client reference and sets Ajour's values.
+    const adopted = runRound(failed, (round) => ({
+      results: syncEverything(round).results.map((result) =>
+        result.status === "synced" && result.entry
+          ? { ...result, entry: { ...result.entry, remoteId: "remote-old" } }
+          : result,
+      ),
+      entries: [{ ...before, minutes: 90, taskRemoteId: "1001" }],
+    })).state;
+    expect(entriesOf(adopted)).toEqual([entry("e1")]);
+    expect(recordIn(adopted).copies.e1).toMatchObject({
+      remoteId: "remote-old",
+      agreed: expect.objectContaining({ minutes: 90 }),
+    });
+  });
+
+  it("holds an entry on a project the connection doesn't manage, or on Local only time, with its reason", () => {
+    const unmanaged = remoteEntry("globex", {
+      projectRemoteId: "GLOBEX-INT",
+      taskName: "Design review",
+      minutes: 30,
+    });
+    const localOnly = remoteEntry("reading", { taskName: "Reading" });
+
+    const { state, result } = runRound(
+      stateWith([]),
+      listing(unmanaged, localOnly),
+    );
+
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).held).toEqual([
+      {
+        remoteId: "globex",
+        localDate: TODAY,
+        minutes: 30,
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        reason: "unmanagedProject",
+      },
+      expect.objectContaining({ remoteId: "reading", reason: "localOnlyTask" }),
+    ]);
+    expect(result).toMatchObject({ received: 0, held: 2 });
+    expect(describeTimeSyncStatus(recordIn(state))?.summary).toBe(
+      "Time entries · 2 held",
+    );
+
+    // Gone there, it leaves Sync review; turning Time entries off drops them.
+    expect(recordIn(runRound(state, listing()).state).held).toEqual([]);
+    expect(stopTimeSync(state.timeSyncs, CONNECTION.connectionId)).toEqual({});
+  });
+
+  it("never reads an entry outside the window as deleted", () => {
+    const old = entry("old", { localDate: "2026-10-05" });
+    const state = stateWith([old]);
+    state.timeSyncs[CONNECTION.connectionId]!.startWeek = "2026-09-07";
+    const synced = runRound(state).state;
+    expect(plan(synced).request.from).toBe("2026-10-12");
+
+    const { state: after } = runRound(synced, listing());
+
+    expect(entriesOf(after)).toEqual([old]);
+    expect(Object.keys(recordIn(after).copies)).toEqual(["old"]);
+  });
+
+  it("leaves a remote running entry for later: not taken, and not an edit or a delete", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const running = { running: true, countingSince: LATER };
+
+    const { state, result } = runRound(
+      synced,
+      listing(
+        remoteE1({ ...running, minutes: 120 }),
+        remoteEntry("timer-elsewhere", running),
+      ),
+    );
+
+    expect(entriesOf(state)).toEqual([entry("e1")]);
+    expect(recordIn(state).copies.e1?.remoteUpdatedAt).toBe(
+      "2026-11-12T14:00:00.000Z",
+    );
+    expect(result).toMatchObject({ received: 0, held: 0 });
+  });
+
+  it("leaves a submitted week as it is", () => {
+    const monday = "2026-11-09";
+    const synced = runRound(
+      stateWith([
+        entry("deleted-there", { localDate: monday }),
+        entry("edited-there", { localDate: monday }),
+      ]),
+    ).state;
+    const submitted = {
+      ...synced,
+      lockedWeeks: [{ weekOf: monday, lockedAt: 400 }],
+    };
+    const copies = recordIn(synced).copies;
+
+    const { state, result } = runRound(
+      submitted,
+      listing(
+        remoteEntry(copies["edited-there"]!.remoteId, {
+          clientRef: "edited-there",
+          localDate: monday,
+          minutes: 10,
+        }),
+        remoteEntry("logged-monday", { localDate: monday }),
+      ),
+    );
+
+    expect(entriesOf(state)).toEqual(entriesOf(submitted));
+    expect(recordIn(state).copies).toEqual(copies);
+    expect(result).toMatchObject({ received: 0 });
+  });
+});
+
 describe("starting and stopping with the plugins overview", () => {
   const group = (inactive: boolean, connectionIds: string[]) => ({
     plugin: {
@@ -923,6 +1394,7 @@ describe("the connection's status line", () => {
     startedAt: 1,
     copies: {},
     refusals: {},
+    held: [],
     ...overrides,
   });
   const refusal = (message: string) => ({
@@ -937,7 +1409,7 @@ describe("the connection's status line", () => {
   });
 
   it("says what the last round sent, or that it is up to date", () => {
-    const round = { at: 1, synced: 2, refused: 0, failed: 0 };
+    const round = { at: 1, synced: 2, received: 0, refused: 0, failed: 0 };
     expect(describeTimeSyncStatus(record({ lastRound: round }))).toEqual({
       summary: "Time entries · 2 sent",
       notes: [],
@@ -953,6 +1425,7 @@ describe("the connection's status line", () => {
         lastRound: {
           at: 1,
           synced: 0,
+          received: 0,
           refused: 0,
           failed: 1,
           failedMessage: "The planner timed out.",
@@ -977,7 +1450,7 @@ describe("the connection's status line", () => {
     expect(
       describeTimeSyncStatus(
         record({
-          lastRound: { at: 1, synced: 2, refused: 0, failed: 0 },
+          lastRound: { at: 1, synced: 2, received: 0, refused: 0, failed: 0 },
           error: { at: 2, message: "The planner is down." },
         }),
       ),

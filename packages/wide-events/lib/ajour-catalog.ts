@@ -2158,6 +2158,10 @@ export const catalog = defineCatalog({
           trigger: operational<"change" | "poll" | "more" | "retry">(),
           /** Changes beyond this round's 20, for the next one. */
           waiting_count: operational<number>(),
+          /** Entries Ajour took from the listing: added, edited or deleted (#694). */
+          received_count: operational<number>(),
+          /** Listed entries Ajour holds for Sync review, such as one on a project it doesn't manage. */
+          held_count: operational<number>(),
           /**
            * Why the answer was not kept: the connection was saved again, or
            * Time entries went off while the round ran.

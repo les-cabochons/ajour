@@ -1965,8 +1965,10 @@ const store = {
     });
   },
   /**
-   * Keeps what a time sync round answered (#692). It is not undoable, and it
-   * changes no entry, so it never makes an Undo stale.
+   * Keeps what a time sync round answered (#692), and takes what changed in
+   * the other system into the entries (#694). It is not undoable and adds no
+   * Undo toast: an Undo of an earlier action on an entry the round changed
+   * is then refused as stale, as after any later change.
    */
   applyTimeSyncRound(
     plan: TimeSyncPlan,
@@ -1979,12 +1981,12 @@ const store = {
         plan,
         answer,
         context,
-        Date.now(),
+        { createId, now: Date.now },
       );
       return {
         state:
           applied.result.kind === "applied"
-            ? { ...state, timeSyncs: applied.timeSyncs }
+            ? { ...state, ...applied.state }
             : state,
         result: applied.result,
       };

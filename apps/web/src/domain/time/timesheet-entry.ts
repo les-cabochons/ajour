@@ -45,6 +45,19 @@ export interface RelocateTimesheetEntryValues extends UpdateTimesheetEntryValues
   localDate: string;
 }
 
+/**
+ * The part of the state the entry transitions below read and write, so a
+ * domain module that holds only these, such as the time sync, can call them.
+ */
+export type TimesheetEntryState = Pick<
+  LocalAppState,
+  | "projects"
+  | "timesheetEntries"
+  | "timesheetTombstones"
+  | "timers"
+  | "workItems"
+>;
+
 function hasOwn<T extends object>(value: T, key: PropertyKey) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -126,11 +139,11 @@ export function createTimesheetEntry(
   };
 }
 
-export function saveManualTimesheetEntry(
-  state: LocalAppState,
+export function saveManualTimesheetEntry<State extends TimesheetEntryState>(
+  state: State,
   values: Omit<CreateTimesheetEntryValues, "sourceBlockIds" | "entryId">,
   factories: TimesheetEntryFactories,
-): LocalAppState {
+): State {
   return {
     ...state,
     timesheetEntries: [
@@ -153,12 +166,12 @@ export function saveManualTimesheetEntry(
   };
 }
 
-export function updateTimesheetEntry(
-  state: LocalAppState,
+export function updateTimesheetEntry<State extends TimesheetEntryState>(
+  state: State,
   entryId: string,
   values: UpdateTimesheetEntryValues,
   factories: TimesheetEntryFactories,
-): LocalAppState {
+): State {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
   if (!entry) {
     return state;
@@ -226,10 +239,10 @@ export function updateTimesheetEntry(
   };
 }
 
-export function deleteTimesheetEntry(
-  state: LocalAppState,
+export function deleteTimesheetEntry<State extends TimesheetEntryState>(
+  state: State,
   entryId: string,
-): LocalAppState {
+): State {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
   if (!entry || state.timers.some((timer) => timer.entryId === entryId)) {
     return state;
@@ -310,12 +323,12 @@ export function duplicateTimesheetEntry(
   };
 }
 
-export function moveTimesheetEntry(
-  state: LocalAppState,
+export function moveTimesheetEntry<State extends TimesheetEntryState>(
+  state: State,
   entryId: string,
   values: RelocateTimesheetEntryValues,
   factories: TimesheetEntryFactories,
-): LocalAppState {
+): State {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
   if (!entry || state.timers.some((timer) => timer.entryId === entryId)) {
     return state;
