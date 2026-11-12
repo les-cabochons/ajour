@@ -48,6 +48,14 @@ import type {
   projectSourceSyncResultSchema,
   projectSourceTaskSchema,
 } from "../../shared/project-source.ts";
+import type {
+  timeSyncChangeResultSchema,
+  timeSyncChangeSchema,
+  timeSyncEntryValuesSchema,
+  timeSyncRemoteEntrySchema,
+  timeSyncRequestSchema,
+  timeSyncResultSchema,
+} from "../../shared/time-sync.ts";
 
 type Input<Schema extends { _input: unknown }> = Schema["_input"];
 type Output<Schema extends { _output: unknown }> = Schema["_output"];
@@ -151,3 +159,30 @@ export type ProjectSourceProject = Input<typeof projectSourceProjectSchema>;
 export type ProjectSourceTask = Input<typeof projectSourceTaskSchema>;
 /** A project's budget. The source writes every figure; `remaining` may be negative. */
 export type ProjectSourceBudget = Input<typeof projectSourceBudgetSchema>;
+
+/**
+ * What `syncTimeEntries` receives: the window to list, as local dates in the
+ * user's time zone, and at most 20 changes to apply first, in order.
+ */
+export type TimeSyncRequest = Output<typeof timeSyncRequestSchema>;
+/**
+ * One change: an entry to create or update, or one to delete. Send its
+ * `syncKey` as your client reference, so a retry never duplicates. `agreed`
+ * holds the values both sides last agreed on, when there are some.
+ */
+export type TimeSyncChange = Output<typeof timeSyncChangeSchema>;
+/**
+ * An entry's values: its day, whole minutes, whether it runs and since when
+ * its count started, its project and its task. Never a note.
+ */
+export type TimeSyncEntryValues = Output<typeof timeSyncEntryValuesSchema>;
+/** What `syncTimeEntries` answers: one result per change, and the remote entries in the window. */
+export type TimeSyncResult = Input<typeof timeSyncResultSchema>;
+/**
+ * How one change went: `synced` with the entry as stored (none for a
+ * delete), `refused` for good with a sentence the user reads, or `failed`
+ * with a sentence, to retry next round.
+ */
+export type TimeSyncChangeResult = Input<typeof timeSyncChangeResultSchema>;
+/** An entry as your system stores it, with `clientRef` when Ajour created it. */
+export type TimeSyncRemoteEntry = Input<typeof timeSyncRemoteEntrySchema>;

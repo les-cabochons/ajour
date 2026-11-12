@@ -17,7 +17,7 @@ This package provides:
 Until the SDK is published, vendor the packed package in your plugin repo:
 
 ```sh
-pnpm add -D file:vendor/ajour-plugin-sdk-0.1.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.2.0.tgz
 ```
 
 Once it's published, swap the file dependency for a version range.
@@ -137,6 +137,12 @@ Each agent task lists the Ajour MCP `tools` its run may use, and gets only those
 A project source brings the user's projects, tasks, assignments and budgets from the system that holds them, read only: Ajour never writes to it. Declare `"projectSource": {}` and export `syncProjects(connection, { cursor, trigger })`. Answer `{ snapshot, cursor }`, or `{ unchanged: true }` when nothing changed since the cursor Ajour sent. The cursor is yours, such as an ETag: Ajour keeps the last one per connection and hands it back on the next sync, and sends none on the first. `trigger` is `manual` when the user asked for the sync, such as Sync now or opening a managed project's page, and `auto` for the 15-minute sync: a plugin that answers from a cache should read the source on a manual one. Older Ajour versions send no trigger.
 
 The snapshot is `ProjectSourceSnapshot`. Nothing in it names a product: `source.label` is what Ajour calls the source, such as in "From Planner", and the project `url`s are where "Open in Planner" goes. `asOf` is when the source's hours are from, so Ajour can tell lag from a conflict. `me.hoursAvailable` says whether `myHours` can be known for the user, and `hoursNote` is your sentence on why not, such as how to link their account. `me.hoursSince` is the first day `myHours` cover, when they cover a period such as the current month. A project has a `code`, by which Ajour links an existing local project without asking, and a `complete` flag, which archives it. A task has a `group`, such as a phase, `assigned`, and the user's `myHours`. A budget's `unit` is hours or money; `remaining` may be negative, and `status` is `ok`, `warning`, `over` or `unknown`. A budget's `since` is the first day `consumed` covers. URLs are absolute https addresses. A snapshot holds at most 200 projects and 10,000 tasks.
+
+### Time syncs
+
+A time sync keeps the user's time entries in step with your system, both ways. Declare `"timeSync": {}` beside `"projectSource": {}`: only entries on projects the same connection manages take part. Its switch, Time entries, starts off. Turning it on calls `validateConnection` with `timeSync` among `context.capabilities`, so throw there, with a sentence the user reads, when the token can't write time entries.
+
+Export `syncTimeEntries(connection, request)`. Each call is one round: apply `request.changes` in order, at most 20, then list your entries from `request.from` to `request.to`, local dates in `request.timeZone`. Send each change's `syncKey` as your client reference, and adopt the entry you already hold under it, so a retry never duplicates. `agreed` holds the values both sides last agreed on, so you can keep what Ajour doesn't own, such as a real start time. Answer one result per change, `synced` with the entry as you stored it (none for a delete), `refused` with a sentence when your system won't take it, or `failed` with a sentence to retry next round, and the `entries` in the window, each with `clientRef` when Ajour created it and `updatedAt`. Minutes are whole. A running entry has `countingSince`, the instant its count would have started from zero. Ajour never sends a note. See [the time sync API](https://docs.ajour.day/developers/time-sync-api).
 
 ### What needs the user's consent again
 

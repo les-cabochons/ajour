@@ -14,7 +14,7 @@ corepack enable
 pnpm init
 pnpm add -D typescript vitest tar
 # Until the SDK is published, vendor the packed package:
-pnpm add -D file:vendor/ajour-plugin-sdk-0.1.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.2.0.tgz
 ```
 
 Set up `package.json`. The scripts match the official plugins, so you can copy their CI later.

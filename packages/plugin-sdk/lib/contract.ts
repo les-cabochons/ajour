@@ -60,6 +60,7 @@ export type PluginManifest = {
     calendar?: {} | undefined;
     team?: { apiVersion: 1 } | undefined;
     projectSource?: {} | undefined;
+    timeSync?: {} | undefined;
     agentTask?:
       | {
           tasks: {
@@ -130,6 +131,7 @@ export type PluginManifest = {
                     | "calendar"
                     | "team"
                     | "projectSource"
+                    | "timeSync"
                     | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
@@ -182,6 +184,7 @@ export type PluginManifest = {
           | "calendar"
           | "team"
           | "projectSource"
+          | "timeSync"
           | undefined;
         passToPlugin?: boolean | undefined;
       }[]
@@ -272,6 +275,7 @@ export type PluginField = {
     | "calendar"
     | "team"
     | "projectSource"
+    | "timeSync"
     | undefined;
   passToPlugin?: boolean | undefined;
 };
@@ -380,7 +384,12 @@ export type PluginConnection = {
 
 export type ValidationContext = {
   capabilities: (
-    "connector" | "codeHost" | "calendar" | "team" | "projectSource"
+    | "connector"
+    | "codeHost"
+    | "calendar"
+    | "team"
+    | "projectSource"
+    | "timeSync"
   )[];
 };
 
@@ -877,7 +886,7 @@ export type CodeHostOperations = {
 /** Each calendar operation's request and result, by the function name it exports. */
 export type CalendarOperations = {
   readonly listCalendarEvents: {
-    request: { from: string; to: string; timeZone: string };
+    request: { timeZone: string; from: string; to: string };
     result: {
       events: {
         status: "cancelled" | "confirmed" | "tentative";
@@ -1222,4 +1231,190 @@ export type ProjectSourceBudget = {
   total?: number | undefined;
   remaining?: number | undefined;
   since?: string | undefined;
+};
+
+/** What `syncTimeEntries` receives: the window to list, as local dates in the
+user's time zone, and at most 20 changes to apply first, in order. */
+export type TimeSyncRequest = {
+  changes: (
+    | {
+        values: {
+          localDate: string;
+          minutes: number;
+          running: boolean;
+          projectRemoteId: string;
+          taskName: string;
+          countingSince?: string | undefined;
+          taskRemoteId?: string | undefined;
+        };
+        kind: "upsert";
+        syncKey: string;
+        remoteId?: string | undefined;
+        agreed?:
+          | {
+              localDate: string;
+              minutes: number;
+              running: boolean;
+              projectRemoteId: string;
+              taskName: string;
+              countingSince?: string | undefined;
+              taskRemoteId?: string | undefined;
+            }
+          | undefined;
+      }
+    | {
+        kind: "delete";
+        syncKey: string;
+        remoteId?: string | undefined;
+        agreed?:
+          | {
+              localDate: string;
+              minutes: number;
+              running: boolean;
+              projectRemoteId: string;
+              taskName: string;
+              countingSince?: string | undefined;
+              taskRemoteId?: string | undefined;
+            }
+          | undefined;
+      }
+  )[];
+  timeZone: string;
+  from: string;
+  to: string;
+};
+
+/** One change: an entry to create or update, or one to delete. Send its
+`syncKey` as your client reference, so a retry never duplicates. `agreed`
+holds the values both sides last agreed on, when there are some. */
+export type TimeSyncChange =
+  | {
+      values: {
+        localDate: string;
+        minutes: number;
+        running: boolean;
+        projectRemoteId: string;
+        taskName: string;
+        countingSince?: string | undefined;
+        taskRemoteId?: string | undefined;
+      };
+      kind: "upsert";
+      syncKey: string;
+      remoteId?: string | undefined;
+      agreed?:
+        | {
+            localDate: string;
+            minutes: number;
+            running: boolean;
+            projectRemoteId: string;
+            taskName: string;
+            countingSince?: string | undefined;
+            taskRemoteId?: string | undefined;
+          }
+        | undefined;
+    }
+  | {
+      kind: "delete";
+      syncKey: string;
+      remoteId?: string | undefined;
+      agreed?:
+        | {
+            localDate: string;
+            minutes: number;
+            running: boolean;
+            projectRemoteId: string;
+            taskName: string;
+            countingSince?: string | undefined;
+            taskRemoteId?: string | undefined;
+          }
+        | undefined;
+    };
+
+/** An entry's values: its day, whole minutes, whether it runs and since when
+its count started, its project and its task. Never a note. */
+export type TimeSyncEntryValues = {
+  localDate: string;
+  minutes: number;
+  running: boolean;
+  projectRemoteId: string;
+  taskName: string;
+  countingSince?: string | undefined;
+  taskRemoteId?: string | undefined;
+};
+
+/** What `syncTimeEntries` answers: one result per change, and the remote entries in the window. */
+export type TimeSyncResult = {
+  entries: {
+    remoteId: string;
+    updatedAt: string;
+    localDate: string;
+    minutes: number;
+    running: boolean;
+    projectRemoteId: string;
+    taskName: string;
+    countingSince?: string | undefined;
+    taskRemoteId?: string | undefined;
+    clientRef?: string | undefined;
+  }[];
+  results: (
+    | {
+        status: "synced";
+        syncKey: string;
+        entry?:
+          | {
+              remoteId: string;
+              updatedAt: string;
+              localDate: string;
+              minutes: number;
+              running: boolean;
+              projectRemoteId: string;
+              taskName: string;
+              countingSince?: string | undefined;
+              taskRemoteId?: string | undefined;
+              clientRef?: string | undefined;
+            }
+          | undefined;
+      }
+    | { status: "refused"; message: string; syncKey: string }
+    | { status: "failed"; message: string; syncKey: string }
+  )[];
+};
+
+/** How one change went: `synced` with the entry as stored (none for a
+delete), `refused` for good with a sentence the user reads, or `failed`
+with a sentence, to retry next round. */
+export type TimeSyncChangeResult =
+  | {
+      status: "synced";
+      syncKey: string;
+      entry?:
+        | {
+            remoteId: string;
+            updatedAt: string;
+            localDate: string;
+            minutes: number;
+            running: boolean;
+            projectRemoteId: string;
+            taskName: string;
+            countingSince?: string | undefined;
+            taskRemoteId?: string | undefined;
+            clientRef?: string | undefined;
+          }
+        | undefined;
+    }
+  | { status: "refused"; message: string; syncKey: string }
+  | { status: "failed"; message: string; syncKey: string };
+
+/** An entry as your system stores it, with `clientRef` when Ajour created it. */
+export type TimeSyncRemoteEntry = {
+  remoteId: string;
+  updatedAt: string;
+  localDate: string;
+  minutes: number;
+  running: boolean;
+  projectRemoteId: string;
+  taskName: string;
+  countingSince?: string | undefined;
+  taskRemoteId?: string | undefined;
+  clientRef?: string | undefined;
 };

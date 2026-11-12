@@ -20,6 +20,8 @@ import type {
   SettleStatesResult,
   SettleWriteRequest,
   SettleWriteResult,
+  TimeSyncRequest,
+  TimeSyncResult,
   ValidationContext,
   ValidationResult,
   WriteDescriptionRequest,
@@ -122,9 +124,12 @@ type OperationHandlers<
  * What a plugin's entrypoint exports: one function per operation it serves.
  * Each receives the connection without its secrets. Unlike plugin API 3,
  * `validateConnection` receives the connection too, so it can call
- * `ajour.http` with its id. `syncProjects` serves the `projectSource`
- * capability: it answers the user's projects as a snapshot, or that
- * nothing changed since the cursor it received.
+ * `ajour.http` with its id, and the capabilities that are on, so it checks
+ * only their access. `syncProjects` serves the `projectSource` capability:
+ * it answers the user's projects as a snapshot, or that nothing changed
+ * since the cursor it received. `syncTimeEntries` serves `timeSync`: it
+ * runs one round, applying the changes in order, then listing the remote
+ * entries in the window.
  */
 export type PluginModule = {
   validateConnection?: (
@@ -160,6 +165,10 @@ export type PluginModule = {
     connection: PluginConnection,
     request: ProjectSourceSyncRequest,
   ) => Awaitable<ProjectSourceSyncResult>;
+  syncTimeEntries?: (
+    connection: PluginConnection,
+    request: TimeSyncRequest,
+  ) => Awaitable<TimeSyncResult>;
 } & OperationHandlers<CodeHostOperations> &
   OperationHandlers<CalendarOperations> &
   OperationHandlers<BacklogCommentOperations>;
