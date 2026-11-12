@@ -202,6 +202,22 @@ describe("a time sync round", () => {
     expect(recovered).not.toHaveProperty("error");
   });
 
+  it("leaves Undo alone, and sends an Undo's result like any other change", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    await round("change");
+    const token = localStore.deleteTimesheetEntry(entryId)!;
+
+    expect(await round("change")).toMatchObject({ synced: 1 });
+    expect(localStore.snapshot().timeSyncs?.[connectionId]?.copies).toEqual({});
+
+    // The round changed no entry, so the Undo still applies.
+    expect(localStore.undo(token)).toBe("restored");
+    expect(await round("change")).toMatchObject({ synced: 1 });
+    expect(
+      localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
+    ).toMatchObject({ agreed: { minutes: 90 } });
+  });
+
   it("drops the synced copies when Time entries goes off", async () => {
     const { appApi, localStore, connectionId, round } = await load();
     const { followTimeSyncSwitches } = await import("@/lib/time-sync");

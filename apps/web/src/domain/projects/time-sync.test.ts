@@ -14,6 +14,7 @@ import {
   describeTimeSyncStatus,
   entrySyncKey,
   failTimeSyncRound,
+  normalizeTimeSyncs,
   planTimeSyncRound,
   reconcileTimeSyncs,
   startTimeSync,
@@ -679,5 +680,25 @@ describe("the connection's status line", () => {
       error: "The planner is down.",
       notes: [],
     });
+  });
+});
+
+describe("reading stored time syncs back", () => {
+  it("keeps what a round stored, reads an older state as none, and drops what it can't read", () => {
+    const stored = runRound(stateWith([entry("e1")])).state.timeSyncs;
+    expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(stored)))).toEqual(
+      stored,
+    );
+    expect(normalizeTimeSyncs(undefined)).toEqual({});
+
+    const broken = structuredClone(stored) as Record<string, unknown>;
+    (broken.c1 as LocalTimeSync).copies.e2 = {
+      remoteId: "remote-2",
+      agreed: { minutes: -1 },
+    } as never;
+    broken.c2 = { pluginId: "other", startWeek: "not a day", startedAt: 1 };
+    const read = normalizeTimeSyncs(broken);
+    expect(Object.keys(read)).toEqual(["c1"]);
+    expect(Object.keys(read.c1!.copies)).toEqual(["e1"]);
   });
 });
