@@ -173,6 +173,19 @@ describe("planning a round", () => {
     expect(round.request.changes[1]).toMatchObject({ values: { minutes: 1 } });
   });
 
+  it("rounds to the nearest whole minute, and sends at least 1", () => {
+    const minutes = (durationMs: number) => {
+      const [change] = plan(stateWith([entry("e1", { durationMs })])).request
+        .changes;
+      return change?.kind === "upsert" ? change.values.minutes : undefined;
+    };
+
+    expect(minutes(30_000)).toBe(1);
+    expect(minutes(89_000)).toBe(1);
+    expect(minutes(90_000)).toBe(2);
+    expect(minutes(89 * MINUTE + 31_000)).toBe(90);
+  });
+
   it("sends the name the task commits as, and a Not known yet task's own name", () => {
     const workday: PropertyPlugins = {
       projects: [],

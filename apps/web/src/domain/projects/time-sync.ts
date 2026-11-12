@@ -257,7 +257,9 @@ function createReader(
     if (!taskName) return undefined;
     return {
       localDate: entry.localDate,
-      minutes: Math.round(entry.durationMs / MINUTE_MS),
+      // To the nearest whole minute, and never 0: a time sync takes 1 to
+      // 1,440 minutes, and the 30 second floor rounds to 1.
+      minutes: Math.max(1, Math.round(entry.durationMs / MINUTE_MS)),
       running: false,
       projectRemoteId: project.source.remoteId,
       taskName,
