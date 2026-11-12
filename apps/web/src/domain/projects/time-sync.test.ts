@@ -348,6 +348,18 @@ describe("applying a round", () => {
     ]);
   });
 
+  it("changes nothing for a round that brought nothing new, so the poll writes nothing", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    // The first quiet round turns "1 sent" into "up to date".
+    const upToDate = runRound(synced, syncEverything, 900).state;
+    expect(recordIn(upToDate).lastRound).toMatchObject({ at: 900, synced: 0 });
+
+    const quiet = runRound(upToDate, syncEverything, 960);
+
+    expect(quiet.result).toMatchObject({ kind: "applied", synced: 0 });
+    expect(quiet.state.timeSyncs).toBe(upToDate.timeSyncs);
+  });
+
   it("deletes an entry that stops qualifying, or is gone, then drops its copy", () => {
     const synced = runRound(stateWith([entry("moved"), entry("gone")])).state;
     const after = {

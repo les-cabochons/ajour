@@ -17,6 +17,7 @@ import type {
   LocalTimesheetEntry,
 } from "@/domain/local-state";
 import { getCommitTarget } from "@/domain/projects/commit-target";
+import { recordsEqual } from "@/domain/records-equal";
 import type { PropertyPlugins } from "@/domain/projects/plugin-properties";
 import {
   addLocalDays,
@@ -516,9 +517,19 @@ export function applyTimeSyncRound(
     context,
     plan.plannedAt,
   );
+  const result = { kind: "applied" as const, ...counts, waiting: plan.waiting };
+  // A round that brought nothing new keeps the record, so the poll writes
+  // nothing: the status line doesn't show when the round ran.
+  const withoutRoundTime = (candidate: LocalTimeSync) => ({
+    ...candidate,
+    lastRound: candidate.lastRound && { ...candidate.lastRound, at: 0 },
+  });
+  if (recordsEqual(withoutRoundTime(record), withoutRoundTime(next))) {
+    return { timeSyncs: state.timeSyncs, result };
+  }
   return {
     timeSyncs: { ...state.timeSyncs, [plan.connection.connectionId]: next },
-    result: { kind: "applied", ...counts, waiting: plan.waiting },
+    result,
   };
 }
 

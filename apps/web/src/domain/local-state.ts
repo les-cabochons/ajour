@@ -173,6 +173,10 @@ export interface LocalTimeSyncRefusal {
 
 /** What one round did, in counts, for the connection's status line. */
 export interface LocalTimeSyncRound {
+  /**
+   * When the round ran. A later round that changes nothing keeps it, so the
+   * 60-second poll writes nothing.
+   */
   at: number;
   /** Changes the other system took. */
   synced: number;
