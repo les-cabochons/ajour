@@ -25,6 +25,16 @@ import { wideEvents } from "@/lib/wide-events";
 /** How often the scheduler syncs a project source connection. */
 export const PROJECT_SOURCE_SYNC_INTERVAL_MS = 15 * 60_000;
 
+/**
+ * How long after a sync the user asked for, opening a project of the same
+ * connection syncs nothing (#686), so moving between projects doesn't read
+ * the source each time.
+ */
+export const PROJECT_PAGE_SYNC_INTERVAL_MS = 5 * 60_000;
+
+/** When each connection last started a sync the user asked for, in this window. */
+const lastUserSyncAt = new Map<string, number>();
+
 export type ProjectSourceSyncOutcome =
   /** The source had nothing new since the last sync. */
   | { kind: "unchanged" }
@@ -77,6 +87,7 @@ export function syncProjectSourceConnection(
   const running = runningSyncs.get(key);
   if (running) return running;
   const trigger = options.trigger ?? "user";
+  if (trigger === "user") lastUserSyncAt.set(key, Date.now());
 
   const run = async (
     job: Unit<AjourCatalog, "project_source.sync">,
@@ -178,6 +189,25 @@ export function syncProjectSourceConnection(
 
   runningSyncs.set(key, promise);
   return promise;
+}
+
+/**
+ * Syncs the connection of a managed project the user opens (#686), as a sync
+ * the user asked for, so a plugin that answers from a cache reads the source.
+ * Answers undefined, and syncs nothing, when the user asked for one in the
+ * last PROJECT_PAGE_SYNC_INTERVAL_MS.
+ */
+export function syncOpenedProjectSource(
+  pluginId: string,
+  connectionId: string,
+): Promise<ProjectSourceSyncOutcome> | undefined {
+  const last = lastUserSyncAt.get(JSON.stringify([pluginId, connectionId]));
+  if (last !== undefined && Date.now() - last < PROJECT_PAGE_SYNC_INTERVAL_MS) {
+    return undefined;
+  }
+  return syncProjectSourceConnection(pluginId, connectionId, {
+    trigger: "user",
+  });
 }
 
 /** One line for a sync's result, such as "Example planner · 2 added · 1 held for review". */

@@ -113,6 +113,7 @@ import {
   ManagedProjectMark,
   ManagedProjectTitleMark,
 } from "@/features/projects/project-source-ui";
+import { useProjectSourceSync } from "@/features/projects/use-project-source-sync";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
   commitProjectTaskDraft,
@@ -698,6 +699,7 @@ function ProjectDetail({
   const isArchived = project.status === "archived";
   const managed = isManagedProject(project);
   const sourceLabel = getProjectSourceLabel(project, projectSources);
+  const sourceSync = useProjectSourceSync(project, sourceLabel);
   const projectActions = getProjectActions(project);
 
   const summary = taskSummary(project);
@@ -1697,6 +1699,8 @@ function ProjectDetail({
             onImport={openImportPicker}
             onArchive={() => onProjectAction(project, "archive")}
             onRestore={() => onProjectAction(project, "restore")}
+            sourceSyncing={sourceSync.syncing}
+            onSyncSource={sourceSync.syncNow}
           />
         </div>
       </div>

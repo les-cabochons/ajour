@@ -3488,7 +3488,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.syncProjects(
           pluginId,
           pluginConnection(connection),
-          cursor ? { cursor } : {},
+          // The trigger lets a plugin that answers from a cache read the
+          // source when the user asked for the sync (#686).
+          { ...(cursor ? { cursor } : {}), trigger: payload.trigger },
           call.admit,
         );
         if ("unchanged" in result) {

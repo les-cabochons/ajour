@@ -202,7 +202,8 @@ The backlog editor module is feature-local because its vocabulary and commands b
   read only: `packages/shared/project-source.ts` owns the snapshot shape,
   the sync request and result, and `parseProjectSourceSyncResult`, which
   names a bad field's path. The plugin exports
-  `syncProjects(connection, { cursor })`; the API exposes it at
+  `syncProjects(connection, { cursor, trigger })`, where `trigger` is
+  `manual` for a sync the user asked for (#686); the API exposes it at
   `POST /api/plugins/:pluginId/connections/:connectionId/sync-projects`
   and keeps the cursor per connection (`StoredConnection.projectSourceCursor`).
   Saving the connection drops the cursor, and a sync that was running then

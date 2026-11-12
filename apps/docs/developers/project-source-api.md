@@ -11,7 +11,7 @@ Nothing in the shape names a product. Your plugin supplies the source's label an
 ```ts
 export async function syncProjects(
   connection: PluginConnection,
-  request: { cursor?: string },
+  request: { cursor?: string; trigger?: "manual" | "auto" },
 ): Promise<
   { snapshot: ProjectSourceSnapshot; cursor?: string } | { unchanged: true }
 >;
@@ -19,7 +19,9 @@ export async function syncProjects(
 
 Return the snapshot and the cursor to send next time, or `{ unchanged: true }` when nothing changed since the cursor you received.
 
-Ajour calls `syncProjects` every 15 minutes while the connection's Managed projects switch is on, when the user adds the connection, and when they press Sync now on it. A call that fails keeps the last snapshot Ajour applied, and the connection shows the error and when it last synced.
+Ajour calls `syncProjects` every 15 minutes while the connection's Managed projects switch is on, when the user adds the connection, when they press Sync now on it or on a managed project's page, and when they open a managed project's page, at most once every 5 minutes per connection. A call that fails keeps the last snapshot Ajour applied, and the connection shows the error and when it last synced.
+
+`trigger` says what started the sync: `manual` when the user asked for it, `auto` for the 15-minute sync. A plugin that answers from a cache of the source should read the source on a manual sync, so what the user just changed there shows. Older Ajour versions send no trigger.
 
 The cursor is yours. Ajour never reads it: it keeps the last one per connection and sends it back on the next sync, and sends none on the first sync, after a snapshot that came without one, after the user saves the connection again, after your plugin's version changes, and when Ajour needs the whole snapshot again. An ETag works well: send it as `If-None-Match`, and answer `{ unchanged: true }` on a 304. Never answer `{ unchanged: true }` to a request without a cursor: Ajour refuses it, since it has nothing to compare with.
 

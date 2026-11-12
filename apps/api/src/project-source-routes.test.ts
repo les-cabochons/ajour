@@ -89,7 +89,10 @@ const snapshot = {
   ],
 };
 
-type Fixture = { __plannerSeen?: unknown[]; __plannerAnswer?: unknown };
+type Fixture = {
+  __plannerSeen?: { cursor?: string; trigger?: string }[];
+  __plannerAnswer?: unknown;
+};
 const fixture = globalThis as Fixture;
 
 describe("the project source sync route", () => {
@@ -186,7 +189,10 @@ describe("the project source sync route", () => {
         }
       ).connectionGroups[0]!.connections[0]!;
     };
-    const seen = () => fixture.__plannerSeen ?? [];
+    // The requests the plugin received: the cursors, then the triggers.
+    const received = () => fixture.__plannerSeen ?? [];
+    const seen = () => received().map(({ trigger: _trigger, ...rest }) => rest);
+    const triggers = () => received().map((request) => request.trigger);
     return {
       server,
       sink,
@@ -195,10 +201,21 @@ describe("the project source sync route", () => {
       save,
       connectionSummary,
       seen,
+      triggers,
       rewriteManifest,
       root,
     };
   }
+
+  it("tells the plugin whether the user asked for the sync", async () => {
+    const { sync, triggers } = await setup();
+    fixture.__plannerAnswer = { snapshot, cursor: 'W/"v1"' };
+
+    await sync("manual");
+    await sync("auto");
+
+    expect(triggers()).toEqual(["manual", "auto"]);
+  });
 
   it("answers the snapshot, keeps the cursor and sends it next time", async () => {
     const { sync, seen, sink, connectionId } = await setup();
