@@ -7,19 +7,20 @@ import {
   exampleProjectSourceManifest,
   logExampleRemoteEntry,
   runExampleTimeSyncRound,
+  startExampleRemoteTimer,
 } from "../../../../../packages/example/index.ts";
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /*
- * Time sync (#691 to #694, #696): the example planner declares a project
- * source and a time sync. A mocked local API serves it. With Time entries
- * off, it answers turning it on as the API does when the plugin refuses the
+ * Time sync (#691 to #696): the example planner declares a project source
+ * and a time sync. A mocked local API serves it. With Time entries off, it
+ * answers turning it on as the API does when the plugin refuses the
  * connection: a 400 with the connection's label and the plugin's sentence.
  * With Time entries on, its sync-time-entries route is a stateful fake
  * remote: the example planner's own in-memory remote, one per page, where
- * a step logs, edits and deletes entries as another tool would. The page's
- * clock runs as usual, and a step moves it forward to reach the next
- * 60-second round without waiting for it.
+ * a step logs, edits and deletes entries, or starts a timer, as another
+ * tool would. The page's clock runs as usual, and a step moves it forward
+ * to reach the next 60-second round without waiting for it.
  */
 
 const { Given, When, Then } = createBdd();
@@ -521,6 +522,26 @@ When(
 When("another tool deletes that entry in the planner", async ({ page }) => {
   const remote = remotes.get(page)!;
   deleteExampleRemoteEntry(remote.key, remote.loggedId!);
+});
+
+When(
+  "another tool starts a timer on {string} in the planner",
+  async ({ page }, task: string) => {
+    // Now on the page's clock, which Ajour counts by and the steps move.
+    const now = await page.evaluate(() => Date.now());
+    startExampleRemoteTimer(remotes.get(page)!.key, {
+      localDate: today(),
+      projectRemoteId: "ACME-SUP",
+      taskName: task,
+      countingSince: new Date(now).toISOString(),
+    });
+  },
+);
+
+Then("the running entry is on {string}", async ({ page }, task: string) => {
+  await expect(runningEntryCard(page)).toContainText(task, {
+    timeout: 15_000,
+  });
 });
 
 When("I open today in the Day view", async ({ page }) => {

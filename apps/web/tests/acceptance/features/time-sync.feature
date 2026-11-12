@@ -37,6 +37,22 @@ Feature: Time entries sync through a time sync plugin
     When 3 minutes pass
     And I stop the running entry
     Then the planner shows "Ticket #102 - Export" stopped at 3 minutes, as the entry it showed running
+
+  Scenario: A timer started in another tool becomes the running entry, and the previous one is saved
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    And 2 minutes pass
+    Then the planner shows "Ticket #101 - Login" running for 2 minutes
+    When another tool starts a timer on "Ticket #102 - Export" in the planner
+    And a minute passes
+    Then the running entry is on "Ticket #102 - Export"
+    And today's "Ticket #101 - Login" entry shows "0:02"
+    And the planner shows "Ticket #101 - Login" stopped at 2 minutes, as the entry it showed running
+    And the planner shows "Ticket #102 - Export" running
+    When a minute passes
+    Then the running entry is on "Ticket #102 - Export"
+    And the planner shows "Ticket #102 - Export" running
+
   Scenario: An entry logged in another tool shows in the Day view, and follows its edit and delete there
     Given the example planner manages "Acme - Support", with Time entries on
     And another tool logged 45 minutes on "Ticket #101 - Login" today in the planner
