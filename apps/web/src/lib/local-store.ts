@@ -68,7 +68,11 @@ import {
   reconcilePullRequests,
   type PullRequestCommand,
 } from "@/domain/pull-requests/pull-request-lifecycle";
-import type { CodeHostSyncResult } from "@ajour/shared";
+import type {
+  CodeHostSyncResult,
+  PluginsOverview,
+  TimeSyncResult,
+} from "@ajour/shared";
 import type {
   BacklogImportCandidate,
   BacklogDoneWorkItem,
@@ -269,6 +273,19 @@ import {
   normalizeTeamPushHold,
 } from "@/domain/projects/team-link";
 import { normalizeProjectSources } from "@/domain/projects/source-link";
+import {
+  applyTimeSyncRound,
+  failTimeSyncRound,
+  normalizeTimeSyncs,
+  reconcileTimeSyncs,
+  stopTimeSync,
+  timeSyncStateOf,
+  type PlannedTimeSyncRound,
+  type TimeSyncConnectionRef,
+  type TimeSyncContext,
+  type TimeSyncPlan,
+  type TimeSyncRoundResult,
+} from "@/domain/projects/time-sync";
 import {
   answerSourceWaitingTasks as applyAnswerSourceWaitingTasks,
   confirmProjectSourceUnchanged,
@@ -638,6 +655,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       settleRules: normalizeSettleRules(persistedState.settleRules),
       teamConnections: normalizeTeamConnections(persistedState.teamConnections),
       projectSources: normalizeProjectSources(persistedState.projectSources),
+      timeSyncs: normalizeTimeSyncs(persistedState.timeSyncs),
       teamPushHold: normalizeTeamPushHold(
         persistedState.teamPushHold,
         Date.now(),
@@ -1929,6 +1947,67 @@ const store = {
       return next === before ? state : withSourceSyncState(state, next);
     });
   },
+  /**
+   * Starts and stops time syncs to match the Time entries switches in
+   * `overview` (#692). Not undoable.
+   */
+  followTimeSyncSwitches(overview: Pick<PluginsOverview, "connectionGroups">) {
+    updateState((state) => {
+      const current = state.timeSyncs ?? {};
+      const now = Date.now();
+      const next = reconcileTimeSyncs(
+        current,
+        overview,
+        formatLocalDateFromTimestamp(now),
+        now,
+      );
+      return next === current ? state : { ...state, timeSyncs: next };
+    });
+  },
+  /**
+   * Keeps what a time sync round answered (#692). It is not undoable, and it
+   * changes no entry, so it never makes an Undo stale.
+   */
+  applyTimeSyncRound(
+    plan: TimeSyncPlan,
+    answer: TimeSyncResult,
+    context: TimeSyncContext,
+  ): TimeSyncRoundResult {
+    return updateStateWithResult<TimeSyncRoundResult>((state) => {
+      const applied = applyTimeSyncRound(
+        timeSyncStateOf(state),
+        plan,
+        answer,
+        context,
+        Date.now(),
+      );
+      return {
+        state:
+          applied.result.kind === "applied"
+            ? { ...state, timeSyncs: applied.timeSyncs }
+            : state,
+        result: applied.result,
+      };
+    });
+  },
+  /** Keeps why a time sync round failed. Its changes wait for the next one. */
+  failTimeSyncRound(
+    connection: TimeSyncConnectionRef,
+    message: string,
+    planned?: PlannedTimeSyncRound,
+  ) {
+    updateState((state) => {
+      const before = state.timeSyncs ?? {};
+      const timeSyncs = failTimeSyncRound(
+        timeSyncStateOf(state),
+        connection,
+        message,
+        Date.now(),
+        planned,
+      );
+      return timeSyncs === before ? state : { ...state, timeSyncs };
+    });
+  },
   /** The user's answer for a held source project, from Sync review. No Undo. */
   resolveHeldSourceProject(
     connection: ProjectSourceConnectionRef,
@@ -1989,6 +2068,17 @@ const store = {
         state,
         disconnectProjectSource(sourceSyncStateOf(state), connectionId),
       );
+    });
+  },
+  /**
+   * A removed time sync connection: its synced copies go. The other system
+   * keeps its entries.
+   */
+  removeConnectionTimeSync(connectionId: string) {
+    return updateState((state) => {
+      const current = state.timeSyncs ?? {};
+      const timeSyncs = stopTimeSync(current, connectionId);
+      return timeSyncs === current ? state : { ...state, timeSyncs };
     });
   },
   /** A removed team connection: its projects become local, with their entries. */
@@ -3794,6 +3884,24 @@ export const STORE_COMMANDS = {
     },
   },
   removeConnectionProjectSource: "connection.delete",
+  removeConnectionTimeSync: "connection.delete",
+  followTimeSyncSwitches: { name: "time_sync.reconcile", trigger: "system" },
+  applyTimeSyncRound: {
+    name: "time_sync.apply_round",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([plan]) => plan.connection.pluginId },
+      connection: { id: ([plan]) => plan.connection.connectionId },
+    },
+  },
+  failTimeSyncRound: {
+    name: "time_sync.apply_round",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([connection]) => connection.pluginId },
+      connection: { id: ([connection]) => connection.connectionId },
+    },
+  },
   removeConnectionPullRequests: "connection.delete",
   createTeam: "team.create",
   addProject: {

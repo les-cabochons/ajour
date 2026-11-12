@@ -6,6 +6,7 @@ import {
   type TimeSyncEntryValues,
   type TimeSyncRequest,
   type TimeSyncResult,
+  timeSyncEntryValuesSchema,
 } from "@ajour/shared";
 import type {
   LocalAppState,
@@ -17,7 +18,11 @@ import type {
 } from "@/domain/local-state";
 import { getCommitTarget } from "@/domain/projects/commit-target";
 import type { PropertyPlugins } from "@/domain/projects/plugin-properties";
-import { addLocalDays, getWeekOf } from "@/domain/time/local-date";
+import {
+  addLocalDays,
+  getWeekOf,
+  isValidLocalDate,
+} from "@/domain/time/local-date";
 import {
   resolveCommitTaskName,
   resolveLineNameSource,
@@ -42,6 +47,17 @@ export type TimeSyncState = Pick<
 > & {
   timeSyncs: Record<string, LocalTimeSync>;
 };
+
+/** The part of the local state the time sync rules read and write. */
+export function timeSyncStateOf(
+  state: Pick<LocalAppState, "projects" | "timesheetEntries" | "timeSyncs">,
+): TimeSyncState {
+  return {
+    projects: state.projects,
+    timesheetEntries: state.timesheetEntries,
+    timeSyncs: state.timeSyncs ?? {},
+  };
+}
 
 /** The connection a round runs for. */
 export interface TimeSyncConnectionRef {
@@ -504,30 +520,155 @@ export function applyTimeSyncRound(
   };
 }
 
+/** A round planned before it failed, so Ajour notes what it saw. */
+export interface PlannedTimeSyncRound {
+  plan: TimeSyncPlan;
+  context: TimeSyncContext;
+}
+
 /**
  * A round that failed as a whole changes nothing: its changes wait for the
- * next one. The connection keeps the error until a round goes through.
+ * next one. The connection keeps the error until a round goes through. A
+ * round that got as far as its plan notes the local changes it saw.
  */
 export function failTimeSyncRound(
   state: TimeSyncState,
-  plan: TimeSyncPlan,
+  connection: TimeSyncConnectionRef,
   message: string,
-  context: TimeSyncContext,
   now: number,
+  planned?: PlannedTimeSyncRound,
 ): Record<string, LocalTimeSync> {
-  const record = recordOf(state.timeSyncs, plan.connection);
-  if (!record || record.startedAt !== plan.startedAt) return state.timeSyncs;
+  const record = recordOf(state.timeSyncs, connection);
+  if (!record) return state.timeSyncs;
   const failed = { ...record, error: { at: now, message } };
   return {
     ...state.timeSyncs,
-    [plan.connection.connectionId]: {
-      ...noteLocalChanges(
-        state,
-        plan.connection,
-        failed,
-        context,
-        plan.plannedAt,
-      ),
-    },
+    [connection.connectionId]:
+      planned && planned.plan.startedAt === record.startedAt
+        ? noteLocalChanges(
+            state,
+            connection,
+            failed,
+            planned.context,
+            planned.plan.plannedAt,
+          )
+        : failed,
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizeValues(value: unknown): TimeSyncEntryValues | undefined {
+  return timeSyncEntryValuesSchema.safeParse(value).data;
+}
+
+function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
+  const copy = asRecord(value);
+  const agreed = normalizeValues(copy?.agreed);
+  if (
+    !copy ||
+    !agreed ||
+    !nonEmptyString(copy.remoteId) ||
+    !nonEmptyString(copy.remoteUpdatedAt)
+  ) {
+    return undefined;
+  }
+  return {
+    remoteId: copy.remoteId,
+    agreed,
+    remoteUpdatedAt: copy.remoteUpdatedAt,
+    ...(finiteNumber(copy.changedAt) ? { changedAt: copy.changedAt } : {}),
+  };
+}
+
+function normalizeRefusal(value: unknown): LocalTimeSyncRefusal | undefined {
+  const refusal = asRecord(value);
+  const change =
+    refusal?.change === "delete" ? "delete" : normalizeValues(refusal?.change);
+  if (
+    !refusal ||
+    !change ||
+    !nonEmptyString(refusal.message) ||
+    !finiteNumber(refusal.at)
+  ) {
+    return undefined;
+  }
+  return { message: refusal.message, change, at: refusal.at };
+}
+
+/** The records of `value` that `normalize` keeps, by key. */
+function normalizeRecords<T>(
+  value: unknown,
+  normalize: (candidate: unknown) => T | undefined,
+): Record<string, T> {
+  const records: Record<string, T> = {};
+  for (const [key, candidate] of Object.entries(asRecord(value) ?? {})) {
+    const record = normalize(candidate);
+    if (nonEmptyString(key) && record) records[key] = record;
+  }
+  return records;
+}
+
+/**
+ * Reads stored time syncs back. A record whose shape is wrong is dropped,
+ * and the next round starts it again this week; a copy or refusal whose
+ * shape is wrong is dropped alone, and its entry is sent again. A state
+ * saved before time syncs reads as none.
+ */
+export function normalizeTimeSyncs(
+  value: unknown,
+): Record<string, LocalTimeSync> {
+  return normalizeRecords(value, (candidate): LocalTimeSync | undefined => {
+    const record = asRecord(candidate);
+    if (
+      !record ||
+      !nonEmptyString(record.pluginId) ||
+      typeof record.startWeek !== "string" ||
+      !isValidLocalDate(record.startWeek) ||
+      !finiteNumber(record.startedAt)
+    ) {
+      return undefined;
+    }
+    const lastRound = asRecord(record.lastRound);
+    const error = asRecord(record.error);
+    return {
+      pluginId: record.pluginId,
+      startWeek: getWeekOf(record.startWeek),
+      startedAt: record.startedAt,
+      copies: normalizeRecords(record.copies, normalizeCopy),
+      refusals: normalizeRecords(record.refusals, normalizeRefusal),
+      ...(lastRound &&
+      finiteNumber(lastRound.at) &&
+      finiteNumber(lastRound.synced) &&
+      finiteNumber(lastRound.refused) &&
+      finiteNumber(lastRound.failed)
+        ? {
+            lastRound: {
+              at: lastRound.at,
+              synced: lastRound.synced,
+              refused: lastRound.refused,
+              failed: lastRound.failed,
+              ...(nonEmptyString(lastRound.failedMessage)
+                ? { failedMessage: lastRound.failedMessage }
+                : {}),
+            },
+          }
+        : {}),
+      ...(error && finiteNumber(error.at) && nonEmptyString(error.message)
+        ? { error: { at: error.at, message: error.message } }
+        : {}),
+    };
+  });
 }

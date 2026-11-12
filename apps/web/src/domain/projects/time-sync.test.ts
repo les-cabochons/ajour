@@ -464,10 +464,10 @@ describe("applying a round", () => {
       ...edited,
       timeSyncs: failTimeSyncRound(
         edited,
-        { ...plan(edited), plannedAt: 400 },
+        CONNECTION,
         "The planner is down.",
-        CONTEXT,
         410,
+        { plan: { ...plan(edited), plannedAt: 400 }, context: CONTEXT },
       ),
     };
     expect(recordIn(failed).copies.e1?.changedAt).toBe(400);

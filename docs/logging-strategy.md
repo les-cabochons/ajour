@@ -715,6 +715,12 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     (`system`). The store commands that apply the answer fold into the job.
     A manual and a scheduled call of the same connection share one run.
     The scheduler's 30-second tick records nothing.
+  - `time_sync.round`, each round of a time sync (#692), in
+    `lib/time-sync.ts`, always `schedule`: `time_sync_round.trigger` says
+    whether a store write, the 60-second poll, changes left over or a retry
+    started it. A store write that leaves nothing to send starts no round,
+    so the runner's own writes record nothing. The counts are those of the
+    route's event, plus `waiting_count`; no day, task, project or note.
   - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
     Refresh (`user`) or not. A load the cache answers records nothing, by
     decision: the 30-second refresh would emit an event each time, so there
@@ -1057,7 +1063,9 @@ channel to read the event each emits.
 | `time_entry.stop`                    | command                            | store command                                    |
 | `time_entry.uncommit`                | command                            | store command                                    |
 | `time_entry.update`                  | command                            | store command                                    |
-| `time_sync.round`                    | request, plugin_operation          | route, plugin method                             |
+| `time_sync.apply_round`              | command                            | store command                                    |
+| `time_sync.reconcile`                | command                            | store command                                    |
+| `time_sync.round`                    | job, request, plugin_operation     | route, plugin method, client call, renderer      |
 | `timeline.commit`                    | command                            | store command                                    |
 | `timeline.dismiss`                   | command                            | store command                                    |
 | `timeline.import`                    | command                            | store command                                    |
