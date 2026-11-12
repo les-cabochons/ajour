@@ -72,7 +72,7 @@ import {
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 import { PickerChevron } from "@/components/picker-chevron";
-import { RiPencilLine } from "@remixicon/react";
+import { RiPencilLine, RiRefreshLine } from "@remixicon/react";
 
 /*
  * The project page edits in place, like the backlog item page: each field
@@ -407,11 +407,17 @@ export function ProjectPropertiesCard({
   onImport,
   onArchive,
   onRestore,
+  sourceSyncing = false,
+  onSyncSource,
 }: {
   project: LocalProject;
   /** What the user calls the project's source, for a managed project. */
   sourceLabel?: string;
   isImporting: boolean;
+  /** A sync of the managed project's source is running from Sync now. */
+  sourceSyncing?: boolean;
+  /** Sync now, for a managed project: syncs its source (#686). */
+  onSyncSource?: () => void;
   /** Opens the Excel file picker. */
   onImport: () => void;
   onArchive: () => void;
@@ -626,6 +632,12 @@ export function ProjectPropertiesCard({
       <PropertyActions>
         {sourceUrl ? (
           <OpenInSourceAction url={sourceUrl} label={sourceLabel} />
+        ) : null}
+        {managed && onSyncSource ? (
+          <PropertyAction disabled={sourceSyncing} onClick={onSyncSource}>
+            <RiRefreshLine aria-hidden="true" />
+            {sourceSyncing ? "Syncing…" : "Sync now"}
+          </PropertyAction>
         ) : null}
         {/* A managed project's tasks come from its source. */}
         {managed ? null : (

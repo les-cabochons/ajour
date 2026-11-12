@@ -124,6 +124,35 @@ describe("a managed project's Properties card", () => {
     expect(link.getAttribute("target")).toBe("_blank");
   });
 
+  it("syncs its source from Sync now, which waits while a sync runs (#686)", () => {
+    const project = syncedProject("ACME-SUP");
+    const label = getProjectSourceLabel(
+      project,
+      localStore.snapshot().projectSources,
+    );
+    const onSyncSource = vi.fn();
+    const card = (sourceSyncing: boolean) => (
+      <ProjectPropertiesCard
+        project={project}
+        sourceLabel={label}
+        isImporting={false}
+        onImport={() => {}}
+        onArchive={() => {}}
+        onRestore={() => {}}
+        sourceSyncing={sourceSyncing}
+        onSyncSource={onSyncSource}
+      />
+    );
+    const { rerender } = render(card(false));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    expect(onSyncSource).toHaveBeenCalledOnce();
+
+    rerender(card(true));
+    const busy = screen.getByRole("button", { name: "Syncing…" });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("has no Open in link when the source gave no URL", () => {
     const snapshot = structuredClone(fixtureSnapshot);
     delete snapshot.projects[0]!.url;

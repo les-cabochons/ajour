@@ -176,6 +176,34 @@ describe("a project source sync", () => {
     expect(managed()).toHaveLength(2);
   });
 
+  it("syncs a managed project's source when its page opens, at most once per interval", async () => {
+    const { connectionId, recorded } = await load();
+    const { syncOpenedProjectSource, PROJECT_PAGE_SYNC_INTERVAL_MS } =
+      await import("@/lib/project-source-sync");
+    const jobs = () =>
+      recorded.filter(
+        (event) => event.name === "project_source.sync" && event.kind === "job",
+      );
+    // Only the clock is fake: the local API still answers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = Date.now();
+
+    expect(await syncOpenedProjectSource(PLUGIN, connectionId)).toMatchObject({
+      kind: "applied",
+    });
+    // Opening another project of the connection soon after reads nothing.
+    vi.setSystemTime(start + 60_000);
+    expect(syncOpenedProjectSource(PLUGIN, connectionId)).toBeUndefined();
+    vi.setSystemTime(start + PROJECT_PAGE_SYNC_INTERVAL_MS);
+    await syncOpenedProjectSource(PLUGIN, connectionId);
+    vi.useRealTimers();
+
+    expect(jobs()).toHaveLength(2);
+    expect(jobs()[0]).toMatchObject({
+      project_source_sync: { trigger: "manual" },
+    });
+  });
+
   it("trusts the API's cursor while each answer applies", async () => {
     const { sync, connectionId, localStore, appApi, recorded } = await load();
     await sync();
