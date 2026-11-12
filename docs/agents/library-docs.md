@@ -211,6 +211,21 @@ The backlog editor module is feature-local because its vocabulary and commands b
   The SDK's sample is `packages/plugin-sdk/tests/sample-project-source/`.
   Nothing in Ajour names a product: the plugin supplies the source's label
   and URLs.
+- The time sync capability (spec #685, #691, ADR 0018) is plugin API 4 only
+  and needs `projectSource`: `packages/shared/time-sync.ts` owns a round's
+  request, changes, remote entries and result, and `parseTimeSyncResult`,
+  which names a bad field and refuses a change left unanswered or answered
+  twice. The plugin exports `syncTimeEntries(connection, request)`; the API
+  runs it at
+  `POST /api/plugins/:pluginId/connections/:connectionId/sync-time-entries`
+  while the Time entries switch is on, and keeps nothing of a round. That
+  switch starts off (`capabilityStartsOff` in `packages/shared/plugins.ts`):
+  the state file lists, per plugin, the switches that start off and that the
+  user turned on (`enabledCapabilities`), beside those that start on and
+  that the user turned off (`disabledCapabilities`). Turning it on
+  validates each connection with `timeSync` on first
+  (`checkConnectionsWith` in `apps/api/src/server.ts`). The example plugin
+  answers rounds from an in-memory remote, `packages/example/plugin/time-sync.ts`.
 - Sync reports each item's `stateCategory` and `stateDone`. The plugin decides
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages

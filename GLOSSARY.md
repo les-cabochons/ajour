@@ -176,7 +176,11 @@ _Avoid_: Submitted, synced, sent
 
 **Committed copy**:
 The values of a time entry as it was last committed: its day, project, task, note and duration.
-_Avoid_: Snapshot, fingerprint
+_Avoid_: Snapshot, fingerprint, synced copy (that is a time sync's)
+
+**Synced copy**:
+The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. See ADR 0018.
+_Avoid_: Committed copy, remote copy, mirror
 
 **Submitted week**:
 A week the user locked after committing every change: its entries are read-only, for agents too, until the user reopens it. The code calls it a locked week.
@@ -227,7 +231,7 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team, project source or sign-in. When a plugin provides more than one of backlog, code host, calendar, team and project source, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events, Projects and Managed projects.
+An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team, project source, time sync or sign-in. When a plugin provides more than one of backlog, code host, calendar, team, project source and time sync, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events, Projects, Managed projects and Time entries.
 _Avoid_: Extension, add-on, integration, connector
 
 **Plugin source**:
@@ -249,6 +253,10 @@ _Avoid_: Backend, server, workspace, organization
 **Project source**:
 A plugin capability that provides a read-only snapshot of the user's projects, tasks, assignments and budgets from a system that holds the truth about them. Ajour never writes to it, and names it by the label the plugin gives.
 _Avoid_: The product's name (such as Chronops) in Ajour, project sync, project connector, team (that capability syncs both ways)
+
+**Time sync**:
+A plugin capability that keeps a live copy of the user's time entries in another system, both ways, on the projects its project source manages. It is not a commit: the timesheet tool gets a week only through Commit. Its switch, Time entries, starts off. See ADR 0018.
+_Avoid_: The product's name in Ajour, time push, live commit, sync (alone)
 
 **Backlog** (capability):
 A plugin capability that syncs backlog items, with their descriptions, estimates and comments, between Ajour and a source tool such as Azure DevOps, Jira or GitHub issues. Say "backlog capability" wherever the user's backlog could be meant.

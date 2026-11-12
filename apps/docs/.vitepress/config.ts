@@ -110,6 +110,7 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Calendar API", link: "/developers/calendar-api" },
       { text: "Team API", link: "/developers/team-api" },
       { text: "Project source API", link: "/developers/project-source-api" },
+      { text: "Time sync API", link: "/developers/time-sync-api" },
       { text: "Schema API", link: "/developers/schema-api" },
       { text: "Plugin source", link: "/developers/plugin-source" },
     ],
