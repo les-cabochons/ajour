@@ -192,9 +192,15 @@ export type ProjectSourceSnapshot = z.infer<typeof projectSourceSnapshotSchema>;
 
 const cursorSchema = z.string().min(1).max(2_000);
 
-/** What `syncProjects` receives: the cursor Ajour kept, absent on the first sync. */
+/**
+ * What `syncProjects` receives: the cursor Ajour kept, absent on the first
+ * sync, and what started the sync (#686). `manual` is a sync the user asked
+ * for, such as Sync now: a plugin that answers from a cache should read the
+ * source. `auto` is the scheduler's. Ajour before #686 sends no trigger.
+ */
 export const projectSourceSyncRequestSchema = z.object({
   cursor: cursorSchema.optional(),
+  trigger: z.enum(["manual", "auto"]).optional(),
 });
 export type ProjectSourceSyncRequest = z.infer<
   typeof projectSourceSyncRequestSchema

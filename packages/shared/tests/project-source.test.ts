@@ -288,6 +288,15 @@ describe("a project source sync", () => {
     });
   });
 
+  it("says whether the user asked for the sync, and refuses another trigger", () => {
+    expect(projectSourceSyncRequestSchema.parse({ trigger: "manual" })).toEqual(
+      { trigger: "manual" },
+    );
+    expect(
+      projectSourceSyncRequestSchema.safeParse({ trigger: "startup" }).success,
+    ).toBe(false);
+  });
+
   it("answers with a snapshot and the next cursor, or that nothing changed", () => {
     const snapshot = minimalSnapshot();
 

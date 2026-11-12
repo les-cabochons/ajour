@@ -132,7 +132,12 @@ export type DataShapeImportResult = Input<
   typeof projectDataShapeImportResponseSchema
 >;
 
-/** What `syncProjects` receives: the cursor Ajour kept from the last sync, absent on the first. */
+/**
+ * What `syncProjects` receives: the cursor Ajour kept from the last sync,
+ * absent on the first, and what started the sync. `manual` is a sync the user
+ * asked for, such as Sync now: a plugin that answers from a cache should read
+ * the source. `auto` is the scheduler's. Older Ajour versions send no trigger.
+ */
 export type ProjectSourceSyncRequest = Output<
   typeof projectSourceSyncRequestSchema
 >;
