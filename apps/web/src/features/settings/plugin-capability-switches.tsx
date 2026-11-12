@@ -17,13 +17,16 @@ const capabilityDescriptions: Record<SwitchableCapability, string> = {
   team: "Keep shared projects and tasks in step with your team.",
   projectSource:
     "Bring your projects, tasks and budgets from the system that holds them.",
+  timeSync:
+    "Keep a live copy of your time entries there, both ways. Notes stay in Ajour.",
 };
 
 /**
  * The Capabilities section of a plugin that declares more than one of a
- * backlog capability, a code host, a calendar, a team and a project source:
- * one switch each, under the plugin's own switch. Turning one off
- * pauses it and keeps its connections and data.
+ * backlog capability, a code host, a calendar, a team, a project source and
+ * a time sync: one switch each, under the plugin's own switch. Turning one
+ * off pauses it and keeps its connections and data. Time entries starts off,
+ * and the API checks each connection before it turns on.
  */
 export function PluginCapabilitySwitches({
   group,

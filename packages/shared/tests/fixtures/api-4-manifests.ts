@@ -326,3 +326,26 @@ export function projectSourceManifest(): Fixture {
     },
   };
 }
+
+/**
+ * A project source that also keeps the user's time entries in step, both
+ * ways: the time sync is on the projects the same connection manages.
+ */
+export function timeSyncManifest(): Fixture {
+  const manifest = projectSourceManifest();
+  return {
+    ...manifest,
+    id: "ajc-time-sync",
+    capabilities: { projectSource: {}, timeSync: {} },
+    network: {
+      ...manifest.network,
+      endpoints: [
+        ...manifest.network.endpoints,
+        { method: "GET", path: "/integration/time-entries" },
+        { method: "POST", path: "/integration/time-entries" },
+        { method: "PUT", path: "/integration/time-entries/*" },
+        { method: "DELETE", path: "/integration/time-entries/*" },
+      ],
+    },
+  };
+}

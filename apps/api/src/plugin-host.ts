@@ -294,6 +294,7 @@ const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   calendar: "does not provide calendar events",
   team: "does not sync a team's projects",
   projectSource: "does not provide projects from a source",
+  timeSync: "does not sync time entries",
 };
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(

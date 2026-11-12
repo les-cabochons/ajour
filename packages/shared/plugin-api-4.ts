@@ -567,10 +567,22 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
      * moves into the main manifest and runs in the shared runtime.
      */
     projectDataShape: projectDataShapeDefinitionSchema.optional(),
-    // `projectSource` (#504) comes from the shared object: API 3 refuses it,
-    // and its snapshot and sync contract are in `project-source.ts`.
+    // `projectSource` (#504) and `timeSync` (#691) come from the shared
+    // object: API 3 refuses them. Their contracts are in `project-source.ts`
+    // and `time-sync.ts`.
   })
   .superRefine((capabilities, context) => {
+    if (
+      capabilities.timeSync !== undefined &&
+      capabilities.projectSource === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timeSync"],
+        message:
+          "The timeSync capability needs projectSource: it syncs the entries on the projects the connection manages.",
+      });
+    }
     if (capabilities.team !== undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
