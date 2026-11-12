@@ -1,8 +1,10 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import type { TimeSyncRequest } from "@ajour/shared";
-import { exampleProjectSourceManifest } from "../../../../../packages/example/index.ts";
-import { runRound } from "../../../../../packages/example/plugin/time-sync.ts";
+import {
+  exampleProjectSourceManifest,
+  runExampleTimeSyncRound,
+} from "../../../../../packages/example/index.ts";
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /*
@@ -151,7 +153,7 @@ const remotes = new WeakMap<Page, { key: string; failNextChange?: string }>();
 
 /** What the page's fake remote holds now. */
 function remoteEntries(page: Page) {
-  return runRound(remotes.get(page)!.key, {
+  return runExampleTimeSyncRound(remotes.get(page)!.key, {
     from: "2000-01-01",
     to: "2100-12-31",
     timeZone: "UTC",
@@ -225,7 +227,7 @@ Given(
           await route.fulfill({ status: 502, json: { error }, headers: cors });
           return;
         }
-        const answer = runRound(remote.key, request);
+        const answer = runExampleTimeSyncRound(remote.key, request);
         await route.fulfill({
           json: {
             connection: overview("on").connectionGroups[0]!.connections[0],
