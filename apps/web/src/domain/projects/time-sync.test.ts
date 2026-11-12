@@ -11,6 +11,7 @@ import {
 } from "@/domain/projects/plugin-properties";
 import {
   applyTimeSyncRound,
+  describeTimeSyncStatus,
   entrySyncKey,
   failTimeSyncRound,
   planTimeSyncRound,
@@ -580,5 +581,78 @@ describe("starting and stopping with the plugins overview", () => {
     expect(reconcile(started, [group(true, ["c1", "c2"])])).toEqual({});
     // A plugin the overview doesn't list may still be loading.
     expect(reconcile(started, [])).toBe(started);
+  });
+});
+
+describe("the connection's status line", () => {
+  const record = (overrides: Partial<LocalTimeSync> = {}): LocalTimeSync => ({
+    pluginId: CONNECTION.pluginId,
+    startWeek: "2026-11-09",
+    startedAt: 1,
+    copies: {},
+    refusals: {},
+    ...overrides,
+  });
+  const refusal = (message: string) => ({
+    message,
+    change: "delete" as const,
+    at: 1,
+  });
+
+  it("says nothing before the first round", () => {
+    expect(describeTimeSyncStatus(undefined)).toBeUndefined();
+    expect(describeTimeSyncStatus(record())).toBeUndefined();
+  });
+
+  it("says what the last round sent, or that it is up to date", () => {
+    const round = { at: 1, synced: 2, refused: 0, failed: 0 };
+    expect(describeTimeSyncStatus(record({ lastRound: round }))).toEqual({
+      summary: "Time entries · 2 sent",
+      notes: [],
+    });
+    expect(
+      describeTimeSyncStatus(record({ lastRound: { ...round, synced: 0 } })),
+    ).toEqual({ summary: "Time entries · up to date", notes: [] });
+  });
+
+  it("counts the refusals that stand, with each message once, and the last round's failure", () => {
+    const status = describeTimeSyncStatus(
+      record({
+        lastRound: {
+          at: 1,
+          synced: 0,
+          refused: 0,
+          failed: 1,
+          failedMessage: "The planner timed out.",
+        },
+        refusals: {
+          e1: refusal("The planner refuses an entry over 24 hours."),
+          e2: refusal("The planner refuses an entry over 24 hours."),
+        },
+      }),
+    );
+
+    expect(status).toEqual({
+      summary: "Time entries · 2 refused · 1 failed",
+      notes: [
+        "The planner refuses an entry over 24 hours.",
+        "The planner timed out.",
+      ],
+    });
+  });
+
+  it("says the last sync failed, and why, until a round goes through", () => {
+    expect(
+      describeTimeSyncStatus(
+        record({
+          lastRound: { at: 1, synced: 2, refused: 0, failed: 0 },
+          error: { at: 2, message: "The planner is down." },
+        }),
+      ),
+    ).toEqual({
+      summary: "Time entries · Last sync failed",
+      error: "The planner is down.",
+      notes: [],
+    });
   });
 });

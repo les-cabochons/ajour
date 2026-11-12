@@ -556,6 +556,50 @@ export function failTimeSyncRound(
   };
 }
 
+/** What a connection's row says about its time sync. */
+export interface TimeSyncStatus {
+  /** Such as "Time entries · 2 sent" or "Time entries · up to date". */
+  summary: string;
+  /** Why the last round failed, until a round goes through. */
+  error?: string;
+  /** The messages of the refusals that stand, each once, then the last round's failure. */
+  notes: string[];
+}
+
+/**
+ * The status line of a connection's time sync: what the last round sent,
+ * the refusals that stand, and the last round's failure. Nothing before the
+ * first round.
+ */
+export function describeTimeSyncStatus(
+  record: LocalTimeSync | undefined,
+): TimeSyncStatus | undefined {
+  if (!record) return undefined;
+  const refusals = Object.values(record.refusals);
+  const messages = new Set(refusals.map((refusal) => refusal.message));
+  if (record.error) {
+    return {
+      summary: "Time entries · Last sync failed",
+      error: record.error.message,
+      notes: [...messages],
+    };
+  }
+  const round = record.lastRound;
+  if (!round) return undefined;
+  if (round.failedMessage) messages.add(round.failedMessage);
+  const parts = [
+    round.synced ? `${round.synced} sent` : undefined,
+    refusals.length ? `${refusals.length} refused` : undefined,
+    round.failed ? `${round.failed} failed` : undefined,
+  ].filter((part) => part !== undefined);
+  return {
+    summary: ["Time entries", ...(parts.length ? parts : ["up to date"])].join(
+      " · ",
+    ),
+    notes: [...messages],
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
