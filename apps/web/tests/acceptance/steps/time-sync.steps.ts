@@ -11,7 +11,7 @@ import {
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /*
- * Time sync (#691, #692, #693, #694): the example planner declares a project
+ * Time sync (#691 to #694, #696): the example planner declares a project
  * source and a time sync. A mocked local API serves it. With Time entries
  * off, it answers turning it on as the API does when the plugin refuses the
  * connection: a 400 with the connection's label and the plugin's sentence.
@@ -505,6 +505,19 @@ When(
   },
 );
 
+When(
+  "another tool changes the planner's {string} entry to {int} minutes",
+  async ({ page }, task: string, minutes: number) => {
+    const entry = remoteEntries(page).find(
+      (candidate) => candidate.taskName === task,
+    );
+    expect(entry).toBeDefined();
+    editExampleRemoteEntry(remotes.get(page)!.key, entry!.remoteId, {
+      minutes,
+    });
+  },
+);
+
 When("another tool deletes that entry in the planner", async ({ page }) => {
   const remote = remotes.get(page)!;
   deleteExampleRemoteEntry(remote.key, remote.loggedId!);
@@ -512,6 +525,18 @@ When("another tool deletes that entry in the planner", async ({ page }) => {
 
 When("I open today in the Day view", async ({ page }) => {
   await page.goto(`/time/${today()}?view=day`);
+});
+
+When("I open this week's Commit page", async ({ page }) => {
+  const now = new Date();
+  // Back to Monday: getDay() counts Sunday as 0.
+  now.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  const monday = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  await page.goto(`/time/${monday}/commit`);
 });
 
 When("I open Sync review", async ({ page }) => {
