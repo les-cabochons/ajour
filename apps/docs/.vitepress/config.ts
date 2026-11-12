@@ -34,6 +34,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Running entries", link: "/time/running-entries" },
       { text: "Time entries", link: "/time/entries" },
       { text: "Commit your week", link: "/time/commit" },
+      { text: "Time sync", link: "/time/time-sync" },
     ],
   },
   {
