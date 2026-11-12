@@ -1010,6 +1010,34 @@ describe("taking the other system's changes", () => {
     });
   });
 
+  it("reads the remote ids of entries taken on its own connection only", () => {
+    const other = { ...CONNECTION, connectionId: "c2" };
+    const globex = managedProject({
+      _id: "globex",
+      source: { ...other, remoteId: "GLOBEX-INT", syncedAt: 1 },
+    });
+    // c1 took remote entry 7 of its system; c2's system has its own 7.
+    const state = stateWith(
+      [entry("taken-on-c1", { timeSyncRemoteId: "7" })],
+      [managedProject(), globex],
+    );
+    state.timeSyncs = startTimeSync(state.timeSyncs, other, TODAY, 100);
+    const round = planTimeSyncRound(state, other, CONTEXT, 200)!;
+
+    const applied = applyTimeSyncRound(
+      state,
+      round,
+      listing(remoteEntry("7", { projectRemoteId: "GLOBEX-INT" }))(round),
+      CONTEXT,
+      factoriesAt(300),
+    );
+
+    expect(entriesOf(applied.state)).toEqual([
+      entry("taken-on-c1", { timeSyncRemoteId: "7" }),
+      expect.objectContaining({ projectId: "globex", timeSyncRemoteId: "7" }),
+    ]);
+  });
+
   it("finds the task by the name it commits as, then by its own name, else adds a Not known yet task once", () => {
     const workday: PropertyPlugins = {
       projects: [],

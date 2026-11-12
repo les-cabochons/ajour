@@ -427,17 +427,18 @@ function createReader(
       ? record.copies[syncKey]
       : undefined;
     const values = entry ? valuesOf(entry, copy !== undefined) : undefined;
-    // An entry taken from there, whose copy went with Time entries off,
-    // still names its remote entry, so Ajour's values go to it.
-    const known = copy
-      ? { remoteId: copy.remoteId, agreed: copy.agreed }
-      : entry?.timeSyncRemoteId
-        ? { remoteId: entry.timeSyncRemoteId }
-        : {};
+    const known = copy ? { remoteId: copy.remoteId, agreed: copy.agreed } : {};
     if (values) {
+      // An entry taken from there, whose copy went with Time entries off,
+      // still names its remote entry, so Ajour's values go to it. It takes
+      // part, so its project is this connection's, and so is the id.
+      const remote =
+        !copy && entry?.timeSyncRemoteId
+          ? { remoteId: entry.timeSyncRemoteId }
+          : {};
       return copy && sameEntryValues(copy.agreed, values)
         ? undefined
-        : { kind: "upsert", syncKey, ...known, values };
+        : { kind: "upsert", syncKey, ...known, ...remote, values };
     }
     return copy ? { kind: "delete", syncKey, ...known } : undefined;
   };
@@ -924,11 +925,19 @@ function takeListing(
     copies[syncKey] = copyOf(entry._id, remote);
   }
 
+  // Remote ids are this connection's: another system may use the same.
+  const managedHere = new Set(
+    current.projects
+      .filter((project) => values.isManagedHere(project))
+      .map((project) => project._id),
+  );
   const known = new Set([
     ...Object.values(copies).map((copy) => copy.remoteId),
     // Taken before, by a time sync since turned off and on.
     ...current.timesheetEntries.flatMap((item) =>
-      item.timeSyncRemoteId ? [item.timeSyncRemoteId] : [],
+      item.timeSyncRemoteId && item.projectId && managedHere.has(item.projectId)
+        ? [item.timeSyncRemoteId]
+        : [],
     ),
   ]);
   // A delete synced this round, should the listing still show it.
