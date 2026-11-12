@@ -1185,6 +1185,65 @@ describe("taking the other system's changes", () => {
     });
   });
 
+  it("dates a waiting change from the round that first saw it, so a later edit there wins", () => {
+    const keys = Array.from(
+      { length: 21 },
+      (_, index) => `e${String(index).padStart(2, "0")}`,
+    );
+    const agreed = {
+      localDate: TODAY,
+      minutes: 90,
+      running: false,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+      taskRemoteId: "1001",
+    };
+    const synced = stateWith(keys.map((key) => entry(key)));
+    recordIn(synced).copies = Object.fromEntries(
+      keys.map((key) => [
+        key,
+        {
+          remoteId: `remote-${key}`,
+          agreed,
+          remoteUpdatedAt: "2026-11-12T14:00:00.000Z",
+        },
+      ]),
+    );
+    const edited = {
+      ...synced,
+      timesheetEntries: keys.map((key) =>
+        entry(key, { durationMs: 2 * 60 * MINUTE }),
+      ),
+    };
+    // Planned at 14:30 with 21 changes: e20 waits. Edited there at 15:00,
+    // answered at 16:00.
+    const round = {
+      ...plan(edited),
+      plannedAt: Date.parse("2026-11-12T14:30:00.000Z"),
+    };
+    expect(round.waiting).toBe(1);
+    const answer = syncEverything(round);
+    answer.entries.push(
+      remoteEntry("remote-e20", {
+        clientRef: "e20",
+        minutes: 45,
+        taskRemoteId: "1001",
+      }),
+    );
+
+    const applied = applyTimeSyncRound(
+      edited,
+      round,
+      answer,
+      CONTEXT,
+      factoriesAt(Date.parse("2026-11-12T16:00:00.000Z")),
+    );
+
+    expect(
+      entriesOf(applied.state).find((item) => item._id === "e20"),
+    ).toMatchObject({ durationMs: 45 * MINUTE });
+  });
+
   it("never reads an entry as deleted while its change of the round failed or was refused", () => {
     const synced = runRound(stateWith([entry("e1"), entry("e2")])).state;
     const edited = {

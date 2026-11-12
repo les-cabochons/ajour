@@ -478,6 +478,12 @@ export interface TimeSyncPlan {
   request: TimeSyncRequest;
   /** Changes beyond this round's limit, for the next round. */
   waiting: number;
+  /**
+   * The copied entries that differed from their copy at planning, sent or
+   * not. Their change is no newer than `plannedAt`, which a conflict reads
+   * when the copy has no `changedAt` yet.
+   */
+  changedAtPlanning: string[];
 }
 
 /**
@@ -496,19 +502,20 @@ export function planTimeSyncRound(
   const record = recordOf(state.timeSyncs, connection);
   if (!record) return undefined;
   const reader = createReader(state, connection, record, context, now);
-  const changes = [...reader.syncKeys()]
-    .flatMap((syncKey) => {
-      const change = reader.changeFor(syncKey);
-      return change &&
+  const pending = [...reader.syncKeys()].flatMap((syncKey) => {
+    const change = reader.changeFor(syncKey);
+    return change ? [change] : [];
+  });
+  const changes = pending
+    .filter(
+      (change) =>
         !isRefused(
-          Object.hasOwn(record.refusals, syncKey)
-            ? record.refusals[syncKey]
+          Object.hasOwn(record.refusals, change.syncKey)
+            ? record.refusals[change.syncKey]
             : undefined,
           change,
-        )
-        ? [change]
-        : [];
-    })
+        ),
+    )
     .sort(
       (left, right) =>
         dayOf(left).localeCompare(dayOf(right)) ||
@@ -531,6 +538,9 @@ export function planTimeSyncRound(
       changes: changes.slice(0, TIME_SYNC_MAX_CHANGES),
     },
     waiting: Math.max(0, changes.length - TIME_SYNC_MAX_CHANGES),
+    changedAtPlanning: pending
+      .filter((change) => Object.hasOwn(record.copies, change.syncKey))
+      .map((change) => change.syncKey),
   };
 }
 
@@ -753,6 +763,7 @@ function takeListing(
     remote.localDate <= context.today &&
     !isDateLocked(state, remote.localDate);
   const reader = createReader(state, connection, record, context, now);
+  const changedAtPlanning = new Set(plan.changedAtPlanning);
   /** The saved entries by sync key. */
   const saved = new Map(
     state.timesheetEntries.map((entry) => [entrySyncKey(entry), entry]),
@@ -837,8 +848,12 @@ function takeListing(
     }
     // Ajour deleted it, or it stopped taking part: the delete wins.
     if (deletedHere) continue;
-    // Both changed: Ajour's change wins when it is the later one.
-    if (local && (copy.changedAt ?? now) >= Date.parse(remote.updatedAt)) {
+    // Both changed: Ajour's change wins when it is the later one. One seen
+    // first at this round's planning is no newer than it; one made since,
+    // no newer than now.
+    const localAt =
+      copy.changedAt ?? (changedAtPlanning.has(syncKey) ? plan.plannedAt : now);
+    if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
     }
