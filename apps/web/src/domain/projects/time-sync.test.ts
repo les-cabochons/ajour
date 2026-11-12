@@ -12,6 +12,7 @@ import {
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
 import {
+  entrySyncKey,
   normalizeTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
@@ -20,7 +21,6 @@ import {
   applyTimeSyncRound,
   describeTimeSyncHoldReason,
   describeTimeSyncStatus,
-  entrySyncKey,
   failTimeSyncRound,
   normalizeTimeSyncs,
   planTimeSyncRound,
@@ -1547,19 +1547,16 @@ describe("taking the other system's changes", () => {
     expect(Object.keys(recordIn(after).copies)).toEqual(["old"]);
   });
 
-  it("leaves a remote running entry for later: not taken, and not an edit or a delete", () => {
+  it("leaves a saved entry that runs again there as it is: not an edit, and not a new running entry", () => {
     const synced = runRound(stateWith([entry("e1")])).state;
-    const running = { running: true, countingSince: LATER };
 
     const { state, result } = runRound(
       synced,
-      listing(
-        remoteE1({ ...running, minutes: 120 }),
-        remoteEntry("timer-elsewhere", running),
-      ),
+      listing(remoteE1({ running: true, countingSince: LATER, minutes: 120 })),
     );
 
     expect(entriesOf(state)).toEqual([entry("e1")]);
+    expect(state.timers).toEqual([]);
     expect(recordIn(state).copies.e1?.remoteUpdatedAt).toBe(
       "2026-11-12T14:00:00.000Z",
     );
@@ -1822,6 +1819,525 @@ describe("a submitted week", () => {
     const deleted = runRound(reopened, listing());
     expect(entriesOf(deleted.state)).toEqual([]);
     expect(deleted.result).toMatchObject({ received: 1, putBack: 0 });
+  });
+});
+
+/*
+ * A running entry started in another tool, such as a timer on a work item
+ * (#695). It becomes Ajour's running entry, and Ajour's own is saved at the
+ * instant the other one started, so the user has one running entry across
+ * both tools. Ajour's running entry t1 starts at 15:00.
+ */
+describe("a running entry from the other system", () => {
+  const NOW = Date.parse("2026-11-12T15:00:00.000Z");
+  const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
+
+  /** Ajour's running entry t1, on Ticket #101 - Login since 15:00. */
+  function t1(overrides: Partial<LocalTimer> = {}): LocalTimer {
+    return {
+      _id: "t1",
+      startedAt: NOW,
+      localDate: TODAY,
+      projectId: "acme",
+      taskId: "login",
+      note: "Fixed the redirect for ACME",
+      accumulatedDurationMs: 0,
+      ...overrides,
+    };
+  }
+
+  function running(timer: LocalTimer = t1()): TimeSyncState {
+    return { ...stateWith([]), timers: [timer] };
+  }
+
+  /** Ids that differ from one round to the next, and a clock that reads `now`. */
+  function factoriesFor(now: number) {
+    let next = 0;
+    return {
+      createId: (prefix: string) => `${prefix}-at-${now - NOW}-${++next}`,
+      now: () => now,
+    };
+  }
+
+  /** Plans a round at `now`, has `answer` answer it, and applies it. */
+  function roundAt(
+    state: TimeSyncState,
+    now: number,
+    answer: (round: TimeSyncPlan) => TimeSyncResult,
+  ) {
+    const round = planTimeSyncRound(state, CONNECTION, CONTEXT, now)!;
+    const applied = applyTimeSyncRound(
+      state,
+      round,
+      answer(round),
+      CONTEXT,
+      factoriesFor(now),
+    );
+    return { round, ...applied };
+  }
+
+  const changesAt = (state: TimeSyncState, now: number) =>
+    planTimeSyncRound(state, CONNECTION, CONTEXT, now)!.request.changes;
+
+  /** t1 sent at 15:01, as remote-1. */
+  function sent() {
+    return roundAt(running(), NOW + MINUTE, (round) => syncEverything(round))
+      .state;
+  }
+
+  /** t1 as the other system lists it once sent, with `overrides`. */
+  function t1There(overrides: Partial<TimeSyncRemoteEntry> = {}) {
+    return remoteEntry("remote-1", {
+      clientRef: "t1",
+      minutes: 1,
+      running: true,
+      countingSince: at(0),
+      taskRemoteId: "1001",
+      updatedAt: "2026-11-12T14:00:00.000Z",
+      ...overrides,
+    });
+  }
+
+  /** t1 stopped there at 15:25, with 25 minutes. */
+  const t1StoppedThere = () =>
+    t1There({
+      running: false,
+      countingSince: undefined,
+      minutes: 25,
+      updatedAt: at(25 * MINUTE),
+    });
+
+  /** A timer another tool started on Ad hoc support, `offsetMs` after 15:00. */
+  function timerElsewhere(offsetMs: number, remoteId = "elsewhere") {
+    return remoteEntry(remoteId, {
+      running: true,
+      countingSince: at(offsetMs),
+      minutes: 0,
+      taskName: "ad hoc  SUPPORT",
+      updatedAt: at(offsetMs),
+    });
+  }
+
+  /**
+   * The other system as these tests drive it. It keeps one running entry per
+   * person, so a timer started there, or a running entry Ajour sends, stops
+   * the one running before at that instant. It answers a round as the
+   * example planner does, and lists every entry.
+   */
+  function oneRunningEntryRemote() {
+    const entries = new Map<string, TimeSyncRemoteEntry>();
+    let nextId = 1;
+    const stopRunning = (instant: number, except?: string) => {
+      for (const listed of entries.values()) {
+        if (!listed.running || listed.remoteId === except) continue;
+        const { countingSince, ...rest } = listed;
+        entries.set(listed.remoteId, {
+          ...rest,
+          running: false,
+          minutes: Math.round((instant - Date.parse(countingSince!)) / MINUTE),
+          updatedAt: new Date(instant).toISOString(),
+        });
+      }
+    };
+    return {
+      /** What runs there now. */
+      running: () => [...entries.values()].filter((listed) => listed.running),
+      /** Another tool starts a timer on Ad hoc support. Returns its id. */
+      start(offsetMs: number) {
+        stopRunning(NOW + offsetMs);
+        const remoteId = `elsewhere-${nextId++}`;
+        entries.set(remoteId, timerElsewhere(offsetMs, remoteId));
+        return remoteId;
+      },
+      /** Answers a round sent at `now`. */
+      answer: (now: number) => (round: TimeSyncPlan) => {
+        const updatedAt = new Date(now).toISOString();
+        const results = round.request.changes.map((change) => {
+          const existing =
+            (change.remoteId && entries.get(change.remoteId)) ||
+            [...entries.values()].find(
+              (listed) => listed.clientRef === change.syncKey,
+            );
+          if (change.kind === "delete") {
+            if (existing) entries.delete(existing.remoteId);
+            return { syncKey: change.syncKey, status: "synced" as const };
+          }
+          const remoteId = existing ? existing.remoteId : `remote-${nextId++}`;
+          if (change.values.running) stopRunning(now, remoteId);
+          const clientRef = existing ? existing.clientRef : change.syncKey;
+          const stored: TimeSyncRemoteEntry = {
+            remoteId,
+            ...(clientRef ? { clientRef } : {}),
+            ...change.values,
+            updatedAt,
+          };
+          entries.set(remoteId, stored);
+          return {
+            syncKey: change.syncKey,
+            status: "synced" as const,
+            entry: stored,
+          };
+        });
+        return { results, entries: [...entries.values()] };
+      },
+    };
+  }
+
+  it("makes a timer started there the running entry while Ajour has none, counting from its start, with a copy that sends nothing back", () => {
+    const { state, result } = roundAt(
+      stateWith([]),
+      NOW + 2 * MINUTE,
+      listing(timerElsewhere(0)),
+    );
+
+    expect(state.timers).toEqual([
+      expect.objectContaining({
+        localDate: TODAY,
+        startedAt: NOW,
+        accumulatedDurationMs: 0,
+        projectId: "acme",
+        taskId: "ad-hoc",
+        timeSyncRemoteId: "elsewhere",
+      }),
+    ]);
+    expect(state.timers[0]?.note).toBeUndefined();
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).copies[state.timers[0]!._id]).toEqual({
+      remoteId: "elsewhere",
+      agreed: expect.objectContaining({
+        running: true,
+        countingSince: at(0),
+        taskName: "Ad hoc support",
+      }),
+      remoteUpdatedAt: at(0),
+    });
+    expect(result).toMatchObject({ received: 1, held: 0 });
+    expect(changesAt(state, NOW + 10 * MINUTE)).toEqual([]);
+  });
+
+  it("saves Ajour's running entry with the minutes it ran until the other one started, and sends its stop", () => {
+    // A system that lists both as running: Ajour's started first.
+    const { state } = roundAt(
+      sent(),
+      NOW + 21 * MINUTE,
+      listing(t1There(), timerElsewhere(20 * MINUTE)),
+    );
+
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({
+        syncKey: "t1",
+        taskId: "login",
+        durationMs: 20 * MINUTE,
+        note: "Fixed the redirect for ACME",
+      }),
+    ]);
+    expect(state.timers).toEqual([
+      expect.objectContaining({
+        startedAt: NOW + 20 * MINUTE,
+        taskId: "ad-hoc",
+      }),
+    ]);
+    expect(changesAt(state, NOW + 21 * MINUTE + 2_000)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "t1",
+        remoteId: "remote-1",
+        values: expect.objectContaining({ running: false, minutes: 20 }),
+      }),
+    ]);
+
+    // One that never went there, on a Local only task, stays in Ajour.
+    const kept = roundAt(
+      running(t1({ taskId: "mine" })),
+      NOW + MINUTE,
+      listing(timerElsewhere(40_000)),
+    ).state;
+    expect(entriesOf(kept)).toEqual([
+      expect.objectContaining({ taskId: "mine", durationMs: 40_000 }),
+    ]);
+    expect(changesAt(kept, NOW + MINUTE + 2_000)).toEqual([]);
+  });
+
+  it("keeps Ajour's running entry when it started after the other one, which stops once Ajour's goes there", () => {
+    const remote = oneRunningEntryRemote();
+    remote.start(0);
+    const later = running(t1({ startedAt: NOW + 10 * MINUTE }));
+
+    // Ten seconds in, Ajour's entry hasn't gone there yet.
+    const first = roundAt(
+      later,
+      NOW + 10 * MINUTE + 10_000,
+      remote.answer(NOW + 10 * MINUTE + 10_000),
+    );
+    expect(first.state.timers).toEqual(later.timers);
+    expect(entriesOf(first.state)).toEqual([]);
+    expect(first.result).toMatchObject({ received: 0, held: 0 });
+
+    // Once it goes, the other system stops its own, and Ajour takes that one
+    // as a saved entry.
+    const second = roundAt(
+      first.state,
+      NOW + 10 * MINUTE + 40_000,
+      remote.answer(NOW + 10 * MINUTE + 40_000),
+    );
+    expect(second.state.timers).toEqual(later.timers);
+    expect(entriesOf(second.state)).toEqual([
+      expect.objectContaining({ taskId: "ad-hoc", durationMs: 11 * MINUTE }),
+    ]);
+    expect(remote.running()).toEqual([
+      expect.objectContaining({ clientRef: "t1" }),
+    ]);
+  });
+
+  it("stops Ajour's running entry with the minutes the other system stopped it at", () => {
+    const { state, result } = roundAt(
+      sent(),
+      NOW + 26 * MINUTE,
+      listing(t1StoppedThere()),
+    );
+
+    expect(state.timers).toEqual([]);
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({
+        syncKey: "t1",
+        taskId: "login",
+        durationMs: 25 * MINUTE,
+        note: "Fixed the redirect for ACME",
+      }),
+    ]);
+    expect(recordIn(state).copies.t1).toEqual({
+      remoteId: "remote-1",
+      agreed: expect.objectContaining({ running: false, minutes: 25 }),
+      remoteUpdatedAt: at(25 * MINUTE),
+    });
+    expect(result).toMatchObject({ received: 1 });
+    expect(changesAt(state, NOW + 27 * MINUTE)).toEqual([]);
+  });
+
+  describe("when Ajour changed its running entry too", () => {
+    /** t1 moved to Ad hoc support in Ajour, first seen at `changedAt`, and stopped there at 15:25. */
+    function stoppedThereAfterEdit(changedAt: number) {
+      const synced = sent();
+      const record = recordIn(synced);
+      const edited: TimeSyncState = {
+        ...synced,
+        timers: [t1({ taskId: "ad-hoc" })],
+        timeSyncs: {
+          [CONNECTION.connectionId]: {
+            ...record,
+            copies: { t1: { ...record.copies.t1!, changedAt } },
+          },
+        },
+      };
+      // Planned before the edit, so the edit waits for the next round.
+      const round = planTimeSyncRound(
+        synced,
+        CONNECTION,
+        CONTEXT,
+        NOW + 26 * MINUTE,
+      )!;
+      return applyTimeSyncRound(
+        edited,
+        round,
+        listing(t1StoppedThere())(round),
+        CONTEXT,
+        factoriesFor(NOW + 31 * MINUTE),
+      );
+    }
+
+    it("keeps it running when Ajour's change is the later one, and sends it", () => {
+      const { state } = stoppedThereAfterEdit(NOW + 30 * MINUTE);
+
+      expect(state.timers).toEqual([t1({ taskId: "ad-hoc" })]);
+      expect(entriesOf(state)).toEqual([]);
+      expect(changesAt(state, NOW + 32 * MINUTE)).toEqual([
+        expect.objectContaining({
+          syncKey: "t1",
+          values: expect.objectContaining({
+            running: true,
+            taskName: "Ad hoc support",
+          }),
+        }),
+      ]);
+    });
+
+    it("stops it with the other system's values when the stop there is the later one", () => {
+      const { state } = stoppedThereAfterEdit(NOW + 20 * MINUTE);
+
+      expect(state.timers).toEqual([]);
+      expect(entriesOf(state)).toEqual([
+        expect.objectContaining({
+          syncKey: "t1",
+          taskId: "login",
+          durationMs: 25 * MINUTE,
+        }),
+      ]);
+      expect(changesAt(state, NOW + 32 * MINUTE)).toEqual([]);
+    });
+  });
+
+  it("holds a running entry that started there before today, then takes it as a saved entry once it stops", () => {
+    const yesterday = "2026-11-11";
+    const overnight = remoteEntry("overnight", {
+      localDate: yesterday,
+      running: true,
+      countingSince: "2026-11-11T22:00:00.000Z",
+      minutes: 17 * 60,
+      updatedAt: "2026-11-11T22:00:00.000Z",
+    });
+
+    const { state, result } = roundAt(
+      running(),
+      NOW + 10_000,
+      listing(overnight),
+    );
+    expect(state.timers).toEqual([t1()]);
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).held).toEqual([
+      {
+        remoteId: "overnight",
+        localDate: yesterday,
+        minutes: 17 * 60,
+        projectRemoteId: "ACME-SUP",
+        taskName: "Ticket #101 - Login",
+        reason: "startedBeforeToday",
+      },
+    ]);
+    expect(result).toMatchObject({ received: 0, held: 1 });
+    expect(describeTimeSyncHoldReason("startedBeforeToday")).toBe(
+      "It has run there since before today. Ajour takes it once it stops.",
+    );
+
+    const stopped = roundAt(
+      state,
+      NOW + 20 * MINUTE,
+      listing({
+        ...overnight,
+        running: false,
+        countingSince: undefined,
+        minutes: 17 * 60 + 30,
+        updatedAt: at(-30 * MINUTE),
+      }),
+    ).state;
+    expect(stopped.timers).toEqual([t1()]);
+    expect(entriesOf(stopped)).toEqual([
+      expect.objectContaining({
+        localDate: yesterday,
+        taskId: "login",
+        durationMs: (17 * 60 + 30) * MINUTE,
+        timeSyncRemoteId: "overnight",
+      }),
+    ]);
+    expect(recordIn(stopped).held).toEqual([]);
+  });
+
+  it("holds a timer started there in a submitted week, as an entry logged there, and takes it once the week is reopened", () => {
+    const submitted: TimeSyncState = {
+      ...stateWith([]),
+      lockedWeeks: [{ weekOf: "2026-11-09", lockedAt: 400 }],
+    };
+
+    const { state, result } = roundAt(
+      submitted,
+      NOW + 2 * MINUTE,
+      listing(timerElsewhere(0)),
+    );
+    expect(state.timers).toEqual([]);
+    expect(recordIn(state).held).toEqual([
+      expect.objectContaining({
+        remoteId: "elsewhere",
+        reason: "submittedWeek",
+      }),
+    ]);
+    expect(result).toMatchObject({ received: 0, held: 1 });
+
+    const reopened = roundAt(
+      { ...state, lockedWeeks: [] },
+      NOW + 3 * MINUTE,
+      listing(timerElsewhere(0)),
+    ).state;
+    expect(reopened.timers).toEqual([
+      expect.objectContaining({
+        startedAt: NOW,
+        timeSyncRemoteId: "elsewhere",
+      }),
+    ]);
+    expect(recordIn(reopened).held).toEqual([]);
+  });
+
+  it("settles after a takeover: Ajour and the other system never take the running entry back and forth", () => {
+    const remote = oneRunningEntryRemote();
+    let state = roundAt(
+      running(),
+      NOW + MINUTE,
+      remote.answer(NOW + MINUTE),
+    ).state;
+
+    // Another tool starts a timer at 15:20, which stops t1 there.
+    const elsewhere = remote.start(20 * MINUTE);
+    state = roundAt(
+      state,
+      NOW + 20 * MINUTE + 30_000,
+      remote.answer(NOW + 20 * MINUTE + 30_000),
+    ).state;
+    const [taken] = state.timers;
+    expect(taken).toMatchObject({
+      startedAt: NOW + 20 * MINUTE,
+      taskId: "ad-hoc",
+    });
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({ syncKey: "t1", durationMs: 20 * MINUTE }),
+    ]);
+
+    const quiet = (minutes: number) => {
+      const next = roundAt(
+        state,
+        NOW + minutes * MINUTE,
+        remote.answer(NOW + minutes * MINUTE),
+      );
+      expect(next.round.request.changes).toEqual([]);
+      expect(next.result).toMatchObject({ synced: 0, received: 0 });
+      state = next.state;
+    };
+    quiet(21);
+    quiet(22);
+    expect(state.timers).toEqual([taken]);
+    expect(remote.running()).toEqual([
+      expect.objectContaining({ remoteId: elsewhere }),
+    ]);
+
+    // A switch in Ajour right after goes there as any switch does, and
+    // settles too.
+    state = startTimer(
+      state,
+      { projectId: "acme", taskId: "login" },
+      TODAY,
+      factoriesFor(NOW + 23 * MINUTE),
+    );
+    const switched = roundAt(
+      state,
+      NOW + 23 * MINUTE + 2_000,
+      remote.answer(NOW + 23 * MINUTE + 2_000),
+    );
+    expect(switched.round.request.changes).toEqual([
+      expect.objectContaining({
+        syncKey: taken!._id,
+        remoteId: elsewhere,
+        values: expect.objectContaining({ running: false, minutes: 3 }),
+      }),
+      expect.objectContaining({
+        values: expect.objectContaining({ running: true }),
+      }),
+    ]);
+    expect(switched.result).toMatchObject({ received: 0 });
+    state = switched.state;
+    const [mine] = state.timers;
+    quiet(24);
+    quiet(25);
+    expect(state.timers).toEqual([mine]);
+    expect(remote.running()).toEqual([
+      expect.objectContaining({ clientRef: mine!._id }),
+    ]);
   });
 });
 

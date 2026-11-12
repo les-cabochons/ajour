@@ -188,10 +188,16 @@ export interface LocalTimeSyncRefusal {
  * `unmanagedProject`, its project isn't one this connection manages;
  * `localOnlyProject` and `localOnlyTask`, it would land on time the user
  * keeps local, which never takes part; `submittedWeek`, its day is in a
- * submitted week, until the user reopens it (#696).
+ * submitted week, until the user reopens it (#696); `startedBeforeToday`,
+ * it runs there since a day before today, while Ajour's running entry is
+ * always on today (#695). Ajour takes that one once it stops.
  */
 export type TimeSyncHoldReason =
-  "unmanagedProject" | "localOnlyProject" | "localOnlyTask" | "submittedWeek";
+  | "unmanagedProject"
+  | "localOnlyProject"
+  | "localOnlyTask"
+  | "submittedWeek"
+  | "startedBeforeToday";
 
 /** An entry of the other system that Ajour holds, as it was listed. */
 export interface LocalTimeSyncHold {
@@ -433,9 +439,15 @@ export interface LocalTimer {
   entryId?: string;
   /**
    * The time sync key, when it is not `_id`: a Continue on today's entry
-   * keeps that entry's key. See `entrySyncKey` in domain/projects/time-sync.ts.
+   * keeps that entry's key. See `entrySyncKey` in domain/time/timesheet-entry.ts.
    */
   syncKey?: string;
+  /**
+   * The other system's id for a running entry a time sync took from there
+   * (#695). The entry it saves as keeps it, as `LocalTimesheetEntry`'s
+   * `timeSyncRemoteId` says.
+   */
+  timeSyncRemoteId?: string;
 }
 
 /** What starting a running entry needs. It has no date: a running entry always starts today. */
@@ -448,6 +460,8 @@ export interface LocalTimerDraft {
   entryId?: string;
   /** The time sync key of the entry it resumes. See `LocalTimer.syncKey`. */
   syncKey?: string;
+  /** The other system's id of the running entry it is. See `LocalTimer.timeSyncRemoteId`. */
+  timeSyncRemoteId?: string;
 }
 
 /**
@@ -522,11 +536,12 @@ export interface LocalTimesheetEntry {
    * The time sync key, when it is not `_id`. An entry saved from a running
    * entry keeps the running entry's key, so the other system sees a stop,
    * not a delete and a new entry. It never changes after that. See
-   * `entrySyncKey` in domain/projects/time-sync.ts.
+   * `entrySyncKey` in domain/time/timesheet-entry.ts.
    */
   syncKey?: string;
   /**
-   * The other system's id for an entry a time sync took from there (#694).
+   * The other system's id for an entry a time sync took from there (#694),
+   * or saved from a running entry it took there (#695).
    * It outlives the synced copy, so turning Time entries off and on updates
    * that entry instead of adding another. Its project belongs to one
    * connection, so one id is enough.

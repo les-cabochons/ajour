@@ -1,6 +1,7 @@
 import type {
   LocalAppState,
   LocalProject,
+  LocalTimer,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
 import {
@@ -57,6 +58,21 @@ export type TimesheetEntryState = Pick<
   | "timers"
   | "workItems"
 >;
+
+/**
+ * The time sync key of a saved or running entry: the one rule. The other
+ * system keeps it as its client reference, so it lives in the entry itself
+ * and outlives Time entries going off and on. It is the stored key, else
+ * the id. A running entry and the entry it saves as share one: Stop hands
+ * the running entry's key to a new entry, and a Continue on today's entry
+ * keeps that entry's key (domain/time/timer-transitions.ts). The time sync
+ * rules read it (domain/projects/time-sync.ts).
+ */
+export function entrySyncKey(
+  entry: Pick<LocalTimesheetEntry | LocalTimer, "_id" | "syncKey">,
+) {
+  return entry.syncKey ?? entry._id;
+}
 
 function hasOwn<T extends object>(value: T, key: PropertyKey) {
   return Object.prototype.hasOwnProperty.call(value, key);

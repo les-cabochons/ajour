@@ -6,13 +6,20 @@ import type {
 } from "@/domain/local-state";
 import {
   createTimesheetEntry,
+  entrySyncKey,
   keepTimesheetEntryCommit,
   type TimesheetEntryFactories,
+  type TimesheetEntryState,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
-import { entrySyncKey } from "@/domain/projects/time-sync";
 
 export type TimerFactories = TimesheetEntryFactories;
+
+/**
+ * The part of the state Start and Stop read and write, so a domain module
+ * that holds only these, such as the time sync, can call them.
+ */
+export type TimerState = TimesheetEntryState;
 
 /** What Save writes to the running entry. It keeps running. */
 export interface RunningEntryEdit {
@@ -47,6 +54,10 @@ export function normalizeTimer(
     ...(typeof timer.syncKey === "string" && timer.syncKey
       ? { syncKey: timer.syncKey }
       : {}),
+    ...(typeof timer.timeSyncRemoteId === "string" &&
+    timer.timeSyncRemoteId.trim()
+      ? { timeSyncRemoteId: timer.timeSyncRemoteId }
+      : {}),
   };
 }
 
@@ -66,6 +77,9 @@ function createTimer(
     accumulatedDurationMs: timer.accumulatedDurationMs ?? 0,
     entryId: timer.entryId,
     ...(timer.syncKey ? { syncKey: timer.syncKey } : {}),
+    ...(timer.timeSyncRemoteId
+      ? { timeSyncRemoteId: timer.timeSyncRemoteId }
+      : {}),
   };
 }
 
@@ -75,12 +89,12 @@ function createTimer(
  * starts at the same instant, without a prompt (Switch). `accumulatedDurationMs` is
  * the time typed in Hours: the entry counts on from it.
  */
-export function startTimer(
-  state: LocalAppState,
+export function startTimer<State extends TimerState>(
+  state: State,
   timer: LocalTimerDraft,
   today: string,
   factories: TimerFactories,
-): LocalAppState {
+): State {
   if (state.timers.length > 1) {
     return state;
   }
@@ -174,11 +188,16 @@ export function cancelTimer(
   };
 }
 
-export function saveTimer(
-  state: LocalAppState,
+/**
+ * Stops the running entry and saves it, with the time counted up to now. A
+ * new entry takes the running entry's time sync key, and the remote id of a
+ * running entry a time sync took. A resumed entry keeps its own.
+ */
+export function saveTimer<State extends TimerState>(
+  state: State,
   timerId: string,
   factories: TimerFactories,
-): LocalAppState {
+): State {
   const timer = state.timers.find((item) => item._id === timerId);
   if (!timer) {
     return state;
@@ -213,6 +232,8 @@ export function saveTimer(
   if (existingEntry) {
     entry.committedAt = existingEntry.committedAt;
     entry.usedAt = factories.now();
+  } else if (timer.timeSyncRemoteId) {
+    entry.timeSyncRemoteId = timer.timeSyncRemoteId;
   }
   const revertedWorkItems = existingEntry
     ? applyLoggedTimeToWorkItems(state.workItems, {
