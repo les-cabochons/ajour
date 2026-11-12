@@ -60,7 +60,14 @@ Ajour finds the task by the name your commit would use, then by the task's own n
 
 If an entry changed on both sides before Ajour checked, the later change wins, and a delete wins over an edit. When you turn **Time entries** on, Ajour's values win for the entries it already has.
 
-A running entry started in another tool stays as it is for now.
+### A timer started in another tool
+
+You have one running entry across both tools, so the same minutes never count twice.
+
+- A timer you start in another tool, such as on a work item, becomes your running entry in Ajour within a minute, on its project and task. Its time counts from when you started it there.
+- If an entry was running in Ajour, Ajour saves it with the time it ran until the other timer started.
+- If you start an entry in Ajour after that timer, your entry in Ajour wins. The other system stops its timer once your entry shows there, and Ajour takes the stopped one as a saved entry.
+- Stop your running entry in the other tool, and Ajour stops it too, with the time it has there.
 
 ### Submitted weeks
 
@@ -68,13 +75,13 @@ A week you [submitted](/time/commit) stays as you committed it, so your timeshee
 
 - An edit there to one of its entries is put back: about 2 seconds after Ajour sees it, Ajour sends its own values over it. So is an edit that moves an entry into the week.
 - A delete there is put back too: Ajour creates the entry again.
-- An entry logged there in that week is held, and **Sync review** lists it with "The week is submitted. Reopen it to take this entry." Reopen the week, and Ajour takes it within a minute.
+- An entry logged there in that week, or a timer started there while the week is submitted, is held, and **Sync review** lists it with "The week is submitted. Reopen it to take this entry." Reopen the week, and Ajour takes it within a minute.
 
 If the other system refuses to take Ajour's values back, the connection shows its reason, and Ajour leaves that entry there as it is.
 
 ### Held entries
 
-Ajour doesn't take an entry logged there on a project the connection doesn't manage, on a **Local only** project or task, or in a week you submitted. It holds it instead, and **Settings › Sync review** lists it with its day, the project's code, its task, its duration and why. Nothing there changes it: the list follows the other system, so an entry leaves it once Ajour can take it.
+Ajour doesn't take an entry logged there on a project the connection doesn't manage, on a **Local only** project or task, or in a week you submitted. It doesn't take a timer there that started before today either, since your running entry in Ajour is always on today: once it stops, Ajour takes it as a saved entry. Ajour holds these entries instead, and **Settings › Sync review** lists each one with its day, the project's code, its task, its duration and why. Nothing there changes it: the list follows the other system, so an entry leaves it once Ajour can take it.
 
 ## On the connection
 
