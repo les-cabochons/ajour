@@ -547,6 +547,31 @@ describe("applying a round", () => {
     expect(applied.timeSyncs).toBe(restarted.timeSyncs);
   });
 
+  it("keeps no failure of a round that began before Time entries went off and on", () => {
+    const state = stateWith([entry("e1")]);
+    const round = plan(state);
+    const restarted = {
+      ...state,
+      timeSyncs: startTimeSync(
+        stopTimeSync(state.timeSyncs, CONNECTION.connectionId),
+        CONNECTION,
+        TODAY,
+        999,
+      ),
+    };
+
+    const failed = failTimeSyncRound(
+      restarted,
+      CONNECTION,
+      "The planner is down.",
+      300,
+      { plan: round, context: CONTEXT },
+    );
+
+    expect(failed).toBe(restarted.timeSyncs);
+    expect(failed[CONNECTION.connectionId]).not.toHaveProperty("error");
+  });
+
   it("sends every qualifying entry again once Time entries is back on, by the same sync keys", () => {
     const synced = runRound(stateWith([entry("e1")])).state;
     const again = {

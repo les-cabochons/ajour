@@ -542,7 +542,8 @@ export interface PlannedTimeSyncRound {
 /**
  * A round that failed as a whole changes nothing: its changes wait for the
  * next one. The connection keeps the error until a round goes through. A
- * round that got as far as its plan notes the local changes it saw.
+ * round that got as far as its plan notes the local changes it saw, unless
+ * Time entries went off and on since, and then it keeps nothing.
  */
 export function failTimeSyncRound(
   state: TimeSyncState,
@@ -552,20 +553,22 @@ export function failTimeSyncRound(
   planned?: PlannedTimeSyncRound,
 ): Record<string, LocalTimeSync> {
   const record = recordOf(state.timeSyncs, connection);
-  if (!record) return state.timeSyncs;
+  // A round planned for a time sync since stopped fails into nothing.
+  if (!record || (planned && planned.plan.startedAt !== record.startedAt)) {
+    return state.timeSyncs;
+  }
   const failed = { ...record, error: { at: now, message } };
   return {
     ...state.timeSyncs,
-    [connection.connectionId]:
-      planned && planned.plan.startedAt === record.startedAt
-        ? noteLocalChanges(
-            state,
-            connection,
-            failed,
-            planned.context,
-            planned.plan.plannedAt,
-          )
-        : failed,
+    [connection.connectionId]: planned
+      ? noteLocalChanges(
+          state,
+          connection,
+          failed,
+          planned.context,
+          planned.plan.plannedAt,
+        )
+      : failed,
   };
 }
 
