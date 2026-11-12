@@ -348,7 +348,7 @@ export function startTimeSyncRunner(
 
   /**
    * Follows the switches, forgets the connections that stopped, and starts
-   * polling with the first overview. The runner reads no overview of its
+   * the 60-second poll with the first overview. The runner reads no overview of its
    * own: the sync scheduler refreshes it every 30 seconds, and each round
    * reads a fresh one before it sends.
    */
@@ -368,7 +368,7 @@ export function startTimeSyncRunner(
         slots.delete(key);
       }
     }
-    if (first) poll();
+    if (first) pollTimer = setTimeout(poll, TIME_SYNC_POLL_INTERVAL_MS);
   };
 
   const unsubscribeOverview = subscribePluginsOverview(receive);

@@ -7,3 +7,21 @@ Feature: Time entries sync through a time sync plugin
     When I turn on time entries for the example planner
     Then Settings says "Planner: Time entries need a token that can write. This one can only read."
     And the example planner's Time entries switch is off
+
+  Scenario: An entry added, edited and deleted on a managed project reaches the planner within seconds
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I log "1:30" on "Ticket #101 - Login" today
+    Then the planner holds 90 minutes on "Ticket #101 - Login" today
+    When I change today's "Ticket #101 - Login" entry to "2:00" hours
+    Then the planner holds 120 minutes on "Ticket #101 - Login" today
+    When I open the example planner's settings
+    Then Settings says "Time entries · 1 sent"
+    When I delete today's "Ticket #101 - Login" entry
+    Then the planner holds no entry
+
+  Scenario: A failed round shows the connection's toast, and the change goes through on the next round
+    Given the example planner manages "Acme - Support", with Time entries on
+    And the planner fails the next round that brings a change with "The planner is down."
+    When I log "1:30" on "Ticket #101 - Login" today
+    Then an error toast "Planner sync failed" says "The planner is down."
+    And the planner holds 90 minutes on "Ticket #101 - Login" today
