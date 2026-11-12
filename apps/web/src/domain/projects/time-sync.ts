@@ -260,6 +260,8 @@ interface SyncSource {
   durationMs: number;
   /** Only for the running entry, in epoch milliseconds. */
   countingSince?: number;
+  /** Only for a saved entry a time sync took from there. */
+  timeSyncRemoteId?: string;
 }
 
 /** A running entry as the rules read it at `now`. */
@@ -425,7 +427,13 @@ function createReader(
       ? record.copies[syncKey]
       : undefined;
     const values = entry ? valuesOf(entry, copy !== undefined) : undefined;
-    const known = copy ? { remoteId: copy.remoteId, agreed: copy.agreed } : {};
+    // An entry taken from there, whose copy went with Time entries off,
+    // still names its remote entry, so Ajour's values go to it.
+    const known = copy
+      ? { remoteId: copy.remoteId, agreed: copy.agreed }
+      : entry?.timeSyncRemoteId
+        ? { remoteId: entry.timeSyncRemoteId }
+        : {};
     if (values) {
       return copy && sameEntryValues(copy.agreed, values)
         ? undefined
@@ -905,7 +913,13 @@ function takeListing(
     copies[syncKey] = copyOf(entry._id, remote);
   }
 
-  const known = new Set(Object.values(copies).map((copy) => copy.remoteId));
+  const known = new Set([
+    ...Object.values(copies).map((copy) => copy.remoteId),
+    // Taken before, by a time sync since turned off and on.
+    ...current.timesheetEntries.flatMap((item) =>
+      item.timeSyncRemoteId ? [item.timeSyncRemoteId] : [],
+    ),
+  ]);
   // A delete synced this round, should the listing still show it.
   for (const change of plan.request.changes) {
     if (change.kind === "delete" && change.remoteId) known.add(change.remoteId);
@@ -941,7 +955,15 @@ function takeListing(
       },
       factories,
     );
-    const created = current.timesheetEntries.at(-1)!;
+    // It keeps the remote id beyond its copy.
+    const created = {
+      ...current.timesheetEntries.at(-1)!,
+      timeSyncRemoteId: remote.remoteId,
+    };
+    current = {
+      ...current,
+      timesheetEntries: [...current.timesheetEntries.slice(0, -1), created],
+    };
     copies[entrySyncKey(created)] = copyOf(created._id, remote);
     received += 1;
   }

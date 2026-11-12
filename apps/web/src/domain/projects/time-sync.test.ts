@@ -12,6 +12,10 @@ import {
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
 import {
+  normalizeTimesheetEntry,
+  updateTimesheetEntry,
+} from "@/domain/time/timesheet-entry";
+import {
   applyTimeSyncRound,
   describeTimeSyncStatus,
   entrySyncKey,
@@ -43,6 +47,7 @@ import {
 const CONNECTION = { pluginId: "example-project-source", connectionId: "c1" };
 const TODAY = "2026-11-12";
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 
 const CONTEXT: TimeSyncContext = {
   today: TODAY,
@@ -953,6 +958,56 @@ describe("taking the other system's changes", () => {
     expect(describeTimeSyncStatus(recordIn(state))?.summary).toBe(
       "Time entries · 1 received",
     );
+  });
+
+  it("keeps the remote id of an entry it took, so Time entries off and on updates that entry instead of adding one", () => {
+    const logged = remoteEntry("logged");
+    const taken = runRound(stateWith([]), listing(logged)).state;
+    const [added] = entriesOf(taken);
+    expect(added).toMatchObject({ timeSyncRemoteId: "logged" });
+    // It survives an edit, and a reload.
+    const edited = updateTimesheetEntry(
+      taken,
+      added!._id,
+      { durationMs: HOUR },
+      factoriesAt(400),
+    );
+    const [reloaded] = edited.timesheetEntries.map((item) =>
+      normalizeTimesheetEntry(JSON.parse(JSON.stringify(item))),
+    );
+    expect(reloaded).toMatchObject({ timeSyncRemoteId: "logged" });
+    expect(
+      normalizeTimesheetEntry({ ...reloaded!, timeSyncRemoteId: 7 } as never),
+    ).not.toHaveProperty("timeSyncRemoteId");
+    const again = {
+      ...edited,
+      timesheetEntries: [reloaded!],
+      timeSyncs: startTimeSync({}, CONNECTION, TODAY, 999),
+    };
+
+    expect(plan(again).request.changes).toEqual([
+      {
+        kind: "upsert",
+        syncKey: added!._id,
+        remoteId: "logged",
+        values: expect.objectContaining({ minutes: 60 }),
+      },
+    ]);
+    // A send that fails still never takes the same entry as a new one.
+    const failed = runRound(again, (round) => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "failed" as const,
+        message: "The planner timed out.",
+      })),
+      entries: [logged],
+    })).state;
+    expect(entriesOf(failed)).toEqual([reloaded]);
+    const sent = runRound(failed).state;
+    expect(entriesOf(sent)).toEqual([reloaded]);
+    expect(recordIn(sent).copies[added!._id]).toMatchObject({
+      remoteId: "logged",
+    });
   });
 
   it("finds the task by the name it commits as, then by its own name, else adds a Not known yet task once", () => {

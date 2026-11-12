@@ -97,6 +97,7 @@ export function normalizeTimesheetEntry(
     submittedFingerprint: _submittedFingerprint,
     previousSubmittedAt: _previousSubmittedAt,
     syncKey,
+    timeSyncRemoteId,
     ...entry
   } = stored;
   const normalized: LocalTimesheetEntry = {
@@ -106,6 +107,9 @@ export function normalizeTimesheetEntry(
       : [],
     // A broken key would fail every time sync round, so it reads as none.
     ...(typeof syncKey === "string" && syncKey ? { syncKey } : {}),
+    ...(typeof timeSyncRemoteId === "string" && timeSyncRemoteId.trim()
+      ? { timeSyncRemoteId }
+      : {}),
   };
   const commit =
     normalizeTimesheetEntryCommit(storedCommit) ??
@@ -538,13 +542,24 @@ function orderDayByCommittedAt(
 /**
  * Carries the committed copy across a rebuild of the entry, such as an edit
  * or a running entry saved again. Edits never change the copy: the change
- * shows on the Commit page until it is committed.
+ * shows on the Commit page until it is committed. The entry's time sync key
+ * and the remote id of an entry a time sync took come along too.
  */
 export function keepTimesheetEntryCommit(
   existing: LocalTimesheetEntry | undefined,
   next: LocalTimesheetEntry,
 ): LocalTimesheetEntry {
-  return existing?.commit ? { ...next, commit: existing.commit } : next;
+  if (!existing?.commit && !existing?.syncKey && !existing?.timeSyncRemoteId) {
+    return next;
+  }
+  return {
+    ...next,
+    ...(existing?.commit ? { commit: existing.commit } : {}),
+    ...(existing?.syncKey ? { syncKey: existing.syncKey } : {}),
+    ...(existing?.timeSyncRemoteId
+      ? { timeSyncRemoteId: existing.timeSyncRemoteId }
+      : {}),
+  };
 }
 
 /**

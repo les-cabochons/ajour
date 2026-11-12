@@ -513,6 +513,13 @@ export interface LocalTimesheetEntry {
    * `entrySyncKey` in domain/projects/time-sync.ts.
    */
   syncKey?: string;
+  /**
+   * The other system's id for an entry a time sync took from there (#694).
+   * It outlives the synced copy, so turning Time entries off and on updates
+   * that entry instead of adding another. Its project belongs to one
+   * connection, so one id is enough.
+   */
+  timeSyncRemoteId?: string;
 }
 
 export interface LocalTimesheetImportDraft {
