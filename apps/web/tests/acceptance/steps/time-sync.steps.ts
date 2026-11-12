@@ -8,12 +8,14 @@ import {
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /*
- * Time sync (#691, #692): the example planner declares a project source and
- * a time sync. A mocked local API serves it. With Time entries off, it
- * answers turning it on as the API does when the plugin refuses the
+ * Time sync (#691, #692, #693): the example planner declares a project
+ * source and a time sync. A mocked local API serves it. With Time entries
+ * off, it answers turning it on as the API does when the plugin refuses the
  * connection: a 400 with the connection's label and the plugin's sentence.
  * With Time entries on, its sync-time-entries route is a stateful fake
- * remote: the example planner's own in-memory remote, one per page.
+ * remote: the example planner's own in-memory remote, one per page. The
+ * page's clock runs as usual, and a step moves it forward to reach the next
+ * 60-second round without waiting for it.
  */
 
 const { Given, When, Then } = createBdd();
@@ -148,8 +150,14 @@ function today() {
   ].join("-");
 }
 
-/** Each page's fake remote: the example planner's remote under a key of its own. */
-const remotes = new WeakMap<Page, { key: string; failNextChange?: string }>();
+/**
+ * Each page's fake remote: the example planner's remote under a key of its
+ * own, and the remote id it first gave each task's entry.
+ */
+const remotes = new WeakMap<
+  Page,
+  { key: string; failNextChange?: string; firstIds: Map<string, string> }
+>();
 
 /** What the page's fake remote holds now. */
 function remoteEntries(page: Page) {
@@ -164,7 +172,11 @@ function remoteEntries(page: Page) {
 Given(
   "the example planner manages {string}, with Time entries on",
   async ({ page }, projectName: string) => {
-    remotes.set(page, { key: `acceptance-${crypto.randomUUID()}` });
+    remotes.set(page, {
+      key: `acceptance-${crypto.randomUUID()}`,
+      firstIds: new Map(),
+    });
+    await page.clock.install();
     // Synced a moment ago, so the project source scheduler leaves it alone.
     await page.addInitScript(
       ({ connectionId, pluginId, projectName }) => {
@@ -195,6 +207,13 @@ Given(
                     status: "active",
                     createdAt: 1,
                     source: { remoteId: "1001", assigned: true },
+                  },
+                  {
+                    _id: "export",
+                    name: "Ticket #102 - Export",
+                    status: "active",
+                    createdAt: 1,
+                    source: { remoteId: "1002", assigned: true },
                   },
                 ],
               },
@@ -316,6 +335,110 @@ Then(
           projectRemoteId: "ACME-SUP",
         },
       ]);
+  },
+);
+
+/** Picks a task in the open entry editor, then presses Start. */
+async function startOn(page: Page, task: string) {
+  const editor = timeEntryEditor(page);
+  await editor.getByRole("button", { name: "Project or task" }).click();
+  await page.getByPlaceholder("Search projects and tasks...").fill(task);
+  await page.locator("[cmdk-item]").filter({ hasText: task }).first().click();
+  await editor.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(runningEntryCard(page)).toContainText(task);
+}
+
+/** The sidebar's card of the running entry. */
+function runningEntryCard(page: Page) {
+  return page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("region", { name: "Running entry" });
+}
+
+When("I start an entry on {string}", async ({ page }, task: string) => {
+  await page.goto(`/time/${today()}?view=day`);
+  await page.getByRole("button", { name: "Create time entry" }).click();
+  await startOn(page, task);
+});
+
+// Start on a new entry while another runs: the first is saved, and the new
+// one starts at the same instant.
+When("I switch to {string}", async ({ page }, task: string) => {
+  await page.getByRole("button", { name: "Create time entry" }).first().click();
+  await startOn(page, task);
+});
+
+When("I stop the running entry", async ({ page }) => {
+  await runningEntryCard(page)
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+  await expect(runningEntryCard(page)).toHaveCount(0);
+});
+
+When("{int} minute(s) pass(es)", async ({ page }, minutes: number) => {
+  // Fires the 60-second round that falls due meanwhile, once.
+  await page.clock.fastForward(minutes * 60_000);
+});
+
+/**
+ * Waits until the planner holds one entry on `task` as `expected`, and
+ * checks it is the entry the planner first gave that task: a stop arrives
+ * as the same entry, not a delete and a new one.
+ */
+async function expectRemoteEntry(
+  page: Page,
+  task: string,
+  expected: { running: boolean; minutes?: number },
+) {
+  const remote = remotes.get(page)!;
+  await expect
+    .poll(
+      () =>
+        remoteEntries(page)
+          .filter((entry) => entry.taskName === task)
+          .map((entry) => ({
+            localDate: entry.localDate,
+            running: entry.running,
+            counting: entry.countingSince !== undefined,
+            ...(expected.minutes === undefined
+              ? {}
+              : { minutes: entry.minutes }),
+          })),
+      { timeout: 15_000 },
+    )
+    .toEqual([
+      {
+        localDate: today(),
+        running: expected.running,
+        counting: expected.running,
+        ...(expected.minutes === undefined
+          ? {}
+          : { minutes: expected.minutes }),
+      },
+    ]);
+  const [entry] = remoteEntries(page).filter(
+    (candidate) => candidate.taskName === task,
+  );
+  if (!remote.firstIds.has(task)) remote.firstIds.set(task, entry!.remoteId);
+  expect(entry!.remoteId).toBe(remote.firstIds.get(task));
+}
+
+Then("the planner shows {string} running", async ({ page }, task: string) => {
+  await expectRemoteEntry(page, task, { running: true });
+});
+
+Then(
+  "the planner shows {string} running for {int} minute(s)",
+  async ({ page }, task: string, minutes: number) => {
+    await expectRemoteEntry(page, task, { running: true, minutes });
+  },
+);
+
+Then(
+  "the planner shows {string} stopped at {int} minute(s), as the entry it showed running",
+  async ({ page }, task: string, minutes: number) => {
+    expect(remotes.get(page)!.firstIds.has(task)).toBe(true);
+    await expectRemoteEntry(page, task, { running: false, minutes });
   },
 );
 

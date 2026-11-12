@@ -25,3 +25,15 @@ Feature: Time entries sync through a time sync plugin
     When I log "1:30" on "Ticket #101 - Login" today
     Then an error toast "Planner sync failed" says "The planner is down."
     And the planner holds 90 minutes on "Ticket #101 - Login" today
+
+  Scenario: The running entry shows there as running, and a switch and Stop follow within seconds
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    And 2 minutes pass
+    Then the planner shows "Ticket #101 - Login" running for 2 minutes
+    When I switch to "Ticket #102 - Export"
+    Then the planner shows "Ticket #101 - Login" stopped at 2 minutes, as the entry it showed running
+    And the planner shows "Ticket #102 - Export" running
+    When 3 minutes pass
+    And I stop the running entry
+    Then the planner shows "Ticket #102 - Export" stopped at 3 minutes, as the entry it showed running
