@@ -2,19 +2,23 @@ import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import type { TimeSyncRequest } from "@ajour/shared";
 import {
+  deleteExampleRemoteEntry,
+  editExampleRemoteEntry,
   exampleProjectSourceManifest,
+  logExampleRemoteEntry,
   runExampleTimeSyncRound,
 } from "../../../../../packages/example/index.ts";
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
 /*
- * Time sync (#691, #692, #693): the example planner declares a project
+ * Time sync (#691, #692, #693, #694): the example planner declares a project
  * source and a time sync. A mocked local API serves it. With Time entries
  * off, it answers turning it on as the API does when the plugin refuses the
  * connection: a 400 with the connection's label and the plugin's sentence.
  * With Time entries on, its sync-time-entries route is a stateful fake
- * remote: the example planner's own in-memory remote, one per page. The
- * page's clock runs as usual, and a step moves it forward to reach the next
+ * remote: the example planner's own in-memory remote, one per page, where
+ * a step logs, edits and deletes entries as another tool would. The page's
+ * clock runs as usual, and a step moves it forward to reach the next
  * 60-second round without waiting for it.
  */
 
@@ -152,11 +156,17 @@ function today() {
 
 /**
  * Each page's fake remote: the example planner's remote under a key of its
- * own, and the remote id it first gave each task's entry.
+ * own, the remote id it first gave each task's entry, and the entry another
+ * tool logged last, for its edit and delete.
  */
 const remotes = new WeakMap<
   Page,
-  { key: string; failNextChange?: string; firstIds: Map<string, string> }
+  {
+    key: string;
+    failNextChange?: string;
+    firstIds: Map<string, string>;
+    loggedId?: string;
+  }
 >();
 
 /** What the page's fake remote holds now. */
@@ -454,5 +464,98 @@ Then(
       timeout: 15_000,
     });
     await expect(toasts.getByText(text, { exact: true })).toBeVisible();
+  },
+);
+
+/** Logs an entry in the page's fake remote as another tool would. */
+async function logElsewhere(
+  page: Page,
+  minutes: number,
+  taskName: string,
+  projectRemoteId: string,
+) {
+  const remote = remotes.get(page)!;
+  remote.loggedId = logExampleRemoteEntry(remote.key, {
+    localDate: today(),
+    minutes,
+    projectRemoteId,
+    taskName,
+  }).remoteId;
+}
+
+Given(
+  "another tool logged {int} minutes on {string} today in the planner",
+  async ({ page }, minutes: number, task: string) => {
+    await logElsewhere(page, minutes, task, "ACME-SUP");
+  },
+);
+
+Given(
+  "another tool logged {int} minutes on {string} of project {string} today in the planner",
+  async ({ page }, minutes: number, task: string, project: string) => {
+    await logElsewhere(page, minutes, task, project);
+  },
+);
+
+When(
+  "another tool changes that entry in the planner to {int} minutes",
+  async ({ page }, minutes: number) => {
+    const remote = remotes.get(page)!;
+    editExampleRemoteEntry(remote.key, remote.loggedId!, { minutes });
+  },
+);
+
+When("another tool deletes that entry in the planner", async ({ page }) => {
+  const remote = remotes.get(page)!;
+  deleteExampleRemoteEntry(remote.key, remote.loggedId!);
+});
+
+When("I open today in the Day view", async ({ page }) => {
+  await page.goto(`/time/${today()}?view=day`);
+});
+
+When("I open Sync review", async ({ page }) => {
+  await page.goto("/settings/sync-review");
+});
+
+When("a minute passes", async ({ page }) => {
+  // The runner has the plugins overview, and so its 60-second round, once
+  // the page is quiet.
+  await page.waitForLoadState("networkidle");
+  await page.clock.fastForward("01:00");
+});
+
+Then(
+  "today's {string} entry shows {string}",
+  async ({ page }, task: string, hours: string) => {
+    await expect(
+      page.locator(".time-entry-row").filter({ hasText: task }),
+    ).toContainText(hours);
+  },
+);
+
+Then("the Day view shows no {string} entry", async ({ page }, task: string) => {
+  await expect(
+    page.locator(".time-entry-row").filter({ hasText: task }),
+  ).toHaveCount(0);
+});
+
+Then(
+  "Sync review holds {string} on {string} for {string}, because {string}",
+  async (
+    { page },
+    task: string,
+    project: string,
+    hours: string,
+    reason: string,
+  ) => {
+    const held = page
+      .getByRole("region", { name: "Time entries held from Planner" })
+      .locator("[data-held-time-entry]");
+    await expect(held).toHaveCount(1);
+    await expect(held).toContainText(task);
+    await expect(held).toContainText(project);
+    await expect(held).toContainText(hours);
+    await expect(held).toContainText(reason);
   },
 );
