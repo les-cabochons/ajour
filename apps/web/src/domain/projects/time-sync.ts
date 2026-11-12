@@ -724,11 +724,13 @@ interface TakenListing {
  *   adopts it.
  *
  * A copy whose change this round failed or was refused is left as it is,
- * since the change is sent again. A remote running entry (#695), a day in a
+ * since the change is sent again, and a copy whose refusal stands is never
+ * read as deleted there. A remote running entry (#695), a day in a
  * submitted week (#696), the copy of the running entry, which a Continue
  * shares with today's entry (#693), and a remote entry that can't take
- * part yet, such as one dated after today, are left for a later round. A taken entry's copy agrees on Ajour's values
- * for it, so nothing is sent back.
+ * part yet, such as one dated after today, are left for a later round. A
+ * taken entry's copy agrees on Ajour's values for it, so nothing is sent
+ * back.
  */
 function takeListing(
   state: TimeSyncState,
@@ -815,7 +817,14 @@ function takeListing(
         delete copies[syncKey];
         continue;
       }
-      if (isDateLocked(state, entry.localDate)) continue;
+      // A refused change keeps the entry, as the refusal stands: the other
+      // system may have dropped it on the way, such as Continue's restart.
+      if (
+        isDateLocked(state, entry.localDate) ||
+        Object.hasOwn(record.refusals, syncKey)
+      ) {
+        continue;
+      }
       current = deleteTimesheetEntry(current, entry._id);
       delete copies[syncKey];
       received += 1;
@@ -996,7 +1005,7 @@ export function applyTimeSyncRound(
   const taken = takeListing(
     state,
     plan.connection,
-    { ...record, copies },
+    { ...record, copies, refusals },
     plan,
     answer,
     outcomes,

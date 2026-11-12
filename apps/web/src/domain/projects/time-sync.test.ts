@@ -1217,6 +1217,29 @@ describe("taking the other system's changes", () => {
     ]);
   });
 
+  it("never reads an entry as deleted while its refusal stands, in the rounds after too", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const tooLong = {
+      ...synced,
+      timesheetEntries: [entry("e1", { durationMs: 25 * 60 * MINUTE })],
+    };
+    // Continue made the plugin delete e1 there, then refused the start.
+    const refused = runRound(tooLong, (round) => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "refused" as const,
+        message: "The planner refuses an entry over 24 hours.",
+      })),
+      entries: [],
+    })).state;
+    expect(plan(refused).request.changes).toEqual([]);
+
+    const { state } = runRound(refused, listing());
+
+    expect(entriesOf(state).map((item) => item._id)).toEqual(["e1"]);
+    expect(Object.keys(recordIn(state).copies)).toEqual(["e1"]);
+  });
+
   it("keeps Ajour's values on the first round: an entry it made is its own, not a new one", () => {
     // Made before Time entries went off and on, and changed there since.
     const before = remoteEntry("remote-old", { clientRef: "e1", minutes: 30 });
