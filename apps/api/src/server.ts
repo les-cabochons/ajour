@@ -23,12 +23,14 @@ import {
   unsignedPluginsActivationUpdateSchema,
   type PluginOrigin,
   pluginIdSchema,
+  capabilityStartsOff,
   pluginHasCapability,
   pluginHasCodeHost,
   pluginHasCalendar,
   pluginHasTeam,
   pluginHasProjectSource,
   pluginHasSwitchableCapabilities,
+  pluginHasTimeSync,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
   switchableCapabilitySchema,
@@ -49,6 +51,7 @@ import {
   backlogSyncResultSchema,
   projectSourceSyncRouteRequestSchema,
   projectSourceSyncRouteResponseSchema,
+  timeSyncRouteResponseSchema,
   type PluginField,
   type PluginFieldValues,
   type PluginManifest,
@@ -77,6 +80,7 @@ import {
   connectionAgentAccess,
   type AgentAccess,
 } from "../../../packages/shared/plugins.ts";
+import { timeSyncRequestSchema } from "../../../packages/shared/time-sync.ts";
 import {
   codeHostOperationSchema,
   codeHostOperations,
@@ -1529,6 +1533,76 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     readBody: readJsonBody,
   };
 
+  /**
+   * Turning on a capability that starts off checks each of the plugin's
+   * connections with it on, as a save would, so the plugin can refuse a
+   * connection that can't serve it, such as a token that can only read.
+   * Nothing is saved. The first refusal answers with the connection's label
+   * and the plugin's sentence, with the connection's secrets scrubbed.
+   * Undefined when every connection passed.
+   */
+  async function checkConnectionsWith(
+    pluginId: string,
+    capability: SwitchableCapability,
+    unit: Unit<AjourCatalog, "plugin.activate">,
+  ): Promise<{ status: number; message: string } | undefined> {
+    const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+    if (!plugin || !isPluginApi4Manifest(plugin)) {
+      unit.refuse("not_supported");
+      return { status: 409, message: "This plugin needs an update" };
+    }
+    const inactive = await inactiveCapability(
+      storage,
+      pluginId,
+      undefined,
+      runnable,
+      `turning on ${switchableCapabilityLabels[capability].toLowerCase()}`,
+    );
+    if (inactive) {
+      unit.refuse(inactive.reason);
+      return { status: 409, message: inactive.message };
+    }
+    const declared = pluginSwitchableCapabilities(plugin);
+    const enabled = await storage.listEnabledCapabilities(pluginId, declared);
+    const capabilities = declared.filter(
+      (candidate) => candidate === capability || enabled.includes(candidate),
+    );
+    const manifest = secretManifestOf(plugin);
+    await storage.settleSecrets([manifest], pluginId);
+    const connections = await storage.listConnections(pluginId);
+    unit.set({ activation: { connections_checked: connections.length } });
+    for (const { id } of connections) {
+      const read = await storage.readConnectionSecrets(pluginId, id, manifest);
+      if (!read) continue;
+      const { connection } = read;
+      const call = admittedCall(plugin, connection.secrets);
+      try {
+        await pluginManager.validateConnection(
+          pluginId,
+          connection.config,
+          { capabilities },
+          call.admit,
+          {
+            label: connection.label,
+            tenantLabel: connection.tenantLabel,
+            autoSync: connection.autoSync,
+            autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+            onPremises: connection.onPremises === true,
+            access: connection.access ?? [],
+          },
+        );
+      } catch (error) {
+        unit.refuse("connection_refused");
+        const credentials = call.credentials(connection.config);
+        return {
+          status: 400,
+          message: `${connection.label}: ${credentials.errorMessage(error)}`,
+        };
+      }
+    }
+    return undefined;
+  }
+
   // One handler per route in ROUTES. Each adds its catalog fields to the
   // request's event; the seam records the method, route, status and sizes.
   const handlers: RouteHandlers = {
@@ -1984,6 +2058,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             error: "This plugin does not declare that capability.",
           });
           return;
+        }
+        if (payload.enabled && capabilityStartsOff(payload.capability)) {
+          const refusal = await checkConnectionsWith(
+            pluginId,
+            payload.capability,
+            unit,
+          );
+          if (refusal) {
+            writeJson(response, refusal.status, { error: refusal.message });
+            return;
+          }
         }
         await storage.setPluginCapabilityEnabled(
           pluginId,
@@ -3564,6 +3649,93 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
+    timeSyncRound: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
+      if (!plugin || !pluginHasTimeSync(plugin)) {
+        unit.refuse("not_supported");
+        writeJson(response, 409, {
+          error: "This plugin does not sync time entries.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "timeSync",
+        runnable,
+        "syncing time entries",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
+      if (!connection) {
+        unit.refuse("connection_not_found");
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+      const round = await readRequest(request, timeSyncRequestSchema);
+      unit.set({ time_sync_round: { change_count: round.changes.length } });
+      const call = admittedCall(plugin, connection.secrets);
+      try {
+        const result = await pluginManager.syncTimeEntries(
+          pluginId,
+          pluginConnection(connection),
+          round,
+          call.admit,
+        );
+        const count = (status: string) =>
+          result.results.filter((answer) => answer.status === status).length;
+        unit.set({
+          time_sync_round: {
+            synced_count: count("synced"),
+            refused_count: count("refused"),
+            failed_count: count("failed"),
+            entry_count: result.entries.length,
+          },
+        });
+        // The round's time and outcome are the window's to keep (#685). The
+        // connection's last sync and error stay the project source's, which
+        // a round every minute would otherwise hide.
+        const { summary } = await findConnectionSummary(
+          storage,
+          pluginManager,
+          pluginId,
+          connectionId,
+        );
+        writeJson(
+          response,
+          200,
+          timeSyncRouteResponseSchema.parse({ connection: summary, ...result }),
+        );
+      } catch (error) {
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
+      }
+    },
+
     backlogImportStage: async ({ request, response, unit }) => {
       const payload = await readRequest(
         request,
@@ -4100,7 +4272,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 /**
  * A capability an update adds starts off, so the update changes nothing until
  * the user turns it on. A plugin with one switchable capability follows its
- * plugin switch alone, so it keeps no capability switch.
+ * plugin switch alone, so it keeps no capability switch. A capability that
+ * always starts off (`capabilityStartsOff`), such as Time entries, is off
+ * on a new install too, since only the user's choice turns it on.
  */
 async function applyCapabilityDefaults(
   storage: AppApiStorage,
@@ -4109,7 +4283,9 @@ async function applyCapabilityDefaults(
 ) {
   for (const capability of switchableCapabilitySchema.options) {
     if (!pluginHasSwitchableCapabilities(manifest)) {
-      await storage.setPluginCapabilityEnabled(manifest.id, capability, true);
+      if (!capabilityStartsOff(capability)) {
+        await storage.setPluginCapabilityEnabled(manifest.id, capability, true);
+      }
     } else if (
       previous &&
       pluginHasCapability(manifest, capability) &&

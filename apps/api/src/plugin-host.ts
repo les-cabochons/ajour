@@ -103,6 +103,12 @@ import {
   type ProjectSourceSyncResult,
 } from "../../../packages/shared/project-source.ts";
 import {
+  parseTimeSyncResult,
+  timeSyncRequestSchema,
+  type TimeSyncRequest,
+  type TimeSyncResult,
+} from "../../../packages/shared/time-sync.ts";
+import {
   codeHostOperations,
   type CodeHostOperation,
   type CodeHostOperationRequest,
@@ -283,6 +289,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   createTeam: "team.create",
   syncTeamProjects: "team.sync",
   syncProjects: "project_source.sync",
+  syncTimeEntries: "time_sync.round",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
 
 /** The code of an install refused while plugin operations run. */
@@ -315,6 +322,7 @@ export function capabilityOfMethod(
     return "team";
   }
   if (method === "syncProjects") return "projectSource";
+  if (method === "syncTimeEntries") return "timeSync";
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
 }
@@ -934,6 +942,31 @@ export class PluginManager {
       { parse: parseProjectSourceSyncResult },
       admit,
       requireCapability("projectSource"),
+    );
+  }
+
+  /**
+   * Runs one time sync round: the plugin applies the changes in order, then
+   * lists the remote entries in the window. See
+   * packages/shared/time-sync.ts.
+   */
+  async syncTimeEntries(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: TimeSyncRequest,
+    admit?: PluginAdmission,
+  ): Promise<TimeSyncResult> {
+    const round = timeSyncRequestSchema.parse(request);
+    return await this.invokePlugin(
+      pluginId,
+      "syncTimeEntries",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: round,
+      },
+      { parse: (value: unknown) => parseTimeSyncResult(value, round) },
+      admit,
+      requireCapability("timeSync"),
     );
   }
 

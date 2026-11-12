@@ -227,6 +227,11 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/connections/:connectionId/sync-projects",
     name: "project_source.sync",
   },
+  timeSyncRound: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/sync-time-entries",
+    name: "time_sync.round",
+  },
   codeHost: {
     method: "POST",
     path: "/api/code-hosts/:pluginId/connections/:connectionId/:operation",

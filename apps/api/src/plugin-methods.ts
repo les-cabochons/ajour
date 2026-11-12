@@ -6,6 +6,7 @@ import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import type { CodeHostOperation } from "../../../packages/shared/code-host.ts";
 import type { TeamPluginMethod } from "../../../packages/shared/team-sync.ts";
 import type { ProjectSourceMethod } from "../../../packages/shared/project-source.ts";
+import type { TimeSyncMethod } from "../../../packages/shared/time-sync.ts";
 
 /** Every plugin method the plugin host calls. */
 export type PluginMethod =
@@ -20,7 +21,8 @@ export type PluginMethod =
   | CalendarOperation
   | BacklogCommentOperation
   | TeamPluginMethod
-  | ProjectSourceMethod;
+  | ProjectSourceMethod
+  | TimeSyncMethod;
 
 /** Every data-shape method the data-shape host calls. */
 export type ProjectDataShapeMethod = "exportProjects" | "importProjects";
@@ -62,6 +64,7 @@ const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   createTeam: ["config", "request"],
   syncTeamProjects: CONNECTION_AND_REQUEST,
   syncProjects: CONNECTION_AND_REQUEST,
+  syncTimeEntries: CONNECTION_AND_REQUEST,
 };
 
 const PROJECT_DATA_SHAPE_METHOD_ARGUMENTS: Record<

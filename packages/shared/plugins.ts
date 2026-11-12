@@ -11,7 +11,7 @@ import {
   projectSourceCapabilitySchema,
   projectSourceSnapshotSchema,
 } from "./project-source.ts";
-import { timeSyncCapabilitySchema } from "./time-sync.ts";
+import { timeSyncCapabilitySchema, timeSyncResultSchema } from "./time-sync.ts";
 import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
@@ -1559,3 +1559,14 @@ export const projectSourceSyncRouteResponseSchema = z.union([
 export type ProjectSourceSyncRouteResponse = z.infer<
   typeof projectSourceSyncRouteResponseSchema
 >;
+
+/**
+ * What `POST /api/plugins/:pluginId/connections/:connectionId/sync-time-entries`
+ * answers: the connection as the overview shows it, and the plugin's answer
+ * to the round. The route takes the round as `syncTimeEntries` receives it,
+ * `timeSyncRequestSchema`.
+ */
+export const timeSyncRouteResponseSchema = timeSyncResultSchema.extend({
+  connection: pluginConnectionSummarySchema,
+});
+export type TimeSyncRouteResponse = z.infer<typeof timeSyncRouteResponseSchema>;

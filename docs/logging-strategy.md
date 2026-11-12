@@ -1057,6 +1057,7 @@ channel to read the event each emits.
 | `time_entry.stop`                    | command                            | store command                                    |
 | `time_entry.uncommit`                | command                            | store command                                    |
 | `time_entry.update`                  | command                            | store command                                    |
+| `time_sync.round`                    | request, plugin_operation          | route, plugin method                             |
 | `timeline.commit`                    | command                            | store command                                    |
 | `timeline.dismiss`                   | command                            | store command                                    |
 | `timeline.import`                    | command                            | store command                                    |

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  capabilityStartsOff,
   normalizeSourceStatusKey,
   pluginHasCapability,
   switchableCapabilitySchema,
@@ -445,8 +446,17 @@ interface AppApiStateV8 {
   dismissedImportKeys: string[];
   connectorBacklogStatuses: BacklogSourceStatus[];
   disabledPluginIds: string[];
-  /** Per plugin, the switchable capabilities the user turned off. */
+  /**
+   * Per plugin, the switchable capabilities the user turned off, among
+   * those that start on.
+   */
   disabledCapabilities: Record<string, SwitchableCapability[]>;
+  /**
+   * Per plugin, the switchable capabilities the user turned on, among those
+   * that start off (`capabilityStartsOff`), such as Time entries. Absent from
+   * a file saved before #691, which had none: they read as off.
+   */
+  enabledCapabilities: Record<string, SwitchableCapability[]>;
   pluginsEnabled: boolean;
   /** False when the user deactivated every unsigned plugin. */
   unsignedPluginsEnabled: boolean;
@@ -531,8 +541,13 @@ function importKey(
   return `${item.source}:${item.connectionId}:${item.sourceId}`;
 }
 
-function normalizeDisabledCapabilities(
+/**
+ * A per plugin list of switch choices, `disabledCapabilities` or
+ * `enabledCapabilities`, keeping only the capabilities `kept` allows.
+ */
+function normalizeCapabilityChoices(
   raw: unknown,
+  kept: (capability: SwitchableCapability) => boolean,
 ): Record<string, SwitchableCapability[]> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return Object.fromEntries(
@@ -542,7 +557,8 @@ function normalizeDisabledCapabilities(
             new Set(
               capabilities.filter(
                 (capability): capability is SwitchableCapability =>
-                  switchableCapabilitySchema.safeParse(capability).success,
+                  switchableCapabilitySchema.safeParse(capability).success &&
+                  kept(capability as SwitchableCapability),
               ),
             ),
           ).sort()
@@ -550,6 +566,35 @@ function normalizeDisabledCapabilities(
       return pluginId.trim() && valid.length ? [[pluginId.trim(), valid]] : [];
     }),
   );
+}
+
+/**
+ * Whether the capability's switch is on: one that starts on until the user
+ * turns it off, one that starts off once the user turns it on.
+ */
+function capabilitySwitchedOn(
+  state: Pick<AppApiState, "disabledCapabilities" | "enabledCapabilities">,
+  pluginId: string,
+  capability: SwitchableCapability,
+) {
+  return capabilityStartsOff(capability)
+    ? state.enabledCapabilities[pluginId]?.includes(capability) === true
+    : !state.disabledCapabilities[pluginId]?.includes(capability);
+}
+
+/** `choices` with `capability` listed for the plugin, or not. */
+function withCapabilityChoice(
+  choices: Record<string, SwitchableCapability[]>,
+  pluginId: string,
+  capability: SwitchableCapability,
+  listed: boolean,
+): Record<string, SwitchableCapability[]> {
+  const current = choices[pluginId] ?? [];
+  const next = listed
+    ? Array.from(new Set([...current, capability])).sort()
+    : current.filter((candidate) => candidate !== capability);
+  const { [pluginId]: _previous, ...others } = choices;
+  return next.length ? { ...others, [pluginId]: next } : others;
 }
 
 function createDefaultState(): AppApiState {
@@ -561,6 +606,7 @@ function createDefaultState(): AppApiState {
     connectorBacklogStatuses: [],
     disabledPluginIds: [],
     disabledCapabilities: {},
+    enabledCapabilities: {},
     pluginsEnabled: true,
     unsignedPluginsEnabled: true,
     pluginOrigins: {},
@@ -1063,8 +1109,13 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           .map((pluginId) => pluginId.trim()),
       ),
     ).sort(),
-    disabledCapabilities: normalizeDisabledCapabilities(
+    disabledCapabilities: normalizeCapabilityChoices(
       raw.disabledCapabilities,
+      (capability) => !capabilityStartsOff(capability),
+    ),
+    enabledCapabilities: normalizeCapabilityChoices(
+      raw.enabledCapabilities,
+      capabilityStartsOff,
     ),
     pluginsEnabled:
       typeof raw.pluginsEnabled === "boolean"
@@ -1661,9 +1712,11 @@ export class AppApiStorage {
           !state.disabledPluginIds.includes(plugin.id) &&
           !pendingAccess &&
           signingAllowsPlugin(state, plugin.id),
-        inactiveCapabilities: (
-          state.disabledCapabilities[plugin.id] ?? []
-        ).filter((capability) => pluginHasCapability(plugin, capability)),
+        inactiveCapabilities: switchableCapabilitySchema.options.filter(
+          (capability) =>
+            pluginHasCapability(plugin, capability) &&
+            !capabilitySwitchedOn(state, plugin.id, capability),
+        ),
         ...(missingPluginIds.has(plugin.id) ? { missing: true } : {}),
         ...(isPluginApi4Manifest(plugin) && !missingPluginIds.has(plugin.id)
           ? {
@@ -1767,9 +1820,7 @@ export class AppApiStorage {
   ): Promise<boolean> {
     return (
       (await this.isPluginEnabled(pluginId, runnable)) &&
-      !(await this.readState()).disabledCapabilities[pluginId]?.includes(
-        capability,
-      )
+      capabilitySwitchedOn(await this.readState(), pluginId, capability)
     );
   }
 
@@ -1778,8 +1829,10 @@ export class AppApiStorage {
     pluginId: string,
     declared: readonly SwitchableCapability[],
   ): Promise<SwitchableCapability[]> {
-    const disabled = (await this.readState()).disabledCapabilities[pluginId];
-    return declared.filter((capability) => !disabled?.includes(capability));
+    const state = await this.readState();
+    return declared.filter((capability) =>
+      capabilitySwitchedOn(state, pluginId, capability),
+    );
   }
 
   async getPluginSystemEnabled(): Promise<boolean> {
@@ -2171,22 +2224,28 @@ export class AppApiStorage {
     capability: SwitchableCapability,
     enabled: boolean,
   ): Promise<void> {
-    await this.mutate(async (state) => {
-      const current = state.disabledCapabilities[pluginId] ?? [];
-      const next = enabled
-        ? current.filter((candidate) => candidate !== capability)
-        : Array.from(new Set([...current, capability])).sort();
-      const { [pluginId]: _previous, ...others } = state.disabledCapabilities;
-      return {
-        nextState: {
-          ...state,
-          disabledCapabilities: next.length
-            ? { ...others, [pluginId]: next }
-            : others,
-        },
-        result: undefined,
-      };
-    });
+    await this.mutate(async (state) => ({
+      nextState: capabilityStartsOff(capability)
+        ? {
+            ...state,
+            enabledCapabilities: withCapabilityChoice(
+              state.enabledCapabilities,
+              pluginId,
+              capability,
+              enabled,
+            ),
+          }
+        : {
+            ...state,
+            disabledCapabilities: withCapabilityChoice(
+              state.disabledCapabilities,
+              pluginId,
+              capability,
+              !enabled,
+            ),
+          },
+      result: undefined,
+    }));
   }
 
   /**
@@ -2202,9 +2261,11 @@ export class AppApiStorage {
     added: SwitchableCapability,
     pullRequestAutoSyncDefault: boolean,
   ): Promise<void> {
-    // A calendar has no automatic sync of its own to keep, and a team always
-    // syncs on the interval.
-    if (added === "calendar" || added === "team") return;
+    // A calendar has no automatic sync of its own to keep, a team always
+    // syncs on the interval, and a time sync runs while its switch is on.
+    if (added === "calendar" || added === "team" || added === "timeSync") {
+      return;
+    }
     await this.mutate(async (state) => ({
       nextState: {
         ...state,
@@ -2275,6 +2336,11 @@ export class AppApiStorage {
         ),
         disabledCapabilities: Object.fromEntries(
           Object.entries(state.disabledCapabilities).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        enabledCapabilities: Object.fromEntries(
+          Object.entries(state.enabledCapabilities).filter(
             ([candidate]) => candidate !== pluginId,
           ),
         ),
