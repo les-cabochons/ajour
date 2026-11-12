@@ -1060,6 +1060,16 @@ Decided in [the managed projects spec](https://github.com/les-cabochons/ajour/is
 - Under the figures, when the source gives the user's hours, a line reads "Example planner has 6h15 for you. You committed 4h before Nov 4, 4:00 PM." It compares what the user committed on the project before that time, from the first day the source's hours cover, with the source's hours task by task, and a difference of a minute or more adds "See the 2h15", the gap between the source's hours and what the user committed. When the totals match but some tasks differ, the line reads "Example planner has 6h for you, as you committed before Nov 4, 4:00 PM, but 2 tasks differ." with "See them"; when nothing differs there is no link. The link opens the list under it (it stays in the page, hidden until opened): each task that differs, "Example planner 5:15 · You 3:00", and the committed entries behind it by day, as the timesheet tool got them, including deleted entries whose committed copy the source could have. A task the source gives no hours for is unknown, not zero, and stays out of the comparison and both totals. Time committed on tasks the project no longer has is one row, "A removed task". Times read in English, with the year when it is not this one. When the source can't give the user's hours, the line is the plugin's note on why, and nothing when it gave none. The card names the source by its label only.
 - A source task's row reads the source's hours for the user against its estimate, "5:15 of 8:00", with the bar; a task the source has no hours for reads the time logged in Ajour.
 
+### Time sync
+
+Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/685) and [ADR 0018](../adr/0018-time-entries-sync-both-ways-through-a-time-sync-plugin.md). The switch since [#691](https://github.com/les-cabochons/ajour/issues/691).
+
+- A plugin with a time sync always has a project source too, so its page has a Capabilities section with a "Time entries" switch, described "Keep a live copy of your time entries there, both ways. Notes stay in Ajour."
+- Time entries is the one switch that starts off: on a new install, and after an update that adds it. The plugin's other switches start on, as before.
+- Turning it on first checks each of the plugin's connections with Time entries on, so the plugin can refuse a token that can only read. A refusal keeps the switch off, and the page shows the connection's name and the plugin's sentence, such as "Planner: Time entries need a token that can write. This one can only read." With the plugin off, the switch is disabled. Turning it off checks nothing.
+- While it is on, saving a connection checks Time entries too, so the plugin can refuse the token there.
+- Nothing is sent yet: the rounds arrive with [#692](https://github.com/les-cabochons/ajour/issues/692).
+
 ## Settings
 
 Decided in [Settings and Sync review under the new conventions](https://github.com/les-cabochons/ajour/issues/27).
