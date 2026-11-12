@@ -50,16 +50,17 @@ import {
 } from "@/domain/time/timesheet-submission";
 
 /*
- * The time sync rules (#692, #693, #694, ADR 0018). A time sync keeps a
- * live copy of the user's time entries in another system. This module
+ * The time sync rules (#692, #693, #694, #696, ADR 0018). A time sync keeps
+ * a live copy of the user's time entries in another system. This module
  * decides which saved entries and which running entry take part, builds a
  * round's changes from the synced copies, and applies the round's answer:
  * to the copies, and to the entries, with what changed in the other
  * system's window. It changes entries only through the entry transitions.
  * A round is not a commit, and it is not part of Undo.
  *
- * A remote running entry is #695, and submitted weeks #696. Until then a
- * round skips a remote running entry and leaves a submitted week as it is.
+ * A round never writes to a submitted week. It puts back an edit or a
+ * delete made there, and holds an entry logged there until the week is
+ * reopened. A remote running entry is #695: until then a round skips it.
  */
 
 export type TimeSyncState = TimesheetEntryState &
@@ -158,6 +159,7 @@ export function startTimeSync(
       copies: {},
       refusals: {},
       held: [],
+      puttingBack: [],
     },
   };
 }
@@ -603,7 +605,9 @@ function firstSeenAt(
 /**
  * Notes when Ajour first saw each copied entry differ from its copy, as
  * `firstSeenAt` says, and clears that time once they agree. Drops a refusal
- * whose entry changed since, so the next round sends the new values.
+ * whose entry changed since, so the next round sends the new values, and a
+ * put-back that has no upsert left to send, such as one the other system
+ * already refused.
  */
 function noteLocalChanges(
   state: TimeSyncState,
@@ -644,17 +648,40 @@ function noteLocalChanges(
       refusals = rest;
     }
   }
-  return copies === record.copies && refusals === record.refusals
+  const puttingBack = record.puttingBack.filter((syncKey) => {
+    const change = reader.changeFor(syncKey);
+    return (
+      change?.kind === "upsert" &&
+      !isRefused(
+        Object.hasOwn(refusals, syncKey) ? refusals[syncKey] : undefined,
+        change,
+      )
+    );
+  });
+  const samePutBacks = puttingBack.length === record.puttingBack.length;
+  return copies === record.copies &&
+    refusals === record.refusals &&
+    samePutBacks
     ? record
-    : { ...record, copies, refusals };
+    : {
+        ...record,
+        copies,
+        refusals,
+        puttingBack: samePutBacks ? record.puttingBack : puttingBack,
+      };
 }
 
 /** What applying a round's answer did, for its event and the status line. */
 export type TimeSyncRoundResult =
   | {
       kind: "applied";
-      /** Changes the other system took. */
+      /** Changes the other system took, besides the put-backs. */
       synced: number;
+      /**
+       * Upserts that sent Ajour's values back over an edit or a delete
+       * there in a submitted week.
+       */
+      putBack: number;
       refused: number;
       failed: number;
       /** Changes left for the next round. */
@@ -783,6 +810,8 @@ interface TakenListing {
   state: TimeSyncState;
   copies: Record<string, LocalSyncedCopy>;
   held: LocalTimeSyncHold[];
+  /** The record's put-backs, with those this listing calls for. */
+  puttingBack: string[];
   received: number;
 }
 
@@ -802,14 +831,20 @@ interface TakenListing {
  *   such as one a send whose answer was lost made, and the next send
  *   adopts it.
  *
+ * A submitted week stays as the user committed it (#696). An edit there
+ * to one of its entries, or one that moves an entry into it, is put back:
+ * the copy takes the values the other system holds now, so the next round
+ * sends Ajour's over them. A delete there drops the copy, so the next
+ * round creates the entry again. A new entry there is held until the week
+ * is reopened, when the round that lists it next takes it.
+ *
  * A copy whose change this round failed or was refused is left as it is,
  * since the change is sent again, and a copy whose refusal stands is never
- * read as deleted there. A remote running entry (#695), a day in a
- * submitted week (#696), the copy of the running entry, which a Continue
- * shares with today's entry (#693), and a remote entry that can't take
- * part yet, such as one dated after today, are left for a later round. A
- * taken entry's copy agrees on Ajour's values for it, so nothing is sent
- * back.
+ * read as deleted there. A remote running entry (#695), the copy of the
+ * running entry, which a Continue shares with today's entry (#693), and a
+ * remote entry that can't take part yet, such as one dated after today,
+ * are left for a later round. A taken entry's copy agrees on Ajour's
+ * values for it, so nothing is sent back.
  */
 function takeListing(
   state: TimeSyncState,
@@ -824,13 +859,17 @@ function takeListing(
   const { from, to } = plan.request;
   const now = factories.now();
   const inWindow = (localDate: string) => localDate >= from && localDate <= to;
-  /** Whether Ajour may write the day now: unlocked, and an entry there takes part. */
+  /**
+   * Whether the remote entry could take part in Ajour. `locked` checks its
+   * week apart.
+   */
   const canTake = (remote: TimeSyncRemoteEntry) =>
     !remote.running &&
     remote.minutes >= 1 &&
     remote.localDate >= record.startWeek &&
-    remote.localDate <= context.today &&
-    !isDateLocked(state, remote.localDate);
+    remote.localDate <= context.today;
+  /** Whether the day is in a submitted week, which a round never writes. */
+  const locked = (localDate: string) => isDateLocked(state, localDate);
   const reader = createReader(state, connection, record, context, now);
   /** The saved entries by sync key. */
   const saved = new Map(
@@ -851,6 +890,7 @@ function takeListing(
   );
   const copies = { ...record.copies };
   const held: LocalTimeSyncHold[] = [];
+  const puttingBack = new Set(record.puttingBack);
   let received = 0;
 
   /** The copy of a taken entry: Ajour's values for it, so nothing goes back. */
@@ -898,10 +938,15 @@ function takeListing(
       }
       // A refused change keeps the entry, as the refusal stands: the other
       // system may have dropped it on the way, such as Continue's restart.
-      if (
-        isDateLocked(state, entry.localDate) ||
-        Object.hasOwn(record.refusals, syncKey)
-      ) {
+      if (Object.hasOwn(record.refusals, syncKey)) continue;
+      if (locked(entry.localDate)) {
+        // The next round creates it again. Not when this round just sent
+        // it: an entry the other system took but doesn't list yet is not a
+        // delete there, or every round would create it again.
+        if (outcome !== "synced") {
+          delete copies[syncKey];
+          puttingBack.add(syncKey);
+        }
         continue;
       }
       current = deleteTimesheetEntry(current, entry._id);
@@ -916,6 +961,22 @@ function takeListing(
     }
     // Ajour deleted it, or it stopped taking part: the delete wins.
     if (deletedHere) continue;
+    if (locked(entry.localDate) || locked(remote.localDate)) {
+      // Put back. Not when this round just sent the entry: values the other
+      // system lists unlike its answer are how it stores Ajour's, not an
+      // edit there. They count as agreed, or every round would send them.
+      if (outcome === "synced") {
+        copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
+      } else {
+        copies[syncKey] = {
+          remoteId: copy.remoteId,
+          agreed: remoteValuesOf(remote),
+          remoteUpdatedAt: remote.updatedAt,
+        };
+        puttingBack.add(syncKey);
+      }
+      continue;
+    }
     // Both changed: Ajour's change wins when it is the later one.
     const localAt =
       copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
@@ -923,7 +984,7 @@ function takeListing(
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
     }
-    if (!canTake(remote) || isDateLocked(state, entry.localDate)) continue;
+    if (!canTake(remote)) continue;
     const keepsPlace =
       !local &&
       remote.projectRemoteId === copy.agreed.projectRemoteId &&
@@ -1010,6 +1071,12 @@ function takeListing(
       held.push(holdOf(remote, placement.reason));
       continue;
     }
+    // Its project and task would take it, so the week is why it waits.
+    // Ajour adds no task for it until then.
+    if (locked(remote.localDate)) {
+      held.push(holdOf(remote, "submittedWeek"));
+      continue;
+    }
     placeIn(placement);
     current = saveManualTimesheetEntry(
       current,
@@ -1039,12 +1106,19 @@ function takeListing(
       left.localDate.localeCompare(right.localDate) ||
       left.remoteId.localeCompare(right.remoteId),
   );
-  return { state: current, copies, held, received };
+  return {
+    state: current,
+    copies,
+    held,
+    puttingBack: [...puttingBack].sort(),
+    received,
+  };
 }
 
 /**
  * Applies a round's answer. A synced change updates its copy, or drops it
- * for a delete. A refused one keeps its message and is not sent again until
+ * for a delete, and an upsert that puts an entry back counts as put back,
+ * not sent. A refused one keeps its message and is not sent again until
  * the entry changes. A failed one changes nothing and is sent again next
  * round. Then Ajour takes what changed in the listing, as `takeListing`
  * says, and holds what it can't take. It returns the state the round leaves.
@@ -1069,7 +1143,9 @@ export function applyTimeSyncRound(
     ...record.refusals,
   };
   const outcomes = new Map<string, TimeSyncChangeResult["status"]>();
-  const counts = { synced: 0, refused: 0, failed: 0 };
+  const counts = { synced: 0, putBack: 0, refused: 0, failed: 0 };
+  /** The put-backs still to send: a failed one goes again. */
+  const puttingBack = new Set(record.puttingBack);
   let failedMessage: string | undefined;
   for (const outcome of answer.results) {
     const change = sent.get(outcome.syncKey);
@@ -1081,6 +1157,8 @@ export function applyTimeSyncRound(
       failedMessage ??= outcome.message;
       continue;
     }
+    // Sent, or refused for good: either way it is no longer to put back.
+    const putBack = puttingBack.delete(syncKey) && change.kind === "upsert";
     if (outcome.status === "refused") {
       counts.refused += 1;
       refusals[syncKey] = {
@@ -1090,7 +1168,11 @@ export function applyTimeSyncRound(
       };
       continue;
     }
-    counts.synced += 1;
+    if (putBack) {
+      counts.putBack += 1;
+    } else {
+      counts.synced += 1;
+    }
     delete refusals[syncKey];
     if (change.kind === "delete") {
       delete copies[syncKey];
@@ -1108,7 +1190,7 @@ export function applyTimeSyncRound(
   const taken = takeListing(
     state,
     plan.connection,
-    { ...record, copies, refusals },
+    { ...record, copies, refusals, puttingBack: [...puttingBack] },
     plan,
     answer,
     outcomes,
@@ -1124,6 +1206,7 @@ export function applyTimeSyncRound(
       copies: taken.copies,
       refusals,
       held: taken.held,
+      puttingBack: taken.puttingBack,
       lastRound: {
         at: now,
         ...counts,
@@ -1205,7 +1288,7 @@ export function failTimeSyncRound(
 
 /** What a connection's row says about its time sync. */
 export interface TimeSyncStatus {
-  /** Such as "Time entries · 2 sent · 1 received · 1 held" or "Time entries · up to date". */
+  /** Such as "Time entries · 2 sent · 1 put back · 1 received · 1 held" or "Time entries · up to date". */
   summary: string;
   /** Why the last round failed, until a round goes through. */
   error?: string;
@@ -1214,9 +1297,9 @@ export interface TimeSyncStatus {
 }
 
 /**
- * The status line of a connection's time sync: what the last round sent and
- * received, the entries held and the refusals that stand, and the last
- * round's failure. Nothing before the first round.
+ * The status line of a connection's time sync: what the last round sent,
+ * put back and received, the entries held and the refusals that stand, and
+ * the last round's failure. Nothing before the first round.
  */
 export function describeTimeSyncStatus(
   record: LocalTimeSync | undefined,
@@ -1236,6 +1319,7 @@ export function describeTimeSyncStatus(
   if (round.failedMessage) messages.add(round.failedMessage);
   const parts = [
     round.synced ? `${round.synced} sent` : undefined,
+    round.putBack ? `${round.putBack} put back` : undefined,
     round.received ? `${round.received} received` : undefined,
     record.held.length ? `${record.held.length} held` : undefined,
     refusals.length ? `${refusals.length} refused` : undefined,
@@ -1258,6 +1342,8 @@ export function describeTimeSyncHoldReason(reason: TimeSyncHoldReason) {
       return "The project is Local only here.";
     case "localOnlyTask":
       return "The task is Local only here.";
+    case "submittedWeek":
+      return "The week is submitted. Reopen it to take this entry.";
   }
 }
 
@@ -1265,6 +1351,7 @@ const HOLD_REASONS: readonly TimeSyncHoldReason[] = [
   "unmanagedProject",
   "localOnlyProject",
   "localOnlyTask",
+  "submittedWeek",
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -1387,6 +1474,10 @@ export function normalizeTimeSyncs(
       held: Array.isArray(record.held)
         ? record.held.flatMap((hold) => normalizeHold(hold) ?? [])
         : [],
+      // A record stored before #696 puts nothing back.
+      puttingBack: Array.isArray(record.puttingBack)
+        ? [...new Set(record.puttingBack.filter(nonEmptyString))].sort()
+        : [],
       ...(lastRound &&
       finiteNumber(lastRound.at) &&
       finiteNumber(lastRound.synced) &&
@@ -1396,6 +1487,8 @@ export function normalizeTimeSyncs(
             lastRound: {
               at: lastRound.at,
               synced: lastRound.synced,
+              // A round stored before #696 put nothing back.
+              putBack: finiteNumber(lastRound.putBack) ? lastRound.putBack : 0,
               // A round stored before #694 received nothing.
               received: finiteNumber(lastRound.received)
                 ? lastRound.received

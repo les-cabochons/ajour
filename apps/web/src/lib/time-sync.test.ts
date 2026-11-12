@@ -113,6 +113,7 @@ describe("a time sync round", () => {
     expect(await round("change")).toEqual({
       kind: "applied",
       synced: 1,
+      putBack: 0,
       refused: 0,
       failed: 0,
       waiting: 0,
@@ -147,6 +148,7 @@ describe("a time sync round", () => {
           trigger: "change",
           change_count: 1,
           synced_count: 1,
+          put_back_count: 0,
           refused_count: 0,
           failed_count: 0,
           waiting_count: 0,
@@ -277,6 +279,36 @@ describe("a time sync round", () => {
         .timesheetEntries.find((entry) => entry._id === taken._id),
     ).toMatchObject({ durationMs: 20 * 60_000 });
     expect(localStore.undo(token)).toBe("stale");
+  });
+
+  it("puts back an edit made there to a submitted week, and counts it on the round's job", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    const today = formatLocalDateFromTimestamp(Date.now());
+    localStore.markTimesheetEntriesCommitted([entryId]);
+    expect(localStore.submitWeek(today).result).toMatchObject({ ok: true });
+    const { remoteId } =
+      localStore.snapshot().timeSyncs![connectionId]!.copies[entryId]!;
+    // A moment later, so its time is after the round's.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    editExampleRemoteEntry(connectionId, remoteId, { minutes: 20 });
+
+    // The store refuses a write to the submitted week, so neither round
+    // would go through if it made one.
+    expect(await round("poll")).toMatchObject({ received: 0, putBack: 0 });
+    expect(await round("change")).toMatchObject({ synced: 0, putBack: 1 });
+
+    expect(
+      localStore.snapshot().timesheetEntries.find((e) => e._id === entryId),
+    ).toMatchObject({ durationMs: 1.5 * HOUR });
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "ok",
+      time_sync_round: { trigger: "change", put_back_count: 1 },
+    });
+    expect(await round("poll")).toMatchObject({ putBack: 0 });
+    expect(
+      localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
+    ).toMatchObject({ remoteId, agreed: { minutes: 90 } });
   });
 
   it("waits before the next round when changes failed, even with more waiting", async () => {

@@ -15,8 +15,10 @@ import {
   normalizeTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { findLockedWeekWrite } from "@/domain/time/locked-weeks";
 import {
   applyTimeSyncRound,
+  describeTimeSyncHoldReason,
   describeTimeSyncStatus,
   entrySyncKey,
   failTimeSyncRound,
@@ -375,6 +377,7 @@ describe("applying a round", () => {
     expect(first.result).toEqual({
       kind: "applied",
       synced: 2,
+      putBack: 0,
       refused: 0,
       failed: 0,
       waiting: 0,
@@ -536,6 +539,7 @@ describe("applying a round", () => {
     expect(record.lastRound).toEqual({
       at: 510,
       synced: 1,
+      putBack: 0,
       received: 0,
       refused: 0,
       failed: 0,
@@ -1561,36 +1565,236 @@ describe("taking the other system's changes", () => {
     );
     expect(result).toMatchObject({ received: 0, held: 0 });
   });
+});
 
-  it("leaves a submitted week as it is", () => {
-    const monday = "2026-11-09";
-    const synced = runRound(
-      stateWith([
-        entry("deleted-there", { localDate: monday }),
-        entry("edited-there", { localDate: monday }),
-      ]),
-    ).state;
-    const submitted = {
-      ...synced,
-      lockedWeeks: [{ weekOf: monday, lockedAt: 400 }],
+/*
+ * A submitted week stays as the user committed it (#696). Last week, from
+ * Monday 2026-11-02, is submitted, and Time entries went on that week.
+ */
+describe("a submitted week", () => {
+  const SUBMITTED = "2026-11-02";
+
+  /** The entries synced as remote-1 and on, in day order, then last week submitted. */
+  function submittedWeek(
+    entries: LocalTimesheetEntry[] = [entry("e1", { localDate: SUBMITTED })],
+  ): TimeSyncState {
+    const state = stateWith(entries);
+    state.timeSyncs[CONNECTION.connectionId]!.startWeek = SUBMITTED;
+    return {
+      ...runRound(state).state,
+      lockedWeeks: [{ weekOf: SUBMITTED, lockedAt: 400 }],
     };
-    const copies = recordIn(synced).copies;
+  }
 
-    const { state, result } = runRound(
+  /** A round that never writes to the submitted week: the store would refuse it. */
+  function roundIn(
+    state: TimeSyncState,
+    answer?: (round: TimeSyncPlan, state: TimeSyncState) => TimeSyncResult,
+  ) {
+    const ran = runRound(state, answer);
+    expect(findLockedWeekWrite(state, ran.state)).toBeUndefined();
+    return ran;
+  }
+
+  /** e1 as the other system lists it after an edit there to 1:00. */
+  const editedThere = (overrides: Partial<TimeSyncRemoteEntry> = {}) =>
+    remoteE1({ localDate: SUBMITTED, minutes: 60, ...overrides });
+
+  it("puts back an edit made there: the next round sends Ajour's values over it", () => {
+    const submitted = submittedWeek();
+
+    const seen = roundIn(submitted, listing(editedThere()));
+
+    expect(entriesOf(seen.state)).toEqual(entriesOf(submitted));
+    expect(seen.result).toMatchObject({ received: 0, putBack: 0 });
+    // `agreed` is what the other system holds now, so its plugin sees what
+    // goes back, such as a day it moved.
+    expect(plan(seen.state).request.changes).toEqual([
+      {
+        kind: "upsert",
+        syncKey: "e1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({ minutes: 60 }),
+        values: expect.objectContaining({ localDate: SUBMITTED, minutes: 90 }),
+      },
+    ]);
+
+    const back = roundIn(seen.state);
+    expect(back.result).toMatchObject({ synced: 0, putBack: 1 });
+    expect(describeTimeSyncStatus(recordIn(back.state))?.summary).toBe(
+      "Time entries · 1 put back",
+    );
+    expect(plan(back.state).request.changes).toEqual([]);
+  });
+
+  it("puts back an edit that moves an entry out of the submitted week, or into it", () => {
+    const submitted = submittedWeek([
+      entry("e1", { localDate: SUBMITTED }),
+      entry("e2", { localDate: "2026-11-10" }),
+    ]);
+
+    const seen = roundIn(
       submitted,
       listing(
-        remoteEntry(copies["edited-there"]!.remoteId, {
-          clientRef: "edited-there",
-          localDate: monday,
-          minutes: 10,
+        remoteE1({ localDate: "2026-11-10" }),
+        remoteEntry("remote-2", {
+          clientRef: "e2",
+          localDate: "2026-11-03",
+          minutes: 90,
+          taskRemoteId: "1001",
         }),
-        remoteEntry("logged-monday", { localDate: monday }),
       ),
     );
 
-    expect(entriesOf(state)).toEqual(entriesOf(submitted));
-    expect(recordIn(state).copies).toEqual(copies);
-    expect(result).toMatchObject({ received: 0 });
+    expect(entriesOf(seen.state)).toEqual(entriesOf(submitted));
+    expect(plan(seen.state).request.changes).toEqual([
+      expect.objectContaining({
+        syncKey: "e1",
+        agreed: expect.objectContaining({ localDate: "2026-11-10" }),
+        values: expect.objectContaining({ localDate: SUBMITTED }),
+      }),
+      expect.objectContaining({
+        syncKey: "e2",
+        agreed: expect.objectContaining({ localDate: "2026-11-03" }),
+        values: expect.objectContaining({ localDate: "2026-11-10" }),
+      }),
+    ]);
+  });
+
+  it("puts back a delete made there: the next round creates the entry again", () => {
+    const submitted = submittedWeek();
+
+    const seen = roundIn(submitted, listing());
+
+    expect(entriesOf(seen.state)).toEqual(entriesOf(submitted));
+    expect(seen.result).toMatchObject({ received: 0, putBack: 0 });
+    // Its remote entry is gone, so nothing names it.
+    expect(plan(seen.state).request.changes).toEqual([
+      {
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ localDate: SUBMITTED, minutes: 90 }),
+      },
+    ]);
+
+    const back = roundIn(seen.state);
+    expect(back.result).toMatchObject({ synced: 0, putBack: 1 });
+    expect(recordIn(back.state).copies.e1).toMatchObject({
+      agreed: expect.objectContaining({ minutes: 90 }),
+    });
+    expect(plan(back.state).request.changes).toEqual([]);
+  });
+
+  it("puts an edit back once: a refusal stands, and Ajour's values stored another way are no new edit", () => {
+    const seen = roundIn(submittedWeek(), listing(editedThere())).state;
+
+    const refused = roundIn(seen, (round) => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "refused" as const,
+        message: "The planner keeps last week closed.",
+      })),
+      entries: [editedThere()],
+    }));
+    expect(refused.result).toMatchObject({ refused: 1, putBack: 0 });
+    expect(plan(refused.state).request.changes).toEqual([]);
+    const listedAgain = roundIn(refused.state, listing(editedThere()));
+    expect(plan(listedAgain.state).request.changes).toEqual([]);
+
+    // The plugin answers it synced, then lists its own values, changed at
+    // another time than it answered.
+    const storedOtherwise = editedThere({
+      updatedAt: "2026-11-12T15:30:00.000Z",
+    });
+    const synced = roundIn(seen, (round) => ({
+      results: syncEverything(round).results,
+      entries: [storedOtherwise],
+    }));
+    expect(synced.result).toMatchObject({ putBack: 1 });
+    expect(plan(synced.state).request.changes).toEqual([]);
+    const later = roundIn(synced.state, listing(storedOtherwise));
+    expect(later.result).toMatchObject({ putBack: 0 });
+    expect(plan(later.state).request.changes).toEqual([]);
+  });
+
+  it("never reads an entry it just created again as deleted there in the same round", () => {
+    const deleted = roundIn(submittedWeek(), listing()).state;
+
+    // The plugin answers it synced, but doesn't list it yet.
+    const created = roundIn(deleted, (round) => ({
+      results: syncEverything(round).results,
+      entries: [],
+    }));
+
+    expect(created.result).toMatchObject({ putBack: 1 });
+    expect(plan(created.state).request.changes).toEqual([]);
+  });
+
+  it("holds an entry logged there in the submitted week, and takes it once the week is reopened", () => {
+    const submitted = submittedWeek([]);
+    const logged = remoteEntry("logged", {
+      localDate: SUBMITTED,
+      taskName: "Release notes",
+    });
+    const unmanaged = remoteEntry("globex", {
+      localDate: SUBMITTED,
+      projectRemoteId: "GLOBEX-INT",
+    });
+
+    const held = roundIn(submitted, listing(logged, unmanaged));
+
+    expect(entriesOf(held.state)).toEqual([]);
+    // No task is added for an entry it holds.
+    expect(held.state.projects).toEqual(submitted.projects);
+    expect(recordIn(held.state).held).toEqual([
+      expect.objectContaining({
+        remoteId: "globex",
+        reason: "unmanagedProject",
+      }),
+      {
+        remoteId: "logged",
+        localDate: SUBMITTED,
+        minutes: 45,
+        projectRemoteId: "ACME-SUP",
+        taskName: "Release notes",
+        reason: "submittedWeek",
+      },
+    ]);
+    expect(held.result).toMatchObject({ received: 0, held: 2 });
+    expect(describeTimeSyncHoldReason("submittedWeek")).toBe(
+      "The week is submitted. Reopen it to take this entry.",
+    );
+
+    const taken = runRound(
+      { ...held.state, lockedWeeks: [] },
+      listing(logged, unmanaged),
+    );
+    expect(entriesOf(taken.state)).toEqual([
+      expect.objectContaining({
+        localDate: SUBMITTED,
+        durationMs: 45 * MINUTE,
+        timeSyncRemoteId: "logged",
+      }),
+    ]);
+    expect(recordIn(taken.state).held).toEqual([
+      expect.objectContaining({ remoteId: "globex" }),
+    ]);
+    expect(taken.result).toMatchObject({ received: 1, held: 1 });
+  });
+
+  it("takes an edit or a delete made there once the week is reopened", () => {
+    const reopened = { ...submittedWeek(), lockedWeeks: [] };
+
+    const edited = runRound(reopened, listing(editedThere()));
+    expect(entriesOf(edited.state)).toEqual([
+      expect.objectContaining({ localDate: SUBMITTED, durationMs: HOUR }),
+    ]);
+    expect(edited.result).toMatchObject({ received: 1, putBack: 0 });
+    expect(plan(edited.state).request.changes).toEqual([]);
+
+    const deleted = runRound(reopened, listing());
+    expect(entriesOf(deleted.state)).toEqual([]);
+    expect(deleted.result).toMatchObject({ received: 1, putBack: 0 });
   });
 });
 
@@ -1643,6 +1847,7 @@ describe("the connection's status line", () => {
     copies: {},
     refusals: {},
     held: [],
+    puttingBack: [],
     ...overrides,
   });
   const refusal = (message: string) => ({
@@ -1656,12 +1861,22 @@ describe("the connection's status line", () => {
     expect(describeTimeSyncStatus(record())).toBeUndefined();
   });
 
-  it("says what the last round sent, or that it is up to date", () => {
-    const round = { at: 1, synced: 2, received: 0, refused: 0, failed: 0 };
+  it("says what the last round sent and put back, or that it is up to date", () => {
+    const round = {
+      at: 1,
+      synced: 2,
+      putBack: 0,
+      received: 0,
+      refused: 0,
+      failed: 0,
+    };
     expect(describeTimeSyncStatus(record({ lastRound: round }))).toEqual({
       summary: "Time entries · 2 sent",
       notes: [],
     });
+    expect(
+      describeTimeSyncStatus(record({ lastRound: { ...round, putBack: 1 } })),
+    ).toEqual({ summary: "Time entries · 2 sent · 1 put back", notes: [] });
     expect(
       describeTimeSyncStatus(record({ lastRound: { ...round, synced: 0 } })),
     ).toEqual({ summary: "Time entries · up to date", notes: [] });
@@ -1673,6 +1888,7 @@ describe("the connection's status line", () => {
         lastRound: {
           at: 1,
           synced: 0,
+          putBack: 0,
           received: 0,
           refused: 0,
           failed: 1,
@@ -1698,7 +1914,14 @@ describe("the connection's status line", () => {
     expect(
       describeTimeSyncStatus(
         record({
-          lastRound: { at: 1, synced: 2, received: 0, refused: 0, failed: 0 },
+          lastRound: {
+            at: 1,
+            synced: 2,
+            putBack: 0,
+            received: 0,
+            refused: 0,
+            failed: 0,
+          },
           error: { at: 2, message: "The planner is down." },
         }),
       ),
@@ -1727,5 +1950,12 @@ describe("reading stored time syncs back", () => {
     const read = normalizeTimeSyncs(broken);
     expect(Object.keys(read)).toEqual(["c1"]);
     expect(Object.keys(read.c1!.copies)).toEqual(["e1"]);
+
+    // A record stored before #696 puts nothing back.
+    const { puttingBack: _none, ...older } = stored.c1!;
+    const { putBack: _count, ...olderRound } = older.lastRound!;
+    expect(
+      normalizeTimeSyncs({ c1: { ...older, lastRound: olderRound } }).c1,
+    ).toEqual(stored.c1);
   });
 });
