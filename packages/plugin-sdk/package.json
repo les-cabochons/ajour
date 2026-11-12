@@ -1,6 +1,6 @@
 {
   "name": "@ajour/plugin-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Types, the ajour runtime and a test fake for Ajour plugins on plugin API 4.",
   "license": "MIT",
   "type": "module",

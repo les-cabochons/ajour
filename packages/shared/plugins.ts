@@ -11,6 +11,7 @@ import {
   projectSourceCapabilitySchema,
   projectSourceSnapshotSchema,
 } from "./project-source.ts";
+import { timeSyncCapabilitySchema, timeSyncResultSchema } from "./time-sync.ts";
 import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
@@ -131,6 +132,7 @@ export const switchableCapabilitySchema = z.enum([
   "calendar",
   "team",
   "projectSource",
+  "timeSync",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -142,7 +144,18 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     calendar: "Calendar events",
     team: "Projects",
     projectSource: "Managed projects",
+    timeSync: "Time entries",
   };
+
+/**
+ * Whether the capability's switch starts off: on a new install and after an
+ * update that adds it, until the user turns it on. Turning one on checks
+ * each connection with it on first. Time entries starts off because it
+ * sends the user's time out of Ajour (ADR 0018). Every other switch starts on.
+ */
+export function capabilityStartsOff(capability: SwitchableCapability) {
+  return capability === "timeSync";
+}
 
 export const pluginFieldSchema = z.object({
   id: z.string().trim().min(1).max(120),
@@ -344,6 +357,12 @@ export const pluginCapabilitiesObjectSchema = z.object({
    * them, read only. Plugin API 4 only: see `project-source.ts`.
    */
   projectSource: projectSourceCapabilitySchema.optional(),
+  /**
+   * Keeps the user's time entries in step with another system, both ways,
+   * on the projects the same connection manages. Plugin API 4 only, beside
+   * `projectSource`: see `time-sync.ts`.
+   */
+  timeSync: timeSyncCapabilitySchema.optional(),
   agentTask: z
     .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
     .optional(),
@@ -390,6 +409,12 @@ export function pluginHasProjectSource(manifest: {
   capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.projectSource !== undefined;
+}
+
+export function pluginHasTimeSync(manifest: {
+  capabilities: PluginCapabilities;
+}) {
+  return manifest.capabilities.timeSync !== undefined;
 }
 
 export function pluginHasAgentTasks(manifest: {
@@ -463,12 +488,14 @@ export const pluginManifestObjectSchema = z.object({
 
 export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
   (manifest, context) => {
-    if (manifest.capabilities.projectSource !== undefined) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["capabilities", "projectSource"],
-        message: "The projectSource capability needs plugin API 4.",
-      });
+    for (const capability of ["projectSource", "timeSync"] as const) {
+      if (manifest.capabilities[capability] !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["capabilities", capability],
+          message: `The ${capability} capability needs plugin API 4.`,
+        });
+      }
     }
     if (!pluginRunsCode(manifest)) return;
     if (!manifest.entrypoint) {
@@ -1532,3 +1559,14 @@ export const projectSourceSyncRouteResponseSchema = z.union([
 export type ProjectSourceSyncRouteResponse = z.infer<
   typeof projectSourceSyncRouteResponseSchema
 >;
+
+/**
+ * What `POST /api/plugins/:pluginId/connections/:connectionId/sync-time-entries`
+ * answers: the connection as the overview shows it, and the plugin's answer
+ * to the round. The route takes the round as `syncTimeEntries` receives it,
+ * `timeSyncRequestSchema`.
+ */
+export const timeSyncRouteResponseSchema = timeSyncResultSchema.extend({
+  connection: pluginConnectionSummarySchema,
+});
+export type TimeSyncRouteResponse = z.infer<typeof timeSyncRouteResponseSchema>;

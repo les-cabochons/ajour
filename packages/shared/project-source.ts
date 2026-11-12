@@ -50,8 +50,8 @@ const httpsUrlSchema = z
       return false;
     }
   }, "A project source URL is an absolute https address.");
-/** A calendar date that exists, such as 2026-01-31. */
-const dateSchema = z.string().refine((value) => {
+/** A calendar date that exists, such as 2026-01-31. The time sync uses it too. */
+export const calendarDateSchema = z.string().refine((value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return (
@@ -86,7 +86,7 @@ export const projectSourceBudgetSchema = z.object({
    * The first day `consumed` covers, when the budget covers a period. Ajour
    * counts the user's entries from that day only. Without it, all count.
    */
-  since: dateSchema.optional(),
+  since: calendarDateSchema.optional(),
 });
 export type ProjectSourceBudget = z.infer<typeof projectSourceBudgetSchema>;
 
@@ -114,8 +114,8 @@ export const projectSourceProjectSchema = z.object({
   client: z.string().trim().min(1).max(240).optional(),
   /** The source marks it complete, so Ajour archives it. */
   complete: z.boolean(),
-  startsOn: dateSchema.optional(),
-  endsOn: dateSchema.optional(),
+  startsOn: calendarDateSchema.optional(),
+  endsOn: calendarDateSchema.optional(),
   budget: projectSourceBudgetSchema.optional(),
   /** Every task of the project, the ones not assigned to the user included. */
   tasks: z.array(projectSourceTaskSchema).max(PROJECT_SOURCE_MAX_TASKS),
@@ -136,7 +136,7 @@ export const projectSourceMeSchema = z.object({
    * month. Ajour compares the user's entries from that day only.
    * Without it, all count.
    */
-  hoursSince: dateSchema.optional(),
+  hoursSince: calendarDateSchema.optional(),
 });
 export type ProjectSourceMe = z.infer<typeof projectSourceMeSchema>;
 
@@ -228,7 +228,7 @@ export type ProjectSourceSyncResult = z.infer<
 >;
 
 /** `snapshot.projects[0].tasks[1].name`, as a person reads a path. */
-function describePath(path: readonly (string | number)[]) {
+export function describePath(path: readonly (string | number)[]) {
   return path.reduce<string>(
     (text, part) =>
       typeof part === "number"

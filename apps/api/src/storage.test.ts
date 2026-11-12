@@ -1119,6 +1119,9 @@ describe("state files from earlier versions", () => {
     connectorBacklogStatuses: [],
     disabledPluginIds: [],
     disabledCapabilities: {},
+    // Added for #691 without a new version: older files turned on none of
+    // the capabilities that start off.
+    enabledCapabilities: {},
     pluginsEnabled: true,
     // Added to version 7 without a new version: older files read the defaults.
     unsignedPluginsEnabled: true,

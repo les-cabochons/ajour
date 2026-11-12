@@ -278,13 +278,16 @@ export async function mergePullRequest(connection) {
 };
 
 /**
- * A project source. Every name, code, URL and group in its snapshot is
- * marked, and so is its cursor. It answers `unchanged` only to the cursor it gave.
+ * A project source and time sync. Every name, code, URL and group in its
+ * snapshot is marked, and so is its cursor. It answers `unchanged` only to
+ * the cursor it gave. A round echoes the marked values it received, and
+ * refuses a marked change with a marked sentence. It refuses a connection
+ * whose label ends in "-readonly" while Time entries is on.
  */
 const canaryProjectSource: TestPlugin = {
   id: "canary-projects",
   displayName: "Canary projects",
-  capabilities: { projectSource: {} },
+  capabilities: { projectSource: {}, timeSync: {} },
   connectionFields: [
     { id: "label", label: "Label", type: "text", required: true },
     { id: "tenantLabel", label: "Site", type: "text", required: true },
@@ -305,8 +308,38 @@ const canaryProjectSource: TestPlugin = {
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
 const CURSOR = 'W/"' + MARKER + '"';
-export async function validateConnection(connection) {
+export async function validateConnection(connection, context) {
+  if (
+    connection.label.endsWith("-readonly") &&
+    context.capabilities.includes("timeSync")
+  ) {
+    throw new Error("The token of " + connection.label + " can only read.");
+  }
   return { normalizedConfig: connection.config, connectionSummary: {} };
+}
+export async function syncTimeEntries(connection, request) {
+  const results = request.changes.map((change, index) =>
+    index === 0
+      ? {
+          syncKey: change.syncKey,
+          status: "synced",
+          entry: {
+            ...change.values,
+            remoteId: "te-" + MARKER,
+            clientRef: change.syncKey,
+            updatedAt: "2026-11-12T14:30:00.000Z",
+          },
+        }
+      : {
+          syncKey: change.syncKey,
+          status: "refused",
+          message: "Planner refuses " + change.values.taskName,
+        },
+  );
+  return {
+    results,
+    entries: results.flatMap((result) => (result.entry ? [result.entry] : [])),
+  };
 }
 export async function syncProjects(connection, request) {
   if (request.cursor === CURSOR) return { unchanged: true };
@@ -1159,6 +1192,76 @@ describe("the privacy canary", () => {
         "renderer command task.merge",
         "api request project_source.sync",
         "api plugin_operation project_source.sync",
+      ]),
+    );
+    expectNoLeak();
+  });
+
+  it("keeps the time entries of a time sync round, and a refused connection, out of every event", async () => {
+    const from = mark();
+    const save = (label: string) =>
+      app.appApi.savePluginConnection("canary-projects", {
+        label,
+        tenantLabel: `Site ${MARKER}`,
+        siteUrl: SITE,
+        token: SECRET,
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+      });
+    const { connection } = await save(`Time ${MARKER}`);
+    const readOnly = await save(`Time ${MARKER}-readonly`);
+    // Turning Time entries on checks each connection, and the plugin's
+    // refusal names the connection.
+    await expect(
+      app.appApi.setPluginEnabled("canary-projects", true, "timeSync"),
+    ).rejects.toThrow(MARKER);
+    await app.appApi.deletePluginConnection(
+      "canary-projects",
+      readOnly.connection.id,
+    );
+    await app.appApi.setPluginEnabled("canary-projects", true, "timeSync");
+    const values = {
+      localDate: "2026-11-10",
+      minutes: 90,
+      running: false,
+      projectRemoteId: `p-${MARKER}`,
+      taskName: `Task ${MARKER}`,
+      taskRemoteId: `t-${MARKER}`,
+    };
+    const round = await fetchAsTheApp(
+      `${api.baseUrl}/api/plugins/canary-projects/connections/${connection.id}/sync-time-entries`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "2026-10-12",
+          to: "2026-11-15",
+          timeZone: "America/Toronto",
+          changes: [
+            {
+              kind: "upsert",
+              syncKey: `entry-${MARKER}`,
+              remoteId: `te-${MARKER}`,
+              values,
+              agreed: values,
+            },
+            {
+              kind: "upsert",
+              syncKey: `other-${MARKER}`,
+              values: { ...values, taskName: `Refused ${MARKER}` },
+            },
+          ],
+        }),
+      },
+    );
+
+    expect(round.status).toBe(200);
+    expect(namesSince(from)).toEqual(
+      expect.arrayContaining([
+        "renderer command plugin.activate",
+        "api request plugin.activate",
+        "api request time_sync.round",
+        "api plugin_operation time_sync.round",
       ]),
     );
     expectNoLeak();

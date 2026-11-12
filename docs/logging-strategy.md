@@ -1057,6 +1057,7 @@ channel to read the event each emits.
 | `time_entry.stop`                    | command                            | store command                                    |
 | `time_entry.uncommit`                | command                            | store command                                    |
 | `time_entry.update`                  | command                            | store command                                    |
+| `time_sync.round`                    | request, plugin_operation          | route, plugin method                             |
 | `timeline.commit`                    | command                            | store command                                    |
 | `timeline.dismiss`                   | command                            | store command                                    |
 | `timeline.import`                    | command                            | store command                                    |
@@ -1121,7 +1122,8 @@ Two tests hold the whole app to the model (#311):
   descriptions and comments, calendar suggestions, pull requests (a sync,
   then every code host operation, with marked repositories, paths, review
   and comment bodies), a team (create and sync), a project source's
-  snapshot and cursor, a connection with a
+  snapshot and cursor, a time sync round and a connection the plugin
+  refuses for it, a connection with a
   secret, an agent's tool calls and plugin errors through the renderer and
   the real local API. The marker may stay in one place, named in
   `MARKER_ALLOWED_IN`: an error's `message`. ADR 0011 makes it a sensitive

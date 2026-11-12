@@ -592,6 +592,12 @@ export const catalog = defineCatalog({
         "not_supported",
         /** The plugin was updated since the user reviewed its access. */
         "version_changed",
+        /**
+         * Turning on a capability that starts off checked a connection, and
+         * the plugin refused it, so the capability stays off.
+         */
+        "connection_refused",
+        ...inactiveReasons,
         ...requestReasons,
       ],
       fields: {
@@ -602,6 +608,8 @@ export const catalog = defineCatalog({
           enabled: operational<boolean>(),
           /** Running plugin operations the turn-off cancelled. */
           operations_cancelled: operational<number>(),
+          /** Connections checked before a capability that starts off turned on. */
+          connections_checked: operational<number>(),
         },
       },
     },
@@ -2119,6 +2127,27 @@ export const catalog = defineCatalog({
           waiting_question_count: operational<number>(),
           /** Why the answer was not applied: the connection changed or went. */
           discarded: operational<"connection_changed" | "connection_gone">(),
+        },
+      },
+    },
+    /**
+     * One time sync round (#691): the route and the plugin method. Counts
+     * only: the entries' tasks and projects stay out.
+     */
+    "time_sync.round": {
+      kinds: ["request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        time_sync_round: {
+          /** The changes Ajour sent. */
+          change_count: operational<number>(),
+          synced_count: operational<number>(),
+          refused_count: operational<number>(),
+          failed_count: operational<number>(),
+          /** The remote entries the plugin listed in the window. */
+          entry_count: operational<number>(),
         },
       },
     },

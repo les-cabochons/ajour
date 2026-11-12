@@ -98,7 +98,11 @@ Backlog, code host, calendar, team and project source are capabilities of instal
 plugins. A plugin declares one or more in its manifest, and its connections
 serve all of them. A project source (`projectSource`, plugin API 4) is read-only:
 `syncProjects` returns a snapshot of projects, tasks, assignments and budgets, or
-reports it unchanged, and Ajour never writes back (ADR 0016). A connection field may name the capability it configures, so the connection
+reports it unchanged, and Ajour never writes back (ADR 0016). A time sync
+(`timeSync`, plugin API 4, only beside `projectSource`) is the one exception,
+for time entries only: `syncTimeEntries` applies up to 20 changes in order and
+lists the remote entries of a window (ADR 0018). Its Time entries switch starts
+off, and turning it on validates each connection with `timeSync` on. A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date
