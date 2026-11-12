@@ -1701,13 +1701,19 @@ describe("a submitted week", () => {
     const listedAgain = roundIn(refused.state, listing(editedThere()));
     expect(plan(listedAgain.state).request.changes).toEqual([]);
 
-    // The plugin answers it synced, then lists its own values, changed at
-    // another time than it answered.
+    // The plugin stores 1:30 as 1:15, answers that, and lists it changed at
+    // another time than it answered. Read as an edit, it would go back
+    // every round, and come back 1:15 every time.
     const storedOtherwise = editedThere({
+      minutes: 75,
       updatedAt: "2026-11-12T15:30:00.000Z",
     });
     const synced = roundIn(seen, (round) => ({
-      results: syncEverything(round).results,
+      results: syncEverything(round).results.map((result) =>
+        result.status === "synced" && result.entry
+          ? { ...result, entry: { ...result.entry, minutes: 75 } }
+          : result,
+      ),
       entries: [storedOtherwise],
     }));
     expect(synced.result).toMatchObject({ putBack: 1 });
@@ -1715,6 +1721,27 @@ describe("a submitted week", () => {
     const later = roundIn(synced.state, listing(storedOtherwise));
     expect(later.result).toMatchObject({ putBack: 0 });
     expect(plan(later.state).request.changes).toEqual([]);
+  });
+
+  it("puts back an edit made there between a put-back and the round's listing", () => {
+    const seen = roundIn(submittedWeek(), listing(editedThere())).state;
+
+    // The plugin stored 1:30, then someone changed it to 0:30 there.
+    const editedSince = roundIn(seen, (round) => ({
+      results: syncEverything(round).results,
+      entries: [
+        editedThere({ minutes: 30, updatedAt: "2026-11-12T15:30:00.000Z" }),
+      ],
+    }));
+
+    expect(editedSince.result).toMatchObject({ putBack: 1 });
+    expect(plan(editedSince.state).request.changes).toEqual([
+      expect.objectContaining({
+        syncKey: "e1",
+        agreed: expect.objectContaining({ minutes: 30 }),
+        values: expect.objectContaining({ minutes: 90 }),
+      }),
+    ]);
   });
 
   it("never reads an entry it just created again as deleted there in the same round", () => {

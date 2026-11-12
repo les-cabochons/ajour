@@ -852,7 +852,7 @@ function takeListing(
   record: LocalTimeSync,
   plan: TimeSyncPlan,
   answer: TimeSyncResult,
-  outcomes: ReadonlyMap<string, TimeSyncChangeResult["status"]>,
+  outcomes: ReadonlyMap<string, TimeSyncChangeResult>,
   context: TimeSyncContext,
   factories: TimesheetEntryFactories,
 ): TakenListing {
@@ -922,7 +922,11 @@ function takeListing(
 
   for (const [syncKey, copy] of Object.entries(record.copies)) {
     const outcome = outcomes.get(syncKey);
-    if (outcome === "failed" || outcome === "refused" || running.has(syncKey)) {
+    if (
+      outcome?.status === "failed" ||
+      outcome?.status === "refused" ||
+      running.has(syncKey)
+    ) {
       continue;
     }
     const remote = listed.get(copy.remoteId);
@@ -943,7 +947,7 @@ function takeListing(
         // The next round creates it again. Not when this round just sent
         // it: an entry the other system took but doesn't list yet is not a
         // delete there, or every round would create it again.
-        if (outcome !== "synced") {
+        if (outcome?.status !== "synced") {
           delete copies[syncKey];
           puttingBack.add(syncKey);
         }
@@ -962,10 +966,12 @@ function takeListing(
     // Ajour deleted it, or it stopped taking part: the delete wins.
     if (deletedHere) continue;
     if (locked(entry.localDate) || locked(remote.localDate)) {
-      // Put back. Not when this round just sent the entry: values the other
-      // system lists unlike its answer are how it stores Ajour's, not an
-      // edit there. They count as agreed, or every round would send them.
-      if (outcome === "synced") {
+      // Put back. When this round just sent the entry, a listing with the
+      // values the plugin answered it stored is how it stores Ajour's, not
+      // an edit there: they count as agreed, or every round would send them
+      // again. Other values are an edit made there since, put back as well.
+      const answered = outcome?.status === "synced" ? outcome.entry : undefined;
+      if (answered && sameAsAgreed(remoteValuesOf(answered), remote)) {
         copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       } else {
         copies[syncKey] = {
@@ -1142,7 +1148,7 @@ export function applyTimeSyncRound(
   const refusals: Record<string, LocalTimeSyncRefusal> = {
     ...record.refusals,
   };
-  const outcomes = new Map<string, TimeSyncChangeResult["status"]>();
+  const outcomes = new Map<string, TimeSyncChangeResult>();
   const counts = { synced: 0, putBack: 0, refused: 0, failed: 0 };
   /** The put-backs still to send: a failed one goes again. */
   const puttingBack = new Set(record.puttingBack);
@@ -1151,7 +1157,7 @@ export function applyTimeSyncRound(
     const change = sent.get(outcome.syncKey);
     if (!change) continue;
     const { syncKey } = outcome;
-    outcomes.set(syncKey, outcome.status);
+    outcomes.set(syncKey, outcome);
     if (outcome.status === "failed") {
       counts.failed += 1;
       failedMessage ??= outcome.message;
