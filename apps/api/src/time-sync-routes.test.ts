@@ -11,6 +11,10 @@ import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
+import {
+  exampleProjectSourceDirectory,
+  exampleProjectSourceManifest,
+} from "../../../packages/example/index.ts";
 
 /*
  * The time sync capability on the local API (#691): the Time entries
@@ -157,11 +161,18 @@ describe("time sync on the local API", () => {
     await writeFile(path.join(directory, "plugin.mjs"), PLUGIN_SOURCE);
   }
 
-  /** A server with the fixture plugin as a development plugin, and one saved connection. */
-  async function setup() {
+  /**
+   * A server with the fixture plugin as a development plugin, or the example
+   * plugin of `packages/example` when `exampleDirectory` names it, and one
+   * saved connection.
+   */
+  async function setup(exampleDirectory?: string) {
     const root = await tempDir();
-    const pluginDirectory = path.join(root, "planner");
-    await writePlugin(pluginDirectory);
+    const pluginId = exampleDirectory
+      ? exampleProjectSourceManifest.id
+      : "planner";
+    const pluginDirectory = exampleDirectory ?? path.join(root, "planner");
+    if (!exampleDirectory) await writePlugin(pluginDirectory);
     const sink = createRecordingSink<AjourEvent>();
     const server = createAppApiServer({
       ...windowServerOptions,
@@ -178,7 +189,7 @@ describe("time sync on the local API", () => {
     const save = async (serviceUrl: string) => {
       const saved = await dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/plugins/planner/connections",
+        path: `/api/plugins/${pluginId}/connections`,
         body: JSON.stringify({
           values: {
             label: "Planner",
@@ -196,7 +207,7 @@ describe("time sync on the local API", () => {
     const setTimeEntries = (enabled: boolean) =>
       dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/plugins/planner/activation",
+        path: `/api/plugins/${pluginId}/activation`,
         body: JSON.stringify({ enabled, capability: "timeSync" }),
       });
     const group = async () => {
@@ -216,7 +227,7 @@ describe("time sync on the local API", () => {
     const sync = (body: unknown = round) =>
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/plugins/planner/connections/${connectionId}/sync-time-entries`,
+        path: `/api/plugins/${pluginId}/connections/${connectionId}/sync-time-entries`,
         body: JSON.stringify(body),
       });
     const validated = () => fixture.__plannerValidated ?? [];
@@ -426,6 +437,103 @@ describe("time sync on the local API", () => {
       expect(response.status).toBe(400);
       expect((response.body as { error: string }).error).toContain("changes");
       expect(rounds()).toEqual([]);
+    });
+  });
+  describe("the example plugin", () => {
+    /** A saved entry on the example fixture's project. */
+    const saved = (localDate: string, minutes: number) => ({
+      localDate,
+      minutes,
+      running: false,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+
+    it("applies changes in order, adopts a create it holds, and lists the window", async () => {
+      const { setTimeEntries, sync } = await setup(
+        exampleProjectSourceDirectory,
+      );
+      expect((await setTimeEntries(true)).status).toBe(200);
+
+      const first = await sync({
+        from: "2026-10-01",
+        to: "2026-11-15",
+        timeZone: "America/Toronto",
+        changes: [
+          { kind: "upsert", syncKey: "a", values: saved("2026-11-10", 60) },
+          { kind: "upsert", syncKey: "b", values: saved("2026-11-11", 30) },
+          {
+            kind: "upsert",
+            syncKey: "c",
+            values: saved("2026-11-11", 25 * 60),
+          },
+          { kind: "upsert", syncKey: "d", values: saved("2026-10-05", 15) },
+        ],
+      });
+
+      expect(first.status).toBe(200);
+      expect(first.body).toMatchObject({
+        results: [
+          {
+            syncKey: "a",
+            status: "synced",
+            entry: { remoteId: "example-1", clientRef: "a", minutes: 60 },
+          },
+          {
+            syncKey: "b",
+            status: "synced",
+            entry: { remoteId: "example-2", clientRef: "b" },
+          },
+          {
+            syncKey: "c",
+            status: "refused",
+            message: "The example planner refuses an entry over 24 hours.",
+          },
+          {
+            syncKey: "d",
+            status: "synced",
+            entry: { remoteId: "example-3", clientRef: "d" },
+          },
+        ],
+      });
+      const remoteIds = (body: unknown) =>
+        (body as { entries: { remoteId: string }[] }).entries.map(
+          (entry) => entry.remoteId,
+        );
+      expect(remoteIds(first.body)).toEqual([
+        "example-3",
+        "example-1",
+        "example-2",
+      ]);
+
+      // A create whose answer was lost comes again without the remote id:
+      // the remote holds its client reference, so it updates that entry.
+      const second = await sync({
+        from: "2026-11-09",
+        to: "2026-11-15",
+        timeZone: "America/Toronto",
+        changes: [
+          { kind: "upsert", syncKey: "a", values: saved("2026-11-12", 45) },
+          { kind: "delete", syncKey: "b", remoteId: "example-2" },
+        ],
+      });
+
+      expect(second.body).toMatchObject({
+        results: [
+          {
+            syncKey: "a",
+            status: "synced",
+            entry: {
+              remoteId: "example-1",
+              localDate: "2026-11-12",
+              minutes: 45,
+            },
+          },
+          { syncKey: "b", status: "synced" },
+        ],
+      });
+      // "d" is still there, before the window.
+      expect(remoteIds(second.body)).toEqual(["example-1"]);
     });
   });
 });
