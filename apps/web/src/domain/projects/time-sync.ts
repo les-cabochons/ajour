@@ -560,23 +560,56 @@ export function planTimeSyncRound(
 }
 
 /**
- * Notes when Ajour first saw each copied entry differ from its copy, and
- * clears that time once they agree. Drops a refusal whose entry changed
- * since, so the next round sends the new values.
+ * When Ajour first saw a copied entry differ from its copy, as a round knows
+ * it: at planning while the copy still agrees on the values the plan saw it
+ * differ from, else now, since the difference is against values agreed
+ * after the plan.
+ */
+function firstSeenAt(
+  plan: Pick<TimeSyncPlan, "plannedAt" | "changedAtPlanning">,
+  syncKey: string,
+  agreed: TimeSyncEntryValues,
+  now: number,
+) {
+  const plannedAgainst = Object.hasOwn(plan.changedAtPlanning, syncKey)
+    ? plan.changedAtPlanning[syncKey]
+    : undefined;
+  return plannedAgainst && sameEntryValues(plannedAgainst, agreed)
+    ? plan.plannedAt
+    : now;
+}
+
+/**
+ * Notes when Ajour first saw each copied entry differ from its copy, as
+ * `firstSeenAt` says, and clears that time once they agree. Drops a refusal
+ * whose entry changed since, so the next round sends the new values.
  */
 function noteLocalChanges(
   state: TimeSyncState,
   connection: TimeSyncConnectionRef,
   record: LocalTimeSync,
   context: TimeSyncContext,
-  seenAt: number,
+  plan: Pick<TimeSyncPlan, "plannedAt" | "changedAtPlanning">,
+  now: number,
 ): LocalTimeSync {
-  const reader = createReader(state, connection, record, context, seenAt);
+  const reader = createReader(
+    state,
+    connection,
+    record,
+    context,
+    plan.plannedAt,
+  );
   let copies = record.copies;
   for (const [syncKey, copy] of Object.entries(record.copies)) {
     const changed = reader.changeFor(syncKey) !== undefined;
     if (changed && copy.changedAt === undefined) {
-      copies = { ...copies, [syncKey]: { ...copy, changedAt: seenAt } };
+      copies = {
+        ...copies,
+        [syncKey]: {
+          ...copy,
+          changedAt: firstSeenAt(plan, syncKey, copy.agreed, now),
+        },
+      };
     } else if (!changed && copy.changedAt !== undefined) {
       const { changedAt: _agreed, ...rest } = copy;
       copies = { ...copies, [syncKey]: rest };
@@ -862,17 +895,9 @@ function takeListing(
     }
     // Ajour deleted it, or it stopped taking part: the delete wins.
     if (deletedHere) continue;
-    // Both changed: Ajour's change wins when it is the later one. A
-    // difference the plan saw against the same agreed values is no newer
-    // than the plan; one against values agreed since, no newer than now.
-    const plannedAgainst = Object.hasOwn(plan.changedAtPlanning, syncKey)
-      ? plan.changedAtPlanning[syncKey]
-      : undefined;
+    // Both changed: Ajour's change wins when it is the later one.
     const localAt =
-      copy.changedAt ??
-      (plannedAgainst && sameEntryValues(plannedAgainst, copy.agreed)
-        ? plan.plannedAt
-        : now);
+      copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
@@ -1086,7 +1111,8 @@ export function applyTimeSyncRound(
       },
     },
     context,
-    plan.plannedAt,
+    plan,
+    now,
   );
   const result = {
     kind: "applied" as const,
@@ -1149,7 +1175,8 @@ export function failTimeSyncRound(
           connection,
           failed,
           planned.context,
-          planned.plan.plannedAt,
+          planned.plan,
+          now,
         )
       : failed,
   };

@@ -1365,6 +1365,33 @@ describe("taking the other system's changes", () => {
         values: expect.objectContaining({ minutes: 150 }),
       }),
     ]);
+
+    // The next round, planned at 16:30, leaves it waiting past its 20; an
+    // edit there at 15:10 shows only now. Ajour's edit, seen at 16:00, wins.
+    const next = {
+      ...plan(applied.state),
+      plannedAt: Date.parse("2026-11-12T16:30:00.000Z"),
+    };
+    const waiting = {
+      ...next,
+      request: { ...next.request, changes: [] },
+      waiting: 1,
+    };
+    const later = applyTimeSyncRound(
+      applied.state,
+      waiting,
+      {
+        results: [],
+        entries: [
+          remoteE1({ minutes: 30, updatedAt: "2026-11-12T15:10:00.000Z" }),
+        ],
+      },
+      CONTEXT,
+      factoriesAt(Date.parse("2026-11-12T17:00:00.000Z")),
+    );
+    expect(entriesOf(later.state)).toEqual([
+      expect.objectContaining({ durationMs: 150 * MINUTE }),
+    ]);
   });
 
   it("never reads an entry as deleted while its change of the round failed or was refused", () => {
