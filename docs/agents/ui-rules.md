@@ -66,7 +66,8 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Preserve user-entered values during validation errors.
 - Settings save on change or on blur, only when the value changed, with the Undo toast where the UX spec gives one. No per-row Save buttons.
 - Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Reorder and cross-day drags get both from `lib/table-drag.ts`.
-- Enabled buttons, `role="button"` elements, links, switches and checkboxes show the pointer cursor, and disabled or `aria-disabled` ones show the default cursor. The base layer of `apps/web/src/styles.css` sets both, so components do not add `cursor-pointer`. Set a cursor only when it means something else, such as grab, resize or text.
+- Enabled buttons, `role="button"` elements, links, switches and checkboxes show the pointer cursor, and disabled or `aria-disabled` ones show the default cursor. The base layer of `apps/web/src/styles.css` sets both, so components do not add `cursor-pointer`. Set a cursor only when it means something else, such as grabbing, resize or text.
+- Rows that can be dragged to reorder keep the pointer cursor, because a click still opens or selects them. The grabbing cursor shows only while a drag runs.
 - Route loading shows `PageSkeleton` from `apps/web/src/components/page-skeleton.tsx`, the page layout in `Skeleton` blocks, after 150ms. Faster loads show nothing.
 
 ## Motion and performance

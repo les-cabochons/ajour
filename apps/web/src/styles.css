@@ -321,7 +321,7 @@
   }
 
   /* Interactive elements point, as in shadcn/ui. The base layer sits under
-     components and utilities, so explicit cursors (grab, resize, text) win. */
+     components and utilities, so explicit cursors (grabbing, resize, text) win. */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   a[href],
