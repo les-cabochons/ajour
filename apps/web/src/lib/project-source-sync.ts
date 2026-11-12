@@ -49,7 +49,14 @@ export type ProjectSourceSyncOutcome =
   /** The connection changed, went or was turned off while the sync ran. */
   | { kind: "discarded" };
 
-const runningSyncs = new Map<string, Promise<ProjectSourceSyncOutcome>>();
+/** The run of each connection in this window, and who started it. */
+const runningSyncs = new Map<
+  string,
+  {
+    trigger: "user" | "schedule";
+    promise: Promise<ProjectSourceSyncOutcome>;
+  }
+>();
 
 /**
  * The connection, when the local API has it with Managed projects on, read
@@ -68,8 +75,11 @@ async function activeConnection(pluginId: string, connectionId: string) {
 /**
  * Syncs one project source connection, as one `project_source.sync` job: its
  * local API calls and the store command that applies the answer count on
- * it. A manual and a scheduled call share one run, and other windows wait
- * for it.
+ * it. In this window, a call shares the connection's run in progress,
+ * except a user call that finds a scheduled run (#688): the plugin may answer
+ * that one from its copies, so the user call starts a run once it ends, and
+ * later user calls share that one. Another window's call waits for the run
+ * to end, then runs its own.
  *
  * The local API keeps the cursor, and moves it before the web applies the
  * answer. So the web asks for the whole snapshot when it holds nothing from
@@ -84,9 +94,16 @@ export function syncProjectSourceConnection(
   options: { trigger?: "user" | "schedule" } = {},
 ): Promise<ProjectSourceSyncOutcome> {
   const key = JSON.stringify([pluginId, connectionId]);
-  const running = runningSyncs.get(key);
-  if (running) return running;
   const trigger = options.trigger ?? "user";
+  const running = runningSyncs.get(key);
+  if (running) {
+    if (trigger === "user" && running.trigger === "schedule") {
+      const again = () =>
+        syncProjectSourceConnection(pluginId, connectionId, options);
+      return running.promise.then(again, again);
+    }
+    return running.promise;
+  }
   if (trigger === "user") lastUserSyncAt.set(key, Date.now());
 
   const run = async (
@@ -184,10 +201,10 @@ export function syncProjectSourceConnection(
       (job) => exclusively(`ajour-project-source-sync:${key}`, () => run(job)),
     )
     .finally(() => {
-      if (runningSyncs.get(key) === promise) runningSyncs.delete(key);
+      if (runningSyncs.get(key)?.promise === promise) runningSyncs.delete(key);
     });
 
-  runningSyncs.set(key, promise);
+  runningSyncs.set(key, { trigger, promise });
   return promise;
 }
 

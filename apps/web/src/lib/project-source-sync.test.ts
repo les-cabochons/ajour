@@ -204,6 +204,36 @@ describe("a project source sync", () => {
     });
   });
 
+  it("reads the source for the user after a 15-minute sync that runs, in one run for all who asked (#688)", async () => {
+    const { sync, recorded } = await load();
+    const jobs = () =>
+      recorded.filter(
+        (event) => event.name === "project_source.sync" && event.kind === "job",
+      );
+    // What the local API passes on to the plugin, one per request.
+    const requests = () =>
+      api.events.filter(
+        (event) =>
+          event.name === "project_source.sync" && event.kind === "request",
+      );
+
+    const scheduled = sync("schedule");
+    // The page opens, and the user clicks Sync now, while it runs.
+    const onOpen = sync("user");
+    const syncNow = sync("user");
+    const [, opened, clicked] = await Promise.all([scheduled, onOpen, syncNow]);
+
+    expect(jobs().map((job) => job.project_source_sync?.trigger)).toEqual([
+      "auto",
+      "manual",
+    ]);
+    expect(clicked).toBe(opened);
+    await waitForEvent(api.events, () => requests().length === 2);
+    expect(
+      requests().map((request) => request.project_source_sync?.trigger),
+    ).toEqual(["auto", "manual"]);
+  });
+
   it("trusts the API's cursor while each answer applies", async () => {
     const { sync, connectionId, localStore, appApi, recorded } = await load();
     await sync();
