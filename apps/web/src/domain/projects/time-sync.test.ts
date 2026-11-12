@@ -777,6 +777,22 @@ describe("the running entry", () => {
     ]);
   });
 
+  it("sends Continue on an entry taken from there to its remote entry, also once Time entries went off and on", () => {
+    const taken = stateWith([entry("e1", { timeSyncRemoteId: "logged" })]);
+    const continued = act(taken, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+
+    expect(changesAt(continued, NOW + MINUTE + 2_000)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        remoteId: "logged",
+        values: expect.objectContaining({ running: true }),
+      }),
+    ]);
+  });
+
   it("sends Continue on today's entry as that entry running again, counting its saved time", () => {
     const saved = roundAt(stateWith([entry("e1")]), NOW).state;
     const continued = act(saved, NOW + MINUTE, (app, factories) =>

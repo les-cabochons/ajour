@@ -264,9 +264,19 @@ interface SyncSource {
   timeSyncRemoteId?: string;
 }
 
-/** A running entry as the rules read it at `now`. */
-function runningSourceOf(timer: LocalTimer, now: number): SyncSource {
+/**
+ * A running entry as the rules read it at `now`. One that continues an
+ * entry taken from there keeps its remote id, so Ajour's values go to it.
+ */
+function runningSourceOf(
+  timer: LocalTimer,
+  now: number,
+  resumed: LocalTimesheetEntry | undefined,
+): SyncSource {
   return {
+    ...(resumed?.timeSyncRemoteId
+      ? { timeSyncRemoteId: resumed.timeSyncRemoteId }
+      : {}),
     localDate: timer.localDate,
     projectId: timer.projectId,
     taskId: timer.taskId,
@@ -403,6 +413,9 @@ function createReader(
     context,
   );
 
+  const savedById = new Map(
+    state.timesheetEntries.map((entry) => [entry._id, entry]),
+  );
   /**
    * The entry under each sync key. A running entry that resumed today's
    * entry shares its key, and counts for it until it stops.
@@ -412,7 +425,15 @@ function createReader(
       (entry) => [entrySyncKey(entry), entry] as const,
     ),
     ...state.timers.map(
-      (timer) => [entrySyncKey(timer), runningSourceOf(timer, now)] as const,
+      (timer) =>
+        [
+          entrySyncKey(timer),
+          runningSourceOf(
+            timer,
+            now,
+            timer.entryId ? savedById.get(timer.entryId) : undefined,
+          ),
+        ] as const,
     ),
   ]);
 
