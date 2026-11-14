@@ -27,7 +27,7 @@ Each call is one round for one connection. Apply `request.changes` in order, the
 
 - **`from` and `to`.** The window to list, as local dates, `YYYY-MM-DD`, both included.
 - **`timeZone`.** The user's IANA time zone, such as `America/Toronto`. The window's dates and each entry's `localDate` are days in it.
-- **`changes`.** At most 20, in the order to apply them. One per entry.
+- **`changes`.** At most 20, in the order to apply them. One per entry. It can be empty: before a round that changes entries your system has, Ajour sends one with no changes and takes its listing first, so a later change on your side isn't overwritten.
 
 A change is an `upsert`, with the entry's `values`, or a `delete`. It has:
 

@@ -443,7 +443,11 @@ function createReader(
     if (values) {
       // An entry taken from there, whose copy went with Time entries off,
       // still names its remote entry, so Ajour's values go to it. It takes
-      // part, so its project is this connection's, and so is the id.
+      // part, so its project is this connection's. The id is this
+      // connection's too, unless the entry moved here from a project
+      // another time sync manages. That id then names nothing here when
+      // ids are unique, such as UUIDs, and the plugin handles it as it
+      // handles any entry deleted there.
       const remote =
         !copy && entry?.timeSyncRemoteId
           ? { remoteId: entry.timeSyncRemoteId }
@@ -569,6 +573,23 @@ export function planTimeSyncRound(
       ),
     ),
   };
+}
+
+/**
+ * The round to send before this plan when the plan would change an entry
+ * the other system already has: the same plan with no changes, so its
+ * listing goes through the conflict check first. The plugin applies changes
+ * before it lists, so a change sent at once would overwrite a later edit
+ * there, or create again an entry deleted there, that it should lose to.
+ * Then the runner plans again from what the listing left. Undefined when the
+ * plan only creates entries.
+ */
+export function listingRoundOf(plan: TimeSyncPlan): TimeSyncPlan | undefined {
+  const overwrites = plan.request.changes.some(
+    (change) => change.remoteId !== undefined || change.agreed !== undefined,
+  );
+  if (!overwrites) return undefined;
+  return { ...plan, request: { ...plan.request, changes: [] }, waiting: 0 };
 }
 
 /**

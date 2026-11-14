@@ -726,7 +726,10 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     #696, `put_back_count` counts the upserts that sent Ajour's values back
     over an edit or a delete in a submitted week, and the renderer's
     `synced_count` leaves them out. A round that finds one to put back
-    writes the store, so the next round goes 2 s later.
+    writes the store, so the next round goes 2 s later. A round that would
+    change an entry the other system has first lists the window with no
+    changes and plans again, with `listed_first`; its counts cover both
+    calls.
   - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
     Refresh (`user`) or not. A load the cache answers records nothing, by
     decision: the 30-second refresh would emit an event each time, so there

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import {
+  deleteExampleRemoteEntry,
   editExampleRemoteEntry,
   exampleProjectSourceDirectory,
   exampleProjectSourceManifest,
@@ -309,6 +310,70 @@ describe("a time sync round", () => {
     expect(
       localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
     ).toMatchObject({ remoteId, agreed: { minutes: 90 } });
+  });
+
+  // The plugin applies the changes before it lists, so a change sent at
+  // once would overwrite what it should lose to.
+  it("lets a delete there win over an edit Ajour hasn't sent, instead of creating the entry again", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    const { remoteId } =
+      localStore.snapshot().timeSyncs![connectionId]!.copies[entryId]!;
+    deleteExampleRemoteEntry(connectionId, remoteId);
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+
+    expect(await round("change")).toMatchObject({
+      kind: "applied",
+      synced: 0,
+      received: 1,
+    });
+
+    expect(
+      localStore.snapshot().timesheetEntries.some((e) => e._id === entryId),
+    ).toBe(false);
+    expect(
+      localStore.snapshot().timeSyncs?.[connectionId]?.copies,
+    ).not.toHaveProperty(entryId);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "ok",
+      time_sync_round: { trigger: "change", listed_first: true },
+    });
+    // Nothing was created there again for the next round to list.
+    expect(await round("poll")).toMatchObject({ received: 0 });
+  });
+
+  it("lets a newer edit there win over an edit of Ajour's that waited for a failed round", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    await round("change");
+    const { remoteId } =
+      localStore.snapshot().timeSyncs![connectionId]!.copies[entryId]!;
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+      String(url).endsWith("/sync-time-entries")
+        ? new Response(JSON.stringify({ error: "The planner is down." }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          })
+        : fetchAsTheApp(url, init),
+    );
+    await expect(round("change")).rejects.toThrow("The planner is down.");
+    vi.stubGlobal("fetch", fetchAsTheApp);
+    // A moment later, so its time is after the time Ajour saw its own edit.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    editExampleRemoteEntry(connectionId, remoteId, { minutes: 20 });
+
+    expect(await round("retry")).toMatchObject({
+      kind: "applied",
+      synced: 0,
+      received: 1,
+    });
+
+    expect(
+      localStore.snapshot().timesheetEntries.find((e) => e._id === entryId),
+    ).toMatchObject({ durationMs: 20 * 60_000 });
+    expect(
+      localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
+    ).toMatchObject({ remoteId, agreed: { minutes: 20 } });
   });
 
   it("waits before the next round when changes failed, even with more waiting", async () => {
