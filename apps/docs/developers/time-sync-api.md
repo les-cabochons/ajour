@@ -58,6 +58,8 @@ Answer one result per change, by its `syncKey`:
 
 Then list `entries`, every entry of the user in the window after the changes, at most 2,000. Each has your `remoteId`, `clientRef` when Ajour created it, its values as above, and `updatedAt`, when your system last changed it, as an ISO date-time. When both sides changed an entry between two rounds, the later change wins.
 
+List the user's running entry with `running: true` and `countingSince`. One Ajour didn't create becomes the user's running entry in Ajour, and Ajour saves its own at that `countingSince`. Keep one running entry per person: when a timer starts, in your system or from an upsert Ajour sends, stop the one running before at that instant. Ajour then reads the stop of its own running entry, and keeps the minutes you list.
+
 Ajour checks every answer before it uses any of it. It refuses one that leaves a change without a result, answers a change twice, or gives a synced upsert no entry, naming the field.
 
 ## Types

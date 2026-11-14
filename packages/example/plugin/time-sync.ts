@@ -114,8 +114,9 @@ export function runRound(
 
 /*
  * Another tool's hand on the remote, for Ajour's tests: an entry logged,
- * edited or deleted there, as a timer in a planning tool would. Ajour takes
- * these changes on its next round. Each one stamps `updatedAt` now.
+ * edited or deleted there, or a timer started there, as a planning tool
+ * would. Ajour takes these changes on its next round. Each one stamps
+ * `updatedAt` now.
  */
 
 /** Logs an entry as another tool would: without a client reference. */
@@ -152,4 +153,40 @@ export function editElsewhere(
 /** Deletes an entry as another tool would. */
 export function deleteElsewhere(connectionId: string, remoteId: string) {
   remoteOf(connectionId).entries.delete(remoteId);
+}
+
+/**
+ * Starts a timer as another tool would, counting from `countingSince`. The
+ * planner keeps one running entry per person, as a real system does, so the
+ * entry running there stops at that instant, with its whole minutes.
+ */
+export function startElsewhere(
+  connectionId: string,
+  values: Omit<TimeSyncEntryValues, "minutes" | "running" | "countingSince"> & {
+    countingSince: string;
+  },
+): TimeSyncRemoteEntry {
+  const remote = remoteOf(connectionId);
+  const startedAt = Date.parse(values.countingSince);
+  for (const entry of remote.entries.values()) {
+    if (!entry.running || !entry.countingSince) continue;
+    const minutes = Math.round(
+      (startedAt - Date.parse(entry.countingSince)) / 60_000,
+    );
+    remote.entries.set(
+      entry.remoteId,
+      stored(entry.remoteId, entry.clientRef, {
+        ...entry,
+        running: false,
+        minutes: Math.max(0, minutes),
+      }),
+    );
+  }
+  const entry = stored(`example-${remote.nextId++}`, undefined, {
+    ...values,
+    minutes: 0,
+    running: true,
+  });
+  remote.entries.set(entry.remoteId, entry);
+  return entry;
 }

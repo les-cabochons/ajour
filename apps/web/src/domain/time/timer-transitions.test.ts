@@ -164,6 +164,36 @@ describe("the time sync key of the running entry", () => {
     ).not.toHaveProperty("syncKey");
   });
 
+  it("hands the remote id of a running entry a time sync took to the entry it saves as", () => {
+    const started = startTimer(
+      createState(),
+      {
+        projectId: "project-1",
+        taskId: "task-1",
+        timeSyncRemoteId: "elsewhere",
+      },
+      TODAY,
+      createFactories(),
+    );
+    const [timer] = started.timers;
+    expect(timer).toMatchObject({ timeSyncRemoteId: "elsewhere" });
+    expect(normalizeTimer(JSON.parse(JSON.stringify(timer)))).toMatchObject({
+      timeSyncRemoteId: "elsewhere",
+    });
+    expect(
+      normalizeTimer({ ...timer!, timeSyncRemoteId: " " }),
+    ).not.toHaveProperty("timeSyncRemoteId");
+
+    expect(
+      saveTimer(started, timer!._id, createFactories(2_000)).timesheetEntries,
+    ).toEqual([
+      expect.objectContaining({
+        syncKey: timer!._id,
+        timeSyncRemoteId: "elsewhere",
+      }),
+    ]);
+  });
+
   it("gives a running entry continued from another day a key of its own", () => {
     const entry = createEntry({ syncKey: "timer-0" });
     const continued = continueTimesheetEntry(
