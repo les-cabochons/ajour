@@ -2169,6 +2169,12 @@ export const catalog = defineCatalog({
            */
           put_back_count: operational<number>(),
           /**
+           * The round listed the window with no changes before it sent, as
+           * it would change an entry the other system has. Its counts cover
+           * both calls, and `entry_count` is the last listing's.
+           */
+          listed_first: operational<boolean>(),
+          /**
            * Why the answer was not kept: the connection was saved again, or
            * Time entries went off while the round ran.
            */

@@ -6,6 +6,7 @@ import {
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
 import {
+  listingRoundOf,
   planTimeSyncRound,
   reconcileTimeSyncs,
   timeSyncStateOf,
@@ -33,7 +34,10 @@ import { wideEvents } from "@/lib/wide-events";
  * sync-time-entries route, and keeps the answer, with what changed in the
  * other system (#694) and what it puts back in a submitted week (#696).
  * A round that finds an entry to put back writes the store, so the next
- * round goes 2 s later and sends it. The rules live in
+ * round goes 2 s later and sends it. A round that would change an entry the
+ * other system has lists the window first, with no changes, and plans again
+ * from what that took, since the plugin applies changes before it lists.
+ * The rules live in
  * domain/projects/time-sync.ts. The runner sends a round 2 s after a store
  * write and every 60 s while Time entries is on and the plugin is active,
  * one round at a time per connection, and backs off after a failure.
@@ -160,6 +164,45 @@ export function runTimeSyncRound(
       connection: { id: connectionId },
       time_sync_round: { trigger },
     });
+    /**
+     * Keeps one answer of the round, unless the connection was saved again
+     * or Time entries went off while it ran, and counts it on the job.
+     */
+    const keep = (
+      { plan, context }: PlannedTimeSyncRound,
+      answer: TimeSyncRouteResponse,
+    ): TimeSyncRoundOutcome => {
+      job.set({ time_sync_round: { entry_count: answer.entries.length } });
+      // Saved again in this window while the round ran: the answer may be
+      // for another account.
+      if (connectionGeneration(pluginId, connectionId) !== generation) {
+        job
+          .set({ time_sync_round: { discarded: "connection_changed" } })
+          .end("noop");
+        return { kind: "discarded" };
+      }
+      const result = job.enter(() =>
+        localStore.applyTimeSyncRound(plan, answer, context),
+      );
+      if (result.kind === "discarded") {
+        job
+          .set({ time_sync_round: { discarded: "time_sync_stopped" } })
+          .end("noop");
+        return result;
+      }
+      job.set({
+        time_sync_round: {
+          synced_count: result.synced,
+          put_back_count: result.putBack,
+          refused_count: result.refused,
+          failed_count: result.failed,
+          received_count: result.received,
+          held_count: result.held,
+        },
+      });
+      return result;
+    };
+
     let planned: PlannedTimeSyncRound | undefined;
     let answer: TimeSyncRouteResponse;
     try {
@@ -190,8 +233,35 @@ export function runTimeSyncRound(
         job.end("noop");
         return { kind: "idle" };
       }
+      const listing = listingRoundOf(planned.plan);
+      if (listing) {
+        // Takes what changed there first, so a change Ajour should lose
+        // never goes over it, then plans again from what that left.
+        job.set({ time_sync_round: { listed_first: true } });
+        const listed = await job.enter(() =>
+          syncTimeEntries(pluginId, connectionId, listing.request),
+        );
+        const kept = keep({ plan: listing, context: planned.context }, listed);
+        if (kept.kind !== "applied") return kept;
+        const next = planFor(ref, overview);
+        if (!next || next.plan.request.changes.length === 0) {
+          job.set({ time_sync_round: { change_count: 0, waiting_count: 0 } });
+          return kept;
+        }
+        planned = {
+          ...next,
+          plan: { ...next.plan, receivedBefore: kept.received },
+        };
+        job.set({
+          time_sync_round: {
+            change_count: planned.plan.request.changes.length,
+            waiting_count: planned.plan.waiting,
+          },
+        });
+      }
+      const { request: sent } = planned.plan;
       answer = await job.enter(() =>
-        syncTimeEntries(pluginId, connectionId, request),
+        syncTimeEntries(pluginId, connectionId, sent),
       );
     } catch (error) {
       // The changes wait for the next round; the connection shows why.
@@ -200,36 +270,7 @@ export function runTimeSyncRound(
       job.enter(() => localStore.failTimeSyncRound(ref, message, planned));
       throw error;
     }
-    const { plan, context } = planned;
-    job.set({ time_sync_round: { entry_count: answer.entries.length } });
-    // Saved again in this window while the round ran: the answer may be for
-    // another account.
-    if (connectionGeneration(pluginId, connectionId) !== generation) {
-      job
-        .set({ time_sync_round: { discarded: "connection_changed" } })
-        .end("noop");
-      return { kind: "discarded" };
-    }
-    const result = job.enter(() =>
-      localStore.applyTimeSyncRound(plan, answer, context),
-    );
-    if (result.kind === "discarded") {
-      job
-        .set({ time_sync_round: { discarded: "time_sync_stopped" } })
-        .end("noop");
-      return result;
-    }
-    job.set({
-      time_sync_round: {
-        synced_count: result.synced,
-        put_back_count: result.putBack,
-        refused_count: result.refused,
-        failed_count: result.failed,
-        received_count: result.received,
-        held_count: result.held,
-      },
-    });
-    return result;
+    return keep(planned, answer);
   };
 
   // The job opens now, so the time another window holds the lock counts too.
