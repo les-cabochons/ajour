@@ -15,7 +15,7 @@ From then on, Ajour sends your entries from the week you turned it on. Older wee
 
 ## What Ajour sends
 
-Ajour sends a saved entry when all of these hold:
+Ajour sends a saved or running entry when all of these hold:
 
 - Its project is managed by the same connection.
 - It has a task, and neither the task nor the project is **Local only**.
@@ -30,6 +30,17 @@ For each entry, the other system gets its day, its time rounded to the nearest m
 | Time, in whole minutes                     | Entries under 30 seconds              |
 | Project                                    | Entries on Local only tasks           |
 | Task, under the name your commit would use | Entries on projects it doesn't manage |
+
+## Your running entry
+
+Your running entry shows in the other system as running, with the same elapsed time as in Ajour. It goes there once it has run 30 seconds, within a minute after that, so a Start you discard right away stays in Ajour.
+
+- **Stop** stops that same entry there, with its time in whole minutes.
+- **Start** on another task while an entry runs stops the first entry and starts the second there, in one go, at the same instant.
+- **Continue** on today's entry makes it run again there, with its saved time.
+- **Discard** deletes the running entry there. On a continued entry, it puts back the saved time, stopped.
+
+Ajour sends the running entry again only when its count changes by a minute or more, such as when you correct its time, or when you change its task. The minutes it counts as time passes never send a change.
 
 ## When it sends
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TimeSyncResult } from "@ajour/shared";
 import type {
+  LocalAppState,
   LocalProject,
+  LocalTimer,
   LocalTimeSync,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
@@ -23,6 +25,13 @@ import {
   type TimeSyncPlan,
   type TimeSyncState,
 } from "@/domain/projects/time-sync";
+import {
+  cancelTimer,
+  continueTimesheetEntry,
+  editRunningEntry,
+  saveTimer,
+  startTimer,
+} from "@/domain/time/timer-transitions";
 
 /*
  * The time sync rules for saved entries (#692, ADR 0018): which entries
@@ -104,6 +113,7 @@ function stateWith(
 ): TimeSyncState {
   return {
     projects,
+    timers: [],
     timesheetEntries: entries,
     timeSyncs: startTimeSync({}, CONNECTION, TODAY, 100),
   };
@@ -591,6 +601,277 @@ describe("applying a round", () => {
       }),
     ]);
     expect(plan(again).request.changes[0]).not.toHaveProperty("remoteId");
+  });
+});
+
+/*
+ * The running entry (#693). It starts at 10:00 in Toronto today, NOW, on
+ * Ticket #101 - Login, and goes through the same timer transitions as in
+ * the app: Stop, a switch, Continue and Discard.
+ */
+describe("the running entry", () => {
+  const NOW = Date.parse("2026-11-12T15:00:00.000Z");
+  const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
+
+  function timer(id: string, overrides: Partial<LocalTimer> = {}): LocalTimer {
+    return {
+      _id: id,
+      startedAt: NOW,
+      localDate: TODAY,
+      projectId: "acme",
+      taskId: "login",
+      note: "Fixed the redirect for ACME",
+      accumulatedDurationMs: 0,
+      ...overrides,
+    };
+  }
+
+  function running(entries: LocalTimesheetEntry[] = []): TimeSyncState {
+    return { ...stateWith(entries), timers: [timer("t1")] };
+  }
+
+  /** Runs a timer transition at `now`, as the store does. */
+  function act(
+    state: TimeSyncState,
+    now: number,
+    transition: (
+      app: LocalAppState,
+      factories: { createId: (prefix: string) => string; now: () => number },
+    ) => LocalAppState,
+  ): TimeSyncState {
+    const next = transition(
+      { ...state, workItems: [] } as unknown as LocalAppState,
+      { createId: (prefix) => `${prefix}-at-${now - NOW}`, now: () => now },
+    );
+    return {
+      ...state,
+      timers: next.timers,
+      timesheetEntries: next.timesheetEntries,
+    };
+  }
+
+  const changesAt = (state: TimeSyncState, now: number) =>
+    planTimeSyncRound(state, CONNECTION, CONTEXT, now)!.request.changes;
+
+  /** Plans a round at `now`, and applies the example planner's answer. */
+  function roundAt(state: TimeSyncState, now: number) {
+    const round = planTimeSyncRound(state, CONNECTION, CONTEXT, now)!;
+    const applied = applyTimeSyncRound(
+      state,
+      round,
+      syncEverything(round),
+      CONTEXT,
+      now,
+    );
+    return { round, state: { ...state, timeSyncs: applied.timeSyncs } };
+  }
+
+  it("sends the running entry as running, counting since its count would have started from zero", () => {
+    expect(changesAt(running(), NOW + 10 * MINUTE)).toEqual([
+      {
+        kind: "upsert",
+        syncKey: "t1",
+        values: {
+          localDate: TODAY,
+          minutes: 10,
+          running: true,
+          countingSince: at(0),
+          projectRemoteId: "ACME-SUP",
+          taskName: "Ticket #101 - Login",
+          taskRemoteId: "1001",
+        },
+      },
+    ]);
+  });
+
+  it("keeps a running entry local until it has run 30 seconds, and a Stop before then too", () => {
+    const state = running();
+
+    expect(changesAt(state, NOW + 29_999)).toEqual([]);
+    expect(changesAt(state, NOW + 30_000)).toEqual([
+      expect.objectContaining({
+        syncKey: "t1",
+        values: expect.objectContaining({ running: true, minutes: 1 }),
+      }),
+    ]);
+    const stopped = act(state, NOW + 20_000, (app, factories) =>
+      saveTimer(app, "t1", factories),
+    );
+    expect(changesAt(stopped, NOW + 22_000)).toEqual([]);
+  });
+
+  it("sends Stop as the same entry stopped: the saved entry keeps the running entry's key", () => {
+    const sent = roundAt(running(), NOW + 5 * MINUTE).state;
+    const stopped = act(sent, NOW + 45 * MINUTE, (app, factories) =>
+      saveTimer(app, "t1", factories),
+    );
+    expect(stopped.timesheetEntries).toEqual([
+      expect.objectContaining({ syncKey: "t1", durationMs: 45 * MINUTE }),
+    ]);
+
+    const { round, state } = roundAt(stopped, NOW + 45 * MINUTE + 2_000);
+
+    expect(round.request.changes).toEqual([
+      {
+        kind: "upsert",
+        syncKey: "t1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({
+          running: true,
+          countingSince: at(0),
+        }),
+        values: {
+          localDate: TODAY,
+          minutes: 45,
+          running: false,
+          projectRemoteId: "ACME-SUP",
+          taskName: "Ticket #101 - Login",
+          taskRemoteId: "1001",
+        },
+      },
+    ]);
+    expect(Object.keys(recordIn(state).copies)).toEqual(["t1"]);
+    expect(changesAt(state, NOW + 50 * MINUTE)).toEqual([]);
+  });
+
+  it("sends a switch as the first entry stopped, then the second running, in one round", () => {
+    const sent = roundAt(running(), NOW + 5 * MINUTE).state;
+    const switched = act(sent, NOW + 45 * MINUTE, (app, factories) =>
+      startTimer(
+        app,
+        { projectId: "acme", taskId: "ad-hoc" },
+        TODAY,
+        factories,
+      ),
+    );
+
+    // Two seconds later: the second entry takes over from the first at once,
+    // and stays there in the next round, though it hasn't run 30 seconds.
+    const { round, state } = roundAt(switched, NOW + 45 * MINUTE + 2_000);
+    expect(changesAt(state, NOW + 45 * MINUTE + 4_000)).toEqual([]);
+    expect(round.request.changes).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "t1",
+        values: expect.objectContaining({ running: false, minutes: 45 }),
+      }),
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: `timer-at-${45 * MINUTE}`,
+        values: expect.objectContaining({
+          running: true,
+          countingSince: at(45 * MINUTE),
+          taskName: "Ad hoc support",
+        }),
+      }),
+    ]);
+  });
+
+  it("sends Continue on today's entry as that entry running again, counting its saved time", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+
+    expect(changesAt(continued, NOW + MINUTE + 2_000)).toEqual([
+      {
+        kind: "upsert",
+        syncKey: "e1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({ running: false, minutes: 90 }),
+        values: expect.objectContaining({
+          running: true,
+          minutes: 90,
+          // 90 minutes saved, resumed a minute after NOW.
+          countingSince: at(MINUTE - 90 * MINUTE),
+        }),
+      },
+    ]);
+  });
+
+  it("sends Discard as a delete, and on a continued entry puts back its saved time, stopped", () => {
+    const sent = roundAt(running(), NOW + 5 * MINUTE).state;
+    const discarded = act(sent, NOW + 6 * MINUTE, (app) =>
+      cancelTimer(app, "t1"),
+    );
+    expect(changesAt(discarded, NOW + 6 * MINUTE + 2_000)).toEqual([
+      {
+        kind: "delete",
+        syncKey: "t1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({ running: true }),
+      },
+    ]);
+
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = roundAt(
+      act(saved, NOW + MINUTE, (app, factories) =>
+        continueTimesheetEntry(app, "e1", TODAY, factories),
+      ),
+      NOW + 2 * MINUTE,
+    ).state;
+    const putBack = act(continued, NOW + 3 * MINUTE, (app) =>
+      cancelTimer(app, continued.timers[0]!._id),
+    );
+    expect(changesAt(putBack, NOW + 3 * MINUTE + 2_000)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 90 }),
+      }),
+    ]);
+  });
+
+  it("never sends a running entry again as time passes, only when its count moves by a minute or more", () => {
+    const sent = roundAt(running(), NOW + 5 * MINUTE).state;
+    expect(changesAt(sent, NOW + 3 * 60 * MINUTE)).toEqual([]);
+
+    const recount = (countedDurationMs: number) =>
+      act(sent, NOW + 10 * MINUTE + 40_000, (app, factories) =>
+        editRunningEntry(
+          app,
+          "t1",
+          { projectId: "acme", taskId: "login", countedDurationMs },
+          factories,
+        ),
+      );
+    // Typed back as 10 minutes at 10:40: the count starts 40 seconds later.
+    expect(changesAt(recount(10 * MINUTE), NOW + 11 * MINUTE)).toEqual([]);
+    expect(changesAt(recount(60 * MINUTE), NOW + 11 * MINUTE)).toEqual([
+      expect.objectContaining({
+        syncKey: "t1",
+        values: expect.objectContaining({
+          countingSince: at(40_000 - 50 * MINUTE),
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps the key handed over at save once Time entries is back on", () => {
+    const sent = roundAt(running(), NOW + 5 * MINUTE).state;
+    const stopped = roundAt(
+      act(sent, NOW + 45 * MINUTE, (app, factories) =>
+        saveTimer(app, "t1", factories),
+      ),
+      NOW + 46 * MINUTE,
+    ).state;
+    const again = {
+      ...stopped,
+      timeSyncs: startTimeSync(
+        stopTimeSync(stopped.timeSyncs, CONNECTION.connectionId),
+        CONNECTION,
+        TODAY,
+        999,
+      ),
+    };
+
+    expect(changesAt(again, NOW + 50 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "t1",
+        values: expect.objectContaining({ running: false, minutes: 45 }),
+      }),
+    ]);
   });
 });
 

@@ -100,6 +100,80 @@ describe("timer hydration", () => {
       note: "Legacy note",
       accumulatedDurationMs: 0,
     });
+    expect(timer).not.toHaveProperty("syncKey");
+  });
+
+  it("reads back the sync key of a running entry that resumed an entry", () => {
+    const stored = { _id: "timer-2", startedAt: 700, entryId: "entry-1" };
+
+    expect(normalizeTimer({ ...stored, syncKey: "timer-1" }).syncKey).toBe(
+      "timer-1",
+    );
+    expect(
+      normalizeTimer({ ...stored, syncKey: 42 as unknown as string }),
+    ).not.toHaveProperty("syncKey");
+  });
+});
+
+/*
+ * A running entry and the entry it saves as share one time sync key (#693),
+ * so the other system sees a stop, not a delete and a new entry.
+ */
+describe("the time sync key of the running entry", () => {
+  it("hands the running entry's key to the entry it saves as", () => {
+    const saved = saveTimer(
+      createState({ timers: [createRunningTimer()] }),
+      "timer-1",
+      createFactories(),
+    );
+
+    expect(saved.timesheetEntries).toEqual([
+      expect.objectContaining({ _id: "timesheet-1", syncKey: "timer-1" }),
+    ]);
+  });
+
+  it("keeps today's entry's key through Continue and Stop", () => {
+    const handedOver = createEntry({ syncKey: "timer-0" });
+    const continued = continueTimesheetEntry(
+      createState({ timesheetEntries: [handedOver] }),
+      handedOver._id,
+      TODAY,
+      createFactories(),
+    );
+    expect(continued.timers[0]).toMatchObject({
+      _id: "timer-1",
+      entryId: handedOver._id,
+      syncKey: "timer-0",
+    });
+    expect(
+      saveTimer(continued, "timer-1", createFactories(2_000))
+        .timesheetEntries[0],
+    ).toMatchObject({ _id: handedOver._id, syncKey: "timer-0" });
+
+    // An entry keyed by its own id keeps no stored key.
+    const plain = createEntry();
+    const resumed = continueTimesheetEntry(
+      createState({ timesheetEntries: [plain] }),
+      plain._id,
+      TODAY,
+      createFactories(),
+    );
+    expect(resumed.timers[0]?.syncKey).toBe(plain._id);
+    expect(
+      saveTimer(resumed, "timer-1", createFactories(2_000)).timesheetEntries[0],
+    ).not.toHaveProperty("syncKey");
+  });
+
+  it("gives a running entry continued from another day a key of its own", () => {
+    const entry = createEntry({ syncKey: "timer-0" });
+    const continued = continueTimesheetEntry(
+      createState({ timesheetEntries: [entry] }),
+      entry._id,
+      "2026-08-03",
+      createFactories(),
+    );
+
+    expect(continued.timers[0]).not.toHaveProperty("syncKey");
   });
 });
 

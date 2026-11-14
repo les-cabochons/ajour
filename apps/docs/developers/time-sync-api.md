@@ -39,7 +39,7 @@ A change is an `upsert`, with the entry's `values`, or a `delete`. It has:
 
 - **`localDate`.** The entry's day.
 - **`minutes`.** Whole minutes. Both sides compare in minutes, so seconds never make a change.
-- **`running`** and **`countingSince`.** A running entry has `countingSince`, the instant its count would have started from zero, so your system's elapsed time matches Ajour's. A saved entry has none.
+- **`running`** and **`countingSince`.** A running entry has `countingSince`, the instant its count would have started from zero, so your system's elapsed time matches Ajour's. A saved entry has none. A running entry's `minutes` is its count when Ajour sent it: Ajour sends it again only when `countingSince` moves by a minute or more, or another value changes, never because time passed. Stop sends the same `syncKey` with `running: false`.
 - **`projectRemoteId`.** The project's `remoteId` in your project source snapshot.
 - **`taskName`.** The task's name as a commit would send it.
 - **`taskRemoteId`.** The task's `remoteId` in your snapshot, when the task came from it.

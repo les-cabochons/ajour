@@ -10,6 +10,7 @@ import {
   type TimesheetEntryFactories,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import { entrySyncKey } from "@/domain/projects/time-sync";
 
 export type TimerFactories = TimesheetEntryFactories;
 
@@ -42,6 +43,10 @@ export function normalizeTimer(
         : undefined),
     accumulatedDurationMs: timer.accumulatedDurationMs ?? 0,
     entryId: timer.entryId,
+    // A broken key would fail every time sync round, so it reads as none.
+    ...(typeof timer.syncKey === "string" && timer.syncKey
+      ? { syncKey: timer.syncKey }
+      : {}),
   };
 }
 
@@ -60,6 +65,7 @@ function createTimer(
     note: timer.note,
     accumulatedDurationMs: timer.accumulatedDurationMs ?? 0,
     entryId: timer.entryId,
+    ...(timer.syncKey ? { syncKey: timer.syncKey } : {}),
   };
 }
 
@@ -197,6 +203,9 @@ export function saveTimer(
         durationMs,
         sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
         entryId: timer.entryId,
+        // A new entry takes the running entry's time sync key, so the other
+        // system sees this save as a stop. A resumed entry keeps its own.
+        syncKey: existingEntry ? existingEntry.syncKey : entrySyncKey(timer),
       },
       factories,
     ),
@@ -232,9 +241,10 @@ export function saveTimer(
 }
 
 /**
- * Continues a time entry's work. Today's entry resumes: the timer links to it and its
- * saved time carries over. Another day's entry is left as is, and a new running entry
- * starts today with the same work item, task and note.
+ * Continues a time entry's work. Today's entry resumes: the timer links to it, its
+ * saved time carries over, and it keeps the entry's time sync key. Another day's entry
+ * is left as is, and a new running entry starts today with the same work item, task
+ * and note.
  */
 export function continueTimesheetEntry(
   state: LocalAppState,
@@ -263,6 +273,7 @@ export function continueTimesheetEntry(
       ...sharedFields,
       accumulatedDurationMs: entry.durationMs,
       entryId: entry._id,
+      syncKey: entrySyncKey(entry),
     },
     today,
     factories,

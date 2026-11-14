@@ -391,6 +391,11 @@ export interface LocalTimer {
   note?: string;
   accumulatedDurationMs: number;
   entryId?: string;
+  /**
+   * The time sync key, when it is not `_id`: a Continue on today's entry
+   * keeps that entry's key. See `entrySyncKey` in domain/projects/time-sync.ts.
+   */
+  syncKey?: string;
 }
 
 /** What starting a running entry needs. It has no date: a running entry always starts today. */
@@ -401,6 +406,8 @@ export interface LocalTimerDraft {
   note?: string;
   accumulatedDurationMs?: number;
   entryId?: string;
+  /** The time sync key of the entry it resumes. See `LocalTimer.syncKey`. */
+  syncKey?: string;
 }
 
 /**
@@ -471,6 +478,13 @@ export interface LocalTimesheetEntry {
   usedAt?: number;
   /** The entry as it was last committed. Undefined until its first commit. */
   commit?: LocalTimesheetEntryCommit;
+  /**
+   * The time sync key, when it is not `_id`. An entry saved from a running
+   * entry keeps the running entry's key, so the other system sees a stop,
+   * not a delete and a new entry. It never changes after that. See
+   * `entrySyncKey` in domain/projects/time-sync.ts.
+   */
+  syncKey?: string;
 }
 
 export interface LocalTimesheetImportDraft {
