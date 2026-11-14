@@ -2114,6 +2114,32 @@ describe("a running entry from the other system", () => {
     expect(changesAt(state, NOW + 27 * MINUTE)).toEqual([]);
   });
 
+  it("keeps Ajour's running entry running and holds the stop there when it also moved to a project Ajour doesn't manage", () => {
+    const before = sent();
+    const { state, result } = roundAt(
+      before,
+      NOW + 26 * MINUTE,
+      listing({
+        ...t1StoppedThere(),
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        taskRemoteId: undefined,
+      }),
+    );
+
+    expect(state.timers).toEqual(before.timers);
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).held).toEqual([
+      expect.objectContaining({
+        remoteId: "remote-1",
+        reason: "unmanagedProject",
+      }),
+    ]);
+    expect(result).toMatchObject({ received: 0, held: 1 });
+    // Nothing goes back over the move there.
+    expect(changesAt(state, NOW + 27 * MINUTE)).toEqual([]);
+  });
+
   describe("when Ajour changed its running entry too", () => {
     /** t1 moved to Ad hoc support in Ajour, first seen at `changedAt`, and stopped there at 15:25. */
     function stoppedThereAfterEdit(changedAt: number) {

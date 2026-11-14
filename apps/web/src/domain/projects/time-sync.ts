@@ -919,6 +919,31 @@ function takeListing(
   };
 
   /**
+   * Where the values there put a copied entry: its own project and task when
+   * neither side moved them, else the ones the remote entry names.
+   */
+  const placementOf = (
+    copy: LocalSyncedCopy,
+    place: { projectId?: string; taskId?: string },
+    remote: TimeSyncRemoteEntry,
+    local: TimeSyncChange | undefined,
+  ): Placement => {
+    const keepsPlace =
+      !local &&
+      remote.projectRemoteId === copy.agreed.projectRemoteId &&
+      normalizeTaskImportName(remote.taskName) ===
+        normalizeTaskImportName(copy.agreed.taskName);
+    return keepsPlace
+      ? {
+          kind: "placed",
+          projects: current.projects,
+          projectId: place.projectId!,
+          taskId: place.taskId!,
+        }
+      : placeRemoteEntry(current.projects, remote, values, factories);
+  };
+
+  /**
    * Takes the values there into a copied saved entry: its project and task,
    * kept when neither side moved them, its day and its whole minutes, which
    * keep the entry's seconds when they agree. A project or task Ajour holds
@@ -931,19 +956,7 @@ function takeListing(
     remote: TimeSyncRemoteEntry,
     local: TimeSyncChange | undefined,
   ) => {
-    const keepsPlace =
-      !local &&
-      remote.projectRemoteId === copy.agreed.projectRemoteId &&
-      normalizeTaskImportName(remote.taskName) ===
-        normalizeTaskImportName(copy.agreed.taskName);
-    const placement: Placement = keepsPlace
-      ? {
-          kind: "placed",
-          projects: current.projects,
-          projectId: entry.projectId!,
-          taskId: entry.taskId!,
-        }
-      : placeRemoteEntry(current.projects, remote, values, factories);
+    const placement = placementOf(copy, entry, remote, local);
     if (placement.kind === "held") {
       held.push(holdOf(remote, placement.reason));
       return false;
@@ -981,7 +994,8 @@ function takeListing(
    * Takes a stop there of Ajour's running entry (#695): Ajour stops it once
    * its count reached the minutes there, then takes the values there as for
    * an edit. When Ajour changed it too, the later change wins, and a delete
-   * in Ajour, such as a move to a Local only task, wins over the stop.
+   * in Ajour, such as a move to a Local only task, wins over the stop. A
+   * stop that also moved it to a project or task Ajour holds is held.
    */
   const takeStop = (
     syncKey: string,
@@ -1003,6 +1017,13 @@ function takeListing(
       locked(remote.localDate) ||
       locked(timer.localDate)
     ) {
+      return;
+    }
+    // A project or task Ajour holds leaves it running, as it leaves a saved
+    // entry as it is, so its stop never goes back over the move there.
+    const placement = placementOf(copy, timer, remote, local);
+    if (placement.kind === "held") {
+      held.push(holdOf(remote, placement.reason));
       return;
     }
     // Never before it started, nor after now.
