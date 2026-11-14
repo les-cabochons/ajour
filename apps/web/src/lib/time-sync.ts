@@ -31,7 +31,9 @@ import { wideEvents } from "@/lib/wide-events";
  * Runs the time sync rounds (#692, ADR 0018) beside the project source
  * runner. A round plans from the local store, sends through the local API's
  * sync-time-entries route, and keeps the answer, with what changed in the
- * other system (#694). The rules live in
+ * other system (#694) and what it puts back in a submitted week (#696).
+ * A round that finds an entry to put back writes the store, so the next
+ * round goes 2 s later and sends it. The rules live in
  * domain/projects/time-sync.ts. The runner sends a round 2 s after a store
  * write and every 60 s while Time entries is on and the plugin is active,
  * one round at a time per connection, and backs off after a failure.
@@ -220,6 +222,7 @@ export function runTimeSyncRound(
     job.set({
       time_sync_round: {
         synced_count: result.synced,
+        put_back_count: result.putBack,
         refused_count: result.refused,
         failed_count: result.failed,
         received_count: result.received,

@@ -35,6 +35,8 @@ A change is an `upsert`, with the entry's `values`, or a `delete`. It has:
 - **`remoteId`.** Your entry's id, when Ajour knows it. A create whose answer was lost comes again without one: find your entry by its client reference and update it, so a retry never makes a duplicate.
 - **`agreed`.** The values both sides last agreed on, when there are some. Use them to keep what Ajour doesn't own, such as a real start time, while the day doesn't change.
 
+A week the user submitted stays as they committed it, and Ajour puts it back when your system changes it. When your listing shows an edit to one of its entries, the next round sends an upsert with Ajour's values, and `agreed` holds your entry's values as you listed them, so you see what goes back, such as a day someone moved. When your listing misses one of its entries, the next round sends an upsert to create it again. It has no `remoteId`, or the old one for an entry Ajour first took from your system: create the entry, with the client reference. An entry logged in your system in a submitted week waits in Ajour's Sync review until the user reopens the week.
+
 ### Entry values
 
 - **`localDate`.** The entry's day.

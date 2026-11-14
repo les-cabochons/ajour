@@ -60,17 +60,28 @@ Ajour finds the task by the name your commit would use, then by the task's own n
 
 If an entry changed on both sides before Ajour checked, the later change wins, and a delete wins over an edit. When you turn **Time entries** on, Ajour's values win for the entries it already has.
 
-A running entry started in another tool, and a week you submitted, stay as they are for now.
+A running entry started in another tool stays as it is for now.
+
+### Submitted weeks
+
+A week you [submitted](/time/commit) stays as you committed it, so your timesheet tool, Ajour and the other system agree. Ajour never changes it to follow the other system:
+
+- An edit there to one of its entries is put back: about 2 seconds after Ajour sees it, Ajour sends its own values over it. So is an edit that moves an entry into the week.
+- A delete there is put back too: Ajour creates the entry again.
+- An entry logged there in that week is held, and **Sync review** lists it with "The week is submitted. Reopen it to take this entry." Reopen the week, and Ajour takes it within a minute.
+
+If the other system refuses to take Ajour's values back, the connection shows its reason, and Ajour leaves that entry there as it is.
 
 ### Held entries
 
-Ajour doesn't take an entry logged there on a project the connection doesn't manage, or on a **Local only** project or task. It holds it instead, and **Settings › Sync review** lists it with its day, the project's code, its task, its duration and why. Nothing there changes it: the list follows the other system, so an entry leaves it once Ajour can take it.
+Ajour doesn't take an entry logged there on a project the connection doesn't manage, on a **Local only** project or task, or in a week you submitted. It holds it instead, and **Settings › Sync review** lists it with its day, the project's code, its task, its duration and why. Nothing there changes it: the list follows the other system, so an entry leaves it once Ajour can take it.
 
 ## On the connection
 
 The connection's row in **Settings › Plugins** says what the last round did:
 
 - **Time entries · 2 sent**: the other system took two changes.
+- **Time entries · 1 put back**: Ajour sent its values back over an entry of a submitted week that changed there.
 - **Time entries · 1 received**: Ajour took one entry added, edited or deleted there.
 - **Time entries · 1 held**: one entry waits in Sync review.
 - **Time entries · up to date**: nothing was waiting.

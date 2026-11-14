@@ -2163,6 +2163,12 @@ export const catalog = defineCatalog({
           /** Listed entries Ajour holds for Sync review, such as one on a project it doesn't manage. */
           held_count: operational<number>(),
           /**
+           * Upserts that sent Ajour's values back over an edit or a delete
+           * there in a submitted week (#696): the status line's "put back".
+           * The renderer's `synced_count` leaves them out.
+           */
+          put_back_count: operational<number>(),
+          /**
            * Why the answer was not kept: the connection was saved again, or
            * Time entries went off while the round ran.
            */

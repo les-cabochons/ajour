@@ -722,7 +722,11 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     so the runner's own writes record nothing. The counts are those of the
     route's event, plus `waiting_count`, and since #694 `received_count`,
     the entries Ajour took from the listing, and `held_count`, the listed
-    entries it holds for Sync review; no day, task, project or note.
+    entries it holds for Sync review; no day, task, project or note. Since
+    #696, `put_back_count` counts the upserts that sent Ajour's values back
+    over an edit or a delete in a submitted week, and the renderer's
+    `synced_count` leaves them out. A round that finds one to put back
+    writes the store, so the next round goes 2 s later.
   - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
     Refresh (`user`) or not. A load the cache answers records nothing, by
     decision: the 30-second refresh would emit an event each time, so there

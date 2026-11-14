@@ -144,6 +144,12 @@ export interface LocalTimeSync {
    * that changes or goes there leaves this list too.
    */
   held: LocalTimeSyncHold[];
+  /**
+   * The sync keys of entries in a submitted week that the other system
+   * edited or deleted (#696). Their next upsert sends Ajour's values back,
+   * and counts as put back instead of sent.
+   */
+  puttingBack: string[];
   /** What the last round that reached the plugin did. */
   lastRound?: LocalTimeSyncRound;
   /** Why the last round failed, until a round goes through. */
@@ -181,10 +187,11 @@ export interface LocalTimeSyncRefusal {
  * Why Ajour holds an entry of the other system instead of taking it:
  * `unmanagedProject`, its project isn't one this connection manages;
  * `localOnlyProject` and `localOnlyTask`, it would land on time the user
- * keeps local, which never takes part.
+ * keeps local, which never takes part; `submittedWeek`, its day is in a
+ * submitted week, until the user reopens it (#696).
  */
 export type TimeSyncHoldReason =
-  "unmanagedProject" | "localOnlyProject" | "localOnlyTask";
+  "unmanagedProject" | "localOnlyProject" | "localOnlyTask" | "submittedWeek";
 
 /** An entry of the other system that Ajour holds, as it was listed. */
 export interface LocalTimeSyncHold {
@@ -204,8 +211,13 @@ export interface LocalTimeSyncRound {
    * 60-second poll writes nothing.
    */
   at: number;
-  /** Changes the other system took. */
+  /** Changes the other system took, besides the put-backs. */
   synced: number;
+  /**
+   * Upserts that sent Ajour's values back over an edit or a delete there in
+   * a submitted week (#696).
+   */
+  putBack: number;
   /** Entries Ajour took from the other system: added, edited or deleted. */
   received: number;
   refused: number;

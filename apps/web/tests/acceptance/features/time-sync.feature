@@ -56,3 +56,18 @@ Feature: Time entries sync through a time sync plugin
     When I open Sync review
     And a minute passes
     Then Sync review holds "Design review" on "GLOBEX-INT" for "0:30", because "The connection doesn't manage this project."
+
+  Scenario: An edit made in another tool to a submitted week is put back
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I log "1:30" on "Ticket #101 - Login" today
+    Then the planner holds 90 minutes on "Ticket #101 - Login" today
+    When I open this week's Commit page
+    And I press "Mark as committed"
+    And I press "Submit week"
+    And I press "Submit anyway"
+    Then the Commit page shows the week is submitted
+    When another tool changes the planner's "Ticket #101 - Login" entry to 60 minutes
+    And a minute passes
+    Then the planner holds 90 minutes on "Ticket #101 - Login" today
+    When I open the example planner's settings
+    Then Settings says "Time entries · 1 put back"
