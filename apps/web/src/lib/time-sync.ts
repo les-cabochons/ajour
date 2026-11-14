@@ -166,13 +166,11 @@ export function runTimeSyncRound(
     });
     /**
      * Keeps one answer of the round, unless the connection was saved again
-     * or Time entries went off while it ran. Counts what it took on the
-     * job, adding what an earlier listing in the same round took.
+     * or Time entries went off while it ran, and counts it on the job.
      */
     const keep = (
       { plan, context }: PlannedTimeSyncRound,
       answer: TimeSyncRouteResponse,
-      receivedBefore: number,
     ): TimeSyncRoundOutcome => {
       job.set({ time_sync_round: { entry_count: answer.entries.length } });
       // Saved again in this window while the round ran: the answer may be
@@ -183,16 +181,15 @@ export function runTimeSyncRound(
           .end("noop");
         return { kind: "discarded" };
       }
-      const kept = job.enter(() =>
+      const result = job.enter(() =>
         localStore.applyTimeSyncRound(plan, answer, context),
       );
-      if (kept.kind === "discarded") {
+      if (result.kind === "discarded") {
         job
           .set({ time_sync_round: { discarded: "time_sync_stopped" } })
           .end("noop");
-        return kept;
+        return result;
       }
-      const result = { ...kept, received: receivedBefore + kept.received };
       job.set({
         time_sync_round: {
           synced_count: result.synced,
@@ -208,7 +205,6 @@ export function runTimeSyncRound(
 
     let planned: PlannedTimeSyncRound | undefined;
     let answer: TimeSyncRouteResponse;
-    let receivedBefore = 0;
     try {
       const overview = await job.enter(() => getPluginsOverview());
       if (
@@ -245,18 +241,17 @@ export function runTimeSyncRound(
         const listed = await job.enter(() =>
           syncTimeEntries(pluginId, connectionId, listing.request),
         );
-        const kept = keep(
-          { plan: listing, context: planned.context },
-          listed,
-          0,
-        );
+        const kept = keep({ plan: listing, context: planned.context }, listed);
         if (kept.kind !== "applied") return kept;
-        receivedBefore = kept.received;
-        planned = planFor(ref, overview);
-        if (!planned || planned.plan.request.changes.length === 0) {
+        const next = planFor(ref, overview);
+        if (!next || next.plan.request.changes.length === 0) {
           job.set({ time_sync_round: { change_count: 0, waiting_count: 0 } });
           return kept;
         }
+        planned = {
+          ...next,
+          plan: { ...next.plan, receivedBefore: kept.received },
+        };
         job.set({
           time_sync_round: {
             change_count: planned.plan.request.changes.length,
@@ -275,7 +270,7 @@ export function runTimeSyncRound(
       job.enter(() => localStore.failTimeSyncRound(ref, message, planned));
       throw error;
     }
-    return keep(planned, answer, receivedBefore);
+    return keep(planned, answer);
   };
 
   // The job opens now, so the time another window holds the lock counts too.

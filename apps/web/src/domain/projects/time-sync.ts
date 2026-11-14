@@ -511,6 +511,11 @@ export interface TimeSyncPlan {
    * when the change synced, a difference left is newer than the plan.
    */
   changedAtPlanning: Record<string, TimeSyncEntryValues>;
+  /**
+   * Entries a listing earlier in the same round took, as `listingRoundOf`
+   * plans it, so the round's counts cover both calls.
+   */
+  receivedBefore?: number;
 }
 
 /**
@@ -1412,7 +1417,7 @@ export function applyTimeSyncRound(
       lastRound: {
         at: now,
         ...counts,
-        received: taken.received,
+        received: (plan.receivedBefore ?? 0) + taken.received,
         ...(failedMessage ? { failedMessage } : {}),
       },
     },
@@ -1424,7 +1429,7 @@ export function applyTimeSyncRound(
     kind: "applied" as const,
     ...counts,
     waiting: plan.waiting,
-    received: taken.received,
+    received: (plan.receivedBefore ?? 0) + taken.received,
     held: taken.held.length,
   };
   // A round that brought nothing new keeps the record, so the poll writes

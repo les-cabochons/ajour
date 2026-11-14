@@ -342,6 +342,32 @@ describe("a time sync round", () => {
     expect(await round("poll")).toMatchObject({ received: 0 });
   });
 
+  it("counts what the listing took with what the round then sent, on the job and in Settings", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+    logExampleRemoteEntry(connectionId, {
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+
+    expect(await round("change")).toMatchObject({ synced: 1, received: 1 });
+
+    expect(
+      localStore.snapshot().timeSyncs?.[connectionId]?.lastRound,
+    ).toMatchObject({ synced: 1, received: 1 });
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: {
+        listed_first: true,
+        change_count: 1,
+        synced_count: 1,
+        received_count: 1,
+      },
+    });
+  });
+
   it("lets a newer edit there win over an edit of Ajour's that waited for a failed round", async () => {
     const { localStore, connectionId, entryId, round } = await load();
     await round("change");
