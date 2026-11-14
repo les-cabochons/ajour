@@ -37,3 +37,22 @@ Feature: Time entries sync through a time sync plugin
     When 3 minutes pass
     And I stop the running entry
     Then the planner shows "Ticket #102 - Export" stopped at 3 minutes, as the entry it showed running
+  Scenario: An entry logged in another tool shows in the Day view, and follows its edit and delete there
+    Given the example planner manages "Acme - Support", with Time entries on
+    And another tool logged 45 minutes on "Ticket #101 - Login" today in the planner
+    When I open today in the Day view
+    And a minute passes
+    Then today's "Ticket #101 - Login" entry shows "0:45"
+    When another tool changes that entry in the planner to 60 minutes
+    And a minute passes
+    Then today's "Ticket #101 - Login" entry shows "1:00"
+    When another tool deletes that entry in the planner
+    And a minute passes
+    Then the Day view shows no "Ticket #101 - Login" entry
+
+  Scenario: An entry logged in another tool on a project the connection doesn't manage waits in Sync review
+    Given the example planner manages "Acme - Support", with Time entries on
+    And another tool logged 30 minutes on "Design review" of project "GLOBEX-INT" today in the planner
+    When I open Sync review
+    And a minute passes
+    Then Sync review holds "Design review" on "GLOBEX-INT" for "0:30", because "The connection doesn't manage this project."

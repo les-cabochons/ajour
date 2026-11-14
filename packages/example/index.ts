@@ -3,14 +3,21 @@
 // package Ajour loads from disk as a development plugin. It serves a fixture
 // snapshot, and a time sync over an in-memory remote per connection
 // (`plugin/time-sync.ts`). This file hands out its folder, the fixture it
-// serves and its time sync round, so a test can assert on what Ajour
-// received, or answer a mocked route the way the plugin would.
+// serves, its time sync round, and a way to log, edit and delete remote
+// entries as another tool would, so a test can assert on what Ajour
+// received, answer a mocked route the way the plugin would, or change the
+// remote under Ajour.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import manifest from "./plugin/plugin.json" with { type: "json" };
 
 export { FIXTURE_CURSOR, fixtureSnapshot } from "./plugin/fixture.ts";
-export { runRound as runExampleTimeSyncRound } from "./plugin/time-sync.ts";
+export {
+  deleteElsewhere as deleteExampleRemoteEntry,
+  editElsewhere as editExampleRemoteEntry,
+  logElsewhere as logExampleRemoteEntry,
+  runRound as runExampleTimeSyncRound,
+} from "./plugin/time-sync.ts";
 
 /** The plugin's manifest, as `plugin/plugin.json` declares it. */
 export const exampleProjectSourceManifest = manifest;

@@ -138,6 +138,12 @@ export interface LocalTimeSync {
    * again only once its change differs from the one refused.
    */
   refusals: Record<string, LocalTimeSyncRefusal>;
+  /**
+   * The other system's entries Ajour can't take, from the last round's
+   * listing, for Sync review (#694). Each round lists them again, so one
+   * that changes or goes there leaves this list too.
+   */
+  held: LocalTimeSyncHold[];
   /** What the last round that reached the plugin did. */
   lastRound?: LocalTimeSyncRound;
   /** Why the last round failed, until a round goes through. */
@@ -171,6 +177,26 @@ export interface LocalTimeSyncRefusal {
   at: number;
 }
 
+/**
+ * Why Ajour holds an entry of the other system instead of taking it:
+ * `unmanagedProject`, its project isn't one this connection manages;
+ * `localOnlyProject` and `localOnlyTask`, it would land on time the user
+ * keeps local, which never takes part.
+ */
+export type TimeSyncHoldReason =
+  "unmanagedProject" | "localOnlyProject" | "localOnlyTask";
+
+/** An entry of the other system that Ajour holds, as it was listed. */
+export interface LocalTimeSyncHold {
+  remoteId: string;
+  localDate: string;
+  minutes: number;
+  /** The project's id in the other system, which Sync review shows as its code. */
+  projectRemoteId: string;
+  taskName: string;
+  reason: TimeSyncHoldReason;
+}
+
 /** What one round did, in counts, for the connection's status line. */
 export interface LocalTimeSyncRound {
   /**
@@ -180,6 +206,8 @@ export interface LocalTimeSyncRound {
   at: number;
   /** Changes the other system took. */
   synced: number;
+  /** Entries Ajour took from the other system: added, edited or deleted. */
+  received: number;
   refused: number;
   /** Changes that failed, and are sent again next round. */
   failed: number;
@@ -485,6 +513,13 @@ export interface LocalTimesheetEntry {
    * `entrySyncKey` in domain/projects/time-sync.ts.
    */
   syncKey?: string;
+  /**
+   * The other system's id for an entry a time sync took from there (#694).
+   * It outlives the synced copy, so turning Time entries off and on updates
+   * that entry instead of adding another. Its project belongs to one
+   * connection, so one id is enough.
+   */
+  timeSyncRemoteId?: string;
 }
 
 export interface LocalTimesheetImportDraft {

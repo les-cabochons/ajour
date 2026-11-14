@@ -720,7 +720,9 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     whether a store write, the 60-second poll, changes left over or a retry
     started it. A store write that leaves nothing to send starts no round,
     so the runner's own writes record nothing. The counts are those of the
-    route's event, plus `waiting_count`; no day, task, project or note.
+    route's event, plus `waiting_count`, and since #694 `received_count`,
+    the entries Ajour took from the listing, and `held_count`, the listed
+    entries it holds for Sync review; no day, task, project or note.
   - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
     Refresh (`user`) or not. A load the cache answers records nothing, by
     decision: the 30-second refresh would emit an event each time, so there

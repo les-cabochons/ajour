@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import {
+  editExampleRemoteEntry,
   exampleProjectSourceDirectory,
   exampleProjectSourceManifest,
+  logExampleRemoteEntry,
 } from "../../../../packages/example/index.ts";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 import { fetchAsTheApp, startLocalApi } from "@/test-support/local-api";
@@ -114,6 +116,8 @@ describe("a time sync round", () => {
       refused: 0,
       failed: 0,
       waiting: 0,
+      received: 0,
+      held: 0,
     });
 
     const timeSync = localStore.snapshot().timeSyncs?.[connectionId];
@@ -147,6 +151,8 @@ describe("a time sync round", () => {
           failed_count: 0,
           waiting_count: 0,
           entry_count: 1,
+          received_count: 0,
+          held_count: 0,
         },
       }),
     ]);
@@ -218,6 +224,59 @@ describe("a time sync round", () => {
     expect(
       localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
     ).toMatchObject({ agreed: { minutes: 90 } });
+  });
+
+  it("takes an entry logged in the other system, and an edit there makes an older Undo of it refuse", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    const today = formatLocalDateFromTimestamp(Date.now());
+    logExampleRemoteEntry(connectionId, {
+      localDate: today,
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+    logExampleRemoteEntry(connectionId, {
+      localDate: today,
+      minutes: 30,
+      projectRemoteId: "INITECH-OPS",
+      taskName: "Design review",
+    });
+
+    expect(await round("poll")).toMatchObject({ received: 1, held: 1 });
+    const taken = localStore
+      .snapshot()
+      .timesheetEntries.find((entry) => entry._id !== entryId)!;
+    expect(taken).toMatchObject({ durationMs: 45 * 60_000, note: undefined });
+    expect(localStore.snapshot().timeSyncs?.[connectionId]?.held).toEqual([
+      expect.objectContaining({
+        projectRemoteId: "INITECH-OPS",
+        reason: "unmanagedProject",
+      }),
+    ]);
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: { trigger: "poll", received_count: 1, held_count: 1 },
+    });
+    // A round adds no Undo toast, and nothing it took goes back.
+    expect(await round("change")).toEqual({ kind: "idle" });
+
+    const token = localStore.updateTimesheetEntry(taken._id, {
+      durationMs: HOUR,
+    })!;
+    await round("change");
+    const copy =
+      localStore.snapshot().timeSyncs?.[connectionId]?.copies[taken._id];
+    // A moment later, so its time is after Ajour's.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    editExampleRemoteEntry(connectionId, copy!.remoteId, { minutes: 20 });
+
+    expect(await round("poll")).toMatchObject({ received: 1 });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.find((entry) => entry._id === taken._id),
+    ).toMatchObject({ durationMs: 20 * 60_000 });
+    expect(localStore.undo(token)).toBe("stale");
   });
 
   it("waits before the next round when changes failed, even with more waiting", async () => {
