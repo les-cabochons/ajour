@@ -17,6 +17,19 @@ vi.mock("@/lib/local-hooks", () => ({
     workItems: [
       { _id: "one", projectId: "p1", title: "First item" },
       { _id: "two", projectId: "p2", title: "Second item" },
+      {
+        _id: "epic",
+        projectId: "p1",
+        title: "Epic",
+        sourceId: "src-epic",
+        sourceExternalId: "PAY-1",
+      },
+      {
+        _id: "sub",
+        projectId: "p1",
+        title: "Synced subitem",
+        parentSourceId: "src-epic",
+      },
     ],
   }),
 }));
@@ -111,5 +124,20 @@ it("loads folders only for the chosen item's project and keeps drafts independen
     target: { value: "Draft" },
   });
   expect(listRepositoryFolders).toHaveBeenCalledTimes(1);
+  view.unmount();
+});
+
+it("previews a synced subitem's parent, which it names by source id", async () => {
+  const view = await renderRoutes({
+    routes: { "/": () => <PluginHandoffTemplates pluginId="tool" /> },
+  });
+  const picker = await screen.findByRole("combobox", { name: "Preview item" });
+  fireEvent.focus(picker);
+  fireEvent.change(picker, { target: { value: "Synced subitem" } });
+  fireEvent.keyDown(picker, { key: "Enter" });
+  fireEvent.change(screen.getByLabelText("Title template"), {
+    target: { value: "{{item.parent.key}} {{item.parent.title}}" },
+  });
+  expect(screen.getByLabelText("Title preview").textContent).toBe("PAY-1 Epic");
   view.unmount();
 });

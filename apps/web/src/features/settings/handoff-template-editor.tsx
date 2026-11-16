@@ -1,5 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  getWorkItemLookupKeys,
+  getWorkItemParentKey,
+} from "@/domain/backlog/work-item-hierarchy";
+import {
   HANDOFF_SLOTS,
   isValidHandoffBranch,
   handoffTitle,
@@ -275,12 +279,18 @@ export function PluginHandoffTemplates({ pluginId }: { pluginId: string }) {
     };
   }, [projectId]);
   const items = useMemo(() => {
-    const parents = new Map(state.workItems.map((item) => [item._id, item]));
+    // A synced subitem names its parent by source id, a local one by its id.
+    const parents = new Map(
+      state.workItems.flatMap((item) =>
+        getWorkItemLookupKeys(item).map((key) => [key, item] as const),
+      ),
+    );
     const projects = new Map(
       state.projects.map((project) => [project._id, project]),
     );
     return state.workItems.map((item) => {
-      const parent = parents.get(item.parentWorkItemId ?? "");
+      const parentKey = getWorkItemParentKey(item);
+      const parent = parentKey ? parents.get(parentKey) : undefined;
       return {
         id: item._id,
         label: `${item.sourceExternalId ?? ""} ${item.title}`.trim(),
