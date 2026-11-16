@@ -30,7 +30,7 @@ A plugin that hands a backlog item to a coding tool, such as T3 Code, Claude Cod
 
 Only the user changes a mode. A plugin that loses its signature in an update drops to Always ask.
 
-**Command review.** Ajour checks an undeclared command with a fixed rule table over its executable and arguments (deleting or formatting disks, paths outside the user's folders, shells given inline code, credential stores, sending data out). An optional local model, the **command reviewer**, labels what the rules don't decide. It is downloaded only when the user asks, never bundled, and #708 chooses it. **Rules and the reviewer only add friction:** neither may turn a refusal or an ask into a run.
+**Command review.** Ajour checks an undeclared command with a fixed rule table over its executable, arguments and folder. It marks risky: shells and interpreters given inline code, Ajour's own folders, credential stores, erasing or formatting disks, bulk deletes outside a repository folder, sending data out, installing software, changing system settings or accounts, running as an administrator, starting another program it can't check, and paths outside the plugin's repository folders. It marks for review, which shows the reason without asking: plain downloads and history rewrites (`git push --force`, `git reset --hard`, `git clean -fdx`, `git branch -D`). Installing, system settings, administrator rights and other programs were added in #717: #708's corpus held commands such as `Stop-Computer`, `reg delete`, `net user /add` and `sudo`, and `env`, `xargs` and `npx` would otherwise run a shell or interpreter the table refuses. An optional local model, the **command reviewer**, labels what the rules don't decide. It is downloaded only when the user asks, never bundled, and #708 chooses it. **Rules and the reviewer only add friction:** neither may turn a refusal or an ask into a run.
 
 **How a command runs.** `capture` waits for the command, with bounded output and time, and gives the plugin its exit code and output. `detached` starts a process Ajour doesn't own. `terminal` opens the user's terminal app on the command. A plugin may also open an https address in the user's browser while it is on.
 
@@ -58,7 +58,7 @@ Links inside content stay blocked, as #331 decided. That rule is about what a pa
   So a plugin with process access, through a declared command or in any command mode, can reach every plugin's credentials, not only its own. A declared command whose executable runs code it is given, such as `node` or `python`, is as wide as Accept everything.
 
   Two measures narrow this, and neither closes it:
-  - The rules mark any argument that names Ajour's own data or install folder risky.
+  - The rules mark any argument that names Ajour's own data, install or command folder risky.
   - The `folder` slot can never be either folder.
 
   Access review and the command mode's warning say this in plain words, and a release claims G1 only for plugins without process access.
