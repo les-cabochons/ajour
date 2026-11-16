@@ -162,10 +162,8 @@ import {
   secretManifestOf,
   type SecretFieldDeclaration,
 } from "./connection-credentials.ts";
-import {
-  connectionBaseAddress,
-  secretAddressHoldsUserinfo,
-} from "./broker-policy.ts";
+import { secretAddressHoldsUserinfo } from "./broker-policy.ts";
+import { handoffConnectionAddress } from "./handoff-connection-address.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import {
   BrokerRequestError,
@@ -1495,24 +1493,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       commandBridge.publish("command-access", caller.pluginId);
     },
     // A `connection-url` argument: the handoff connection's base address,
-    // as the credential broker would reach it. The base address field is
-    // never secret, so the saved config holds it without a vault read.
-    connectionAddress: async (caller) => {
-      if (!caller.connectionId) return undefined;
-      const connection = await storage.getConnection(
-        caller.pluginId,
-        caller.connectionId,
-      );
-      return connection
-        ? connectionBaseAddress(caller.manifest, {
-            id: connection.id,
-            values: connection.config,
-            secrets: [],
-            onPremises: connection.onPremises === true,
-            access: connection.access ?? [],
-          })
-        : undefined;
-    },
+    // refused while the connection is paused.
+    connectionAddress: (caller) => handoffConnectionAddress(storage, caller),
     openExternal: options.openExternal,
     terminal: options.terminal,
     enabledGate: (caller) => processConsentGate(storage, caller, false),
