@@ -7,10 +7,13 @@
  * an uninstall, and a change in a development package's folder forgets it
  * too. Windows hears nothing when that folder itself is renamed or moved,
  * so each check also compares the folder's identity, one stat, with the
- * one it had when found. Suspension is asked afresh on every check: it
- * costs nothing.
+ * one it had when found. Some file systems give a folder no identity to
+ * trust, and some give one that changes: a package whose identity is
+ * missing or keeps changing is found again at most every 10 s. Suspension
+ * is asked afresh on every check: it costs nothing.
  */
 import { watch as watchFolder } from "node:fs";
+import type { BigIntStats } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { BrokerCaller } from "./broker-port.ts";
 import type { ResolvedPlugin } from "./plugin-package.ts";
@@ -31,9 +34,15 @@ export interface SessionPackageGateOptions {
   ): Promise<{ packageKey: string; development: boolean }>;
   /** Calls back on any change in the folder, until closed. */
   watch?(directory: string, changed: () => void): { close(): void };
-  /** The folder's identity, or undefined once nothing is at its path. */
-  identify?(directory: string): Promise<string | undefined>;
+  /**
+   * The folder's identity, null when it has none to trust, or undefined
+   * once nothing is at its path.
+   */
+  identify?(directory: string): Promise<string | null | undefined>;
 }
+
+/** The least time between two finds a folder's identity asks for. */
+const DOUBT_MS = 10_000;
 
 export interface SessionPackageGate {
   check(caller: BrokerCaller): Promise<"plugin_off" | undefined>;
@@ -56,13 +65,24 @@ export function watchPackageFolder(
 /** A folder's device and inode, which a rename or a replacement changes. */
 export async function folderIdentity(
   directory: string,
-): Promise<string | undefined> {
+): Promise<string | null | undefined> {
   try {
-    const found = await stat(directory, { bigint: true });
-    return found.isDirectory() ? `${found.dev}:${found.ino}` : undefined;
+    return identityOf(await stat(directory, { bigint: true }));
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A stat's device and inode, or null when the file system gives no file
+ * id: Windows reports 0 for some, and the id isn't unique on others.
+ */
+export function identityOf(
+  found: Pick<BigIntStats, "dev" | "ino" | "isDirectory">,
+): string | null | undefined {
+  if (!found.isDirectory()) return undefined;
+  if (found.ino === 0n) return null;
+  return `${found.dev}:${found.ino}`;
 }
 
 export function createSessionPackageGate(
@@ -72,9 +92,11 @@ export function createSessionPackageGate(
     found: Promise<PackageFound | undefined>;
     watcher?: { close(): void };
     /** A development package's folder, as it was when found. */
-    folder?: { directory: string; identity: string };
+    folder?: { directory: string; identity: string | null };
   }
   const known = new Map<string, Entry>();
+  /** When a plugin's folder identity last had its package found again. */
+  const doubted = new Map<string, number>();
   let closed = false;
   const watch = options.watch ?? watchPackageFolder;
   const identify = options.identify ?? folderIdentity;
@@ -106,6 +128,8 @@ export function createSessionPackageGate(
           // A folder already gone is found afresh on the next check.
           if (identity === undefined) keep = false;
           else entry.folder = { directory: resolved.directory, identity };
+          // One with no identity is kept for a while only.
+          if (identity === null) doubted.set(pluginId, Date.now());
         } catch {
           // Unwatched, it is found afresh on every check.
           keep = false;
@@ -129,13 +153,22 @@ export function createSessionPackageGate(
     return entry;
   };
 
-  /** The package now: a kept one whose folder moved or went is found again. */
+  /**
+   * The package now: a kept one whose folder went is found again, and one
+   * whose folder moved or can't tell is found again at most every 10 s.
+   */
   const currentPackage = async (pluginId: string) => {
     const entry = find(pluginId);
     const found = await entry.found;
     const folder = entry.folder;
     if (!folder || known.get(pluginId) !== entry) return found;
-    if ((await identify(folder.directory)) === folder.identity) return found;
+    const identity = await identify(folder.directory);
+    if (identity !== null && identity === folder.identity) return found;
+    if (identity !== undefined) {
+      const now = Date.now();
+      if (now - (doubted.get(pluginId) ?? -Infinity) < DOUBT_MS) return found;
+      doubted.set(pluginId, now);
+    }
     invalidate(pluginId, entry);
     return find(pluginId).found;
   };
@@ -162,6 +195,7 @@ export function createSessionPackageGate(
     close() {
       closed = true;
       for (const pluginId of [...known.keys()]) invalidate(pluginId);
+      doubted.clear();
     },
   };
 }

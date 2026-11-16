@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import type { BrokerCaller } from "./broker-port.ts";
 import type { ResolvedPlugin } from "./plugin-package.ts";
-import { createSessionPackageGate } from "./session-package-gate.ts";
+import {
+  createSessionPackageGate,
+  identityOf,
+} from "./session-package-gate.ts";
 
 const manifest = (version = "1.0.0") =>
   pluginApi4ManifestSchema.parse({
@@ -46,7 +49,9 @@ function setup(source: "installed" | "development" = "development") {
     changes.push(changed);
     return { close: closed };
   });
-  const identify = vi.fn(async () => folder);
+  const identify = vi.fn(
+    async (): Promise<string | null | undefined> => folder,
+  );
   const gate = createSessionPackageGate({
     suspended: () => suspended,
     find,
@@ -133,6 +138,49 @@ describe("Given a session's package gate", () => {
     set({ folder: null, present: false });
     expect(await gate.check(caller())).toBe("plugin_off");
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it("doesn't trust a folder with no identity, and finds it again every 10 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const { gate, find, identify, caller, set } = setup();
+      // Some file systems give no file id: a stat says inode 0.
+      identify.mockResolvedValue(null);
+      expect(await gate.check(caller())).toBe(undefined);
+      expect(await gate.check(caller())).toBe(undefined);
+      expect(find).toHaveBeenCalledOnce();
+      // Replaced with no change heard, and no identity to tell.
+      set({ key: "key-2" });
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(await gate.check(caller())).toBe(undefined);
+      expect(find).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await gate.check(caller())).toBe("plugin_off");
+      expect(find).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("finds a package whose folder identity changes on every check at most every 10 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const { gate, find, identify, caller } = setup();
+      let next = 0;
+      identify.mockImplementation(async () => `dev:${next++}`);
+      for (let i = 0; i < 20; i += 1)
+        expect(await gate.check(caller())).toBe(undefined);
+      // Found, then found again once at the first change.
+      expect(find).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(9999);
+      await gate.check(caller());
+      expect(find).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      for (let i = 0; i < 20; i += 1) await gate.check(caller());
+      expect(find).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("asks nothing of an installed package's folder", async () => {
@@ -240,5 +288,25 @@ describe("Given a development package's real folder", () => {
     } finally {
       gate.close();
     }
+  });
+});
+
+describe("Given a folder's stat", () => {
+  const stats = (ino: bigint, directory = true) => ({
+    dev: 7n,
+    ino,
+    isDirectory: () => directory,
+  });
+
+  it("is the folder's device and inode", () => {
+    expect(identityOf(stats(42n))).toBe("7:42");
+  });
+
+  it("is no identity to trust when the inode is 0", () => {
+    expect(identityOf(stats(0n))).toBe(null);
+  });
+
+  it("is nothing for what isn't a folder", () => {
+    expect(identityOf(stats(42n, false))).toBe(undefined);
   });
 });

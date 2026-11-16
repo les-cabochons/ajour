@@ -117,12 +117,19 @@ function setup(
   } = {},
 ) {
   const sink = createRecordingSink<AjourEvent>();
+  const released = vi.fn();
   const sessions = new ProcessSessions({
     events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
     check: options.check ?? (async () => undefined),
     checkMs: options.checkMs,
+    released,
   });
-  cleanups.push(() => sessions.shutdown());
+  const children: FakeChild[] = [];
+  cleanups.push(() => {
+    // What a test left running ends with it, not in the next test.
+    for (const child of children) if (child.exitCode === null) child.end(137);
+    return sessions.shutdown();
+  });
   vi.mocked(childRunning).mockImplementation(playedRunning);
   // Ending a tree ends the program it was given.
   vi.mocked(endProcessTree).mockImplementation((child) => {
@@ -131,6 +138,7 @@ function setup(
   const start = () => {
     const release = sessions.reserve(caller.pluginId);
     const child = new FakeChild();
+    children.push(child);
     const id = sessions.register(
       caller,
       "server",
@@ -153,8 +161,136 @@ function setup(
         (event as { process?: { session?: string } }).process?.session ===
           "close",
     );
-  return { sessions, start, read, closeEvents };
+  return { sessions, start, read, closeEvents, released };
 }
+
+describe("Given a session Ajour ends whose program survives the kill", () => {
+  /** Each way Ajour ends a session, played against a kill that fails. */
+  const triggers = [
+    {
+      name: "a close",
+      options: {},
+      end: async (s: ReturnType<typeof setup>, id: string) => {
+        const closing = s.sessions.close(caller, id);
+        await vi.advanceTimersByTimeAsync(3000);
+        await closing;
+      },
+    },
+    {
+      name: "the idle timeout",
+      options: { idleSeconds: 1 },
+      end: async () => {
+        await vi.advanceTimersByTimeAsync(1000 + 3000);
+      },
+    },
+    {
+      name: "a gate turning off",
+      options: { checkMs: 100 },
+      end: async (
+        _s: ReturnType<typeof setup>,
+        _id: string,
+        off: () => void,
+      ) => {
+        off();
+        await vi.advanceTimersByTimeAsync(100 + 3000);
+      },
+    },
+  ];
+
+  function survivor(trigger: (typeof triggers)[number]) {
+    vi.useFakeTimers();
+    let gateOff = false;
+    const s = setup({
+      ...trigger.options,
+      check: async () => (gateOff ? "plugin_off" : undefined),
+    });
+    // The kill fails: the program keeps running.
+    vi.mocked(endProcessTree).mockImplementation(() => undefined);
+    const first = s.start();
+    return {
+      ...s,
+      first,
+      end: () => trigger.end(s, first.id, () => (gateOff = true)),
+    };
+  }
+
+  it.each(triggers)(
+    "after $name it keeps its place but no call reaches it, until its process is gone",
+    async (trigger) => {
+      const { sessions, read, first, end, released } = survivor(trigger);
+      await end();
+      expect(endProcessTree).toHaveBeenCalledWith(
+        first.child,
+        expect.anything(),
+        expect.any(Function),
+      );
+      await expect(read(first.id)).rejects.toMatchObject({
+        reason: "session_ended",
+      });
+      await expect(
+        sessions.send(caller, first.id, "hello"),
+      ).rejects.toMatchObject({ reason: "session_ended" });
+      await expect(sessions.close(caller, first.id)).rejects.toMatchObject({
+        reason: "session_ended",
+      });
+      // The surviving program still counts toward the plugin's two, so
+      // opens and closes can't pile survivors up.
+      const held = sessions.reserve(caller.pluginId);
+      expect(() => sessions.reserve(caller.pluginId)).toThrow(
+        expect.objectContaining({ reason: "session_limit" }),
+      );
+      held();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(released).not.toHaveBeenCalled();
+      // Its process is found gone: only now is its place free.
+      vi.mocked(childRunning).mockReturnValue(false);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(released).toHaveBeenCalledWith(caller.pluginId);
+      sessions.reserve(caller.pluginId);
+      sessions.reserve(caller.pluginId);
+    },
+  );
+
+  it.each(triggers)("after $name the quit ends it again", async (trigger) => {
+    const { sessions, first, end } = survivor(trigger);
+    await end();
+    vi.mocked(endProcessTree).mockClear();
+    const quit = sessions.shutdown();
+    await vi.advanceTimersByTimeAsync(3000);
+    await quit;
+    expect(endProcessTree).toHaveBeenCalledWith(
+      first.child,
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it("the host ending the plugin's sessions doesn't wait on a survivor forever", async () => {
+    const { sessions, first, end } = survivor(triggers[0]!);
+    await end();
+    vi.mocked(endProcessTree).mockClear();
+    let done = false;
+    void sessions.endPlugin(caller.pluginId).then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(done).toBe(true);
+    expect(endProcessTree).toHaveBeenCalledWith(
+      first.child,
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it("a survivor that later reports its exit is forgotten, with no output kept", async () => {
+    const { sessions, first, end, read, released } = survivor(triggers[0]!);
+    await end();
+    first.child.end(137);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(released).toHaveBeenCalledWith(caller.pluginId);
+    await expect(read(first.id)).rejects.toMatchObject({
+      reason: "session_ended",
+    });
+  });
+});
 
 describe("Given a session whose program exited", () => {
   it("keeps its place until read, and forgets it a minute later if nobody reads", async () => {

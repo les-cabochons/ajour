@@ -121,12 +121,19 @@ interface Session {
   /** The program ended and its output is all in. */
   exited: boolean;
   exitCode: number | null;
-  /** Ajour ended it, or forgot it: no call reaches it. */
+  /**
+   * Ajour ended it, or forgot it: no call reaches it. Its program keeps its
+   * place, and is ended again at quit, until its end is reported or found.
+   */
   ended: boolean;
   /** Its close event went out. */
   reported: boolean;
   waiters: Set<() => void>;
   gone: Promise<void>;
+  /** Looks for the program's end every few seconds, until it is found. */
+  watchEnd: () => void;
+  /** Ajour is ending its tree. */
+  killing?: Promise<void>;
 }
 
 export interface ProcessSessionsOptions {
@@ -219,6 +226,7 @@ export class ProcessSessions {
       gone: new Promise<void>((resolve) => {
         markGone = resolve;
       }),
+      watchEnd: () => undefined,
     };
     this.sessions.set(session.id, session);
     child.stdin?.on("error", () => undefined);
@@ -241,7 +249,8 @@ export class ProcessSessions {
       session.exited = true;
       markGone();
       this.wake(session);
-      if (session.ended) return;
+      // Ajour ended it: its end frees its place.
+      if (session.ended) return this.forget(session);
       this.report(session, "exit");
       // Its last output waits for a read, for a while.
       clearTimeout(session.idleTimer);
@@ -270,21 +279,24 @@ export class ProcessSessions {
     // Only its end, reported or found, ends the program's session: one
     // that outlives a failed kill keeps its place, and the quit ends it.
     const confirmEnd = () => {
+      // A program that reported its exit is having its pipes waited for.
+      if (session.exited || !noEndReported(child)) return;
       clearTimeout(exitTimer);
       exitTimer = setTimeout(() => {
-        if (session.exited || session.ended) return;
+        if (session.exited) return;
         if (childRunning(child)) confirmEnd();
         else finished();
       }, CONFIRM_END_MS);
       exitTimer.unref?.();
     };
+    session.watchEnd = confirmEnd;
     let erred = false;
     child.on("error", () => {
       // An error once it started, such as a kill that failed, doesn't say
       // the program ended: end it once, and wait for its end.
       if (session.exited || erred) return;
       erred = true;
-      if (child.exitCode === null && child.signalCode === null) {
+      if (noEndReported(child)) {
         endProcessTree(child, env, () => session.exited);
         confirmEnd();
       } else waitForPipes(500);
@@ -483,36 +495,57 @@ export class ProcessSessions {
     session.idleTimer.unref?.();
   }
 
-  /** Drops a session, and what it kept, from what any call reaches. */
-  private forget(session: Session) {
+  /** Puts a session, and what it kept, out of any call's reach. */
+  private seal(session: Session) {
     session.ended = true;
     clearTimeout(session.idleTimer);
-    if (this.sessions.get(session.id) !== session) return;
-    this.sessions.delete(session.id);
     session.lines = [];
     session.bytes = 0;
     session.stderr = "";
     this.wake(session);
+  }
+
+  /** Seals a session and frees its place: its program ended. */
+  private forget(session: Session) {
+    this.seal(session);
+    if (this.sessions.get(session.id) !== session) return;
+    this.sessions.delete(session.id);
     this.unwatch();
     const pluginId = session.pluginId;
     if (![...this.sessions.values()].some((s) => s.pluginId === pluginId))
       this.options.released?.(pluginId);
   }
 
+  /**
+   * Ends the session. Its program keeps its place until its end is
+   * reported or found; a later end, the quit or the host's, ends it again.
+   */
   private async end(session: Session, why: SessionEndedBy) {
-    if (session.ended) return session.gone;
+    if (session.ended) {
+      if (session.exited) return;
+      return this.kill(session);
+    }
     // Past the quit, the plugins stopping turns gates off: that is the quit.
     const endedBy = this.stopping ? "quit" : why;
-    this.forget(session);
-    if (!session.exited) {
+    this.seal(session);
+    if (session.exited) this.forget(session);
+    else await this.kill(session);
+    this.report(session, endedBy);
+  }
+
+  /** Ends the session's tree, waiting a while, once at a time. */
+  private kill(session: Session): Promise<void> {
+    session.killing ??= (async () => {
       endProcessTree(session.child, session.env, () => session.exited);
       // A process the OS won't end leaves its pipes behind, not Ajour waiting.
       await Promise.race([
         session.gone,
         new Promise((resolve) => setTimeout(resolve, 3000).unref?.()),
       ]);
-    }
-    this.report(session, endedBy);
+      if (!session.exited) session.watchEnd();
+      session.killing = undefined;
+    })();
+    return session.killing;
   }
 
   private report(session: Session, endedBy: SessionEndedBy) {
@@ -574,6 +607,11 @@ export class ProcessSessions {
       this.checking = false;
     }
   }
+}
+
+/** The child hasn't reported its end. */
+function noEndReported(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
 }
 
 /**
