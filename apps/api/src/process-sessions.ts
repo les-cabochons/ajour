@@ -13,7 +13,11 @@ import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import type { BrokerCaller, ProcessSessionRead } from "./broker-port.ts";
 import type { ApiEvents } from "./events.ts";
-import { endProcessGroup, endProcessTree } from "./process-tree.ts";
+import {
+  childRunning,
+  endProcessGroup,
+  endProcessTree,
+} from "./process-tree.ts";
 
 /** What one plugin's sessions may hold and move. */
 export const SESSION_LIMITS = {
@@ -41,6 +45,8 @@ export const SESSION_LIMITS = {
 
 /** Time a read leaves its operation to return what it read. */
 const RETURN_MARGIN_MS = 250;
+/** How often a program that outlived a failed kill is looked for. */
+const CONFIRM_END_MS = 3000;
 
 const sessionIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 export const sessionRequestSchema = z.discriminatedUnion("action", [
@@ -261,6 +267,17 @@ export class ProcessSessions {
       session.exitCode ??= code;
       finished();
     });
+    // Only its end, reported or found, ends the program's session: one
+    // that outlives a failed kill keeps its place, and the quit ends it.
+    const confirmEnd = () => {
+      clearTimeout(exitTimer);
+      exitTimer = setTimeout(() => {
+        if (session.exited || session.ended) return;
+        if (childRunning(child)) confirmEnd();
+        else finished();
+      }, CONFIRM_END_MS);
+      exitTimer.unref?.();
+    };
     let erred = false;
     child.on("error", () => {
       // An error once it started, such as a kill that failed, doesn't say
@@ -269,7 +286,7 @@ export class ProcessSessions {
       erred = true;
       if (child.exitCode === null && child.signalCode === null) {
         endProcessTree(child, env, () => session.exited);
-        waitForPipes(3000);
+        confirmEnd();
       } else waitForPipes(500);
     });
     this.touch(session);

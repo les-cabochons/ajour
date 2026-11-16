@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { existsSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import type { BrokerCaller } from "./broker-port.ts";
 import type { ResolvedPlugin } from "./plugin-package.ts";
@@ -21,6 +25,7 @@ function setup(source: "installed" | "development" = "development") {
   let key = "key-1";
   let present = true;
   let suspended = false;
+  let folder: string | undefined = "dev:1";
   const changes: (() => void)[] = [];
   const closed = vi.fn();
   const find = vi.fn(async () =>
@@ -41,11 +46,13 @@ function setup(source: "installed" | "development" = "development") {
     changes.push(changed);
     return { close: closed };
   });
+  const identify = vi.fn(async () => folder);
   const gate = createSessionPackageGate({
     suspended: () => suspended,
     find,
     processPackage,
     watch,
+    identify,
   });
   const caller = (v = "1.0.0", packageKey = "key-1"): BrokerCaller => ({
     pluginId: "gate",
@@ -59,6 +66,7 @@ function setup(source: "installed" | "development" = "development") {
     find,
     processPackage,
     watch,
+    identify,
     closed,
     caller,
     change: () => changes.at(-1)!(),
@@ -67,7 +75,10 @@ function setup(source: "installed" | "development" = "development") {
       key?: string;
       present?: boolean;
       suspended?: boolean;
+      /** The folder's identity, or null once it is gone. */
+      folder?: string | null;
     }) => {
+      if (next.folder !== undefined) folder = next.folder ?? undefined;
       version = next.version ?? version;
       key = next.key ?? key;
       present = next.present ?? present;
@@ -109,6 +120,26 @@ describe("Given a session's package gate", () => {
     expect(closed).toHaveBeenCalled();
     expect(await gate.check(caller())).toBe("plugin_off");
     expect(await gate.check(caller("1.0.0", "key-2"))).toBe(undefined);
+  });
+
+  it("finds a development package again when its folder moves or goes, though no change was heard", async () => {
+    const { gate, find, closed, caller, set } = setup();
+    await gate.check(caller());
+    // Windows hears nothing when the watched folder itself is renamed.
+    set({ folder: "dev:2" });
+    expect(await gate.check(caller())).toBe(undefined);
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(closed).toHaveBeenCalledOnce();
+    set({ folder: null, present: false });
+    expect(await gate.check(caller())).toBe("plugin_off");
+    expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks nothing of an installed package's folder", async () => {
+    const { gate, identify, caller } = setup("installed");
+    await gate.check(caller());
+    await gate.check(caller());
+    expect(identify).not.toHaveBeenCalled();
   });
 
   it("watches no installed package", async () => {
@@ -163,5 +194,51 @@ describe("Given a session's package gate", () => {
     await gate.check(caller());
     gate.close();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Given a development package's real folder", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
+    );
+  });
+
+  it("turns the plugin off once its folder is renamed", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-gate-"));
+    roots.push(root);
+    const directory = path.join(root, "gate");
+    await mkdir(directory);
+    // Found as the host finds it: only while its folder is there.
+    const find = vi.fn(async () =>
+      existsSync(directory)
+        ? ({
+            manifest: manifest(),
+            directory,
+            source: "development",
+            access: {},
+          } as unknown as ResolvedPlugin)
+        : undefined,
+    );
+    const gate = createSessionPackageGate({
+      suspended: () => false,
+      find,
+      processPackage: async () => ({ packageKey: "key-1", development: true }),
+    });
+    const caller: BrokerCaller = {
+      pluginId: "gate",
+      manifest: manifest(),
+      packageKey: "key-1",
+      development: true,
+      method: "syncConnection",
+    };
+    try {
+      expect(await gate.check(caller)).toBe(undefined);
+      await rename(directory, path.join(root, "moved"));
+      expect(await gate.check(caller)).toBe("plugin_off");
+    } finally {
+      gate.close();
+    }
   });
 });

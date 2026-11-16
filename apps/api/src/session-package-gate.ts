@@ -5,9 +5,13 @@
  * and a development package's key reads each of its files, so the package
  * found is kept per plugin. The host forgets it on an install, a replace or
  * an uninstall, and a change in a development package's folder forgets it
- * too. Suspension is asked afresh on every check: it costs nothing.
+ * too. Windows hears nothing when that folder itself is renamed or moved,
+ * so each check also compares the folder's identity, one stat, with the
+ * one it had when found. Suspension is asked afresh on every check: it
+ * costs nothing.
  */
 import { watch as watchFolder } from "node:fs";
+import { stat } from "node:fs/promises";
 import type { BrokerCaller } from "./broker-port.ts";
 import type { ResolvedPlugin } from "./plugin-package.ts";
 
@@ -27,6 +31,8 @@ export interface SessionPackageGateOptions {
   ): Promise<{ packageKey: string; development: boolean }>;
   /** Calls back on any change in the folder, until closed. */
   watch?(directory: string, changed: () => void): { close(): void };
+  /** The folder's identity, or undefined once nothing is at its path. */
+  identify?(directory: string): Promise<string | undefined>;
 }
 
 export interface SessionPackageGate {
@@ -47,16 +53,31 @@ export function watchPackageFolder(
   return { close: () => watcher.close() };
 }
 
+/** A folder's device and inode, which a rename or a replacement changes. */
+export async function folderIdentity(
+  directory: string,
+): Promise<string | undefined> {
+  try {
+    const found = await stat(directory, { bigint: true });
+    return found.isDirectory() ? `${found.dev}:${found.ino}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createSessionPackageGate(
   options: SessionPackageGateOptions,
 ): SessionPackageGate {
   interface Entry {
     found: Promise<PackageFound | undefined>;
     watcher?: { close(): void };
+    /** A development package's folder, as it was when found. */
+    folder?: { directory: string; identity: string };
   }
   const known = new Map<string, Entry>();
   let closed = false;
   const watch = options.watch ?? watchPackageFolder;
+  const identify = options.identify ?? folderIdentity;
 
   const invalidate = (pluginId: string, entry = known.get(pluginId)) => {
     if (!entry || known.get(pluginId) !== entry) return;
@@ -64,9 +85,9 @@ export function createSessionPackageGate(
     entry.watcher?.close();
   };
 
-  const find = (pluginId: string): Promise<PackageFound | undefined> => {
+  const find = (pluginId: string): Entry => {
     const kept = known.get(pluginId);
-    if (kept) return kept.found;
+    if (kept) return kept;
     const entry: Entry = { found: Promise.resolve(undefined) };
     // Once closed, nothing is kept or watched.
     let keep = !closed;
@@ -81,6 +102,10 @@ export function createSessionPackageGate(
           );
           if (known.get(pluginId) === entry) entry.watcher = watcher;
           else watcher.close();
+          const identity = await identify(resolved.directory);
+          // A folder already gone is found afresh on the next check.
+          if (identity === undefined) keep = false;
+          else entry.folder = { directory: resolved.directory, identity };
         } catch {
           // Unwatched, it is found afresh on every check.
           keep = false;
@@ -101,7 +126,18 @@ export function createSessionPackageGate(
       },
       () => invalidate(pluginId, entry),
     );
-    return entry.found;
+    return entry;
+  };
+
+  /** The package now: a kept one whose folder moved or went is found again. */
+  const currentPackage = async (pluginId: string) => {
+    const entry = find(pluginId);
+    const found = await entry.found;
+    const folder = entry.folder;
+    if (!folder || known.get(pluginId) !== entry) return found;
+    if ((await identify(folder.directory)) === folder.identity) return found;
+    invalidate(pluginId, entry);
+    return find(pluginId).found;
   };
 
   return {
@@ -109,7 +145,7 @@ export function createSessionPackageGate(
       if (options.suspended(caller.pluginId)) return "plugin_off";
       let current: PackageFound | undefined;
       try {
-        current = await find(caller.pluginId);
+        current = await currentPackage(caller.pluginId);
       } catch {
         return "plugin_off";
       }

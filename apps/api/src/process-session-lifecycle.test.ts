@@ -12,7 +12,11 @@ import type { BrokerCaller } from "./broker-port.ts";
 import { createApiEvents } from "./events.ts";
 import { ProcessBroker } from "./process-broker.ts";
 import { ProcessSessions, SESSION_LIMITS } from "./process-sessions.ts";
-import { endProcessGroup, endProcessTree } from "./process-tree.ts";
+import {
+  childRunning,
+  endProcessGroup,
+  endProcessTree,
+} from "./process-tree.ts";
 
 /*
  * A session's lifecycle against a program the test plays (#743): timers,
@@ -23,7 +27,12 @@ import { endProcessGroup, endProcessTree } from "./process-tree.ts";
 vi.mock("./process-tree.ts", () => ({
   endProcessTree: vi.fn(),
   endProcessGroup: vi.fn(),
+  childRunning: vi.fn(),
 }));
+
+/** A played program runs until it reports its end. */
+const playedRunning = (child: ChildProcess) =>
+  child.exitCode === null && child.signalCode === null;
 
 /** Runs as a spawned child reports it started, before the broker hears. */
 const spawnHook: { started?: (child: ChildProcess) => void } = {};
@@ -93,6 +102,7 @@ afterEach(async () => {
   spawnHook.started = undefined;
   vi.mocked(endProcessTree).mockReset();
   vi.mocked(endProcessGroup).mockReset();
+  vi.mocked(childRunning).mockReset();
   for (const cleanup of cleanups.splice(0)) await cleanup();
   await Promise.all(
     roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
@@ -113,6 +123,7 @@ function setup(
     checkMs: options.checkMs,
   });
   cleanups.push(() => sessions.shutdown());
+  vi.mocked(childRunning).mockImplementation(playedRunning);
   // Ending a tree ends the program it was given.
   vi.mocked(endProcessTree).mockImplementation((child) => {
     queueMicrotask(() => (child as unknown as FakeChild).end(137));
@@ -202,6 +213,44 @@ describe("Given a session whose program exited", () => {
     expect(await read(id)).toMatchObject({ exited: false });
     child.end(1);
     expect(await read(id)).toMatchObject({ exited: true, exitCode: 1 });
+  });
+
+  it("an error whose kill failed keeps the session, and its place, while the program runs", async () => {
+    vi.useFakeTimers();
+    const { sessions, start, read } = setup();
+    vi.mocked(endProcessTree).mockImplementation(() => undefined);
+    const { id, child } = start();
+    start();
+    child.emit("error", new Error("kill EPERM"));
+    // The program never reports its end.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await read(id)).toMatchObject({ exited: false });
+    expect(() => sessions.reserve(caller.pluginId)).toThrow(
+      expect.objectContaining({ reason: "session_limit" }),
+    );
+    // Its process is found gone: that is its end.
+    vi.mocked(childRunning).mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await read(id)).toMatchObject({ exited: true, exitCode: null });
+    sessions.reserve(caller.pluginId)();
+  });
+
+  it("a session whose program outlived a failed kill is ended again at quit", async () => {
+    vi.useFakeTimers();
+    const { sessions, start } = setup();
+    vi.mocked(endProcessTree).mockImplementation(() => undefined);
+    const { child } = start();
+    child.emit("error", new Error("kill EPERM"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    vi.mocked(endProcessTree).mockClear();
+    const quit = sessions.shutdown();
+    await vi.advanceTimersByTimeAsync(3000);
+    await quit;
+    expect(endProcessTree).toHaveBeenCalledWith(
+      child,
+      expect.anything(),
+      expect.any(Function),
+    );
   });
 });
 
