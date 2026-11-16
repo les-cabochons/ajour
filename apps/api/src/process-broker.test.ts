@@ -7,6 +7,8 @@ import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { ProcessBroker } from "./process-broker.ts";
+import { FolderResolver } from "./repository-folders.ts";
+import { AppApiStorage } from "./storage.ts";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -44,9 +46,11 @@ async function fixture(
       ],
     },
   });
+  const storage = new AppApiStorage(path.join(root, "state.json"));
+  const folder = await storage.addRepositoryFolder("project", root, "repo");
+  const folders = new FolderResolver(storage, {});
   const broker = new ProcessBroker({
-    folders: { resolve: async (id) => (id === "repo" ? root : undefined) },
-    protectedDirectories: [],
+    folders,
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
   });
@@ -54,6 +58,7 @@ async function fixture(
     root,
     manifest,
     broker,
+    folder,
     op: broker.forOperation({
       pluginId: manifest.id,
       manifest,
@@ -80,7 +85,7 @@ it.each(["-option", "a\0b", "a\rb", "a\nb"])(
   },
 );
 it("Given every slot kind and a conditional group, fills exactly one argument each", async () => {
-  const { op, root } = await fixture([
+  const { op, root, folder } = await fixture([
     "{id:id}",
     "{ref:ref}",
     "{count:number}",
@@ -97,7 +102,7 @@ it("Given every slot kind and a conditional group, fills exactly one argument ea
       count: 42,
       format: "json",
       url: "https://example.test/a",
-      folder: "repo",
+      folder: folder.id,
       branch: "fix/login",
     },
   };
@@ -197,7 +202,6 @@ it.each(["plugin_off", "needs_consent"] as const)(
     const { manifest, root } = await fixture();
     const broker = new ProcessBroker({
       folders: { resolve: async () => root },
-      protectedDirectories: [],
       gate: async () => reason,
     });
     await expect(
@@ -232,9 +236,11 @@ it("Given undeclared commands and modes not yet supported, refuses", async () =>
 });
 it("Given a repository folder in Ajour data, refuses it", async () => {
   const { manifest, root } = await fixture(["{folder:folder}"]);
+  const storage = new AppApiStorage(path.join(root, "state.json"));
+  // Simulate a saved folder that now points into a protected root.
+  const folder = await storage.addRepositoryFolder("project", root, "repo");
   const broker = new ProcessBroker({
-    folders: { resolve: async () => root },
-    protectedDirectories: [root],
+    folders: new FolderResolver(storage, { userData: root }),
     gate: async () => undefined,
   });
   await expect(
@@ -244,7 +250,7 @@ it("Given a repository folder in Ajour data, refuses it", async () => {
         manifest,
         method: "syncConnection",
       })
-      .run({ command: "run", args: { folder: "repo" } }),
+      .run({ command: "run", args: { folder: folder.id } }),
   ).rejects.toMatchObject({ reason: "folder_refused" });
 });
 it("Given marked argv, stdin, output and paths, emits one content-free event per call and records activity", async () => {
@@ -257,7 +263,6 @@ it("Given marked argv, stdin, output and paths, emits one content-free event per
   const records: unknown[] = [];
   const broker = new ProcessBroker({
     folders: { resolve: async () => root },
-    protectedDirectories: [],
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
     events: createApiEvents({ sink, userDataPath: root }),
@@ -375,7 +380,6 @@ it("Given no override, finds an executable by name on the user's PATH", async ()
   try {
     const broker = new ProcessBroker({
       folders: { resolve: async () => root },
-      protectedDirectories: [],
       gate: async () => undefined,
     });
     const op = broker.forOperation({
@@ -423,7 +427,6 @@ it.each([
     const { manifest } = await fixture([]);
     const broker = new ProcessBroker({
       folders: { resolve: async () => undefined },
-      protectedDirectories: [],
       gate: async () => undefined,
       executableOverride: async () => executable,
     });
@@ -445,7 +448,6 @@ it("Given a declared executable absent from PATH, refuses without starting", asy
   ];
   const broker = new ProcessBroker({
     folders: { resolve: async () => undefined },
-    protectedDirectories: [],
     gate: async () => undefined,
   });
   await expect(
@@ -478,23 +480,6 @@ it.each([" https://example.test/a ", "https://exa\tmple.test/a"])(
     ).toEqual(["https://example.test/a"]);
   },
 );
-it("Given a folder containing Ajour data, refuses it", async () => {
-  const { manifest, root } = await fixture(["{folder:folder}"]);
-  const broker = new ProcessBroker({
-    folders: { resolve: async () => root },
-    protectedDirectories: [path.join(root, "data")],
-    gate: async () => undefined,
-  });
-  await expect(
-    broker
-      .forOperation({
-        pluginId: manifest.id,
-        manifest,
-        method: "syncConnection",
-      })
-      .run({ command: "run", args: { folder: "repo" } }),
-  ).rejects.toMatchObject({ reason: "folder_refused" });
-});
 it("Given stdin without text permission, refuses", async () => {
   const { op, manifest } = await fixture([]);
   delete manifest.processes!.commands[0]!.stdin;
@@ -524,7 +509,6 @@ it("Given an activity recorder still writing, run settles without waiting", asyn
   const { manifest } = await fixture([]);
   const broker = new ProcessBroker({
     folders: { resolve: async () => undefined },
-    protectedDirectories: [],
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
     record: () => new Promise(() => {}),
@@ -588,7 +572,6 @@ it.each(["missing", "changed", "off", "during-operation"])(
     if (scenario === "off") await storage.setPluginEnabled(manifest.id, false);
     const broker = new ProcessBroker({
       folders: { resolve: async () => undefined },
-      protectedDirectories: [],
       gate: (c) => processConsentGate(storage, c),
       executableOverride: async () => {
         if (scenario === "during-operation") {
@@ -657,4 +640,18 @@ it("Given a burst of process activity, gathers it without writing until flush", 
   expect(
     await new AppApiStorage(file).getPluginProcessSettings("test"),
   ).toMatchObject({ refusedCount: 20 });
+});
+
+it("Given caller project context, refuses a folder from another project", async () => {
+  const { broker, manifest, folder } = await fixture(["{folder:folder}"]);
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+        projectId: "other",
+      })
+      .run({ command: "run", args: { folder: folder.id } }),
+  ).rejects.toMatchObject({ reason: "folder_refused" });
 });

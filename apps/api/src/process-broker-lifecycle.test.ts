@@ -65,7 +65,6 @@ function setup(options: Partial<ProcessBrokerOptions> = {}) {
   });
   const broker = new ProcessBroker({
     folders: { resolve: async () => undefined },
-    protectedDirectories: [],
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
     ...options,

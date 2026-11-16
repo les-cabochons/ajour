@@ -10,6 +10,7 @@ import {
 } from "@ajour/wide-events/sinks.ts";
 import {
   startAppApiServer,
+  addRepositoryFolderForServer,
   stopAppApiServer,
 } from "../../../api/src/server.ts";
 import { WINDOW_TOKEN_HEADER } from "../../../api/src/window-token.ts";
@@ -198,6 +199,8 @@ export async function startLocalApi({
   const { port } = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${port}`,
+    addRepositoryFolder: (projectId: string, chosenPath: string) =>
+      addRepositoryFolderForServer(server, projectId, chosenPath),
     /** The folder the API keeps its state in: what its events scrub as user data. */
     userDataPath: root,
     events: sink.events,

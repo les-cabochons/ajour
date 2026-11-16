@@ -1,5 +1,4 @@
 import { spawn, execFile } from "node:child_process";
-import { checkProcessFolder } from "./process-folder.ts";
 import path from "node:path";
 import { z } from "zod";
 import type { DeclaredArgument } from "../../../packages/shared/plugin-api-4.ts";
@@ -58,7 +57,6 @@ export class ProcessBrokerError extends Error {
 }
 export interface ProcessBrokerOptions {
   folders: FolderResolver;
-  protectedDirectories: readonly string[];
   gate(
     caller: BrokerCaller,
   ): Promise<"plugin_off" | "needs_consent" | undefined>;
@@ -127,6 +125,7 @@ export class ProcessBroker implements ProcessBrokerPort {
   private async argument(
     arg: DeclaredArgument,
     values: ProcessRunRequest["args"],
+    projectId?: string,
   ) {
     if (arg.kind === "literal") return arg.value;
     const raw = values[arg.name];
@@ -179,12 +178,9 @@ export class ProcessBroker implements ProcessBrokerPort {
       }
       case "folder": {
         try {
-          const folder = await this.options.folders.resolve(value);
+          const folder = await this.options.folders.resolve(value, projectId);
           if (!folder) return refuse("folder_refused");
-          return await checkProcessFolder(
-            folder,
-            this.options.protectedDirectories,
-          );
+          return folder;
         } catch {
           return refuse("folder_refused");
         }
@@ -242,8 +238,9 @@ export class ProcessBroker implements ProcessBrokerPort {
             continue;
           }
           for (const arg of group.args)
-            argv.push(await this.argument(arg, request.args));
-        } else argv.push(await this.argument(group, request.args));
+            argv.push(await this.argument(arg, request.args, caller.projectId));
+        } else
+          argv.push(await this.argument(group, request.args, caller.projectId));
       }
       if ((this.active.get(caller.pluginId) ?? 0) >= 4)
         return refuse("concurrency");

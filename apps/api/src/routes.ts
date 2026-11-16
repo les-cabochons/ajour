@@ -39,6 +39,26 @@ interface RouteSpec {
  * served on its own, before the origin check, and named `mcp.request`.
  */
 export const ROUTES = {
+  repositoryFolderList: {
+    method: "GET",
+    path: "/api/projects/:projectId/repository-folders",
+    name: "repository_folder.list",
+  },
+  repositoryFolderAdd: {
+    method: "POST",
+    path: "/api/projects/:projectId/repository-folders",
+    name: "repository_folder.add",
+  },
+  repositoryFolderRemove: {
+    method: "DELETE",
+    path: "/api/projects/:projectId/repository-folders/:folderId",
+    name: "repository_folder.remove",
+  },
+  repositoryFolderUse: {
+    method: "POST",
+    path: "/api/projects/:projectId/repository-folders/:folderId/use",
+    name: "repository_folder.use",
+  },
   health: { method: "GET", path: "/api/health", name: "api.health" },
   agentRunnerStatus: {
     method: "GET",

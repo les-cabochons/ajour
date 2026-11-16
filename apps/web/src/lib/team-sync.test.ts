@@ -1,3 +1,8 @@
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { AppApiStorage } from "../../../api/src/storage.ts";
+import { FolderResolver } from "../../../api/src/repository-folders.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginsOverview, TeamSyncRequest } from "@ajour/shared";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
@@ -184,6 +189,34 @@ describe("team sync service", () => {
     cursor: "c1",
     projects: [],
     assigned: assignAll(request),
+  });
+
+  it("keeps local API folder paths off a team sync round", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-team-folders-"));
+    try {
+      const loaded = await load();
+      const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
+      const repo = path.join(root, "repo");
+      await mkdir(repo);
+      const data = path.join(root, "data");
+      await mkdir(data);
+      const apiState = new AppApiStorage(path.join(data, "state.json"));
+      const folder = await new FolderResolver(apiState, {
+        userData: data,
+        install: path.join(root, "install"),
+      }).addFromChooser(projectId, repo);
+      loaded.localStore.forgetUndo(undoToken!);
+      const api = stubApi(answer);
+      await loaded.syncTeamConnection(PLUGIN, CONNECTION);
+      expect(api.requests[0]?.changes).toMatchObject([{ name: "Beta" }]);
+      const sent = JSON.stringify(api.requests);
+      expect(sent).not.toContain(folder.id);
+      expect(sent).not.toContain("repositoryFolders");
+      expect(sent).not.toContain(JSON.stringify(root).slice(1, -1));
+      expect(await apiState.listRepositoryFolders(projectId)).toEqual([folder]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("sends a shared project once its Undo window closes, then sends nothing", async () => {

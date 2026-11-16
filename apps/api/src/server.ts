@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ProcessBroker } from "./process-broker.ts";
-import type { FolderResolver } from "./broker-port.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
+import { FolderResolver } from "./repository-folders.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -253,6 +253,7 @@ interface AppApiServerOptions {
   host?: string;
   port?: number;
   statePath?: string;
+  protectedRepositoryFolders?: Readonly<Record<string, string>>;
   installedPluginDirectory?: string;
   developmentPluginDirectories?: string[];
   bundledPluginArchives?: string[];
@@ -322,8 +323,6 @@ interface AppApiServerOptions {
   brokerTransport?: BrokerTransport;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
-  processFolders?: FolderResolver;
-  processInstallDirectory?: string;
   /** The clock of the plugins' crash budget. Tests move it. */
   pluginClock?: () => number;
   /**
@@ -350,6 +349,7 @@ interface AppApiRuntime {
   port: number;
   /** Stops recording the process's crashes, when the API was asked to. */
   stopWatchingCrashes?: () => void;
+  folderResolver: FolderResolver;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
@@ -1353,13 +1353,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const developmentPluginDirectories =
     options.developmentPluginDirectories ??
     (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
+  const folderResolver = new FolderResolver(
+    storage,
+    options.protectedRepositoryFolders ?? {
+      userData: path.dirname(statePath),
+      install: path.resolve(import.meta.dirname, "../.."),
+    },
+  );
   const processBroker = new ProcessBroker({
-    folders: options.processFolders ?? { resolve: async () => undefined },
-    protectedDirectories: [
-      storage.dataDirectory,
-      options.processInstallDirectory ??
-        path.resolve(import.meta.dirname, "../.."),
-    ],
+    folders: folderResolver,
     gate: (caller) => processConsentGate(storage, caller),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);
@@ -1529,6 +1531,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
   });
   const runtime: AppApiRuntime = {
+    folderResolver,
     events,
     openSockets: new Set(),
     cutOffSockets: new WeakSet(),
@@ -1633,6 +1636,35 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // One handler per route in ROUTES. Each adds its catalog fields to the
   // request's event; the seam records the method, route, status and sizes.
   const handlers: RouteHandlers = {
+    repositoryFolderList: async ({ response, params }) => {
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
+    repositoryFolderAdd: ({ response }) => {
+      writeJson(response, 403, {
+        error: "Add repository folders through the desktop folder chooser.",
+      });
+    },
+    repositoryFolderRemove: async ({ response, params }) => {
+      await storage.removeRepositoryFolder(params.projectId, params.folderId);
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
+    repositoryFolderUse: async ({ response, params }) => {
+      await runtime.folderResolver.resolve(params.folderId, params.projectId);
+      await storage.useRepositoryFolder(params.projectId, params.folderId);
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
     health: ({ response }) => {
       writeJson(response, 200, { ok: true });
     },
@@ -4642,4 +4674,16 @@ export async function stopAppApiServer(server: Server): Promise<void> {
   } finally {
     unit?.end();
   }
+}
+
+/** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
+export async function addRepositoryFolderForServer(
+  server: Server,
+  projectId: string,
+  chosenPath: string,
+) {
+  const runtime = appApiRuntimesByServer.get(server);
+  if (!runtime || runtime.stopping)
+    throw new Error("Repository folders need the active desktop app.");
+  return runtime.folderResolver.addFromChooser(projectId, chosenPath);
 }

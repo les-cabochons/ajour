@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { recordingEvents } from "../../../desktop/recording-events.ts";
 import {
   afterAll,
   beforeAll,
@@ -648,6 +651,72 @@ afterAll(async () => {
 });
 
 describe("the privacy canary", () => {
+  it("keeps a chosen repository folder path out of choose, list, use and remove events, including a moved folder", async () => {
+    const require = createRequire(import.meta.url);
+    const {
+      createFolderChooser,
+    } = require("../../../desktop/electron/repository-folders.cjs");
+    const {
+      createIpcListeners,
+    } = require("../../../desktop/electron/ipc-listeners.cjs");
+    const main = recordingEvents();
+    let invoke: (event: unknown, id: string) => Promise<{ id: string }>;
+    const ipc = createIpcListeners(
+      {
+        handle: (_channel: string, handler: typeof invoke) => {
+          invoke = handler;
+        },
+      },
+      { events: main.events, windowSession: () => undefined },
+    );
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-repo-canary-"));
+    const chosen = path.join(root, MARKER);
+    await mkdir(chosen);
+    const from = mark();
+    try {
+      ipc.handle(
+        "ajour:choose-folder",
+        createFolderChooser({
+          window: () => ({}),
+          assertSender: () => {},
+          show: async () => ({ canceled: false, filePaths: [chosen] }),
+          add: api.addRepositoryFolder,
+          cancel: () => main.events.current()?.cancel(),
+        }),
+      );
+      const folder = await invoke!({}, "canary-project");
+      const client = await import("./app-api");
+      expect(await client.listRepositoryFolders("canary-project")).toHaveLength(
+        1,
+      );
+      await client.useRepositoryFolder("canary-project", folder.id);
+      await rm(chosen, { recursive: true });
+      await expect(
+        client.useRepositoryFolder("canary-project", folder.id),
+      ).rejects.toThrow("no longer available");
+      await client.removeRepositoryFolder("canary-project", folder.id);
+      expect(namesSince(from)).toEqual(
+        expect.arrayContaining([
+          "api request repository_folder.list",
+          "api request repository_folder.use",
+          "api request repository_folder.remove",
+        ]),
+      );
+      expect(main.recorded).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "repository_folder.choose",
+            kind: "ipc",
+            outcome: "ok",
+          }),
+        ]),
+      );
+      expectNoLeak([...everything(), ...main.recorded]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps a connection's names, URL and secret out of every event", async () => {
     const from = mark();
     const save = (variant: string) =>
