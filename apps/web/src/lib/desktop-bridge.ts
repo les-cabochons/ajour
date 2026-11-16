@@ -314,6 +314,8 @@ declare global {
       onTrayAction?: (
         callback: (action: DesktopTrayAction) => void,
       ) => () => void;
+      getTerminalApp?: () => Promise<string>;
+      setTerminalApp?: (value: string) => Promise<string>;
       getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
       /** Installs the ajour command of the app's own version, and resolves with how it ended. */
       installCliCommand?: (

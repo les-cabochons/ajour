@@ -983,6 +983,29 @@ describe("AppApiStorage", () => {
       });
     });
 
+    it("writes the kept records again after a failed write, without waiting for another request", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(30);
+      const mutate = vi
+        .spyOn(
+          storage as unknown as { mutate: () => Promise<unknown> },
+          "mutate",
+        )
+        .mockRejectedValueOnce(new Error("EBUSY: resource busy or locked"));
+
+      await storage.recordBrokerActivity("jira", connectionId, "request", 10);
+      await storage.recordBrokerActivity("jira", connectionId, "request", 20);
+
+      await vi.waitFor(
+        async () => {
+          expect((await onDisk()).connections[connectionId]).toMatchObject({
+            lastRequestAt: 20,
+          });
+        },
+        { timeout: 3_000 },
+      );
+      expect(mutate.mock.calls.length).toBeGreaterThan(1);
+    });
+
     it("counts a blocked direct attempt apart, without taking it for a request or a refusal", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(60_000);
 

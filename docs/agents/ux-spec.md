@@ -1379,6 +1379,25 @@ The repository picker is a centered dialog listing a project's folders as radio 
 
 Repository folders survive project archive and Undo, including Undo of creating a project. The current project lifecycle has no permanent-delete command. A future permanent-delete operation must prune the project's local folder associations after it commits.
 
+### Plugin terminals and links
+
+Settings > General > Terminal shows the terminal app plugins open commands in:
+Windows Terminal on Windows and Terminal on macOS. Linux hides the setting.
+The preference saves on change. It does not change the ajour command installation.
+
+An approved declared command can start detached or open in a terminal in its
+repository folder. Ajour reports that it started and leaves the process running
+when the plugin operation ends or Ajour quits. Launches cannot take stdin.
+A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
+Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
+strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour
+asks the user to install it.
+
+An enabled plugin may open HTTPS links. A custom link scheme must be declared
+and approved, and unsigned plugins also need the global switch and per-plugin
+acceptance. File, script and undeclared schemes are refused. Content links keep
+their existing desktop policy. A plugin may open at most five links per minute; further requests are refused.
+
 ## Coding handoff records
 
 A handoff start refuses unsafe links and undeclared resume commands without

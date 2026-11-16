@@ -327,6 +327,8 @@ interface AppApiServerOptions {
    * plugins need the desktop app.
    */
   brokerTransport?: BrokerTransport;
+  openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
+  terminal?: () => Promise<import("./process-launch.ts").TerminalApp>;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
   /** The clock of the plugins' crash budget. Tests move it. */
@@ -1401,6 +1403,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   );
   const processBroker = new ProcessBroker({
     folders: folderResolver,
+    openExternal: options.openExternal,
+    terminal: options.terminal,
+    enabledGate: (caller) => processConsentGate(storage, caller, false),
     gate: (caller) => processConsentGate(storage, caller),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);

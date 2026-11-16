@@ -49,13 +49,16 @@ async function fixture(
   const storage = new AppApiStorage(path.join(root, "state.json"));
   const folder = await storage.addRepositoryFolder("project", root, "repo");
   const folders = new FolderResolver(storage, {});
+  const sink = createRecordingSink<AjourEvent>();
   const broker = new ProcessBroker({
     folders,
+    events: createApiEvents({ sink, userDataPath: root }),
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
   });
   return {
     root,
+    sink,
     manifest,
     broker,
     folder,
@@ -71,7 +74,7 @@ it("Given text with shell metacharacters, capture preserves one argument", async
   expect(
     JSON.parse(
       (await op.run({ command: "run", args: { title: "hello & echo $(x)" } }))
-        .stdout,
+        .stdout!,
     ),
   ).toEqual(["hello & echo $(x)"]);
 });
@@ -106,7 +109,7 @@ it("Given every slot kind and a conditional group, fills exactly one argument ea
       branch: "fix/login",
     },
   };
-  expect(JSON.parse((await op.run(request)).stdout)).toEqual([
+  expect(JSON.parse((await op.run(request)).stdout!)).toEqual([
     "PAY:12",
     "feature/login",
     "42",
@@ -142,7 +145,7 @@ it("Given a command waiting for input, sends stdin and removes AJOUR environment
     expect(
       JSON.parse(
         (await op.run({ command: "run", args: {}, stdin: "hello\nworld" }))
-          .stdout,
+          .stdout!,
       ),
     ).toEqual({ data: "hello\nworld", keys: [] });
   } finally {
@@ -215,7 +218,7 @@ it.each(["plugin_off", "needs_consent"] as const)(
     ).rejects.toMatchObject({ reason });
   },
 );
-it("Given undeclared commands and modes not yet supported, refuses", async () => {
+it("Given undeclared commands and launch modes without a folder, refuses", async () => {
   const { op, manifest, broker } = await fixture();
   await expect(op.run({ command: "unknown", args: {} })).rejects.toMatchObject({
     reason: "undeclared",
@@ -231,7 +234,7 @@ it("Given undeclared commands and modes not yet supported, refuses", async () =>
           method: "syncConnection",
         })
         .run({ command: "run", args: { title: "x" } }),
-    ).rejects.toMatchObject({ reason: "not_yet" });
+    ).rejects.toMatchObject({ reason: "folder_refused" });
   }
 });
 it("Given a repository folder in Ajour data, refuses it", async () => {
@@ -277,7 +280,7 @@ it("Given marked argv, stdin, output and paths, emits one content-free event per
   });
   expect(
     (await op.run({ command: "run", args: { title: marker }, stdin: marker }))
-      .stdout,
+      .stdout!,
   ).toBe(marker);
   await expect(op.run({ command: marker, args: {} })).rejects.toMatchObject({
     reason: "undeclared",
@@ -406,7 +409,7 @@ it("Given an empty optional group, omits it, and refuses unknown or partial slot
     { if: "branch", args: ["--branch", "{branch:ref}", "{base:ref}"] },
   ]);
   expect(
-    JSON.parse((await op.run({ command: "run", args: {} })).stdout),
+    JSON.parse((await op.run({ command: "run", args: {} })).stdout!),
   ).toEqual([]);
   const invalidArgs: Record<string, string>[] = [
     { base: "main" },
@@ -475,7 +478,7 @@ it.each([" https://example.test/a ", "https://exa\tmple.test/a"])(
     const { op } = await fixture(["{url:https-url}"]);
     expect(
       JSON.parse(
-        (await op.run({ command: "run", args: { url: value } })).stdout,
+        (await op.run({ command: "run", args: { url: value } })).stdout!,
       ),
     ).toEqual(["https://example.test/a"]);
   },
@@ -660,3 +663,261 @@ it("Given caller project context, refuses a folder from another project", async 
       .run({ command: "run", args: { folder: folder.id } }),
   ).rejects.toMatchObject({ reason: "folder_refused" });
 });
+it("Given a detached command, returns started and leaves the child alive after close and shutdown", async () => {
+  const { manifest, broker, root, folder, sink } = await fixture(
+    ["{folder:folder}"],
+    "const fs=require('fs');setTimeout(()=>{fs.writeFileSync(require('path').join(process.cwd(),'detached-done'),'done')},300)",
+  );
+  manifest.processes!.commands[0]!.mode = "detached";
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  expect(await op.run({ command: "run", args: { folder: folder.id } })).toEqual(
+    { started: true },
+  );
+  expect(sink.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "plugin.process",
+        outcome: "ok",
+        process: expect.objectContaining({
+          mode: "detached",
+          command_id: "run",
+        }),
+      }),
+    ]),
+  );
+  op.close();
+  await broker.shutdown();
+  const { readFile } = await import("node:fs/promises");
+  await expect
+    .poll(async () => readFile(path.join(root, "detached-done"), "utf8"))
+    .toBe("done");
+});
+it.each([
+  "https://example.test/private?secret=CANARY",
+  "codex://thread/private?secret=CANARY",
+])(
+  "Given allowed link %s, opens through the injected main port and logs only the scheme",
+  async (url) => {
+    const { manifest } = await fixture();
+    manifest.processes!.openSchemes = ["codex"];
+    const sink = createRecordingSink<AjourEvent>();
+    const opened = vi.fn(async (_url: string) => undefined);
+    const gate = vi.fn(async () => undefined);
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate,
+      openExternal: opened,
+      events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
+    });
+    await broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .open(url);
+    expect(opened).toHaveBeenCalledWith(url, ["codex"]);
+    expect(JSON.stringify(sink.events)).not.toContain("CANARY");
+    expect(sink.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "plugin.open",
+          outcome: "ok",
+          open: { scheme: new URL(url).protocol.slice(0, -1) },
+        }),
+      ]),
+    );
+  },
+);
+it.each([
+  "file:///tmp/x",
+  "javascript:alert(1)",
+  "data:text/plain,x",
+  "other://x",
+  "http://example.test",
+])("Given forbidden link %s, never opens", async (url) => {
+  const { manifest } = await fixture();
+  const opened = vi.fn(async () => undefined);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+    openExternal: opened,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .open(url),
+  ).rejects.toMatchObject({ reason: "undeclared" });
+  expect(opened).not.toHaveBeenCalled();
+});
+it.each([
+  "unsigned_processes_off",
+  "process_acceptance_required",
+  "needs_consent",
+  "plugin_off",
+] as const)("Given a declared scheme behind %s, refuses", async (reason) => {
+  const { manifest } = await fixture();
+  manifest.processes!.openSchemes = ["codex"];
+  const opened = vi.fn(async () => undefined);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    enabledGate: async () => undefined,
+    gate: async () => reason,
+    openExternal: opened,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .open("codex://thread/1"),
+  ).rejects.toMatchObject({ reason });
+  expect(opened).not.toHaveBeenCalled();
+});
+it("Given an enabled unsigned plugin, HTTPS does not need process acceptance", async () => {
+  const { manifest } = await fixture();
+  const opened = vi.fn(async () => undefined);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    enabledGate: async () => undefined,
+    gate: async () => "unsigned_processes_off",
+    openExternal: opened,
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  await op.open("https://example.test/");
+  op.close();
+  await expect(op.open("https://example.test/")).rejects.toMatchObject({
+    reason: "operation_ended",
+  });
+  expect(opened).toHaveBeenCalledTimes(1);
+});
+
+it("Given five opens, refuses a sixth across operations until the minute expires", async () => {
+  const { manifest } = await fixture();
+  const opened = vi.fn(async () => undefined);
+  const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+  try {
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      openExternal: opened,
+    });
+    const caller = {
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection" as const,
+    };
+    for (let i = 0; i < 5; i++)
+      await broker.forOperation(caller).open("https://example.test/");
+    await expect(
+      broker.forOperation(caller).open("https://example.test/"),
+    ).rejects.toMatchObject({ reason: "rate_limit" });
+    await broker
+      .forOperation({ ...caller, pluginId: "other" })
+      .open("https://example.test/");
+    clock.mockReturnValue(61_000);
+    await broker.forOperation(caller).open("https://example.test/");
+    expect(opened).toHaveBeenCalledTimes(7);
+  } finally {
+    clock.mockRestore();
+  }
+});
+it.skipIf(process.platform !== "win32")(
+  "Given unsafe terminal text, the plugin receives invalid_request and a terminal reason",
+  async () => {
+    const { manifest, broker, folder } = await fixture([
+      "{folder:folder}",
+      "{title:text}",
+    ]);
+    manifest.processes!.commands[0]!.mode = "terminal";
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({
+          command: "run",
+          args: { folder: folder.id, title: 'x" --injected "y' },
+        }),
+    ).rejects.toMatchObject({
+      reason: "invalid_request",
+      message: expect.stringContaining("terminal mode"),
+    });
+  },
+);
+
+// Opens a real Windows Terminal window, which needs an interactive desktop: CI
+// runners have none, so it runs only when AJOUR_REAL_WT_TEST=1 is set on a
+// developer machine. The unit tests above stay authoritative.
+it.skipIf(
+  process.platform !== "win32" || process.env.AJOUR_REAL_WT_TEST !== "1",
+)(
+  "Given real Windows Terminal, a declared command receives every allowed argument exactly",
+  async (context) => {
+    const { findExecutable } = await import("./agent-runner/cli-path.ts");
+    if (!(await findExecutable("wt.exe", process.env.PATH ?? ""))) {
+      context.skip(true, "Windows Terminal is not installed on this runner");
+      return;
+    }
+    const values = [
+      "last",
+      "space value",
+      "end\\ with space",
+      "abc._-:/@+=,~()",
+      "C:\\folder\\child",
+      "123",
+    ];
+    const { manifest, broker, folder, root } = await fixture(
+      [
+        "{folder:folder}",
+        { kind: "literal", value: "--resume" },
+        ...values.map((_, i) => `{v${i}:text}`),
+      ],
+      "require('fs').writeFileSync(require('path').join(process.cwd(),'terminal-result.json'),JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}))",
+    );
+    manifest.processes!.commands[0]!.mode = "terminal";
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    expect(
+      await op.run({
+        command: "run",
+        args: {
+          folder: folder.id,
+          ...Object.fromEntries(values.map((v, i) => [`v${i}`, v])),
+        },
+      }),
+    ).toEqual({ started: true });
+    op.close();
+    await broker.shutdown();
+    const { readFile } = await import("node:fs/promises");
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(
+            await readFile(path.join(root, "terminal-result.json"), "utf8"),
+          ),
+        { timeout: 15000 },
+      )
+      .toEqual({ cwd: root, args: [root, "--resume", ...values] });
+  },
+  20000,
+);

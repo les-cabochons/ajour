@@ -726,6 +726,22 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
   return { keepRunning: windowSettings.keep_running };
 });
 
+const { terminalSettings, openPluginLink } = require("./terminal-settings.cjs");
+const terminalPreferences = () =>
+  terminalSettings(
+    process.platform,
+    path.join(app.getPath("userData"), "terminal-app.json"),
+  );
+const readTerminalApp = () => terminalPreferences().read();
+ipc.handle("ajour:get-terminal-app", async (event) => {
+  assertActiveDesktopWindow(event, "read the terminal app");
+  return readTerminalApp();
+});
+ipc.handle("ajour:set-terminal-app", async (event, value) => {
+  assertActiveDesktopWindow(event, "set the terminal app");
+  return terminalPreferences().save(value);
+});
+
 ipc.handle("ajour:get-cli-command", async (event) => {
   assertActiveDesktopWindow(event, "read the ajour command's state");
   return await cliCommand.state();
@@ -1689,6 +1705,11 @@ async function ensureInternalAppApiRunning() {
       }),
       vault: internalAppApiVault(internalAppApiModule, statePath),
       brokerTransport: internalAppApiBrokerNetwork().transport,
+      openExternal: (url, declaredSchemes) =>
+        openPluginLink(url, declaredSchemes, (href) =>
+          shell.openExternal(href),
+        ),
+      terminal: readTerminalApp,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),

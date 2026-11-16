@@ -31,6 +31,19 @@ export async function syncConnection(connection) {
     if (error.name !== "AjourProcessError" || error.code !== "undeclared")
       throw error;
   }
+  for (const url of [
+    "other://private",
+    "file:///private",
+    "javascript:alert(1)",
+  ]) {
+    try {
+      await ajour.open(url);
+      throw new Error("An undeclared link escaped.");
+    } catch (error) {
+      if (error.name !== "AjourProcessError" || error.code !== "undeclared")
+        throw error;
+    }
+  }
   const found = await call(connection, "/api/items");
   return {
     items: found.items.map((item) => ({

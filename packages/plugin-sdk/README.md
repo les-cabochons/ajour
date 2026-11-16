@@ -337,16 +337,16 @@ a repository folder id the host resolves, never a path. Put multiline text on
 stdin, which requires `stdin: "text"` in the declaration. Conditional groups run
 when their controlling slot is present, and then require all their slots.
 
-Only `capture` is available. It returns `{ exitCode, stdout, stderr }`, including
+`capture` returns `{ exitCode, stdout, stderr }`, including
 nonzero exit codes. Output is limited to 1 MB per stream. The declared timeout
 defaults to 60 seconds. Four calls may run at once per plugin. Ending the plugin
-operation cancels its children. Refusals reject with `AjourProcessError` and a
-`code` such as `invalid_request`, `undeclared`, `not_yet`, `concurrency`,
+operation cancels its capture children. Refusals reject with `AjourProcessError` and a
+`code` such as `invalid_request`, `undeclared`, `concurrency`,
 `output_limit`, `timeout` or `operation_ended`. The test fake accepts a
 `processRun` responder and otherwise refuses process requests.
 
 The user must turn the plugin on and approve its declared commands. Undeclared
-commands, detached and terminal commands are refused for now. A process runs as
+commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
 
@@ -384,3 +384,17 @@ MIT
 A handoff manifest may set `capabilities.handoff.promptTemplate`, at most 16 KiB of UTF-8. Users edit prompt, title and branch templates on the plugin page. Ajour fills them before calling `startHandoff`; plugins still receive finished `prompt`, `title` and `branch` strings.
 
 Slots are `{{item.key}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`, `{{item.type}}`, `{{item.parent.key}}`, `{{item.parent.title}}`, `{{project.name}}` and `{{repo.name}}`. Add `|slug`, for example `{{item.title|slug}}`, for a lowercase ASCII branch segment of at most 60 characters. Unknown slots or filters fail saving. Descriptions omit frontmatter and have a 32 KiB UTF-8 limit. Missing optional values become empty text.
+## Launching commands and opening links
+
+`ajour.process.run({ command, args })` uses the declared command's mode.
+Capture returns `{ exitCode, stdout, stderr }`. Detached and terminal modes return
+`{ started: true }` once the OS accepts the launch. Narrow the result with
+`result.started === true` before reading capture output. Ajour does not own or
+stop launched processes. Launch modes need a repository folder slot and use the
+first resolved folder as cwd. They refuse stdin. Terminal uses the user's choice
+in Settings > General > Terminal. Windows Terminal refuses semicolons in values.
+
+`await ajour.open(url)` opens HTTPS while the plugin is enabled. Custom schemes
+must appear in `processes.openSchemes` and pass command consent and unsigned
+plugin gates. File, script and undeclared schemes are refused. The host opens
+links through main. Events contain only the scheme.

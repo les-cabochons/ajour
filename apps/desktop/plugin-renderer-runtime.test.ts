@@ -622,43 +622,52 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
-  it("relays process calls only to the sender's own operation", async () => {
-    const { start, ready } = setUp();
-    const run = vi.fn(async () => ({
-      exitCode: 0,
-      stdout: "answer",
-      stderr: "",
-    }));
-    start("jira", { processBroker: { run, close: vi.fn() } });
-    const { driver } = await ready();
-    const { runId } = (await driver.send({ type: "next" })) as {
-      runId: string;
-    };
-    expect(
-      await driver.send({
-        type: "process",
-        runId,
-        request: { command: "run", args: {} },
-      }),
-    ).toEqual({
-      ok: true,
-      response: { exitCode: 0, stdout: "answer", stderr: "" },
-    });
-    start("github", { processBroker: { run: vi.fn(), close: vi.fn() } });
-    const other = await ready(1);
-    const foreign = (await other.driver.send({ type: "next" })) as {
-      runId: string;
-    };
-    expect(
-      await driver.send({
-        type: "process",
-        runId: foreign.runId,
-        request: { command: "run", args: {} },
-      }),
-    ).toMatchObject({ ok: false, error: { code: "refused" } });
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith({ command: "run", args: {} });
-  });
+  it.each(["process", "open"])(
+    "relays %s calls only to the sender's own operation",
+    async (type) => {
+      const { start, ready } = setUp();
+      const run = vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "answer",
+        stderr: "",
+      }));
+      start("jira", { processBroker: { run, open: run, close: vi.fn() } });
+      const { driver } = await ready();
+      const { runId } = (await driver.send({ type: "next" })) as {
+        runId: string;
+      };
+      expect(
+        await driver.send({
+          type,
+          url: "codex://thread/1",
+          runId,
+          request: { command: "run", args: {} },
+        }),
+      ).toEqual({
+        ok: true,
+        response: { exitCode: 0, stdout: "answer", stderr: "" },
+      });
+      start("github", {
+        processBroker: { run: vi.fn(), open: vi.fn(), close: vi.fn() },
+      });
+      const other = await ready(1);
+      const foreign = (await other.driver.send({ type: "next" })) as {
+        runId: string;
+      };
+      expect(
+        await driver.send({
+          type,
+          url: "codex://thread/1",
+          runId: foreign.runId,
+          request: { command: "run", args: {} },
+        }),
+      ).toMatchObject({ ok: false, error: { code: "refused" } });
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledWith(
+        type === "open" ? "codex://thread/1" : { command: "run", args: {} },
+      );
+    },
+  );
 
   it("relays a run's ajour.http to that run's broker only, never another's", async () => {
     const { recorded, start, ready } = setUp();

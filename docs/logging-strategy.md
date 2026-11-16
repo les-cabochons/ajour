@@ -997,6 +997,7 @@ channel to read the event each emits.
 | `plugin.activate`                    | command, request                        | route, client call                               |
 | `plugin.install`                     | command, ipc                            | IPC channel                                      |
 | `plugin.list`                        | command, request                        | route, client call                               |
+| `plugin.open`                        | job                                     | local API                                        |
 | `plugin.process`                     | job                                     | local API                                        |
 | `plugin.process_read`                | request                                 | route                                            |
 | `plugin.process_update`              | command, request                        | route, client call                               |
@@ -1076,6 +1077,8 @@ channel to read the event each emits.
 | `team.create`                        | command, request, plugin_operation      | route, plugin method, store command, client call |
 | `team.resolve_arrival`               | command                                 | store command                                    |
 | `team.sync`                          | job, request, plugin_operation          | route, plugin method, client call, renderer      |
+| `terminal.read`                      | ipc                                     | IPC channel                                      |
+| `terminal.update`                    | ipc                                     | IPC channel                                      |
 | `time_entry.commit`                  | command                                 | store command                                    |
 | `time_entry.continue`                | command                                 | store command                                    |
 | `time_entry.create`                  | command                                 | store command                                    |

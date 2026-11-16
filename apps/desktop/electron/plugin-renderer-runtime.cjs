@@ -83,6 +83,7 @@ const MESSAGE_TYPES = new Set([
   "process",
   "http",
   "publicFetch",
+  "open",
   "abort",
   "blocked",
 ]);
@@ -859,7 +860,10 @@ function createPluginRendererRuntime({
         : undefined;
     if (!run) {
       unit?.refuse("unknown_run");
-      return type === "http" || type === "publicFetch" || type === "process"
+      return type === "http" ||
+        type === "publicFetch" ||
+        type === "open" ||
+        type === "process"
         ? endedAnswer
         : undefined;
     }
@@ -876,9 +880,13 @@ function createPluginRendererRuntime({
       run.aborts.get(message.callId)?.abort();
       return undefined;
     }
-    if (type === "process") {
+    if (type === "open" || type === "process") {
       if (!run.processBroker) return endedAnswer;
-      return run.processBroker.run(message.request).then(
+      return (
+        type === "open"
+          ? run.processBroker.open(message.url)
+          : run.processBroker.run(message.request)
+      ).then(
         (response) => ({ ok: true, response }),
         (error) => ({ ok: false, error: brokerErrorOf(error) }),
       );
