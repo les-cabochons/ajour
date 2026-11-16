@@ -147,6 +147,63 @@ for (let i = 0; i < 400; i++) {
 describe.skipIf(process.platform !== "win32")(
   "Windows faithful delivery",
   () => {
+    it.each([
+      [
+        "classic-pnp",
+        `@"${process.execPath}"  "${root}\\cache.zip\\cli.js"  %*`,
+        process.execPath,
+        [`${root}\\cache.zip\\cli.js`],
+      ],
+      [
+        "berry-run",
+        `@goto #_undefined_# 2>NUL || @title %COMSPEC% & @setlocal & @"${process.execPath}" "${script}" "run" %*`,
+        process.execPath,
+        [script, "run"],
+      ],
+      [
+        "berry-node-gyp",
+        `@goto #_undefined_# 2>NUL || @title %COMSPEC% & @setlocal & @"${process.execPath}" "${script}" "run" "--top-level" "node-gyp" %*`,
+        process.execPath,
+        [script, "run", "--top-level", "node-gyp"],
+      ],
+      [
+        "berry-native",
+        `@goto #_undefined_# 2>NUL || @title %COMSPEC% & @setlocal & @"C:\\tools\\tool.exe"  %*`,
+        "C:\\tools\\tool.exe",
+        [],
+      ],
+    ] as const)(
+      "Given Yarn %s generator output, preserves its command and prefix",
+      (name, source, command, prefix) => {
+        const shim = path.join(root, `${name}.cmd`);
+        writeFileSync(shim, source);
+        expect(resolveSpawn(shim, ["--version"], {})).toEqual({
+          command,
+          args: [...prefix, "--version"],
+          env: {},
+        });
+      },
+    );
+
+    it.each([
+      '"--eval=process.exit()"',
+      '"relative.js"',
+      "",
+      '"-C:\\script.js"',
+    ])(
+      "Given a Yarn Node prefix %s without an absolute script, refuses",
+      (prefix) => {
+        const shim = path.join(root, "node-option.cmd");
+        writeFileSync(shim, `@"${process.execPath}" ${prefix} %*`);
+        expect(resolveSpawn(shim, [], {})).toHaveProperty("refused");
+      },
+    );
+
+    it("Given a Yarn native wrapper with a prefix, refuses", () => {
+      const shim = path.join(root, "native-prefix.cmd");
+      writeFileSync(shim, `@"C:\\tools\\tool.exe" "${script}" %*`);
+      expect(resolveSpawn(shim, [], {})).toHaveProperty("refused");
+    });
     for (const [format, content] of Object.entries(fixtures)) {
       it(`Given ${format}, every hostile value arrives exactly or is refused, and no canary runs`, () => {
         const shim = path.join(root, `${format}.cmd`);

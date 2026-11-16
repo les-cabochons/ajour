@@ -43,6 +43,24 @@ afterEach(async () => {
 });
 
 describe("findExecutable", () => {
+  it("Given relative PATH entries, skips them and finds the absolute installation", async () => {
+    const bin = await tempDir("ajour-path-");
+    const executable = path.join(bin, "claude.exe");
+    await writeFile(executable, "");
+    await chmod(executable, 0o755);
+    const relative = path.relative(process.cwd(), bin);
+    expect(await findExecutable("claude", relative, "win32")).toBeNull();
+    expect(
+      await findExecutable(
+        "claude",
+        [relative, bin].join(path.delimiter),
+        "win32",
+      ),
+    ).toBe(executable);
+    if (process.platform === "win32") {
+      expect(await findExecutable("claude", bin.slice(2), "win32")).toBeNull();
+    }
+  });
   it("finds an executable on PATH and skips folders without it", async () => {
     const empty = await tempDir("ajour-path-");
     const bin = await tempDir("ajour-path-");

@@ -269,8 +269,8 @@ export class AgentRunner {
           ? await readVersion(executable, pathValue)
           : undefined;
         const refusalReason =
-          output && typeof output !== "string"
-            ? spawnRefusalMessage(output.refused)
+          output && executable && typeof output !== "string"
+            ? spawnRefusalMessage(output.refused, cli.label, executable)
             : undefined;
         const version =
           typeof output === "string" && output
@@ -582,7 +582,7 @@ export class AgentRunner {
       );
       if ("refused" in plan) {
         throw new AgentRunError(
-          `${adapter.label} can't start: ${spawnRefusalMessage(plan.refused)}`,
+          spawnRefusalMessage(plan.refused, adapter.label, invocation.command),
           400,
         );
       }

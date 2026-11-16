@@ -41,9 +41,11 @@ On Windows it resolves complete recognised npm, pnpm, Yarn Classic, Yarn Berry
 and T3 shim templates to a native `.exe` and literal prefix arguments. Unknown
 or changed shims are refused. npm and pnpm reject batch files and other
 script-host inputs as Node entry points; extensionless Node scripts remain
-supported. Yarn targets only `node.exe`; its quoted prefix values
-must be separated by spaces, cannot end in a backslash, and cannot name batch
-files or other script-host inputs. T3 targets only `T3 Code.exe` or
+supported. Yarn targets `node.exe` with an absolute script path first, followed
+by optional literal words, or a non-interpreter `.exe` with no prefix. The script
+need not exist as a file because Plug'n'Play paths can point inside zip archives.
+Prefix values must be separated by spaces, cannot end in a backslash, and cannot
+name batch files or other script-host inputs. T3 targets only `T3 Code.exe` or
 `T3 Code (Nightly).exe`, with a Node script prefix. Every resolved Windows
 command refuses known command interpreters and script hosts. Executable paths,
 resolved targets and Node PATH entries require a drive-letter or UNC prefix.

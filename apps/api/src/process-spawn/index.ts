@@ -158,9 +158,17 @@ function recognizeShim(
       )
     )
       return;
-    // Yarn's generated node launcher must never turn into an arbitrary script host.
-    if (path.basename(command).toLowerCase() !== "node.exe")
+    if (!/\.exe$/i.test(command) || isInterpreter(command))
       return { refused: "native_exe_required" };
+    // Node must receive a script before any options. PnP scripts may be in zip files.
+    if (path.basename(command).toLowerCase() === "node.exe") {
+      if (
+        !prefix[0] ||
+        prefix[0].startsWith("-") ||
+        !isAbsoluteWindowsPath(prefix[0])
+      )
+        return;
+    } else if (prefix.length) return;
     return { command, prefix };
   }
   const t3 =
@@ -220,22 +228,24 @@ function isInterpreter(value: string): boolean {
 }
 
 /** User-facing explanations shared by launch and CLI detection. */
-export function spawnRefusalMessage(reason: string): string {
+export function spawnRefusalMessage(
+  reason: string,
+  tool: string,
+  launcher: string,
+): string {
+  if (reason === "nul" || reason === "invalid_unicode")
+    return "The command's settings or environment contain a character Windows can't pass.";
+  if (reason === "command_line_too_long")
+    return "The command's settings are too long for Windows to pass. Shorten them, then try again.";
+  const reinstall =
+    "Reinstall it with npm, pnpm or Yarn, or use its Windows .exe file.";
   const messages: Record<string, string> = {
-    nul: "The task's input can't be passed safely because it contains a NUL character.",
-    invalid_unicode:
-      "The task's input can't be passed safely because it contains invalid Unicode.",
-    command_line_too_long:
-      "The task's input can't be passed safely because it exceeds the Windows command line limit.",
-    absolute_path_required: "The CLI needs a fully qualified executable path.",
-    native_exe_required:
-      "The CLI must resolve to a supported native executable, without a command interpreter.",
-    shim_too_large: "The CLI launcher is too large to inspect safely.",
-    unknown_shim: "The CLI launcher is not a supported shim.",
-    shim_unreadable: "The CLI launcher could not be read.",
+    absolute_path_required:
+      "that file's location is relative to the current folder. Add the full folder path to PATH, then reopen Ajour.",
+    native_exe_required: `it starts a program Ajour can't run directly. ${reinstall}`,
+    shim_too_large: `that launcher file is too large to check. ${reinstall}`,
+    unknown_shim: `it doesn't recognise that launcher. ${reinstall}`,
+    shim_unreadable: `it can't read that launcher file. Check that the file is still there and you can open it. ${reinstall}`,
   };
-  const message = messages[reason] ?? "The CLI could not be started safely.";
-  return ["nul", "invalid_unicode", "command_line_too_long"].includes(reason)
-    ? message
-    : `${message} Install a supported CLI shim or a native executable.`;
+  return `Ajour can't start ${tool} from ${launcher} because ${messages[reason] ?? `it couldn't check that launcher. ${reinstall}`}`;
 }

@@ -72,6 +72,13 @@ export async function findExecutable(
 ): Promise<string | null> {
   const extensions = platform === "win32" ? [".exe", ".cmd", ""] : [""];
   for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
+    // Relative Windows entries depend on the current directory or drive.
+    if (
+      platform === "win32"
+        ? !/^(?:[a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+[\\/])/i.test(directory)
+        : !path.isAbsolute(directory)
+    )
+      continue;
     for (const extension of extensions) {
       const candidate = path.join(directory, name + extension);
       try {

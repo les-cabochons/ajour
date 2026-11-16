@@ -844,16 +844,28 @@ describe("AgentRunner", () => {
     ]);
   });
 
-  it("carries a refused version probe into CLI status", async () => {
-    const { runner } = await setup([], {
-      versionOutput: { refused: "unknown_shim" },
-    });
-    expect((await runner.overview()).clis[0]).toMatchObject({
-      installed: true,
-      refusalReason:
-        "The CLI launcher is not a supported shim. Install a supported CLI shim or a native executable.",
-    });
-  });
+  it.each([
+    [
+      "unknown_shim",
+      "it doesn't recognise that launcher. Reinstall it with npm, pnpm or Yarn, or use its Windows .exe file.",
+    ],
+    [
+      "absolute_path_required",
+      "that file's location is relative to the current folder. Add the full folder path to PATH, then reopen Ajour.",
+    ],
+  ])(
+    "carries a %s version refusal into CLI status with the tool and file",
+    async (reason, explanation) => {
+      const { runner } = await setup([], {
+        versionOutput: { refused: reason },
+        findExecutable: async () => "C:\\tools\\claude.cmd",
+      });
+      expect((await runner.overview()).clis[0]).toMatchObject({
+        installed: true,
+        refusalReason: `Ajour can't start Claude Code from C:\\tools\\claude.cmd because ${explanation}`,
+      });
+    },
+  );
 
   it("logs a refused argument as a launch failure", async () => {
     const adapter: AgentCliAdapter = {
@@ -874,7 +886,7 @@ describe("AgentRunner", () => {
         error: expect.objectContaining({
           type: "AgentRunError",
           message: expect.stringContaining(
-            "task\'s input can\'t be passed safely",
+            "The command's settings or environment contain a character Windows can't pass.",
           ),
         }),
         launch: { failed_step: "spawn" },
@@ -1711,7 +1723,7 @@ describe.skipIf(process.platform !== "win32")("Windows runner launch", () => {
     });
     await expect(runner.start(request)).rejects.toMatchObject({
       status: 400,
-      message: expect.stringContaining("CLI launcher is not a supported shim"),
+      message: expect.stringContaining("it doesn't recognise that launcher"),
     });
     expect(revoked).toHaveLength(1);
     expect((await runner.overview()).currentRun).toBeNull();
