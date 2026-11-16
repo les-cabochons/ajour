@@ -4,7 +4,7 @@ Ajour lists the pull requests that need you: the ones you wrote, and the ones yo
 
 <Shot name="pull-requests" alt="The Pull requests page with active and settled pull requests" />
 
-Pull requests need a code host plugin, such as [GitHub](/plugins/github) or [Azure DevOps](/plugins/azure-devops). Once it is on, **Pull requests** shows in the sidebar's view switcher. While pull requests need you, a **Pull requests** section also shows in the sidebar.
+Pull requests need a code host plugin, such as [GitHub](/plugins/github) or [Azure DevOps](/plugins/azure-devops). Once it is on, **Pull requests** shows in the sidebar's views. While pull requests need you, a **Pull requests** section also shows in the sidebar.
 
 ## What is on your plate
 
