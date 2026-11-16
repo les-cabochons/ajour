@@ -94,6 +94,19 @@ export async function launchProcess(
   }
   if (platform !== "darwin" || terminal !== "Terminal")
     throw new ProcessLaunchRefused("Unsupported terminal");
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+  // Terminal may already be running. Forward only launcher changes, not inherited secrets.
+  const exports = Object.entries(plan.env)
+    .flatMap(([name, value]) => {
+      if (value === undefined || value === process.env[name]) return [];
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || value.includes("\0"))
+        throw new ProcessLaunchRefused(
+          "Environment cannot be passed safely in terminal mode",
+          "invalid_request",
+        );
+      return [`export ${name}=${quote(value)}\n`];
+    })
+    .join("");
   const root = ports.temp ?? os.tmpdir();
   // Ajour may have quit before the five-minute timer ran. Only sweep our old directories.
   for (const entry of await readdir(root, { withFileTypes: true })) {
@@ -117,11 +130,10 @@ export async function launchProcess(
     await rm(directory, { recursive: true, force: true });
   };
 
-  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
   try {
     await writeFile(
       script,
-      `#!/bin/sh\ncd ${quote(cwd)} || exit 1\nexec ${[plan.command, ...plan.args].map(quote).join(" ")}\n`,
+      `#!/bin/sh\nfor v in $(env | sed -n 's/^\\(AJOUR_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$v"; done\n${exports}cd ${quote(cwd)} || exit 1\nexec ${[plan.command, ...plan.args].map(quote).join(" ")}\n`,
       { mode: 0o700, flag: "wx" },
     );
     await start(

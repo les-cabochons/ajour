@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { launchProcess } from "./process-launch.ts";
 import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import os from "node:os";
@@ -9,6 +9,72 @@ const ports = {
   find: async () => "C:\\tools\\wt.exe",
   start: async () => undefined,
 };
+it.each([
+  ["BAD-NAME", "value"],
+  ["9BAD", "value"],
+  ["BAD;touch injected", "value"],
+  ["VALID_NAME", "nul\0value"],
+])(
+  "Given unsafe macOS environment %j, refuses before spawning",
+  async (name, value) => {
+    const start = vi.fn(async () => undefined);
+    await expect(
+      launchProcess(
+        { command: "/tools/fake", args: [], env: { [name]: value } },
+        "/repo",
+        "Terminal",
+        { platform: "darwin", start },
+      ),
+    ).rejects.toMatchObject({ reason: "invalid_request" });
+    expect(start).not.toHaveBeenCalled();
+  },
+);
+it("Given launcher environment changes, exports only changed values with POSIX quoting", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-env-"));
+  vi.stubEnv("HOME", "/home/alex");
+  vi.stubEnv("NODE_PATH", "/old/modules");
+  vi.stubEnv("UNRELATED_SECRET", "must-not-reach-disk");
+  vi.stubEnv("ELECTRON_RUN_AS_NODE", undefined);
+  vi.stubEnv("T3CODE_TEST", undefined);
+  try {
+    await launchProcess(
+      {
+        command: "/tools/fake",
+        args: [],
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: "1",
+          T3CODE_TEST: "a'b\n$(touch bad)",
+          NODE_PATH: "/new/modules",
+        },
+      },
+      "/repo",
+      "Terminal",
+      {
+        platform: "darwin",
+        temp: root,
+        start: async (plan) => {
+          const script = await readFile(plan.args[2]!, "utf8");
+          expect(script).toContain("export ELECTRON_RUN_AS_NODE='1'\n");
+          expect(script).toContain(
+            "export T3CODE_TEST='a'\\''b\n$(touch bad)'\n",
+          );
+          expect(script).toContain("export NODE_PATH='/new/modules'\n");
+          expect(script).not.toContain("export HOME=");
+          expect(script).not.toContain("UNRELATED_SECRET");
+          expect(script).not.toContain("must-not-reach-disk");
+          expect(script.indexOf("export NODE_PATH=")).toBeLessThan(
+            script.indexOf("cd '/repo'"),
+          );
+        },
+        later: () => undefined,
+      },
+    );
+  } finally {
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 it.each([
   'x" --injected "y',
   "a\t--tabflag",
@@ -80,6 +146,7 @@ it.each(["Terminal"] as const)(
   async (terminal) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-test-"));
     let cleanup: (() => Promise<void>) | undefined;
+    vi.stubEnv("AJOUR_TEST_SECRET", "ajour-secret-must-not-reach-disk");
     try {
       let script = "";
       await launchProcess(
@@ -101,7 +168,7 @@ it.each(["Terminal"] as const)(
         },
       );
       expect(await readFile(script, "utf8")).toBe(
-        "#!/bin/sh\ncd '/repo'\\''s folder' || exit 1\nexec '/tools/fake' 'a'\\''b' '$(touch bad)' ''\n",
+        "#!/bin/sh\nfor v in $(env | sed -n 's/^\\(AJOUR_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset \"$v\"; done\ncd '/repo'\\''s folder' || exit 1\nexec '/tools/fake' 'a'\\''b' '$(touch bad)' ''\n",
       );
       if (process.platform !== "win32")
         expect((await stat(script)).mode & 0o777).toBe(0o700);
@@ -114,6 +181,7 @@ it.each(["Terminal"] as const)(
       await cleanup!();
       await expect(stat(script)).rejects.toThrow();
     } finally {
+      vi.unstubAllEnvs();
       await rm(root, { recursive: true, force: true });
     }
   },
