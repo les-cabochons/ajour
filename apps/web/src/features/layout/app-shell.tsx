@@ -73,7 +73,10 @@ import {
   MAIN_CONTENT_ID,
   SkipToContent,
 } from "@/features/layout/skip-to-content";
-import { getSettingsPages } from "@/features/settings/settings-navigation";
+import {
+  getSettingsPages,
+  unlistedSettingsPages,
+} from "@/features/settings/settings-navigation";
 import {
   useOpenSettings,
   useSettingsWindowLocation,
@@ -590,9 +593,10 @@ export function AppShell() {
   const isNarrowView = useIsNarrowView();
   const narrowSettingsPage =
     isNarrowView && isSettingsActive
-      ? getSettingsPages("wide", false, true).find((page) =>
-          pathname.startsWith(page.to),
-        )
+      ? [
+          ...getSettingsPages("wide", false, true),
+          ...unlistedSettingsPages,
+        ].find((page) => pathname.startsWith(page.to))
       : undefined;
   // In wide windows Settings is a window over the page (`SettingsWindow`),
   // open while the page's search names a settings page. Cmd/Ctrl+B waits

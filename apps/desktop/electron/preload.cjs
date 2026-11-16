@@ -131,6 +131,8 @@ const desktopApi = {
   checkForUpdates: (track, trace) =>
     invoke("ajour:check-for-updates", track, ...traced(trace)),
   getUpdateState: (trace) => invoke("ajour:get-update-state", ...traced(trace)),
+  getReleaseNotes: (track, trace) =>
+    invoke("ajour:get-release-notes", track, ...traced(trace)),
   onUpdateStateChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("ajour:update-state-changed", listener);

@@ -2193,6 +2193,7 @@ describe("plugin and update IPC: the privacy canary", () => {
       "async function confirmUnsignedInstall(",
       "async function installPluginArchive(",
       'ipc.handle("ajour:open-update-release"',
+      'ipc.handle("ajour:get-release-notes"',
       'ipc.handle("ajour:install-plugin"',
       'ipc.handle("ajour:download-catalog-plugin"',
       'ipc.handle("ajour:uninstall-plugin"',
@@ -2350,6 +2351,70 @@ describe("plugin and update IPC: the privacy canary", () => {
       `Cannot load plugins from ~\\${MARKER}\\plugins: ${MARKER} has no plugin.json`,
     );
     expectNoLeak(recorded);
+  });
+
+  it("records how What's new read the release notes, and none of their text", async () => {
+    const {
+      createUpdateCheckCoordinator,
+      fetchReleaseNotes,
+    } = require("./electron/update-check.cjs");
+    const release = {
+      tag_name: "v0.0.1-nightly.20261116.377",
+      name: `Ajour ${MARKER}`,
+      html_url:
+        "https://github.com/les-cabochons/ajour/releases/tag/v0.0.1-nightly.20261116.377",
+      draft: false,
+      prerelease: true,
+      published_at: "2026-11-16T16:27:41Z",
+      body: `* feat(time): ${MARKER} by @a in https://github.com/les-cabochons/ajour/pull/1`,
+    };
+    let status = 200;
+    const runtime = pluginRuntime({
+      app: { isPackaged: true, getVersion: () => "0.0.1-nightly.20261116.376" },
+      net: {
+        fetch: async () => ({
+          ok: status === 200,
+          status,
+          json: async () => [release],
+        }),
+      },
+      releaseNotesCoordinated: createUpdateCheckCoordinator({
+        checkForUpdatesImpl: fetchReleaseNotes,
+        failureTtlMs: 0,
+      }),
+    });
+
+    const notes = await runtime.invoke("ajour:get-release-notes", "nightly");
+    await runtime.invoke("ajour:get-release-notes", "nightly");
+    status = 503;
+    await expect(
+      runtime.invoke("ajour:get-release-notes", "stable"),
+    ).rejects.toThrow("(503)");
+
+    expect(notes).toEqual([
+      expect.objectContaining({
+        tagName: release.tag_name,
+        body: release.body,
+      }),
+    ]);
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "update.release_notes",
+        outcome: "ok",
+        update: {
+          track: "nightly",
+          release_count: 1,
+          cache: "miss",
+          github_statuses: [200],
+        },
+      },
+      { outcome: "ok", update: { cache: "hit", release_count: 1 } },
+      {
+        outcome: "error",
+        update: { track: "stable", cache: "miss", github_statuses: [503] },
+      },
+    ]);
+    expectNoLeak(runtime.recorded);
   });
 
   it("keeps a release URL out of the open-release events, whether it is allowed, refused or fails", async () => {

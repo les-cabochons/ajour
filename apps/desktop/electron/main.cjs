@@ -128,6 +128,7 @@ const {
 } = require("./window-api-token.cjs");
 const {
   createUpdateCheckCoordinator,
+  fetchReleaseNotes,
   isAllowedReleaseUrl,
 } = require("./update-check.cjs");
 
@@ -295,6 +296,10 @@ const appMenuModel = getAppMenuModel({
   appName: app.name,
 });
 const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
+// What's new reads the notes through the same cache and backoff as checks.
+const releaseNotesCoordinated = createUpdateCheckCoordinator({
+  checkForUpdatesImpl: fetchReleaseNotes,
+});
 const automaticUpdateController = createAutomaticUpdateController({
   autoUpdater,
   isEnabled: automaticUpdatesEnabled,
@@ -828,6 +833,33 @@ ipc.handle("ajour:check-for-updates", async (event, track) => {
 ipc.handle("ajour:get-update-state", (event) => {
   assertActiveDesktopWindow(event, "read application update state");
   return automaticUpdateController.getState();
+});
+
+/**
+ * What's new: the track's latest releases with their notes. The event holds
+ * how they were read, never their text.
+ */
+ipc.handle("ajour:get-release-notes", async (event, track) => {
+  assertActiveDesktopWindow(event, "read application release notes");
+  const unit = events.current();
+  const report = {};
+  try {
+    const notes = await releaseNotesCoordinated({
+      track,
+      currentVersion: app.getVersion(),
+      fetchImpl: net.fetch,
+      report,
+    });
+    unit?.set({ update: { release_count: notes.length } });
+    return notes;
+  } finally {
+    unit?.set({
+      update: {
+        ...(track === "stable" || track === "nightly" ? { track } : {}),
+        ...report,
+      },
+    });
+  }
 });
 
 ipc.handle("ajour:update-and-restart", async (event, track, version) => {

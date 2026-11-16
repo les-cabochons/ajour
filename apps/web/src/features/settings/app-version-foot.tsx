@@ -6,6 +6,7 @@ import {
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { SettingsLink } from "@/features/settings/settings-link";
 import { useUserPreferences } from "@/lib/local-hooks";
 import {
   applyDesktopUpdate,
@@ -72,7 +73,8 @@ function AppUpdateButton() {
 
 /**
  * The end of the Settings window's left column: the installed version, then
- * the desktop app's update button. The browser build knows no version and
+ * the desktop app's update button. The version opens What's new, quietly: it
+ * reads as plain text until hovered. The browser build knows no version and
  * has no update button, so it shows nothing.
  */
 export function AppVersionFoot() {
@@ -84,12 +86,17 @@ export function AppVersionFoot() {
       data-app-version=""
       className="flex h-9 items-center justify-between gap-2 border-t pr-1 pl-2.5 text-xs text-muted-foreground"
     >
-      <span className="min-w-0 truncate">
-        Ajour{" "}
-        {version ? (
-          <span className="font-mono tabular-nums">{version}</span>
-        ) : null}
-      </span>
+      {version ? (
+        <SettingsLink
+          page="whats-new"
+          aria-label={`What's new in Ajour ${version}`}
+          className="min-w-0 truncate rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground"
+        >
+          Ajour <span className="font-mono tabular-nums">{version}</span>
+        </SettingsLink>
+      ) : (
+        <span className="min-w-0 truncate">Ajour</span>
+      )}
       {canUpdate ? <AppUpdateButton /> : null}
     </div>
   );

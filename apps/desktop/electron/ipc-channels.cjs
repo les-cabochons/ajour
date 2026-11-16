@@ -83,6 +83,11 @@ const IPC_CHANNELS = {
   },
   "ajour:check-for-updates": { event: "update.check", mode: "invoke" },
   "ajour:get-update-state": { event: "update.get_state", mode: "invoke" },
+  // What's new: the track's latest releases and their notes.
+  "ajour:get-release-notes": {
+    event: "update.release_notes",
+    mode: "invoke",
+  },
   "ajour:update-and-restart": { event: "update.install", mode: "invoke" },
   // Choosing a track checks it at once.
   "ajour:configure-automatic-updates": {

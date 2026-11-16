@@ -29,6 +29,7 @@ import {
   SettingsSyncReviewPage,
   SettingsTimeEntriesPage,
   SettingsVaultPage,
+  SettingsWhatsNewPage,
   SettingsWorkflowPage,
 } from "@/features/settings/settings-pages";
 import { isNarrowView } from "@/lib/use-narrow-view";
@@ -397,6 +398,16 @@ const settingsSyncReviewRoute = createRoute({
   ),
 });
 
+const settingsWhatsNewRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/whats-new",
+  component: () => (
+    <RouteSuspense>
+      <SettingsWhatsNewPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsDebugRoutes = SettingsDebugPage
   ? [
       createRoute({
@@ -450,6 +461,7 @@ const routeTree = rootRoute.addChildren([
       settingsProjectsRoute,
       settingsTimeEntriesRoute,
       settingsSyncReviewRoute,
+      settingsWhatsNewRoute,
       ...settingsDebugRoutes,
     ]),
   ]),

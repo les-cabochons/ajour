@@ -315,8 +315,8 @@ On Windows x64, with the command installed, one more `SettingRow` per WSL distro
 
 ### Application updates
 
-Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/settings/app-version-foot.tsx`, `apps/web/src/lib/desktop-updates.ts`
-Last updated: 2026-10-19
+Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/settings/app-version-foot.tsx`, `apps/web/src/lib/desktop-updates.ts`, `apps/web/src/features/settings/settings-whats-new-page.tsx`, `apps/web/src/lib/release-notes.ts`, `apps/web/src/domain/release-notes.ts`, `apps/web/src/features/layout/sidebar-header-actions.tsx`
+Last updated: 2026-11-16
 
 The stable/nightly choice is a `SettingRow` with the shared outline toggle
 group. Keep exactly one track selected and explain nightly risk in the row's
@@ -326,6 +326,18 @@ rendering keeps the preference available but identifies the desktop requirement.
 The desktop controller owns update state, shared through `lib/desktop-updates.ts`.
 Startup, periodic, and manual checks only report availability. The Settings
 window's left column ends with the version and the update `TooltipButton`.
+The version is a `SettingsLink` to What's new in the muted foot text, underlined
+only on hover. While an update waits, `SidebarHeaderActions` swaps the gear's
+`SettingsLink` for a `DropdownMenu` trigger in `text-primary` with a 6px accent
+dot; its items are Restart to update, What's new and Settings.
+What's new (`settings-whats-new-page.tsx`, one of `unlistedSettingsPages`) puts a
+waiting update in an accent-tinted box (`whats-new-update`), then a timeline
+(`whats-new-timeline`): a 1px line with an 8px ring per release, filled in
+`--success` for the installed one beside a success `Chip`. Changes are rows of
+a fixed-width kind (New in `text-primary`), the area muted, the summary, and the
+pull request number in mono as a muted external link. `domain/release-notes.ts`
+parses GitHub's generated notes; `lib/release-notes.ts` reads them through the
+desktop bridge.
 The update arrow stays outlined, with stronger contrast when an update is available.
 On supported Windows builds, clicking an available update opens a native warning
 before downloading and restarting. Cancel leaves the update available, and an

@@ -11,6 +11,7 @@ import {
   RiPuzzle2Line as Puzzle,
   RiRobot2Line as Agents,
   RiSettings3Line as Settings,
+  RiSparkling2Line as Sparkle,
   RiTerminalBoxLine as Terminal,
   RiGitPullRequestLine as PullRequestIcon,
   RiFlowChart as Workflow,
@@ -88,6 +89,15 @@ export function getSettingsGroups(
     },
   ] as const;
 }
+
+/**
+ * Settings pages no group lists. What's new opens from the version at the
+ * foot of the Settings window, from the gear's menu while an update waits,
+ * and from the command palette.
+ */
+export const unlistedSettingsPages = [
+  { to: "/settings/whats-new", label: "What's new", icon: Sparkle },
+] as const;
 
 /** The settings pages in display order, without their groups. */
 export function getSettingsPages(
