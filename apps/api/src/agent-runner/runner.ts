@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -44,6 +43,8 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
+import { resolveSpawn } from "../process-spawn/index.ts";
+import { defaultReadVersion } from "./cli-path.ts";
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
 
@@ -213,21 +214,6 @@ interface RunnerTask {
   tools?: readonly AgentTaskMcpTool[];
   /** Its settings marked secret, which never reach the agent. */
   secretSettings: readonly { id: string; label: string }[];
-}
-
-function defaultReadVersion(executable: string, pathValue: string) {
-  return new Promise<string | undefined>((resolve) => {
-    execFile(
-      executable,
-      ["--version"],
-      {
-        timeout: 5000,
-        encoding: "utf8",
-        env: { ...process.env, PATH: pathValue },
-      },
-      (error, stdout) => resolve(error ? undefined : stdout),
-    );
-  });
 }
 
 export class AgentRunner {
@@ -583,9 +569,22 @@ export class AgentRunner {
       // A spawn that fails later, such as a missing executable, reaches
       // finalize() through the child's error and close events.
       step = "spawn";
-      child = spawn(invocation.command, invocation.args, {
+      const plan = resolveSpawn(
+        invocation.command,
+        invocation.args,
+        invocation.env,
+      );
+      if ("refused" in plan) {
+        throw new AgentRunError(
+          `${adapter.label} can't start: ${plan.refused}. Install a supported CLI shim or a native executable.`,
+          400,
+        );
+      }
+      child = spawn(plan.command, plan.args, {
         cwd: workDirectory,
-        env: invocation.env,
+        env: plan.env,
+        shell: false,
+        windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
       const run: AgentRun = {

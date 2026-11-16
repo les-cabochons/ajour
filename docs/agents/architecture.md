@@ -26,6 +26,25 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 
 The agent runner starts a coding agent CLI for a plugin agent task, such as "Enter in Workday". It lives in the local API (`apps/api/src/agent-runner/`). One run at a time: a second `POST /api/agent-runs` answers 409. Each CLI has an adapter in `apps/api/src/agent-runner/adapters/` (Claude Code, Codex and OpenCode). A run gets its own MCP agent client and agent session. The client's token travels only in the `AJOUR_MCP_TOKEN` environment variable, never in a file or an argument, and Ajour ends the session and revokes the client when the CLI exits. A plugin API 4 task's run client carries the data tools its task declares (`StoredMcpClient.tools`, #396): `mcp-server.ts` lists only those and the session tools, and refuses a call to any other as `tool_not_declared`, whatever the CLI's flags say. API 3 tasks stay inactive. User-created clients keep every tool. The CLI never gets the window token, another `AJOUR_` variable or a setting marked secret: a secret fills neither the prompt nor the week link: a task whose prompt uses one is refused, and a week link that uses one is left out of the overview (`weekLinkRefusal` says why). Stop, a stall and quitting end the CLI process only; ending every process a run started, and nothing else, is #341. Playwright MCP is bundled as an exact-pinned dependency of `apps/api` and run through the app's own Node (`playwright-mcp.ts`), never through `npx`. Plugins declare tasks with `agentTask` in `plugin.json`. A task is a prompt file and settings, and no plugin code runs. A plugin's tasks share their settings by ID: the local API stores one set of values per plugin and saves them through `POST /api/agents/plugins/:pluginId/settings`. The renderer shows Settings > Agents (`features/settings/settings-agents-page.tsx`), the task settings on the plugin's page (`features/settings/agent-task-settings.tsx`) and the Commit page's `AgentTaskButtons`, one set per placement (`commit-week`, `submit-week`), both reading `lib/agent-runner.ts`. Spec: `docs/specs/2026-10-15-ajour-agent-runner-design.md`. Plugins can add text properties to projects (`projectProperties`) and tasks (`taskProperties`); overrides live on `LocalProject.pluginProperties` and `LocalProjectTask.pluginProperties` in local state, and `get_week_changes` and `get_week_status` send them resolved, with `projectFullName`. A task property that defaults to the task's name maps the task to another one in the plugin's tool, such as a local task committed as a Workday task. `LocalProjectTask.commitAs` (Not known yet or Local only) and `LocalProject.localOnly` keep time out of the commit; every reader asks `domain/projects/commit-target.ts`.
 
+The runner's version probe (`cli-path.ts`, `defaultReadVersion`) and launch both
+resolve the executable through `process-spawn` before starting it with
+`shell: false` and `windowsHide: true`. A refused launch returns the existing
+400 refusal with its reason and releases the run's client and work folder.
+A refused version probe returns no version and never executes the shim.
+
+## Process spawning
+
+`apps/api/src/process-spawn/index.ts` owns `resolveSpawn(executablePath, argv, env)`.
+It returns a fresh command, argument list and environment, or a refusal reason.
+On Windows it resolves complete recognised npm, pnpm, Yarn Classic, Yarn Berry
+and T3 shim templates to a native `.exe` and literal prefix arguments. Unknown
+or changed shims are refused. There is no shell fallback. NUL is refused on all
+systems; Windows also refuses lone surrogates and excessive command lines.
+Other systems keep the original command and arguments. Callers own cwd, stdio,
+timeouts, cancellation and process cleanup. This module performs no approval or
+sandboxing. Its Windows fuzz tests run in the API unit suite through the existing
+Windows workspace test job in `.github/workflows/tests.yml`.
+
 ## Product Boundary
 
 The default workflow is local-first:
@@ -940,6 +959,7 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
 
   Access review and the mode's warning say this, and a release claims G1
   only for plugins without process access.
+
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the

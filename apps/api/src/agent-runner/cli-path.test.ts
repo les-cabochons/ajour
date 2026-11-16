@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  defaultReadVersion,
   findExecutable,
   readLoginShellPath,
   resolveLoginShellPath,
 } from "./cli-path.ts";
+
+import { npmShim } from "./test-support/npm-shim.ts";
 
 // Records every shell start; each one still runs the real execFile.
 vi.mock("node:child_process", async (importOriginal) => {
@@ -118,5 +121,33 @@ describe.skipIf(process.platform === "win32")("readLoginShellPath", () => {
     expect(
       await readLoginShellPath({ shell, fallback: "/short", timeoutMs: 100 }),
     ).toEqual({ path: "/short", fromShell: false });
+  });
+});
+
+describe.skipIf(process.platform !== "win32")("Windows CLI version", () => {
+  it.each(["claude", "codex", "opencode"])(
+    "detects %s through an npm shim and reads its version",
+    async (name) => {
+      const bin = await tempDir("ajour npm & �-");
+      await writeFile(path.join(bin, "version.mjs"), 'console.log("1.2.3");');
+      await writeFile(
+        path.join(bin, `${name}.cmd`),
+        npmShim("%dp0%\\version.mjs"),
+      );
+      const executable = await findExecutable(name, bin);
+      expect(executable).toBe(path.join(bin, `${name}.cmd`));
+      expect(
+        await defaultReadVersion(executable!, process.env.PATH ?? ""),
+      ).toBe("1.2.3\n");
+    },
+  );
+
+  it("refuses an unknown shim without executing it", async () => {
+    const bin = await tempDir("ajour unknown-");
+    const shim = path.join(bin, "claude.cmd");
+    await writeFile(shim, "@echo SHOULD_NOT_RUN");
+    expect(
+      await defaultReadVersion(shim, process.env.PATH ?? ""),
+    ).toBeUndefined();
   });
 });

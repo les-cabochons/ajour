@@ -20,6 +20,7 @@ import type {
   PluginField,
 } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
+import { npmShim } from "./test-support/npm-shim.ts";
 import { AgentRunner, DEFAULT_KILL_GRACE_MS } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
@@ -784,7 +785,12 @@ describe("AgentRunner", () => {
       ...fakeAdapter([], ""),
       // Next to the run's folder, so under the test's stand-in user data path.
       buildInvocation: (input) => ({
-        command: path.join(input.workDirectory, "..", "no-such-cli", "claude"),
+        command: path.join(
+          input.workDirectory,
+          "..",
+          "no-such-cli",
+          "claude.exe",
+        ),
         args: [],
         env: input.baseEnv,
         files: {},
@@ -818,7 +824,7 @@ describe("AgentRunner", () => {
     const adapter: AgentCliAdapter = {
       ...fakeAdapter([], ""),
       buildInvocation: (input) => ({
-        command: path.join(tmpdir(), "ajour-no-such-cli", "claude"),
+        command: path.join(tmpdir(), "ajour-no-such-cli", "claude.exe"),
         args: [],
         env: input.baseEnv,
         files: {},
@@ -838,7 +844,7 @@ describe("AgentRunner", () => {
     ]);
   });
 
-  it("logs a spawn that throws as a launch failure", async () => {
+  it("logs a refused argument as a launch failure", async () => {
     const adapter: AgentCliAdapter = {
       ...fakeAdapter([], ""),
       buildInvocation: (input) => ({
@@ -855,8 +861,8 @@ describe("AgentRunner", () => {
       expect.objectContaining({
         outcome: "error",
         error: expect.objectContaining({
-          type: "TypeError",
-          code: "ERR_INVALID_ARG_VALUE",
+          type: "AgentRunError",
+          message: expect.stringContaining("nul"),
         }),
         launch: { failed_step: "spawn" },
       }),
@@ -1631,5 +1637,72 @@ describe("AgentRunner", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe.skipIf(process.platform !== "win32")("Windows runner launch", () => {
+  it.each(["claude", "codex", "opencode"])(
+    "starts %s through an npm shim with literal argv",
+    async (name) => {
+      const hostile = 'Fix login" & echo INJECTED & "%PATH%!VAR!';
+      const adapter: AgentCliAdapter = {
+        ...fakeAdapter([], ""),
+        buildInvocation(input) {
+          const shim = path.join(input.workDirectory, `${name}.cmd`);
+          return {
+            command: shim,
+            args: [hostile, "", "line\nnext"],
+            env: {
+              ...input.baseEnv,
+              AJOUR_MCP_TOKEN: input.token,
+              FAKE_CLI_REPORT: path.join(
+                input.workDirectory,
+                "..",
+                "report.jsonl",
+              ),
+            },
+            files: { [`${name}.cmd`]: npmShim(FAKE_CLI) },
+          };
+        },
+      };
+      const { runner, sessions, report } = await setup([], {
+        adapter,
+        apiVersion: 4,
+      });
+      const run = await runner.start(request);
+      await settled(runner);
+      const observed = JSON.parse((await readFile(report, "utf8")).trim());
+      expect(observed.argv).toEqual([hostile, "", "line\nnext"]);
+      expect(observed.hasToken).toBe(true);
+      expect(observed.ajourKeys).toEqual([]);
+      expect(sessions.get(run.sessionId)!.state).toBe("done");
+    },
+  );
+
+  it("refuses a changed shim with a reason and cleans up the run", async () => {
+    const adapter: AgentCliAdapter = {
+      ...fakeAdapter([], ""),
+      buildInvocation(input) {
+        return {
+          command: path.join(input.workDirectory, "unknown.cmd"),
+          args: [],
+          env: input.baseEnv,
+          files: { "unknown.cmd": "@echo SHOULD_NOT_RUN" },
+        };
+      },
+    };
+    const { runner, revoked, work } = await setup([], {
+      adapter,
+      apiVersion: 4,
+    });
+    await expect(runner.start(request)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("unknown_shim"),
+    });
+    expect(revoked).toHaveLength(1);
+    expect((await runner.overview()).currentRun).toBeNull();
+    expect(
+      (await readdir(work)).filter((name) => name.startsWith("run-")),
+    ).toEqual([]);
   });
 });
