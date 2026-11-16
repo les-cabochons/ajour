@@ -949,6 +949,9 @@ channel to read the event each emits.
 | `catalog.remove_source`              | command, ipc                       | IPC channel                                      |
 | `cli_command.follow`                 | job                                | main process                                     |
 | `cli_command.get_state`              | ipc                                | IPC channel                                      |
+| `agent_instructions.list`            | ipc                                | IPC channel, no paths or content                 |
+| `agent_instructions.preview`         | ipc                                | IPC channel, no paths or content                 |
+| `agent_instructions.apply`           | ipc                                | IPC channel, no paths or content                 |
 | `cli_command.install`                | command, ipc                       | IPC channel                                      |
 | `cli_command.path_broadcast`         | job                                | main process                                     |
 | `cli_command.remove`                 | command, ipc                       | IPC channel                                      |

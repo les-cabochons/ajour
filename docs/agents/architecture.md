@@ -1,5 +1,32 @@
 # Architecture
 
+## Global agent instructions
+
+`packages/shared/agent-instructions.ts` owns the fixed file ids, exact thread-naming
+block and deterministic status and edit rules. Desktop main loads it from the
+same internal runtime directory as the API. `electron/agent-instructions.cjs`
+owns file I/O, with an injected home for tests. It supports UTF-8 with or without
+a BOM and BOM-marked UTF-16 LE/BE, and refuses unsupported encodings. Writes use
+an exclusive temporary file beside the target and an atomic rename, preserving
+the existing mode. Duplicate or broken markers and linked files are refused.
+The user text outside the managed span stays unchanged. Adding to text without
+a final newline appends a separating newline before the opening marker.
+
+The restricted preload exposes list, preview and apply IPC calls. Main's shared
+IPC wrapper checks the window session; each handler also checks the active
+window. Requests contain a known file id, an action or an opaque preview token,
+never a renderer-selected path or replacement text. Main retains previews and
+compares the current bytes before replacing the file. Applies run serially.
+Events record IPC metadata only, never instruction contents or paths.
+
+The catalog uses default user instruction paths on Windows and macOS. `~` resolves
+through `os.homedir()`, the Windows user profile. It does not edit managed policy
+files or follow tool-specific environment overrides. Path references checked on
+2026-11-16: [Codex](https://learn.chatgpt.com/docs/agent-configuration/agents-md),
+[OpenCode](https://opencode.ai/docs/instructions),
+[Claude Code](https://code.claude.com/docs/en/memory), and
+[Gemini CLI](https://geminicli.com/docs/cli/gemini-md/).
+
 Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep architectural changes aligned with the privacy boundary in `docs/local-first-architecture.md`.
 
 ## Runtime Surfaces

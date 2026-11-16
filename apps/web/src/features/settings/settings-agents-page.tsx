@@ -3,6 +3,7 @@ import type { AgentBrowserMode, AgentCliId } from "@ajour/shared/agent-runs";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
+import { AgentInstructionsSetting } from "./agent-instructions-setting";
 import { updateAgentRunnerSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
@@ -34,16 +35,24 @@ export function SettingsAgentsPage() {
     }
   };
 
-  if (state.kind === "loading") return null;
+  if (state.kind === "loading") return <AgentInstructionsSetting />;
   if (state.kind === "unavailable") {
     return (
-      <p className="settings-section-desc">
-        Agents need the Ajour desktop app.
-      </p>
+      <>
+        <p className="settings-section-desc">
+          Agents need the Ajour desktop app.
+        </p>
+        <AgentInstructionsSetting />
+      </>
     );
   }
   if (state.kind === "error") {
-    return <p className="text-sm text-destructive">{state.message}</p>;
+    return (
+      <>
+        <p className="text-sm text-destructive">{state.message}</p>
+        <AgentInstructionsSetting />
+      </>
+    );
   }
   const { settings, clis } = state.overview;
   const cliOptions = clis
@@ -185,6 +194,7 @@ export function SettingsAgentsPage() {
         </AppPanel>
       </section>
 
+      <AgentInstructionsSetting />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
   );

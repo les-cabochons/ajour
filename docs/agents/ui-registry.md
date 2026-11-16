@@ -1,5 +1,14 @@
 # UI Registry
 
+## Agent instructions
+
+`features/settings/agent-instructions-setting.tsx` owns Settings > Agents > Agent
+instructions. It uses `AppPanel`, `SettingRow`, `Button` and the centered `Dialog`.
+The dialog shows a monospace diff with unchanged context, removed lines prefixed
+with minus and added lines with plus. Confirm applies the preview; errors stay in
+the dialog. File statuses use `role="status"`; operation errors use `role="alert"`.
+It mounts independently of the agent runner's availability.
+
 - Pull request rows live in `features/pull-requests/pull-request-row.tsx`. The list groups Active, Settled and Recently closed items. The sidebar work list shows them as a collapsible Pull requests section, only while a code host is enabled, between the Backlog section and Snoozed: active, unsnoozed items in longest-waiting-first order, as one-line compact rows. E settles locally, B opens the shared snooze picker, Enter opens the summary and the context menu offers Open in the provider. Ctrl/Cmd-click opens the source without changing routes. Navigation and records are hidden while the code host is inactive.
 
 This registry captures reusable visual patterns already present in Ajour. Update it after meaningful UI additions.

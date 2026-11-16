@@ -1701,6 +1701,21 @@ export const catalog = defineCatalog({
       reasons: ["foreign_sender"],
       fields: { ipc: ipcFields },
     },
+    "agent_instructions.list": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
+    "agent_instructions.preview": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
+    "agent_instructions.apply": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
     /**
      * Installing the ajour command from Settings (#568): the version, where
      * it stopped and why. Never a path, which holds the user name.

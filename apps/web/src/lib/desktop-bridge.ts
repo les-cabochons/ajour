@@ -7,6 +7,12 @@ import type {
   PluginSourceInspection,
 } from "@ajour/shared";
 import type { LaunchContext } from "@ajour/wide-events";
+import type {
+  InstructionFileId,
+  InstructionAction,
+  InstructionFileState,
+  InstructionPreview,
+} from "@ajour/shared/agent-instructions";
 import type { ForwardedBatch } from "@ajour/wide-events/forwarding.ts";
 import type {
   LocalLogSettings,
@@ -235,6 +241,15 @@ export type DesktopLogsStatus = LocalLogStatus & { settings: LocalLogSettings };
 declare global {
   interface Window {
     ajourDesktop?: {
+      listAgentInstructions?: () => Promise<InstructionFileState[]>;
+      previewAgentInstructions?: (
+        id: InstructionFileId,
+        action: InstructionAction,
+      ) => Promise<InstructionPreview>;
+      applyAgentInstructions?: (
+        id: InstructionFileId,
+        token: string,
+      ) => Promise<void>;
       // The synchronous answers below are null when the main process could
       // not produce them.
       bootstrapLocalState?: Partial<LocalAppState> | null;

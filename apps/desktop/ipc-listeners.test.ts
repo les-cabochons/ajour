@@ -520,9 +520,11 @@ describe("the IPC channel table", () => {
     // The plugin renderer runtime registers its page's channel itself.
     const source = (
       await Promise.all(
-        ["./electron/main.cjs", "./electron/plugin-renderer-runtime.cjs"].map(
-          (file) => readFile(new URL(file, import.meta.url), "utf8"),
-        ),
+        [
+          "./electron/main.cjs",
+          "./electron/plugin-renderer-runtime.cjs",
+          "./electron/agent-instructions.cjs",
+        ].map((file) => readFile(new URL(file, import.meta.url), "utf8")),
       )
     ).join("\n");
 
