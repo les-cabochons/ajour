@@ -103,3 +103,36 @@ it("Given no folder, the picker offers the native chooser and displays refusals"
     "Ajour's data folder",
   );
 });
+
+it("Given a saved selection, adding another folder selects the new folder", async () => {
+  const added = { ...folder, id: "new", name: "added" };
+  window.ajourDesktop = { chooseFolder: vi.fn().mockResolvedValue(added) };
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([folder]);
+  await renderRoutes({
+    routes: {
+      "/": () => (
+        <RepositoryPicker
+          projectId="p"
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+        />
+      ),
+    },
+  });
+  await screen.findByRole("radio", { name: /service/ });
+  fireEvent.click(screen.getByRole("button", { name: /Add folder/ }));
+  const radio = await screen.findByRole("radio", { name: /added/ });
+  await waitFor(() => expect((radio as HTMLInputElement).checked).toBe(true));
+});
+it("Given a pending initial list, the section adds no loading line and uses normal controls", async () => {
+  window.ajourDesktop = { chooseFolder: vi.fn() };
+  vi.mocked(api.listRepositoryFolders).mockReturnValue(new Promise(() => {}));
+  await renderRoutes({
+    routes: { "/": () => <RepositoryFoldersSection projectId="p" /> },
+  });
+  expect(screen.queryByText(/Loading folders/)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: /Add folder/ }).className,
+  ).toContain("h-[var(--control-height)]");
+});

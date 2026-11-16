@@ -1,5 +1,5 @@
 import {
-  repositoryFoldersSchema,
+  repositoryFolderSchema,
   type RepositoryFolder,
 } from "../../../packages/shared/repository-folders.ts";
 import { randomUUID } from "node:crypto";
@@ -1002,9 +1002,13 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
-    repositoryFolders: repositoryFoldersSchema
-      .catch([])
-      .parse(raw.repositoryFolders),
+    repositoryFolders: (Array.isArray(raw.repositoryFolders)
+      ? raw.repositoryFolders
+      : []
+    ).flatMap((folder) => {
+      const parsed = repositoryFolderSchema.safeParse(folder);
+      return parsed.success ? [parsed.data] : [];
+    }),
     // A step that held keeps the file below the current version.
     version:
       typeof raw.version === "number"

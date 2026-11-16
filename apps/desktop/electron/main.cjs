@@ -1,3 +1,7 @@
+const {
+  protectedRepositoryFolders,
+  createFolderChooser,
+} = require("./repository-folders.cjs");
 const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const { existsSync, readdirSync } = require("node:fs");
@@ -910,38 +914,30 @@ async function installPluginArchive(unit, archive, ...options) {
   return result;
 }
 
-ipc.handle("ajour:choose-folder", async (event, projectId) => {
-  assertActiveDesktopWindow(event, "choose a repository folder");
-  if (event.senderFrame !== mainWindow.webContents.mainFrame)
-    throw refusedSender("Only the main Ajour frame can choose a folder.");
-  if (
-    typeof projectId !== "string" ||
-    !projectId.trim() ||
-    projectId.length > 200
-  )
-    throw new Error("Choose a project.");
-  const selected = await dialog.showOpenDialog(mainWindow, {
-    title: "Add repository folder",
-    properties: ["openDirectory"],
-  });
-  if (selected.canceled || selected.filePaths.length !== 1) return null;
-  if (!internalAppApiServer)
-    throw new Error("Repository folders need the desktop app.");
-  const { addRepositoryFolderForServer } = await internalAppApiModulePromise;
-  return addRepositoryFolderForServer(
-    internalAppApiServer,
-    projectId,
-    selected.filePaths[0],
-    {
-      userData: app.getPath("userData"),
-      install: app.isPackaged
-        ? process.platform === "darwin"
-          ? path.resolve(process.resourcesPath, "../..")
-          : path.dirname(app.getPath("exe"))
-        : app.getAppPath(),
+ipc.handle(
+  "ajour:choose-folder",
+  createFolderChooser({
+    window: () => mainWindow,
+    assertSender: (event) => {
+      assertActiveDesktopWindow(event, "choose a repository folder");
+      if (event.senderFrame !== mainWindow.webContents.mainFrame)
+        throw refusedSender("Only the main Ajour frame can choose a folder.");
     },
-  );
-});
+    show: (owner, options) => dialog.showOpenDialog(owner, options),
+    cancel: () => events.current()?.cancel(),
+    add: async (projectId, chosenPath) => {
+      if (!internalAppApiServer)
+        throw new Error("Repository folders need the desktop app.");
+      const { addRepositoryFolderForServer } =
+        await internalAppApiModulePromise;
+      return addRepositoryFolderForServer(
+        internalAppApiServer,
+        projectId,
+        chosenPath,
+      );
+    },
+  }),
+);
 
 ipc.handle("ajour:install-plugin", async (event) => {
   const unit = events.current();
@@ -1660,6 +1656,20 @@ async function ensureInternalAppApiRunning() {
       host: INTERNAL_APP_API_HOST,
       port: INTERNAL_APP_API_PORT,
       statePath,
+      protectedRepositoryFolders: protectedRepositoryFolders({
+        platform: process.platform,
+        packaged: app.isPackaged,
+        userData: app.getPath("userData"),
+        exe: app.getPath("exe"),
+        resources: process.resourcesPath,
+        appPath: app.getAppPath(),
+        localAppData:
+          process.env.LOCALAPPDATA ??
+          (process.platform === "win32"
+            ? path.join(app.getPath("home"), "AppData", "Local")
+            : undefined),
+        env: process.env,
+      }),
       vault: internalAppApiVault(internalAppApiModule, statePath),
       brokerTransport: internalAppApiBrokerNetwork().transport,
       brokerResolver: internalAppApiBrokerNetwork().resolver,

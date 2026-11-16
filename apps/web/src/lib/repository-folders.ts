@@ -51,15 +51,17 @@ export function useRepositoryFolders(projectId: string) {
       setBusy(false);
     }
   };
-  const add = () =>
+  const add = (onAdded?: (folder: RepositoryFolder) => void) =>
     run(async () => {
       const folder = await window.ajourDesktop?.chooseFolder?.(projectId);
-      if (folder)
+      if (folder) {
         setFolders((current) =>
           current.some((saved) => saved.id === folder.id)
             ? current
             : [...current, folder],
         );
+        onAdded?.(folder);
+      }
     });
   return { folders, setFolders, error, busy, desktop, run, add };
 }

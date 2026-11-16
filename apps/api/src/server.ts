@@ -250,6 +250,7 @@ interface AppApiServerOptions {
   host?: string;
   port?: number;
   statePath?: string;
+  protectedRepositoryFolders?: Readonly<Record<string, string>>;
   installedPluginDirectory?: string;
   developmentPluginDirectories?: string[];
   bundledPluginArchives?: string[];
@@ -345,6 +346,7 @@ interface AppApiRuntime {
   port: number;
   /** Stops recording the process's crashes, when the API was asked to. */
   stopWatchingCrashes?: () => void;
+  folderResolver: FolderResolver;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
@@ -1504,6 +1506,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
   });
   const runtime: AppApiRuntime = {
+    folderResolver: new FolderResolver(
+      storage,
+      options.protectedRepositoryFolders ?? {
+        userData: path.dirname(statePath),
+      },
+    ),
     events,
     openSockets: new Set(),
     cutOffSockets: new WeakSet(),
@@ -1628,6 +1636,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
     },
     repositoryFolderUse: async ({ response, params }) => {
+      await runtime.folderResolver.resolve(params.folderId, params.projectId);
       await storage.useRepositoryFolder(params.projectId, params.folderId);
       writeJson(
         response,
@@ -4607,13 +4616,9 @@ export async function addRepositoryFolderForServer(
   server: Server,
   projectId: string,
   chosenPath: string,
-  protectedFolders: { userData: string; install: string },
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime || runtime.stopping)
     throw new Error("Repository folders need the active desktop app.");
-  return new FolderResolver(runtime.storage, protectedFolders).addFromChooser(
-    projectId,
-    chosenPath,
-  );
+  return runtime.folderResolver.addFromChooser(projectId, chosenPath);
 }

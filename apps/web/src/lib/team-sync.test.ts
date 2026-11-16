@@ -192,19 +192,19 @@ describe("team sync service", () => {
   });
 
   it("keeps local API folder paths off a team sync round", async () => {
-    const { FolderResolver } =
-      await import("../../../api/src/repository-folders.ts");
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-team-folders-"));
     try {
       const loaded = await load();
       const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
+      const repo = path.join(root, "repo");
+      await mkdir(repo);
       const data = path.join(root, "data");
       await mkdir(data);
       const apiState = new AppApiStorage(path.join(data, "state.json"));
       const folder = await new FolderResolver(apiState, {
         userData: data,
         install: path.join(root, "install"),
-      }).addFromChooser(projectId, root);
+      }).addFromChooser(projectId, repo);
       loaded.localStore.forgetUndo(undoToken!);
       const api = stubApi(answer);
       await loaded.syncTeamConnection(PLUGIN, CONNECTION);

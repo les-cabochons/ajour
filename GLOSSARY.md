@@ -362,7 +362,6 @@ The corner control that shows whether agents are idle, active, waiting for the u
 The chat the agent indicator opens, with the agent sessions, their questions and the activity list.
 
 **Repository folder**:
-
 A folder on this computer that the user associates with an Ajour project. A project can have several. Its stable id resolves to an absolute path in the local API. Paths and the last-used choice never sync with a team. Removing it forgets the association and leaves files in place.
 
 _Avoid_: clone, working directory or repository path for the saved association. A repository folder does not promise that Git is initialized there.

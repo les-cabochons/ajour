@@ -45,7 +45,9 @@ function PickerContent({ projectId, onOpenChange, onSelect }: Props) {
         <DialogDescription>On this computer</DialogDescription>
       </DialogHeader>
       {!state.desktop ? (
-        <p>Folders need the desktop app.</p>
+        <p className="text-sm text-muted-foreground">
+          Folders need the desktop app.
+        </p>
       ) : (
         <>
           {!state.busy && !state.folders.length ? (
@@ -84,7 +86,7 @@ function PickerContent({ projectId, onOpenChange, onSelect }: Props) {
           <Button
             variant="outline"
             disabled={state.busy}
-            onClick={() => void state.add()}
+            onClick={() => void state.add((folder) => setSelected(folder.id))}
           >
             Add folder…
           </Button>

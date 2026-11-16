@@ -34,7 +34,6 @@ function RepositoryFolders({ projectId }: { projectId: string }) {
               </div>
               <Button
                 variant="ghost"
-                size="sm"
                 disabled={state.busy}
                 aria-label={`Remove ${folder.name}`}
                 onClick={() =>
@@ -51,18 +50,12 @@ function RepositoryFolders({ projectId }: { projectId: string }) {
           ))}
           <Button
             variant="outline"
-            size="sm"
             className="mt-2"
             disabled={state.busy}
             onClick={() => void state.add()}
           >
             Add folder…
           </Button>
-          {state.busy ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              Loading folders…
-            </p>
-          ) : null}
         </>
       )}
       {state.error ? (
