@@ -386,7 +386,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         const value = await this.argument(arg, values, caller.projectId);
         if (arg.kind === "literal") literals.push(argv.length);
         argv.push(value);
-        if (arg.kind === "folder" && command.mode !== "capture") cwd ??= value;
+        // Every mode works in its first repository folder: tools such as
+        // Claude Code refuse to start in an untrusted folder like the root.
+        if (arg.kind === "folder") cwd ??= value;
       };
       let cwd: string | undefined;
       let cwdFolder: string | undefined;

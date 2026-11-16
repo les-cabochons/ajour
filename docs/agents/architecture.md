@@ -206,7 +206,7 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable. Declared capture commands start at the filesystem root. Declared launch modes use their resolved repository folder. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
+inherit no `AJOUR_` variable. Declared commands start in the repository folder their first `folder` argument resolves to, or at the filesystem root when they have none; launch modes require one. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
