@@ -162,10 +162,10 @@ export function CliCommandSetting() {
     <section className="settings-section">
       <h2 className="settings-section-title">Terminal</h2>
       <p className="settings-section-desc">
-        Use Ajour from your shell with the ajour command.
+        Choose where plugin commands open and install the ajour shell command.
       </p>
-      <TerminalAppSetting />
       <AppPanel>
+        <TerminalAppSetting />
         <SettingRow
           label="ajour command"
           description={

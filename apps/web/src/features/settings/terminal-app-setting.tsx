@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { SettingRow } from "@/components/app-surface";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 export function TerminalAppSetting() {
   const desktop = window.ajourDesktop;
   const [value, setValue] = useState<string | null>(null);
@@ -14,6 +8,7 @@ export function TerminalAppSetting() {
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let active = true;
+    if (!["win32", "darwin"].includes(desktop?.runtime?.platform ?? "")) return;
     void desktop?.getTerminalApp?.().then(
       (v) => {
         if (active) setValue(v);
@@ -26,50 +21,48 @@ export function TerminalAppSetting() {
       active = false;
     };
   }, [desktop]);
-  if (!desktop?.getTerminalApp || !desktop.setTerminalApp) return null;
+  if (
+    !desktop?.getTerminalApp ||
+    !desktop.setTerminalApp ||
+    !["win32", "darwin"].includes(desktop.runtime?.platform ?? "")
+  )
+    return null;
   const choices =
     desktop.runtime?.platform === "win32"
-      ? [
-          { value: "wt", label: "Windows Terminal" },
-          { value: "powershell", label: "PowerShell" },
-          { value: "cmd", label: "Command Prompt" },
-        ]
-      : [
-          { value: "Terminal", label: "Terminal" },
-          { value: "iTerm", label: "iTerm" },
-        ];
+      ? [{ value: "wt", label: "Windows Terminal" }]
+      : [{ value: "Terminal", label: "Terminal" }];
   return (
-    <>
-      <SettingRow
+    <SettingRow
+      label="Terminal app"
+      description={
+        <span className="flex h-8 min-w-0 flex-col overflow-hidden">
+          <span className="truncate">
+            Open plugin commands in this terminal.
+          </span>
+          <span
+            role="alert"
+            className="truncate text-destructive"
+            title={error ?? undefined}
+          >
+            {error ?? "\u00a0"}
+          </span>
+        </span>
+      }
+    >
+      <OptionSelect
         label="Terminal app"
-        description="Open plugin commands in this terminal."
-      >
-        <Select
-          value={value}
-          disabled={saving || value === null}
-          items={choices}
-          onValueChange={(next) => {
-            if (!next || next === value) return;
-            setSaving(true);
-            setError(null);
-            void desktop.setTerminalApp!(next)
-              .then(setValue, () => setError("Couldn't save the terminal app."))
-              .finally(() => setSaving(false));
-          }}
-        >
-          <SelectTrigger aria-label="Terminal app">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {choices.map((c) => (
-              <SelectItem key={c.value} value={c.value}>
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </SettingRow>
-      {error && <p role="alert">{error}</p>}
-    </>
+        value={value ?? ""}
+        options={choices}
+        disabled={saving || value === null}
+        onChange={(next) => {
+          if (next === value) return;
+          setSaving(true);
+          setError(null);
+          void desktop.setTerminalApp!(next)
+            .then(setValue, () => setError("Couldn't save the terminal app."))
+            .finally(() => setSaving(false));
+        }}
+      />
+    </SettingRow>
   );
 }

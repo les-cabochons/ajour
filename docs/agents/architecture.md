@@ -1112,15 +1112,22 @@ Ajour never kills those children when an operation ends or the app quits.
 Both launch modes require a resolved repository folder argument and use the first
 folder argument as cwd. They refuse stdin, which these modes cannot deliver.
 
-`process-launch.ts` opens Windows Terminal with an argv list and refuses `;` in
-any value. PowerShell and Command Prompt preferences launch the resolved target
-itself in a new console. On macOS it writes a private executable `.command` file
-with POSIX single-quoted arguments, opens it with Terminal or iTerm, then removes
-its private temp directory after 60 seconds or during broker shutdown. Main persists the terminal choice
-on this computer, through IPC restricted to the active desktop window.
+`process-launch.ts` supports Windows Terminal on Windows and Terminal on macOS.
+Windows Terminal re-joins argv, so executable paths, resolved launcher prefixes,
+arguments and cwd must use the strict terminal allowlist: non-empty ASCII letters,
+digits, spaces and `. _ - : / \ @ + = , ~ ( )`, with no trailing backslash.
+Only manifest literals may start with a dash. Invalid values return `invalid_request`
+with a terminal-mode reason. Missing Windows Terminal asks the user to install it.
+On macOS, private executable `.command` files use POSIX single-quoted arguments.
+Each is deleted after five minutes, never at broker shutdown; the next launch
+sweeps script directories older than an hour. Main persists the terminal choice
+on this computer through restricted IPC and migrates retired choices to the
+supported app. Linux has no terminal choice.
 
 `OperationProcessBroker.open` checks activation and consent for HTTPS and the
 process gates for declared custom schemes. It calls an injected main-process
 `openExternal` port. The worker relays requests through its owning operation;
 no renderer opens links itself. The page-content policy in `navigation.cjs`
-is unchanged. `plugin.open` records the approved scheme, never the URL.
+is unchanged. Main checks HTTPS or the manifest schemes again before opening.
+A plugin may open at most five links in a rolling minute across operations.
+`plugin.open` records the approved scheme, never the URL.

@@ -28,15 +28,41 @@ it.each(["win32", "darwin"])(
       expect(trigger.hasAttribute("disabled")).toBe(false),
     );
     fireEvent.click(trigger);
-    const label = platform === "win32" ? "PowerShell" : "iTerm";
-    const option = await screen.findByRole("option", { name: label });
-    fireEvent.pointerEnter(option, { pointerType: "touch" });
-    fireEvent.pointerDown(option, { pointerType: "touch" });
-    fireEvent.click(option);
-    await vi.waitFor(() =>
-      expect(setTerminalApp).toHaveBeenCalledWith(
-        platform === "win32" ? "powershell" : "iTerm",
-      ),
-    );
+    expect(
+      await screen.findByRole("option", {
+        name: platform === "win32" ? "Windows Terminal" : "Terminal",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "PowerShell" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Command Prompt" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "iTerm" })).toBeNull();
   },
 );
+it("Given Linux, hides the terminal preference", () => {
+  Object.defineProperty(window, "ajourDesktop", {
+    configurable: true,
+    value: {
+      runtime: { platform: "linux" },
+      getTerminalApp: async () => "Terminal",
+      setTerminalApp: vi.fn(),
+    },
+  });
+  render(<TerminalAppSetting />);
+  expect(screen.queryByRole("combobox")).toBeNull();
+});
+it("Given a read failure, keeps the error in the fixed-height row description", async () => {
+  Object.defineProperty(window, "ajourDesktop", {
+    configurable: true,
+    value: {
+      runtime: { platform: "win32" },
+      getTerminalApp: async () => {
+        throw new Error("failed");
+      },
+      setTerminalApp: vi.fn(),
+    },
+  });
+  render(<TerminalAppSetting />);
+  const error = await screen.findByText("Couldn't read the terminal app.");
+  expect(error.className).toContain("text-destructive");
+  expect(error.parentElement?.className).toContain("h-8");
+});

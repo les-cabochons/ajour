@@ -12,3 +12,10 @@ it("Given a launch result, SDK callers can distinguish it from capture", async (
   else expectTypeOf(result.stdout).toEqualTypeOf<string>();
   expect(result).toEqual({ started: true });
 });
+
+it("Given a malformed URL, fake open throws AjourProcessError", async () => {
+  await expect(createFakeAjour().open("not a url")).rejects.toMatchObject({
+    name: "AjourProcessError",
+    code: "invalid_request",
+  });
+});

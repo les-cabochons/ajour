@@ -1389,9 +1389,9 @@ The preference saves on change. It does not change the ajour command installatio
 An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
 when the plugin operation ends or Ajour quits. Launches cannot take stdin.
-Windows Terminal refuses semicolons in arguments and folder paths.
+Windows supports Windows Terminal only, macOS supports Terminal only, and Linux hides the setting. Saved PowerShell, Command Prompt and iTerm choices migrate to the supported app. Windows terminal mode refuses values outside its strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour asks the user to install it.
 
 An enabled plugin may open HTTPS links. A custom link scheme must be declared
 and approved, and unsigned plugins also need the global switch and per-plugin
 acceptance. File, script and undeclared schemes are refused. Content links keep
-their existing desktop policy.
+their existing desktop policy. A plugin may open at most five links per minute; further requests are refused.

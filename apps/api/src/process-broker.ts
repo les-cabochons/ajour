@@ -1,6 +1,5 @@
 import {
   launchProcess,
-  cleanupLaunchScripts,
   startUnowned,
   ProcessLaunchRefused,
   type TerminalApp,
@@ -41,6 +40,7 @@ const requestSchema = z
   })
   .strict();
 export type ProcessReason =
+  | "rate_limit"
   | "invalid_request"
   | "plugin_off"
   | "needs_consent"
@@ -60,15 +60,15 @@ export type ProcessReason =
 export class ProcessBrokerError extends Error {
   override readonly name = "AjourProcessError";
   readonly reason: ProcessReason;
-  constructor(reason: ProcessReason) {
-    super(`Process request refused: ${reason}.`);
+  constructor(reason: ProcessReason, message?: string) {
+    super(message ?? `Process request refused: ${reason}.`);
     this.reason = reason;
   }
 }
 export interface ProcessBrokerOptions {
   folders: FolderResolver;
   terminal?: () => Promise<TerminalApp>;
-  openExternal?: (url: string) => Promise<void>;
+  openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
   enabledGate?: ProcessBrokerOptions["gate"];
   gate(
     caller: BrokerCaller,
@@ -97,6 +97,7 @@ const refuse = (reason: ProcessReason): never => {
 };
 export class ProcessBroker implements ProcessBrokerPort {
   private stopping = false;
+  private readonly opens = new Map<string, number[]>();
   private readonly runs = new Map<Promise<ProcessRunResult>, AbortController>();
   private readonly records = new Set<Promise<void>>();
   async shutdown(): Promise<void> {
@@ -115,7 +116,6 @@ export class ProcessBroker implements ProcessBrokerPort {
       ]);
     } finally {
       clearTimeout(timer);
-      await cleanupLaunchScripts();
     }
   }
   private readonly active = new Map<string, number>();
@@ -190,11 +190,25 @@ export class ProcessBroker implements ProcessBrokerPort {
       if (!this.options.openExternal) return refuse("spawn_refused");
       if (url.username || url.password) return refuse("invalid_request");
       if (signal.aborted || this.stopping) return refuse("operation_ended");
-      await this.options.openExternal(url.href);
+      const now = Date.now();
+      const recent = (this.opens.get(caller.pluginId) ?? []).filter(
+        (at) => now - at < 60_000,
+      );
+      if (recent.length >= 5)
+        throw new ProcessBrokerError(
+          "rate_limit",
+          "A plugin can open at most 5 links per minute.",
+        );
+      this.opens.set(caller.pluginId, [...recent, now]);
+      await this.options.openExternal(
+        url.href,
+        caller.manifest.processes?.openSchemes ?? [],
+      );
     } catch (error) {
       reason =
         error instanceof ProcessBrokerError &&
         [
+          "rate_limit",
           "invalid_request",
           "plugin_off",
           "needs_consent",
@@ -207,7 +221,10 @@ export class ProcessBroker implements ProcessBrokerPort {
         ].includes(error.reason)
           ? (error.reason as ReasonOf<AjourCatalog, "plugin.open">)
           : "spawn_failed";
-      throw new ProcessBrokerError(reason as ProcessReason);
+      throw new ProcessBrokerError(
+        reason as ProcessReason,
+        error instanceof ProcessBrokerError ? error.message : undefined,
+      );
     } finally {
       unit?.end(reason ? "refused" : "ok", reason);
     }
@@ -318,6 +335,7 @@ export class ProcessBroker implements ProcessBrokerPort {
       if (Object.keys(request.args).some((k) => !slots.includes(k)))
         return refuse("invalid_request");
       const argv: string[] = [];
+      const literals: number[] = [];
       for (const group of command.args) {
         if ("if" in group) {
           if (!Object.hasOwn(request.args, group.if)) {
@@ -336,6 +354,7 @@ export class ProcessBroker implements ProcessBrokerPort {
               request.args,
               caller.projectId,
             );
+            if (arg.kind === "literal") literals.push(argv.length);
             argv.push(value);
             if (arg.kind === "folder") cwd ??= value;
           }
@@ -345,6 +364,7 @@ export class ProcessBroker implements ProcessBrokerPort {
             request.args,
             caller.projectId,
           );
+          if (group.kind === "literal") literals.push(argv.length);
           argv.push(value);
           if (group.kind === "folder") cwd ??= value;
         }
@@ -393,6 +413,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         if (lastGate) return refuse(lastGate);
         if (signal.aborted) return refuse("operation_ended");
         await launchProcess(plan, cwd, terminal, {
+          literalArgIndices: literals.map(
+            (index) => index + plan.args.length - argv.length,
+          ),
           start: async (launch, folder, hidden) => {
             const gate = await this.options.gate(caller);
             if (gate) return refuse(gate);
@@ -538,9 +561,12 @@ export class ProcessBroker implements ProcessBrokerPort {
         error instanceof ProcessBrokerError
           ? error.reason
           : error instanceof ProcessLaunchRefused
-            ? "spawn_refused"
+            ? error.reason
             : "spawn_failed";
-      throw new ProcessBrokerError(reason);
+      throw new ProcessBrokerError(
+        reason,
+        error instanceof ProcessLaunchRefused ? error.message : undefined,
+      );
     } finally {
       if (reserved)
         this.active.set(

@@ -296,7 +296,15 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
 
   return {
     open: async (url) => {
-      const scheme = new URL(url).protocol.slice(0, -1);
+      let scheme: string;
+      try {
+        scheme = new URL(url).protocol.slice(0, -1);
+      } catch {
+        throw Object.assign(new Error("Invalid link URL."), {
+          name: "AjourProcessError",
+          code: "invalid_request",
+        });
+      }
       if (
         !options.openExternal ||
         (scheme !== "https" &&

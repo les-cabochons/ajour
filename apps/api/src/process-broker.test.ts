@@ -720,7 +720,7 @@ it.each([
         method: "syncConnection",
       })
       .open(url);
-    expect(opened).toHaveBeenCalledWith(url);
+    expect(opened).toHaveBeenCalledWith(url, ["codex"]);
     expect(JSON.stringify(sink.events)).not.toContain("CANARY");
     expect(sink.events).toEqual(
       expect.arrayContaining([
@@ -805,3 +805,115 @@ it("Given an enabled unsigned plugin, HTTPS does not need process acceptance", a
   });
   expect(opened).toHaveBeenCalledTimes(1);
 });
+
+it("Given five opens, refuses a sixth across operations until the minute expires", async () => {
+  const { manifest } = await fixture();
+  const opened = vi.fn(async () => undefined);
+  const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+  try {
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      openExternal: opened,
+    });
+    const caller = {
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection" as const,
+    };
+    for (let i = 0; i < 5; i++)
+      await broker.forOperation(caller).open("https://example.test/");
+    await expect(
+      broker.forOperation(caller).open("https://example.test/"),
+    ).rejects.toMatchObject({ reason: "rate_limit" });
+    await broker
+      .forOperation({ ...caller, pluginId: "other" })
+      .open("https://example.test/");
+    clock.mockReturnValue(61_000);
+    await broker.forOperation(caller).open("https://example.test/");
+    expect(opened).toHaveBeenCalledTimes(7);
+  } finally {
+    clock.mockRestore();
+  }
+});
+it.skipIf(process.platform !== "win32")(
+  "Given unsafe terminal text, the plugin receives invalid_request and a terminal reason",
+  async () => {
+    const { manifest, broker, folder } = await fixture([
+      "{folder:folder}",
+      "{title:text}",
+    ]);
+    manifest.processes!.commands[0]!.mode = "terminal";
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({
+          command: "run",
+          args: { folder: folder.id, title: 'x" --injected "y' },
+        }),
+    ).rejects.toMatchObject({
+      reason: "invalid_request",
+      message: expect.stringContaining("terminal mode"),
+    });
+  },
+);
+
+// GitHub Windows images may lack Windows Terminal. Unit tests remain authoritative.
+it.skipIf(process.platform !== "win32")(
+  "Given real Windows Terminal, a declared command receives every allowed argument exactly",
+  async (context) => {
+    const { findExecutable } = await import("./agent-runner/cli-path.ts");
+    if (!(await findExecutable("wt.exe", process.env.PATH ?? ""))) {
+      context.skip(true, "Windows Terminal is not installed on this runner");
+      return;
+    }
+    const values = [
+      "last",
+      "space value",
+      "end\\ with space",
+      "abc._-:/@+=,~()",
+      "C:\\folder\\child",
+      "123",
+    ];
+    const { manifest, broker, folder, root } = await fixture(
+      [
+        "{folder:folder}",
+        { kind: "literal", value: "--resume" },
+        ...values.map((_, i) => `{v${i}:text}`),
+      ],
+      "require('fs').writeFileSync(require('path').join(process.cwd(),'terminal-result.json'),JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}))",
+    );
+    manifest.processes!.commands[0]!.mode = "terminal";
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    expect(
+      await op.run({
+        command: "run",
+        args: {
+          folder: folder.id,
+          ...Object.fromEntries(values.map((v, i) => [`v${i}`, v])),
+        },
+      }),
+    ).toEqual({ started: true });
+    op.close();
+    await broker.shutdown();
+    const { readFile } = await import("node:fs/promises");
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(
+            await readFile(path.join(root, "terminal-result.json"), "utf8"),
+          ),
+        { timeout: 15000 },
+      )
+      .toEqual({ cwd: root, args: [root, "--resume", ...values] });
+  },
+  20000,
+);

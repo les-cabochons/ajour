@@ -147,7 +147,9 @@ describe("the ajour command setting", () => {
 
     expect(screen.getByRole("heading", { name: "Terminal" })).toBeTruthy();
     expect(
-      screen.getByText("Use Ajour from your shell with the ajour command."),
+      screen.getByText(
+        "Choose where plugin commands open and install the ajour shell command.",
+      ),
     ).toBeTruthy();
     expect(screen.getByText("ajour command")).toBeTruthy();
     expect(status()).toBe("Not installed.");

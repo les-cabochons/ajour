@@ -675,6 +675,7 @@ export const catalog = defineCatalog({
     "plugin.open": {
       kinds: ["job"],
       reasons: [
+        "rate_limit",
         "invalid_request",
         "plugin_off",
         "needs_consent",
@@ -694,6 +695,7 @@ export const catalog = defineCatalog({
     "plugin.process": {
       kinds: ["job"],
       reasons: [
+        "rate_limit",
         "invalid_request",
         "plugin_off",
         "needs_consent",
