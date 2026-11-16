@@ -75,6 +75,42 @@ Then(
   },
 );
 
+Then(
+  "each comment takes the full width, with its author's initials in its header",
+  async ({ page }) => {
+    const region = commentsRegion(page);
+    await expect(region.getByRole("article")).toHaveCount(5);
+    const thread = await region.evaluate((section) => {
+      const rect = (element: Element) => {
+        const { left, right, top, bottom } = element.getBoundingClientRect();
+        return { left, right, top, bottom };
+      };
+      return {
+        section: rect(section),
+        comments: [...section.querySelectorAll(".backlog-comment")].map(
+          (comment) => {
+            const header = comment.querySelector("header")!;
+            return {
+              box: rect(comment.querySelector("article")!),
+              header: rect(header),
+              avatar: rect(comment.querySelector(".backlog-comment-avatar")!),
+              headerText: (header as HTMLElement).innerText,
+            };
+          },
+        ),
+      };
+    });
+    for (const { box, header, avatar, headerText } of thread.comments) {
+      expect(Math.abs(box.left - thread.section.left)).toBeLessThan(1);
+      expect(Math.abs(box.right - thread.section.right)).toBeLessThan(1);
+      expect(avatar.left).toBeGreaterThan(header.left);
+      expect(avatar.top).toBeGreaterThan(header.top);
+      expect(avatar.bottom).toBeLessThan(header.bottom);
+      expect(headerText).not.toContain("commented");
+    }
+  },
+);
+
 When("I show earlier comments", async ({ page }) => {
   await commentsRegion(page)
     .getByRole("button", { name: /^Show earlier comments/ })
