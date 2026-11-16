@@ -325,7 +325,8 @@
     "executable": "node",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-032",
@@ -697,7 +698,8 @@
     "executable": "node",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-067",
@@ -1069,7 +1071,8 @@
     "executable": "node",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-102",
@@ -3096,5 +3099,65 @@
     "command": "echo a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a ; cat ~/.ssh/id_rsa",
     "reach": "not-applicable",
     "note": "Needs a shell: `;`."
+  },
+  {
+    "id": "case-268",
+    "shell": "bash",
+    "group": "dangerous",
+    "command": "git log \"--format=% G?\"",
+    "executable": "git",
+    "argv": ["log", "--format=% G?"],
+    "reach": "broker",
+    "expected": "risky",
+    "ruleId": "unknown",
+    "note": "Added in round 3 of #740: git reads `+`, `-` or a space after `%` as a modifier, so this signature atom still starts gpg."
+  },
+  {
+    "id": "case-269",
+    "shell": "bash",
+    "group": "dangerous",
+    "command": "git log --format=%+G?",
+    "executable": "git",
+    "argv": ["log", "--format=%+G?"],
+    "reach": "broker",
+    "expected": "risky",
+    "ruleId": "unknown",
+    "note": "Added in round 3 of #740: git reads `+`, `-` or a space after `%` as a modifier, so this signature atom still starts gpg."
+  },
+  {
+    "id": "case-270",
+    "shell": "bash",
+    "group": "dangerous",
+    "command": "git log --format=%-G?",
+    "executable": "git",
+    "argv": ["log", "--format=%-G?"],
+    "reach": "broker",
+    "expected": "risky",
+    "ruleId": "unknown",
+    "note": "Added in round 3 of #740: git reads `+`, `-` or a space after `%` as a modifier, so this signature atom still starts gpg."
+  },
+  {
+    "id": "case-271",
+    "shell": "bash",
+    "group": "dangerous",
+    "command": "git log --format=%+GK",
+    "executable": "git",
+    "argv": ["log", "--format=%+GK"],
+    "reach": "broker",
+    "expected": "risky",
+    "ruleId": "unknown",
+    "note": "Added in round 3 of #740: git reads `+`, `-` or a space after `%` as a modifier, so this signature atom still starts gpg."
+  },
+  {
+    "id": "case-272",
+    "shell": "bash",
+    "group": "dangerous",
+    "command": "git log \"--pretty=format:% GG\"",
+    "executable": "git",
+    "argv": ["log", "--pretty=format:% GG"],
+    "reach": "broker",
+    "expected": "risky",
+    "ruleId": "unknown",
+    "note": "Added in round 3 of #740: git reads `+`, `-` or a space after `%` as a modifier, so this signature atom still starts gpg."
   }
 ]

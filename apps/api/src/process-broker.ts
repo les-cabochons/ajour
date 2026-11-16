@@ -845,7 +845,10 @@ function isGit(executable: string): boolean {
  * keeps git from using a bare repository it finds by itself, such as one
  * committed inside the repository folder, whose configuration could run a
  * program (`core.fsmonitor`). It is appended after any `GIT_CONFIG_COUNT`
- * entries Ajour's own environment has, so it wins. `GIT_OPTIONAL_LOCKS=0`
+ * entries Ajour's own environment has, so it wins over them. A
+ * `GIT_CONFIG_PARAMETERS` the user set in their own environment still
+ * applies and can change it; plugins can't set the environment, so only the
+ * user can. `GIT_OPTIONAL_LOCKS=0`
  * keeps read-only commands such as `git status` from writing the index.
  */
 export function gitEnvironment(

@@ -783,11 +783,7 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
     "version probe": {
       allowed: [
         ["git", "--version"],
-        ["node", "--version"],
-        ["node.exe", "--version"],
-        ["python", "--version"],
-        ["python3", "--version"],
-        ["py", "--version"],
+        ["git.exe", "--version"],
         ["gh", "--version"],
         ["t3", "--version"],
         ["claude", "--version"],
@@ -797,6 +793,13 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["code", "--version"],
       ],
       refused: [
+        // A version manager's shim (Volta, asdf, mise, pyenv) reads the
+        // project's version files and may download or run that version.
+        ["node", "--version"],
+        ["node.exe", "--version"],
+        ["python", "--version"],
+        ["python3", "--version"],
+        ["py", "--version"],
         // These read the project before they print a version: pytest loads
         // conftest.py, Corepack reads packageManager and installs that
         // version, mvn reads .mvn/jvm.config, gradlew is the project's own
@@ -918,6 +921,8 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "log", "--pretty=format:%h %(trailers:key=Fixes)"],
         ["git", "log", "--format=%h%d %(decorate:prefix=[)"],
         ["git", "log", "--format=100%% %s"],
+        ["git", "log", "--format=%%G %s"],
+        ["git", "log", "--format=%+(trailers) %-d % s"],
         ["git", "log", "-p", "--follow", "--", "src/app.ts"],
         ["git", "log", "origin/main..HEAD"],
       ],
@@ -936,6 +941,15 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "log", "--format=%h %GS"],
         ["git", "log", "--pretty=format:%GK"],
         ["git", "log", "--pretty=tformat:%GG"],
+        // git reads `+`, `-` or a space after `%` as a modifier.
+        ["git", "log", "--format=% G?"],
+        ["git", "log", "--format=%+G?"],
+        ["git", "log", "--format=%-G?"],
+        ["git", "log", "--format=%+GK"],
+        ["git", "log", "--pretty=format:% GG"],
+        ["git", "log", "--format=%%%+G?"],
+        ["git", "log", "--format=%+(describe)"],
+        ["git", "log", "--format=% (describe:tags)"],
         // An atom Ajour can't vouch for, or a name git reads from config.
         ["git", "log", "--format=%(describe)"],
         ["git", "log", "--format=%(trailersx)"],
@@ -1012,6 +1026,9 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
       ],
       refused: [
         ["git", "describe", "--abbrev=x"],
+        // `--dirty` refreshes the index, even with GIT_OPTIONAL_LOCKS=0.
+        ["git", "describe", "--dirty"],
+        ["git", "describe", "--dirty=-modified"],
         ["git", "describe", "--config=x"],
       ],
     },
@@ -1036,6 +1053,9 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "branch", "--set-upstream-to=origin/x"],
         ["git", "branch", "-c", "x"],
         ["git", "branch", "--show-current", "x"],
+        // After `--`, `--list` is a branch name.
+        ["git", "branch", "--", "--list"],
+        ["git", "branch", "new", "--", "--list"],
       ],
     },
     // A listing follows a symlink or junction inside the repository folder
@@ -1108,7 +1128,7 @@ it("Given an allowlisted command outside a repository folder, asks as unknown", 
     UNKNOWN,
   );
   // A version probe, `pwd` and `whoami` read no folder, so they run anywhere.
-  for (const line of [["node", "--version"], ["pwd"], ["whoami"]])
+  for (const line of [["gh", "--version"], ["pwd"], ["whoami"]])
     expect(review("posix", line, systemRoot.posix)).toEqual({
       verdict: "none",
     });

@@ -988,7 +988,7 @@ describe("Given the rule table", () => {
 
   it("Auto asks for a risky command with the rule's reason and runs a plain one", async () => {
     const { broker, op, ask, sink } = await ruleBroker("auto");
-    const plain = await op.run({ executable: "node", argv: ["--version"] });
+    const plain = await op.run({ executable: "git", argv: ["--version"] });
     expect(plain.exitCode).toBe(0);
     expect(ask).not.toHaveBeenCalled();
 

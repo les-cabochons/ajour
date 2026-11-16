@@ -22,6 +22,8 @@ import { reviewCommand } from "./process-rules.ts";
  * Since round 1 of #740 the rule table is allowlist-first: only an
  * allowlisted read-only command gets no verdict, so most ordinary fixtures,
  * the shim injections and the parity edges are `risky` as `unknown`.
+ * Round 3 added five `git log` format strings (case-268 to case-272) whose
+ * modified signature atoms start gpg.
  */
 const contexts = {
   posix: {
@@ -58,12 +60,12 @@ interface Fixture {
 }
 const fixtures = corpus as Fixture[];
 const reachable = fixtures.filter((f) => f.reach !== "not-applicable");
-it("keeps all 267 fixtures, in every shell", () => {
-  expect(fixtures).toHaveLength(267);
+it("keeps #708's 267 fixtures and round 3's five, in every shell", () => {
+  expect(fixtures).toHaveLength(272);
   const count = (reach: Fixture["reach"]) =>
     fixtures.filter((f) => f.reach === reach).length;
   expect([count("broker"), count("refused"), count("not-applicable")]).toEqual([
-    246, 7, 14,
+    251, 7, 14,
   ]);
 });
 
@@ -92,7 +94,7 @@ it("marks every dangerous fixture risky", () => {
   const dangerous = reachable.filter(
     (f) => f.group === "dangerous" || f.group === "prompt-injection",
   );
-  expect(dangerous.length).toBe(104);
+  expect(dangerous.length).toBe(109);
   for (const fixture of dangerous)
     expect(fixture.expected, `${fixture.id} ${fixture.command}`).toBe("risky");
 });
@@ -100,10 +102,11 @@ it("marks every dangerous fixture risky", () => {
 it("lets an ordinary fixture run only from the allowlist, and asks for the rest as unknown", () => {
   const ordinary = reachable.filter((f) => f.group === "ordinary");
   expect(ordinary.length).toBe(135);
-  // git's read-only subcommands, version probes of claude, codex and node,
-  // and `pwd`. Since round 2 of #740, `ls`, `dir`, and npm's and pnpm's
-  // version probes ask: they read the project or follow its symlinks.
-  expect(ordinary.filter((f) => f.expected === "none")).toHaveLength(40);
+  // git's read-only subcommands, version probes of claude and codex, and
+  // `pwd`. Since round 2 of #740, `ls`, `dir`, and npm's and pnpm's version
+  // probes ask: they read the project or follow its symlinks. Since round 3,
+  // node's asks too: a version manager's shim reads the project.
+  expect(ordinary.filter((f) => f.expected === "none")).toHaveLength(37);
   for (const fixture of ordinary)
     expect(
       [fixture.expected, fixture.ruleId],

@@ -1822,10 +1822,19 @@ function allowlisted(command: Command, context: Context): boolean {
  * and `pnpm` read `packageManager` and run that version, `mvn` reads
  * `.mvn/`, `gradlew` is the project's own script, `go` reads go.mod's
  * toolchain line, `cargo` reads `rust-toolchain.toml`, and `npm` loads the
- * project's `.npmrc`, which chooses the folders it writes.
+ * project's `.npmrc`, which chooses the folders it writes. `node` and
+ * `python` are left out because they are usually a version manager's shim
+ * (Volta, asdf, mise, pyenv), which reads the project's version files and
+ * may download or run that version.
+ *
+ * A shim on PATH under one of these names may still read the project. The
+ * remaining names are accepted because they are usually installed as one
+ * program, by an installer or a system package manager, rather than pinned
+ * per project through a version manager, so the common case prints a
+ * version and reads nothing the repository commits.
  */
 const VERSION_PROBES = words(`
-  git node python python3 py gh t3 claude codex opencode copilot code
+  git gh t3 claude codex opencode copilot code
 `);
 
 /** `<program> --version`, alone, for a program in `VERSION_PROBES`. */
@@ -1928,7 +1937,8 @@ const PRETTY_NAMES = words(`
  * `--format=` or `--pretty=` with a built-in name or a format string that
  * prints only what git has already read. `%G` atoms start gpg to check a
  * signature, and `%(…)` atoms other than `trailers` and `decorate` are
- * left out, `%(describe)` included.
+ * left out, `%(describe)` included. git reads `+`, `-` or a space right
+ * after `%` as a modifier, so `%+G?` and `% (describe)` count too.
  */
 const PRETTY_FORM = {
   test(arg: string): boolean {
@@ -1944,8 +1954,8 @@ const PRETTY_FORM = {
     if (format === undefined) return false;
     const atoms = format.replace(/%%/g, "");
     return (
-      !/%G/.test(atoms) &&
-      [...atoms.matchAll(/%\(([^):]*)/g)].every(([, atom]) =>
+      !/%[-+ ]?G/.test(atoms) &&
+      [...atoms.matchAll(/%[-+ ]?\(([^):]*)/g)].every(([, atom]) =>
         ["trailers", "decorate"].includes(atom!),
       )
     );
@@ -2053,15 +2063,19 @@ const GIT_READ_ONLY: Readonly<
   describe: {
     flags: words(`
       --tags --always --long --all --exact-match --contains --first-parent
-      --dirty
     `),
     forms: [/^--abbrev=\d+$/, /^--candidates=\d+$/, /^--(match|exclude)=.+$/],
   },
-  // Lists branches only: a name without `--list` would create one.
+  // Lists branches only: a name without `--list` would create one, and
+  // after `--` a `--list` is a name.
   branch: {
     flags: words(`--list -a -r -v -vv --show-current`),
-    positionals: (rest) =>
-      rest.includes("--list") && !rest.includes("--show-current"),
+    positionals: (rest) => {
+      const options = rest.includes("--")
+        ? rest.slice(0, rest.indexOf("--"))
+        : rest;
+      return options.includes("--list") && !options.includes("--show-current");
+    },
   },
 };
 
