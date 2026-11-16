@@ -176,28 +176,38 @@ describe("Given a plugin with process sessions on the server", () => {
     );
   });
 
-  it("the session gate ends a development package's sessions when its files change, or it is suspended", async () => {
-    const { development, sessionGate } = await setup();
-    const gate = await sessionGate();
-    const caller = callerOf(
-      "dev-session",
-      "1.0.0",
-      await pluginProcessPackageKey(development),
-      true,
-    );
-    expect(await gate(caller)).toBe(undefined);
-    const inspect = vi.spyOn(PluginManager.prototype, "inspectPlugins");
-    for (let n = 0; n < 5; n++) expect(await gate(caller)).toBe(undefined);
-    expect(inspect).not.toHaveBeenCalled();
-    const suspension = vi
-      .spyOn(PluginManager.prototype, "suspension")
-      .mockReturnValue({ cause: "crash", stops: 3, at: 0 } as never);
-    expect(await gate(caller)).toBe("plugin_off");
-    suspension.mockRestore();
-    await writeFile(
-      path.join(development, "plugin.mjs"),
-      "export const x = 1;",
-    );
-    await vi.waitFor(async () => expect(await gate(caller)).toBe("plugin_off"));
-  });
+  it(
+    "the session gate ends a development package's sessions when its files change, or it is suspended",
+    { timeout: 20_000 },
+    async () => {
+      const { development, sessionGate } = await setup();
+      const gate = await sessionGate();
+      const caller = callerOf(
+        "dev-session",
+        "1.0.0",
+        await pluginProcessPackageKey(development),
+        true,
+      );
+      expect(await gate(caller)).toBe(undefined);
+      // macOS can report the setup's own writes to the new watch a moment
+      // late, which only makes the gate find the package once more.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      expect(await gate(caller)).toBe(undefined);
+      const inspect = vi.spyOn(PluginManager.prototype, "inspectPlugins");
+      for (let n = 0; n < 5; n++) expect(await gate(caller)).toBe(undefined);
+      expect(inspect).not.toHaveBeenCalled();
+      const suspension = vi
+        .spyOn(PluginManager.prototype, "suspension")
+        .mockReturnValue({ cause: "crash", stops: 3, at: 0 } as never);
+      expect(await gate(caller)).toBe("plugin_off");
+      suspension.mockRestore();
+      await writeFile(
+        path.join(development, "plugin.mjs"),
+        "export const x = 1;",
+      );
+      await vi.waitFor(async () =>
+        expect(await gate(caller)).toBe("plugin_off"),
+      );
+    },
+  );
 });
