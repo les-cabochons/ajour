@@ -125,6 +125,8 @@ async function runtime(
       uninstallPluginForServer: uninstall,
     }),
     internalAppApiEntryPath: "fixture/server.ts",
+    internalAppApiRuntimeRoot: "/fixture",
+    os: { homedir: () => "/fixture-home" },
     internalAppApiVault: () => undefined,
     internalAppApiBrokerNetwork: () => ({
       transport: "broker-transport",
