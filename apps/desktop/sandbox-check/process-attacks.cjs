@@ -59,6 +59,7 @@ const { openPluginLink } = require(
   path.join(electronRoot, "terminal-settings.cjs"),
 );
 const { writeFakeTool } = require("./fake-tool.cjs");
+const { eventsHold } = require("./event-values.cjs");
 
 const PLUGIN = "fixture-escape";
 const FIXTURE = path.join(__dirname, "fixtures", PLUGIN);
@@ -418,7 +419,6 @@ async function main() {
   await new Promise((resolve) => server.close(resolve));
   await consume;
 
-  const eventText = JSON.stringify(sink.events);
   report("process-attacks", {
     values,
     inject,
@@ -434,8 +434,9 @@ async function main() {
     markers: await fs.readdir(markers),
     windows,
     // ADR 0011: events hold ids and outcomes, never argv, values or paths.
-    eventsHoldValues: values.some((value) => eventText.includes(value)),
-    eventsHoldCanary: eventText.includes(canary),
+    // Compared value by value, since JSON escapes the `\` and `"` in these.
+    eventsHoldValues: values.some((value) => eventsHold(sink.events, value)),
+    eventsHoldCanary: eventsHold(sink.events, canary),
     processEvents: sink.events.filter(
       (event) => event.name === "plugin.process",
     ).length,

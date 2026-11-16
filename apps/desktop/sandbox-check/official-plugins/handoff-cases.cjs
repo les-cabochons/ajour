@@ -5,12 +5,25 @@
 // `t3` there: on Windows a `.cmd` shim, which the broker resolves to node.exe
 // and the script without cmd.exe. It answers with T3's recorded outputs, and
 // the case moves its thread through T3's statuses between refreshes.
+//
+// Outside Windows the broker reads PATH from the user's login shell, `$SHELL
+// -ilc` (apps/api/src/agent-runner/cli-path.ts), whose profile could reorder
+// or drop the fake tool's folder, and caches the first answer. So `prepare`
+// runs before the API exists: it puts the folder first on PATH and points
+// SHELL at a stand-in that runs the command without a profile, so the PATH
+// the broker reads is the check's own on every system.
 "use strict";
 
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { writeFakeTool } = require("../fake-tool.cjs");
+const { eventsHold } = require("../event-values.cjs");
+
+/** The login shell's stand-in: `$SHELL -ilc <command>` runs `<command>`. */
+const STAND_IN_SHELL = `#!/bin/sh
+exec /bin/sh -c "$2"
+`;
 
 const THREAD_ID = "mcp:c1e0d197-f95e-4388-b011-c17ab63ddef3";
 const LINK =
@@ -26,15 +39,11 @@ const ITEM = {
     "After signing in, users land on /home instead of the page they asked for.",
 };
 
-async function run({
-  ok,
-  pass,
-  assert,
-  server,
-  addRepositoryFolderForServer,
-  sink,
-  onCleanup,
-}) {
+/**
+ * Writes the fake `t3` and puts it first on the PATH the broker reads. Call
+ * it before the app API reads any PATH; `run` takes what it returns.
+ */
+async function prepare({ onCleanup }) {
   // The tool and the repository, outside Ajour's data folder.
   const work = await fs.mkdtemp(path.join(os.tmpdir(), "ajour-handoff-"));
   onCleanup(() => fs.rm(work, { recursive: true, force: true }));
@@ -44,11 +53,31 @@ async function run({
     "t3",
     await fs.readFile(path.join(__dirname, "fake-t3.cjs"), "utf8"),
   );
-  const pathBefore = process.env.PATH;
-  process.env.PATH = `${bin}${path.delimiter}${pathBefore ?? ""}`;
+  const before = { PATH: process.env.PATH, SHELL: process.env.SHELL };
   onCleanup(() => {
-    process.env.PATH = pathBefore;
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
+  process.env.PATH = `${bin}${path.delimiter}${before.PATH ?? ""}`;
+  if (process.platform !== "win32") {
+    const shell = path.join(work, "login-shell");
+    await fs.writeFile(shell, STAND_IN_SHELL, { mode: 0o755 });
+    process.env.SHELL = shell;
+  }
+  return { work, bin };
+}
+
+async function run({
+  tools: { work, bin },
+  ok,
+  pass,
+  assert,
+  server,
+  addRepositoryFolderForServer,
+  sink,
+}) {
   const statePath = path.join(bin, "t3-state.json");
   const t3State = async (change) => {
     const state = JSON.parse(await fs.readFile(statePath, "utf8"));
@@ -271,10 +300,10 @@ async function run({
       all.every((call) => call.ajour.length === 0),
       "t3 never sees an AJOUR_ variable",
     );
-    const events = JSON.stringify(sink.events);
+    // Compared value by value: JSON would escape a Windows path's `\`.
     for (const text of [ITEM.title, ITEM.description, realRepository, LINK]) {
       assert.ok(
-        !events.includes(text),
+        !eventsHold(sink.events, text),
         "no event holds the prompt, the title, the folder or the link",
       );
     }
@@ -284,4 +313,4 @@ async function run({
   }
 }
 
-module.exports = { run };
+module.exports = { prepare, run };

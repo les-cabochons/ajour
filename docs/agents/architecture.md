@@ -618,7 +618,9 @@ API 3 runtime or fallback to Node workers.
   `javascript:` and https-with-credentials links, with only the declared
   scheme reaching main's `openPluginLink`; `AJOUR_` variables, which the
   echo tool's output shows the child has none of, and no event holding an
-  argument or an `AJOUR_` value; Unicode format, control and separator
+  argument or an `AJOUR_` value, every string in the events compared to the
+  value itself (`sandbox-check/event-values.cjs`), since JSON escapes the
+  `\` and `"` of `C:\repo` or `a"b c"d`; Unicode format, control and separator
   characters in an undeclared argv or name; and the command modes: Always
   ask asks even for an allowlisted command, and in Auto an allowlisted
   command runs, inline code asks and the window's Deny refuses it, and a
@@ -640,7 +642,8 @@ API 3 runtime or fallback to Node workers.
   (`apps/desktop/plugin-release.config.cjs`, entry
   `sandbox-check/official-plugins.cjs`, never part of a release), and `just
 plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
-  `ajour-plugins`), `AJOUR_PLUGINS_COMMIT` (default `HEAD`) and
+  `ajour-plugins`), `AJOUR_PLUGINS_COMMIT` (default `releaseCommit` of
+  `sandbox-check/release-baseline.json`) and
   `AJOUR_PLUGIN_RELEASE_EXECUTABLE` (the packaged executable). The check packs
   each plugin folder at that commit, installs it as a user would, and drives
   it through the real app API, broker and renderer runtime against fixture
@@ -656,14 +659,23 @@ plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
   so it runs signed, in Auto, and drives a fake `t3`
   (`sandbox-check/official-plugins/fake-t3.cjs`, the plugin's recorded
   outputs of t3 v0.1.10) that `official-plugins/handoff-cases.cjs` puts
-  first on PATH, as an npm `.cmd` shim on Windows. Through the real API,
+  first on PATH, as an npm `.cmd` shim on Windows, before the API reads any
+  PATH. Outside Windows it also points `SHELL`, which the broker's
+  login-shell PATH read honours (`apps/api/src/agent-runner/cli-path.ts`),
+  at a stand-in that runs the command without a profile, so no profile can
+  reorder or drop the tool's folder. Through the real API,
   broker and renderer it detects the tool and its version, starts a hand
   off whose argv, title, branch and stdin prompt reach `t3` intact, records
   the thread's link, and maps T3's statuses to Working, Needs you, Ready,
   Failed, Done (settled or archived), Unknown (no server) and Gone, and `t3`
-  runs only declared commands, with no `AJOUR_` variable. It runs on Windows
-  today. The macOS package and a CI job for the check are not wired yet
-  (#614).
+  runs only declared commands, with no `AJOUR_` variable, and no wide event
+  holds the prompt, title, folder or link, compared value by value
+  (`sandbox-check/event-values.cjs`), since JSON escapes a Windows path. CI
+  runs it on Windows (`.github/workflows/plugin-release.yml`, called by
+  `Tests` for pull requests that touch `apps/desktop`, `apps/api`,
+  `packages` or the workflows, and for every push to main, held by the
+  Plugin sandbox gate), against `ajour-plugins` at the pinned
+  `releaseCommit`. The macOS package and its CI job stay with #614.
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,

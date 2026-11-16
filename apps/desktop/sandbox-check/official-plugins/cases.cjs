@@ -175,6 +175,11 @@ async function runCases(ctx) {
   await writeTeamSyncPackage(path.join(installedRoot, "team-sync"), teamMarker);
   const statePath = path.join(userData, "state.json");
   await fs.writeFile(statePath, JSON.stringify(legacyState()));
+  // Before the API exists, so the first PATH the broker reads has the tool.
+  const handoffCases = require("./handoff-cases.cjs");
+  const handoffTools = await handoffCases.prepare({
+    onCleanup: ctx.onCleanup,
+  });
 
   const {
     createAppApiServer,
@@ -688,14 +693,14 @@ async function runCases(ctx) {
     });
     const access = await ok("GET", "/api/plugins/agent-handoff/command-access");
     assert.equal(access.mode, "auto", "a signed plugin starts in Auto");
-    await require("./handoff-cases.cjs").run({
+    await handoffCases.run({
+      tools: handoffTools,
       ok,
       pass,
       assert,
       server,
       addRepositoryFolderForServer,
       sink,
-      onCleanup: ctx.onCleanup,
     });
   }
 
