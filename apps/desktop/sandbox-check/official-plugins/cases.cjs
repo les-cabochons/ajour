@@ -1,6 +1,7 @@
-// The cases of the release check of the six official plugins (#403). Each
-// one drives Ajour's local API as the window does, and reads what the fixture
-// services received and what Ajour answered, wrote and logged.
+// The cases of the release check of the official plugins (#403): the six
+// that came over from API 3, then `agent-handoff` (#725). Each one drives
+// Ajour's local API as the window does, and reads what the fixture services
+// and tools received and what Ajour answered, wrote and logged.
 //
 // The data folder starts as the last release left it: the API 3 packages the
 // official listing names, installed, and a version 7 state file, with their
@@ -175,8 +176,12 @@ async function runCases(ctx) {
   const statePath = path.join(userData, "state.json");
   await fs.writeFile(statePath, JSON.stringify(legacyState()));
 
-  const { createAppApiServer, stopAppApiServer, installPluginForServer } =
-    await load("server.ts");
+  const {
+    createAppApiServer,
+    stopAppApiServer,
+    installPluginForServer,
+    addRepositoryFolderForServer,
+  } = await load("server.ts");
   const { MemorySecretVault } = await load(
     "test-support/memory-secret-vault.ts",
   );
@@ -654,6 +659,44 @@ async function runCases(ctx) {
       1,
     );
     pass("workday-project-data: turned off, it is neither listed nor run");
+  }
+
+  // --------------------------------------------------------- Agent handoff
+  // Installed as the signed catalog installs it, so it runs as users get it:
+  // a signed plugin, which the unsigned process gates don't hold, in Auto.
+  // The check doesn't verify a signature; the catalog's own check does.
+  {
+    const directory = path.join(sourceRoot, "plugins", "agent-handoff");
+    const archive = path.join(userData, "agent-handoff.ajour-connector");
+    await tar.create({ cwd: directory, file: archive, gzip: true }, ["."]);
+    await installPluginForServer(
+      server,
+      await fs.readFile(archive),
+      path.basename(archive),
+      {
+        origin: {
+          kind: "source",
+          signed: true,
+          official: true,
+          sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+          installedAt: new Date().toISOString(),
+        },
+      },
+    );
+    await ok("POST", "/api/plugins/agent-handoff/activation", {
+      enabled: true,
+    });
+    const access = await ok("GET", "/api/plugins/agent-handoff/command-access");
+    assert.equal(access.mode, "auto", "a signed plugin starts in Auto");
+    await require("./handoff-cases.cjs").run({
+      ok,
+      pass,
+      assert,
+      server,
+      addRepositoryFolderForServer,
+      sink,
+      onCleanup: ctx.onCleanup,
+    });
   }
 
   // ---------------------------------------------------- nothing leaked

@@ -600,7 +600,30 @@ API 3 runtime or fallback to Node workers.
   malicious plugin's ways out and its attacks on the broker, and
   `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget, an
   infinite loop, a fork bomb, the quit drain and the sweep across a forced
-  kill of main, and a second Ajour started beside the first. It is seam 3
+  kill of main, and a second Ajour started beside the first.
+  `sandbox-check/process-attacks.cjs` (#725) turns the malicious plugin
+  (`fixtures/fixture-escape`, a development plugin, so unsigned) on the
+  process broker, through hand offs of a project, so the broker runs with a
+  project as a real hand off does. It checks that each attack is refused or
+  harmless: declared commands, undeclared commands and declared links
+  before the unsigned process switch and the plugin's acceptance; an
+  undeclared command without `processes.undeclaredCommands`, and a package
+  that adds it without new consent, which the host refuses before any call;
+  shell metacharacters in a `text` slot, which reach the fixture's echo tool
+  unchanged (on Windows through an npm `.cmd` shim written by
+  `sandbox-check/fake-tool.cjs`) and write none of their markers, the values
+  a `text` slot refuses, and a `.cmd` launcher the broker doesn't know; a
+  `folder` id of another project, a folder that became a junction to
+  Ajour's data folder, a path and an unknown id; undeclared, `file:`,
+  `javascript:` and https-with-credentials links, with only the declared
+  scheme reaching main's `openPluginLink`; `AJOUR_` variables, which the
+  echo tool's output shows the child has none of, and no event holding an
+  argument or an `AJOUR_` value; Unicode format, control and separator
+  characters in an undeclared argv or name; and the command modes: Always
+  ask asks even for an allowlisted command, and in Auto an allowlisted
+  command runs, inline code asks and the window's Deny refuses it, and a
+  command off the allowlist asks and is denied when the window goes away
+  without answering. It is seam 3
   (#392): `.github/workflows/plugin-sandbox.yml` runs it on Windows and
   macOS, and on Linux, where it checks only that plugins stay off, as
   informational. The `Tests` workflow runs it for pull requests that touch
@@ -610,8 +633,9 @@ API 3 runtime or fallback to Node workers.
   skipped. A push to main runs it in the nightly release workflow, and the
   stable release workflow runs it on the promoted commit; neither publishes
   unless it passes on Windows and macOS.
-- The **official-plugin release check** (#403, seam 3) runs the six official
-  plugins in a packaged build. `just plugin-release-package` builds a
+- The **official-plugin release check** (#403, seam 3) runs the official
+  plugins in a packaged build: the six that came over from API 3, and
+  `agent-handoff` (#725). `just plugin-release-package` builds a
   test-only package of the desktop app
   (`apps/desktop/plugin-release.config.cjs`, entry
   `sandbox-check/official-plugins.cjs`, never part of a release), and `just
@@ -627,8 +651,19 @@ plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
   address nor a redirect address reaching the plugin, logs or UI; an Azure
   DevOps connection saved with a project URL; each legacy GitHub address
   form rewritten once and still syncing; and connections made on API 3 staying
-  installed and inactive with their settings. It runs on Windows today. The
-  macOS package and a CI job for the check are not wired yet.
+  installed and inactive with their settings. `agent-handoff` is installed
+  as the signed catalog installs it (the check doesn't verify a signature),
+  so it runs signed, in Auto, and drives a fake `t3`
+  (`sandbox-check/official-plugins/fake-t3.cjs`, the plugin's recorded
+  outputs of t3 v0.1.10) that `official-plugins/handoff-cases.cjs` puts
+  first on PATH, as an npm `.cmd` shim on Windows. Through the real API,
+  broker and renderer it detects the tool and its version, starts a hand
+  off whose argv, title, branch and stdin prompt reach `t3` intact, records
+  the thread's link, and maps T3's statuses to Working, Needs you, Ready,
+  Failed, Done (settled or archived), Unknown (no server) and Gone, and `t3`
+  runs only declared commands, with no `AJOUR_` variable. It runs on Windows
+  today. The macOS package and a CI job for the check are not wired yet
+  (#614).
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,

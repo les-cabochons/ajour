@@ -1,11 +1,12 @@
-// The release check of the six official plugins (#403, seam 3 of the spec
-// #381). `scripts/check-plugin-release.mjs` starts this entrypoint inside a
-// packaged build, which exists only for the check (`plugin-release.config.cjs`):
-// production releases never contain it. It runs the real sandboxed renderer
+// The release check of the official plugins (#403, seam 3 of the spec #381;
+// `agent-handoff` since #725). `scripts/check-plugin-release.mjs` starts this
+// entrypoint inside a packaged build, which exists only for the check
+// (`plugin-release.config.cjs`): production releases never contain it. It runs the real sandboxed renderer
 // runtime, IPC table, credential broker and local API against the official
 // plugins at a commit of `les-cabochons/ajour-plugins`, with fixture services
-// in place of Jira, GitHub, Azure DevOps and a calendar server. The cases
-// are in `official-plugins/cases.cjs`.
+// in place of Jira, GitHub, Azure DevOps and a calendar server, and a fake
+// `t3` on PATH in place of T3 Code. The cases are in
+// `official-plugins/cases.cjs`.
 //
 // Run unpackaged for quick turns, from `apps/desktop`:
 //   AJOUR_RELEASE_CHECK_UNPACKAGED=1 AJOUR_USER_DATA_PATH=<empty folder> \
