@@ -13,7 +13,18 @@ import { AppApiStorage } from "./storage.ts";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
+    // A detached child can still hold its folder open while it exits on
+    // Windows, so removal retries instead of failing with EBUSY.
+    roots
+      .splice(0)
+      .map((p) =>
+        rm(p, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 100,
+        }),
+      ),
   );
 });
 async function fixture(
