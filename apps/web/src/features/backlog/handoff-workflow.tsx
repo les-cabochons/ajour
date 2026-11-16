@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import {
   fillHandoffTemplates,
   handoffTemplateDefaults,
@@ -51,53 +51,20 @@ import {
   setLastHandoffTool,
 } from "@/lib/handoff-tools";
 import { localStore } from "@/lib/local-store";
+import {
+  listenForHandoffRequests,
+  setHandoffStarting,
+} from "@/features/backlog/handoff-request";
 
 /**
  * Hand off to a coding tool, from "Hand off to a coding tool" in
- * docs/agents/ux-spec.md. Every surface asks through `requestHandoff`: the
+ * docs/agents/ux-spec.md. Every surface asks through `requestHandoff`
+ * (`handoff-request.ts`): the
  * item page's split button, the row menus and the command palette. The one
  * `HandoffHost`, mounted in the app shell, shows the first-time notice, the
  * repository picker and the Review prompt dialog, starts the thread and
  * says how it went.
  */
-
-export interface HandoffRequest {
-  itemId: string;
-  toolKey: string;
-  /** Opens the Review prompt dialog instead of starting at once. */
-  review?: boolean;
-}
-
-let requestListener: ((request: HandoffRequest) => void) | null = null;
-
-export function requestHandoff(request: HandoffRequest) {
-  requestListener?.(request);
-}
-
-const starting = new Set<string>();
-const startingListeners = new Set<() => void>();
-let startingVersion = 0;
-
-function setStarting(itemId: string, value: boolean) {
-  if (value) starting.add(itemId);
-  else starting.delete(itemId);
-  startingVersion++;
-  startingListeners.forEach((listener) => listener());
-}
-
-/** Whether a hand off of the item is on its way, so its button waits. */
-export function useHandoffStarting(itemId: string) {
-  useSyncExternalStore(
-    (listener) => {
-      startingListeners.add(listener);
-      return () => {
-        startingListeners.delete(listener);
-      };
-    },
-    () => startingVersion,
-  );
-  return starting.has(itemId);
-}
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -144,7 +111,7 @@ async function start(
   const state = localStore.snapshot();
   const current =
     state.workItems.find((candidate) => candidate._id === item._id) ?? item;
-  setStarting(item._id, true);
+  setHandoffStarting(item._id, true);
   try {
     const record = await startHandoff({
       pluginId: tool.pluginId,
@@ -167,7 +134,7 @@ async function start(
       timeout: UNDO_TOAST_TIMEOUT_MS,
     });
   } finally {
-    setStarting(item._id, false);
+    setHandoffStarting(item._id, false);
   }
 }
 
@@ -206,7 +173,7 @@ export function HandoffHost() {
   }
 
   useEffect(() => {
-    requestListener = (request) => {
+    return listenForHandoffRequests((request) => {
       const tool = getHandoffTools().find(
         (candidate) => candidate.key === request.toolKey,
       );
@@ -231,10 +198,7 @@ export function HandoffHost() {
       };
       if (!hasSeenHandoffNotice(tool.key)) setStep({ kind: "notice", job });
       else void proceed(job);
-    };
-    return () => {
-      requestListener = null;
-    };
+    });
   }, []);
 
   const close = () => setStep(IDLE);

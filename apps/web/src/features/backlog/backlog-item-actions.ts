@@ -3,7 +3,7 @@ import {
   isHandOffAction,
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
-import { requestHandoff } from "@/features/backlog/handoff-workflow";
+import { requestHandoff } from "@/features/backlog/handoff-request";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { settleBacklogItem } from "@/features/backlog/settle-dialog";

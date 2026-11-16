@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { BacklogImportCandidate } from "@ajour/shared";
 
 /*
@@ -162,6 +170,13 @@ function closeUndoToast() {
 }
 
 describe("a synced item's priority change", () => {
+  // Each test imports Ajour afresh. Transforming its modules once here keeps
+  // that cost out of the first test's time limit on a busy machine.
+  beforeAll(async () => {
+    installWindow();
+    await load({ restart: true }).catch(() => undefined);
+    vi.unstubAllGlobals();
+  }, 30_000);
   beforeEach(() => {
     storage.clear();
     toasts.undo.length = 0;

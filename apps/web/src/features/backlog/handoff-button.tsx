@@ -18,7 +18,7 @@ import {
 import {
   requestHandoff,
   useHandoffStarting,
-} from "@/features/backlog/handoff-workflow";
+} from "@/features/backlog/handoff-request";
 
 /** A tool's own icon, from its plugin's manifest, drawn as an image. */
 export function HandoffToolIcon({
