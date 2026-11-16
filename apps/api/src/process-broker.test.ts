@@ -6,7 +6,11 @@ import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.
 import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
-import { gitEnvironment, ProcessBroker } from "./process-broker.ts";
+import {
+  gitEnvironment,
+  ProcessBroker,
+  type ProcessBrokerOptions,
+} from "./process-broker.ts";
 import { processRuleTable, processRules } from "./process-rules.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -28,6 +32,7 @@ afterEach(async () => {
 async function fixture(
   args: unknown[] = ["{title:text}"],
   source = "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write(JSON.stringify(process.argv.slice(2))))",
+  options: Partial<ProcessBrokerOptions> = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-process-"));
   roots.push(root);
@@ -65,6 +70,7 @@ async function fixture(
     folders,
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
+    ...options,
   });
   return {
     root,
@@ -1139,8 +1145,11 @@ describe("detached commands with stdin", () => {
   // returned and shut down, and only later writes what it read.
   const reader =
     "const fs=require('fs');const path=require('path');let data='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>setTimeout(()=>fs.writeFileSync(path.join(process.cwd(),'stdin-read.txt'),data),500))";
-  async function detachedFixture(source = reader) {
-    const made = await fixture(["{folder:folder}"], source);
+  async function detachedFixture(
+    source = reader,
+    options: Partial<ProcessBrokerOptions> = {},
+  ) {
+    const made = await fixture(["{folder:folder}"], source, options);
     const command = pluginApi4ManifestSchema.parse({
       ...made.manifest,
       processes: {
@@ -1228,36 +1237,127 @@ describe("detached commands with stdin", () => {
     expect(JSON.stringify(sink.events)).not.toContain(root);
   });
 
-  it("Given the operation ends before the child has read its input, refuses and stops the child", async () => {
-    const { op, folder, root } = await detachedFixture(
-      "require('fs').writeFileSync(require('path').join(process.cwd(),'pid'),String(process.pid));setInterval(()=>{},1000)",
-    );
+  // Writes its pid, then never reads stdin.
+  const idle =
+    "require('fs').writeFileSync(require('path').join(process.cwd(),'pid'),String(process.pid));setInterval(()=>{},1000)";
+  async function readPid(root: string) {
     const { readFile } = await import("node:fs/promises");
-    const run = op.run({
-      command: "run",
-      args: { folder: folder.id },
-      stdin: "x".repeat(1024 * 1024),
-    });
-    const pid = Number(
-      await expect
-        .poll(async () =>
-          readFile(path.join(root, "pid"), "utf8").catch(() => ""),
-        )
-        .toMatch(/^\d+$/)
-        .then(() => readFile(path.join(root, "pid"), "utf8")),
-    );
-    op.close();
-    await expect(run).rejects.toMatchObject({ reason: "operation_ended" });
+    const file = path.join(root, "pid");
     await expect
-      .poll(() => {
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch {
-          return false;
-        }
+      .poll(async () => readFile(file, "utf8").catch(() => ""), {
+        timeout: 10_000,
       })
-      .toBe(false);
+      .toMatch(/^\d+$/);
+    return Number(await readFile(file, "utf8"));
+  }
+  function alive(pid: number) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it("Given the operation ends before the child has read its input, refuses and stops the child", async () => {
+    const { op, folder, root } = await detachedFixture(idle);
+    try {
+      const run = op.run({
+        command: "run",
+        args: { folder: folder.id },
+        stdin: "x".repeat(1024 * 1024),
+      });
+      const pid = await readPid(root);
+      op.close();
+      await expect(run).rejects.toMatchObject({ reason: "operation_ended" });
+      await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
+    } finally {
+      op.close();
+    }
+  });
+
+  it("Given a child that doesn't read its input before the stdin deadline, stops it and refuses without a timeout", async () => {
+    const records: unknown[][] = [];
+    const { op, folder, root, sink } = await detachedFixture(idle, {
+      stdinDeadlineMs: 500,
+      record: (...args) => {
+        records.push(args);
+      },
+    });
+    try {
+      const run = op.run({
+        command: "run",
+        args: { folder: folder.id },
+        // Past any pipe buffer, so the child has to read for delivery to end.
+        stdin: "x".repeat(1024 * 1024),
+      });
+      const pid = await readPid(root);
+      await expect(run).rejects.toMatchObject({ reason: "stdin_failed" });
+      await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
+      expect(sink.events).toEqual([
+        expect.objectContaining({
+          name: "plugin.process",
+          outcome: "refused",
+          outcome_reason: "stdin_failed",
+        }),
+      ]);
+      await expect.poll(() => records.length).toBe(1);
+      // Refused, not a timeout: it never counts toward suspending the plugin.
+      expect(records[0]).toEqual([
+        "process-test",
+        expect.any(Number),
+        true,
+        false,
+      ]);
+    } finally {
+      op.close();
+    }
+  });
+
+  it("Given a terminal command and stdin, refuses at run time and starts nothing", async () => {
+    const records: unknown[][] = [];
+    const terminal = vi.fn(async () => "wt" as const);
+    const { op, folder, broker, manifest } = await detachedFixture(idle, {
+      terminal,
+      record: (...args) => {
+        records.push(args);
+      },
+    });
+    op.close();
+    // The manifest schema refuses this declaration; the run-time check holds
+    // even for a manifest that got past it.
+    const command = manifest.processes!.commands[0]!;
+    const terminalManifest = {
+      ...manifest,
+      processes: {
+        ...manifest.processes!,
+        commands: [{ ...command, mode: "terminal" as const }],
+      },
+    };
+    const terminalOp = broker.forOperation({
+      pluginId: manifest.id,
+      manifest: terminalManifest,
+      method: "syncConnection",
+    });
+    try {
+      await expect(
+        terminalOp.run({
+          command: "run",
+          args: { folder: folder.id },
+          stdin: "prompt",
+        }),
+      ).rejects.toMatchObject({ reason: "invalid_request" });
+      expect(terminal).not.toHaveBeenCalled();
+      await expect.poll(() => records.length).toBe(1);
+      expect(records[0]).toEqual([
+        manifest.id,
+        expect.any(Number),
+        true,
+        false,
+      ]);
+    } finally {
+      terminalOp.close();
+    }
   });
 });
 it.each([

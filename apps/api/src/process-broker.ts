@@ -20,7 +20,7 @@ import {
 } from "./process-launch.ts";
 import { pluginProcessesSchema } from "../../../packages/shared/plugin-api-4.ts";
 
-import { spawn, execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { z } from "zod";
 import type { DeclaredArgument } from "../../../packages/shared/plugin-api-4.ts";
@@ -41,6 +41,7 @@ import {
   resolveLoginShellPath,
 } from "./agent-runner/cli-path.ts";
 import { resolveSpawn } from "./process-spawn/index.ts";
+import { endProcessTree } from "./process-tree.ts";
 
 const requestSchema = z
   .object({
@@ -132,6 +133,8 @@ export interface ProcessBrokerOptions {
     started: boolean,
   ): void | Promise<void>;
   events?: ApiEvents;
+  /** How long a detached child has to read its stdin; tests shorten it. */
+  stdinDeadlineMs?: number;
 }
 const refuse = (reason: ProcessReason): never => {
   throw new ProcessBrokerError(reason);
@@ -626,7 +629,11 @@ export class ProcessBroker implements ProcessBrokerPort {
               folder,
               hidden,
               command.mode === "detached" && command.stdin === "text"
-                ? { stdin, signal }
+                ? {
+                    stdin,
+                    signal,
+                    deadlineMs: this.options.stdinDeadlineMs,
+                  }
                 : undefined,
             );
           },
@@ -679,49 +686,11 @@ export class ProcessBroker implements ProcessBrokerPort {
           }, ms);
         };
         let failure: ProcessBrokerError | undefined;
-        const killChild = () => {
-          if (exited) return;
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            /* Settlement still drains the streams. */
-          }
-        };
         const stop = (why: ProcessReason) => {
           if (failure) return;
           failure = new ProcessBrokerError(why);
           try {
-            if (!exited && child.pid !== undefined) {
-              if (process.platform === "win32") {
-                const killer = resolveSpawn(
-                  path.join(
-                    process.env.SystemRoot ?? "C:\\Windows",
-                    "System32",
-                    "taskkill.exe",
-                  ),
-                  ["/pid", String(child.pid), "/T", "/F"],
-                  env,
-                );
-                if (!("refused" in killer))
-                  execFile(
-                    killer.command,
-                    killer.args,
-                    { env: killer.env, shell: false, windowsHide: true },
-                    (error) => {
-                      if (error && !exited) killChild();
-                    },
-                  );
-                else if (!exited) killChild();
-              } else {
-                try {
-                  process.kill(-child.pid, "SIGKILL");
-                } catch {
-                  killChild();
-                }
-              }
-            }
-          } catch {
-            killChild();
+            endProcessTree(child, env, () => exited);
           } finally {
             drain(1000);
           }

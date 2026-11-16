@@ -1389,8 +1389,8 @@ An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
 when the plugin operation ends or Ajour quits. A detached command can take its
 input on stdin, such as a coding tool's prompt: Ajour writes all of it before
-reporting the start, and refuses the start if the process stops reading first
-or the operation ends while it writes. A terminal command cannot take stdin.
+reporting the start, and refuses the start if the process stops reading first,
+hasn't read its input within 10 seconds, or the operation ends while it writes. A terminal command cannot take stdin.
 A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
 Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
 strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour

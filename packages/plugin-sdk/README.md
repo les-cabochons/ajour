@@ -409,15 +409,20 @@ The user's command mode controls undeclared commands after all process gates pas
 
 `ajour.process.run({ command, args })` uses the declared command's mode.
 Capture returns `{ exitCode, stdout, stderr }`. Detached and terminal modes return
-`{ started: true }` once the OS accepts the launch. Narrow the result with
+`{ started: true }` once the OS accepts the launch, or, for a command given
+stdin, once the process has read its input. Narrow the result with
 `result.started === true` before reading capture output. Ajour does not own or
-stop launched processes. Launch modes need a repository folder slot and use the
-first resolved folder as cwd. A detached command that declares `stdin: "text"`
-takes up to 1 MB of input, such as a prompt with line breaks that would not fit
-on a command line. Ajour writes all of it and closes stdin before it returns
-`{ started: true }`. If the process stops reading first, the call rejects with
-`stdin_failed` and Ajour stops the process; if the operation ends first, it
-rejects with `operation_ended`. The process's stdout and stderr are discarded.
+stop launched processes, except while it delivers stdin. Launch modes need a
+repository folder slot and use the first resolved folder as cwd. A detached
+command that declares `stdin: "text"` takes up to 1 MB of input, such as a
+prompt with line breaks that would not fit on a command line. Ajour writes all
+of it and closes stdin before it returns `{ started: true }`, so the call
+returns only once the process has read the input (on Windows, all of it, even
+a small one). Read stdin as the process starts. If the process stops reading,
+or hasn't read the input within 10 seconds, the call rejects with
+`stdin_failed` and Ajour stops the process and everything it started; if the
+operation ends first, it rejects with `operation_ended`. The process's stdout
+and stderr are discarded.
 Terminal commands refuse stdin. Terminal uses the user's choice
 in Settings > General > Terminal. Windows Terminal refuses semicolons in values.
 

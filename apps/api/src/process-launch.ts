@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { findExecutable } from "./agent-runner/cli-path.ts";
 import { resolveSpawn, type SpawnResolution } from "./process-spawn/index.ts";
+import { endProcessTree } from "./process-tree.ts";
 
 export class ProcessLaunchRefused extends Error {
   readonly reason:
@@ -18,17 +19,28 @@ export class ProcessLaunchRefused extends Error {
 }
 export type TerminalApp = "wt" | "Terminal";
 type Plan = Exclude<SpawnResolution, { refused: string }>;
+/**
+ * How long a child has to read its input. Shorter than an operation's
+ * deadline, so a child that never reads is refused with `stdin_failed`
+ * rather than run the operation into a timeout, which counts toward
+ * suspending the plugin.
+ */
+export const stdinDeliveryDeadlineMs = 10_000;
 /** Text for the child's stdin, and the signal that abandons its delivery. */
 export interface UnownedInput {
   stdin: string;
   signal?: AbortSignal;
+  /** Overrides {@link stdinDeliveryDeadlineMs}. */
+  deadlineMs?: number;
 }
 const stdinChunk = 64 * 1024;
 /**
  * Starts a process Ajour doesn't own. Given input, only stdin is piped: the
  * text is written with backpressure and stdin ended before the child is let
- * go. Until then Ajour owns it, so a failed or abandoned delivery stops it
- * rather than leave it running on part of its input.
+ * go. Delivery ends once the child has read the input (on Windows, all of
+ * it). Until then Ajour owns it, so a failed, late or abandoned delivery
+ * stops it and everything it started rather than leave it running on part
+ * of its input.
  */
 export async function startUnowned(
   plan: Plan,
@@ -55,18 +67,18 @@ export async function startUnowned(
     }
     const stdin = child.stdin!;
     let settled = false;
+    let exited = false;
+    child.once("exit", () => {
+      exited = true;
+    });
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const fail = (error: ProcessLaunchRefused) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       input.signal?.removeEventListener("abort", abort);
       stdin.destroy();
-      try {
-        if (process.platform !== "win32" && child.pid !== undefined)
-          process.kill(-child.pid, "SIGKILL");
-        else child.kill("SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
+      endProcessTree(child, plan.env, () => exited);
       reject(error);
     };
     const abort = () =>
@@ -89,6 +101,16 @@ export async function startUnowned(
       void (async () => {
         if (input.signal?.aborted) return abort();
         input.signal?.addEventListener("abort", abort, { once: true });
+        deadline = setTimeout(
+          () =>
+            fail(
+              new ProcessLaunchRefused(
+                "The process didn't read its input in time.",
+                "stdin_failed",
+              ),
+            ),
+          input.deadlineMs ?? stdinDeliveryDeadlineMs,
+        );
         const data = Buffer.from(input.stdin, "utf8");
         for (let at = 0; at < data.length && !settled; at += stdinChunk) {
           if (!stdin.write(data.subarray(at, at + stdinChunk)))
@@ -113,6 +135,7 @@ export async function startUnowned(
             );
           if (settled) return;
           settled = true;
+          clearTimeout(deadline);
           input.signal?.removeEventListener("abort", abort);
           child.unref();
           resolve();
