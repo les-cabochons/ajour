@@ -614,7 +614,23 @@ describe("session commands (#743)", () => {
     expect(command!.description).toContain(
       "Keeps a program running and talks to it.",
     );
-    expect(command!.description).toContain("Ends after 600 seconds unused");
+    expect(command!.description).toContain("Ends after 10 minutes unused");
     expect(command!.description).not.toMatch(/stdin|timeout/i);
+  });
+
+  it.each([
+    [60, "1 minute"],
+    [90, "90 seconds"],
+    [1, "1 second"],
+    [3600, "60 minutes"],
+  ])("says %i seconds unused as %s", (idleTimeoutSeconds, words) => {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: session({ idleTimeoutSeconds }),
+    });
+    const [command] = summarizePluginAccess(manifest, {
+      agentPrompts: {},
+    }).commands!;
+    expect(command!.description).toContain(`Ends after ${words} unused,`);
   });
 });

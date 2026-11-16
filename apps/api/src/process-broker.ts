@@ -149,6 +149,8 @@ export interface ProcessBrokerOptions {
   sessionGate?(caller: BrokerCaller): Promise<ProcessReason | undefined>;
   /** How often open sessions' gates are rechecked. */
   sessionCheckMs?: number;
+  /** The plugin holds no process session now: what its gate kept can go. */
+  sessionsReleased?(pluginId: string): void;
 }
 const refuse = (reason: ProcessReason): never => {
   throw new ProcessBrokerError(reason);
@@ -189,7 +191,15 @@ export class ProcessBroker implements ProcessBrokerPort {
       checkMs: options.sessionCheckMs,
       check: async (caller) =>
         (await options.gate(caller)) ?? (await options.sessionGate?.(caller)),
+      released: (pluginId) => options.sessionsReleased?.(pluginId),
     });
+  }
+  /**
+   * Ajour is quitting: the host calls it before stopping the plugins, so
+   * a session their stop ends is recorded as ended by the quit.
+   */
+  quitting(): void {
+    this.sessions.quitting();
   }
   /**
    * Ends the plugin's process sessions and their trees. The host calls it
@@ -744,6 +754,16 @@ export class ProcessBroker implements ProcessBrokerPort {
           );
         });
         started = true;
+        // The operation may have ended while the program started.
+        if (signal.aborted || this.stopping) {
+          child.on("error", () => undefined);
+          endProcessTree(
+            child,
+            plan.env,
+            () => child.exitCode !== null || child.signalCode !== null,
+          );
+          return refuse("operation_ended");
+        }
         const sessionId = this.sessions.register(
           caller,
           command.id,

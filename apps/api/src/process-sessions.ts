@@ -13,7 +13,7 @@ import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import type { BrokerCaller, ProcessSessionRead } from "./broker-port.ts";
 import type { ApiEvents } from "./events.ts";
-import { endProcessTree } from "./process-tree.ts";
+import { endProcessGroup, endProcessTree } from "./process-tree.ts";
 
 /** What one plugin's sessions may hold and move. */
 export const SESSION_LIMITS = {
@@ -28,8 +28,10 @@ export const SESSION_LIMITS = {
   /** Stdout lines waiting for a read; the oldest go first. */
   bufferBytes: 2 * 1024 * 1024,
   bufferLines: 10_000,
-  /** Stderr kept between reads: the newest text. */
+  /** Stderr kept between reads, in UTF-8: the newest text. */
   stderrBytes: 64 * 1024,
+  /** How long an exited session keeps its last output for a read. */
+  exitedKeepMs: 60_000,
   /** Lines one read returns at most, and by default. */
   readLines: 1000,
   defaultReadLines: 100,
@@ -98,7 +100,10 @@ interface Session {
   child: ChildProcess;
   env: Readonly<Record<string, string | undefined>>;
   idleMs: number;
+  /** The idle timeout, or once the program exited, the end of its keep. */
   idleTimer?: ReturnType<typeof setTimeout>;
+  /** Reads under way: the idle timeout waits for them. */
+  readers: number;
   openedAt: number;
   lines: string[];
   bytes: number;
@@ -124,6 +129,8 @@ export interface ProcessSessionsOptions {
   check(caller: BrokerCaller): Promise<string | undefined>;
   /** How often open sessions' gates are rechecked. */
   checkMs?: number;
+  /** The plugin holds no session now. */
+  released?(pluginId: string): void;
 }
 
 export function packageIdentity(caller: BrokerCaller): string {
@@ -147,14 +154,18 @@ export class ProcessSessions {
     this.options = options;
   }
 
-  /** Holds one of the plugin's places for an open; call the release once. */
+  /**
+   * Holds one of the plugin's places for an open; call the release once.
+   * An exited session holds its place until its output is read or its
+   * keep runs out, so a plugin can't pile up unread output.
+   */
   reserve(pluginId: string): () => void {
     if (this.stopping) throw new SessionRefused("operation_ended");
-    const live = [...this.sessions.values()].filter(
-      (s) => s.pluginId === pluginId && !s.exited,
+    const held = [...this.sessions.values()].filter(
+      (s) => s.pluginId === pluginId,
     ).length;
     const pending = this.opening.get(pluginId) ?? 0;
-    if (live + pending >= SESSION_LIMITS.perPlugin)
+    if (held + pending >= SESSION_LIMITS.perPlugin)
       throw new SessionRefused("session_limit");
     this.opening.set(pluginId, pending + 1);
     let released = false;
@@ -185,6 +196,7 @@ export class ProcessSessions {
       child,
       env,
       idleMs: idleTimeoutSeconds * 1000,
+      readers: 0,
       openedAt: Date.now(),
       lines: [],
       bytes: 0,
@@ -207,9 +219,10 @@ export class ProcessSessions {
     child.stdout?.on("data", (chunk: Buffer) => this.stdout(session, chunk));
     const decoder = new StringDecoder("utf8");
     child.stderr?.on("data", (chunk: Buffer) => {
-      session.stderr += decoder.write(chunk);
-      if (session.stderr.length > SESSION_LIMITS.stderrBytes)
-        session.stderr = session.stderr.slice(-SESSION_LIMITS.stderrBytes);
+      session.stderr = utf8Tail(
+        session.stderr + decoder.write(chunk),
+        SESSION_LIMITS.stderrBytes,
+      );
     });
     let exitTimer: ReturnType<typeof setTimeout> | undefined;
     const finished = () => {
@@ -222,18 +235,43 @@ export class ProcessSessions {
       session.exited = true;
       markGone();
       this.wake(session);
-      if (!session.ended) this.report(session, "exit");
+      if (session.ended) return;
+      this.report(session, "exit");
+      // Its last output waits for a read, for a while.
+      clearTimeout(session.idleTimer);
+      session.idleTimer = setTimeout(
+        () => this.forget(session),
+        SESSION_LIMITS.exitedKeepMs,
+      );
+      session.idleTimer.unref?.();
+    };
+    const waitForPipes = (ms: number) => {
+      clearTimeout(exitTimer);
+      exitTimer = setTimeout(finished, ms);
+      exitTimer.unref?.();
     };
     child.once("exit", (code) => {
       session.exitCode = code;
-      // A descendant may still hold the pipes: take what came, then stop waiting.
-      exitTimer = setTimeout(finished, 500);
+      // What the program started may outlive it, holding the pipes.
+      endProcessGroup(child);
+      // Take what came, then stop waiting.
+      waitForPipes(500);
     });
     child.once("close", (code) => {
       session.exitCode ??= code;
       finished();
     });
-    child.once("error", () => finished());
+    let erred = false;
+    child.on("error", () => {
+      // An error once it started, such as a kill that failed, doesn't say
+      // the program ended: end it once, and wait for its end.
+      if (session.exited || erred) return;
+      erred = true;
+      if (child.exitCode === null && child.signalCode === null) {
+        endProcessTree(child, env, () => session.exited);
+        waitForPipes(3000);
+      } else waitForPipes(500);
+    });
     this.touch(session);
     this.watch();
     if (this.stopping) void this.end(session, "quit");
@@ -265,6 +303,23 @@ export class ProcessSessions {
     remaining?: () => number | undefined,
   ): Promise<ProcessSessionRead> {
     const session = await this.use(caller, id);
+    // A read waiting for a line is use: the idle timeout counts from its end.
+    session.readers += 1;
+    if (!session.exited) clearTimeout(session.idleTimer);
+    try {
+      return await this.take(session, options, signal, remaining);
+    } finally {
+      session.readers -= 1;
+      this.touch(session);
+    }
+  }
+
+  private async take(
+    session: Session,
+    options: { max?: number; waitMs?: number },
+    signal: AbortSignal,
+    remaining?: () => number | undefined,
+  ): Promise<ProcessSessionRead> {
     let waitMs = options.waitMs ?? 0;
     const left = remaining?.();
     if (left !== undefined)
@@ -299,7 +354,6 @@ export class ProcessSessions {
     session.dropped = false;
     session.stderr = "";
     if (result.exited) this.forget(session);
-    else this.touch(session);
     return result;
   }
 
@@ -315,6 +369,15 @@ export class ProcessSessions {
         .filter((s) => s.pluginId === pluginId)
         .map((s) => this.end(s, "gate")),
     );
+  }
+
+  /**
+   * Ajour is quitting: no session opens, the gates aren't rechecked, and a
+   * session that ends from now on ended with the quit. The host calls it
+   * before stopping the plugins, whose gates then turn off.
+   */
+  quitting(): void {
+    this.stopping = true;
   }
 
   /** Ends every session and refuses new ones: Ajour is quitting. */
@@ -393,6 +456,8 @@ export class ProcessSessions {
   }
 
   private touch(session: Session) {
+    // An exited session keeps its own timer, and a waiting read holds it off.
+    if (session.ended || session.exited || session.readers > 0) return;
     clearTimeout(session.idleTimer);
     session.idleTimer = setTimeout(() => {
       if (session.exited) this.forget(session);
@@ -401,17 +466,26 @@ export class ProcessSessions {
     session.idleTimer.unref?.();
   }
 
-  /** Drops a session whose program already ended. */
+  /** Drops a session, and what it kept, from what any call reaches. */
   private forget(session: Session) {
     session.ended = true;
     clearTimeout(session.idleTimer);
+    if (this.sessions.get(session.id) !== session) return;
     this.sessions.delete(session.id);
+    session.lines = [];
+    session.bytes = 0;
+    session.stderr = "";
     this.wake(session);
     this.unwatch();
+    const pluginId = session.pluginId;
+    if (![...this.sessions.values()].some((s) => s.pluginId === pluginId))
+      this.options.released?.(pluginId);
   }
 
-  private async end(session: Session, endedBy: SessionEndedBy) {
+  private async end(session: Session, why: SessionEndedBy) {
     if (session.ended) return session.gone;
+    // Past the quit, the plugins stopping turns gates off: that is the quit.
+    const endedBy = this.stopping ? "quit" : why;
     this.forget(session);
     if (!session.exited) {
       endProcessTree(session.child, session.env, () => session.exited);
@@ -465,10 +539,11 @@ export class ProcessSessions {
   }
 
   private async recheck() {
-    if (this.checking) return;
+    if (this.checking || this.stopping) return;
     this.checking = true;
     try {
       for (const session of [...this.sessions.values()]) {
+        if (this.stopping) return;
         if (session.ended || session.exited) continue;
         let refusal: string | undefined;
         try {
@@ -482,4 +557,18 @@ export class ProcessSessions {
       this.checking = false;
     }
   }
+}
+
+/**
+ * The newest `maxBytes` of `text` in UTF-8, cut between characters: a
+ * character, a surrogate pair among them, is kept whole or not at all.
+ */
+export function utf8Tail(text: string, maxBytes: number): string {
+  // A UTF-16 unit is at most three bytes in UTF-8, a pair four.
+  if (text.length * 3 <= maxBytes) return text;
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length <= maxBytes) return text;
+  let start = bytes.length - maxBytes;
+  while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start += 1;
+  return bytes.subarray(start).toString("utf8");
 }

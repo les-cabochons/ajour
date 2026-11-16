@@ -61,6 +61,10 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     send({ jsonrpc: "2.0", id, result: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(GIT_|AJOUR_)/i.test(k))) });
   } else if (method === "later") {
     setTimeout(() => send({ jsonrpc: "2.0", id, result: "late" }), params.ms);
+  } else if (method === "orphan") {
+    const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+    send({ jsonrpc: "2.0", id, result: { pids: [process.pid, child.pid] } });
+    setTimeout(() => process.exit(0), 50);
   } else if (method === "exit") {
     send({ jsonrpc: "2.0", id, result: "bye" });
     process.exitCode = params.code;
@@ -515,9 +519,12 @@ describe("Given a session's end", () => {
     await expect(read(op, id)).rejects.toMatchObject({
       reason: "session_ended",
     });
-    expect(sessionEvents(sink).at(-1)).toMatchObject({
-      process: { session: "close", ended_by: "idle" },
-    });
+    // The close event follows the program's end.
+    await vi.waitFor(() =>
+      expect(sessionEvents(sink).at(-1)).toMatchObject({
+        process: { session: "close", ended_by: "idle" },
+      }),
+    );
   });
 
   it("use keeps an idle session alive", async () => {
@@ -543,6 +550,22 @@ describe("Given a session's end", () => {
       reason: "operation_ended",
     });
   });
+
+  // Windows has no process group to end once its leader is gone.
+  it.skipIf(process.platform === "win32")(
+    "a program that exited by itself leaves none of its tree running",
+    async () => {
+      const context = await fixture();
+      const op = context.operation();
+      const id = await open(op);
+      const { pids: tree } = await call(op, id, "orphan");
+      pids.push(...tree);
+      await expectGone(tree);
+      await vi.waitFor(async () =>
+        expect((await read(op, id)).exited).toBe(true),
+      );
+    },
+  );
 
   it("the host ending a plugin's sessions ends only that plugin's", async () => {
     const context = await withTree();

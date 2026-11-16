@@ -1156,25 +1156,40 @@ owns it under a 192-bit random id.
 A session belongs to the plugin and package that opened it, not to the
 operation: a later operation of the same plugin and package uses the id, and
 any other caller is refused with `session_ended`, as for an unknown id. A
-plugin keeps at most 2, counting opens under way. `send` writes one line of at
+plugin keeps at most 2, counting opens under way and sessions whose program
+exited but whose output no read has taken. `send` writes one line of at
 most 1 MB with Ajour's newline, refusing NUL and line breaks, and refuses more
 than 4 MB the program hasn't taken. `read` returns up to 1000 stdout lines,
 waiting up to 30 s for one but never past the operation's remaining time, which
 `PluginOperationLifetime` hands the broker through `setRemainingTime`; the
 operation's end interrupts the wait. Between reads Ajour keeps 2 MB and 10,000
 lines, dropping the oldest, drops a line over 1 MB, and keeps the newest 64 KB of
-stderr; `dropped` reports either loss once.
+stderr in UTF-8, cut between characters; `dropped` reports either loss once.
 
 Ajour ends the tree, with `endProcessTree` in `process-tree.ts` as capture
 does (taskkill `/T /F` on Windows, the process group on POSIX), on `close`,
-after the idle timeout without a send or read, and when the gates refuse:
-every call rechecks `processConsentGate` and the server's `sessionGate`
+after the idle timeout without a send or read (a read waiting for a line holds
+the timeout off, which counts from its end), and when the gates refuse: every
+call rechecks `processConsentGate` and the server's `sessionGate`
 (suspension, or another package of the plugin), and a 2 s timer rechecks them
 for open sessions, which covers the unsigned switch, a revoked acceptance or
-consent and suspension. The server also ends a plugin's sessions at once when
-it is turned off, uninstalled or replaced (`ProcessBroker.endSessions`), and
-`ProcessBroker.shutdown` ends them all at quit. A program that exits by itself
-keeps its unread lines until a read reports `exited`. Each session emits one
+consent and suspension. The package check (`session-package-gate.ts`) keeps
+the package it found per plugin while the plugin holds a session, since
+finding it reads every plugin folder and a development package's files; the
+server forgets it on an install, a replace or an uninstall, and a recursive
+watch on a development package's folder forgets it on any change there.
+Suspension is asked on every check. The server also ends a plugin's sessions
+at once when it is turned off, uninstalled or replaced
+(`ProcessBroker.endSessions`). At quit the server calls
+`ProcessBroker.quitting` before it stops the plugins, so the gates their stop
+turns off end nothing as a gate: `ProcessBroker.shutdown` ends every session
+with `ended_by: "quit"`. An open whose operation ends while its program starts
+ends the program and is refused. A program that exits by itself has the rest of
+its process group ended on POSIX (`endProcessGroup`), and keeps its unread
+lines until a read reports `exited` or for 60 s, holding its place meanwhile.
+An `error` from the child once it started ends its tree, and the session
+counts as exited only when the child is gone. Session processes are not yet
+recorded for the launch sweep (#749). Each session emits one
 `plugin.process` event at open and one at its end, never a line, stderr or the
 id.
 

@@ -170,7 +170,7 @@ export function summarizePluginAccess(
                 ? "Keeps a program running and talks to it."
                 : "Opens in your terminal.",
           command.mode === "session"
-            ? `Ends after ${command.idleTimeoutSeconds} seconds unused, and when Ajour quits.`
+            ? `Ends after ${idleWords(command.idleTimeoutSeconds ?? 300)} unused, and when Ajour quits.`
             : command.stdin === "text"
               ? "Takes text on stdin."
               : "No stdin.",
@@ -444,4 +444,11 @@ export function commandArgvShape(
         : argument(arg),
     ),
   ].join(" ");
+}
+
+/** A session's idle timeout in words: whole minutes as minutes. */
+function idleWords(seconds: number): string {
+  const [count, unit] =
+    seconds % 60 === 0 ? [seconds / 60, "minute"] : [seconds, "second"];
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
 }
