@@ -678,6 +678,7 @@ export const catalog = defineCatalog({
         "executable_missing",
         "spawn_refused",
         "concurrency",
+        "capture_incomplete",
         "output_limit",
         "timeout",
         "operation_ended",

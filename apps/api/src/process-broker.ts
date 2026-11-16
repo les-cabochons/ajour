@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
+import { checkProcessFolder } from "./process-folder.ts";
 import path from "node:path";
 import { z } from "zod";
 import type { DeclaredArgument } from "../../../packages/shared/plugin-api-4.ts";
@@ -39,6 +39,7 @@ export type ProcessReason =
   | "executable_missing"
   | "spawn_refused"
   | "concurrency"
+  | "capture_incomplete"
   | "output_limit"
   | "timeout"
   | "operation_ended"
@@ -76,16 +77,28 @@ export interface ProcessBrokerOptions {
 const refuse = (reason: ProcessReason): never => {
   throw new ProcessBrokerError(reason);
 };
-const inside = (candidate: string, parent: string) => {
-  const relative = path.relative(parent, candidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith(".." + path.sep) &&
-      relative !== ".." &&
-      !path.isAbsolute(relative))
-  );
-};
 export class ProcessBroker implements ProcessBrokerPort {
+  private stopping = false;
+  private readonly runs = new Map<Promise<ProcessRunResult>, AbortController>();
+  private readonly records = new Set<Promise<void>>();
+  async shutdown(): Promise<void> {
+    this.stopping = true;
+    for (const controller of this.runs.values()) controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        (async () => {
+          await Promise.allSettled([...this.runs.keys()]);
+          await Promise.allSettled([...this.records]);
+        })(),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, 3000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   private readonly active = new Map<string, number>();
   private readonly options: ProcessBrokerOptions;
   constructor(options: ProcessBrokerOptions) {
@@ -94,8 +107,20 @@ export class ProcessBroker implements ProcessBrokerPort {
   forOperation(caller: BrokerCaller) {
     const ended = new AbortController();
     return {
-      run: (request: ProcessRunRequest) =>
-        this.run(caller, request, ended.signal),
+      run: (request: ProcessRunRequest) => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        ended.signal.addEventListener("abort", abort, { once: true });
+        if (ended.signal.aborted || this.stopping) controller.abort();
+        const task = this.run(caller, request, controller.signal);
+        this.runs.set(task, controller);
+        const cleanup = () => {
+          this.runs.delete(task);
+          ended.signal.removeEventListener("abort", abort);
+        };
+        void task.then(cleanup, cleanup);
+        return task;
+      },
       close: () => ended.abort(),
     };
   }
@@ -153,23 +178,16 @@ export class ProcessBroker implements ProcessBrokerPort {
         return url.href;
       }
       case "folder": {
-        const folder = await this.options.folders.resolve(value);
-        if (!folder || !path.isAbsolute(folder))
-          return refuse("folder_refused");
-        const canonical = await realpath(folder).catch(() => undefined);
-        if (!canonical || !(await stat(canonical)).isDirectory())
-          return refuse("folder_refused");
-        for (const protectedPath of this.options.protectedDirectories) {
-          const protectedReal = await realpath(protectedPath).catch(() =>
-            path.resolve(protectedPath),
+        try {
+          const folder = await this.options.folders.resolve(value);
+          if (!folder) return refuse("folder_refused");
+          return await checkProcessFolder(
+            folder,
+            this.options.protectedDirectories,
           );
-          if (
-            inside(canonical, protectedReal) ||
-            inside(protectedReal, canonical)
-          )
-            return refuse("folder_refused");
+        } catch {
+          return refuse("folder_refused");
         }
-        return canonical;
       }
     }
     return value;
@@ -294,8 +312,10 @@ export class ProcessBroker implements ProcessBrokerPort {
               stderr: Buffer.concat(buffers.stderr).toString("utf8"),
             });
         };
-        const drain = (ms = 100) => {
-          grace ??= setTimeout(() => {
+        const drain = (ms = 2000) => {
+          clearTimeout(grace);
+          grace = setTimeout(() => {
+            failure ??= new ProcessBrokerError("capture_incomplete");
             child.stdin.destroy();
             child.stdout.destroy();
             child.stderr.destroy();
@@ -375,6 +395,8 @@ export class ProcessBroker implements ProcessBrokerPort {
         });
         child.once("close", (code) => {
           exitCode = code;
+          if (!child.stdout.readableEnded || !child.stderr.readableEnded)
+            failure ??= new ProcessBrokerError("capture_incomplete");
           finish();
         });
         if (signal.aborted) abort();
@@ -424,7 +446,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         reason,
       );
       try {
-        void Promise.resolve(
+        const recording = Promise.resolve(
           this.options.record?.(
             caller.pluginId,
             Date.now(),
@@ -433,6 +455,8 @@ export class ProcessBroker implements ProcessBrokerPort {
             started,
           ),
         ).catch(() => undefined);
+        this.records.add(recording);
+        void recording.then(() => this.records.delete(recording));
       } catch {
         /* Activity never changes the process result. */
       }

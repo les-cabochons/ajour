@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
@@ -350,7 +350,23 @@ it("Given a child that starts a descendant, cancellation ends both", async () =>
     op.close();
     await running;
   }
-  for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+  try {
+    // taskkill can close the parent's pipes before it finishes the tree.
+    await vi.waitFor(
+      () => {
+        for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+      },
+      { timeout: 2000 },
+    );
+  } finally {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* Already exited. */
+      }
+    }
+  }
 });
 it("Given no override, finds an executable by name on the user's PATH", async () => {
   const { manifest, root } = await fixture([]);
@@ -520,15 +536,33 @@ it("Given an activity recorder still writing, run settles without waiting", asyn
   });
   expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
 });
-it("Given a descendant holding stdout after parent exit, capture settles and frees its slot", async () => {
-  const { op } = await fixture(
-    [],
-    `require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},1500)'],{stdio:['ignore',process.stdout,'ignore']}).unref()`,
-  );
-  const before = Date.now();
-  expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
-  expect(Date.now() - before).toBeLessThan(900);
-});
+// Windows Node closes inherited pipe handles when this fixture parent exits.
+it.skipIf(process.platform === "win32").each(["stdout", "stderr"] as const)(
+  "Given a descendant writing later to %s, captures through EOF",
+  async (stream) => {
+    const { op, manifest } = await fixture(
+      [],
+      `process.${stream}.write('HEAD');require('node:child_process').spawn(process.execPath,['-e',"setTimeout(()=>process.${stream}.write('TAIL'),400)"],{stdio:['ignore',1,2]}).unref()`,
+    );
+    manifest.processes!.commands[0]!.timeoutSeconds = 10;
+    expect((await op.run({ command: "run", args: {} }))[stream]).toBe(
+      "HEADTAIL",
+    );
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "Given a descendant holding a pipe beyond the drain bound, refuses incomplete capture",
+  async () => {
+    const { op, manifest } = await fixture(
+      [],
+      `require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},2600)'],{stdio:['ignore',1,'ignore']}).unref()`,
+    );
+    manifest.processes!.commands[0]!.timeoutSeconds = 10;
+    await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+      reason: "capture_incomplete",
+    });
+  },
+);
 
 it.each(["missing", "changed", "off", "during-operation"])(
   "Given %s consent, the broker port refuses with real storage",

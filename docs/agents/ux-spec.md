@@ -1156,8 +1156,12 @@ API 4's `processes` declarations appear in Access as argv shapes, for example
 brackets, and schemes such as `codex:`. The existing New marker and update
 approval panel cover added or changed commands and added schemes. Changed
 command policies ask again even when they restrict access. Removed commands
-and schemes do not ask again. Ajour doesn't run declared commands yet; the
-process broker (#713) will.
+and schemes do not ask again. Declared capture commands run through the
+process broker (#713). Capture waits for stdout and stderr EOF for up to two
+seconds after the parent exits. If either pipe stays open, the plugin receives
+`capture_incomplete` instead of a complete result. Quitting aborts captures and
+waits up to three seconds for their settlement and activity recorders before
+flushing activity to disk.
 
 A plugin declaring commands or app schemes shows this warning in Access and
 in update approval when commands or schemes are added: "These commands

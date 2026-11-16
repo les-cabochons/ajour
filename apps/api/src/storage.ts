@@ -1272,6 +1272,7 @@ export class AppApiStorage {
   /** How many times each plugin's data was removed, for a flush in flight. */
   private readonly brokerActivityRemovals = new Map<string, number>();
   private brokerActivityWrittenAt = -Infinity;
+  private brokerActivityFlush?: Promise<void>;
   private brokerActivityTimer?: ReturnType<typeof setTimeout>;
   /**
    * How many times each connection was saved this launch, so a project
@@ -2944,7 +2945,24 @@ export class AppApiStorage {
    * Writes the broker's records gathered so far, if any. The API calls it as
    * it stops, so a quit loses none.
    */
-  async flushBrokerActivity(): Promise<void> {
+  flushBrokerActivity(): Promise<void> {
+    if (this.brokerActivityFlush) return this.brokerActivityFlush;
+    this.brokerActivityFlush = (async () => {
+      try {
+        do {
+          await this.flushBrokerActivityBatch();
+        } while (
+          this.brokerActivityPending.size ||
+          this.processActivityPending.size
+        );
+      } finally {
+        this.brokerActivityFlush = undefined;
+      }
+    })();
+    return this.brokerActivityFlush;
+  }
+
+  private async flushBrokerActivityBatch(): Promise<void> {
     clearTimeout(this.brokerActivityTimer);
     this.brokerActivityTimer = undefined;
     if (

@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { spawn, execFile } from "node:child_process";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import { resolveSpawn } from "./process-spawn/index.ts";
+import type { ProcessBrokerOptions } from "./process-broker.ts";
 import { ProcessBroker } from "./process-broker.ts";
 vi.mock("node:child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:child_process")>()),
@@ -24,7 +25,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveSpawn).mockReset();
 });
-function setup() {
+function setup(options: Partial<ProcessBrokerOptions> = {}) {
   vi.mocked(resolveSpawn).mockImplementation((command, args, env) => ({
     command,
     args: [...args],
@@ -67,9 +68,11 @@ function setup() {
     protectedDirectories: [],
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
+    ...options,
   });
   return {
     child,
+    broker,
     op: broker.forOperation({
       pluginId: manifest.id,
       manifest,
@@ -131,3 +134,86 @@ it.skipIf(process.platform !== "win32")(
     expect(await pending).toMatchObject({ reason: "operation_ended" });
   },
 );
+
+it.each(["stdout", "stderr"] as const)(
+  "Given %s data after exit, waits for both EOFs",
+  async (stream) => {
+    const { child, op } = setup();
+    const pending = op.run({ command: "run", args: {} });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    vi.useFakeTimers();
+    child[stream].write("HEAD");
+    child.emit("exit", 0);
+    await vi.advanceTimersByTimeAsync(400);
+    child[stream].write("TAIL");
+    child.stdout.end();
+    child.stderr.end();
+    await vi.advanceTimersByTimeAsync(0);
+    child.emit("close", 0);
+    expect((await pending)[stream]).toBe("HEADTAIL");
+  },
+);
+it("Given no EOF after exit, refuses incomplete capture within two seconds", async () => {
+  const { child, op } = setup();
+  const pending = op.run({ command: "run", args: {} }).catch((e) => e);
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  vi.useFakeTimers();
+  child.emit("exit", 0);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await pending).toMatchObject({ reason: "capture_incomplete" });
+});
+
+it("Given a running capture, shutdown waits for settlement and refuses later runs", async () => {
+  const { child, op, broker } = setup();
+  const pending = op.run({ command: "run", args: {} }).catch((e) => e);
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  vi.useFakeTimers();
+  let stopped = false;
+  const stopping = broker.shutdown().then(() => {
+    stopped = true;
+  });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(stopped).toBe(false);
+  await vi.advanceTimersByTimeAsync(600);
+  await stopping;
+  expect(await pending).toMatchObject({ reason: "operation_ended" });
+  await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+    reason: "operation_ended",
+  });
+  expect(child.stdout.destroyed).toBe(true);
+});
+
+it.each([false, true])(
+  "Given an activity recorder still pending, shutdown waits within its bound, stuck=%s",
+  async (stuck) => {
+    let release!: () => void;
+    const recording = new Promise<void>((r) => (release = r));
+    const { child, op, broker } = setup({ record: () => recording });
+    const running = op.run({ command: "run", args: {} });
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    child.stdout.end();
+    child.stderr.end();
+    await new Promise<void>((r) => setImmediate(r));
+    child.emit("close", 0);
+    await running;
+    vi.useFakeTimers();
+    let stopped = false;
+    const stopping = broker.shutdown().then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(stopped).toBe(false);
+    if (stuck) await vi.advanceTimersByTimeAsync(2800);
+    else release();
+    await stopping;
+    expect(stopped).toBe(true);
+    release();
+  },
+);
+it("Given close without both EOFs, refuses incomplete capture", async () => {
+  const { child, op } = setup();
+  const running = op.run({ command: "run", args: {} }).catch((e) => e);
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+  child.emit("close", 0);
+  expect(await running).toMatchObject({ reason: "capture_incomplete" });
+});

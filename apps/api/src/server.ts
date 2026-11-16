@@ -354,6 +354,7 @@ interface AppApiRuntime {
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
+  processBroker: ProcessBroker;
   stopping: boolean;
   pluginDrainMs: number;
   /**
@@ -1536,6 +1537,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     pluginManager,
     projectDataShapePluginManager,
     agentRunner,
+    processBroker,
     stopping: false,
     pluginDrainMs: options.pluginDrainMs ?? 5_000,
     inFlight: new Set(),
@@ -4324,11 +4326,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     void agentRunner.shutdown();
     // A stop closes the server first, and drains the plugins itself.
     if (!runtime.stopping) {
-      void pluginManager.shutdown();
-      void projectDataShapePluginManager.shutdown();
+      void (async () => {
+        await Promise.all([
+          pluginManager.shutdown(),
+          projectDataShapePluginManager.shutdown(),
+        ]);
+        await processBroker.shutdown();
+        await storage.flushBrokerActivity();
+      })().catch(() => undefined);
     }
-    // What the broker gathered for Access review since its last write.
-    storage.flushBrokerActivity().catch(() => undefined);
   });
   return server;
 }
@@ -4617,6 +4623,7 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     await runtime?.agentRunner.shutdown();
     unit?.set({ api: { agent_runner_ms: Date.now() - phaseStartedAt } });
     await pluginsStopped;
+    await runtime?.processBroker.shutdown();
     // No plugin sends a request now: write what the broker gathered for
     // Access review since its last write, so a quit loses none.
     await runtime?.storage.flushBrokerActivity().catch(() => undefined);
