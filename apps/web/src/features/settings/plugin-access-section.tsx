@@ -60,9 +60,10 @@ function ProcessWarning({ hasSchemes }: { hasSchemes: boolean }) {
     <ActivityWarning>
       These {hasSchemes ? "commands and links" : "commands"} run as you, outside
       the sandbox. A plugin that starts processes is outside G1, Ajour's
-      guarantee that plugins cannot obtain credentials. These processes can do
-      whatever you can, including reading your files and accessing every
-      plugin's credentials, not only its own.
+      guarantee that plugins which start no process cannot obtain any
+      credential, their own or another plugin's. These processes can do whatever
+      you can, including reading your files and accessing every plugin's
+      credentials, not only its own.
     </ActivityWarning>
   );
 }
@@ -182,7 +183,8 @@ export function PluginAccessSection({
         })}
       </p>
       {listed &&
-      ((group.access?.summary.commands?.length ?? 0) > 0 ||
+      (group.access?.summary.undeclaredCommands ||
+        (group.access?.summary.commands?.length ?? 0) > 0 ||
         (group.access?.summary.openSchemes?.length ?? 0) > 0) ? (
         <ProcessWarning
           hasSchemes={(group.access?.summary.openSchemes?.length ?? 0) > 0}
@@ -248,7 +250,8 @@ export function PluginAccessUpdatePanel({
         It stays inactive until you allow it. Your connections and settings are
         kept.
       </p>
-      {(pendingAccess.difference.commands?.length ?? 0) > 0 ||
+      {pendingAccess.difference.undeclaredCommands ||
+      (pendingAccess.difference.commands?.length ?? 0) > 0 ||
       (pendingAccess.difference.openSchemes?.length ?? 0) > 0 ? (
         <ProcessWarning
           hasSchemes={(access.summary.openSchemes?.length ?? 0) > 0}

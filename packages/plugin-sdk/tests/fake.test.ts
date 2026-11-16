@@ -463,5 +463,7 @@ it("Given an undeclared process fixture, passes every argument and folder id unc
     argv: ["--message", "a  b & c"],
     cwdFolder: "repository",
   };
-  expect(JSON.parse((await fake.process.run(request)).stdout)).toEqual(request);
+  const result = await fake.process.run(request);
+  if (result.started) throw new Error("Expected captured output");
+  expect(JSON.parse(result.stdout)).toEqual(request);
 });

@@ -108,7 +108,13 @@ export type AjourProcessRequest =
       args: Readonly<Record<string, string | number>>;
       stdin?: string;
     };
-export interface AjourProcessResult {
+
+export type AjourProcessResult =
+  | { started: true; exitCode?: never; stdout?: never; stderr?: never }
+  | AjourCaptureResult;
+export interface AjourCaptureResult {
+  started?: never;
+
   exitCode: number | null;
   stdout: string;
   stderr: string;

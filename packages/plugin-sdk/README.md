@@ -337,16 +337,16 @@ a repository folder id the host resolves, never a path. Put multiline text on
 stdin, which requires `stdin: "text"` in the declaration. Conditional groups run
 when their controlling slot is present, and then require all their slots.
 
-Only `capture` is available. It returns `{ exitCode, stdout, stderr }`, including
+`capture` returns `{ exitCode, stdout, stderr }`, including
 nonzero exit codes. Output is limited to 1 MB per stream. The declared timeout
 defaults to 60 seconds. Four calls may run at once per plugin. Ending the plugin
-operation cancels its children. Refusals reject with `AjourProcessError` and a
-`code` such as `invalid_request`, `undeclared`, `not_yet`, `concurrency`,
+operation cancels its capture children. Refusals reject with `AjourProcessError` and a
+`code` such as `invalid_request`, `undeclared`, `concurrency`,
 `output_limit`, `timeout` or `operation_ended`. The test fake accepts a
 `processRun` responder and otherwise refuses process requests.
 
 The user must turn the plugin on and approve its declared commands. Undeclared
-commands, detached and terminal commands are refused for now. A process runs as
+commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
 
@@ -381,7 +381,7 @@ MIT
 
 ### Undeclared commands
 
-A plugin with process access may request a command outside its declared commands:
+A plugin must declare `processes.undeclaredCommands: true` to request a command outside its declared commands. Without this flag every mode refuses it with `undeclared`. Adding the flag widens access and requires consent again.
 
 ```ts
 const result = await ajour.process.run({
@@ -391,6 +391,21 @@ const result = await ajour.process.run({
 });
 ```
 
-Use a bare executable name, never a path, shell or script host. Each argv element remains one text argument. NUL, CR and LF are refused; a leading dash is allowed. `cwdFolder` is a host-owned repository folder id. Without it the command runs at the system root, never Ajour's data or installation folder.
+Use a bare executable name, never a path, shell or script host. Each argv element remains one text argument. Unicode controls, format characters and line or paragraph separators are refused; a leading dash is allowed. `cwdFolder` is a host-owned repository folder id. Without it the command runs at the system root, never Ajour's data or installation folder.
 
-The user's command mode controls undeclared commands after all process gates pass. Always ask requests permission. Auto runs unless review marks the command risky. Accept everything runs without asking. An ask holds the operation until Allow once, Always or Deny, and denies after two minutes or when no window is connected. Always remembers only the exact executable, arguments and folder id for this package. The Access tab lists and removes these approvals. Package or version changes, lost signatures and changed development directories invalidate them. No rule reviewer is installed by this feature.
+The user's command mode controls undeclared commands after all process gates pass. Always ask requests permission. Auto runs unless review marks the command risky. Accept everything runs without asking. An ask shows the resolved executable, plugin id, signature status and folder name and path. Allow once and Always have a 600 ms input delay. Deny all from this plugin refuses its queued asks. At most two asks per plugin may be pending; overflow refuses with `ask_queue_full`. An ask holds the operation until Allow once, Always or Deny, and denies after two minutes or when no window is connected. Always remembers only the exact executable, arguments and folder id for this package. The Access tab lists and removes these approvals. Package or version changes, lost signatures and changed development directories invalidate them. No rule reviewer is installed by this feature.
+
+## Launching commands and opening links
+
+`ajour.process.run({ command, args })` uses the declared command's mode.
+Capture returns `{ exitCode, stdout, stderr }`. Detached and terminal modes return
+`{ started: true }` once the OS accepts the launch. Narrow the result with
+`result.started === true` before reading capture output. Ajour does not own or
+stop launched processes. Launch modes need a repository folder slot and use the
+first resolved folder as cwd. They refuse stdin. Terminal uses the user's choice
+in Settings > General > Terminal. Windows Terminal refuses semicolons in values.
+
+`await ajour.open(url)` opens HTTPS while the plugin is enabled. Custom schemes
+must appear in `processes.openSchemes` and pass command consent and unsigned
+plugin gates. File, script and undeclared schemes are refused. The host opens
+links through main. Events contain only the scheme.

@@ -48,6 +48,7 @@ export async function readHandoffStates(request) { await process(); return reque
       forOperation(caller) {
         callers.push(caller);
         return {
+          async open() {},
           async run() {
             return { exitCode: 0, stdout: "", stderr: "" };
           },

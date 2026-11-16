@@ -32,6 +32,7 @@ it("shows declared argv and schemes with the process G1 warning", async () => {
               choices: [],
               summary: {
                 ...NO_PLUGIN_ACCESS,
+                undeclaredCommands: true,
                 commands: [
                   {
                     id: "start",
@@ -51,6 +52,10 @@ it("shows declared argv and schemes with the process G1 warning", async () => {
     screen.getByText("t3 thread start <folder> - --title <text> --json"),
   ).toBeTruthy();
   expect(screen.getByText("codex:")).toBeTruthy();
+  expect(screen.getByText("Undeclared commands")).toBeTruthy();
+  expect(
+    screen.getByText(/a command no rule marks risky runs without asking/),
+  ).toBeTruthy();
   expect(
     screen.getByText(
       /These commands and links run as you, outside the sandbox/,

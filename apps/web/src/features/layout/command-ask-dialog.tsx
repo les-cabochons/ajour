@@ -1,3 +1,5 @@
+import { connectMcpBridge } from "@/lib/mcp-bridge";
+import { commandDisplay } from "@ajour/shared/command-modes";
 import { commandAccessChanged } from "@/lib/command-access-events";
 import { useEffect, useState } from "react";
 import { commandAskSchema, type CommandAsk } from "@ajour/shared/command-modes";
@@ -10,16 +12,24 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { answerCommand, appApiUrl } from "@/lib/app-api";
+import { answerCommand } from "@/lib/app-api";
 export function CommandAskDialog({
   ask,
   disabled,
   onAnswer,
+  error,
 }: {
   ask: CommandAsk;
   disabled: boolean;
-  onAnswer(answer: "once" | "always" | "deny"): void;
+  error?: string;
+  onAnswer(answer: "once" | "always" | "deny" | "deny-all"): void;
 }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    const timer = setTimeout(() => setReady(true), 600);
+    return () => clearTimeout(timer);
+  }, [ask.id]);
   return (
     <Dialog
       open
@@ -39,9 +49,17 @@ export function CommandAskDialog({
           aria-label="Exact command arguments"
           className="overflow-auto text-xs break-all whitespace-pre-wrap"
         >
-          {JSON.stringify([ask.executable, ...ask.argv], null, 2)}
+          {commandDisplay([ask.executable, ...ask.argv])}
         </pre>
-        <p>Folder: {ask.folderName}</p>
+        <p>
+          Plugin: {ask.pluginId}, {ask.signed ? "Signed" : "Unsigned"}
+        </p>
+        <p>
+          Executable: {commandDisplay(ask.resolvedExecutable ?? ask.executable)}
+        </p>
+        <p>Folder: {commandDisplay(ask.folderName)}</p>
+        <p>{commandDisplay(ask.folderPath ?? "Path unavailable")}</p>
+        {error ? <p role="alert">{error}</p> : null}
         {ask.reason ? (
           <p
             className={ask.risky ? "text-destructive" : "text-muted-foreground"}
@@ -57,18 +75,28 @@ export function CommandAskDialog({
           <Button
             variant="outline"
             disabled={disabled}
+            onClick={() => onAnswer("deny-all")}
+          >
+            Deny all from this plugin
+          </Button>
+          <Button
+            variant="outline"
+            disabled={disabled}
             onClick={() => onAnswer("deny")}
           >
             Deny
           </Button>
           <Button
             variant="outline"
-            disabled={disabled}
+            disabled={disabled || !ready}
             onClick={() => onAnswer("always")}
           >
             Always
           </Button>
-          <Button disabled={disabled} onClick={() => onAnswer("once")}>
+          <Button
+            disabled={disabled || !ready}
+            onClick={() => onAnswer("once")}
+          >
             Allow once
           </Button>
         </DialogFooter>
@@ -81,32 +109,43 @@ export function CommandAskHost() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
-    const stream = new EventSource(appApiUrl("/api/process/bridge"));
-    stream.addEventListener("command-ask", (event) => {
-      try {
-        const raw: unknown = JSON.parse((event as MessageEvent<string>).data);
-        const parsed = commandAskSchema.nullable().safeParse(raw);
-        if (parsed.success) {
-          setAsk(parsed.data);
-          setBusy(false);
-          setError(undefined);
-        }
-      } catch {
-        setAsk(null);
-      }
-    });
-    stream.addEventListener("command-access", (event) => {
-      try {
-        const pluginId: unknown = JSON.parse(
-          (event as MessageEvent<string>).data,
-        );
-        if (typeof pluginId === "string") commandAccessChanged(pluginId);
-      } catch {
-        /* Ignore malformed notifications. */
-      }
-    });
-    stream.onerror = () => setAsk(null);
-    return () => stream.close();
+    return connectMcpBridge(
+      {
+        onStatus: (status) => {
+          if (status === "disconnected" || status === "reconnecting")
+            setAsk(null);
+        },
+        runToolCall: () => ({ requestId: "", ok: false, error: "Unsupported" }),
+        onStream: (stream) => {
+          stream.addEventListener("command-ask", (event) => {
+            try {
+              const raw: unknown = JSON.parse(
+                (event as MessageEvent<string>).data,
+              );
+              const parsed = commandAskSchema.nullable().safeParse(raw);
+              if (parsed.success) {
+                setAsk(parsed.data);
+                setBusy(false);
+                setError(undefined);
+              }
+            } catch {
+              setAsk(null);
+            }
+          });
+          stream.addEventListener("command-access", (event) => {
+            try {
+              const pluginId: unknown = JSON.parse(
+                (event as MessageEvent<string>).data,
+              );
+              if (typeof pluginId === "string") commandAccessChanged(pluginId);
+            } catch {
+              /* Ignore malformed notifications. */
+            }
+          });
+        },
+      },
+      "/api/process/bridge",
+    );
   }, []);
   useEffect(() => {
     if (!ask) return;
@@ -116,7 +155,7 @@ export function CommandAskHost() {
     );
     return () => clearTimeout(timer);
   }, [ask]);
-  const answer = async (value: "once" | "always" | "deny") => {
+  const answer = async (value: "once" | "always" | "deny" | "deny-all") => {
     if (!ask) return;
     setBusy(true);
     try {
@@ -133,12 +172,12 @@ export function CommandAskHost() {
           key={ask.id}
           ask={ask}
           disabled={busy}
+          error={error}
           onAnswer={(value) => {
             void answer(value);
           }}
         />
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
     </>
   );
 }

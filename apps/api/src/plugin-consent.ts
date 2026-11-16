@@ -71,6 +71,7 @@ export async function processConsentGate(
     "isPluginEnabled" | "getPluginConsent" | "getPluginProcessGate"
   >,
   caller: BrokerCaller,
+  processAccess = true,
 ): Promise<
   | "plugin_off"
   | "needs_consent"
@@ -98,6 +99,8 @@ export async function processConsentGate(
   });
   if (
     !consent ||
+    (access.undeclaredCommands === true &&
+      consent.access.undeclaredCommands !== true) ||
     (access.commands ?? []).some(
       (c) =>
         !(consent.access.commands ?? []).some(
@@ -109,6 +112,7 @@ export async function processConsentGate(
     )
   )
     return "needs_consent";
+  if (!processAccess) return undefined;
   return (
     await storage.getPluginProcessGate(
       caller.pluginId,

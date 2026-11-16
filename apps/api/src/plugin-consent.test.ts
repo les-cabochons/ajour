@@ -1236,3 +1236,43 @@ describe("what an update does to activation", () => {
     ).toEqual({ turnOff: false });
   });
 });
+
+it("Given historical consent with no undeclared flag, adding it requires consent again", async () => {
+  const access = { ...NO_PLUGIN_ACCESS, undeclaredCommands: true };
+  expect(
+    decideUpdateConsent({
+      consent: { version: "1", at: 1, access: NO_PLUGIN_ACCESS },
+      previous: { version: "1", access: NO_PLUGIN_ACCESS },
+      wasOn: true,
+      next: { version: "2", access },
+      at: 2,
+    }).turnOff,
+  ).toBe(true);
+  const manifest = pluginApi4ManifestSchema.parse({
+    id: "test",
+    version: "2.0.0",
+    apiVersion: 4,
+    displayName: "Test",
+    iconSvg: "<svg/>",
+    entrypoint: "index.js",
+    connectionFields: [{ id: "site", label: "Site", type: "text" }],
+    capabilities: { connector: {} },
+    processes: { undeclaredCommands: true },
+  });
+  expect(
+    await processConsentGate(
+      {
+        isPluginEnabled: async () => true,
+        getPluginConsent: async () => ({
+          version: "1",
+          at: 1,
+          access: NO_PLUGIN_ACCESS,
+        }),
+        getPluginProcessGate: async () => {
+          throw new Error("Consent must refuse first");
+        },
+      },
+      { pluginId: "test", manifest, method: "syncConnection" },
+    ),
+  ).toBe("needs_consent");
+});

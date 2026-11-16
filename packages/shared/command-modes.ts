@@ -14,7 +14,7 @@ export const undeclaredCommandSchema = z
         z
           .string()
           .max(32767)
-          .refine((v) => !/[\0\r\n]/.test(v)),
+          .refine((v) => !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(v)),
       )
       .max(100),
     cwdFolder: z.string().min(1).max(200).optional(),
@@ -23,6 +23,8 @@ export const undeclaredCommandSchema = z
 export type UndeclaredCommand = z.infer<typeof undeclaredCommandSchema>;
 export const rememberedCommandSchema = undeclaredCommandSchema.extend({
   id: z.string(),
+  folderName: z.string().optional(),
+  folderPath: z.string().optional(),
 });
 export const commandPolicySchema = z.object({
   identity: z.string(),
@@ -39,6 +41,9 @@ export const commandAskSchema = undeclaredCommandSchema.extend({
   id: z.string(),
   pluginId: z.string(),
   pluginName: z.string(),
+  signed: z.boolean().default(false),
+  resolvedExecutable: z.string().optional(),
+  folderPath: z.string().optional(),
   folderName: z.string(),
   risky: z.boolean(),
   reason: z.string().optional(),
@@ -46,5 +51,20 @@ export const commandAskSchema = undeclaredCommandSchema.extend({
 });
 export type CommandAsk = z.infer<typeof commandAskSchema>;
 export const commandAnswerSchema = z
-  .object({ id: z.string(), answer: z.enum(["once", "always", "deny"]) })
+  .object({
+    id: z.string(),
+    answer: z.enum(["once", "always", "deny", "deny-all"]),
+  })
   .strict();
+
+/** Escape invisible whitespace while preserving argument boundaries. */
+export function commandDisplay(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/[^\x00-\x7f]/gu, (c) =>
+    /[\s\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(c)
+      ? "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")
+      : c,
+  );
+}
+export function safeCommandDisplay(value: string): boolean {
+  return !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
+}

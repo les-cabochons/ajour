@@ -1,3 +1,4 @@
+import { commandDisplay } from "@ajour/shared/command-modes";
 import { subscribeCommandAccess } from "@/lib/command-access-events";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
@@ -37,12 +38,17 @@ export function CommandAccessControls({
           ]}
         />
       </SettingRow>
+      <p role="note" className="text-sm text-muted-foreground">
+        Process access is outside G1. G1 guarantees that plugins which start no
+        process cannot obtain any credential, their own or another plugin's.
+        Commands run as you and can reach every plugin's credentials in every
+        mode.
+      </p>
       {access.mode === "accept-everything" ? (
         <p role="alert" className="text-sm text-destructive">
           Accept everything runs undeclared commands without asking, even when
-          marked risky. It gives up G1, Ajour's guarantee that plugins cannot
-          obtain credentials. Commands run as you, outside the sandbox, and can
-          access every plugin's credentials.
+          marked risky. It removes the last per-command check. Commands run as
+          you and can access every plugin's credentials.
         </p>
       ) : null}
       <h3 className="text-sm font-medium">Remembered approvals</h3>
@@ -59,10 +65,17 @@ export function CommandAccessControls({
             >
               <div className="min-w-0">
                 <pre className="text-xs break-all whitespace-pre-wrap">
-                  {JSON.stringify([a.executable, ...a.argv])}
+                  {commandDisplay([a.executable, ...a.argv])}
                 </pre>
                 <p className="text-xs text-muted-foreground">
-                  Folder id: {a.cwdFolder ?? "System root"}
+                  Folder:{" "}
+                  {commandDisplay(
+                    a.folderName ??
+                      (a.cwdFolder
+                        ? "Repository folder unavailable"
+                        : "System root"),
+                  )}{" "}
+                  {commandDisplay(a.folderPath ?? "Path unavailable")}
                 </p>
               </div>
               <Button

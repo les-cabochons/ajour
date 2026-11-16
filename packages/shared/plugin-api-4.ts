@@ -620,6 +620,7 @@ export const pluginProcessesSchema = strictObject({
       strictObject({ names: z.array(executableNameSchema).min(1).max(10) }),
     )
     .default({}),
+  undeclaredCommands: z.literal(true).optional(),
   commands: z.array(declaredCommandSchema).max(256).default([]),
   openSchemes: z
     .array(

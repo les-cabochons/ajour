@@ -1229,7 +1229,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
             lastRunAt: z.number().finite().optional(),
             refusedCount: z.number().nonnegative().default(0),
             acceptance: z.string().optional(),
-            commandPolicy: commandPolicySchema.optional(),
+            commandPolicy: commandPolicySchema.optional().catch(undefined),
           })
           .safeParse(value);
         return parsed.success ? [[id, parsed.data]] : [];
@@ -2541,8 +2541,18 @@ export class AppApiStorage {
     identity: string,
     development: boolean,
     change: (current: CommandPolicy) => CommandPolicy,
+    expected?: CommandPolicy,
   ): Promise<CommandPolicy> {
     return this.mutate((state) => {
+      const saved = this.processSettingsIn(state, pluginId)?.commandPolicy;
+      if (
+        expected &&
+        (!saved ||
+          saved.identity !== expected.identity ||
+          saved.signed !== expected.signed ||
+          identity !== expected.identity)
+      )
+        return { nextState: state, result: saved ?? expected };
       const policy = commandPolicySchema.parse(
         change(this.commandPolicyIn(state, pluginId, identity, development)),
       );
@@ -2646,7 +2656,7 @@ export class AppApiStorage {
     if (this.brokerActivityTimer) return;
     this.brokerActivityTimer = setTimeout(() => {
       this.brokerActivityTimer = undefined;
-      this.flushBrokerActivity().catch(() => undefined);
+      this.flushBrokerActivity().catch(() => this.retryBrokerActivityFlush());
     }, this.brokerActivityWindowMs);
     this.brokerActivityTimer.unref?.();
   }
@@ -3290,15 +3300,39 @@ export class AppApiStorage {
     const wait =
       this.brokerActivityWrittenAt + this.brokerActivityWindowMs - Date.now();
     if (wait <= 0) {
-      await this.flushBrokerActivity();
+      await this.flushBrokerActivity().catch(() =>
+        this.retryBrokerActivityFlush(),
+      );
       return;
     }
     this.brokerActivityTimer = setTimeout(() => {
       this.brokerActivityTimer = undefined;
       // Access review's records never fail anything; a failed write keeps
-      // them for the next.
-      this.flushBrokerActivity().catch(() => undefined);
+      // them and tries again.
+      this.flushBrokerActivity().catch(() => this.retryBrokerActivityFlush());
     }, wait);
+    this.brokerActivityTimer.unref?.();
+  }
+
+  /**
+   * After a failed write (a file briefly locked on Windows, say), writes the
+   * kept records again one window later, so they don't wait for the next
+   * request to be saved.
+   */
+  private retryBrokerActivityFlush(): void {
+    if (
+      this.brokerActivityTimer ||
+      (this.brokerActivityPending.size === 0 &&
+        this.processActivityPending.size === 0)
+    )
+      return;
+    this.brokerActivityTimer = setTimeout(
+      () => {
+        this.brokerActivityTimer = undefined;
+        this.flushBrokerActivity().catch(() => this.retryBrokerActivityFlush());
+      },
+      Math.max(this.brokerActivityWindowMs, 1_000),
+    );
     this.brokerActivityTimer.unref?.();
   }
 

@@ -6,6 +6,7 @@ const ask = {
   argv: ["--version"],
   pluginId: "p",
   pluginName: "Plugin",
+  signed: false,
   folderName: "System root",
   risky: false,
 };
@@ -63,4 +64,41 @@ it("Given a window that disconnects, all outstanding asks deny", async () => {
   expect(await one).toEqual({ answer: "deny", reason: "no_window" });
   expect(await two).toEqual({ answer: "deny", reason: "no_window" });
   expect(asks.snapshot()).toBeNull();
+});
+
+it("Given two pending asks for a plugin, overflow is a gate refusal and Deny all clears only that plugin", async () => {
+  const asks = new CommandAsks({ connected: () => true, publish: () => {} });
+  const one = asks.ask(ask, new AbortController().signal);
+  const two = asks.ask(ask, new AbortController().signal);
+  expect(await asks.ask(ask, new AbortController().signal)).toEqual({
+    answer: "deny",
+    reason: "ask_queue_full",
+  });
+  const other = asks.ask(
+    { ...ask, pluginId: "other" },
+    new AbortController().signal,
+  );
+  expect(asks.answer(asks.snapshot()!.id, "deny-all")).toBe(true);
+  expect(await one).toEqual({ answer: "deny", reason: "user_denied" });
+  expect(await two).toEqual({ answer: "deny", reason: "user_denied" });
+  expect(asks.snapshot()?.pluginId).toBe("other");
+  asks.disconnect();
+  await other;
+});
+
+it("Given Always was saved, queued identical asks use that exact approval", async () => {
+  const asks = new CommandAsks({ connected: () => true, publish: () => {} });
+  const one = asks.ask(ask, new AbortController().signal);
+  const two = asks.ask(ask, new AbortController().signal);
+  const other = asks.ask(
+    { ...ask, pluginId: "other" },
+    new AbortController().signal,
+  );
+  asks.answer(asks.snapshot()!.id, "always");
+  await one;
+  asks.approveMatching("p", ask);
+  expect(await two).toEqual({ answer: "once" });
+  expect(asks.snapshot()?.pluginId).toBe("other");
+  asks.disconnect();
+  await other;
 });

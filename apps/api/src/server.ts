@@ -330,6 +330,8 @@ interface AppApiServerOptions {
    * plugins need the desktop app.
    */
   brokerTransport?: BrokerTransport;
+  openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
+  terminal?: () => Promise<import("./process-launch.ts").TerminalApp>;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
   /** The clock of the plugins' crash budget. Tests move it. */
@@ -1429,9 +1431,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     folderName: async (id) =>
       (await storage.listRepositoryFolders()).find((f) => f.id === id)?.name,
     remember: async (caller, command, approvedPolicy) => {
-      await storage.changeCommandPolicy(
+      const latest = await pluginManager.processPackage(caller.pluginId);
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === caller.pluginId,
+      );
+      if (!plugin || !isPluginApi4Manifest(plugin)) return;
+      const identity = commandIdentity({
+        ...caller,
+        ...latest,
+        manifest: plugin,
+      });
+      if (identity !== approvedPolicy.identity) return;
+      const saved = await storage.changeCommandPolicy(
         caller.pluginId,
-        commandIdentity(caller),
+        identity,
         caller.development === true,
         (current) => {
           if (
@@ -1447,9 +1460,25 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             ],
           };
         },
+        approvedPolicy,
       );
+      if (
+        saved.identity === approvedPolicy.identity &&
+        saved.signed === approvedPolicy.signed &&
+        saved.approvals.some(
+          (a) =>
+            a.executable === command.executable &&
+            JSON.stringify(a.argv) === JSON.stringify(command.argv) &&
+            a.cwdFolder === command.cwdFolder,
+        )
+      )
+        commandAsks.approveMatching(caller.pluginId, command);
       commandBridge.publish("command-access", caller.pluginId);
     },
+    openExternal: options.openExternal,
+    terminal: options.terminal,
+    enabledGate: (caller) => processConsentGate(storage, caller, false),
+
     gate: (caller) => processConsentGate(storage, caller),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);

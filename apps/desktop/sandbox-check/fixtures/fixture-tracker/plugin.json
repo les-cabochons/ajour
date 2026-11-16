@@ -45,6 +45,7 @@
     "requestHeaders": ["Accept"]
   },
   "processes": {
+    "undeclaredCommands": true,
     "executables": {
       "node": {
         "names": ["node"]

@@ -24,7 +24,11 @@ it("Given command access, only a window can change the mode and remove an exact 
       entrypoint: "index.mjs",
       connectionFields: [{ id: "site", label: "Site", type: "text" }],
       capabilities: { connector: {} },
-      processes: { executables: { git: { names: ["git"] } }, commands: [] },
+      processes: {
+        undeclaredCommands: true,
+        executables: { git: { names: ["git"] } },
+        commands: [],
+      },
     }),
   );
   await writeFile(

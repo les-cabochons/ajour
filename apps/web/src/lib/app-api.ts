@@ -1990,7 +1990,10 @@ export function updateCommandAccess(
     commandAccessSchema,
   );
 }
-export function answerCommand(id: string, answer: "once" | "always" | "deny") {
+export function answerCommand(
+  id: string,
+  answer: "once" | "always" | "deny" | "deny-all",
+) {
   return appApiRequest(
     "answerCommand",
     "/api/process/answer",

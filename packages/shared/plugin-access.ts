@@ -181,6 +181,7 @@ export function summarizePluginAccess(
         }),
       }))
       .sort(byText((command) => command.id)),
+    undeclaredCommands: manifest.processes?.undeclaredCommands === true,
     openSchemes: [...new Set(manifest.processes?.openSchemes ?? [])].sort(),
     mcpTools: tasks
       .flatMap((task) =>
@@ -267,6 +268,7 @@ export const NO_PLUGIN_ACCESS: Readonly<PluginAccessSummary> = Object.freeze({
   endpoints: [],
   publicHosts: [],
   commands: [],
+  undeclaredCommands: false,
   openSchemes: [],
   mcpTools: [],
   agentPrompts: [],
@@ -342,6 +344,8 @@ export function pluginAccessDifference(
       next.commands ?? [],
       (command) => command.policy,
     ),
+    undeclaredCommands:
+      next.undeclaredCommands === true && before.undeclaredCommands !== true,
     openSchemes: added(
       before.openSchemes ?? [],
       next.openSchemes ?? [],
@@ -368,6 +372,7 @@ export function pluginAccessDifference(
 /** Whether an update needs the user's consent before it runs. */
 export function widensAccess(difference: PluginAccessDifference) {
   return (
+    difference.undeclaredCommands ||
     difference.alwaysReady ||
     difference.onPremises ||
     [

@@ -1379,6 +1379,25 @@ The repository picker is a centered dialog listing a project's folders as radio 
 
 Repository folders survive project archive and Undo, including Undo of creating a project. The current project lifecycle has no permanent-delete command. A future permanent-delete operation must prune the project's local folder associations after it commits.
 
+### Plugin terminals and links
+
+Settings > General > Terminal shows the terminal app plugins open commands in:
+Windows Terminal on Windows and Terminal on macOS. Linux hides the setting.
+The preference saves on change. It does not change the ajour command installation.
+
+An approved declared command can start detached or open in a terminal in its
+repository folder. Ajour reports that it started and leaves the process running
+when the plugin operation ends or Ajour quits. Launches cannot take stdin.
+A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
+Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
+strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour
+asks the user to install it.
+
+An enabled plugin may open HTTPS links. A custom link scheme must be declared
+and approved, and unsigned plugins also need the global switch and per-plugin
+acceptance. File, script and undeclared schemes are refused. Content links keep
+their existing desktop policy. A plugin may open at most five links per minute; further requests are refused.
+
 ## Coding handoff records
 
 A handoff start refuses unsafe links and undeclared resume commands without
@@ -1395,8 +1414,10 @@ whose native data exceeds 4 KB keeps the handoff with capped status and label an
 
 ### Undeclared commands
 
-The plugin's Access tab offers Always ask, Auto and Accept everything. Signed plugins start in Auto. Unsigned and development-directory plugins start in Always ask. Losing a signature drops the mode to Always ask. Accept everything shows a red warning that it gives up G1, the credential guarantee, and that commands can access every plugin's credentials.
+Undeclared commands require `processes.undeclaredCommands: true`. Without it, every mode refuses them. Access review lists this as its own item and adding it requires consent again, including for historical consent records. It says the plugin may run commands it does not declare; under Auto, a command no rule marks risky runs without asking; under Accept everything, any command runs.
+
+The plugin's Access tab offers Always ask, Auto and Accept everything. Signed plugins start in Auto. Unsigned and development-directory plugins start in Always ask. Losing a signature drops the mode to Always ask. Every mode warns that process access is outside G1. G1 guarantees that plugins which start no process cannot obtain any credential, their own or another plugin's. Commands run as you and can reach every plugin's credentials. Accept everything shows a red warning that it removes the last per-command check.
 
 Always ask asks for each undeclared command unless its exact line and folder were remembered. Auto asks only for a risky verdict; no verdict and review run. Accept everything runs regardless of verdict. Every mode still passes activation, consent and unsigned process gates.
 
-A centered dialog names the plugin and folder and shows the executable and every argument as a JSON array so spaces and argument boundaries remain visible. It shows any rule reason in red when risky. Allow once, Always and Deny answer the current ask. Escape denies. Always remembers precisely that executable, every argument and the folder id. Access lists those approvals with Remove. An update, package change, lost signature or changed development directory clears them. Asks queue one at a time. Each visible ask denies after two minutes. No connected window denies immediately with a reason.
+A centered dialog shows the plugin name, id and signature status, the resolved executable path, and the folder name and path and shows the executable and every argument as a JSON array so spaces and argument boundaries remain visible. It shows any rule reason in red when risky. Allow once and Always become clickable after 600 ms. Deny answers the current ask immediately. Deny all from this plugin denies its queued asks. Answer errors appear inside the dialog and clear on the next ask. Unicode controls, format and line or paragraph separator characters in arguments, executable or folder display are refused. Non-ASCII whitespace renders as visible escapes. Escape denies. Always remembers precisely that executable, every argument and the folder id. Access lists those approvals with Remove. An update, package change, lost signature or changed development directory clears them. Asks queue one at a time with at most two pending per plugin. Overflow refuses with `ask_queue_full`, decided by the gate. The host reopens a refused stream. Each visible ask denies after two minutes. No connected window denies immediately with a reason.

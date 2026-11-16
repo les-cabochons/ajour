@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -85,5 +85,55 @@ it("Given concurrent user mode and approval writes, both survive", async () => {
   expect(await storage.commandPolicy("p", "v1", false)).toMatchObject({
     mode: "always-ask",
     approvals: [{ id: "a" }],
+  });
+});
+
+it("Given a stale ask, it cannot overwrite a newer policy identity", async () => {
+  const s = await setup(true);
+  const old = await s.commandPolicy("p", "v1", false);
+  await s.changeCommandPolicy("p", "v2", false, (p) => ({
+    ...p,
+    approvals: [{ id: "new", executable: "git", argv: ["status"] }],
+  }));
+  await s.changeCommandPolicy(
+    "p",
+    "v1",
+    false,
+    (p) => ({
+      ...p,
+      approvals: [{ id: "stale", executable: "git", argv: [] }],
+    }),
+    old,
+  );
+  expect(
+    (await s.commandPolicy("p", "v2", false)).approvals.map((a) => a.id),
+  ).toEqual(["new"]);
+});
+it("Given an invalid saved policy, preserves process overrides, acceptance and activity", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "command-policy-"));
+  roots.push(root);
+  const file = path.join(root, "state.json");
+  const initial = new AppApiStorage(file);
+  await initial.setPluginOrigin("p", {
+    kind: "file",
+    signed: false,
+    installedAt: "2026-11-16T00:00:00Z",
+  });
+  const raw = JSON.parse(await readFile(file, "utf8"));
+  raw.pluginProcesses = {
+    p: {
+      overrides: { git: "C:/git.exe" },
+      acceptance: "accepted",
+      lastRunAt: 123,
+      refusedCount: 7,
+      commandPolicy: { mode: "bad" },
+    },
+  };
+  await writeFile(file, JSON.stringify(raw));
+  const s = new AppApiStorage(file);
+  expect(await s.getPluginProcessSettings("p")).toMatchObject({
+    overrides: { git: "C:/git.exe" },
+    lastRunAt: 123,
+    refusedCount: 7,
   });
 });

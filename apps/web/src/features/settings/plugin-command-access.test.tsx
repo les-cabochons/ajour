@@ -50,3 +50,46 @@ it("Given the mode selector, a user can choose Auto", async () => {
   fireEvent.click(option);
   expect(change).toHaveBeenCalledWith({ mode: "auto" });
 });
+
+it.each(["always-ask", "auto", "accept-everything"] as const)(
+  "Given %s, process access warns outside G1",
+  (mode) => {
+    render(
+      <CommandAccessControls
+        access={{ mode, approvals: [] }}
+        disabled={false}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("note").textContent).toContain(
+      "every plugin's credentials in every mode",
+    );
+    expect(screen.getByRole("note").textContent).toContain(
+      "their own or another plugin's",
+    );
+  },
+);
+it("Given a remembered folder, shows its name and path and visible non-ASCII whitespace", () => {
+  render(
+    <CommandAccessControls
+      access={{
+        mode: "auto",
+        approvals: [
+          {
+            id: "a",
+            executable: "git",
+            argv: ["a\u00a0b"],
+            cwdFolder: "opaque-id",
+            folderName: "Repo",
+            folderPath: "C:/repo",
+          },
+        ],
+      }}
+      disabled={false}
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByText(/Folder:/).textContent).toContain("C:/repo");
+  expect(document.body.textContent).not.toContain("opaque-id");
+  expect(document.body.textContent).toContain("\\u00a0");
+});

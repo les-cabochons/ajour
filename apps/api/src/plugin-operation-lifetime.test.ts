@@ -71,6 +71,7 @@ describe("plugin operation lifetime", () => {
     try {
       let waiting: ((value: boolean) => void) | undefined;
       const processBroker: import("./broker-port.ts").OperationProcessBroker = {
+        open: async () => {},
         run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
         close: () => {},
         onWaiting: (listener) => {
