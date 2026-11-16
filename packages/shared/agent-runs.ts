@@ -47,6 +47,7 @@ export const agentCliStatusSchema = z.object({
   supported: z.boolean(),
   installed: z.boolean(),
   version: z.string().optional(),
+  refusalReason: z.string().optional(),
 });
 export type AgentCliStatus = z.infer<typeof agentCliStatusSchema>;
 

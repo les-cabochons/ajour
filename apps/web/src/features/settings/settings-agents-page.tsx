@@ -74,7 +74,8 @@ export function SettingsAgentsPage() {
             label="Agent"
             labelFor="agent-cli"
             description={
-              showInstallHint ? (
+              selectedCli?.refusalReason ??
+              (showInstallHint ? (
                 <>
                   Install a supported agent such as{" "}
                   <a
@@ -105,7 +106,7 @@ export function SettingsAgentsPage() {
                   </a>
                   , then reopen this page.
                 </>
-              ) : undefined
+              ) : undefined)
             }
             stacked
           >

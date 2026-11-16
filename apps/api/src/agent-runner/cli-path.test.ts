@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  defaultReadVersion,
   findExecutable,
   readLoginShellPath,
   resolveLoginShellPath,
 } from "./cli-path.ts";
+
+import { npmShim } from "./test-support/npm-shim.ts";
 
 // Records every shell start; each one still runs the real execFile.
 vi.mock("node:child_process", async (importOriginal) => {
@@ -40,6 +43,38 @@ afterEach(async () => {
 });
 
 describe("findExecutable", () => {
+  it("Given relative PATH entries, skips them and finds the absolute installation", async () => {
+    // The folder sits under the working directory so its relative form is
+    // truly relative: on CI the checkout and the temp folder are on different
+    // Windows drives, where path.relative returns an absolute path.
+    const bin = await mkdtemp(path.join(process.cwd(), ".ajour-path-"));
+    tempDirs.push(bin);
+    const executable = path.join(
+      bin,
+      process.platform === "win32" ? "claude.exe" : "claude",
+    );
+    await writeFile(executable, "");
+    await chmod(executable, 0o755);
+    const relative = path.relative(process.cwd(), bin);
+    expect(path.isAbsolute(relative)).toBe(false);
+    expect(await findExecutable("claude", relative)).toBeNull();
+    expect(
+      await findExecutable(
+        "claude",
+        [relative, bin].join(path.delimiter),
+        process.platform,
+      ),
+    ).toBe(executable);
+  });
+  // Root-relative Windows paths depend on the current drive; POSIX has no such paths.
+  it.skipIf(process.platform !== "win32")(
+    "Given a root-relative Windows PATH entry, skips the installation",
+    async () => {
+      const bin = await tempDir("ajour-path-");
+      await writeFile(path.join(bin, "claude.exe"), "");
+      expect(await findExecutable("claude", bin.slice(2))).toBeNull();
+    },
+  );
   it("finds an executable on PATH and skips folders without it", async () => {
     const empty = await tempDir("ajour-path-");
     const bin = await tempDir("ajour-path-");
@@ -118,5 +153,34 @@ describe.skipIf(process.platform === "win32")("readLoginShellPath", () => {
     expect(
       await readLoginShellPath({ shell, fallback: "/short", timeoutMs: 100 }),
     ).toEqual({ path: "/short", fromShell: false });
+  });
+});
+
+// Windows shim probes require Windows path and process semantics.
+describe.skipIf(process.platform !== "win32")("Windows CLI version", () => {
+  it.each(["claude", "codex", "opencode"])(
+    "detects %s through an npm shim and reads its version",
+    async (name) => {
+      const bin = await tempDir("ajour npm & �-");
+      await writeFile(path.join(bin, "version.mjs"), 'console.log("1.2.3");');
+      await writeFile(
+        path.join(bin, `${name}.cmd`),
+        npmShim("%dp0%\\version.mjs"),
+      );
+      const executable = await findExecutable(name, bin);
+      expect(executable).toBe(path.join(bin, `${name}.cmd`));
+      expect(
+        await defaultReadVersion(executable!, process.env.PATH ?? ""),
+      ).toBe("1.2.3\n");
+    },
+  );
+
+  it("refuses an unknown shim without executing it", async () => {
+    const bin = await tempDir("ajour unknown-");
+    const shim = path.join(bin, "claude.cmd");
+    await writeFile(shim, "@echo SHOULD_NOT_RUN");
+    expect(await defaultReadVersion(shim, process.env.PATH ?? "")).toEqual({
+      refused: "unknown_shim",
+    });
   });
 });

@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import path from "node:path";
 
+import { resolveSpawn } from "../process-spawn/index.ts";
+
 const PATH_MARKER = "__AJOUR_PATH__";
 
 /**
@@ -70,6 +72,13 @@ export async function findExecutable(
 ): Promise<string | null> {
   const extensions = platform === "win32" ? [".exe", ".cmd", ""] : [""];
   for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
+    // Relative Windows entries depend on the current directory or drive.
+    if (
+      platform === "win32"
+        ? !/^(?:[a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+[\\/])/i.test(directory)
+        : !path.isAbsolute(directory)
+    )
+      continue;
     for (const extension of extensions) {
       const candidate = path.join(directory, name + extension);
       try {
@@ -81,4 +90,27 @@ export async function findExecutable(
     }
   }
   return null;
+}
+
+/** Reads a CLI version through the same shell-free resolution as a run. */
+export function defaultReadVersion(executable: string, pathValue: string) {
+  const plan = resolveSpawn(executable, ["--version"], {
+    ...process.env,
+    PATH: pathValue,
+  });
+  if ("refused" in plan) return Promise.resolve({ refused: plan.refused });
+  return new Promise<string | undefined>((resolve) => {
+    execFile(
+      plan.command,
+      plan.args,
+      {
+        timeout: 5000,
+        encoding: "utf8",
+        env: plan.env,
+        shell: false,
+        windowsHide: true,
+      },
+      (error, stdout) => resolve(error ? undefined : stdout),
+    );
+  });
 }

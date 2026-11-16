@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -44,6 +43,8 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
+import { resolveSpawn, spawnRefusalMessage } from "../process-spawn/index.ts";
+import { defaultReadVersion } from "./cli-path.ts";
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
 
@@ -121,7 +122,7 @@ export interface AgentRunnerOptions {
   readVersion?: (
     executable: string,
     pathValue: string,
-  ) => Promise<string | undefined>;
+  ) => Promise<string | { refused: string } | undefined>;
   loginShellPath: () => Promise<string>;
   chromeInstalled: () => Promise<boolean>;
   playwright: (input: {
@@ -215,21 +216,6 @@ interface RunnerTask {
   secretSettings: readonly { id: string; label: string }[];
 }
 
-function defaultReadVersion(executable: string, pathValue: string) {
-  return new Promise<string | undefined>((resolve) => {
-    execFile(
-      executable,
-      ["--version"],
-      {
-        timeout: 5000,
-        encoding: "utf8",
-        env: { ...process.env, PATH: pathValue },
-      },
-      (error, stdout) => resolve(error ? undefined : stdout),
-    );
-  });
-}
-
 export class AgentRunner {
   private readonly options: AgentRunnerOptions;
   private active: ActiveRun | null = null;
@@ -282,15 +268,21 @@ export class AgentRunner {
         const output = executable
           ? await readVersion(executable, pathValue)
           : undefined;
-        const version = output
-          ? (adapter?.parseVersion(output) ?? output.trim())
-          : undefined;
+        const refusalReason =
+          output && executable && typeof output !== "string"
+            ? spawnRefusalMessage(output.refused, cli.label, executable)
+            : undefined;
+        const version =
+          typeof output === "string" && output
+            ? (adapter?.parseVersion(output) ?? output.trim())
+            : undefined;
         return {
           id: cli.id,
           label: cli.label,
           supported: adapter !== undefined,
           installed: executable !== null,
           ...(version ? { version } : {}),
+          ...(refusalReason ? { refusalReason } : {}),
         };
       }),
     );
@@ -583,9 +575,22 @@ export class AgentRunner {
       // A spawn that fails later, such as a missing executable, reaches
       // finalize() through the child's error and close events.
       step = "spawn";
-      child = spawn(invocation.command, invocation.args, {
+      const plan = resolveSpawn(
+        invocation.command,
+        invocation.args,
+        invocation.env,
+      );
+      if ("refused" in plan) {
+        throw new AgentRunError(
+          spawnRefusalMessage(plan.refused, adapter.label, invocation.command),
+          400,
+        );
+      }
+      child = spawn(plan.command, plan.args, {
         cwd: workDirectory,
-        env: invocation.env,
+        env: plan.env,
+        shell: false,
+        windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
       const run: AgentRun = {

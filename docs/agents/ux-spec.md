@@ -1101,6 +1101,8 @@ Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/68
 
 ## Settings
 
+When a CLI version probe is refused, Settings > Agents shows the selected CLI's plain-English refusal reason beside the Agent control.
+
 Decided in [Settings and Sync review under the new conventions](https://github.com/les-cabochons/ajour/issues/27).
 
 - Pages keep their content, with sentence case and the labels from the Vocabulary section.
