@@ -3,6 +3,51 @@ const { constants } = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 
+// TODO(#730): unify with protectedRepositoryFolders and cliInstallDirectory
+// when that PR lands. Keep data, install, CLI and override roots identical.
+function protectedInstructionRoots({ home, env, platform, runtime }) {
+  const roots = [
+    runtime.userData,
+    runtime.packaged
+      ? platform === "darwin"
+        ? path.resolve(runtime.resources, "../..")
+        : path.dirname(runtime.exe)
+      : runtime.runtimeRoot,
+    (!runtime.packaged && env.AJOUR_CLI_INSTALL_DIR) ||
+      (platform === "darwin"
+        ? path.join(home, "Library/Application Support/Ajour/bin")
+        : path.join(
+            env.LOCALAPPDATA || path.join(home, "AppData/Local"),
+            "Ajour/bin",
+          )),
+    env.AJOUR_APP_API_STATE_PATH &&
+      path.dirname(path.resolve(env.AJOUR_APP_API_STATE_PATH)),
+    env.AJOUR_USER_DATA_PATH && path.resolve(env.AJOUR_USER_DATA_PATH),
+  ];
+  return roots
+    .concat(
+      platform === "win32"
+        ? [
+            env.SystemRoot || "C:\\Windows",
+            env.ProgramFiles || "C:\\Program Files",
+            env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
+            env.ProgramData || "C:\\ProgramData",
+          ]
+        : [
+            "/System",
+            "/Library",
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/etc",
+            "/var",
+            "/private",
+            "/Applications",
+          ],
+    )
+    .filter(Boolean);
+}
+
 function decode(bytes) {
   if (bytes === null)
     return { text: null, encode: (text) => Buffer.from(text, "utf8") };
@@ -48,11 +93,75 @@ function createInstructionController({
   env = process.env,
   io = fs,
   userId = process.getuid?.(),
+  platform = process.platform,
+  runtime = {},
 }) {
+  const protectedRoots = protectedInstructionRoots({
+    home,
+    env,
+    platform,
+    runtime,
+  });
   const pending = new Map();
   let writing = Promise.resolve();
   const load = async () =>
     typeof editor === "function" ? await editor() : editor;
+  function root(variable, fallback) {
+    const value = env[variable] || fallback;
+    if (
+      !path.isAbsolute(value) ||
+      (process.platform === "win32" && path.win32.parse(value).root.length <= 1)
+    )
+      throw new Error(
+        `${variable} must be an absolute folder. No changes made.`,
+      );
+    return value;
+  }
+  async function existingAncestor(file) {
+    let current = path.resolve(file);
+    for (;;) {
+      try {
+        const real = await io.realpath(current);
+        return {
+          ancestor: real,
+          resolved: path.join(real, path.relative(current, file)),
+        };
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        const parent = path.dirname(current);
+        if (parent === current) throw error;
+        current = parent;
+      }
+    }
+  }
+  async function checkLocation(file) {
+    const location = await existingAncestor(file);
+    for (const protectedRoot of protectedRoots) {
+      const protectedLocation = (await existingAncestor(protectedRoot))
+        .resolved;
+      const relative = path.relative(protectedLocation, location.resolved);
+      if (
+        !relative ||
+        (!relative.startsWith(`..${path.sep}`) &&
+          relative !== ".." &&
+          !path.isAbsolute(relative))
+      )
+        throw new Error(
+          "Instruction file is in a protected folder. No changes made.",
+        );
+    }
+    return location.ancestor;
+  }
+  async function isReadOnly(file, info) {
+    if (!(info.mode & 0o222) || (userId !== undefined && info.uid !== userId))
+      return true;
+    try {
+      await io.access(file, constants.W_OK);
+      return false;
+    } catch {
+      return true;
+    }
+  }
   async function target(id) {
     const module = await load();
     const file = module.INSTRUCTION_FILES.find((entry) => entry.id === id);
@@ -60,39 +169,44 @@ function createInstructionController({
     let resolved = path.join(home, file.path);
     try {
       if (id === "codex") {
-        const root = env.CODEX_HOME || path.join(home, ".codex");
-        resolved = path.join(root, "AGENTS.md");
-        const override = path.join(root, "AGENTS.override.md");
+        const directory = root("CODEX_HOME", path.join(home, ".codex"));
+        resolved = path.join(directory, "AGENTS.md");
+        const override = path.join(directory, "AGENTS.override.md");
         if (decode((await read(override)).bytes).text?.trim())
           resolved = override;
       }
       if (id === "claude")
         resolved = path.join(
-          env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"),
+          root("CLAUDE_CONFIG_DIR", path.join(home, ".claude")),
           "CLAUDE.md",
         );
       if (id === "opencode")
         resolved = path.join(
-          env.OPENCODE_CONFIG_DIR ||
+          root(
+            "OPENCODE_CONFIG_DIR",
             path.join(
-              env.XDG_CONFIG_HOME || path.join(home, ".config"),
+              root("XDG_CONFIG_HOME", path.join(home, ".config")),
               "opencode",
             ),
+          ),
           "AGENTS.md",
         );
       if (id === "copilot")
         resolved = path.join(
-          env.COPILOT_HOME || path.join(home, ".copilot"),
+          root("COPILOT_HOME", path.join(home, ".copilot")),
           "copilot-instructions.md",
         );
       if (id === "gemini") {
-        const root = path.join(env.GEMINI_CLI_HOME || home, ".gemini");
-        resolved = path.join(root, "GEMINI.md");
-        const settings = await read(path.join(root, "settings.json"));
+        const directory = path.join(root("GEMINI_CLI_HOME", home), ".gemini");
+        resolved = path.join(directory, "GEMINI.md");
+        const settings = await read(path.join(directory, "settings.json"));
         if (settings.bytes !== null) {
           let name;
           try {
-            name = JSON.parse(decode(settings.bytes).text)?.context?.fileName;
+            const { default: stripJsonComments } =
+              await import("strip-json-comments");
+            name = JSON.parse(stripJsonComments(decode(settings.bytes).text))
+              ?.context?.fileName;
           } catch {
             throw new Error(
               "Cannot parse Gemini settings.json. No changes made.",
@@ -103,15 +217,15 @@ function createInstructionController({
             if (Array.isArray(name) && name.length === 1) name = name[0];
             if (
               typeof name !== "string" ||
-              !name ||
-              name === "." ||
-              name === ".." ||
-              /[\\/:]/.test(name)
+              name.startsWith(".") ||
+              name.includes("..") ||
+              !name.endsWith(".md") ||
+              /[\\/:\x00-\x1f<>"|?*]/.test(name)
             )
               throw new Error(
                 "Gemini settings.json must select one context filename. No changes made.",
               );
-            resolved = path.join(root, name);
+            resolved = path.join(directory, name);
           }
         }
       }
@@ -122,6 +236,7 @@ function createInstructionController({
     return { module, file: resolved };
   }
   async function read(file) {
+    const ancestor = await checkLocation(file);
     try {
       const info = await io.lstat(file);
       if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1)
@@ -130,16 +245,15 @@ function createInstructionController({
         );
       if (info.size > 1024 * 1024)
         throw new Error("Instruction file exceeds 1 MB. No changes made.");
-      let readOnly =
-        !(info.mode & 0o222) || (userId !== undefined && info.uid !== userId);
-      try {
-        await io.access(file, constants.W_OK);
-      } catch {
-        readOnly = true;
-      }
+      const readOnly = await isReadOnly(file, info);
       return { bytes: await io.readFile(file), mode: info.mode, readOnly };
     } catch (error) {
-      if (error.code === "ENOENT") return { bytes: null, mode: 0o600 };
+      if (error.code === "ENOENT")
+        return {
+          bytes: null,
+          mode: 0o600,
+          readOnly: await isReadOnly(ancestor, await io.lstat(ancestor)),
+        };
       throw error;
     }
   }

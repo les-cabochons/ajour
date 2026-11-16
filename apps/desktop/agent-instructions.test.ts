@@ -18,12 +18,15 @@ const {
   registerInstructionIpc,
 } = require("./electron/agent-instructions.cjs");
 const homes: string[] = [];
+// macOS temporary folders resolve under the protected /private tree.
+const temporaryRoot =
+  process.platform === "darwin" ? os.homedir() : os.tmpdir();
 afterEach(async () => {
   for (const home of homes.splice(0))
     await rm(home, { recursive: true, force: true });
 });
 async function fixture(env: NodeJS.ProcessEnv = {}) {
-  const home = await mkdtemp(path.join(os.tmpdir(), "ajour-instructions-"));
+  const home = await mkdtemp(path.join(temporaryRoot, "ajour-instructions-"));
   homes.push(home);
   return {
     home,
@@ -326,3 +329,266 @@ it("refuses a preview if Codex switches to an override before confirmation", asy
   );
   expect(await readFile(override, "utf8")).toBe("New override");
 });
+it.each([
+  "settings.json",
+  "../x.md",
+  "oauth_creds.json",
+  ".hidden.md",
+  "a..b.md",
+  "a\\b.md",
+])(
+  "refuses unsafe Gemini context name %s before preview or write",
+  async (name) => {
+    const { home, controller } = await fixture();
+    const root = path.join(home, ".gemini");
+    await mkdir(root);
+    const settings = JSON.stringify({ context: { fileName: name } });
+    await writeFile(path.join(root, "settings.json"), settings);
+    expect(
+      (await controller.list()).find(
+        (row: editor.InstructionFileState) => row.id === "gemini",
+      ).error,
+    ).toMatch(/filename/i);
+    await expect(controller.preview("gemini", "add")).rejects.toThrow(
+      /filename/i,
+    );
+    await expect(controller.apply("gemini", "invalid")).rejects.toThrow(
+      /filename/i,
+    );
+    expect(await readFile(path.join(root, "settings.json"), "utf8")).toBe(
+      settings,
+    );
+  },
+);
+it.each(["GEMINI.md", "AGENTS.md"])(
+  "accepts Gemini Markdown context %s",
+  async (name) => {
+    const { home, controller } = await fixture();
+    await mkdir(path.join(home, ".gemini"));
+    await writeFile(
+      path.join(home, ".gemini/settings.json"),
+      JSON.stringify({ context: { fileName: name } }),
+    );
+    const preview = await controller.preview("gemini", "add");
+    await controller.apply("gemini", preview.token);
+    expect(await readFile(path.join(home, ".gemini", name), "utf8")).toContain(
+      editor.THREAD_NAMING_BLOCK,
+    );
+  },
+);
+it("reads commented Gemini settings without changing comments or comment-like strings", async () => {
+  const { home, controller } = await fixture();
+  await mkdir(path.join(home, ".gemini"));
+  const settings = path.join(home, ".gemini/settings.json");
+  const json = String.raw`{
+    // User preferences
+    "url": "https://example.test/a/*literal*/", /* comment */
+    "escaped": "a\"//b", "backslash": "\\", // after escaped backslash
+    "context": {"fileName": "AGENTS.md"}
+  }`;
+  await writeFile(settings, json);
+  const preview = await controller.preview("gemini", "add");
+  await controller.apply("gemini", preview.token);
+  expect(
+    await readFile(path.join(home, ".gemini/AGENTS.md"), "utf8"),
+  ).toContain(editor.THREAD_NAMING_BLOCK);
+  expect(await readFile(settings, "utf8")).toBe(json);
+  for (const malformed of [
+    "{/* comment */ broken}",
+    '{"context": /* missing value */}',
+    "{/* unterminated",
+  ]) {
+    await writeFile(settings, malformed);
+    await expect(controller.preview("gemini", "add")).rejects.toThrow(
+      /parse Gemini/,
+    );
+    expect(await readFile(settings, "utf8")).toBe(malformed);
+  }
+});
+it.each([
+  ["codex", "CODEX_HOME"],
+  ["claude", "CLAUDE_CONFIG_DIR"],
+  ["gemini", "GEMINI_CLI_HOME"],
+  ["opencode", "OPENCODE_CONFIG_DIR"],
+  ["opencode", "XDG_CONFIG_HOME"],
+  ["copilot", "COPILOT_HOME"],
+])("rejects relative %s root from %s", async (id, variable) => {
+  const { home } = await fixture();
+  const controller = createInstructionController({
+    home,
+    editor,
+    env: { [variable]: "relative/config" },
+  });
+  await expect(controller.preview(id, "add")).rejects.toThrow(/absolute/i);
+});
+it.each([
+  "userData",
+  "runtimeRoot",
+  "cli",
+  "stateOverride",
+  "dataOverride",
+  "install",
+  "SystemRoot",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "ProgramData",
+])("refuses missing instructions under protected %s", async (kind) => {
+  const { home } = await fixture();
+  const protectedRoot = path.join(home, "protected");
+  await mkdir(protectedRoot);
+  const env: NodeJS.ProcessEnv = {
+    CODEX_HOME: path.join(protectedRoot, "missing/nested"),
+  };
+  const runtime: Record<string, unknown> = {};
+  if (kind === "cli") env.AJOUR_CLI_INSTALL_DIR = protectedRoot;
+  else if (kind === "stateOverride")
+    env.AJOUR_APP_API_STATE_PATH = path.join(protectedRoot, "state.json");
+  else if (kind === "dataOverride") env.AJOUR_USER_DATA_PATH = protectedRoot;
+  else if (kind === "install") {
+    runtime.packaged = true;
+    runtime.exe = path.join(protectedRoot, "Ajour.exe");
+  } else if (
+    ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"].includes(
+      kind,
+    )
+  )
+    env[kind] = protectedRoot;
+  else runtime[kind] = protectedRoot;
+  const controller = createInstructionController({
+    home,
+    editor,
+    env,
+    runtime,
+    platform: "win32",
+  });
+  await expect(controller.preview("codex", "add")).rejects.toThrow(
+    /protected/i,
+  );
+  await expect(
+    readFile(path.join(env.CODEX_HOME!, "AGENTS.md")),
+  ).rejects.toThrow();
+});
+it.each(["access", "owner"])(
+  "checks %s on the deepest existing ancestor and again at apply",
+  async (kind) => {
+    const { home } = await fixture();
+    const ancestor = path.join(home, "custom");
+    await mkdir(ancestor);
+    const fs = await import("node:fs/promises");
+    let denied = true;
+    const controller = createInstructionController({
+      home,
+      editor,
+      env: { CODEX_HOME: path.join(ancestor, "missing/nested") },
+      userId: 123,
+      io: {
+        ...fs,
+        access: async (file: string, mode: number) => {
+          if (file === ancestor && denied && kind === "access")
+            throw new Error("denied");
+          return fs.access(file, mode);
+        },
+        lstat: async (file: string) => {
+          const info = await fs.lstat(file);
+          return Object.assign(info, {
+            uid: file === ancestor && denied && kind === "owner" ? 456 : 123,
+          });
+        },
+      },
+    });
+    expect((await controller.list())[0].readOnly).toBe(true);
+    await expect(controller.preview("codex", "add")).rejects.toThrow(
+      /read-only/,
+    );
+    denied = false;
+    const preview = await controller.preview("codex", "add");
+    denied = true;
+    await expect(controller.apply("codex", preview.token)).rejects.toThrow(
+      /read-only/,
+    );
+  },
+);
+it("allows a custom root outside home and checks real ancestors through junctions", async () => {
+  const { home } = await fixture();
+  const external = await mkdtemp(path.join(temporaryRoot, "ajour-custom-"));
+  homes.push(external);
+  const env = { CODEX_HOME: path.join(external, "nested") };
+  const controller = createInstructionController({ home, editor, env });
+  const preview = await controller.preview("codex", "add");
+  await controller.apply("codex", preview.token);
+  expect(
+    await readFile(path.join(env.CODEX_HOME, "AGENTS.md"), "utf8"),
+  ).toContain(editor.THREAD_NAMING_BLOCK);
+  const fs = await import("node:fs/promises");
+  const alias = path.join(home, "alias");
+  await fs.symlink(
+    external,
+    alias,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const guarded = createInstructionController({
+    home,
+    editor,
+    env: { CODEX_HOME: path.join(alias, "absent") },
+    runtime: { userData: external },
+  });
+  await expect(guarded.preview("codex", "add")).rejects.toThrow(/protected/);
+});
+it.each([
+  "/System",
+  "/Library",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/etc",
+  "/var",
+  "/private",
+  "/Applications",
+])("refuses a missing target whose real ancestor is %s", async (system) => {
+  const { home } = await fixture();
+  const alias = path.join(home, "system-alias");
+  await mkdir(alias);
+  const fs = await import("node:fs/promises");
+  const controller = createInstructionController({
+    home,
+    editor,
+    platform: "linux",
+    env: { CODEX_HOME: path.join(alias, "missing") },
+    io: {
+      ...fs,
+      realpath: async (file: string) =>
+        file === alias
+          ? fs.realpath(path.resolve(system)).catch(() => path.resolve(system))
+          : fs.realpath(file),
+    },
+  });
+  await expect(controller.preview("codex", "add")).rejects.toThrow(/protected/);
+});
+it("does not confuse a protected folder with a sibling sharing its prefix", async () => {
+  const { home } = await fixture();
+  const controller = createInstructionController({
+    home,
+    editor,
+    env: { CODEX_HOME: path.join(home, "data-custom") },
+    runtime: { userData: path.join(home, "data") },
+  });
+  const preview = await controller.preview("codex", "add");
+  await controller.apply("codex", preview.token);
+  expect(
+    await readFile(path.join(home, "data-custom/AGENTS.md"), "utf8"),
+  ).toContain(editor.THREAD_NAMING_BLOCK);
+});
+it.runIf(process.platform === "win32").each(["C:relative", "\\relative"])(
+  "refuses drive-relative or root-relative Windows folders %s",
+  async (directory) => {
+    const { home } = await fixture();
+    const controller = createInstructionController({
+      home,
+      editor,
+      env: { CODEX_HOME: directory },
+    });
+    await expect(controller.preview("codex", "add")).rejects.toThrow(
+      /absolute/,
+    );
+  },
+);

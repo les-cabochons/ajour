@@ -1112,8 +1112,14 @@ visible. A changed file requires a fresh preview. The managed thread-naming bloc
 asks agents to include the ticket number in their title. Other text, line endings
 and encoding stay intact. Missing folders and files are created on confirmation.
 Codex uses its non-empty override file when present. Resolved paths follow the
-agents' location environment variables. Gemini uses the configured context
-filename, or refuses malformed settings. Read-only files show Read-only without
+agents' location environment variables, which must name absolute folders outside
+Ajour's data, installation and CLI folders and system folders. Main resolves the
+deepest existing ancestor and checks its ownership and write access before
+creating missing files or folders. Custom folders outside home are supported.
+Gemini reads JSON settings with comments without changing them. Its context
+filename must be a plain Markdown filename with no leading dot, `..` or path
+separator. Malformed settings and unsafe filenames refuse editing with a message.
+Read-only files show Read-only without
 write actions. When OpenCode would fall back to Claude Code rules, Add warns that
 creating the OpenCode file stops reading them. The row says when those rules
 already cover OpenCode. Add supplies a final newline, and Remove removes only

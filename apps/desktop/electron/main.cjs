@@ -738,6 +738,13 @@ registerInstructionIpc(
   { handle: ipc.handle },
   createInstructionController({
     home: os.homedir(),
+    runtime: {
+      packaged: app.isPackaged,
+      userData: app.getPath("userData"),
+      exe: app.getPath("exe"),
+      resources: process.resourcesPath,
+      runtimeRoot: internalAppApiRuntimeRoot,
+    },
     editor: () =>
       import(
         pathToFileURL(
