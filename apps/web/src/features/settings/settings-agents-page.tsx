@@ -3,6 +3,7 @@ import type { AgentBrowserMode, AgentCliId } from "@ajour/shared/agent-runs";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
+import { AgentInstructionsSetting } from "./agent-instructions-setting";
 import { updateAgentRunnerSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
@@ -16,6 +17,15 @@ import {
  * page, next to the connection settings of other plugins.
  */
 export function SettingsAgentsPage() {
+  return (
+    <div className="settings-sections settings-measure">
+      <AgentInstructionsSetting />
+      <AgentRunnerSetting />
+    </div>
+  );
+}
+
+function AgentRunnerSetting() {
   const state = useAgentRunner();
   const [error, setError] = useState<string | null>(null);
 
@@ -34,17 +44,9 @@ export function SettingsAgentsPage() {
     }
   };
 
-  if (state.kind === "loading") return null;
-  if (state.kind === "unavailable") {
-    return (
-      <p className="settings-section-desc">
-        Agents need the Ajour desktop app.
-      </p>
-    );
-  }
-  if (state.kind === "error") {
+  if (state.kind === "loading" || state.kind === "unavailable") return null;
+  if (state.kind === "error")
     return <p className="text-sm text-destructive">{state.message}</p>;
-  }
   const { settings, clis } = state.overview;
   const cliOptions = clis
     .filter((cli) => cli.supported)
@@ -61,7 +63,7 @@ export function SettingsAgentsPage() {
   const showInstallHint = noneInstalled || selectedCli?.installed === false;
 
   return (
-    <div className="settings-sections settings-measure">
+    <>
       <section className="settings-section">
         <h2 className="settings-section-title">Agent</h2>
         <p className="settings-section-desc">
@@ -186,6 +188,6 @@ export function SettingsAgentsPage() {
       </section>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
+    </>
   );
 }

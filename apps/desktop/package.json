@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
+    "strip-json-comments": "^5.0.3",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
