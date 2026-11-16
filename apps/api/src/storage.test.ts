@@ -1001,10 +1001,12 @@ describe("AppApiStorage", () => {
             lastRequestAt: 20,
           });
         },
-        { timeout: 3_000 },
+        // The retry waits about a second, then a full atomic write that a
+        // slow Windows runner can take seconds to finish.
+        { timeout: 15_000, interval: 100 },
       );
       expect(mutate.mock.calls.length).toBeGreaterThan(1);
-    });
+    }, 20_000);
 
     it("counts a blocked direct attempt apart, without taking it for a request or a refusal", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(60_000);
