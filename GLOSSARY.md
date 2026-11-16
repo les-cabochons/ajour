@@ -295,12 +295,32 @@ The user's approval for one plugin to use one account, for what that plugin says
 _Avoid_: Share, authorization, token (in user-facing text, say "Used by" and "Allow")
 
 **Access**:
-What a plugin declares it will reach: its hosts and endpoints, the accounts it wants to use, and its agent prompts. The user approves it at install, and again whenever an update widens it.
+What a plugin declares it will reach: its hosts and endpoints, the accounts it wants to use, the commands it starts, and its agent prompts. The user approves it at install, and again whenever an update widens it.
 _Avoid_: Permissions, scopes, capabilities (a capability is what a plugin provides, not what it reaches)
 
 **Access choice**:
 Something one connection may do that the user turns on for that connection, such as "Edit work items", which unlocks part of a plugin's access and names the token scope it needs. Every access choice starts off, except one the plugin marks as always on.
 _Avoid_: Permission, scope, toggle, feature flag
+
+**Process broker**:
+The part of Ajour that starts a process for a plugin, such as `t3 thread start`, after checking the plugin's access, its gates and its command mode. A plugin never starts a process itself (ADR 0019).
+_Avoid_: Shell, launcher, runner (the agent runner is something else)
+
+**Declared command**:
+A command a plugin names in its manifest, with the shape of each argument. The user approves it with the plugin's access.
+_Avoid_: Allowed command, whitelisted command
+
+**Command mode**:
+What a plugin may do with a command it didn't declare: Always ask, Auto (asks only for risky commands) or Accept everything. Only the user changes it.
+_Avoid_: Yolo (in user-facing text), trust level, permission mode
+
+**Command review**:
+The checks Ajour runs on a command a plugin didn't declare: a fixed set of rules, then the command reviewer if the user downloaded it. A review can only make Ajour ask or refuse, never let a command through.
+_Avoid_: Scan, vetting, approval
+
+**Command reviewer**:
+A small model Ajour can download, on the user's request, to mark commands risky that no rule names. It runs on the user's computer.
+_Avoid_: AI check, classifier (in user-facing text), guard
 
 **Held change**:
 A change to a synced item that its connection refused because its access choices don't include editing work items, such as a settle, an estimate, a description or a comment. Ajour keeps it on this computer, as the user left it, and sends it only when the user approves it in Sync review. Turning editing on is not that approval.

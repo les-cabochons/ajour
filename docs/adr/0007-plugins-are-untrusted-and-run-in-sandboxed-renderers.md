@@ -18,7 +18,7 @@ Two guarantees stay separate in code, tests and docs:
 
 ## Consequences
 
-- There is no full-access class. If the sandbox cannot be applied, third-party plugins do not run.
+- There is no full-access class. If the sandbox cannot be applied, third-party plugins do not run. A plugin that needs a process asks Ajour's process broker, under the user's consent and command mode (ADR 0019).
 - Measured on Windows (#230) and macOS (#260):
   - Each plugin costs about 21 to 31 MB of its own memory.
   - A warm call takes under 0.2 ms.
