@@ -2049,6 +2049,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       try {
         await pluginManager.openHandoff(record.pluginId, record.projectId, {
+          toolId: record.toolId,
+          ...(record.connectionId ? { connectionId: record.connectionId } : {}),
           ...(record.link ? { link: record.link } : {}),
           ...(record.resume ? { resume: record.resume } : {}),
           folderId: record.folderId,

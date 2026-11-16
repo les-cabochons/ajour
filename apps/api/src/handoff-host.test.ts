@@ -312,6 +312,7 @@ it("opens a resume in the handoff's folder only where a slot is unconditional or
   });
   const resume = (args: Record<string, string | number>) =>
     manager.openHandoff("tools", "p", {
+      toolId: "t3",
       resume: { command: "resume", args },
       folderId: "f",
     });
@@ -324,6 +325,7 @@ it("opens a resume in the handoff's folder only where a slot is unconditional or
     ]);
     await expect(
       manager.openHandoff("plain", "p", {
+        toolId: "t3",
         link: "https://example.test/thread",
         folderId: "f",
       }),

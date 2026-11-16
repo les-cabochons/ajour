@@ -30,6 +30,7 @@ import type {
   ReadyPlugin,
 } from "./plugin-runtime.ts";
 import { PluginStopBudget } from "./plugin-stop-budget.ts";
+import { HANDOFF_NEEDS_CONNECTION } from "./handoffs.ts";
 import {
   DEFAULT_PLUGIN_RUNTIME_SETTINGS,
   effectiveMemoryCeilingMb,
@@ -1108,11 +1109,16 @@ export class PluginManager {
    * resume leaves out gets the handoff's folder, so it opens where it ran:
    * an unconditional slot, or one in a group whose condition the resume
    * sets. Every gate of the broker applies, as for the plugin's own calls.
+   * A tool that uses a connection reopens through the handoff's own, so a
+   * `connection-url` slot gets its address; a handoff started before the
+   * tool used one is refused.
    */
   async openHandoff(
     pluginId: string,
     projectId: string,
     target: {
+      toolId: string;
+      connectionId?: string;
       link?: string;
       resume?: { command: string; args: Record<string, string | number> };
       folderId: string;
@@ -1135,6 +1141,15 @@ export class PluginManager {
         "This thread has no link or command to open it.",
         "not_supported",
       );
+    const usesConnection =
+      manifest.capabilities.handoff?.tools.find(
+        (tool) => tool.id === target.toolId,
+      )?.connection === "required";
+    if (usesConnection && !target.connectionId)
+      throw new PluginOperationRefused(
+        HANDOFF_NEEDS_CONNECTION,
+        "not_supported",
+      );
     const broker = this.processBroker.forOperation({
       pluginId,
       manifest,
@@ -1144,6 +1159,7 @@ export class PluginManager {
       traceparent: this.events?.current()?.traceparent(),
       method: "openHandoff",
       projectId,
+      ...(usesConnection ? { connectionId: target.connectionId } : {}),
     });
     try {
       if (target.link) {
