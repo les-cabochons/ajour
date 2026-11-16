@@ -940,22 +940,22 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
   block reaches the user's programs through the process broker. G1 holds only
   for plugins that start no process: a process runs as the user, and on
   Windows DPAPI doesn't protect the vault from the user's own programs. G2
-  widens:
+  widens. Access review and the mode's warning say this, and a release claims
+  G1 only for plugins without process access:
   - Declared commands run as approved with the plugin's access.
   - Undeclared commands follow the plugin's command mode: Always ask, Auto
     (asks for what the rules or the command reviewer mark risky) or Accept
     everything, which gives G1 up for that plugin.
 
-  Access review and the mode's warning say this, and a release claims G1
-  only for plugins without process access.
-
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the
   declared network policy, the credential use and the access choices, and says
-  nothing about what a plugin does with data it may read. No page needs a
-  weaker wording for any plugin, because a plugin that isn't built for API 4
-  does not run.
+  nothing about what a plugin does with data it may read. Plugins with a
+  `processes` block are the exception to credential isolation. Their commands
+  run as the user and can reach every plugin's credentials, not only their own
+  (ADR 0019). Access review and update approval state this exception. Plugins
+  built for an older API do not run.
 
 ## Compact desktop timer panel
 

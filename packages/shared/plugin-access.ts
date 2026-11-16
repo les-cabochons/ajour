@@ -86,6 +86,10 @@ function byText<Item>(text: (item: Item) => string) {
   };
 }
 
+const codeInterpreters = new Set(
+  "node python python3 py ruby perl php deno bun java osascript".split(" "),
+);
+
 /**
  * What the manifest reaches. `agentPrompts` holds each agent task's prompt,
  * as read from the package, because the manifest holds only its path. A
@@ -144,9 +148,21 @@ export function summarizePluginAccess(
     commands: (manifest.processes?.commands ?? [])
       .map((command) => ({
         id: command.id,
-        argv: commandArgvShape(command),
+        argv: commandArgvShape(
+          command,
+          manifest.processes?.executables[command.executable]?.names ?? [],
+        ),
         description: [
           `Executable names: ${(manifest.processes?.executables[command.executable]?.names ?? []).join(", ")}.`,
+          (
+            manifest.processes?.executables[command.executable]?.names ?? []
+          ).some((name) =>
+            codeInterpreters.has(
+              name.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, ""),
+            ),
+          )
+            ? "This command runs code it is given: as wide as Accept everything."
+            : "",
           command.mode === "capture"
             ? "Captures output."
             : command.mode === "detached"
@@ -156,7 +172,9 @@ export function summarizePluginAccess(
           command.timeoutSeconds === undefined
             ? "Uses the broker's default timeout."
             : `Timeout: ${command.timeoutSeconds} seconds.`,
-        ].join(" "),
+        ]
+          .filter(Boolean)
+          .join(" "),
         policy: JSON.stringify({
           command,
           names:
@@ -394,20 +412,23 @@ export function pluginAccessView(
 }
 
 /** Each slot stays one argv element; brackets show a conditional group. */
-export function commandArgvShape(command: DeclaredCommand): string {
-  const argument = (arg: DeclaredArgument): string =>
+export function commandArgvShape(
+  command: DeclaredCommand,
+  names: readonly string[],
+): string {
+  const quote = (value: string) =>
+    /^[A-Za-z0-9_./:=+@-]+$/.test(value) ? value : JSON.stringify(value);
+  const argument = (arg: DeclaredArgument, named = false): string =>
     arg.kind === "literal"
-      ? /^[A-Za-z0-9_./:=+@-]+$/.test(arg.value)
-        ? arg.value
-        : JSON.stringify(arg.value)
+      ? quote(arg.value)
       : arg.kind === "enum"
-        ? `<${arg.values.join("|")}>`
-        : `<${arg.kind}>`;
+        ? `<${named ? `${arg.name}:` : ""}${arg.values.map(quote).join("|")}>`
+        : `<${named ? `${arg.name}:` : ""}${arg.kind}>`;
   return [
-    command.executable,
+    names.map(quote).join("|"),
     ...command.args.map((arg) =>
       "if" in arg
-        ? `[${arg.args.map(argument).join(" ")} if ${arg.if}]`
+        ? `[${arg.args.map((value) => argument(value, true)).join(" ")} if ${arg.if}]`
         : argument(arg),
     ),
   ].join(" ");

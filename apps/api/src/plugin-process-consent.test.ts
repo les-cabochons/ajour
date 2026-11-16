@@ -56,7 +56,7 @@ describe("process access update consent", () => {
     expect(decision(access(), access(processes)).turnOff).toBe(true);
     expect(decision(access(processes), access(processes)).turnOff).toBe(false);
   });
-  it("holds an executable name change even when the argv shape stays the same", () => {
+  it("holds an executable name change and its argv shape", () => {
     expect(
       decision(
         access(declaration),
@@ -74,7 +74,7 @@ describe("process access update consent", () => {
 
 it.each([
   { args: ["{title:text}"] },
-  { mode: "detached" },
+  { mode: "detached", timeoutSeconds: undefined },
   { stdin: "text" },
   { timeoutSeconds: 600 },
   { args: [{ kind: "enum", name: "format", values: ["json", "text"] }] },

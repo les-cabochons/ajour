@@ -172,13 +172,13 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
         z
           .object({
             id: shortText,
-            argv: z.string().max(12000000),
-            policy: z.string().max(12000000),
+            argv: z.string().max(16 * 1024),
+            policy: z.string().max(16 * 1024),
             description: z.string().max(2000).optional(),
           })
           .strict(),
       )
-      .max(100)
+      .max(256)
       .default([]),
     openSchemes: z.array(shortText).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
@@ -205,13 +205,13 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
         z
           .object({
             id: shortText,
-            argv: z.string().max(12000000),
-            policy: z.string().max(12000000),
+            argv: z.string().max(16 * 1024),
+            policy: z.string().max(16 * 1024),
             description: z.string().max(2000).optional(),
           })
           .strict(),
       )
-      .max(100)
+      .max(256)
       .default([]),
     openSchemes: z.array(shortText).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),

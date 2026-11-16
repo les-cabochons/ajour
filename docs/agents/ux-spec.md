@@ -1142,28 +1142,32 @@ Decided in [Access review and credential management for existing plugins](https:
 
 ## Access review and consent
 
+Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
+
 API 4's `processes` declarations appear in Access as argv shapes, for example
 `t3 thread start <folder> - --title <text> --json`, with conditional groups in
 brackets, and schemes such as `codex:`. The existing New marker and update
 approval panel cover added or changed commands and added schemes. Changed
 command policies ask again even when they restrict access. Removed commands
-and schemes do not ask again. This declaration does not execute a process;
-the broker arrives in #713.
+and schemes do not ask again. Ajour doesn't run declared commands yet; the
+process broker (#713) will.
 
-A plugin declaring commands or app schemes shows this warning: "These commands
+A plugin declaring commands or app schemes shows this warning in Access and
+in update approval when commands or schemes are added: "These commands
 run as you, outside the sandbox." It explains that apps opened through schemes
 do too, that a plugin that starts processes is outside G1, and that these
-processes can read files and access credentials as the user. The sandbox's
+processes can read files and access every plugin's credentials, not only its own.
+With schemes the warning says "commands and links". Each scheme says it opens
+another app on this computer. Interpreter commands say they run code they are
+given and are as wide as Accept everything. The sandbox's
 network policy does not limit external commands or apps.
-
-Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
 
 - **The Access section** sits on each plugin's page before Features, in plain words. It says "What this plugin can reach. Ajour runs its code in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here." That is true of a plugin's own code: each plugin runs in its own sandbox and reaches the network only through Ajour's broker, which enforces the list. What the plugin does with the data it may read and the endpoints it may call is not limited by the list (G2 below).
   - **A plugin with agent tasks** adds "Its agent tasks are the exception: a coding agent outside Ajour carries them out, and the list doesn't limit what that agent does." The prompts of an agent task, such as Workday's, run in the user's own coding agent, outside the sandbox and outside the broker, so the section never claims the list limits them. The tools the task gets are listed, as above; what the agent does with its own browser and files is not.
   - Each host the plugin reaches: the address a connection saves ("The address in "Site URL"") and each derived host under the name its plugin gives it, with the address it works out. The endpoints of a host, as method and path, sit behind a disclosure ("N endpoints"), each with the access choice that unlocks it.
   - Public hosts, which Ajour reaches without a credential.
   - "Addresses on your own network", for a plugin that lets a connection be marked on-premises, and "Request headers", listing the headers it may set, when it may set any.
-  - The credential: the connection field Ajour adds to each request, which the plugin never sees. A secret address is the credential and the destination.
+  - The credential: the connection field Ajour adds to each request, which the plugin never sees unless it has process access. With process access, the line says its commands run as the user and can reach every plugin's credentials. A secret address is the credential and the destination.
   - Each agent task and the Ajour tools it gets, or "Gets no Ajour tools.".
   - The start mode: "Loads when needed" or "Always ready", which keeps the plugin loaded and uses about 30 MB.
   - An installed plugin also says "Last used N minutes ago." (or "Not used yet."), as the Vault page says of a secret. When the broker refused requests for access the plugin doesn't have, such as an endpoint it doesn't list, a warning says "Asked for access it doesn't have, refused. N times, last at 14:32." When its sandbox blocked a way out (#390), another says "Tried to connect directly, blocked. N times, last at 14:32." These come from the broker's records, which are written every 30 seconds.

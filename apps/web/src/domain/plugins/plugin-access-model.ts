@@ -285,9 +285,11 @@ export function describeAccess(
           ? `The secret address in ${names[0]}`
           : `The ${list(names)} on each connection`,
       detail:
-        auth.scheme === "secretAddress"
-          ? "The address is the credential. Ajour requests it itself, and the plugin never sees it."
-          : "Ajour adds it to each request. The plugin never sees it.",
+        summary.commands?.length || summary.openSchemes?.length
+          ? "Its commands run as you and can reach every plugin's credentials, not only its own."
+          : auth.scheme === "secretAddress"
+            ? "The address is the credential. Ajour requests it itself, and the plugin never sees it."
+            : "Ajour adds it to each request. The plugin never sees it.",
       isNew: (difference?.authSchemes ?? []).some(
         (added) =>
           added.scheme === auth.scheme &&
@@ -320,7 +322,7 @@ export function describeAccess(
       id: `scheme:${scheme}`,
       kind: "runtime",
       title: `${scheme}:`,
-      detail: "Opens links in this app scheme.",
+      detail: "Opens another app on this computer.",
       isNew: (difference?.openSchemes ?? []).includes(scheme),
     });
   }

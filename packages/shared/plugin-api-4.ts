@@ -462,7 +462,11 @@ const processIdSchema = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/);
 const processLiteralSchema = z
   .string()
   .max(1000)
-  .regex(/^[^\x00\r\n]*$/);
+  .regex(/^[^\x00\r\n]*$/)
+  .refine(
+    (value) => !/[\uD800-\uDFFF]/u.test(value),
+    "Lone surrogates are not allowed.",
+  );
 const processSlotKindSchema = z.enum([
   "text",
   "id",
@@ -480,10 +484,14 @@ const processEnumSchema = strictObject({
         .string()
         .min(1)
         .max(1000)
-        .regex(/^[^-\x00\r\n][^\x00\r\n]*$/),
+        .regex(/^[A-Za-z0-9_./:=+@][A-Za-z0-9_./:=+@-]*$/),
     )
     .min(1)
-    .max(100),
+    .max(100)
+    .refine(
+      (values) => new Set(values).size === values.length,
+      "Enum values must be unique.",
+    ),
 });
 /** One argv element. Compact slots are whole elements, never interpolation. */
 export const declaredArgumentSchema = z.union([
@@ -533,6 +541,18 @@ export const declaredCommandSchema = strictObject({
   mode: z.enum(["capture", "detached", "terminal"]),
   timeoutSeconds: z.number().int().min(1).max(600).optional(),
 }).superRefine((command, context) => {
+  if (new TextEncoder().encode(JSON.stringify(command)).length > 12 * 1024)
+    issue(context, [], "A command may use at most 12 KB.");
+  if (command.mode !== "capture") {
+    for (const field of ["stdin", "timeoutSeconds"] as const) {
+      if (command[field] !== undefined)
+        issue(
+          context,
+          [field],
+          "Only capture commands may declare this field.",
+        );
+    }
+  }
   const slots = new Set<string>();
   for (const arg of command.args.flatMap((arg) =>
     "if" in arg ? arg.args : [arg],
@@ -549,6 +569,12 @@ export const declaredCommandSchema = strictObject({
 });
 /** Parsed declaration for the process broker, with typed slots and groups. */
 export type DeclaredCommand = z.infer<typeof declaredCommandSchema>;
+const refusedExecutables = new Set(
+  "cmd command powershell pwsh sh bash zsh fish dash ksh csh tcsh wsl wscript cscript mshta rundll32 regsvr32 conhost start explorer".split(
+    " ",
+  ),
+);
+
 const executableNameSchema = z
   .string()
   .min(1)
@@ -557,6 +583,13 @@ const executableNameSchema = z
   .refine(
     (name) => name !== "." && name !== "..",
     "Use a bare executable name, never a path.",
+  )
+  .refine(
+    (name) =>
+      !refusedExecutables.has(
+        name.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, ""),
+      ),
+    "Shells and script hosts cannot be declared.",
   );
 const refusedSchemes = new Set([
   "http",
@@ -570,6 +603,9 @@ const refusedSchemes = new Set([
   "ajour",
   "ajour-plugin",
   "app",
+  ..."search search-ms shell view-source devtools filesystem chrome chrome-extension edge res its mk ftp smb nfs jar ldap telnet ssh".split(
+    " ",
+  ),
 ]);
 export const pluginProcessesSchema = strictObject({
   executables: z
@@ -578,20 +614,24 @@ export const pluginProcessesSchema = strictObject({
       strictObject({ names: z.array(executableNameSchema).min(1).max(10) }),
     )
     .default({}),
-  commands: z.array(declaredCommandSchema).max(100).default([]),
+  commands: z.array(declaredCommandSchema).max(256).default([]),
   openSchemes: z
     .array(
       z
         .string()
         .regex(/^[a-z][a-z0-9+.-]*$/)
         .refine(
-          (scheme) => !refusedSchemes.has(scheme),
+          (scheme) => !scheme.startsWith("ms-") && !refusedSchemes.has(scheme),
           "This scheme cannot be declared by a plugin.",
         ),
     )
     .max(30)
     .default([]),
 }).superRefine((processes, context) => {
+  if (new TextEncoder().encode(JSON.stringify(processes)).length > 256 * 1024)
+    issue(context, [], "The processes block may use at most 256 KB.");
+  if (Object.keys(processes.executables).length > 256)
+    issue(context, ["executables"], "Declare at most 256 executables.");
   const ids = new Set<string>();
   processes.commands.forEach((command, index) => {
     if (ids.has(command.id))
