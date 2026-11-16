@@ -862,8 +862,12 @@ it.skipIf(process.platform !== "win32")(
   },
 );
 
-// GitHub Windows images may lack Windows Terminal. Unit tests remain authoritative.
-it.skipIf(process.platform !== "win32")(
+// Opens a real Windows Terminal window, which needs an interactive desktop: CI
+// runners have none, so it runs only when AJOUR_REAL_WT_TEST=1 is set on a
+// developer machine. The unit tests above stay authoritative.
+it.skipIf(
+  process.platform !== "win32" || process.env.AJOUR_REAL_WT_TEST !== "1",
+)(
   "Given real Windows Terminal, a declared command receives every allowed argument exactly",
   async (context) => {
     const { findExecutable } = await import("./agent-runner/cli-path.ts");
