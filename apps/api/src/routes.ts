@@ -213,6 +213,26 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/activation",
     name: "plugin.activate",
   },
+  commandBridge: {
+    method: "GET",
+    path: "/api/process/bridge",
+    name: "plugin.process_read",
+  },
+  commandAnswer: {
+    method: "POST",
+    path: "/api/process/answer",
+    name: "plugin.process_update",
+  },
+  commandAccessRead: {
+    method: "GET",
+    path: "/api/plugins/:pluginId/command-access",
+    name: "plugin.process_read",
+  },
+  commandAccessUpdate: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/command-access",
+    name: "plugin.process_update",
+  },
   pluginProcessRead: {
     method: "GET",
     path: "/api/plugins/:pluginId/processes",

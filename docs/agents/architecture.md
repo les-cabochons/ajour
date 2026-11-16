@@ -188,7 +188,7 @@ catalog's `isSignedPlugin` rule. Access review receives the gate state from the
 API and shows the same refusal reason as the broker. Declared schemes use this same gate.
 
 `ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
-one runtime operation access to declared commands and approved links. The runtime supplies
+one runtime operation access to declared commands, undeclared capture commands and approved links. The runtime supplies
 the plugin id and manifest. The host closes this access when the operation ends,
 including cancellation and timeout. `ajour.open` delegates approved links to main.
 The SDK's `ajour.process.run` follows the
@@ -206,16 +206,15 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable. Capture starts at the filesystem root; launch modes
-use the resolved repository folder, never Ajour's working directory.
+inherit no `AJOUR_` variable. Declared capture commands start at the filesystem root. Declared launch modes use their resolved repository folder. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
 calls may run concurrently per plugin across operations. Timeout, excess output
 and operation completion stop the owned process tree with Windows taskkill or a
 POSIX process group. The broker checks activation and consent before starting;
-the unsigned process gates above also apply. #716 supplies command modes.
-Undeclared commands are refused. Detached and terminal launches are described below.
+the unsigned process gates above also apply. Undeclared commands require `processes.undeclaredCommands: true`, covered by consent, and follow the
+command modes below. Detached and terminal launches use the declared mode.
 
 `GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
 and refused count. `POST` accepts `{ executable, path }`, with an absolute path
@@ -1077,7 +1076,7 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
   - Declared commands run as approved with the plugin's access.
   - Undeclared commands follow the plugin's command mode: Always ask, Auto
     (asks for what the rules or the command reviewer mark risky) or Accept
-    everything, which gives G1 up for that plugin.
+    everything, which removes the last per-command check. Every mode is outside G1.
 
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
@@ -1182,3 +1181,11 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+### Undeclared command modes
+
+`command-review.ts` owns the decision table and the `CommandReview` port. Its only implementation returns no verdict. Rules arrive in #717. Undeclared `process.run` accepts a bare executable name and an argv list. Text arguments reject Unicode controls, format characters and line or paragraph separators but allow a leading dash. Folder names and paths and resolved executable paths reject the same characters. Non-ASCII whitespace displays as visible escapes. Undeclared commands never borrow a declared executable override. The broker resolves `cwdFolder` through the repository folder resolver and rechecks gates immediately before spawn.
+
+The API state keeps the user's mode and exact remembered approvals per plugin. Signed plugins default to Auto; unsigned and development plugins default to Always ask. Losing a signature resets the mode to Always ask. Version, package identity, signature loss and development-directory changes invalidate approvals. Only window-token routes change the user's mode or remove approvals. Plugin operations cannot call those routes.
+
+`command-asks.ts` holds at most two pending requests per plugin and 64 overall, refusing overflow with `ask_queue_full`, and shows one at a time over `/api/process/bridge`, an SSE stream independent of MCP. The visible ask expires after two minutes. Deny all from this plugin denies its queued asks. A saved Always approval releases queued identical asks. Always saves only after executable resolution and cannot overwrite a newer policy identity. The dialog shows the plugin id, signature status, resolved executable and folder name and path. Allow once and Always have a 600 ms input delay. The host reopens a refused stream through the bridge connection logic. Disconnection or no window denies it. Operation cancellation removes it. The operation lifetime pauses its execution timeout while a command waits for its answer, including queue time. A reply never bypasses a subsequent gate refusal. The window posts answers through `/api/process/answer` with its window token. Events hold mode and `decided_by`, never command text.

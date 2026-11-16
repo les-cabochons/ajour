@@ -615,7 +615,7 @@ export const catalog = defineCatalog({
     },
     /** Read process overrides and activity for Access review. */
     "plugin.process_read": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: { ...requestFields, plugin: { id: operational() } },
     },
@@ -702,6 +702,10 @@ export const catalog = defineCatalog({
         "unsigned_processes_off",
         "process_acceptance_required",
         "package_unverified",
+        "ask_queue_full",
+        "user_denied",
+        "no_window",
+        "ask_timeout",
         "undeclared",
         "folder_refused",
         "executable_missing",
@@ -716,7 +720,15 @@ export const catalog = defineCatalog({
       fields: {
         plugin: { id: operational() },
         process: {
-          mode: operational<"capture" | "detached" | "terminal">(),
+          mode: operational<
+            | "always-ask"
+            | "auto"
+            | "accept-everything"
+            | "capture"
+            | "detached"
+            | "terminal"
+          >(),
+
           command_id: operational(),
           exit_code: operational<number>(),
           decided_by: operational<
@@ -730,6 +742,7 @@ export const catalog = defineCatalog({
             | "rule"
             | "reviewer"
             | "user"
+            | "remembered"
             | "mode"
           >(),
           rule_id: operational(),

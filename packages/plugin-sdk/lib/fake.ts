@@ -322,9 +322,11 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
         if (
           !options.processRun ||
           (manifest &&
-            !manifest.processes?.commands?.some(
-              (command) => command.id === request.command,
-            ))
+            ("command" in request
+              ? !manifest.processes?.commands?.some(
+                  (command) => command.id === request.command,
+                )
+              : manifest.processes?.undeclaredCommands !== true))
         )
           throw Object.assign(new Error("No process fixture supplied."), {
             name: "AjourProcessError",

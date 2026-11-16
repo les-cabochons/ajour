@@ -45,6 +45,7 @@ export interface McpBridgeHandlers {
     unit: Unit<AjourCatalog, "agent_tool.call">,
   ): BridgeToolResult | Promise<BridgeToolResult>;
   onStatus(status: McpBridgeStatus): void;
+  onStream?(stream: EventSource): void;
   /** The API's agents snapshot, on attach and after every change. */
   onAgents?(snapshot: AgentsSnapshot): void;
 }
@@ -147,6 +148,7 @@ export function connectMcpBridge(
       job.end("error", "disconnected");
       reopenTimer = setTimeout(open, REOPEN_DELAY_MS);
     };
+    handlers.onStream?.(stream);
     stream.addEventListener("handoffs", (message) => {
       try {
         const parsed = handoffsSnapshotSchema.safeParse(

@@ -299,6 +299,7 @@ async function main() {
     pluginRuntime: runtime,
     brokerActivityWindowMs: 0,
   });
+  let closeCommandStream = () => {};
   const request = (method, url, body) =>
     dispatchJsonRequest(server, {
       method,
@@ -402,11 +403,64 @@ async function main() {
       packageKey: gate?.packageKey,
       acceptedStatus: accepted.status,
     });
+    // A connected window receives the exact undeclared command and denies it.
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const commandStreamAbort = new AbortController();
+    const commandStream = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/process/bridge`,
+      {
+        headers: {
+          origin: "app://local",
+          "x-ajour-window-token": "test-window-token",
+        },
+        signal: commandStreamAbort.signal,
+      },
+    );
+    if (!commandStream.ok)
+      throw new Error(`Command stream refused: ${commandStream.status}`);
+    let commandAsksDenied = 0;
+    const consumeCommands = (async () => {
+      let pending = "";
+      for await (const chunk of commandStream.body) {
+        pending += new TextDecoder().decode(chunk);
+        let boundary;
+        while ((boundary = pending.indexOf("\n\n")) >= 0) {
+          const message = pending.slice(0, boundary);
+          pending = pending.slice(boundary + 2);
+          const data = message
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+          if (!data) continue;
+          const ask = JSON.parse(data.slice(6));
+          if (!ask) continue;
+          if (
+            ask.executable !== "node" ||
+            JSON.stringify(ask.argv) !== '["--version"]'
+          )
+            throw new Error("Ask changed the command.");
+          await request("POST", "/api/process/answer", {
+            id: ask.id,
+            answer: "deny",
+          });
+          commandAsksDenied += 1;
+        }
+      }
+    })();
     const synced = await request(
       "POST",
       `/api/plugins/fixture-tracker/connections/${connectionId}/sync`,
       { trigger: "auto", workItems: [] },
     );
+    closeCommandStream = () => {
+      commandStreamAbort.abort();
+      server.closeAllConnections();
+      server.close();
+    };
+    void consumeCommands.catch((error) => {
+      if (error.name !== "AbortError")
+        report("error", { error: String(error) });
+    });
+    report("command-ask", { denied: commandAsksDenied });
     const syncText = JSON.stringify(synced.body);
     report("broker", {
       processActivity: (
@@ -817,6 +871,7 @@ async function main() {
     pluginPagesLeft: pluginPages().length,
     events: summarize(emitted),
   });
+  closeCommandStream();
   clearTimeout(watchdog);
   service.server.close();
   catchAll.server.close();

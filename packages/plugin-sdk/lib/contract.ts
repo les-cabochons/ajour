@@ -313,6 +313,7 @@ export type PluginManifest = {
               timeoutSeconds?: number | undefined;
             }[]
           | undefined;
+        undeclaredCommands?: true | undefined;
         openSchemes?: string[] | undefined;
         executables?: Record<string, { names: string[] }> | undefined;
       }
@@ -428,6 +429,7 @@ export type PluginProcesses = {
         timeoutSeconds?: number | undefined;
       }[]
     | undefined;
+  undeclaredCommands?: true | undefined;
   openSchemes?: string[] | undefined;
   executables?: Record<string, { names: string[] }> | undefined;
 };

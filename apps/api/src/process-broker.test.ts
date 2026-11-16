@@ -51,17 +51,17 @@ async function fixture(
   const folders = new FolderResolver(storage, {});
   const sink = createRecordingSink<AjourEvent>();
   const broker = new ProcessBroker({
-    folders,
     events: createApiEvents({ sink, userDataPath: root }),
+    folders,
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
   });
   return {
     root,
-    sink,
     manifest,
     broker,
     folder,
+    sink,
     op: broker.forOperation({
       pluginId: manifest.id,
       manifest,
@@ -188,6 +188,10 @@ it("Given four active calls across operations, a fifth is refused and close canc
   await expect(other.run({ command: "run", args: {} })).rejects.toMatchObject({
     reason: "concurrency",
   });
+  manifest.processes!.undeclaredCommands = true;
+  await expect(
+    other.run({ executable: "node", argv: ["--version"] }),
+  ).rejects.toMatchObject({ reason: "concurrency" });
   op.close();
   expect(await Promise.all(pending)).toEqual(
     Array.from({ length: 4 }, () =>
@@ -218,24 +222,11 @@ it.each(["plugin_off", "needs_consent"] as const)(
     ).rejects.toMatchObject({ reason });
   },
 );
-it("Given undeclared commands and launch modes without a folder, refuses", async () => {
+it("Given undeclared commands and modes not yet supported, refuses", async () => {
   const { op, manifest, broker } = await fixture();
   await expect(op.run({ command: "unknown", args: {} })).rejects.toMatchObject({
     reason: "undeclared",
   });
-  for (const mode of ["detached", "terminal"] as const) {
-    const altered = structuredClone(manifest);
-    altered.processes!.commands[0]!.mode = mode;
-    await expect(
-      broker
-        .forOperation({
-          pluginId: manifest.id,
-          manifest: altered,
-          method: "syncConnection",
-        })
-        .run({ command: "run", args: { title: "x" } }),
-    ).rejects.toMatchObject({ reason: "folder_refused" });
-  }
 });
 it("Given a repository folder in Ajour data, refuses it", async () => {
   const { manifest, root } = await fixture(["{folder:folder}"]);
@@ -663,6 +654,202 @@ it("Given caller project context, refuses a folder from another project", async 
       .run({ command: "run", args: { folder: folder.id } }),
   ).rejects.toMatchObject({ reason: "folder_refused" });
 });
+
+it("Given an undeclared capture command, preserves leading options and resolves cwd by id", async () => {
+  const { root, manifest, folder } = await fixture();
+  manifest.processes!.undeclaredCommands = true;
+  const broker = new ProcessBroker({
+    folders: { resolve: async (id) => (id === folder.id ? root : undefined) },
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+    policy: async () => ({
+      identity: "v1",
+      signed: true,
+      mode: "auto",
+      approvals: [],
+    }),
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  const result = await op.run({
+    executable: "node",
+    argv: [
+      "-p",
+      "JSON.stringify([process.cwd(), process.argv.slice(1)])",
+      "--",
+      "-value",
+      "a  b & c",
+    ],
+    cwdFolder: folder.id,
+  });
+  // The child reports its cwd as the system sees it: macOS turns /var into
+  // /private/var, while Windows keeps a short 8.3 name such as RUNNER~1.
+  const { realpath } = await import("node:fs/promises");
+  const [cwd, argv] = JSON.parse(result.stdout!);
+  expect([root, await realpath(root)]).toContain(cwd);
+  expect(argv).toEqual(["-value", "a  b & c"]);
+  await expect(
+    op.run({ executable: "node", argv: [], cwdFolder: "missing" }),
+  ).rejects.toMatchObject({ reason: "folder_refused" });
+  await broker.shutdown();
+});
+it.each([
+  "cmd.exe",
+  "bash",
+  "pwsh",
+  "wscript",
+  "C:/tool.exe",
+  "../tool",
+  "tool.ps1",
+])(
+  "Given executable %s, no mode or review bypasses name validation",
+  async (executable) => {
+    const { manifest } = await fixture();
+    const review = vi.fn(async () => ({ verdict: "none" as const }));
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      review: { review },
+      policy: async () => ({
+        identity: "v",
+        signed: true,
+        mode: "accept-everything",
+        approvals: [],
+      }),
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ executable, argv: [] }),
+    ).rejects.toMatchObject({ reason: "invalid_request" });
+    expect(review).not.toHaveBeenCalled();
+  },
+);
+it.each([
+  "x\0y",
+  "x\ry",
+  "x\ny",
+  "x\u202ey",
+  "x\u2028y",
+  "x\u2029y",
+  "x\ty",
+  "x\u007fy",
+  "xㅤy",
+  "xᅟy",
+  "xﾠy",
+  "x͏y",
+  "x️y",
+  "x\ud800y",
+  "x͸y",
+])("Given an invalid argument, refuses %j", async (value) => {
+  const { op } = await fixture();
+  await expect(
+    op.run({ executable: "git", argv: [value] }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+it("Given Always, remembers only the exact line and folder, then rechecks gates after an ask", async () => {
+  const { manifest, root, folder } = await fixture();
+  manifest.processes!.undeclaredCommands = true;
+  let off = false;
+  const approvals: import("../../../packages/shared/command-modes.ts").CommandPolicy["approvals"] =
+    [];
+  const ask = vi.fn(async () => ({ answer: "always" as const }));
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => root },
+    gate: async () => (off ? "plugin_off" : undefined),
+    executableOverride: async () => process.execPath,
+    policy: async () => ({
+      identity: "v",
+      signed: true,
+      mode: "always-ask",
+      approvals,
+    }),
+    ask,
+    remember: async (_caller, command) => {
+      approvals.push({ ...command, id: "approved" });
+    },
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  const request = {
+    executable: "node",
+    argv: ["--version"],
+    cwdFolder: folder.id,
+  };
+  await op.run(request);
+  await op.run(request);
+  expect(ask).toHaveBeenCalledTimes(1);
+  await op.run({ ...request, argv: ["-v"] });
+  expect(ask).toHaveBeenCalledTimes(2);
+  await op.run({ ...request, cwdFolder: undefined });
+  expect(ask).toHaveBeenCalledTimes(3);
+  off = true;
+  await expect(op.run(request)).rejects.toMatchObject({ reason: "plugin_off" });
+  off = false;
+  ask.mockImplementationOnce(async () => {
+    off = true;
+    return { answer: "always" };
+  });
+  await expect(op.run({ ...request, argv: ["--help"] })).rejects.toMatchObject({
+    reason: "plugin_off",
+  });
+  await broker.shutdown();
+});
+
+it.each([
+  ["user_denied", "user"],
+  ["ask_queue_full", "gate"],
+  ["ask_timeout", "mode"],
+  ["no_window", "gate"],
+] as const)(
+  "Given %s, plugin.process records %s without argv",
+  async (reason, decidedBy) => {
+    const { manifest } = await fixture();
+    manifest.processes!.undeclaredCommands = true;
+    const marker = "private-command-text";
+    const sink = createRecordingSink<AjourEvent>();
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
+      policy: async () => ({
+        identity: "v",
+        signed: true,
+        mode: "always-ask",
+        approvals: [],
+      }),
+      ask: async () => ({ answer: "deny", reason }),
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ executable: "git", argv: [marker] }),
+    ).rejects.toMatchObject({ reason });
+    expect(sink.events).toMatchObject([
+      {
+        name: "plugin.process",
+        outcome: "refused",
+        process: { mode: "always-ask", decided_by: decidedBy },
+      },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain(marker);
+  },
+);
+
 it("Given a detached command, returns started and leaves the child alive after close and shutdown", async () => {
   const { manifest, broker, root, folder, sink } = await fixture(
     ["{folder:folder}"],
@@ -921,3 +1108,145 @@ it.skipIf(
   },
   20000,
 );
+
+it.each(["always-ask", "auto", "accept-everything"] as const)(
+  "Given no undeclared access under %s, refuses without reading policy",
+  async (mode) => {
+    const { manifest } = await fixture();
+    const policy = vi.fn(async () => ({
+      identity: "v",
+      signed: true,
+      mode,
+      approvals: [],
+    }));
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      policy,
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ executable: "node", argv: ["--version"] }),
+    ).rejects.toMatchObject({ reason: "undeclared" });
+    expect(policy).not.toHaveBeenCalled();
+  },
+);
+
+it("Given no process access, a refusal reads no policy and writes no activity", async () => {
+  const { manifest } = await fixture();
+  delete manifest.processes;
+  const policy = vi.fn();
+  const record = vi.fn();
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+    policy,
+    record,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ command: "missing", args: {} }),
+  ).rejects.toMatchObject({ reason: "undeclared" });
+  expect(policy).not.toHaveBeenCalled();
+  expect(record).not.toHaveBeenCalled();
+});
+it("Given an undeclared executable with a declared key, ignores the override and shows its resolved path", async () => {
+  const { manifest } = await fixture();
+  manifest.processes!.undeclaredCommands = true;
+  const override = vi.fn(async () => "C:/wrong.exe");
+  const ask = vi.fn(async (_ask: unknown) => ({
+    answer: "deny" as const,
+    reason: "user_denied" as const,
+  }));
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+    executableOverride: override,
+    ask,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ executable: "node", argv: ["--version"] }),
+  ).rejects.toMatchObject({ reason: "user_denied" });
+  expect(override).not.toHaveBeenCalled();
+  expect(ask.mock.calls[0]?.[0]).toMatchObject({
+    resolvedExecutable: expect.stringMatching(/node(?:\.exe)?$/),
+  });
+});
+
+it.each([
+  "x\u202ey",
+  "x\u2028y",
+  "x\ty",
+  "\ud83d\udc68\u200d\ud83d\udc69",
+  "re\u00adport",
+])(
+  "Given folder display %j chosen by the user, asks with it for the dialog to escape",
+  async (value) => {
+    const { manifest, root } = await fixture();
+    manifest.processes!.undeclaredCommands = true;
+    const ask = vi.fn(async (_ask: unknown) => ({
+      answer: "deny" as const,
+      reason: "user_denied" as const,
+    }));
+    for (const spoofName of [true, false]) {
+      const broker = new ProcessBroker({
+        folders: { resolve: async () => (spoofName ? root : value) },
+        folderName: async () => (spoofName ? value : "Repo"),
+        gate: async () => undefined,
+        ask,
+      });
+      await expect(
+        broker
+          .forOperation({
+            pluginId: manifest.id,
+            manifest,
+            method: "syncConnection",
+          })
+          .run({ executable: "node", argv: [], cwdFolder: "folder" }),
+      ).rejects.toMatchObject({ reason: "user_denied" });
+    }
+    expect(ask.mock.calls.map(([a]) => a)).toMatchObject([
+      { folderName: value, folderPath: root },
+      { folderName: "Repo", folderPath: value },
+    ]);
+  },
+);
+it("Given a missing executable, never asks or saves Always", async () => {
+  const { manifest } = await fixture();
+  manifest.processes!.undeclaredCommands = true;
+  const ask = vi.fn(async () => ({ answer: "always" as const }));
+  const remember = vi.fn();
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+    ask,
+    remember,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ executable: "ajour-nonexistent-test-executable", argv: [] }),
+  ).rejects.toMatchObject({ reason: "executable_missing" });
+  expect(ask).not.toHaveBeenCalled();
+  expect(remember).not.toHaveBeenCalled();
+});

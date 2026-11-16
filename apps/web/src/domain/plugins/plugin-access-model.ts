@@ -269,7 +269,9 @@ export function describeAccess(
       kind: "network",
       title: "No network access",
       detail:
-        summary.commands?.length || summary.openSchemes?.length
+        summary.undeclaredCommands ||
+        summary.commands?.length ||
+        summary.openSchemes?.length
           ? "Its sandbox has no network access. External commands and apps may reach the network."
           : "This plugin can't reach the network.",
     });
@@ -285,7 +287,9 @@ export function describeAccess(
           ? `The secret address in ${names[0]}`
           : `The ${list(names)} on each connection`,
       detail:
-        summary.commands?.length || summary.openSchemes?.length
+        summary.undeclaredCommands ||
+        summary.commands?.length ||
+        summary.openSchemes?.length
           ? "Its commands run as you and can reach every plugin's credentials, not only its own."
           : auth.scheme === "secretAddress"
             ? "The address is the credential. Ajour requests it itself, and the plugin never sees it."
@@ -306,6 +310,15 @@ export function describeAccess(
     });
   }
 
+  if (summary.undeclaredCommands)
+    add({
+      id: "commands:undeclared",
+      kind: "runtime",
+      title: "Undeclared commands",
+      detail:
+        "This plugin may run commands it doesn't declare; under Auto, a command no rule marks risky runs without asking; under Accept everything, any command runs.",
+      isNew: difference?.undeclaredCommands === true,
+    });
   for (const command of summary.commands ?? []) {
     add({
       id: `command:${command.id}`,

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { stat, access, constants } from "node:fs/promises";
 import path from "node:path";
 
 import { resolveSpawn } from "../process-spawn/index.ts";
@@ -83,6 +83,7 @@ export async function findExecutable(
       const candidate = path.join(directory, name + extension);
       try {
         await access(candidate, constants.X_OK);
+        if (!(await stat(candidate)).isFile()) continue;
         return candidate;
       } catch {
         // Not here; try the next directory.

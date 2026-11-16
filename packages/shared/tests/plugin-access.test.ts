@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  NO_PLUGIN_ACCESS,
   pluginAccessDifference,
   summarizePluginAccess,
   widensAccess,
@@ -41,6 +42,7 @@ const NOTHING: PluginAccessDifference = {
   endpoints: [],
   publicHosts: [],
   commands: [],
+  undeclaredCommands: false,
   openSchemes: [],
   mcpTools: [],
   agentPrompts: [],
@@ -511,6 +513,7 @@ describe("the access summary", () => {
   it("lists what the plugin reaches, in a stable order", () => {
     expect(summary(gitHubManifest())).toEqual({
       commands: [],
+      undeclaredCommands: false,
       openSchemes: [],
       capabilities: ["codeHost", "connector"],
       authSchemes: [{ scheme: "bearer", fields: ["token"] }],
@@ -700,4 +703,16 @@ describe("an update that removes a gate", () => {
     expect(result.endpoints).toEqual([]);
     expect(widensAccess(result)).toBe(false);
   });
+});
+
+it("Given undeclared commands are newly declared, summary lists them and access widens", () => {
+  const manifest = pluginApi4ManifestSchema.parse({
+    ...gitHubManifest(),
+    processes: { undeclaredCommands: true },
+  });
+  const next = summarizePluginAccess(manifest, { agentPrompts: {} });
+  expect(next.undeclaredCommands).toBe(true);
+  expect(widensAccess(pluginAccessDifference(NO_PLUGIN_ACCESS, next))).toBe(
+    true,
+  );
 });

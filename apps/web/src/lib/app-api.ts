@@ -5,6 +5,11 @@ import {
   handoffsSnapshotSchema,
   type HandoffStartRoute,
 } from "@ajour/shared/handoffs";
+
+import {
+  commandAccessSchema,
+  type CommandMode,
+} from "@ajour/shared/command-modes";
 import { repositoryFoldersSchema } from "@ajour/shared/repository-folders";
 import {
   startBacklogSync,
@@ -1963,5 +1968,36 @@ export function setHandoffVisibility(visible: boolean) {
     "/api/handoffs/visibility",
     { method: "POST", body: JSON.stringify({ visible }) },
     z.object({ ok: z.boolean() }),
+  );
+}
+
+export function getCommandAccess(pluginId: string) {
+  return appApiRequest(
+    "getCommandAccess",
+    `/api/plugins/${encodeURIComponent(pluginId)}/command-access`,
+    undefined,
+    commandAccessSchema,
+  );
+}
+export function updateCommandAccess(
+  pluginId: string,
+  change: { mode: CommandMode } | { remove: string },
+) {
+  return appApiRequest(
+    "updateCommandAccess",
+    `/api/plugins/${encodeURIComponent(pluginId)}/command-access`,
+    { method: "POST", body: JSON.stringify(change) },
+    commandAccessSchema,
+  );
+}
+export function answerCommand(
+  id: string,
+  answer: "once" | "always" | "deny" | "deny-all",
+) {
+  return appApiRequest(
+    "answerCommand",
+    "/api/process/answer",
+    { method: "POST", body: JSON.stringify({ id, answer }) },
+    { parse: (value: unknown) => value },
   );
 }

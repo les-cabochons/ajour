@@ -304,22 +304,28 @@ export interface CredentialBrokerOptions {
 export interface FolderResolver {
   resolve(id: string, projectId?: string): Promise<string | undefined>;
 }
-export interface ProcessRunRequest {
-  command: string;
-  args: Readonly<Record<string, string | number>>;
-  stdin?: string;
-}
+export type ProcessRunRequest =
+  | { executable: string; argv: readonly string[]; cwdFolder?: string }
+  | {
+      command: string;
+      args: Readonly<Record<string, string | number>>;
+      stdin?: string;
+    };
+
 export type ProcessRunResult =
   | { started: true; exitCode?: never; stdout?: never; stderr?: never }
   | ProcessCaptureResult;
 export interface ProcessCaptureResult {
   started?: never;
+
   exitCode: number | null;
   stdout: string;
   stderr: string;
 }
 export interface OperationProcessBroker {
+  onWaiting?(listener: (waiting: boolean) => void): void;
   open(url: string): Promise<void>;
+
   run(request: ProcessRunRequest): Promise<ProcessRunResult>;
   close(): void;
 }
