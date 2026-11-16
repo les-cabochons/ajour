@@ -5,24 +5,26 @@ A plugin that hands a backlog item to a coding tool, such as T3 Code, Claude Cod
 **What a plugin declares.** The manifest's `processes` block names executables by bare name, and commands built from typed argument slots: `literal`, `text`, `id`, `ref`, `number`, `enum`, `https-url` and `folder`. Access review lists each declared command, turning the plugin on approves them, and an update that adds or widens one asks again, like a new host.
 
 **How a command starts.**
+
 - The arguments stay a list from the plugin to the process. There is no shell, ever.
 - Free text goes on stdin.
 - A `folder` argument is the id of a repository folder the user added. A plugin never names a path.
-- No value may start with `-`, so a value can't pass for an option.
+- A declared argument value cannot start with `-`. An undeclared command allows it because the ask shows every argument.
 - The broker finds an executable on the user's PATH by its name. A plugin never gives a path to run.
 - A Windows `.cmd` or `.bat` file runs only the way #706 proved safe: the shim resolved to its real executable, or escaped for `cmd.exe` with whatever can't be made safe refused.
 - The environment is the user's without any `AJOUR_` variable. No secret ever enters argv, stdin or the environment.
 
 **Gates.** A command runs only while its plugin is on and the user's consent covers it. An unsigned plugin, or one from a development directory, passes two more gates:
+
 1. **Unsigned plugins can start processes**, one switch for all plugins, which starts off.
 2. An explicit acceptance on that plugin's page.
 
 **Undeclared commands and command modes.** A plugin may ask for a command its manifest doesn't declare. Each plugin has a **command mode** that decides what happens:
-- **Always ask**: every undeclared command asks, showing the exact command line and folder, with *Allow once*, *Always* and *Deny*. This is the default for unsigned and development-directory plugins.
 
-  What *Always* remembers is not decided here. It may be the exact command line, or the executable with a literal prefix. The ticket that builds remembered approvals decides it before any code, together with:
-  - when a remembered approval stops counting: an update, a lost signature, a change of development directory;
-  - where the user sees and revokes them.
+- **Always ask**: every undeclared command asks, showing the exact command line and folder, with _Allow once_, _Always_ and _Deny_. This is the default for unsigned and development-directory plugins.
+
+  _Always_ remembers the exact executable name, every argument and the folder id, nothing broader. A remembered approval stops counting when the plugin's version or package changes, when it loses its signature, or when its development directory changes. The package identity is the one the unsigned process gates use. The Access tab lists each approval with Remove. The ask shows exactly that line, so what the user approves and what runs stay identical. Decided in #716.
+
 - **Auto**: an undeclared command runs unless a rule or the command reviewer marks it risky, which asks. This is the default for signed plugins.
 - **Accept everything**: every undeclared command runs, behind a red warning.
 
@@ -60,6 +62,7 @@ Links inside content stay blocked, as #331 decided. That rule is about what a pa
   - The `folder` slot can never be either folder.
 
   Access review and the command mode's warning say this in plain words, and a release claims G1 only for plugins without process access.
+
 - G2 widens and Access review says so plainly: under Auto and Accept everything, a plugin runs commands nobody approved one by one, as the user and outside the sandbox. A command a plugin starts can do whatever the user can.
 - Declared commands are part of a plugin's access, so the consent record and Access review list them, and an update that adds one starts off until the user approves it again.
 - Each command emits one `plugin.process` event: the command id, outcome, exit code, duration, the matching rule's id, the reviewer's label and score, and what decided. It never holds argv text, stdin or a path (ADR 0011).

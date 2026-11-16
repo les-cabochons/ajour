@@ -72,6 +72,7 @@ export interface PluginAccessSummary {
   endpoints: PluginAccessEndpoint[];
   publicHosts: string[];
   commands?: PluginAccessCommand[];
+  undeclaredCommands?: boolean;
   openSchemes?: string[];
   mcpTools: PluginAccessMcpTool[];
   agentPrompts: PluginAccessPrompt[];
@@ -97,6 +98,7 @@ export interface PluginAccessDifference {
   endpoints: PluginAccessEndpoint[];
   publicHosts: string[];
   commands?: PluginAccessCommand[];
+  undeclaredCommands?: boolean;
   openSchemes?: string[];
   mcpTools: PluginAccessMcpTool[];
   /** Agent tasks whose prompt is new or changed. */
@@ -180,6 +182,7 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
       )
       .max(256)
       .default([]),
+    undeclaredCommands: z.boolean().default(false),
     openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z
@@ -213,6 +216,7 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
       )
       .max(256)
       .default([]),
+    undeclaredCommands: z.boolean().default(false),
     openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z.array(shortText).max(10),

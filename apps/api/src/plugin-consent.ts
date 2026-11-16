@@ -99,6 +99,8 @@ export async function processConsentGate(
   });
   if (
     !consent ||
+    (access.undeclaredCommands === true &&
+      consent.access.undeclaredCommands !== true) ||
     (access.commands ?? []).some(
       (c) =>
         !(consent.access.commands ?? []).some(

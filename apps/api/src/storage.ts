@@ -2,6 +2,10 @@ import {
   handoffTemplatesSchema,
   type HandoffTemplates,
 } from "../../../packages/shared/handoff-templates.ts";
+import {
+  commandPolicySchema,
+  type CommandPolicy,
+} from "../../../packages/shared/command-modes.ts";
 import { z } from "zod";
 import {
   handoffRecordSchema,
@@ -500,6 +504,7 @@ interface AppApiStateV8 {
       lastRunAt?: number;
       refusedCount: number;
       acceptance?: string;
+      commandPolicy?: CommandPolicy;
     }
   >;
   /**
@@ -1244,6 +1249,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
             lastRunAt: z.number().finite().optional(),
             refusedCount: z.number().nonnegative().default(0),
             acceptance: z.string().optional(),
+            commandPolicy: commandPolicySchema.optional().catch(undefined),
           })
           .safeParse(value);
         return parsed.success ? [[id, parsed.data]] : [];
@@ -2165,7 +2171,26 @@ export class AppApiStorage {
           pluginOrigins: { ...state.pluginOrigins, [pluginId]: parsed },
           pluginProcesses: {
             ...state.pluginProcesses,
-            ...(previous ? { [pluginId]: settings } : {}),
+            ...(previous
+              ? {
+                  [pluginId]: {
+                    ...settings,
+                    ...(previous.commandPolicy
+                      ? {
+                          commandPolicy: {
+                            ...previous.commandPolicy,
+                            approvals: [],
+                            mode:
+                              previous.commandPolicy.signed && !parsed.signed
+                                ? "always-ask"
+                                : previous.commandPolicy.mode,
+                            signed: parsed.signed,
+                          },
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
           },
         },
         result: undefined,
@@ -2510,6 +2535,107 @@ export class AppApiStorage {
     return Object.hasOwn(state.pluginProcesses, pluginId)
       ? state.pluginProcesses[pluginId]
       : undefined;
+  }
+  private commandPolicyIn(
+    state: AppApiState,
+    pluginId: string,
+    identity: string,
+    development: boolean,
+  ): CommandPolicy {
+    const signed =
+      !development && state.pluginOrigins[pluginId]?.signed === true;
+    const saved = this.processSettingsIn(state, pluginId)?.commandPolicy;
+    return {
+      identity,
+      signed,
+      mode:
+        saved?.signed === true && !signed
+          ? "always-ask"
+          : (saved?.mode ?? (signed ? "auto" : "always-ask")),
+      approvals:
+        saved?.identity === identity && saved.signed === signed
+          ? saved.approvals
+          : [],
+    };
+  }
+  async commandPolicy(
+    pluginId: string,
+    identity: string,
+    development: boolean,
+  ): Promise<CommandPolicy> {
+    const state = await this.readState();
+    const saved = this.processSettingsIn(state, pluginId)?.commandPolicy;
+    const policy = this.commandPolicyIn(state, pluginId, identity, development);
+    if (!saved || saved.identity !== identity || saved.signed !== policy.signed)
+      return this.changeCommandPolicy(
+        pluginId,
+        identity,
+        development,
+        (current) => current,
+      );
+    return policy;
+  }
+  /** Serialize user changes and remembered approvals with package invalidation. */
+  async changeCommandPolicy(
+    pluginId: string,
+    identity: string,
+    development: boolean,
+    change: (current: CommandPolicy) => CommandPolicy,
+    expected?: CommandPolicy,
+  ): Promise<CommandPolicy> {
+    return this.mutate((state) => {
+      const saved = this.processSettingsIn(state, pluginId)?.commandPolicy;
+      if (
+        expected &&
+        (!saved ||
+          saved.identity !== expected.identity ||
+          saved.signed !== expected.signed ||
+          identity !== expected.identity)
+      )
+        return { nextState: state, result: saved ?? expected };
+      const policy = commandPolicySchema.parse(
+        change(this.commandPolicyIn(state, pluginId, identity, development)),
+      );
+      return {
+        nextState: {
+          ...state,
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            [pluginId]: {
+              ...(this.processSettingsIn(state, pluginId) ?? {
+                overrides: {},
+                refusedCount: 0,
+              }),
+              commandPolicy: policy,
+            },
+          },
+        },
+        result: policy,
+      };
+    });
+  }
+
+  async saveCommandPolicy(
+    pluginId: string,
+    policy: CommandPolicy,
+  ): Promise<void> {
+    const parsed = commandPolicySchema.parse(policy);
+    await this.mutate(async (state) => ({
+      nextState: {
+        ...state,
+        pluginProcesses: {
+          ...state.pluginProcesses,
+          [pluginId]: {
+            ...(this.processSettingsIn(state, pluginId) ?? {
+              overrides: {},
+              refusedCount: 0,
+            }),
+            commandPolicy: parsed,
+          },
+        },
+      },
+      result: undefined,
+    }));
   }
   async getPluginProcessSettings(pluginId: string) {
     const saved = this.processSettingsIn(await this.readState(), pluginId) ?? {

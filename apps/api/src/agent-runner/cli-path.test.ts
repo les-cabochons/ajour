@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -183,4 +183,19 @@ describe.skipIf(process.platform !== "win32")("Windows CLI version", () => {
       refused: "unknown_shim",
     });
   });
+});
+
+it("Given a directory with the executable name earlier on PATH, continues to the actual executable", async () => {
+  const first = await tempDir("cli-path-directory-");
+  const second = await tempDir("cli-path-file-");
+  await mkdir(path.join(first, "tool"));
+  const file = path.join(
+    second,
+    process.platform === "win32" ? "tool.exe" : "tool",
+  );
+  await writeFile(file, "");
+  await chmod(file, 0o755);
+  expect(
+    await findExecutable("tool", [first, second].join(path.delimiter)),
+  ).toBe(file);
 });

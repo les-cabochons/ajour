@@ -562,6 +562,13 @@ Feature: Backlog list and board views
     And I open the Backlog parent page
     Then the item page's actions fit inside the window
 
+  Scenario: Narrow comments have no timeline
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I open the Backlog parent page
+    And I narrow the window to the narrow view
+    Then each comment takes the full width, with its author's initials in its header
+
   Scenario: Switching items from the sidebar replaces the synced item's page
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

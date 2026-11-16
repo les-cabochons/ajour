@@ -1001,7 +1001,7 @@ channel to read the event each emits.
 | `plugin.list`                        | command, request                        | route, client call                               |
 | `plugin.open`                        | job                                     | local API                                        |
 | `plugin.process`                     | job                                     | local API                                        |
-| `plugin.process_read`                | request                                 | route                                            |
+| `plugin.process_read`                | command, request                        | route, client call                               |
 | `plugin.process_update`              | command, request                        | route, client call                               |
 | `plugin.remove_data`                 | command, request                        | route, client call                               |
 | `plugin.request`                     | job                                     | local API                                        |

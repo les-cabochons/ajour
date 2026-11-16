@@ -449,3 +449,41 @@ it("Given a process fixture and manifest without the command, refuses", async ()
     fake.process.run({ command: "undeclared", args: {} }),
   ).rejects.toMatchObject({ code: "undeclared" });
 });
+
+it("Given an undeclared process fixture, passes every argument and folder id unchanged", async () => {
+  const fake = createFakeAjour({
+    processRun: async (request) => ({
+      exitCode: 0,
+      stdout: JSON.stringify(request),
+      stderr: "",
+    }),
+  });
+  const request = {
+    executable: "git",
+    argv: ["--message", "a  b & c"],
+    cwdFolder: "repository",
+  };
+  const result = await fake.process.run(request);
+  if (result.started) throw new Error("Expected captured output");
+  expect(JSON.parse(result.stdout)).toEqual(request);
+});
+
+it("Given a manifest without undeclared commands, refuses an executable request as the broker does", async () => {
+  const fake = createFakeAjour({
+    manifest,
+    processRun: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+  });
+  await expect(
+    fake.process.run({ executable: "git", argv: ["status"] }),
+  ).rejects.toMatchObject({ code: "undeclared" });
+});
+
+it("Given a manifest that allows undeclared commands, runs an executable request", async () => {
+  const fake = createFakeAjour({
+    manifest: { ...manifest, processes: { undeclaredCommands: true } },
+    processRun: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
+  });
+  await expect(
+    fake.process.run({ executable: "git", argv: ["status"] }),
+  ).resolves.toMatchObject({ stdout: "ok" });
+});
