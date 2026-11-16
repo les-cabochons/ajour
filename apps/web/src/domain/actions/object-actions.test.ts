@@ -453,6 +453,69 @@ describe("backlog item actions", () => {
     expect(actions.at(-1)?.destructive).toBe(true);
   });
 
+  it("lists Hand off to <tool> per tool after triage, each with why it can't", () => {
+    const handoffTools = [
+      { key: "agent-handoff:t3", label: "T3 Code" },
+      {
+        key: "agent-handoff:claude",
+        label: "Claude Code",
+        disabledReason: "claude isn't on PATH.",
+      },
+    ];
+    const options = {
+      subitemCount: 0,
+      isSubitem: false,
+      isRunning: false,
+      handoffTools,
+    };
+    const actions = getBacklogItemActions(
+      { ...syncedItem, projectId: "p" },
+      options,
+    );
+    expect(ids(actions).slice(6, 9)).toEqual([
+      "settle",
+      "hand-off:agent-handoff:t3",
+      "hand-off:agent-handoff:claude",
+    ]);
+    expect(
+      actions
+        .filter((action) => action.group === "hand-off")
+        .map((a) => a.label),
+    ).toEqual(["Hand off to T3 Code", "Hand off to Claude Code"]);
+    expect(disabledReasons(actions)).toEqual({
+      "hand-off:agent-handoff:claude": "claude isn't on PATH.",
+    });
+    // A hand off works in the item's project's folder.
+    expect(
+      disabledReasons(getBacklogItemActions(syncedItem, options)),
+    ).toMatchObject({
+      "hand-off:agent-handoff:t3": "Add the item to a project first",
+    });
+    expect(
+      disabledReasons(
+        getBacklogItemActions(
+          { ...syncedItem, projectId: "p", status: "archived" },
+          options,
+        ),
+      ),
+    ).toMatchObject({ "hand-off:agent-handoff:t3": "Restore the item first" });
+    // One hand off per item at a time.
+    expect(
+      disabledReasons(
+        getBacklogItemActions(
+          { ...syncedItem, projectId: "p" },
+          { ...options, handoffStarting: true },
+        ),
+      ),
+    ).toEqual({
+      "hand-off:agent-handoff:t3": "A hand off of this item is starting",
+      "hand-off:agent-handoff:claude": "A hand off of this item is starting",
+    });
+    expect(
+      ids(getBacklogItemActions(syncedItem, { ...options, handoffTools: [] })),
+    ).not.toContain("hand-off:agent-handoff:t3");
+  });
+
   it("lists Archive before Delete for a synced item, both destructive", () => {
     const actions = getBacklogItemActions(syncedItem, {
       subitemCount: 0,

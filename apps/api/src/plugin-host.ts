@@ -1,4 +1,5 @@
 import {
+  isHttpsUrl,
   startHandoffRequestSchema,
   startHandoffResultSchema,
   detectToolsResultSchema,
@@ -29,6 +30,7 @@ import type {
   ReadyPlugin,
 } from "./plugin-runtime.ts";
 import { PluginStopBudget } from "./plugin-stop-budget.ts";
+import { HANDOFF_NEEDS_CONNECTION } from "./handoffs.ts";
 import {
   DEFAULT_PLUGIN_RUNTIME_SETTINGS,
   effectiveMemoryCeilingMb,
@@ -1100,6 +1102,99 @@ export class PluginManager {
       },
     );
   }
+  /**
+   * Opens a handoff's thread for the window: its link through the broker's
+   * open path (https, or a scheme the manifest declares), else its resume
+   * command, which must be a declared `terminal` command. A folder slot the
+   * resume leaves out gets the handoff's folder, so it opens where it ran:
+   * an unconditional slot, or one in a group whose condition the resume
+   * sets. Every gate of the broker applies, as for the plugin's own calls.
+   * A tool that uses a connection reopens through the handoff's own, so a
+   * `connection-url` slot gets its address; a handoff started before the
+   * tool used one is refused.
+   */
+  async openHandoff(
+    pluginId: string,
+    projectId: string,
+    target: {
+      toolId: string;
+      connectionId?: string;
+      link?: string;
+      resume?: { command: string; args: Record<string, string | number> };
+      folderId: string;
+    },
+  ) {
+    const plugin = await this.getPlugin(pluginId);
+    const manifest = plugin.manifest;
+    if (
+      !this.runsPluginApi4 ||
+      !this.processBroker ||
+      !isPluginApi4Manifest(manifest)
+    )
+      throw new PluginOperationRefused(
+        "Plugins need the desktop app",
+        "not_supported",
+      );
+    requireCapability("handoff")(manifest);
+    if (!target.link && !target.resume)
+      throw new PluginOperationRefused(
+        "This thread has no link or command to open it.",
+        "not_supported",
+      );
+    const usesConnection =
+      manifest.capabilities.handoff?.tools.find(
+        (tool) => tool.id === target.toolId,
+      )?.connection === "required";
+    // A saved link needs no connection; only a resume command fills one in.
+    if (usesConnection && !target.connectionId && !target.link)
+      throw new PluginOperationRefused(
+        HANDOFF_NEEDS_CONNECTION,
+        "not_supported",
+      );
+    const broker = this.processBroker.forOperation({
+      pluginId,
+      manifest,
+      ...(manifest.processes
+        ? await this.processPackage(pluginId, plugin)
+        : {}),
+      traceparent: this.events?.current()?.traceparent(),
+      method: "openHandoff",
+      projectId,
+      ...(usesConnection && target.connectionId
+        ? { connectionId: target.connectionId }
+        : {}),
+    });
+    try {
+      if (target.link) {
+        await broker.open(target.link);
+        return;
+      }
+      const resume = target.resume!;
+      const command = manifest.processes?.commands.find(
+        (candidate) => candidate.id === resume.command,
+      );
+      if (command?.mode !== "terminal")
+        throw new PluginOperationRefused(
+          "The tool's resume command doesn't open a terminal.",
+          "not_supported",
+        );
+      const args: Record<string, string | number> = { ...resume.args };
+      // A group whose condition is missing stays off; filling its folder
+      // slot would make the broker refuse the run.
+      for (const arg of command.args.flatMap((arg) =>
+        !("if" in arg)
+          ? [arg]
+          : Object.hasOwn(resume.args, arg.if)
+            ? arg.args
+            : [],
+      ))
+        if (arg.kind === "folder" && args[arg.name] === undefined)
+          args[arg.name] = target.folderId;
+      await broker.run({ command: command.id, args });
+    } finally {
+      broker.close();
+    }
+  }
   async readHandoffStates(
     pluginId: string,
     request: ReadHandoffStatesRequest,
@@ -1136,7 +1231,7 @@ export class PluginManager {
               ...(pullRequests
                 ? {
                     pullRequests: pullRequests.filter((pr) =>
-                      validHttps(pr.url),
+                      isHttpsUrl(pr.url),
                     ),
                   }
                 : {}),
@@ -1714,13 +1809,6 @@ function lifecycleOf(
   };
 }
 
-function validHttps(link: string): boolean {
-  try {
-    return new URL(link).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 /**
  * A handoff operation's connection, checked to be the plugin's own: the
  * plugin would otherwise read another plugin's settings.

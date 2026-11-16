@@ -79,9 +79,12 @@ import {
 } from "@/features/backlog/backlog-item-comments";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 import {
+  HandoffsCard,
   SubitemsCard,
   TimeEntriesCard,
 } from "@/features/backlog/backlog-item-side-cards";
+import { HandoffButton } from "@/features/backlog/handoff-button";
+import { useItemHandoffs } from "@/features/backlog/use-item-handoffs";
 import {
   updateBacklogItemCards,
   useBacklogItemCards,
@@ -125,6 +128,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const workItem = state.workItems.find((item) => item._id === itemId);
   const commentSource = useCommentSource(workItem);
   const cards = useBacklogItemCards();
+  const handoffs = useItemHandoffs(itemId, workItem?.projectId);
 
   /**
    * Edit and Add subitem have no panel here: they open the inline fields. Add
@@ -387,6 +391,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             </>
           )}
         </SplitButton>
+        {/* Absent without a handoff tool, as in the web build. */}
+        <HandoffButton item={item} />
         <Button variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon data-icon="inline-start" /> Snooze
         </Button>
@@ -616,6 +622,17 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                     if (escaped)
                       focusRef.current?.focus({ preventScroll: true });
                   }}
+                />
+              ) : null}
+              {handoffs.shown ? (
+                <HandoffsCard
+                  handoffs={handoffs.records}
+                  tools={handoffs.tools}
+                  now={now}
+                  open={cards.handoffsOpen}
+                  onOpenChange={(handoffsOpen) =>
+                    updateBacklogItemCards({ handoffsOpen })
+                  }
                 />
               ) : null}
               <TimeEntriesCard

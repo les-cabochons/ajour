@@ -954,6 +954,69 @@
     border-bottom: 0;
   }
 
+  /* The Handoffs card: one block per thread, ruled like the card's rows. */
+  .handoff-rows {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .handoff-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.375rem 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--border-row);
+  }
+
+  .handoff-row:last-child {
+    border-bottom: 0;
+  }
+
+  .handoff-row-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: var(--control-height);
+  }
+
+  .handoff-row-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Past the tool icon, under the title. */
+  .handoff-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+    padding-left: 1.5rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .handoff-row-meta a:hover {
+    color: var(--text);
+  }
+
+  /* A backlog row's handoff mark: green while the thread works, amber while
+     it waits for the user. */
+  .backlog-item-marker.is-handoff-working {
+    color: var(--success);
+  }
+
+  .backlog-item-marker.is-handoff-needs-you {
+    color: var(--warning);
+  }
+
   /* -- Comments: blocks on a timeline (layout B, ADR 0008) -------- */
 
   .backlog-comments {

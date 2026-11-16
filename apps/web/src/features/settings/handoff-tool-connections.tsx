@@ -6,6 +6,7 @@ import {
   getHandoffToolConnections,
   saveHandoffToolConnections,
 } from "@/lib/app-api";
+import { forgetHandoffToolDetection } from "@/lib/handoff-tools";
 
 interface Tool {
   id: string;
@@ -78,6 +79,8 @@ export function PluginHandoffConnections({
           [toolId]: connectionId,
         }),
       );
+      // Detection runs through the picked connection: the item page asks again.
+      forgetHandoffToolDetection(pluginId);
     } catch (reason) {
       setError(
         reason instanceof Error

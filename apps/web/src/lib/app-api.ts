@@ -4,6 +4,7 @@ import {
 } from "@ajour/shared/handoff-templates";
 import { z } from "zod";
 import {
+  detectToolsResultSchema,
   handoffRecordSchema,
   handoffRefreshResultSchema,
   handoffsSnapshotSchema,
@@ -1966,6 +1967,24 @@ export function removeHandoff(id: string) {
     `/api/handoffs/${encodeURIComponent(id)}`,
     { method: "DELETE" },
     handoffsSnapshotSchema,
+  );
+}
+/** Opens the handoff's thread: its link, else its resume command in a terminal. */
+export function openHandoff(id: string) {
+  return appApiRequest(
+    "openHandoff",
+    `/api/handoffs/${encodeURIComponent(id)}/open`,
+    { method: "POST", body: "{}" },
+    z.object({ opened: z.enum(["link", "terminal"]) }),
+  );
+}
+/** Which of the plugin's tools this computer has, and why the others are missing. */
+export function detectHandoffTools(pluginId: string, projectId: string) {
+  return appApiRequest(
+    "detectHandoffTools",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/detect`,
+    { method: "POST", body: JSON.stringify({ projectId }) },
+    detectToolsResultSchema,
   );
 }
 export function setHandoffVisibility(visible: boolean) {

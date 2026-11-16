@@ -1821,6 +1821,25 @@ export const catalog = defineCatalog({
         },
       },
     },
+    "handoff.open": {
+      kinds: ["request", "plugin_operation", "job", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        "handoff_refused",
+        /** A plugin's threads opened 5 terminals in the last minute. */
+        "rate_limit",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          count: operational<number>(),
+        },
+      },
+    },
     "handoff.detect": {
       kinds: ["request", "plugin_operation", "job", "command"],
       reasons: [
