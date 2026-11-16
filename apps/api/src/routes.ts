@@ -90,6 +90,11 @@ export const ROUTES = {
     path: "/api/handoffs/:handoffId/refresh",
     name: "handoff.refresh",
   },
+  handoffOpen: {
+    method: "POST",
+    path: "/api/handoffs/:handoffId/open",
+    name: "handoff.open",
+  },
   handoffRemove: {
     method: "DELETE",
     path: "/api/handoffs/:handoffId",

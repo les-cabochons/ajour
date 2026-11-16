@@ -1,11 +1,18 @@
 import { useSyncExternalStore } from "react";
 import type { Handoff } from "@ajour/shared/handoffs";
+import {
+  getHandoffMarks,
+  sameHandoffMarks,
+  type HandoffMark,
+} from "@/domain/handoffs/handoffs";
 import { listHandoffs, isPluginApiMissing } from "./app-api";
 
 const EMPTY: readonly Handoff[] = [];
 let current: readonly Handoff[] = EMPTY;
 let byItem = new Map<string, readonly Handoff[]>();
+let marks: ReadonlyMap<string, HandoffMark> = new Map();
 const listeners = new Set<() => void>();
+const markListeners = new Set<() => void>();
 let loaded = false;
 let revision = 0;
 export function setHandoffs(records: Handoff[]) {
@@ -40,6 +47,17 @@ export function setHandoffs(records: Handoff[]) {
   }
   byItem = next;
   listeners.forEach((listener) => listener());
+  // Backlog rows read one map: it changes only when a row's mark does.
+  const nextMarks = getHandoffMarks(stable);
+  if (!sameHandoffMarks(marks, nextMarks)) {
+    marks = nextMarks;
+    markListeners.forEach((listener) => listener());
+  }
+}
+
+/** Adds or replaces one record, such as a handoff just started. */
+export function upsertHandoff(record: Handoff) {
+  setHandoffs([...current.filter((old) => old.id !== record.id), record]);
 }
 function subscribe(listener: () => void) {
   listeners.add(listener);
@@ -64,3 +82,19 @@ export function useHandoffs(workItemId?: string): readonly Handoff[] {
     workItemId === undefined ? current : (byItem.get(workItemId) ?? EMPTY),
   );
 }
+
+/**
+ * Every backlog row's handoff mark, keyed by work item id, for lists to
+ * subscribe to once. It asks the API for nothing: the window's bridge sends
+ * snapshots, and the item page's card loads the list.
+ */
+export function useHandoffMarks(): ReadonlyMap<string, HandoffMark> {
+  return useSyncExternalStore(subscribeMarks, getMarks);
+}
+function subscribeMarks(listener: () => void) {
+  markListeners.add(listener);
+  return () => {
+    markListeners.delete(listener);
+  };
+}
+const getMarks = () => marks;

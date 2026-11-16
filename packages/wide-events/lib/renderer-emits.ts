@@ -36,6 +36,8 @@ export const APP_API_CLIENT = {
   startHandoff: "handoff.start",
   refreshHandoffs: "handoff.refresh",
   removeHandoff: "handoff.remove",
+  openHandoff: "handoff.open",
+  detectHandoffTools: "handoff.detect",
   setHandoffVisibility: "handoff.visibility",
   listRepositoryFolders: "repository_folder.list",
   removeRepositoryFolder: "repository_folder.remove",

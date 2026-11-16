@@ -306,6 +306,10 @@ _Avoid_: Permission, scope, toggle, feature flag
 A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool.
 _Avoid_: Agent run, agent session, job
 
+**Hand off**:
+To start a thread for a backlog item in a coding tool, from the item's page, its row menu or the command palette. The verb is two words ("Hand off to T3 Code"); the thing it makes is a handoff.
+_Avoid_: Send to agent, delegate, dispatch
+
 **Process broker**:
 The part of Ajour that starts a process for a plugin, such as `t3 thread start`, after checking the plugin's access, its gates and its command mode. A plugin never starts a process itself (ADR 0019).
 _Avoid_: Shell, launcher, runner (the agent runner is something else)

@@ -8,6 +8,8 @@ const api = vi.hoisted(() => ({
   saveHandoffToolConnections: vi.fn(),
 }));
 vi.mock("@/lib/app-api", () => api);
+const tools_ = vi.hoisted(() => ({ forgetHandoffToolDetection: vi.fn() }));
+vi.mock("@/lib/handoff-tools", () => tools_);
 
 import { PluginHandoffConnections } from "./handoff-tool-connections";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
@@ -16,6 +18,7 @@ afterEach(cleanup);
 beforeEach(() => {
   api.getHandoffToolConnections.mockReset();
   api.saveHandoffToolConnections.mockReset();
+  tools_.forgetHandoffToolDetection.mockReset();
 });
 
 const tools = [
@@ -73,6 +76,26 @@ it("picks the connection a tool hands off through, and saves it", async () => {
     expect(
       screen.getByRole("combobox", { name: "OpenCode connection" }).textContent,
     ).toContain("Desktop server"),
+  );
+});
+
+it("detects the plugin's tools again after a new pick, not after a failed save", async () => {
+  api.getHandoffToolConnections.mockResolvedValue({});
+  api.saveHandoffToolConnections.mockRejectedValueOnce(new Error("Refused."));
+  api.saveHandoffToolConnections.mockImplementation(
+    async (_plugin: string, picks: Record<string, string>) => picks,
+  );
+  await render();
+  const select = await screen.findByRole("combobox", {
+    name: "OpenCode connection",
+  });
+  await choose(select, "Desktop server");
+  await screen.findByRole("alert");
+  expect(tools_.forgetHandoffToolDetection).not.toHaveBeenCalled();
+
+  await choose(select, "Laptop server");
+  await waitFor(() =>
+    expect(tools_.forgetHandoffToolDetection).toHaveBeenCalledWith("opencode"),
   );
 });
 

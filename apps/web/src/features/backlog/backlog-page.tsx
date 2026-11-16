@@ -71,6 +71,7 @@ import {
   type BacklogTaskEditorTarget,
 } from "@/features/backlog/backlog-task-editor";
 import { useWorkItemIconData } from "@/features/backlog/work-item-icons";
+import { useHandoffMarks } from "@/lib/handoffs";
 import { moveBacklogItemWithUndo } from "@/features/backlog/backlog-item-moves";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import {
@@ -155,6 +156,8 @@ export function BacklogPage() {
   const navigate = useNavigate();
   const openSettings = useOpenSettings();
   const icons = useWorkItemIconData(state.projects);
+  // One map for every row's handoff mark; rows subscribe to nothing.
+  const handoffMarks = useHandoffMarks();
   const [peekId, setPeekId] = useState<string | null>(null);
   // The selected rows, as in a file explorer: a click selects one, Cmd or
   // Ctrl+click adds or removes one, Shift+click selects a range. A double
@@ -905,6 +908,7 @@ export function BacklogPage() {
           state={state}
           view={view}
           icons={icons}
+          handoffMark={handoffMarks.get(item._id)}
           board={asCard}
           column={asCard ? place.column : 0}
           now={now}

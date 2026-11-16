@@ -6,12 +6,14 @@ import { useSyncExternalStore } from "react";
  * exported. Time entries starts closed on its summary line. Subitems stays
  * unchosen until the user opens or closes it: a short list then shows open
  * (`resolveSubitemsOpen`, council round 13). The source section of the
- * properties card starts open (#653).
+ * properties card starts open (#653), and so does Handoffs, whose states are
+ * what the user comes back for.
  */
 export interface BacklogItemCards {
   subitemsOpen: boolean | undefined;
   timeEntriesOpen: boolean;
   sourceOpen: boolean;
+  handoffsOpen: boolean;
 }
 
 /** Subitems open while the user has not chosen and the list is 1 to 3 long. */
@@ -28,6 +30,7 @@ const DEFAULT_CARDS: BacklogItemCards = {
   subitemsOpen: undefined,
   timeEntriesOpen: false,
   sourceOpen: true,
+  handoffsOpen: true,
 };
 
 /** Unknown or broken values fall back to the defaults, card by card. */
@@ -43,6 +46,9 @@ export function parseBacklogItemCards(value: string | null): BacklogItemCards {
       timeEntriesOpen:
         "timeEntriesOpen" in parsed && parsed.timeEntriesOpen === true,
       sourceOpen: !("sourceOpen" in parsed && parsed.sourceOpen === false),
+      handoffsOpen: !(
+        "handoffsOpen" in parsed && parsed.handoffsOpen === false
+      ),
     };
   } catch {
     return DEFAULT_CARDS;

@@ -1,4 +1,9 @@
-import type { BacklogItemActionId } from "@/domain/actions/object-actions";
+import {
+  getHandOffToolKey,
+  isHandOffAction,
+  type BacklogItemActionId,
+} from "@/domain/actions/object-actions";
+import { requestHandoff } from "@/features/backlog/handoff-request";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { settleBacklogItem } from "@/features/backlog/settle-dialog";
@@ -37,6 +42,13 @@ export function runBacklogItemAction(
   }: { askToSettle?: boolean; onSettledOrSnoozed?: () => void } = {},
 ) {
   return withEventAttribution({ surface: "button" }, () => {
+    if (isHandOffAction(actionId)) {
+      requestHandoff({
+        itemId: workItem._id,
+        toolKey: getHandOffToolKey(actionId),
+      });
+      return;
+    }
     switch (actionId) {
       case "start-entry":
         if (findWorkItemTimer(localStore.snapshot().timers, workItem._id))

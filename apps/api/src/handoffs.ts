@@ -104,7 +104,8 @@ const pickConnection = (tool: HandoffTool) =>
   `Pick a connection for ${tool.label ?? tool.id} in its settings on the plugin's page.`;
 const DELETED_CONNECTION =
   "The connection this handoff ran through was deleted.";
-const NO_CONNECTION =
+/** A handoff started before its tool used a connection can't go on. */
+export const HANDOFF_NEEDS_CONNECTION =
   "This tool now hands off through a connection. Start a new handoff.";
 
 /** Local handoffs and refresh scheduling. The host owns project scope. */
@@ -463,7 +464,7 @@ export class Handoffs {
                 (tool.connection !== "required"
                   ? undefined
                   : !first.connectionId
-                    ? NO_CONNECTION
+                    ? HANDOFF_NEEDS_CONNECTION
                     : (connection = await this.options.connection?.(
                           first.pluginId,
                           first.connectionId,

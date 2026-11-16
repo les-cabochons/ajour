@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/command";
 import { showToast } from "@/components/ui/toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
+import { getHandOffActionTools } from "@/lib/handoff-tools";
+import { isHandoffStarting } from "@/features/backlog/handoff-request";
 import {
   buildPaletteSections,
   type PaletteCommand,
@@ -447,6 +449,8 @@ export function CommandPalette({
         ).filter((page) => page.to.startsWith("/settings/")),
         platform,
         settleOpensDialog,
+        handoffTools: getHandOffActionTools(),
+        isHandoffStarting,
       })
     : [];
 

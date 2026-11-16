@@ -69,7 +69,7 @@ Start entry · New entry… · Edit · Assign shortcut… · Add to favorites (R
 
 ### Backlog item
 
-Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Pin (Unpin when pinned) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
+Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Pin (Unpin when pinned) · Settle… (Unsettle when settled, Restore when archived) · Hand off to <tool>, one per tool · Open in source · Archive · Delete
 
 Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
@@ -82,6 +82,7 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 - A settled item disables Snooze… and Pin: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
 - Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
+- Hand off to <tool> is listed once per tool of the handoff plugins that are on, only in the desktop app. An item without a project disables it: "Add the item to a project first"; an archived one: "Restore the item first"; one whose hand off is on its way: "A hand off of this item is starting"; a tool this computer doesn't have, with the plugin's reason. See [Hand off to a coding tool](#hand-off-to-a-coding-tool).
 
 ### Right-click menus
 
@@ -89,7 +90,7 @@ Decided in [Native right-click menus with groups and Cut, Copy, Paste](https://g
 
 - A menu draws a line between groups of related actions. Each action set names its groups (`group` in `domain/actions/object-actions.ts`), and the destructive actions at the end share the last one:
   - time entry: Edit · Continue/Stop | Cut · Copy · Paste | Duplicate · Duplicate to… · Move to… · Mark as not committed | Delete/Discard
-  - backlog item: Start entry/Stop · New entry… | Edit · Add subitem | Snooze… · Pin · Settle | Change source state… · Open in source | Archive · Delete
+  - backlog item: Start entry/Stop · New entry… | Edit · Add subitem | Snooze… · Pin · Settle | Hand off to <tool>, per tool | Change source state… · Open in source | Archive · Delete
   - task: Start entry · New entry… | Edit · Assign shortcut… · Add to favorites | Archive/Restore
   - project: Edit · New task | Archive/Restore
   - calendar suggestion: Add · Choose project… | Dismiss · Hide this meeting · Forget this meeting
@@ -1409,6 +1410,21 @@ and approved, and unsigned plugins also need the global switch and per-plugin
 acceptance. File, script and undeclared schemes are refused. Content links keep
 their existing desktop policy. A plugin may open at most five links per minute; further requests are refused.
 
+## Hand off to a coding tool
+
+Built in [#721](https://github.com/les-cabochons/ajour/issues/721), from spec [#710](https://github.com/les-cabochons/ajour/issues/710). Only the desktop app hands off: the web build shows no button, card, menu entry or row mark.
+
+- **Item page.** Beside Start entry, an outline split button **Hand off to <tool>** names the tool last handed off to on this device, or the first tool this computer has. Its arrow lists the other tools, each "Hand off to <tool>", those the plugin's detection didn't find disabled with its reason on a second line, then **Review prompt…**. Opening the menu detects the tools again, at most once a minute per plugin, or at once after the plugin's page saves a new connection pick. A disabled main half says why in a tooltip. From the moment a hand off is asked for until the thread starts, the start fails or a dialog is cancelled, the item has one hand off on its way. A start that runs when its dialog closes keeps the item waiting until it ends, and its end closes no other item's dialog. Meanwhile both halves are disabled ("A hand off of this item is starting"), the row menus and the command palette disable Hand off to <tool> with the same words, and a second request for the item is ignored. The label never changes.
+- **One click** sends the item's key, title, description, link, type, parent key and title, and project name, with the folder. The API fills the templates. A project with one repository folder starts at once; with none or several, the repository picker opens first and the hand off starts in the folder chosen.
+- **Review prompt…** opens a centered dialog: the filled prompt (editable), the folder (Change… opens the picker and returns), and the branch (editable; empty starts without a worktree; an invalid git branch disables Start and says why). Until edited, the prompt and branch follow the folder. Start sends the prompt and branch as the hand off's overrides. A refusal stays in the dialog in the tool's words.
+- **Row menus and the command palette** list Hand off to <tool> (see the action model). It runs the same flow as the button.
+- **First hand off per tool** on a device asks first: "<Tool> receives this item's title, description and link, and sends them to its model provider. Ajour itself sends them nowhere else." Hand off continues and remembers the answer for that tool; Cancel hands off nothing and asks again next time (ADR 0004's explicit sink).
+- **After a hand off**, a toast "Handed off to <tool>" with Open shows for 8 seconds. There is no Undo: the thread already runs in the tool. A refusal shows as an error toast, "Couldn't hand off to <tool>", with the tool's words.
+- **The Handoffs card** sits after Subitems on the item page while the item has threads or a tool could take one, open by default and remembered per device. Each thread shows its tool's icon and title, Open, and a "…" menu with Refresh and Remove from item; under them, its state chip, tool and last change, its branch, and its pull requests as links (a title, else "#<number>"); only an https link opens, and any other shows as text. The chip is green Working, amber Needs you, neutral Ready and Done, red Failed, and muted Unknown, Gone and Paused; its tooltip gives the tool's own label for the state, or the pause reason. Closed, the card says how many threads, how many need you, and when the last one changed. Opening the item refreshes its live threads once.
+- **Open** follows the thread's link, https or a scheme the plugin declares, else runs its resume command in the terminal (Settings › General › Terminal), in the handoff's folder. A plugin's threads open at most five terminals a minute: "Too many threads opened in a terminal. Try again in a minute." A refusal shows as "Couldn't open the thread" with the reason in the setting's words, such as turning the plugin on or accepting its processes.
+- **Remove from item** forgets the thread at once and says "Removed from the item. The thread stays in <tool>."
+- **Backlog rows** show "Working" in green or "Needs you" in amber, with an icon, among the row's marks while a thread of the item works or waits. Needs you wins over Working; a paused thread marks nothing.
+
 ## Coding handoff records
 
 A handoff start refuses unsafe links and undeclared resume commands without
@@ -1435,7 +1451,10 @@ without one is missing with "Pick a connection for <tool> in its settings on the
 plugin's page.", and a connection that fails marks only its own tools missing,
 with the reason. A start uses the pick unless the request names a connection,
 and refuses a tool that uses none when one is named. Each handoff keeps its
-connection. Deleting the connection forgets it as a pick and pauses its handoffs
+connection, and Open runs its resume command through it, so an
+`opencode attach` gets that connection's address. A handoff started before its
+tool used a connection still opens its saved link, but doesn't resume: "This
+tool now hands off through a connection. Start a new handoff." Deleting the connection forgets it as a pick and pauses its handoffs
 as Unknown with "The connection this handoff ran through was deleted."; they stay
 paused until removed. Access review lists each tool that hands off through a
 connection, and an update that makes a tool use one needs approval again.

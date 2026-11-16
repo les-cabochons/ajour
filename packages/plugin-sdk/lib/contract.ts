@@ -737,8 +737,8 @@ export type CodeHostOperations = {
       pullRequests: {
         number: number;
         title: string;
-        id: string;
         url: string;
+        id: string;
         state: "closed" | "merged" | "open";
         author: {
           login: string;
@@ -929,8 +929,8 @@ export type CodeHostOperations = {
       items: {
         number: number;
         title: string;
-        id: string;
         url: string;
+        id: string;
         state: "closed" | "merged" | "open";
         author: {
           login: string;

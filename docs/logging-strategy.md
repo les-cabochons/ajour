@@ -976,8 +976,9 @@ channel to read the event each emits.
 | `event_rule.hide`                    | command                                 | store command                                    |
 | `handoff.connections_read`           | request, job                            | route, client call                               |
 | `handoff.connections_update`         | request, command                        | route, client call                               |
-| `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method                             |
+| `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
 | `handoff.list`                       | request, job                            | route, client call                               |
+| `handoff.open`                       | request, plugin_operation, job, command | route, client call                               |
 | `handoff.refresh`                    | request, plugin_operation, job, command | route, plugin method, client call, local API     |
 | `handoff.remove`                     | request, plugin_operation, job, command | route, client call                               |
 | `handoff.start`                      | request, plugin_operation, job, command | route, plugin method, client call                |

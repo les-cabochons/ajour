@@ -170,7 +170,6 @@ const CONNECTION_URL_METHODS = new Set([
   "detectTools",
   "startHandoff",
   "readHandoffStates",
-  // Nothing passes a connection to it yet: the reopen path of PR #741 will.
   "openHandoff",
 ]);
 const refuse = (reason: ProcessReason): never => {

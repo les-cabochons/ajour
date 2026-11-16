@@ -93,3 +93,53 @@ it("validates plugin prompt default slots and filters at manifest parse", () => 
       }).success,
     ).toBe(false);
 });
+
+import {
+  handoffRecordSchema,
+  handoffUpdateSchema,
+  isHttpsUrl,
+} from "../handoffs.ts";
+it("stores pull request links only when they are https", () => {
+  const record = {
+    id: "h1",
+    pluginId: "p",
+    toolId: "t3",
+    workItemId: "w1",
+    projectId: "p1",
+    folderId: "f1",
+    threadId: "thread",
+    native: {},
+    title: "Fix it",
+    startedAt: 1,
+    state: "working",
+    checkedAt: 1,
+    changedAt: 1,
+    history: [],
+  };
+  const withLink = (url: string) => ({
+    ...record,
+    pullRequests: [{ url, title: "PR" }],
+  });
+  expect(
+    handoffRecordSchema.safeParse(withLink("https://example.test/pr/1"))
+      .success,
+  ).toBe(true);
+  for (const url of [
+    "http://example.test/pr/1",
+    "javascript:alert(1)",
+    "file:///C:/secrets.txt",
+    "not a url",
+  ]) {
+    expect(isHttpsUrl(url)).toBe(false);
+    expect(handoffRecordSchema.safeParse(withLink(url)).success).toBe(false);
+    // A tool's answer still parses: the API drops the link before storing.
+    expect(
+      handoffUpdateSchema.safeParse({
+        id: "h1",
+        state: "ready",
+        native: {},
+        pullRequests: [{ url }],
+      }).success,
+    ).toBe(true);
+  }
+});

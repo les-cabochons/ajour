@@ -275,3 +275,141 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("opens a handoff through its link, else its resume command, behind the broker's gates", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-open-"));
+  const plugin = path.join(root, "plugin");
+  await mkdir(plugin);
+  await mkdir(path.join(root, "repo"));
+  await writeFile(
+    path.join(plugin, "plugin.json"),
+    JSON.stringify({
+      id: "handoff",
+      version: "1.0.0",
+      apiVersion: 4,
+      displayName: "Tools",
+      description: "Test tools",
+      iconSvg: "<svg/>",
+      entrypoint: "plugin.mjs",
+      connectionFields: [],
+      processes: {
+        executables: { t3: { names: ["t3"] } },
+        commands: [
+          {
+            id: "resume",
+            executable: "t3",
+            args: ["thread", "open", "{thread:id}", "{folder:folder}"],
+            mode: "terminal",
+          },
+        ],
+        openSchemes: [],
+      },
+      capabilities: {
+        handoff: {
+          tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+        },
+      },
+    }),
+  );
+  await writeFile(
+    path.join(plugin, "plugin.mjs"),
+    `
+export function detectTools() { return { tools: [{ id: 't3', available: true }] }; }
+export function startHandoff(request) {
+  if (request.title === 'resume') return { threadId: 'r', native: {}, resume: { command: 'resume', args: { thread: 'r' } } };
+  return { threadId: 'l', native: {}, link: 'https://example.test/thread' };
+}
+export function readHandoffStates(request) { return request.handoffs.map(h => ({ id: h.id, state: 'working', native: {} })); }
+`,
+  );
+  const opened: string[] = [];
+  const sink = createRecordingSink();
+  const server = createAppApiServer({
+    ...windowServerOptions,
+    statePath: path.join(root, "data", "state.json"),
+    protectedRepositoryFolders: {
+      userData: path.join(root, "data"),
+      install: path.join(root, "install"),
+    },
+    developmentPluginDirectories: [plugin],
+    allowDevelopmentPlugins: true,
+    pluginRuntime: new InProcessPluginRuntime(),
+    openExternal: async (url) => {
+      opened.push(url);
+    },
+    eventSink: sink,
+  });
+  const call = (method: string, route: string, body?: unknown) =>
+    dispatchJsonRequest(server, {
+      method,
+      path: route,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  try {
+    // The user allows the plugin's access, its commands included.
+    expect(
+      (
+        await call("POST", "/api/plugins/handoff/activation", {
+          enabled: true,
+          version: "1.0.0",
+        })
+      ).status,
+    ).toBe(200);
+    const folder = await addRepositoryFolderForServer(
+      server,
+      "p",
+      path.join(root, "repo"),
+    );
+    const input = {
+      pluginId: "handoff",
+      toolId: "t3",
+      workItemId: "i",
+      projectId: "p",
+      folderId: folder.id,
+      projectName: "Project",
+      item: { key: "K-1", title: "link", type: "Bug", url: "" },
+      branchOverride: "",
+      settings: {},
+    };
+    await call("POST", "/api/plugins/handoff/handoffs/templates", {
+      prompt: "{{item.title}}",
+      title: "{{item.title}}",
+      branch: "",
+    });
+    const link = await call("POST", "/api/handoffs", input);
+    expect(link.status, JSON.stringify(link.body)).toBe(200);
+    const linkId = (link.body as { id: string }).id;
+    expect(await call("POST", `/api/handoffs/${linkId}/open`)).toMatchObject({
+      status: 200,
+      body: { opened: "link" },
+    });
+    expect(opened).toEqual(["https://example.test/thread"]);
+
+    const resume = await call("POST", "/api/handoffs", {
+      ...input,
+      item: { ...input.item, title: "resume" },
+    });
+    expect(resume.status, JSON.stringify(resume.body)).toBe(200);
+    const resumeId = (resume.body as { id: string }).id;
+    // A development plugin starts no process until the user allows it.
+    expect(await call("POST", `/api/handoffs/${resumeId}/open`)).toMatchObject({
+      status: 409,
+      body: { error: expect.stringContaining("Settings › Plugins") },
+    });
+    // At most five terminals a minute per plugin, as for links.
+    for (let i = 0; i < 4; i++)
+      await call("POST", `/api/handoffs/${resumeId}/open`);
+    expect(await call("POST", `/api/handoffs/${resumeId}/open`)).toMatchObject({
+      status: 409,
+      body: { error: expect.stringContaining("Too many threads") },
+    });
+    expect(
+      sink.events.filter((e) => e.name === "handoff.open").at(-1),
+    ).toMatchObject({ outcome_reason: "rate_limit" });
+    expect((await call("POST", "/api/handoffs/missing/open")).status).toBe(404);
+    expect(sink.events.map((e) => e.name)).toContain("handoff.open");
+  } finally {
+    await stopAppApiServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});

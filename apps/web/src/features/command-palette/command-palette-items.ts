@@ -13,6 +13,7 @@ import {
   getTimeEntryActions,
   getTimeEntryActionState,
   type BacklogItemActionId,
+  type BacklogItemActionOptions,
   type ObjectAction,
   type ProjectActionId,
   type TaskActionId,
@@ -130,6 +131,10 @@ export interface PaletteInput {
   platform: ShortcutPlatform;
   /** Whether Settle on a backlog item opens the settle dialog. */
   settleOpensDialog?: (workItem: LocalWorkItem) => boolean;
+  /** The coding tools a backlog item can be handed off to. */
+  handoffTools?: BacklogItemActionOptions["handoffTools"];
+  /** Whether a hand off of the backlog item is on its way. */
+  isHandoffStarting?: (workItemId: string) => boolean;
 }
 
 /** Search results stop here; typing more narrows them. */
@@ -399,6 +404,8 @@ function backlogItemSection(
   runningWorkItemId: string | undefined,
   settleOpensDialog: PaletteInput["settleOpensDialog"],
   keysPlatform?: ShortcutPlatform,
+  handoffTools?: PaletteInput["handoffTools"],
+  isHandoffStarting?: PaletteInput["isHandoffStarting"],
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
@@ -410,6 +417,8 @@ function backlogItemSection(
       : getDirectChildWorkItems(workItem, workItems).length,
     settleOpensDialog: settleOpensDialog?.(workItem),
     otherSourceStateCount: getOtherSourceStates(workItem).length,
+    handoffTools,
+    handoffStarting: isHandoffStarting?.(workItem._id),
   });
 
   return {
@@ -545,6 +554,8 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         input.timer?.workItemId,
         input.settleOpensDialog,
         platform,
+        input.handoffTools,
+        input.isHandoffStarting,
       );
       // Subitems follow their parent; only top-level items are sortable.
       return isSubtaskWorkItem(workItem)
