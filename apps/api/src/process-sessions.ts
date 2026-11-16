@@ -118,6 +118,8 @@ interface Session {
   partialBytes: number;
   overlong: boolean;
   stderr: string;
+  /** Holds a character split across stderr chunks. */
+  stderrDecoder: StringDecoder;
   /** The program ended and its output is all in. */
   exited: boolean;
   exitCode: number | null;
@@ -218,6 +220,7 @@ export class ProcessSessions {
       partialBytes: 0,
       overlong: false,
       stderr: "",
+      stderrDecoder: new StringDecoder("utf8"),
       exited: false,
       exitCode: null,
       ended: false,
@@ -231,13 +234,12 @@ export class ProcessSessions {
     this.sessions.set(session.id, session);
     child.stdin?.on("error", () => undefined);
     child.stdout?.on("data", (chunk: Buffer) => this.stdout(session, chunk));
-    const decoder = new StringDecoder("utf8");
     child.stderr?.on("data", (chunk: Buffer) => {
       // An ended session's pipes are still read, so its program never
       // blocks on a full one, but what it writes is dropped.
       if (session.ended) return;
       session.stderr = utf8Tail(
-        session.stderr + decoder.write(chunk),
+        session.stderr + session.stderrDecoder.write(chunk),
         SESSION_LIMITS.stderrBytes,
       );
     });
@@ -509,6 +511,7 @@ export class ProcessSessions {
     session.partialBytes = 0;
     session.overlong = false;
     session.stderr = "";
+    session.stderrDecoder = new StringDecoder("utf8");
     this.wake(session);
   }
 

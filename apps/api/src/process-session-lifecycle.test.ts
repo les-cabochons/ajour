@@ -288,14 +288,17 @@ describe("Given a session Ajour ends whose program survives the kill", () => {
       partial: Buffer[];
       partialBytes: number;
       stderr: string;
+      stderrDecoder: { end(): string };
     };
     const kept = () =>
       (sessions as unknown as { sessions: Map<string, Kept> }).sessions.get(
         first.id,
       )!;
-    // A line without its end and some stderr wait when Ajour ends it.
+    // A line without its end, some stderr and half a character wait when
+    // Ajour ends it.
     first.child.stdout.write("half a line");
     first.child.stderr.write("an error");
+    first.child.stderr.write(Buffer.from([0xf0, 0x9f, 0x98]));
     await vi.advanceTimersByTimeAsync(0);
     await end();
     first.child.stdout.write(" and the rest\nanother line\nmore");
@@ -308,6 +311,7 @@ describe("Given a session Ajour ends whose program survives the kill", () => {
       partialBytes: 0,
       stderr: "",
     });
+    expect(kept().stderrDecoder.end()).toBe("");
     // Its pipes are still read, so the program never blocks on a full one.
     expect(first.child.stdout.readableFlowing).toBe(true);
     expect(first.child.stdout.readableLength).toBe(0);
