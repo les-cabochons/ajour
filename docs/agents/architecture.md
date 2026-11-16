@@ -651,6 +651,14 @@ plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
   gather in memory and are written once per 30 s at most, and as the API
   stops, so a crash loses one window at most. A limit, a paused connection
   or a plugin turned off isn't a refusal.
+- **Process declarations (#712):** API 4 validates `processes` with bare
+  executable names, typed argv slots, conditional groups and declared app
+  schemes. `DeclaredCommand` is the parsed contract for #713. This ticket
+  adds no execution. Access summaries keep the argv shape and a canonical
+  policy, including executable names, for consent comparison. Added or changed
+  command policies and added schemes hold an update off. Removed declarations
+  do not. Changed policies ask conservatively, even when they narrow access.
+  Older consent records default to empty command and scheme lists.
 - **Consent:** the state file keeps `pluginConsent`, per plugin, the version
   the user turned on and the access summary it had
   (`packages/shared/plugin-access.ts`). Turning a plugin on writes it; an
@@ -963,21 +971,22 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
   block reaches the user's programs through the process broker. G1 holds only
   for plugins that start no process: a process runs as the user, and on
   Windows DPAPI doesn't protect the vault from the user's own programs. G2
-  widens:
+  widens. Access review and the mode's warning say this, and a release claims
+  G1 only for plugins without process access:
   - Declared commands run as approved with the plugin's access.
   - Undeclared commands follow the plugin's command mode: Always ask, Auto
     (asks for what the rules or the command reviewer mark risky) or Accept
     everything, which gives G1 up for that plugin.
 
-  Access review and the mode's warning say this, and a release claims G1
-  only for plugins without process access.
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the
   declared network policy, the credential use and the access choices, and says
-  nothing about what a plugin does with data it may read. No page needs a
-  weaker wording for any plugin, because a plugin that isn't built for API 4
-  does not run.
+  nothing about what a plugin does with data it may read. Plugins with a
+  `processes` block are the exception to credential isolation. Their commands
+  run as the user and can reach every plugin's credentials, not only their own
+  (ADR 0019). Access review and update approval state this exception. Plugins
+  built for an older API do not run.
 
 ## Compact desktop timer panel
 

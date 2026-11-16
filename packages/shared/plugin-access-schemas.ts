@@ -56,6 +56,14 @@ export interface PluginAccessOperation {
   operation: string;
 }
 
+/** The argv shape for review, and the complete canonical declaration for consent. */
+export interface PluginAccessCommand {
+  id: string;
+  argv: string;
+  policy: string;
+  description?: string;
+}
+
 export interface PluginAccessSummary {
   capabilities: string[];
   authSchemes: PluginAccessAuth[];
@@ -63,6 +71,8 @@ export interface PluginAccessSummary {
   derivedHosts: PluginAccessDerivedHost[];
   endpoints: PluginAccessEndpoint[];
   publicHosts: string[];
+  commands?: PluginAccessCommand[];
+  openSchemes?: string[];
   mcpTools: PluginAccessMcpTool[];
   agentPrompts: PluginAccessPrompt[];
   /**
@@ -86,6 +96,8 @@ export interface PluginAccessDifference {
   derivedHosts: PluginAccessDerivedHost[];
   endpoints: PluginAccessEndpoint[];
   publicHosts: string[];
+  commands?: PluginAccessCommand[];
+  openSchemes?: string[];
   mcpTools: PluginAccessMcpTool[];
   /** Agent tasks whose prompt is new or changed. */
   agentPrompts: string[];
@@ -155,6 +167,20 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
     derivedHosts: z.array(derivedHostSchema).max(60),
     endpoints: z.array(endpointSchema).max(2000),
     publicHosts: z.array(shortText).max(20),
+    commands: z
+      .array(
+        z
+          .object({
+            id: shortText,
+            argv: z.string().max(16 * 1024),
+            policy: z.string().max(16 * 1024),
+            description: z.string().max(2000).optional(),
+          })
+          .strict(),
+      )
+      .max(256)
+      .default([]),
+    openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z
       .array(z.object({ task: shortText, prompt: shortText }))
@@ -174,6 +200,20 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
     derivedHosts: z.array(derivedHostSchema).max(60),
     endpoints: z.array(endpointSchema).max(2000),
     publicHosts: z.array(shortText).max(20),
+    commands: z
+      .array(
+        z
+          .object({
+            id: shortText,
+            argv: z.string().max(16 * 1024),
+            policy: z.string().max(16 * 1024),
+            description: z.string().max(2000).optional(),
+          })
+          .strict(),
+      )
+      .max(256)
+      .default([]),
+    openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z.array(shortText).max(10),
     alwaysOnAccess: z.array(shortText).max(10),

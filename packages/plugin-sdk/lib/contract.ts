@@ -253,6 +253,34 @@ export type PluginManifest = {
       }
     | undefined;
   $schema?: string | undefined;
+  processes?:
+    | {
+        commands?:
+          | {
+              id: string;
+              mode: "capture" | "detached" | "terminal";
+              args: (
+                | string
+                | { values: string[]; kind: "enum"; name: string }
+                | { value: string; kind: "literal" }
+                | {
+                    if: string;
+                    args: (
+                      | string
+                      | { values: string[]; kind: "enum"; name: string }
+                      | { value: string; kind: "literal" }
+                    )[];
+                  }
+              )[];
+              executable: string;
+              stdin?: "text" | undefined;
+              timeoutSeconds?: number | undefined;
+            }[]
+          | undefined;
+        openSchemes?: string[] | undefined;
+        executables?: Record<string, { names: string[] }> | undefined;
+      }
+    | undefined;
 };
 
 /** A connection field or agent task setting. Secret fields never reach the plugin. */
@@ -337,6 +365,66 @@ export type PluginNetwork = {
       }
     | { scheme: "secretAddress"; secretField: string }
     | undefined;
+};
+
+/** Commands and app schemes declared in the manifest. No process executes at declaration time. */
+export type PluginProcesses = {
+  commands?:
+    | {
+        id: string;
+        mode: "capture" | "detached" | "terminal";
+        args: (
+          | string
+          | { values: string[]; kind: "enum"; name: string }
+          | { value: string; kind: "literal" }
+          | {
+              if: string;
+              args: (
+                | string
+                | { values: string[]; kind: "enum"; name: string }
+                | { value: string; kind: "literal" }
+              )[];
+            }
+        )[];
+        executable: string;
+        stdin?: "text" | undefined;
+        timeoutSeconds?: number | undefined;
+      }[]
+    | undefined;
+  openSchemes?: string[] | undefined;
+  executables?: Record<string, { names: string[] }> | undefined;
+};
+
+/** Parsed command, with typed slots and conditional groups, for host integrations. */
+export type DeclaredCommand = {
+  id: string;
+  mode: "capture" | "detached" | "terminal";
+  args: (
+    | { values: string[]; kind: "enum"; name: string }
+    | { kind: "literal"; value: string; name?: undefined }
+    | {
+        kind: "number" | "id" | "text" | "ref" | "https-url" | "folder";
+        name: string;
+        value?: undefined;
+      }
+    | { value: string; kind: "literal" }
+    | {
+        if: string;
+        args: (
+          | { values: string[]; kind: "enum"; name: string }
+          | { kind: "literal"; value: string; name?: undefined }
+          | {
+              kind: "number" | "id" | "text" | "ref" | "https-url" | "folder";
+              name: string;
+              value?: undefined;
+            }
+          | { value: string; kind: "literal" }
+        )[];
+      }
+  )[];
+  executable: string;
+  stdin?: "text" | undefined;
+  timeoutSeconds?: number | undefined;
 };
 
 /** A host derived from the base address, such as `api.{host}`. */
