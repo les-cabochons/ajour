@@ -1166,10 +1166,30 @@ The restricted `ajour:choose-folder` IPC accepts only a project id from the acti
 
 The process broker validates every command and resolves its executable through
 `process-spawn`. Capture remains owned by the operation. Detached and terminal
-launches return `{ started: true }` after spawn, ignore stdio and unref the child.
-Ajour never kills those children when an operation ends or the app quits.
+launches return `{ started: true }` after spawn, ignore stdio (except while
+delivering stdin) and unref the child. Except while delivering stdin, Ajour
+never kills those children when an operation ends or the app quits.
 Both launch modes require a resolved repository folder argument and use the first
-folder argument as cwd. They refuse stdin, which these modes cannot deliver.
+folder argument as cwd.
+
+A detached command that declares `stdin: "text"` pipes only stdin; stdout and
+stderr stay ignored. `startUnowned` writes the text in 64 KB chunks, waiting for
+`drain`, ends stdin and only then unrefs the child and returns. The `end`
+callback fires once the child has read the input: on Windows all of it, even a
+small one, and on POSIX whatever doesn't fit in the pipe buffer. So the start
+returns only once the child has read its input. The 1 MB request limit is the
+one capture stdin has. Until stdin ends Ajour owns the child: a write error,
+such as EPIPE when it exits early, refuses with `stdin_failed`, and an ended
+operation refuses with `operation_ended`. A child that hasn't read its input
+within `stdinDeliveryDeadlineMs` (10 seconds) also refuses with `stdin_failed`.
+That deadline is shorter than the operation's 30 seconds, so a child that never
+reads is a refusal rather than a timeout, which would count toward suspending
+the plugin. Each failure stops the child and everything it started, through
+`endProcessTree` in `process-tree.ts` (`taskkill /T /F` on Windows, the process
+group on POSIX), the helper capture uses too, so it never runs on part of its
+input. The `plugin.process` event carries only the reason, never the text or
+argv. Terminal commands refuse stdin, in the manifest and at run time, because
+the terminal app owns the process.
 
 `process-launch.ts` supports Windows Terminal on Windows and Terminal on macOS.
 Windows Terminal re-joins argv, so executable paths, resolved launcher prefixes,

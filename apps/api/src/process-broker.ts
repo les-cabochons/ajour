@@ -81,6 +81,7 @@ export type ProcessReason =
   | "spawn_refused"
   | "concurrency"
   | "capture_incomplete"
+  | "stdin_failed"
   | "output_limit"
   | "timeout"
   | "operation_ended"
@@ -158,6 +159,8 @@ export interface ProcessBrokerOptions {
   sessionCheckMs?: number;
   /** The plugin holds no process session now: what its gate kept can go. */
   sessionsReleased?(pluginId: string): void;
+  /** How long a detached child has to read its stdin; tests shorten it. */
+  stdinDeadlineMs?: number;
 }
 /**
  * The operations whose commands may receive their connection's address:
@@ -674,9 +677,13 @@ export class ProcessBroker implements ProcessBrokerPort {
         // A session opens only through `session.open`, and nothing else does.
         if ((command.mode === "session") !== opening)
           return refuse("invalid_request");
-        if (command.mode !== "capture" && request.stdin !== undefined)
+        // A terminal command runs in another app, so Ajour can't write its
+        // stdin, and a session takes its lines through `session.send`.
+        if (
+          (command.mode === "terminal" || command.mode === "session") &&
+          request.stdin !== undefined
+        )
           refuse("invalid_request");
-
         if (request.stdin !== undefined && command.stdin !== "text")
           return refuse("invalid_request");
         // The host fills a connection-url slot; the plugin never names it.
@@ -836,7 +843,18 @@ export class ProcessBroker implements ProcessBrokerPort {
             const gate = await this.options.gate(caller);
             if (gate) return refuse(gate);
             if (signal.aborted) return refuse("operation_ended");
-            await startUnowned(launch, folder, hidden);
+            await startUnowned(
+              launch,
+              folder,
+              hidden,
+              command.mode === "detached" && command.stdin === "text"
+                ? {
+                    stdin,
+                    signal,
+                    deadlineMs: this.options.stdinDeadlineMs,
+                  }
+                : undefined,
+            );
           },
         });
         started = true;

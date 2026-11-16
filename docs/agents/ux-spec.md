@@ -1387,7 +1387,10 @@ The preference saves on change. It does not change the ajour command installatio
 
 An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
-when the plugin operation ends or Ajour quits. Launches cannot take stdin.
+when the plugin operation ends or Ajour quits. A detached command can take its
+input on stdin, such as a coding tool's prompt: Ajour writes all of it before
+reporting the start, and refuses the start if the process stops reading first,
+hasn't read its input within 10 seconds, or the operation ends while it writes. A terminal command cannot take stdin.
 
 A declared session command keeps a program running in the background for the
 plugin to talk to, such as a coding tool's server, across the plugin's
