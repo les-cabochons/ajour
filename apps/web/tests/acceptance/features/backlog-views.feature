@@ -63,6 +63,11 @@ Feature: Backlog list and board views
     When I hover the other item in the sidebar
     Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
 
+  Scenario: Keep the hover actions inside a row with a long project name
+    Given the project is named "Example project with a name far too long for the sidebar"
+    When I hover the other item in the sidebar
+    Then its sidebar row's hover actions end inside the row
+
   Scenario: Start and stop a focused sidebar item with S
     When I press S on the other item in the sidebar
     Then an entry runs on "other"

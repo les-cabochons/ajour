@@ -715,7 +715,7 @@ function ParentLink({
   // (council round 12). The name gives way to the hover actions, but the
   // arrow keeps its width, so the link stays in reach on hover.
   const className =
-    "flex min-w-3 items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
+    "flex min-w-3 shrink-[8] items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
   const icon = (
     <>
       <ParentIcon aria-hidden className="size-3 shrink-0" />
@@ -833,7 +833,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         <span className="flex h-5 min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           {props.inProjectSection ? (
             workflowState ? (
-              <span className="max-w-[60%] shrink-0 truncate">
+              <span className="max-w-[60%] min-w-0 shrink truncate">
                 {workflowState.name}
               </span>
             ) : null
@@ -846,8 +846,9 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
                   className="ajour-sidebar-icon shrink-0"
                 />
               ) : null}
-              {/* The project keeps its width; the parent's name gives way. */}
-              <span className="max-w-[60%] shrink-0 truncate">
+              {/* The parent's name gives way first; under the hover actions
+                  the project's name gives way too, so they stay in the row. */}
+              <span className="max-w-[60%] min-w-0 shrink truncate">
                 {project ? getLocalProjectDisplayName(project) : "No project"}
               </span>
             </>

@@ -228,6 +228,29 @@ Given("the other Backlog item has 1.5 hours remaining", async ({ page }) => {
   });
   await page.reload();
 });
+Given("the project is named {string}", async ({ page }, name: string) => {
+  await page.evaluate((name) => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    for (const project of state.projects) {
+      project.name = name;
+      project.displayName = name;
+    }
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  }, name);
+  await page.reload();
+});
+Then("its sidebar row's hover actions end inside the row", async ({ page }) => {
+  const row = otherSidebarRow(page);
+  const settle = row.getByRole("button", { name: "Settle", exact: true });
+  await expect(settle).toBeVisible();
+  const [rowBox, settleBox] = await Promise.all([
+    row.boundingBox(),
+    settle.boundingBox(),
+  ]);
+  expect(settleBox!.x + settleBox!.width).toBeLessThanOrEqual(
+    rowBox!.x + rowBox!.width,
+  );
+});
 function otherSidebarRow(page: Page) {
   return page
     .getByRole("navigation", { name: "Primary navigation" })
