@@ -3,19 +3,19 @@
 
 /** The `plugin.json` of a plugin API 4 package, as you write it. */
 export type PluginManifest = {
-  apiVersion: 4;
-  displayName: string;
   id: string;
   version: string;
   iconSvg: string;
+  apiVersion: 4;
+  displayName: string;
   capabilities: {
     projectDataShape?:
       | {
           apiVersion: 1;
           datasets?:
             | {
-                displayName: string;
                 id: string;
+                displayName: string;
                 columns: {
                   type: "string" | "number" | "boolean";
                   key: string;
@@ -61,14 +61,45 @@ export type PluginManifest = {
     team?: { apiVersion: 1 } | undefined;
     projectSource?: {} | undefined;
     timeSync?: {} | undefined;
+    handoff?:
+      | {
+          tools: {
+            id: string;
+            settings: {
+              type:
+                "number" | "url" | "text" | "password" | "select" | "checkbox";
+              id: string;
+              label: string;
+              options?: { value: string; label: string }[] | undefined;
+              required?: boolean | undefined;
+              placeholder?: string | undefined;
+              helpText?: string | undefined;
+              secret?: boolean | undefined;
+              defaultValue?: string | number | boolean | undefined;
+              min?: number | undefined;
+              max?: number | undefined;
+              step?: number | undefined;
+              capability?:
+                | "connector"
+                | "codeHost"
+                | "calendar"
+                | "team"
+                | "projectSource"
+                | "timeSync"
+                | "handoff"
+                | undefined;
+              passToPlugin?: boolean | undefined;
+            }[];
+            label: string;
+            iconSvg: string;
+          }[];
+        }
+      | undefined;
     agentTask?:
       | {
           tasks: {
             id: string;
-            label: string;
             prompt: string;
-            placement: "commit-week" | "submit-week";
-            estimateMinutes: number;
             tools: (
               | "find_entries"
               | "get_last_saved_entry"
@@ -105,6 +136,9 @@ export type PluginManifest = {
               | "archive_work_item"
               | "restore_work_item"
             )[];
+            label: string;
+            placement: "commit-week" | "submit-week";
+            estimateMinutes: number;
             settings?:
               | {
                   type:
@@ -132,6 +166,7 @@ export type PluginManifest = {
                     | "team"
                     | "projectSource"
                     | "timeSync"
+                    | "handoff"
                     | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
@@ -185,6 +220,7 @@ export type PluginManifest = {
           | "team"
           | "projectSource"
           | "timeSync"
+          | "handoff"
           | undefined;
         passToPlugin?: boolean | undefined;
       }[]
@@ -258,20 +294,20 @@ export type PluginManifest = {
         commands?:
           | {
               id: string;
-              mode: "capture" | "detached" | "terminal";
               args: (
                 | string
-                | { values: string[]; kind: "enum"; name: string }
+                | { values: string[]; name: string; kind: "enum" }
                 | { value: string; kind: "literal" }
                 | {
-                    if: string;
                     args: (
                       | string
-                      | { values: string[]; kind: "enum"; name: string }
+                      | { values: string[]; name: string; kind: "enum" }
                       | { value: string; kind: "literal" }
                     )[];
+                    if: string;
                   }
               )[];
+              mode: "capture" | "detached" | "terminal";
               executable: string;
               stdin?: "text" | undefined;
               timeoutSeconds?: number | undefined;
@@ -304,6 +340,7 @@ export type PluginField = {
     | "team"
     | "projectSource"
     | "timeSync"
+    | "handoff"
     | undefined;
   passToPlugin?: boolean | undefined;
 };
@@ -372,20 +409,20 @@ export type PluginProcesses = {
   commands?:
     | {
         id: string;
-        mode: "capture" | "detached" | "terminal";
         args: (
           | string
-          | { values: string[]; kind: "enum"; name: string }
+          | { values: string[]; name: string; kind: "enum" }
           | { value: string; kind: "literal" }
           | {
-              if: string;
               args: (
                 | string
-                | { values: string[]; kind: "enum"; name: string }
+                | { values: string[]; name: string; kind: "enum" }
                 | { value: string; kind: "literal" }
               )[];
+              if: string;
             }
         )[];
+        mode: "capture" | "detached" | "terminal";
         executable: string;
         stdin?: "text" | undefined;
         timeoutSeconds?: number | undefined;
@@ -398,30 +435,30 @@ export type PluginProcesses = {
 /** Parsed command, with typed slots and conditional groups, for host integrations. */
 export type DeclaredCommand = {
   id: string;
-  mode: "capture" | "detached" | "terminal";
   args: (
-    | { values: string[]; kind: "enum"; name: string }
+    | { values: string[]; name: string; kind: "enum" }
     | { kind: "literal"; value: string; name?: undefined }
     | {
-        kind: "number" | "id" | "text" | "ref" | "https-url" | "folder";
+        kind: "number" | "id" | "folder" | "text" | "ref" | "https-url";
         name: string;
         value?: undefined;
       }
     | { value: string; kind: "literal" }
     | {
-        if: string;
         args: (
-          | { values: string[]; kind: "enum"; name: string }
+          | { values: string[]; name: string; kind: "enum" }
           | { kind: "literal"; value: string; name?: undefined }
           | {
-              kind: "number" | "id" | "text" | "ref" | "https-url" | "folder";
+              kind: "number" | "id" | "folder" | "text" | "ref" | "https-url";
               name: string;
               value?: undefined;
             }
           | { value: string; kind: "literal" }
         )[];
+        if: string;
       }
   )[];
+  mode: "capture" | "detached" | "terminal";
   executable: string;
   stdin?: "text" | undefined;
   timeoutSeconds?: number | undefined;
@@ -459,9 +496,9 @@ export type PluginHttpMethod =
 /** The connection each operation receives, without its secret fields. */
 export type PluginConnection = {
   id: string;
+  pluginId: string;
   label: string;
   access: string[];
-  pluginId: string;
   tenantLabel: string;
   autoSync: boolean;
   autoSyncIntervalMinutes: number;
@@ -478,6 +515,7 @@ export type ValidationContext = {
     | "team"
     | "projectSource"
     | "timeSync"
+    | "handoff"
   )[];
 };
 
@@ -522,19 +560,19 @@ export type BacklogSyncWorkItem = {
 
 export type BacklogSyncResult = {
   items: {
+    title: string;
     sourceId: string;
     source: string;
     tenantLabel: string;
     connectionId: string;
     connectionLabel: string;
     externalId: string;
-    title: string;
     workItemType: string;
     depth: 0 | 1;
+    state?: string | undefined;
     description?:
       | { text: string; lost?: string[] | undefined; cut?: boolean | undefined }
       | undefined;
-    state?: string | undefined;
     sourceUrl?: string | undefined;
     originalEstimateHours?: number | undefined;
     remainingEstimateHours?: number | undefined;
@@ -545,7 +583,7 @@ export type BacklogSyncResult = {
     stateDone?: boolean | undefined;
     assignedTo?: string | undefined;
     assignee?:
-      | { displayName: string; id: string; email?: string | undefined }
+      | { id: string; displayName: string; email?: string | undefined }
       | null
       | undefined;
     priority?: "urgent" | "high" | "medium" | "low" | undefined;
@@ -557,7 +595,7 @@ export type BacklogSyncResult = {
     pushedAt?: number | undefined;
   }[];
   viewer?:
-    { displayName: string; id: string; email?: string | undefined } | undefined;
+    { id: string; displayName: string; email?: string | undefined } | undefined;
   workItemUpdates?:
     | {
         localWorkItemId: string;
@@ -602,8 +640,8 @@ export type BacklogSyncResult = {
         comments: {
           id: string;
           author: {
-            displayName: string;
             id: string;
+            displayName: string;
             email?: string | undefined;
           };
           createdAt: string;
@@ -616,7 +654,7 @@ export type BacklogSyncResult = {
 export type SettleStatesRequest = { sourceId: string };
 
 export type SettleStatesResult = {
-  states: { name: string; category: string; done: boolean }[];
+  states: { done: boolean; name: string; category: string }[];
 };
 
 export type SettleWriteRequest = {
@@ -641,7 +679,7 @@ export type SearchAssigneesRequest = {
 };
 
 export type SearchAssigneesResult = {
-  people: { displayName: string; id: string; email?: string | undefined }[];
+  people: { id: string; displayName: string; email?: string | undefined }[];
 };
 
 export type ReadDescriptionRequest = { sourceId: string };
@@ -675,15 +713,12 @@ export type CodeHostOperations = {
   readonly syncPullRequests: {
     request: { tracked: { number: number; repository: string }[] };
     result: {
-      viewer: {
-        login: string;
-        isBot: boolean;
-        displayName?: string | undefined;
-        avatarUrl?: string | undefined;
-      };
       pullRequests: {
         number: number;
         id: string;
+        title: string;
+        url: string;
+        state: "closed" | "merged" | "open";
         author: {
           login: string;
           isBot: boolean;
@@ -704,17 +739,14 @@ export type CodeHostOperations = {
           mentionsViewer: boolean;
           threadId?: string | undefined;
         }[];
-        url: string;
-        state: "closed" | "merged" | "open";
-        title: string;
         repository: string;
         draft: boolean;
         viewerIsAuthor: boolean;
         headSha: string;
         lastPushedAt: number;
         reviewRequests: {
-          kind: "team" | "user";
           name: string;
+          kind: "team" | "user";
           includesViewer: boolean;
         }[];
         reviews: {
@@ -754,6 +786,12 @@ export type CodeHostOperations = {
             }[]
           | undefined;
       }[];
+      viewer: {
+        login: string;
+        isBot: boolean;
+        displayName?: string | undefined;
+        avatarUrl?: string | undefined;
+      };
       instanceUrl?: string | undefined;
     };
   };
@@ -763,8 +801,8 @@ export type CodeHostOperations = {
       headSha: string;
       baseSha: string;
       files: {
-        status: "added" | "modified" | "removed" | "renamed" | "copied";
         path: string;
+        status: "added" | "modified" | "removed" | "renamed" | "copied";
         additions: number;
         deletions: number;
         binary: boolean;
@@ -786,8 +824,8 @@ export type CodeHostOperations = {
       description: string;
       timeline: (
         | {
-            kind: "comment";
             id: string;
+            kind: "comment";
             author: {
               login: string;
               isBot: boolean;
@@ -798,8 +836,8 @@ export type CodeHostOperations = {
             createdAt: number;
           }
         | {
-            kind: "review";
             id: string;
+            kind: "review";
             author: {
               login: string;
               isBot: boolean;
@@ -819,8 +857,8 @@ export type CodeHostOperations = {
             authorName: string;
           }
         | {
-            kind: "event";
             id: string;
+            kind: "event";
             createdAt: number;
             text: string;
             actor?:
@@ -870,6 +908,9 @@ export type CodeHostOperations = {
       items: {
         number: number;
         id: string;
+        title: string;
+        url: string;
+        state: "closed" | "merged" | "open";
         author: {
           login: string;
           isBot: boolean;
@@ -878,9 +919,6 @@ export type CodeHostOperations = {
         };
         createdAt: number;
         updatedAt: number;
-        url: string;
-        state: "closed" | "merged" | "open";
-        title: string;
         repository: string;
         draft: boolean;
         closedAt?: number | undefined;
@@ -925,8 +963,8 @@ export type CodeHostOperations = {
   readonly replyToThread: {
     request: {
       number: number;
-      body: string;
       threadId: string;
+      body: string;
       repository: string;
     };
     result: { commentId: string };
@@ -1000,7 +1038,7 @@ export type BacklogCommentOperations = {
     result: {
       comments: {
         id: string;
-        author: { displayName: string; id: string; email?: string | undefined };
+        author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
         reactions?:
@@ -1021,7 +1059,7 @@ export type BacklogCommentOperations = {
         updatedAt?: string | undefined;
         restrictedTo?: string | undefined;
       }[];
-      viewer: { displayName: string; id: string; email?: string | undefined };
+      viewer: { id: string; displayName: string; email?: string | undefined };
       total?: number | undefined;
       earlierCursor?: string | undefined;
     };
@@ -1031,7 +1069,7 @@ export type BacklogCommentOperations = {
     result: {
       comment: {
         id: string;
-        author: { displayName: string; id: string; email?: string | undefined };
+        author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
         reactions?:
@@ -1059,7 +1097,7 @@ export type BacklogCommentOperations = {
     result: {
       comment: {
         id: string;
-        author: { displayName: string; id: string; email?: string | undefined };
+        author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
         reactions?:
@@ -1120,7 +1158,7 @@ export type BacklogCommentOperations = {
   readonly searchItemPeople: {
     request: { sourceId: string; limit: number; query: string };
     result: {
-      people: { displayName: string; id: string; email?: string | undefined }[];
+      people: { id: string; displayName: string; email?: string | undefined }[];
     };
   };
 };
@@ -1207,9 +1245,9 @@ export type ProjectSourceSyncResult =
                 unit: "hours" | "money";
                 consumed: number;
                 status?: "unknown" | "ok" | "warning" | "over" | undefined;
+                since?: string | undefined;
                 total?: number | undefined;
                 remaining?: number | undefined;
-                since?: string | undefined;
               }
             | undefined;
         }[];
@@ -1252,9 +1290,9 @@ export type ProjectSourceSnapshot = {
           unit: "hours" | "money";
           consumed: number;
           status?: "unknown" | "ok" | "warning" | "over" | undefined;
+          since?: string | undefined;
           total?: number | undefined;
           remaining?: number | undefined;
-          since?: string | undefined;
         }
       | undefined;
   }[];
@@ -1293,9 +1331,9 @@ export type ProjectSourceProject = {
         unit: "hours" | "money";
         consumed: number;
         status?: "unknown" | "ok" | "warning" | "over" | undefined;
+        since?: string | undefined;
         total?: number | undefined;
         remaining?: number | undefined;
-        since?: string | undefined;
       }
     | undefined;
 };
@@ -1316,9 +1354,9 @@ export type ProjectSourceBudget = {
   unit: "hours" | "money";
   consumed: number;
   status?: "unknown" | "ok" | "warning" | "over" | undefined;
+  since?: string | undefined;
   total?: number | undefined;
   remaining?: number | undefined;
-  since?: string | undefined;
 };
 
 /** What `syncTimeEntries` receives: the window to list, as local dates in the
@@ -1463,8 +1501,8 @@ export type TimeSyncResult = {
             }
           | undefined;
       }
-    | { status: "refused"; message: string; syncKey: string }
-    | { status: "failed"; message: string; syncKey: string }
+    | { message: string; status: "refused"; syncKey: string }
+    | { message: string; status: "failed"; syncKey: string }
   )[];
 };
 
@@ -1490,8 +1528,8 @@ export type TimeSyncChangeResult =
           }
         | undefined;
     }
-  | { status: "refused"; message: string; syncKey: string }
-  | { status: "failed"; message: string; syncKey: string };
+  | { message: string; status: "refused"; syncKey: string }
+  | { message: string; status: "failed"; syncKey: string };
 
 /** An entry as your system stores it, with `clientRef` when Ajour created it. */
 export type TimeSyncRemoteEntry = {
@@ -1505,4 +1543,52 @@ export type TimeSyncRemoteEntry = {
   countingSince?: string | undefined;
   taskRemoteId?: string | undefined;
   clientRef?: string | undefined;
+};
+
+export type StartHandoffRequest = {
+  tool: string;
+  folder: { id: string; name: string };
+  prompt: string;
+  title: string;
+  item: { key: string; url: string };
+  settings: Record<string, string | number | boolean>;
+  branch?: string | undefined;
+};
+
+export type StartHandoffResult = {
+  threadId: string;
+  native: Record<string, unknown>;
+  link?: string | undefined;
+  resume?:
+    { command: string; args: Record<string, string | number> } | undefined;
+};
+
+export type ReadHandoffStatesRequest = {
+  tool: string;
+  handoffs: {
+    id: string;
+    threadId: string;
+    native: Record<string, unknown>;
+    folderId: string;
+  }[];
+};
+
+export type ReadHandoffStatesResult = {
+  id: string;
+  native: Record<string, unknown>;
+  state:
+    "working" | "needs-you" | "ready" | "done" | "failed" | "gone" | "unknown";
+  title?: string | undefined;
+  branch?: string | undefined;
+  link?: string | undefined;
+  pullRequests?: { url: string; title?: string | undefined }[] | undefined;
+}[];
+
+export type DetectToolsResult = {
+  tools: {
+    id: string;
+    available: boolean;
+    version?: string | undefined;
+    reason?: string | undefined;
+  }[];
 };

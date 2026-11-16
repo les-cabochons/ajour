@@ -1103,3 +1103,54 @@ The desktop tray panel, specified in [#609](https://github.com/les-cabochons/ajo
 API state version 11 adds `repositoryFolders`, with stable ids, project ids, names, absolute paths and optional last-use timestamps. Only the local API file stores these per-device records. They never enter renderer project records, bootstrap or team sync. `FolderResolver` in `apps/api/src/repository-folders.ts` resolves ids for the process broker, rechecks real paths at use, and refuses Ajour's user-data and install directories and their descendants.
 
 The restricted `ajour:choose-folder` IPC accepts only a project id from the active main frame. Main opens the native directory chooser and calls `addRepositoryFolderForServer` directly. HTTP exposes list, remove and remember-use routes under `/api/projects/:projectId/repository-folders`; POST to the collection refuses paths and directs callers to the chooser. Removal deletes only the mapping. No directory is deleted or scanned.
+
+## Handoffs
+
+The handoff capability, spec #710 and ticket #719, gives a backlog item threads
+in an external coding tool. `packages/shared/handoffs.ts` defines the operation
+requests, answers and local records. API 4 manifests declare tools under
+`capabilities.handoff.tools`; handoff participates in activation and access consent.
+
+`apps/api/src/handoff-state.ts` owns state transitions. `handoffs.ts` coordinates
+starts and refreshes. The storage's version 12 migration adds local handoffs.
+Prompt and settings content reaches the plugin for a start and is never kept in
+the handoff record. Only successful starts create records. History keeps the last
+50 common-state changes with their time and optional native status and label, capped
+at 64 and 200 characters. Native results are limited to 4 KB of serialized UTF-8;
+ordinary checks add no history. Existing native history is compacted on load.
+Removing a record does not stop or delete its external thread.
+
+Refreshes batch by plugin, tool and project. The project comes from the saved
+record and binds the operation's process broker, so folder slots cannot resolve
+another project's folders. The API's 15 second tick checks which records are due:
+30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
+refresh after 24 hours since their last common-state change. Manual refresh still
+checks them. A failed read preserves state and retries at the normal cadence.
+Each batch takes its own time and enters one FIFO queue. A manual refresh waits
+for the active batch, before the tick enqueues its next one. Concurrent ticks
+are skipped. No window means hidden cadence; disconnect resets visibility.
+Unavailable plugins, disabled capabilities and removed tools become unknown once,
+with a native label explaining why. Their plugin reads stop until availability
+returns. Refresh runs every batch and returns `{ handoffs, failures }`, with each
+failure's plugin, tool, project and reason. All failed is HTTP 409, partial success
+is 200, and an unknown single-record refresh is 404.
+
+The authenticated window routes are GET and POST `/api/handoffs`, POST
+`/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE
+`/api/handoffs/:handoffId`, POST `/api/handoffs/visibility`, and POST
+`/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
+The start request carries item identity, prompt, title and optional branch;
+template filling belongs to #720.
+
+Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
+data, VBScript, blob and about links are always refused. Resume commands must be
+declared. Refresh drops unsafe links and non-HTTPS pull request URLs.
+
+Snapshots publish on the SSE bridge after visible changes and on attach.
+`checkedAt` is excluded from change detection. The web store reuses unchanged
+records and per-item arrays, including when only `checkedAt` differs. The window's
+`/api/handoffs/bridge` uses the same bridge protocol while MCP is off; it does
+not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
+visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
+work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
+never prompts, titles, paths, links or native state.

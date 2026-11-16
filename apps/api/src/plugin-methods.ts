@@ -10,6 +10,9 @@ import type { TimeSyncMethod } from "../../../packages/shared/time-sync.ts";
 
 /** Every plugin method the plugin host calls. */
 export type PluginMethod =
+  | "detectTools"
+  | "startHandoff"
+  | "readHandoffStates"
   | "validateConnection"
   | "syncConnection"
   | "listSettleStates"
@@ -50,6 +53,9 @@ function connectionOperations<Operation extends string>(contract: {
  * only one. The contracts' operations come straight from packages/shared.
  */
 const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
+  detectTools: [],
+  startHandoff: ["request"],
+  readHandoffStates: ["request"],
   validateConnection: ["config", "context"],
   syncConnection: ["connection", "workItems", "syncOptions"],
   listSettleStates: CONNECTION_AND_REQUEST,

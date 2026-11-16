@@ -39,6 +39,42 @@ interface RouteSpec {
  * served on its own, before the origin check, and named `mcp.request`.
  */
 export const ROUTES = {
+  handoffBridge: {
+    method: "GET",
+    path: "/api/handoffs/bridge",
+    name: "mcp_bridge.connection",
+  },
+  handoffList: { method: "GET", path: "/api/handoffs", name: "handoff.list" },
+  handoffStart: {
+    method: "POST",
+    path: "/api/handoffs",
+    name: "handoff.start",
+  },
+  handoffRefreshAll: {
+    method: "POST",
+    path: "/api/handoffs/refresh",
+    name: "handoff.refresh",
+  },
+  handoffVisibility: {
+    method: "POST",
+    path: "/api/handoffs/visibility",
+    name: "handoff.visibility",
+  },
+  handoffDetect: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/handoffs/detect",
+    name: "handoff.detect",
+  },
+  handoffRefresh: {
+    method: "POST",
+    path: "/api/handoffs/:handoffId/refresh",
+    name: "handoff.refresh",
+  },
+  handoffRemove: {
+    method: "DELETE",
+    path: "/api/handoffs/:handoffId",
+    name: "handoff.remove",
+  },
   repositoryFolderList: {
     method: "GET",
     path: "/api/projects/:projectId/repository-folders",

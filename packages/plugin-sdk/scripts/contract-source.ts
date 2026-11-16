@@ -192,3 +192,14 @@ export type TimeSyncResult = Input<typeof timeSyncResultSchema>;
 export type TimeSyncChangeResult = Input<typeof timeSyncChangeResultSchema>;
 /** An entry as your system stores it, with `clientRef` when Ajour created it. */
 export type TimeSyncRemoteEntry = Input<typeof timeSyncRemoteEntrySchema>;
+
+export type StartHandoffRequest =
+  import("../../shared/handoffs.ts").StartHandoffRequest;
+export type StartHandoffResult =
+  import("../../shared/handoffs.ts").StartHandoffResult;
+export type ReadHandoffStatesRequest =
+  import("../../shared/handoffs.ts").ReadHandoffStatesRequest;
+export type ReadHandoffStatesResult =
+  import("../../shared/handoffs.ts").ReadHandoffStatesResult;
+export type DetectToolsResult =
+  import("../../shared/handoffs.ts").DetectToolsResult;

@@ -1,3 +1,12 @@
+import {
+  startHandoffRequestSchema,
+  startHandoffResultSchema,
+  detectToolsResultSchema,
+  readHandoffStatesRequestSchema,
+  readHandoffStatesResultSchema,
+  type StartHandoffRequest,
+  type ReadHandoffStatesRequest,
+} from "../../../packages/shared/handoffs.ts";
 import type {
   ProcessBrokerPort,
   OperationProcessBroker,
@@ -285,6 +294,9 @@ export type PluginAdmitted = SecretConnectionFields;
 export type { PluginMethod };
 /** The event each plugin method's worker run emits. A new method needs one. */
 export const PLUGIN_OPERATION_EVENTS = {
+  detectTools: "handoff.detect",
+  startHandoff: "handoff.start",
+  readHandoffStates: "handoff.refresh",
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
@@ -311,6 +323,7 @@ const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   team: "does not sync a team's projects",
   projectSource: "does not provide projects from a source",
   timeSync: "does not sync time entries",
+  handoff: "does not provide handoffs",
 };
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(
@@ -331,6 +344,8 @@ export function capabilityOfMethod(
     return "team";
   }
   if (method === "syncProjects") return "projectSource";
+  if (["detectTools", "startHandoff", "readHandoffStates"].includes(method))
+    return "handoff";
   if (method === "syncTimeEntries") return "timeSync";
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
@@ -1012,6 +1027,113 @@ export class PluginManager {
     );
   }
 
+  async detectTools(pluginId: string, projectId: string) {
+    return this.invokePlugin(
+      pluginId,
+      "detectTools",
+      { projectId },
+      detectToolsResultSchema,
+      undefined,
+      requireCapability("handoff"),
+    );
+  }
+  async startHandoff(
+    pluginId: string,
+    request: StartHandoffRequest,
+    projectId: string,
+  ) {
+    let manifestForResult: PluginManifest;
+    return this.invokePlugin(
+      pluginId,
+      "startHandoff",
+      { request: startHandoffRequestSchema.parse(request), projectId },
+      {
+        parse(value: unknown) {
+          const result = startHandoffResultSchema.parse(value);
+          if (
+            result.link !== undefined &&
+            !validHandoffLink(result.link, manifestForResult)
+          )
+            throw new Error("The handoff link is not allowed by the manifest.");
+          if (
+            result.resume &&
+            (!isPluginApi4Manifest(manifestForResult) ||
+              !manifestForResult.processes?.commands.some(
+                (c) => c.id === result.resume!.command,
+              ))
+          )
+            throw new Error(
+              "The resume command is not declared by the manifest.",
+            );
+          return result;
+        },
+      },
+      undefined,
+      (manifest) => {
+        manifestForResult = manifest;
+        requireCapability("handoff")(manifest);
+        if (
+          !manifest.capabilities.handoff?.tools.some(
+            (t) => t.id === request.tool,
+          )
+        )
+          throw new Error("This handoff tool is not available.");
+      },
+    );
+  }
+  async readHandoffStates(
+    pluginId: string,
+    request: ReadHandoffStatesRequest,
+    projectId: string,
+  ) {
+    let manifestForResult: PluginManifest;
+    const parsed = readHandoffStatesRequestSchema.parse(request);
+    return this.invokePlugin(
+      pluginId,
+      "readHandoffStates",
+      { request: parsed, projectId },
+      {
+        parse(value: unknown) {
+          const result = readHandoffStatesResultSchema.parse(value);
+          const ids = new Set(parsed.handoffs.map((h) => h.id));
+          if (
+            result.length !== ids.size ||
+            new Set(result.map((h) => h.id)).size !== ids.size ||
+            result.some((h) => !ids.has(h.id))
+          )
+            throw new Error("The tool must answer each handoff exactly once.");
+          return result.map((update) => {
+            const { link, pullRequests, ...rest } = update;
+            return {
+              ...rest,
+              ...(link && validHandoffLink(link, manifestForResult)
+                ? { link }
+                : {}),
+              ...(pullRequests
+                ? {
+                    pullRequests: pullRequests.filter((pr) =>
+                      validHttps(pr.url),
+                    ),
+                  }
+                : {}),
+            };
+          });
+        },
+      },
+      undefined,
+      (manifest) => {
+        manifestForResult = manifest;
+        requireCapability("handoff")(manifest);
+        if (
+          !manifest.capabilities.handoff?.tools.some(
+            (t) => t.id === request.tool,
+          )
+        )
+          throw new Error("This handoff tool is not available.");
+      },
+    );
+  }
+
   async listSettleStates(
     pluginId: string,
     connection: PluginInvocationConnection,
@@ -1198,6 +1320,9 @@ export class PluginManager {
                 : {}),
               traceparent: this.events?.current()?.traceparent(),
               method,
+              ...(typeof params.projectId === "string"
+                ? { projectId: params.projectId }
+                : {}),
             });
             args = prepared.args;
           } else {
@@ -1564,4 +1689,30 @@ function lifecycleOf(
       settings,
     ),
   };
+}
+
+function validHttps(link: string): boolean {
+  try {
+    return new URL(link).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+function validHandoffLink(link: string, manifest: PluginManifest): boolean {
+  try {
+    const scheme = new URL(link).protocol.slice(0, -1).toLowerCase();
+    if (
+      ["javascript", "file", "data", "vbscript", "blob", "about"].includes(
+        scheme,
+      )
+    )
+      return false;
+    return (
+      scheme === "https" ||
+      (isPluginApi4Manifest(manifest) &&
+        !!manifest.processes?.openSchemes.includes(scheme))
+    );
+  } catch {
+    return false;
+  }
 }

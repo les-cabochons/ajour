@@ -11,6 +11,7 @@ import { SettingRow } from "@/components/app-surface";
 import { Switch } from "@/components/ui/switch";
 
 const capabilityDescriptions: Record<SwitchableCapability, string> = {
+  handoff: "Start coding threads for items and keep their state.",
   connector: "Sync items into your backlog and write settles back.",
   codeHost: "List the pull requests you wrote or were asked to review.",
   calendar: "Suggest your calendar's meetings as time entries.",

@@ -105,9 +105,10 @@ async function openFakeRenderer(
   baseUrl: string,
   handle: (call: BridgeToolCall) => BridgeToolResult | undefined = () =>
     undefined,
+  endpoint = "/api/mcp/bridge",
 ) {
   const controller = new AbortController();
-  const response = await fetch(`${baseUrl}/api/mcp/bridge`, {
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     headers: { ...windowTokenHeader, Origin: TEST_ORIGIN },
     signal: controller.signal,
   });
@@ -209,6 +210,35 @@ const acmeProjects = {
 };
 
 describe("MCP settings routes", () => {
+  it.each([true, false])(
+    "publishes handoff snapshots on the window's bridge with MCP enabled=%s",
+    async (enabled) => {
+      const { baseUrl } = await startTestApi();
+      await apiRequest(baseUrl, "/api/mcp/settings", { enabled });
+      const renderer = await openFakeRenderer(
+        baseUrl,
+        undefined,
+        enabled ? "/api/mcp/bridge" : "/api/handoffs/bridge",
+      );
+      try {
+        expect(renderer.status).toBe(200);
+        expect(await renderer.waitFor("handoffs")).toEqual({
+          event: "handoffs",
+          data: [],
+        });
+        if (!enabled) {
+          const refused = await apiRequest(baseUrl, "/mcp/ajour", {});
+          expect(refused.status).toBe(404);
+          expect(
+            renderer.events.some(({ event }) => event === "tool-call"),
+          ).toBe(false);
+        }
+      } finally {
+        renderer.close();
+      }
+    },
+  );
+
   it("keeps MCP off by default and turns it on", async () => {
     const { baseUrl } = await startTestApi();
     expect((await apiRequest(baseUrl, "/api/mcp/settings")).body).toEqual({

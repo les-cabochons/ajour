@@ -1378,3 +1378,17 @@ The project page has a Repositories section headed "On this computer". Each row 
 The repository picker is a centered dialog listing a project's folders as radio options. It preselects the last confirmed folder, or the first when none was used. With no folders it offers Add folder…. Use folder remembers the choice locally before returning it to the caller. Cancel and Escape close without remembering. Adding a folder selects it. The section disables controls while loading without adding a status line. Errors appear inline. The hand-off workflow supplies open state and the selection callback.
 
 Repository folders survive project archive and Undo, including Undo of creating a project. The current project lifecycle has no permanent-delete command. A future permanent-delete operation must prune the project's local folder associations after it commits.
+
+## Coding handoff records
+
+A handoff start refuses unsafe links and undeclared resume commands without
+saving a record. Refresh keeps the record and drops unsafe links. Pull request
+links require HTTPS. Missing or disabled plugins and removed tools show Unknown
+with a reason until they return. Refresh all continues after a tool fails and
+returns each failed group's reason. Removing a handoff leaves the external
+thread in place.
+
+Pausing a handoff preserves the tool's native data. The record carries a separate
+pause reason and time, cleared by a successful refresh. Reloading an older record
+whose native data exceeds 4 KB keeps the handoff with capped status and label and
+`native.truncated: true`. Its next successful refresh replaces that compact data.
