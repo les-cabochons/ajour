@@ -38,7 +38,16 @@ interface Options {
   onChange(records: Handoff[]): void;
   events?: ApiEvents;
   now?: () => number;
+  /** Handoffs per `readHandoffStates` call. Tests make it small. */
+  refreshBatchSize?: number;
 }
+
+/**
+ * 100 handoffs, each with at most a 4 KB native result plus title, branch and
+ * pull requests, keep a refresh answer far below the runtime's 8 MiB result
+ * limit (`MAX_PLUGIN_RESULT_BYTES`).
+ */
+export const REFRESH_BATCH_SIZE = 100;
 
 export class HandoffRefused extends Error {}
 
@@ -180,8 +189,9 @@ export class Handoffs {
     }
     const batches = [...groups.values()].flatMap((group) => {
       const batches: Handoff[][] = [];
-      for (let i = 0; i < group.length; i += 1000)
-        batches.push(group.slice(i, i + 1000));
+      const size = this.options.refreshBatchSize ?? REFRESH_BATCH_SIZE;
+      for (let i = 0; i < group.length; i += size)
+        batches.push(group.slice(i, i + size));
       return batches;
     });
     const failures: Array<{

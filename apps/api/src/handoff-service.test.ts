@@ -416,3 +416,54 @@ it("lets a manual refresh run after the active batch before the remaining tick b
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("splits a large tool group into refresh batches below the runtime's result limit", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoffs-"));
+  try {
+    const storage = new AppApiStorage(path.join(root, "state.json"));
+    const folder = await storage.addRepositoryFolder("p", root, "Repo");
+    const calls: number[] = [];
+    const service = new Handoffs({
+      storage,
+      refreshBatchSize: 2,
+      onChange: () => {},
+      plugins: {
+        async listPlugins() {
+          return [
+            {
+              id: "agent",
+              capabilities: { handoff: { tools: [{ id: "t3" }] } },
+            },
+          ];
+        },
+        async startHandoff(_plugin, request) {
+          return { threadId: request.title, native: {} };
+        },
+        async readHandoffStates(_plugin, request) {
+          calls.push(request.handoffs.length);
+          return request.handoffs.map((h) => ({
+            id: h.id,
+            state: "ready" as const,
+            native: {},
+          }));
+        },
+      },
+    });
+    for (const title of ["one", "two", "three", "four", "five"])
+      await service.start({
+        pluginId: "agent",
+        toolId: "t3",
+        projectId: "p",
+        folderId: folder.id,
+        workItemId: title,
+        title,
+        prompt: "",
+        item: { key: title, url: "" },
+        settings: {},
+      });
+    await service.refresh();
+    expect(calls).toEqual([2, 2, 1]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
