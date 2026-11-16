@@ -95,7 +95,11 @@ it("Given version 10, migration adds local folders without changing connections"
 });
 
 it("Given a chosen folder, resolves its id after reload and refuses protected folders and junctions", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-folders-"));
+  // The resolver returns real paths: CI's temp folder is an 8.3 short name on
+  // Windows (RUNNER~1) and a /var link to /private/var on macOS.
+  const root = await fs.realpath(
+    await mkdtemp(path.join(os.tmpdir(), "ajour-folders-")),
+  );
   roots.push(root);
   const data = path.join(root, "data"),
     install = path.join(root, "install"),
