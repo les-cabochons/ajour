@@ -1,3 +1,4 @@
+import { FolderResolver } from "./repository-folders.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -1606,6 +1607,34 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // One handler per route in ROUTES. Each adds its catalog fields to the
   // request's event; the seam records the method, route, status and sizes.
   const handlers: RouteHandlers = {
+    repositoryFolderList: async ({ response, params }) => {
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
+    repositoryFolderAdd: ({ response }) => {
+      writeJson(response, 403, {
+        error: "Add repository folders through the desktop folder chooser.",
+      });
+    },
+    repositoryFolderRemove: async ({ response, params }) => {
+      await storage.removeRepositoryFolder(params.projectId, params.folderId);
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
+    repositoryFolderUse: async ({ response, params }) => {
+      await storage.useRepositoryFolder(params.projectId, params.folderId);
+      writeJson(
+        response,
+        200,
+        await storage.listRepositoryFolders(params.projectId),
+      );
+    },
     health: ({ response }) => {
       writeJson(response, 200, { ok: true });
     },
@@ -4571,4 +4600,20 @@ export async function stopAppApiServer(server: Server): Promise<void> {
   } finally {
     unit?.end();
   }
+}
+
+/** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
+export async function addRepositoryFolderForServer(
+  server: Server,
+  projectId: string,
+  chosenPath: string,
+  protectedFolders: { userData: string; install: string },
+) {
+  const runtime = appApiRuntimesByServer.get(server);
+  if (!runtime || runtime.stopping)
+    throw new Error("Repository folders need the active desktop app.");
+  return new FolderResolver(runtime.storage, protectedFolders).addFromChooser(
+    projectId,
+    chosenPath,
+  );
 }

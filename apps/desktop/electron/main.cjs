@@ -910,6 +910,39 @@ async function installPluginArchive(unit, archive, ...options) {
   return result;
 }
 
+ipc.handle("ajour:choose-folder", async (event, projectId) => {
+  assertActiveDesktopWindow(event, "choose a repository folder");
+  if (event.senderFrame !== mainWindow.webContents.mainFrame)
+    throw refusedSender("Only the main Ajour frame can choose a folder.");
+  if (
+    typeof projectId !== "string" ||
+    !projectId.trim() ||
+    projectId.length > 200
+  )
+    throw new Error("Choose a project.");
+  const selected = await dialog.showOpenDialog(mainWindow, {
+    title: "Add repository folder",
+    properties: ["openDirectory"],
+  });
+  if (selected.canceled || selected.filePaths.length !== 1) return null;
+  if (!internalAppApiServer)
+    throw new Error("Repository folders need the desktop app.");
+  const { addRepositoryFolderForServer } = await internalAppApiModulePromise;
+  return addRepositoryFolderForServer(
+    internalAppApiServer,
+    projectId,
+    selected.filePaths[0],
+    {
+      userData: app.getPath("userData"),
+      install: app.isPackaged
+        ? process.platform === "darwin"
+          ? path.resolve(process.resourcesPath, "../..")
+          : path.dirname(app.getPath("exe"))
+        : app.getAppPath(),
+    },
+  );
+});
+
 ipc.handle("ajour:install-plugin", async (event) => {
   const unit = events.current();
   unit?.set({ plugin: { source: "archive" } });

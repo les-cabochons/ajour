@@ -1,3 +1,4 @@
+import { RepositoryFoldersSection } from "./repository-folders-section";
 import {
   Fragment,
   useCallback,
@@ -1689,6 +1690,7 @@ function ProjectDetail({
               ) : null}
             </TabsContent>
           </Tabs>
+          <RepositoryFoldersSection projectId={project._id} />
         </div>
         <div className="project-side-cards">
           {isNarrowView ? null : budgetCard}
