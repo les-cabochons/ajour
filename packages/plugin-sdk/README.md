@@ -319,10 +319,6 @@ These commands and links run as you, outside the sandbox. A plugin that starts p
 is outside G1. A process can read your files and access every plugin's credentials, not only its own.
 Ajour's sandbox network policy does not restrict external processes or apps.
 
-## License
-
-MIT
-
 ## Declared processes
 
 Declare commands in the manifest's `processes` block, then call:
@@ -353,3 +349,7 @@ The user must turn the plugin on and approve its declared commands. Undeclared
 commands, detached and terminal commands are refused for now. A process runs as
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
+
+## License
+
+MIT

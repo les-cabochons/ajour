@@ -124,6 +124,8 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 ## Plugins
 
+Plugins use the API 4 sandbox and credential broker defined by ADR 0007 and ADR 0010.
+
 ### Process broker
 
 `ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
@@ -137,7 +139,7 @@ page replaces the worker's run id and main accepts only its sender's own runs.
 `ProcessBroker` validates typed argument slots and conditional groups. Folder
 slots resolve repository ids through `FolderResolver.resolve`, which returns an
 absolute path or refuses. The default resolver refuses every folder until #715
-supplies the device's repository folders. Canonical paths under Ajour's data or
+supplies the device's repository folders. Canonical paths inside or containing Ajour's data or
 install directory are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
@@ -153,14 +155,15 @@ POSIX process group. The broker checks activation and consent before starting;
 modes. Undeclared commands are refused. Detached and terminal commands report
 that they are not yet supported, pending #718.
 
-`GET /api/plugins/:pluginId/processes` returns user overrides, the last call time
+`GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
 and refused count. `POST` accepts `{ executable, path }`, with an absolute path
 or null to remove the override. These routes use the API's window authentication;
 plugins cannot call them. The settings UI is a follow-up. Each call emits one
 `plugin.process` event with declared identifiers and outcomes, never arguments,
-stdin, output or paths. Process access has the credential limitations of ADR 0019.
-
-Plugins use the API 4 sandbox and credential broker defined by ADR 0007 and ADR 0010.
+stdin, output or paths. Process activity gathers in memory and flushes with broker
+activity, including at shutdown. Only a started process updates the last run time.
+Data shape plugins cannot declare processes and receive no process broker.
+Process access has the credential limitations of ADR 0019.
 
 Backlog, code host, calendar, team and project source are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections

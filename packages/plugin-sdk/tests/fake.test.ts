@@ -439,3 +439,13 @@ describe("route patterns", () => {
     );
   });
 });
+
+it("Given a process fixture and manifest without the command, refuses", async () => {
+  const fake = createFakeAjour({
+    manifest,
+    processRun: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+  });
+  await expect(
+    fake.process.run({ command: "undeclared", args: {} }),
+  ).rejects.toMatchObject({ code: "undeclared" });
+});

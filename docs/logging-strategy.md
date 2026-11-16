@@ -892,7 +892,7 @@ channel to read the event each emits.
 | `agent_task.configure`               | command, request                   | route, client call                               |
 | `agent_tool.call`                    | request, job                       | local API, renderer                              |
 | `api.health`                         | request                            | route                                            |
-| `api.request`                        | request                            | route, local API                                 |
+| `api.request`                        | request                            | local API                                        |
 | `api.start`                          | lifecycle                          | local API                                        |
 | `api.stop`                           | lifecycle                          | local API                                        |
 | `app.boot`                           | lifecycle                          | renderer                                         |
@@ -989,6 +989,8 @@ channel to read the event each emits.
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
 | `plugin.process`                     | job                                | local API                                        |
+| `plugin.process_read`                | request                            | route                                            |
+| `plugin.process_update`              | request                            | route                                            |
 | `plugin.remove_data`                 | command, request                   | route, client call                               |
 | `plugin.request`                     | job                                | local API                                        |
 | `plugin.resume`                      | command, request                   | route, client call                               |
@@ -1143,7 +1145,7 @@ Two tests hold the whole app to the model (#311):
   and comment bodies), a team (create and sync), a project source's
   snapshot and cursor, a time sync round and a connection the plugin
   refuses for it, a connection with a
-  secret, an agent's tool calls and plugin errors through the renderer and
+  secret, process arguments, stdin and output through connection validation in the real API, an agent's tool calls and plugin errors through the renderer and
   the real local API. The marker may stay in one place, named in
   `MARKER_ALLOWED_IN`: an error's `message`. ADR 0011 makes it a sensitive
   field that keeps what a plugin echoes, such as `Issue KEY-1 not found`,

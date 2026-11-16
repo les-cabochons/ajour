@@ -1,6 +1,3 @@
-import { ProcessBroker } from "../../../api/src/process-broker.ts";
-import { pluginApi4ManifestSchema } from "@ajour/shared/plugin-api-4.ts";
-import { createApiEvents } from "../../../api/src/events.ts";
 import {
   afterAll,
   beforeAll,
@@ -51,6 +48,23 @@ const SITE = `https://${MARKER.toLowerCase()}.example.test/${MARKER}`;
  * contract.
  */
 const canaryPlugin: TestPlugin = {
+  processes: {
+    executables: { node: { names: ["node"] } },
+    commands: [
+      {
+        id: "echo",
+        executable: "node",
+        args: [
+          "-e",
+          `process.stdout.write('${MARKER}');process.stdin.resume()`,
+          "{title:text}",
+        ],
+        stdin: "text",
+        mode: "capture",
+        timeoutSeconds: 10,
+      },
+    ],
+  },
   id: "canary",
   displayName: "Canary tracker",
   capabilities: {
@@ -100,6 +114,8 @@ async function check(connection) {
   }
 }
 export async function validateConnection({ config }) {
+  const result = await ajour.process.run({command:"echo",args:{title:MARKER},stdin:MARKER});
+  if (result.stdout !== MARKER) throw new Error("Process capture failed");
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
@@ -603,6 +619,20 @@ beforeAll(async () => {
     plugin: canaryPlugin,
     morePlugins: [canaryProjectSource],
   });
+  for (const [route, body] of [
+    ["activation", { enabled: true }],
+    ["processes", { executable: "node", path: process.execPath }],
+  ] as const) {
+    const response = await fetchAsTheApp(
+      `${api.baseUrl}/api/plugins/canary/${route}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    expect(response.status).toBe(200);
+  }
   vi.resetModules();
   vi.stubEnv("VITE_APP_API_BASE_URL", api.baseUrl);
   vi.stubGlobal("fetch", fetchAsTheApp);
@@ -657,6 +687,18 @@ describe("the privacy canary", () => {
         "renderer command connection.save",
         "api request connection.save",
         "api plugin_operation connection.save",
+      ]),
+    );
+    expect(api.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "plugin.process",
+          outcome: "ok",
+          process: expect.objectContaining({
+            command_id: "echo",
+            decided_by: "ok",
+          }),
+        }),
       ]),
     );
     expectNoLeak();
@@ -1515,66 +1557,4 @@ describe("what the canary lets through", () => {
       ),
     ).toEqual([]);
   });
-});
-
-it("keeps marked process argv, stdin and output out of the wide event", async () => {
-  const sink = createRecordingSink<AjourEvent>();
-  const manifest = pluginApi4ManifestSchema.parse({
-    id: "canary-process",
-    version: "1.0.0",
-    apiVersion: 4,
-    displayName: "Canary process",
-    iconSvg: "<svg/>",
-    entrypoint: "index.js",
-    connectionFields: [{ id: "site", label: "Site", type: "text" }],
-    capabilities: { connector: {} },
-    processes: {
-      executables: { node: { names: ["node"] } },
-      commands: [
-        {
-          id: "echo",
-          executable: "node",
-          args: [
-            "-e",
-            `process.stdout.write('${MARKER}');process.stdin.resume()`,
-            "{title:text}",
-          ],
-          stdin: "text",
-          mode: "capture",
-          timeoutSeconds: 10,
-        },
-      ],
-    },
-  });
-  const broker = new ProcessBroker({
-    folders: { resolve: async () => undefined },
-    protectedDirectories: [],
-    gate: async () => undefined,
-    executableOverride: async () => process.execPath,
-    events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
-  });
-  const op = broker.forOperation({
-    pluginId: manifest.id,
-    manifest,
-    method: "syncConnection",
-  });
-  try {
-    expect(
-      (
-        await op.run({
-          command: "echo",
-          args: { title: MARKER },
-          stdin: MARKER,
-        })
-      ).stdout,
-    ).toBe(MARKER);
-  } finally {
-    op.close();
-  }
-  expect(sink.events).toHaveLength(1);
-  expect(sink.events[0]).toMatchObject({
-    name: "plugin.process",
-    outcome: "ok",
-  });
-  expect(JSON.stringify(sink.events)).not.toMatch(MARKED);
 });

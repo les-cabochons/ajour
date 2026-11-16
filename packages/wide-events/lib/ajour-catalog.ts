@@ -613,6 +613,17 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** Read process overrides and activity for Access review. */
+    "plugin.process_read": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, plugin: { id: operational() } },
+    },
+    "plugin.process_update": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, plugin: { id: operational() } },
+    },
     /** An API 4 plugin's Advanced section saved: Start and Memory ceiling. */
     "plugin.runtime_update": {
       kinds: ["command", "request"],
@@ -655,12 +666,6 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /**
-     * One request an API 4 plugin sent through Ajour's broker: through one
-     * of its connections, or a public fetch. The path is the manifest's
-     * endpoint pattern it matched, never the path sent, and no header, body
-     * or query value is kept.
-     */
     "plugin.process": {
       kinds: ["job"],
       reasons: [
@@ -684,7 +689,17 @@ export const catalog = defineCatalog({
           command_id: operational(),
           exit_code: operational<number>(),
           decided_by: operational<
-            "gate" | "rule" | "reviewer" | "user" | "mode"
+            | "gate"
+            | "policy"
+            | "ok"
+            | "timeout"
+            | "missing_executable"
+            | "cancelled"
+            | "spawn"
+            | "rule"
+            | "reviewer"
+            | "user"
+            | "mode"
           >(),
           rule_id: operational(),
           reviewer_label: operational(),
@@ -692,6 +707,12 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * One request an API 4 plugin sent through Ajour's broker: through one
+     * of its connections, or a public fetch. The path is the manifest's
+     * endpoint pattern it matched, never the path sent, and no header, body
+     * or query value is kept.
+     */
     "plugin.request": {
       kinds: ["job"],
       reasons: [

@@ -104,6 +104,7 @@ export interface TestPlugin {
   connectionFields: Record<string, unknown>[];
   /** The API 4 network declaration; a plugin with a secret needs one. */
   network?: Record<string, unknown>;
+  processes?: Record<string, unknown>;
   source: string;
 }
 
@@ -142,6 +143,7 @@ async function writePlugin(root: string, plugin: TestPlugin) {
       capabilities: plugin.capabilities,
       connectionFields: plugin.connectionFields,
       ...(plugin.network ? { network: plugin.network } : {}),
+      ...(plugin.processes ? { processes: plugin.processes } : {}),
     }),
   );
   await writeFile(path.join(directory, "plugin.mjs"), plugin.source);

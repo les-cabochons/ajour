@@ -699,3 +699,17 @@ describe("the plugins overview", () => {
     ).toBe("projects");
   });
 });
+
+it("Given a data shape with processes, refuses the manifest", () => {
+  expect(
+    pluginApi4ManifestSchema.safeParse({
+      ...workdayShapeManifest(),
+      processes: {
+        executables: { node: { names: ["node"] } },
+        commands: [
+          { id: "run", executable: "node", args: [], mode: "capture" },
+        ],
+      },
+    }).success,
+  ).toBe(false);
+});

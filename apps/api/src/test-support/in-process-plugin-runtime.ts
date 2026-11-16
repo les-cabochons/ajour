@@ -1,3 +1,7 @@
+import type {
+  OperationProcessBroker,
+  ProcessRunRequest,
+} from "../broker-port.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +23,9 @@ import {
 } from "../plugin-runtime.ts";
 
 /** The broker of the API 4 run whose code is running, as `ajour` finds it. */
+const currentProcessBroker = new AsyncLocalStorage<
+  OperationProcessBroker | undefined
+>();
 const currentBroker = new AsyncLocalStorage<OperationBroker>();
 
 /** An answer as `ajour.http` gives it to plugin code, as the SDK types it. */
@@ -57,6 +64,13 @@ function installAjourGlobal() {
       ajourResponse(await brokerOfThisRun().http(request)),
     publicFetch: async (url: string, init?: BrokerPublicFetchInit) =>
       ajourResponse(await brokerOfThisRun().publicFetch(url, init)),
+    process: {
+      run: (request: ProcessRunRequest) => {
+        const broker = currentProcessBroker.getStore();
+        if (!broker) throw new Error("No process broker for this operation.");
+        return broker.run(request);
+      },
+    },
     log: () => undefined,
   };
 }
@@ -113,7 +127,10 @@ export class InProcessPluginRuntime implements PluginRuntime {
       let returned: unknown;
       if (invocation.broker) {
         installAjourGlobal();
-        returned = await currentBroker.run(invocation.broker, call);
+        returned = await currentProcessBroker.run(
+          invocation.processBroker,
+          () => currentBroker.run(invocation.broker!, call),
+        );
       } else {
         returned = await call();
       }

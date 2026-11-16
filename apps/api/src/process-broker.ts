@@ -65,7 +65,12 @@ export interface ProcessBrokerOptions {
     pluginId: string,
     executable: string,
   ): Promise<string | undefined>;
-  record?(pluginId: string, at: number, refused: boolean): Promise<void>;
+  record?(
+    pluginId: string,
+    at: number,
+    refused: boolean,
+    started: boolean,
+  ): void | Promise<void>;
   events?: ApiEvents;
 }
 const refuse = (reason: ProcessReason): never => {
@@ -145,7 +150,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         }
         if (url.protocol !== "https:" || url.username || url.password)
           return refuse("invalid_request");
-        break;
+        return url.href;
       }
       case "folder": {
         const folder = await this.options.folders.resolve(value);
@@ -158,7 +163,11 @@ export class ProcessBroker implements ProcessBrokerPort {
           const protectedReal = await realpath(protectedPath).catch(() =>
             path.resolve(protectedPath),
           );
-          if (inside(canonical, protectedReal)) return refuse("folder_refused");
+          if (
+            inside(canonical, protectedReal) ||
+            inside(protectedReal, canonical)
+          )
+            return refuse("folder_refused");
         }
         return canonical;
       }
@@ -177,6 +186,7 @@ export class ProcessBroker implements ProcessBrokerPort {
       ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
     });
     let reserved = false;
+    let started = false;
     let reason: ProcessReason | undefined;
     let commandId = "undeclared";
     try {
@@ -263,35 +273,81 @@ export class ProcessBroker implements ProcessBrokerPort {
           stderr: [],
         };
         const sizes = { stdout: 0, stderr: 0 };
+        let exited = false;
+        let exitCode: number | null = null;
+        let settled = false;
+        let grace: ReturnType<typeof setTimeout> | undefined;
+        child.once("spawn", () => {
+          started = true;
+        });
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          clearTimeout(grace);
+          signal.removeEventListener("abort", abort);
+          if (failure) reject(failure);
+          else
+            resolve({
+              exitCode,
+              stdout: Buffer.concat(buffers.stdout).toString("utf8"),
+              stderr: Buffer.concat(buffers.stderr).toString("utf8"),
+            });
+        };
+        const drain = (ms = 100) => {
+          grace ??= setTimeout(() => {
+            child.stdin.destroy();
+            child.stdout.destroy();
+            child.stderr.destroy();
+            finish();
+          }, ms);
+        };
         let failure: ProcessBrokerError | undefined;
+        const killChild = () => {
+          if (exited) return;
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            /* Settlement still drains the streams. */
+          }
+        };
         const stop = (why: ProcessReason) => {
           if (failure) return;
           failure = new ProcessBrokerError(why);
-          if (child.pid !== undefined) {
-            if (process.platform === "win32") {
-              const killer = resolveSpawn(
-                path.join(
-                  process.env.SystemRoot ?? "C:\\Windows",
-                  "System32",
-                  "taskkill.exe",
-                ),
-                ["/pid", String(child.pid), "/T", "/F"],
-                env,
-              );
-              if (!("refused" in killer))
-                execFile(
-                  killer.command,
-                  killer.args,
-                  { env: killer.env, shell: false, windowsHide: true },
-                  () => undefined,
+          try {
+            if (!exited && child.pid !== undefined) {
+              if (process.platform === "win32") {
+                const killer = resolveSpawn(
+                  path.join(
+                    process.env.SystemRoot ?? "C:\\Windows",
+                    "System32",
+                    "taskkill.exe",
+                  ),
+                  ["/pid", String(child.pid), "/T", "/F"],
+                  env,
                 );
-            } else {
-              try {
-                process.kill(-child.pid, "SIGKILL");
-              } catch {
-                child.kill("SIGKILL");
+                if (!("refused" in killer))
+                  execFile(
+                    killer.command,
+                    killer.args,
+                    { env: killer.env, shell: false, windowsHide: true },
+                    (error) => {
+                      if (error && !exited) killChild();
+                    },
+                  );
+                else if (!exited) killChild();
+              } else {
+                try {
+                  process.kill(-child.pid, "SIGKILL");
+                } catch {
+                  killChild();
+                }
               }
             }
+          } catch {
+            killChild();
+          } finally {
+            drain(1000);
           }
         };
         const abort = () => stop("operation_ended");
@@ -310,17 +366,16 @@ export class ProcessBroker implements ProcessBrokerPort {
         child.stdin.end(request.stdin ?? "");
         child.once("error", () => {
           failure ??= new ProcessBrokerError("spawn_failed");
+          drain();
+        });
+        child.once("exit", (code) => {
+          exited = true;
+          exitCode = code;
+          drain();
         });
         child.once("close", (code) => {
-          clearTimeout(timer);
-          signal.removeEventListener("abort", abort);
-          if (failure) reject(failure);
-          else
-            resolve({
-              exitCode: code,
-              stdout: Buffer.concat(buffers.stdout).toString("utf8"),
-              stderr: Buffer.concat(buffers.stderr).toString("utf8"),
-            });
+          exitCode = code;
+          finish();
         });
         if (signal.aborted) abort();
       });
@@ -338,7 +393,23 @@ export class ProcessBroker implements ProcessBrokerPort {
         );
       unit?.set({
         plugin: { id: caller.pluginId },
-        process: { command_id: commandId, decided_by: "gate" },
+        process: {
+          command_id: commandId,
+          decided_by:
+            reason === "plugin_off" || reason === "needs_consent"
+              ? "gate"
+              : reason === "timeout"
+                ? "timeout"
+                : reason === "executable_missing"
+                  ? "missing_executable"
+                  : reason === "operation_ended"
+                    ? "cancelled"
+                    : reason === "spawn_failed"
+                      ? "spawn"
+                      : reason
+                        ? "policy"
+                        : "ok",
+        },
       });
       unit?.end(
         reason === "timeout"
@@ -352,12 +423,19 @@ export class ProcessBroker implements ProcessBrokerPort {
                 : "ok",
         reason,
       );
-      await this.options.record?.(
-        caller.pluginId,
-        Date.now(),
-        reason !== undefined &&
-          !["timeout", "operation_ended", "spawn_failed"].includes(reason),
-      );
+      try {
+        void Promise.resolve(
+          this.options.record?.(
+            caller.pluginId,
+            Date.now(),
+            reason !== undefined &&
+              !["timeout", "operation_ended", "spawn_failed"].includes(reason),
+            started,
+          ),
+        ).catch(() => undefined);
+      } catch {
+        /* Activity never changes the process result. */
+      }
     }
   }
 }

@@ -46,7 +46,7 @@ async function fixture(
   });
   const broker = new ProcessBroker({
     folders: { resolve: async (id) => (id === "repo" ? root : undefined) },
-    protectedDirectories: [path.join(root, "data")],
+    protectedDirectories: [],
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
   });
@@ -123,7 +123,9 @@ it.each([
   const { op } = await fixture([`{value:${kind}}`]);
   await expect(
     op.run({ command: "run", args: { value } }),
-  ).rejects.toBeInstanceOf(Error);
+  ).rejects.toMatchObject({
+    reason: kind == "folder" ? "folder_refused" : "invalid_request",
+  });
 });
 it("Given a command waiting for input, sends stdin and removes AJOUR environment", async () => {
   process.env.AJOUR_PROCESS_CANARY = "secret";
@@ -280,7 +282,7 @@ it("Given marked argv, stdin, output and paths, emits one content-free event per
       name: "plugin.process",
       kind: "job",
       outcome: "ok",
-      process: { command_id: "run", exit_code: 0, decided_by: "gate" },
+      process: { command_id: "run", exit_code: 0, decided_by: "ok" },
     },
     {
       name: "plugin.process",
@@ -292,8 +294,8 @@ it("Given marked argv, stdin, output and paths, emits one content-free event per
   expect(JSON.stringify(sink.events)).not.toContain(marker);
   expect(JSON.stringify(sink.events)).not.toContain(root);
   expect(records).toEqual([
-    [manifest.id, expect.any(Number), false],
-    [manifest.id, expect.any(Number), true],
+    [manifest.id, expect.any(Number), false, true],
+    [manifest.id, expect.any(Number), true, false],
   ]);
 });
 
@@ -311,6 +313,7 @@ it("Given saved process settings, reload preserves overrides and activity and re
     storage.recordPluginProcess("test", 100, true),
     storage.recordPluginProcess("test", 200, false),
   ]);
+  await storage.flushBrokerActivity();
   const reloaded = new AppApiStorage(file);
   expect(await reloaded.getPluginProcessSettings("test")).toEqual({
     overrides: { node: process.execPath },
@@ -446,4 +449,178 @@ it("Given an enum outside its declared set, refuses", async () => {
   await expect(
     op.run({ command: "run", args: { format: "xml" } }),
   ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+
+it.each([" https://example.test/a ", "https://exa\tmple.test/a"])(
+  "Given URL whitespace %j, passes the normalized URL",
+  async (value) => {
+    const { op } = await fixture(["{url:https-url}"]);
+    expect(
+      JSON.parse(
+        (await op.run({ command: "run", args: { url: value } })).stdout,
+      ),
+    ).toEqual(["https://example.test/a"]);
+  },
+);
+it("Given a folder containing Ajour data, refuses it", async () => {
+  const { manifest, root } = await fixture(["{folder:folder}"]);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => root },
+    protectedDirectories: [path.join(root, "data")],
+    gate: async () => undefined,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ command: "run", args: { folder: "repo" } }),
+  ).rejects.toMatchObject({ reason: "folder_refused" });
+});
+it("Given stdin without text permission, refuses", async () => {
+  const { op, manifest } = await fixture([]);
+  delete manifest.processes!.commands[0]!.stdin;
+  await expect(
+    op.run({ command: "run", args: {}, stdin: "input" }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+it("Given text beyond 32767 UTF-16 units, refuses", async () => {
+  const { op } = await fixture();
+  await expect(
+    op.run({ command: "run", args: { title: "x".repeat(32768) } }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+
+it("Given a refusal before spawn, activity has no lastRunAt", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const storage = new AppApiStorage(path.join(root, "activity.json"));
+  storage.recordPluginProcess("test", 100, true, false);
+  await storage.flushBrokerActivity();
+  expect(await storage.getPluginProcessSettings("test")).toEqual({
+    overrides: {},
+    refusedCount: 1,
+  });
+});
+it("Given an activity recorder still writing, run settles without waiting", async () => {
+  const { manifest } = await fixture([]);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    protectedDirectories: [],
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+    record: () => new Promise(() => {}),
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
+});
+it("Given a descendant holding stdout after parent exit, capture settles and frees its slot", async () => {
+  const { op } = await fixture(
+    [],
+    `require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},1500)'],{stdio:['ignore',process.stdout,'ignore']}).unref()`,
+  );
+  const before = Date.now();
+  expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
+  expect(Date.now() - before).toBeLessThan(900);
+});
+
+it.each(["missing", "changed", "off", "during-operation"])(
+  "Given %s consent, the broker port refuses with real storage",
+  async (scenario) => {
+    const { manifest, root } = await fixture([]);
+    const { AppApiStorage } = await import("./storage.ts");
+    const { processConsentGate } = await import("./plugin-consent.ts");
+    const { summarizePluginAccess } =
+      await import("../../../packages/shared/plugin-access.ts");
+    const storage = new AppApiStorage(path.join(root, "consent.json"));
+    const access = summarizePluginAccess(manifest, { agentPrompts: {} });
+    if (scenario === "missing") access.commands = [];
+    await storage.recordPluginConsent(manifest.id, {
+      version: "1.0.0",
+      access,
+      at: 1,
+    });
+    if (scenario === "changed")
+      manifest.processes!.commands[0]!.args.push({
+        kind: "literal",
+        value: "changed",
+      });
+    if (scenario === "off") await storage.setPluginEnabled(manifest.id, false);
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      protectedDirectories: [],
+      gate: (c) => processConsentGate(storage, c),
+      executableOverride: async () => {
+        if (scenario === "during-operation") {
+          const updated = structuredClone(manifest);
+          updated.processes!.commands[0]!.args.push({
+            kind: "literal",
+            value: "updated",
+          });
+          await storage.recordPluginConsent(manifest.id, {
+            version: "2.0.0",
+            access: summarizePluginAccess(updated, { agentPrompts: {} }),
+            at: 2,
+          });
+        }
+        return process.execPath;
+      },
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ command: "run", args: {} }),
+    ).rejects.toMatchObject({
+      reason: scenario === "off" ? "plugin_off" : "needs_consent",
+    });
+  },
+);
+
+it("Given one malformed process settings entry, preserves the other plugin's settings", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const fs = await import("node:fs/promises");
+  const file = path.join(root, "normalize.json");
+  const storage = new AppApiStorage(file);
+  await storage.setPluginProcessOverride("valid", "node", process.execPath);
+  const state = JSON.parse(await fs.readFile(file, "utf8"));
+  state.pluginProcesses.broken = { overrides: 7 };
+  await fs.writeFile(file, JSON.stringify(state));
+  const reloaded = new AppApiStorage(file);
+  expect((await reloaded.getPluginProcessSettings("valid")).overrides).toEqual({
+    node: process.execPath,
+  });
+  expect(await reloaded.getPluginProcessSettings("broken")).toEqual({
+    overrides: {},
+    refusedCount: 0,
+  });
+});
+it("Given a burst of process activity, gathers it without writing until flush", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const fs = await import("node:fs/promises");
+  const file = path.join(root, "buffered.json");
+  const storage = new AppApiStorage(file);
+  await storage.setPluginProcessOverride("test", "node", process.execPath);
+  const before = await fs.readFile(file, "utf8");
+  for (let i = 0; i < 20; i++)
+    storage.recordPluginProcess("test", i, true, false);
+  expect(await fs.readFile(file, "utf8")).toBe(before);
+  expect(await storage.getPluginProcessSettings("test")).toMatchObject({
+    refusedCount: 20,
+  });
+  await storage.flushBrokerActivity();
+  expect(
+    await new AppApiStorage(file).getPluginProcessSettings("test"),
+  ).toMatchObject({ refusedCount: 20 });
 });

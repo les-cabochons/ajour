@@ -302,7 +302,13 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
     },
     process: {
       run: async (request) => {
-        if (!options.processRun)
+        if (
+          !options.processRun ||
+          (manifest &&
+            !manifest.processes?.commands?.some(
+              (command) => command.id === request.command,
+            ))
+        )
           throw Object.assign(new Error("No process fixture supplied."), {
             name: "AjourProcessError",
             code: "undeclared",

@@ -184,7 +184,7 @@ import {
   type PluginAdmitted,
   type PluginMethod,
 } from "./plugin-host.ts";
-import { decideUpdateConsent } from "./plugin-consent.ts";
+import { decideUpdateConsent, processConsentGate } from "./plugin-consent.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -1359,43 +1359,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       options.processInstallDirectory ??
         path.resolve(import.meta.dirname, "../.."),
     ],
-    gate: async (caller) => {
-      if (
-        !(await storage.isPluginEnabled(
-          caller.pluginId,
-          new Map([[caller.pluginId, undefined]]),
-        ))
-      )
-        return "plugin_off";
-      const consent = await storage.getPluginConsent(caller.pluginId);
-      const commands = summarizePluginAccess(caller.manifest, {
-        agentPrompts: Object.fromEntries(
-          (caller.manifest.capabilities.agentTask?.tasks ?? []).map((t) => [
-            t.id,
-            "",
-          ]),
-        ),
-      }).commands;
-      if (
-        !consent ||
-        (commands ?? []).some(
-          (c) =>
-            !(consent.access.commands ?? []).some(
-              (a) => a.id === c.id && a.policy === c.policy,
-            ),
-        )
-      )
-        return "needs_consent";
-      return undefined;
-    },
+    gate: (caller) => processConsentGate(storage, caller),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);
       return Object.hasOwn(overrides, executable)
         ? overrides[executable]
         : undefined;
     },
-    record: (pluginId, at, refused) =>
-      storage.recordPluginProcess(pluginId, at, refused),
+    record: (pluginId, at, refused, started) =>
+      storage.recordPluginProcess(pluginId, at, refused, started),
     events,
   });
   const pluginManager: PluginManager = new PluginManager({
@@ -1482,7 +1454,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
     pluginHost: pluginManager,
-    processBroker,
     events,
   });
   // "Always ready" plugins start with Ajour.
@@ -2184,7 +2155,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
-    pluginProcessRead: async ({ response, params }) => {
+    pluginProcessRead: async ({ response, params, unit }) => {
+      unit.set({
+        plugin: { id: readInput(() => pluginIdSchema.parse(params.pluginId)) },
+      });
       writeJson(
         response,
         200,
@@ -2193,8 +2167,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         ),
       );
     },
-    pluginProcessUpdate: async ({ request, response, params }) => {
+    pluginProcessUpdate: async ({ request, response, params, unit }) => {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
       const payload = await readRequest(
         request,
         z

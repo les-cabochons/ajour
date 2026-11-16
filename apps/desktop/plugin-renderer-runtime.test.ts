@@ -644,10 +644,15 @@ describe("the sandboxed renderer runtime", () => {
       ok: true,
       response: { exitCode: 0, stdout: "answer", stderr: "" },
     });
+    start("github", { processBroker: { run: vi.fn(), close: vi.fn() } });
+    const other = await ready(1);
+    const foreign = (await other.driver.send({ type: "next" })) as {
+      runId: string;
+    };
     expect(
       await driver.send({
         type: "process",
-        runId: "another-plugin-run",
+        runId: foreign.runId,
         request: { command: "run", args: {} },
       }),
     ).toMatchObject({ ok: false, error: { code: "refused" } });

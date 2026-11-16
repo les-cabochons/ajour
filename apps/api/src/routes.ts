@@ -150,12 +150,12 @@ export const ROUTES = {
   pluginProcessRead: {
     method: "GET",
     path: "/api/plugins/:pluginId/processes",
-    name: "api.request",
+    name: "plugin.process_read",
   },
   pluginProcessUpdate: {
     method: "POST",
     path: "/api/plugins/:pluginId/processes",
-    name: "api.request",
+    name: "plugin.process_update",
   },
   pluginRuntimeUpdate: {
     method: "POST",
