@@ -88,6 +88,8 @@ export async function openHandoffThread(handoffId: string) {
 }
 
 interface Job {
+  /** One per accepted request. A dialog's edits, such as its folder, keep it. */
+  id: number;
   tool: HandoffTool;
   item: LocalWorkItem;
   projectId: string;
@@ -102,6 +104,10 @@ type Step =
   | { kind: "review"; job: Job };
 
 const IDLE: Step = { kind: "idle" };
+
+const jobOf = (step: Step) => (step.kind === "idle" ? undefined : step.job);
+
+let nextJobId = 0;
 
 async function start(
   job: Job,
@@ -134,59 +140,87 @@ async function start(
   });
 }
 
-async function startWithToast(job: Job, folder: RepositoryFolder) {
-  try {
-    await start(job, folder);
-  } catch (error) {
-    showErrorToast({
-      title: `Couldn't hand off to ${job.tool.label}`,
-      description: errorMessage(error, "The tool refused the hand off."),
-    });
-  }
+function showStartError(job: Job, error: unknown) {
+  showErrorToast({
+    title: `Couldn't hand off to ${job.tool.label}`,
+    description: errorMessage(error, "The tool refused the hand off."),
+  });
 }
 
 export function HandoffHost() {
   const [step, setStep] = useState<Step>(IDLE);
   /**
-   * The items whose folder lookup or start runs with no dialog showing them.
-   * An item stays starting from the accepted request until its thread
-   * starts, the start fails, or the user cancels a dialog.
+   * Every accepted job holds its item's starting flag until it ends: its
+   * thread starts, its lookup or start fails, the user closes its dialog, or
+   * another job's dialog replaces it. A job whose lookup or start still runs
+   * ends when that settles. Each end is decided where it happens, never read
+   * back from what rendered, so batched dialogs and unmounting lose none.
    */
-  const pending = useRef(new Set<string>());
-  const release = (itemId: string) => {
-    pending.current.delete(itemId);
-    setHandoffStarting(itemId, false);
+  const owners = useRef(new Map<string, number>());
+  /** Jobs with a folder lookup or a start running. */
+  const running = useRef(new Set<number>());
+  /** The step last shown, ahead of the render that shows it. */
+  const shown = useRef<Step>(IDLE);
+  const mounted = useRef(false);
+
+  const release = (job: Job) => {
+    if (owners.current.get(job.item._id) !== job.id) return;
+    owners.current.delete(job.item._id);
+    setHandoffStarting(job.item._id, false);
+  };
+  const isShown = (job: Job) => jobOf(shown.current)?.id === job.id;
+  /** Shows a step. The job it replaces ends, unless something of it runs. */
+  const show = (next: Step) => {
+    const before = jobOf(shown.current);
+    const after = jobOf(next);
+    if (mounted.current) {
+      shown.current = next;
+      setStep(next);
+    } else if (after) release(after);
+    if (before && before.id !== after?.id && !running.current.has(before.id))
+      release(before);
+  };
+  /** A job's lookup or start has settled; it ends unless a dialog shows it. */
+  const settle = (job: Job) => {
+    running.current.delete(job.id);
+    if (!isShown(job)) release(job);
   };
 
-  // A dialog that closes, or gives way to another item's, ends its item's
-  // hand off, unless a lookup or a start for it still runs.
-  const shown = useRef<string | undefined>(undefined);
   useEffect(() => {
-    const before = shown.current;
-    shown.current = step.kind === "idle" ? undefined : step.job.item._id;
-    if (before && before !== shown.current && !pending.current.has(before))
-      setHandoffStarting(before, false);
-  }, [step]);
+    mounted.current = true;
+    const ownersNow = owners.current;
+    const runningNow = running.current;
+    return () => {
+      mounted.current = false;
+      shown.current = IDLE;
+      // A job with nothing running ends with the host. One whose lookup or
+      // start runs ends when that settles.
+      for (const [itemId, id] of [...ownersNow])
+        if (!runningNow.has(id)) {
+          ownersNow.delete(itemId);
+          setHandoffStarting(itemId, false);
+        }
+    };
+  }, []);
 
   async function startInBackground(job: Job, folder: RepositoryFolder) {
+    running.current.add(job.id);
     try {
-      await startWithToast(job, folder);
+      await start(job, folder);
+    } catch (error) {
+      showStartError(job, error);
     } finally {
-      release(job.item._id);
+      settle(job);
     }
   }
 
-  /**
-   * A project with one folder starts at once; none or several ask which.
-   * The caller has marked the job's item pending.
-   */
+  /** A project with one folder starts at once; none or several ask which. */
   async function proceed(job: Job) {
-    const itemId = job.item._id;
     if (job.review) {
-      pending.current.delete(itemId);
-      setStep({ kind: "review", job });
+      show({ kind: "review", job });
       return;
     }
+    running.current.add(job.id);
     let folders: RepositoryFolder[];
     try {
       folders = await listRepositoryFolders(job.projectId);
@@ -195,15 +229,37 @@ export function HandoffHost() {
         title: `Couldn't hand off to ${job.tool.label}`,
         description: errorMessage(error, "Could not load folders."),
       });
-      release(itemId);
+      settle(job);
       return;
     }
+    running.current.delete(job.id);
     if (folders.length === 1) {
       await startInBackground(job, folders[0]!);
       return;
     }
-    pending.current.delete(itemId);
-    setStep({ kind: "picker", job });
+    show({ kind: "picker", job });
+  }
+
+  /**
+   * Review prompt's Start. The item stays starting until the start settles,
+   * even if the dialog closes first, and only this job's dialog closes.
+   */
+  async function startReviewed(
+    job: Job,
+    folder: RepositoryFolder,
+    overrides: { promptOverride: string; branchOverride: string },
+  ) {
+    running.current.add(job.id);
+    try {
+      await start(job, folder, overrides);
+    } catch (error) {
+      // A closed dialog can't show the refusal, so a toast does.
+      if (!isShown(job)) showStartError(job, error);
+      throw error;
+    } finally {
+      settle(job);
+    }
+    if (isShown(job)) show(IDLE);
   }
 
   useEffect(() => {
@@ -227,33 +283,36 @@ export function HandoffHost() {
         return;
       }
       const job: Job = {
+        id: ++nextJobId,
         tool,
         item,
         projectId: item.projectId,
         review: Boolean(request.review),
       };
+      owners.current.set(item._id, job.id);
       setHandoffStarting(item._id, true);
       if (!hasSeenHandoffNotice(tool.key)) {
-        setStep({ kind: "notice", job });
+        show({ kind: "notice", job });
         return;
       }
-      pending.current.add(item._id);
       void proceed(job);
     });
-    // `proceed` reads only refs and setters, so the first one serves.
+    // The listener reads only refs and setters, so the first one serves.
   }, []);
 
-  const close = () => setStep(IDLE);
-  const job = step.kind === "idle" ? undefined : step.job;
+  /** Closes the dialog of `kind` if it still shows. */
+  const dismiss = (kind: Step["kind"]) => {
+    if (shown.current.kind === kind) show(IDLE);
+  };
+  const job = jobOf(step);
   return (
     <>
       <ConfirmDialog
         open={step.kind === "notice"}
         // The dialogs' close callbacks run after their actions, so each
-        // step change reads the step it replaces.
+        // dismissal reads the step its action left.
         onOpenChange={(open) => {
-          if (!open)
-            setStep((current) => (current.kind === "notice" ? IDLE : current));
+          if (!open) dismiss("notice");
         }}
         question={
           job
@@ -265,61 +324,61 @@ export function HandoffHost() {
             : null
         }
         onConfirm={() => {
-          if (step.kind !== "notice") return;
-          markHandoffNoticeSeen(step.job.tool.key);
-          pending.current.add(step.job.item._id);
-          setStep(IDLE);
-          void proceed(step.job);
+          const current = shown.current;
+          if (current.kind !== "notice") return;
+          markHandoffNoticeSeen(current.job.tool.key);
+          // The job goes on to its lookup, so closing the notice keeps it.
+          running.current.add(current.job.id);
+          show(IDLE);
+          running.current.delete(current.job.id);
+          void proceed(current.job);
         }}
       />
       <RepositoryPicker
         projectId={job?.projectId ?? ""}
         open={step.kind === "picker"}
         onOpenChange={(open) => {
-          if (open) return;
+          const current = shown.current;
+          if (open || current.kind !== "picker") return;
           // Closing the picker from the review dialog returns to it.
-          setStep((current) =>
-            current.kind !== "picker"
-              ? current
-              : current.job.review
-                ? { kind: "review", job: current.job }
-                : IDLE,
+          show(
+            current.job.review ? { kind: "review", job: current.job } : IDLE,
           );
         }}
         onSelect={(folder) => {
-          if (step.kind !== "picker") return;
-          const picked = step.job;
+          const current = shown.current;
+          if (current.kind !== "picker") return;
+          const picked = current.job;
           if (picked.review) {
-            setStep({ kind: "review", job: { ...picked, folder } });
+            show({ kind: "review", job: { ...picked, folder } });
             return;
           }
-          pending.current.add(picked.item._id);
-          setStep(IDLE);
+          // The start runs from here, so closing the picker keeps the job.
+          running.current.add(picked.id);
+          show(IDLE);
           void startInBackground(picked, folder);
         }}
       />
       <Dialog
         open={step.kind === "review"}
         onOpenChange={(open) => {
-          if (!open)
-            setStep((current) => (current.kind === "review" ? IDLE : current));
+          if (!open) dismiss("review");
         }}
       >
         {step.kind === "review" ? (
           <ReviewPromptContent
-            key={step.job.item._id + step.job.tool.key}
+            key={step.job.id}
             job={step.job}
             onChooseFolder={(folder) =>
-              setStep({ kind: "picker", job: { ...step.job, folder } })
+              show({ kind: "picker", job: { ...step.job, folder } })
             }
             onFolder={(folder) =>
-              setStep({ kind: "review", job: { ...step.job, folder } })
+              show({ kind: "review", job: { ...step.job, folder } })
             }
-            onStart={async (folder, overrides) => {
-              await start(step.job, folder, overrides);
-              close();
-            }}
-            onCancel={close}
+            onStart={(folder, overrides) =>
+              startReviewed(step.job, folder, overrides)
+            }
+            onCancel={() => dismiss("review")}
           />
         ) : null}
       </Dialog>

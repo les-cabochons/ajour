@@ -24,6 +24,7 @@ import { useLocalState } from "@/lib/local-hooks";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import { HandoffButton } from "./handoff-button";
 import { HandoffHost } from "./handoff-workflow";
+import { isHandoffStarting, requestHandoff } from "./handoff-request";
 import { runBacklogItemAction } from "./backlog-item-actions";
 import { HandoffsCard } from "./backlog-item-side-cards";
 import { getBacklogSurfaceActions } from "./backlog-item-surface";
@@ -481,6 +482,173 @@ it("lets the item be handed off again after the notice is cancelled", async () =
   fireEvent.click(button);
   acceptNotice();
   await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
+});
+
+function seeNoticeFor(tool: string) {
+  window.localStorage.setItem(
+    "ajour.handoff-notices",
+    JSON.stringify([`agent-handoff:${tool}`]),
+  );
+}
+
+function addItem(title: string) {
+  act(() => {
+    localStore.addWorkItem({ title, projectId });
+  });
+  return localStore
+    .snapshot()
+    .workItems.find(
+      (item) => item.title === title && item.projectId === projectId,
+    )!._id;
+}
+
+/** Answers each folder lookup only when the test says so, in call order. */
+function holdFolderLookups() {
+  const answers: ((folders: (typeof folder)[]) => void)[] = [];
+  vi.mocked(api.listRepositoryFolders).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  return answers;
+}
+
+/** Holds every start until the test answers it, in call order. */
+function holdStarts() {
+  const answers: (() => void)[] = [];
+  vi.mocked(api.startHandoff).mockImplementation(
+    (input) =>
+      new Promise((resolve) => {
+        answers.push(() =>
+          resolve(
+            handoffRecord({
+              id: `started-${input.workItemId}`,
+              workItemId: input.workItemId,
+              projectId: input.projectId,
+            }),
+          ),
+        );
+      }),
+  );
+  return answers;
+}
+
+async function openReview(id: string) {
+  act(() =>
+    requestHandoff({ itemId: id, toolKey: "agent-handoff:t3", review: true }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Hand off to T3 Code",
+  });
+  const prompt = within(dialog).getByLabelText("Prompt") as HTMLTextAreaElement;
+  await waitFor(() => expect(prompt.value).toContain("payments"));
+  return dialog;
+}
+
+it("releases an item whose picker another item's replaced in the same batch", async () => {
+  seeNoticeFor("t3");
+  const answers = holdFolderLookups();
+  const other = addItem("Fix logout redirect");
+  await renderPage();
+  act(() => {
+    requestHandoff({ itemId, toolKey: "agent-handoff:t3" });
+    requestHandoff({ itemId: other, toolKey: "agent-handoff:t3" });
+  });
+  const several = [
+    { ...folder, projectId },
+    { ...folder, id: "folder-2", name: "web", projectId },
+  ];
+  // Both lookups answer before React renders either picker.
+  await act(async () => {
+    answers[0]!(several);
+    answers[1]!(several);
+  });
+  const picker = await screen.findByRole("dialog", {
+    name: "Choose repository folder",
+  });
+  expect(picker).toBeTruthy();
+  expect(isHandoffStarting(itemId)).toBe(false);
+  expect(isHandoffStarting(other)).toBe(true);
+  fireEvent.keyDown(picker, { key: "Escape" });
+  await waitFor(() => expect(isHandoffStarting(other)).toBe(false));
+});
+
+it("releases the items of an unmounted host, open dialog or lookup still running", async () => {
+  seeNoticeFor("t3");
+  const answers = holdFolderLookups();
+  const other = addItem("Fix logout redirect");
+  await renderPage();
+  act(() => requestHandoff({ itemId, toolKey: "agent-handoff:t3" }));
+  const several = [
+    { ...folder, projectId },
+    { ...folder, id: "folder-2", name: "web", projectId },
+  ];
+  await act(async () => answers[0]!(several));
+  await screen.findByRole("dialog", { name: "Choose repository folder" });
+  act(() => requestHandoff({ itemId: other, toolKey: "agent-handoff:t3" }));
+  expect(isHandoffStarting(other)).toBe(true);
+  cleanup();
+  expect(isHandoffStarting(itemId)).toBe(false);
+  // The lookup that answers after the host left has no picker to show.
+  // The picker asked for the folders too, so every held lookup answers.
+  await act(async () => answers.forEach((answer) => answer(several)));
+  expect(isHandoffStarting(other)).toBe(false);
+});
+
+it("keeps the item starting when Review prompt closes while its start runs", async () => {
+  seeNoticeFor("t3");
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  const starts = holdStarts();
+  const button = await renderPage();
+  const dialog = await openReview(itemId);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
+  await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Hand off to T3 Code" }),
+    ).toBeNull(),
+  );
+  // The first start still runs, so the item can't start a second.
+  expect(isHandoffStarting(itemId)).toBe(true);
+  expect(button.hasAttribute("disabled")).toBe(true);
+  act(() => requestHandoff({ itemId, toolKey: "agent-handoff:t3" }));
+  expect(api.listRepositoryFolders).toHaveBeenCalledTimes(1);
+  await act(async () => starts[0]!());
+  await screen.findByText("Handed off to T3 Code");
+  expect(isHandoffStarting(itemId)).toBe(false);
+  expect(api.startHandoff).toHaveBeenCalledTimes(1);
+});
+
+it("leaves another item's dialog open when an earlier Review prompt start completes", async () => {
+  seeNoticeFor("t3");
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  const starts = holdStarts();
+  const other = addItem("Fix logout redirect");
+  await renderPage();
+  const first = await openReview(itemId);
+  fireEvent.click(within(first).getByRole("button", { name: "Start" }));
+  await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
+  fireEvent.click(within(first).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Hand off to T3 Code" }),
+    ).toBeNull(),
+  );
+  const second = await openReview(other);
+  expect(within(second).getByText("Fix logout redirect")).toBeTruthy();
+  await act(async () => starts[0]!());
+  await screen.findByText("Handed off to T3 Code");
+  expect(isHandoffStarting(itemId)).toBe(false);
+  expect(
+    screen.getByRole("dialog", { name: "Hand off to T3 Code" }),
+  ).toBeTruthy();
+  expect(isHandoffStarting(other)).toBe(true);
 });
 
 it("renders nothing in the web build, where no tool can run", async () => {

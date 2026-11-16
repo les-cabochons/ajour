@@ -30,7 +30,8 @@ export function listenForHandoffRequests(
 
 /**
  * The items whose hand off is on its way: from the moment the host accepts a
- * request until the thread starts, fails or the user cancels. The host
+ * request until the thread starts, fails or the user cancels. A start still
+ * running when its dialog closes keeps its item here until it settles. The host
  * ignores further requests for them, and every entry point waits.
  */
 const starting = new Set<string>();
