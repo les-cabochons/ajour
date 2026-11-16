@@ -613,3 +613,30 @@ it.runIf(process.platform === "win32").each(["C:relative", "\\relative"])(
     );
   },
 );
+
+it("Given an existing file, gives the replacement its permissions despite the umask", async () => {
+  const fs = await import("node:fs/promises");
+  const { home } = await fixture();
+  const file = path.join(home, ".codex", "AGENTS.md");
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, "user rules\n");
+  const expected = (await fs.stat(file)).mode & 0o777;
+  const chmods: Array<[string, number]> = [];
+  const controller = createInstructionController({
+    home,
+    editor,
+    env: {},
+    io: {
+      ...fs,
+      chmod: async (target: string, mode: number) => {
+        chmods.push([target, mode]);
+        return fs.chmod(target, mode);
+      },
+    },
+  });
+  const preview = await controller.preview("codex", "add");
+  await controller.apply("codex", preview.token);
+  expect(chmods).toHaveLength(1);
+  expect(chmods[0]![0]).toMatch(/AGENTS\.md\..+\.tmp$/);
+  expect(chmods[0]![1]).toBe(expected);
+});

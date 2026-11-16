@@ -342,6 +342,10 @@ function createInstructionController({
             flag: "wx",
             mode: current.mode & 0o777,
           });
+          // The umask filters writeFile's mode, so set the existing file's
+          // permissions explicitly before it replaces the original.
+          if (current.bytes !== null)
+            await io.chmod(temporary, current.mode & 0o777);
           // Recheck after preparing the replacement, before the atomic rename.
           const latest = await read(file);
           if (

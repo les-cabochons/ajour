@@ -59,6 +59,7 @@ function blockRange(text: string) {
   const stop = end + END_MARKER.length;
   if (
     (start > 0 && !["\n", "\uFEFF"].includes(text[start - 1]!)) ||
+    !["\n", "\r"].includes(text[start + START_MARKER.length] ?? "") ||
     text[end - 1] !== "\n" ||
     (stop < text.length && !["\n", "\r"].includes(text[stop]!))
   ) {

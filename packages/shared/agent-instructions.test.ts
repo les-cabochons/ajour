@@ -45,6 +45,8 @@ it.each([
   THREAD_NAMING_BLOCK + THREAD_NAMING_BLOCK,
   "<!-- ajour:thread-naming",
   `user ${THREAD_NAMING_BLOCK}`,
+  // User text after the opening marker would be lost on Update or Remove.
+  `${START_MARKER} keep this user rule\nold\n${END_MARKER}\n`,
 ])("refuses ambiguous markers %j", (text) => {
   expect(() => instructionStatus(text)).toThrow(/marker/i);
   expect(() => editInstructions(text, "remove")).toThrow(/marker/i);
