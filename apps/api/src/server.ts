@@ -1,4 +1,12 @@
-import { Handoffs, HandoffRefused } from "./handoffs.ts";
+import {
+  handoffTemplateDefaults,
+  handoffTemplatesSchema,
+} from "../../../packages/shared/handoff-templates.ts";
+import {
+  Handoffs,
+  HandoffRefused,
+  HandoffTemplateRefused,
+} from "./handoffs.ts";
 import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
 
 import { randomUUID as commandId } from "node:crypto";
@@ -1792,6 +1800,37 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
     },
+    handoffTemplatesGet: async ({ response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      writeJson(
+        response,
+        200,
+        (await storage.getHandoffTemplates(params.pluginId)) ??
+          handoffTemplateDefaults(plugin.capabilities.handoff.promptTemplate),
+      );
+    },
+    handoffTemplatesSave: async ({ request, response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      const templates = await readRequest(request, handoffTemplatesSchema);
+      await storage.setHandoffTemplates(params.pluginId, templates);
+      writeJson(response, 200, templates);
+    },
     handoffList: async ({ response }) => {
       writeJson(response, 200, await storage.listHandoffs());
     },
@@ -1808,12 +1847,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       } catch (error) {
         if (!(error instanceof HandoffRefused)) throw error;
         unit.refuse("handoff_refused");
-        writeJson(response, 409, {
-          error:
-            error instanceof Error
-              ? error.message
-              : "The tool refused the handoff.",
-        });
+        writeJson(
+          response,
+          error instanceof HandoffTemplateRefused ? 400 : 409,
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "The tool refused the handoff.",
+          },
+        );
       }
     },
     handoffRefreshAll: async ({ response }) => {

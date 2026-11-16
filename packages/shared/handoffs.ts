@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  handoffTemplateSchema,
+  isValidHandoffBranch,
+} from "./handoff-templates.ts";
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(20_000);
@@ -142,15 +146,39 @@ export const handoffRefreshResultSchema = z.object({
     z.object({ pluginId: id, toolId: id, projectId: id, reason: z.string() }),
   ),
 });
-export const handoffStartRouteSchema = startHandoffRequestSchema
-  .omit({ folder: true, tool: true })
-  .extend({
+export const handoffStartRouteSchema = z
+  .object({
     pluginId: id,
     toolId: id,
     folderId: id,
     projectId: id,
     workItemId: id,
-  });
+    projectName: z.string().max(500),
+    item: z
+      .object({
+        key: z.string().max(500),
+        title: z.string().min(1).max(500),
+        description: z.string().max(1_048_576).optional(),
+        url: z.string().max(2000),
+        type: z.string().max(500),
+        parent: z
+          .object({ key: z.string().max(500), title: z.string().max(500) })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    branchOverride: z
+      .string()
+      .max(500)
+      .refine(
+        (value) => value === "" || isValidHandoffBranch(value),
+        "The branch template override must be a valid git branch, or empty for no worktree.",
+      )
+      .optional(),
+    promptOverride: z.string().min(1).max(1_048_576).optional(),
+    settings: startHandoffRequestSchema.shape.settings,
+  })
+  .strict();
 export type Handoff = z.infer<typeof handoffRecordSchema>;
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
 export type StartHandoffResult = z.infer<typeof startHandoffResultSchema>;
@@ -169,6 +197,7 @@ export function handoffCapabilitySchema<
 >(fieldSchema: T) {
   return z
     .object({
+      promptTemplate: handoffTemplateSchema.optional(),
       tools: z
         .array(
           z

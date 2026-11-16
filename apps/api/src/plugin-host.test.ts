@@ -1293,6 +1293,20 @@ describe("PluginManager", () => {
     await expect(reading).rejects.toThrow("settings.nope");
   });
 
+  it("rejects unknown filters at install but accepts prose and JSX braces", async () => {
+    const invalid = await discoverCounted(
+      agentTaskPluginFiles({ prompt: "{{weekOf|bogus}}" }),
+    );
+    await expect(invalid.reading).rejects.toThrow("weekOf|bogus");
+    const valid = await discoverCounted(
+      agentTaskPluginFiles({
+        prompt: "{{ the week }} style={{ color: 'red' }} {{ weekOf }}",
+      }),
+    );
+    expect(valid.pluginIds).toContain("ajp-test");
+    await expect(valid.reading).resolves.toBeDefined();
+  });
+
   it("skips an agent task plugin whose prompt is over 64 KB", async () => {
     const { pluginIds, counts, reading } = await discoverCounted(
       agentTaskPluginFiles({ prompt: "x".repeat(65_537) }),

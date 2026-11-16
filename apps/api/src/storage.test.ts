@@ -1136,6 +1136,7 @@ describe("state files from earlier versions", () => {
 
   const emptyCurrentState = {
     handoffs: [],
+    handoffTemplates: {},
     repositoryFolders: [],
     version: 12,
     connections: [],
@@ -1329,4 +1330,21 @@ describe("state files from earlier versions", () => {
       },
     });
   });
+});
+
+it("removes only the uninstalled plugin's handoff templates durably", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "templates-cleanup-"));
+  try {
+    const file = path.join(root, "state.json");
+    const storage = new AppApiStorage(file);
+    const templates = { prompt: "P", title: "T", branch: "B" };
+    await storage.setHandoffTemplates("one", templates);
+    await storage.setHandoffTemplates("two", templates);
+    await storage.removePluginData("one");
+    const reloaded = new AppApiStorage(file);
+    expect(await reloaded.getHandoffTemplates("one")).toBeUndefined();
+    expect(await reloaded.getHandoffTemplates("two")).toEqual(templates);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

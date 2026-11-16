@@ -53,6 +53,11 @@ const copiedRuntimePackages = new Set();
 copyRuntimePackage("zod", [repoRoot]);
 // The Public Suffix List the plugin API 4 manifest rules read.
 copyRuntimePackage("tldts", [path.resolve(repoRoot, "packages/shared")]);
+// Description frontmatter decodes HTML entities when the API fills handoff
+// templates.
+copyRuntimePackage("decode-named-character-reference", [
+  path.resolve(repoRoot, "packages/shared"),
+]);
 copyRuntimePackage("tar", [path.resolve(repoRoot, "apps/api")]);
 copyRuntimePackage("@modelcontextprotocol/sdk", [
   path.resolve(repoRoot, "apps/api"),

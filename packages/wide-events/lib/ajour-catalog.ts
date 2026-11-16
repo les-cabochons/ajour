@@ -1735,6 +1735,16 @@ export const catalog = defineCatalog({
         update: { release_allowed: operational<boolean>() },
       },
     },
+    "handoff.templates_read": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "handoff.templates_update": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
     "handoff.list": {
       kinds: ["request", "job"],
       reasons: [...requestReasons],

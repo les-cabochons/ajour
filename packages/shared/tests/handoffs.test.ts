@@ -74,3 +74,22 @@ it("bounds native state by serialized UTF-8 bytes with an explicit refusal", () 
     false,
   );
 });
+
+it("validates plugin prompt default slots and filters at manifest parse", () => {
+  for (const promptTemplate of [
+    "{{item.nope}}",
+    "{{item.key|bogus}}",
+    "{{weekOf}}",
+  ])
+    expect(
+      pluginApi4ManifestSchema.safeParse({
+        ...jiraManifest(),
+        capabilities: {
+          handoff: {
+            promptTemplate,
+            tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+          },
+        },
+      }).success,
+    ).toBe(false);
+});

@@ -17,8 +17,8 @@ export type PluginManifest = {
                 id: string;
                 displayName: string;
                 columns: {
-                  type: "string" | "number" | "boolean";
                   key: string;
+                  type: "string" | "number" | "boolean";
                   header: string;
                   required?: boolean | undefined;
                   width?: number | undefined;
@@ -29,6 +29,9 @@ export type PluginManifest = {
       | undefined;
     connector?:
       | {
+          description?:
+            | { maxLength?: number | undefined; write?: boolean | undefined }
+            | undefined;
           comments?:
             | {
                 edit?: boolean | undefined;
@@ -48,9 +51,6 @@ export type PluginManifest = {
                 mentions?: boolean | undefined;
                 maxLength?: number | undefined;
               }
-            | undefined;
-          description?:
-            | { maxLength?: number | undefined; write?: boolean | undefined }
             | undefined;
           settle?: boolean | undefined;
           assign?: boolean | undefined;
@@ -93,13 +93,14 @@ export type PluginManifest = {
             label: string;
             iconSvg: string;
           }[];
+          promptTemplate?: string | undefined;
         }
       | undefined;
     agentTask?:
       | {
           tasks: {
-            id: string;
             prompt: string;
+            id: string;
             tools: (
               | "find_entries"
               | "get_last_saved_entry"
@@ -572,6 +573,7 @@ export type BacklogSyncResult = {
     workItemType: string;
     depth: 0 | 1;
     state?: string | undefined;
+    projectName?: string | undefined;
     description?:
       | { text: string; lost?: string[] | undefined; cut?: boolean | undefined }
       | undefined;
@@ -580,7 +582,6 @@ export type BacklogSyncResult = {
     remainingEstimateHours?: number | undefined;
     completedEstimateHours?: number | undefined;
     note?: string | undefined;
-    projectName?: string | undefined;
     stateCategory?: string | undefined;
     stateDone?: boolean | undefined;
     assignedTo?: string | undefined;
@@ -600,8 +601,6 @@ export type BacklogSyncResult = {
     { id: string; displayName: string; email?: string | undefined } | undefined;
   workItemUpdates?:
     | {
-        localWorkItemId: string;
-        sourceId: string;
         fields: {
           originalEstimateHours?:
             | {
@@ -634,6 +633,8 @@ export type BacklogSyncResult = {
               }
             | undefined;
         };
+        localWorkItemId: string;
+        sourceId: string;
       }[]
     | undefined;
   commentFacts?:
@@ -717,8 +718,8 @@ export type CodeHostOperations = {
     result: {
       pullRequests: {
         number: number;
-        id: string;
         title: string;
+        id: string;
         url: string;
         state: "closed" | "merged" | "open";
         author: {
@@ -909,8 +910,8 @@ export type CodeHostOperations = {
     result: {
       items: {
         number: number;
-        id: string;
         title: string;
+        id: string;
         url: string;
         state: "closed" | "merged" | "open";
         author: {
@@ -1017,8 +1018,8 @@ export type CalendarOperations = {
     request: { timeZone: string; from: string; to: string };
     result: {
       events: {
-        status: "cancelled" | "confirmed" | "tentative";
         title: string;
+        status: "cancelled" | "confirmed" | "tentative";
         eventId: string;
         startsAt: number;
         endsAt: number;
@@ -1548,11 +1549,11 @@ export type TimeSyncRemoteEntry = {
 };
 
 export type StartHandoffRequest = {
-  tool: string;
-  folder: { id: string; name: string };
+  item: { key: string; url: string };
   prompt: string;
   title: string;
-  item: { key: string; url: string };
+  tool: string;
+  folder: { id: string; name: string };
   settings: Record<string, string | number | boolean>;
   branch?: string | undefined;
 };
