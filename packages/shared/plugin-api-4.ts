@@ -544,16 +544,19 @@ export const declaredCommandSchema = strictObject({
 }).superRefine((command, context) => {
   if (new TextEncoder().encode(JSON.stringify(command)).length > 12 * 1024)
     issue(context, [], "A command may use at most 12 KB.");
-  if (command.mode !== "capture") {
-    for (const field of ["stdin", "timeoutSeconds"] as const) {
-      if (command[field] !== undefined)
-        issue(
-          context,
-          [field],
-          "Only capture commands may declare this field.",
-        );
-    }
-  }
+  if (command.mode !== "capture" && command.timeoutSeconds !== undefined)
+    issue(
+      context,
+      ["timeoutSeconds"],
+      "Only capture commands may declare a timeout.",
+    );
+  // A terminal command runs in another app, so Ajour can't write its stdin.
+  if (command.mode === "terminal" && command.stdin !== undefined)
+    issue(
+      context,
+      ["stdin"],
+      "Only capture and detached commands may declare stdin.",
+    );
   const slots = new Set<string>();
   for (const arg of command.args.flatMap((arg) =>
     "if" in arg ? arg.args : [arg],

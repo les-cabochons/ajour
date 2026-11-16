@@ -72,6 +72,7 @@ export type ProcessReason =
   | "spawn_refused"
   | "concurrency"
   | "capture_incomplete"
+  | "stdin_failed"
   | "output_limit"
   | "timeout"
   | "operation_ended"
@@ -508,9 +509,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         command = declared;
         commandId = command.id;
         unit?.set({ process: { mode: command.mode } });
-        if (command.mode !== "capture" && request.stdin !== undefined)
+        // A terminal command runs in another app, so Ajour can't write its stdin.
+        if (command.mode === "terminal" && request.stdin !== undefined)
           refuse("invalid_request");
-
         if (request.stdin !== undefined && command.stdin !== "text")
           return refuse("invalid_request");
         const slots = command.args
@@ -620,7 +621,14 @@ export class ProcessBroker implements ProcessBrokerPort {
             const gate = await this.options.gate(caller);
             if (gate) return refuse(gate);
             if (signal.aborted) return refuse("operation_ended");
-            await startUnowned(launch, folder, hidden);
+            await startUnowned(
+              launch,
+              folder,
+              hidden,
+              command.mode === "detached" && command.stdin === "text"
+                ? { stdin, signal }
+                : undefined,
+            );
           },
         });
         started = true;

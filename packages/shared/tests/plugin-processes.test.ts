@@ -409,19 +409,23 @@ describe("review declaration boundaries", () => {
   ])("refuses system scheme %s", (scheme) =>
     expect(parse({ openSchemes: [scheme] }).success).toBe(false),
   );
-  it.each(["detached", "terminal"])(
-    "refuses capture-only fields for %s",
-    (mode) => {
-      expect(
-        parse(command({ mode, timeoutSeconds: undefined, stdin: undefined }))
-          .success,
-      ).toBe(true);
-      expect(parse(command({ mode, timeoutSeconds: undefined })).success).toBe(
-        false,
-      );
-      expect(parse(command({ mode, stdin: undefined })).success).toBe(false);
-    },
-  );
+  it.each(["detached", "terminal"])("refuses a timeout for %s", (mode) => {
+    expect(
+      parse(command({ mode, timeoutSeconds: undefined, stdin: undefined }))
+        .success,
+    ).toBe(true);
+    expect(parse(command({ mode, stdin: undefined })).success).toBe(false);
+  });
+  it("accepts stdin text on a detached command", () => {
+    expect(
+      parse(command({ mode: "detached", timeoutSeconds: undefined })).success,
+    ).toBe(true);
+  });
+  it("refuses stdin on a terminal command", () => {
+    expect(
+      parse(command({ mode: "terminal", timeoutSeconds: undefined })).success,
+    ).toBe(false);
+  });
   it("bounds each command and the whole processes block", () => {
     expect(
       parse(command({ args: Array(30).fill("x".repeat(1000)) })).success,

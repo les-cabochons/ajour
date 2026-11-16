@@ -6,10 +6,11 @@ import { findExecutable } from "./agent-runner/cli-path.ts";
 import { resolveSpawn, type SpawnResolution } from "./process-spawn/index.ts";
 
 export class ProcessLaunchRefused extends Error {
-  readonly reason: "invalid_request" | "spawn_refused";
+  readonly reason:
+    "invalid_request" | "spawn_refused" | "stdin_failed" | "operation_ended";
   constructor(
     message: string,
-    reason: "invalid_request" | "spawn_refused" = "spawn_refused",
+    reason: ProcessLaunchRefused["reason"] = "spawn_refused",
   ) {
     super(message);
     this.reason = reason;
@@ -17,24 +18,106 @@ export class ProcessLaunchRefused extends Error {
 }
 export type TerminalApp = "wt" | "Terminal";
 type Plan = Exclude<SpawnResolution, { refused: string }>;
+/** Text for the child's stdin, and the signal that abandons its delivery. */
+export interface UnownedInput {
+  stdin: string;
+  signal?: AbortSignal;
+}
+const stdinChunk = 64 * 1024;
+/**
+ * Starts a process Ajour doesn't own. Given input, only stdin is piped: the
+ * text is written with backpressure and stdin ended before the child is let
+ * go. Until then Ajour owns it, so a failed or abandoned delivery stops it
+ * rather than leave it running on part of its input.
+ */
 export async function startUnowned(
   plan: Plan,
   cwd: string,
   windowsHide: boolean,
+  input?: UnownedInput,
 ) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(plan.command, plan.args, {
       env: plan.env,
       cwd,
       shell: false,
-      stdio: "ignore",
+      stdio: input ? ["pipe", "ignore", "ignore"] : "ignore",
       detached: true,
       windowsHide,
     });
     child.once("error", reject);
+    if (!input) {
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+      return;
+    }
+    const stdin = child.stdin!;
+    let settled = false;
+    const fail = (error: ProcessLaunchRefused) => {
+      if (settled) return;
+      settled = true;
+      input.signal?.removeEventListener("abort", abort);
+      stdin.destroy();
+      try {
+        if (process.platform !== "win32" && child.pid !== undefined)
+          process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+      reject(error);
+    };
+    const abort = () =>
+      fail(
+        new ProcessLaunchRefused(
+          "The operation ended before the input was delivered.",
+          "operation_ended",
+        ),
+      );
+    // EPIPE when the child exits before reading everything.
+    stdin.on("error", () =>
+      fail(
+        new ProcessLaunchRefused(
+          "The process stopped reading its input.",
+          "stdin_failed",
+        ),
+      ),
+    );
     child.once("spawn", () => {
-      child.unref();
-      resolve();
+      void (async () => {
+        if (input.signal?.aborted) return abort();
+        input.signal?.addEventListener("abort", abort, { once: true });
+        const data = Buffer.from(input.stdin, "utf8");
+        for (let at = 0; at < data.length && !settled; at += stdinChunk) {
+          if (!stdin.write(data.subarray(at, at + stdinChunk)))
+            await new Promise<void>((next) => {
+              const done = () => {
+                stdin.off("drain", done);
+                stdin.off("close", done);
+                next();
+              };
+              stdin.once("drain", done);
+              stdin.once("close", done);
+            });
+        }
+        if (settled) return;
+        stdin.end((error?: Error | null) => {
+          if (error)
+            return fail(
+              new ProcessLaunchRefused(
+                "The process stopped reading its input.",
+                "stdin_failed",
+              ),
+            );
+          if (settled) return;
+          settled = true;
+          input.signal?.removeEventListener("abort", abort);
+          child.unref();
+          resolve();
+        });
+      })();
     });
   });
 }

@@ -15,16 +15,14 @@ afterEach(async () => {
   await Promise.all(
     // A detached child can still hold its folder open while it exits on
     // Windows, so removal retries instead of failing with EBUSY.
-    roots
-      .splice(0)
-      .map((p) =>
-        rm(p, {
-          recursive: true,
-          force: true,
-          maxRetries: 20,
-          retryDelay: 100,
-        }),
-      ),
+    roots.splice(0).map((p) =>
+      rm(p, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      }),
+    ),
   );
 });
 async function fixture(
@@ -1135,6 +1133,132 @@ it("Given a detached command, returns started and leaves the child alive after c
   await expect
     .poll(async () => readFile(path.join(root, "detached-done"), "utf8"))
     .toBe("done");
+});
+describe("detached commands with stdin", () => {
+  // The child reads all of stdin, then keeps running after Ajour has
+  // returned and shut down, and only later writes what it read.
+  const reader =
+    "const fs=require('fs');const path=require('path');let data='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>setTimeout(()=>fs.writeFileSync(path.join(process.cwd(),'stdin-read.txt'),data),500))";
+  async function detachedFixture(source = reader) {
+    const made = await fixture(["{folder:folder}"], source);
+    const command = pluginApi4ManifestSchema.parse({
+      ...made.manifest,
+      processes: {
+        ...made.manifest.processes,
+        commands: [
+          {
+            id: "run",
+            executable: "node",
+            args: [
+              made.manifest.processes!.commands[0]!.args[0],
+              "{folder:folder}",
+            ],
+            stdin: "text",
+            mode: "detached",
+          },
+        ],
+      },
+    });
+    const op = made.broker.forOperation({
+      pluginId: command.id,
+      manifest: command,
+      method: "syncConnection",
+    });
+    return { ...made, manifest: command, op };
+  }
+
+  it("Given multi-line text near the size limit, the child reads all of it and outlives the broker", async () => {
+    const { op, broker, root, folder, sink } = await detachedFixture();
+    const line = "Fix the login page — keep the « remember me » box.\n";
+    const stdin = line
+      .repeat(Math.floor((1024 * 1024 - 100) / line.length))
+      .concat("last line");
+    expect(
+      await op.run({ command: "run", args: { folder: folder.id }, stdin }),
+    ).toEqual({ started: true });
+    op.close();
+    await broker.shutdown();
+    const { readFile } = await import("node:fs/promises");
+    await expect
+      .poll(
+        async () =>
+          readFile(path.join(root, "stdin-read.txt"), "utf8").catch(() => ""),
+        { timeout: 10_000 },
+      )
+      .toBe(stdin);
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "plugin.process",
+        outcome: "ok",
+        process: expect.objectContaining({ mode: "detached" }),
+      }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("remember me");
+  });
+
+  it("Given text over the size limit, refuses before starting", async () => {
+    const { op, folder } = await detachedFixture();
+    await expect(
+      op.run({
+        command: "run",
+        args: { folder: folder.id },
+        stdin: "x".repeat(1024 * 1024 + 1),
+      }),
+    ).rejects.toMatchObject({ reason: "invalid_request" });
+  });
+
+  it("Given a child that exits without reading, refuses the start with a reason and no content", async () => {
+    const marker = "CANARY-STDIN-9F2K";
+    const { op, folder, sink, root } = await detachedFixture("process.exit(0)");
+    await expect(
+      op.run({
+        command: "run",
+        args: { folder: folder.id },
+        stdin: marker.repeat(60_000),
+      }),
+    ).rejects.toMatchObject({ reason: "stdin_failed" });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "plugin.process",
+        outcome: "refused",
+        outcome_reason: "stdin_failed",
+      }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain(marker);
+    expect(JSON.stringify(sink.events)).not.toContain(root);
+  });
+
+  it("Given the operation ends before the child has read its input, refuses and stops the child", async () => {
+    const { op, folder, root } = await detachedFixture(
+      "require('fs').writeFileSync(require('path').join(process.cwd(),'pid'),String(process.pid));setInterval(()=>{},1000)",
+    );
+    const { readFile } = await import("node:fs/promises");
+    const run = op.run({
+      command: "run",
+      args: { folder: folder.id },
+      stdin: "x".repeat(1024 * 1024),
+    });
+    const pid = Number(
+      await expect
+        .poll(async () =>
+          readFile(path.join(root, "pid"), "utf8").catch(() => ""),
+        )
+        .toMatch(/^\d+$/)
+        .then(() => readFile(path.join(root, "pid"), "utf8")),
+    );
+    op.close();
+    await expect(run).rejects.toMatchObject({ reason: "operation_ended" });
+    await expect
+      .poll(() => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .toBe(false);
+  });
 });
 it.each([
   "https://example.test/private?secret=CANARY",

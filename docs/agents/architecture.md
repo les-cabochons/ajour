@@ -1156,7 +1156,18 @@ The process broker validates every command and resolves its executable through
 launches return `{ started: true }` after spawn, ignore stdio and unref the child.
 Ajour never kills those children when an operation ends or the app quits.
 Both launch modes require a resolved repository folder argument and use the first
-folder argument as cwd. They refuse stdin, which these modes cannot deliver.
+folder argument as cwd.
+
+A detached command that declares `stdin: "text"` pipes only stdin; stdout and
+stderr stay ignored. `startUnowned` writes the text in 64 KB chunks, waiting for
+`drain`, ends stdin and only then unrefs the child and returns. The 1 MB request
+limit is the one capture stdin has. Until stdin ends Ajour owns the child: a
+write error, such as EPIPE when it exits early, refuses with `stdin_failed`,
+and an ended operation refuses with `operation_ended`. Both stop the child (its
+POSIX process group, or the process on Windows) so it never runs on part of its
+input. The `plugin.process` event carries only the reason, never the text or
+argv. Terminal commands refuse stdin, in the manifest and at run time, because
+the terminal app owns the process.
 
 `process-launch.ts` supports Windows Terminal on Windows and Terminal on macOS.
 Windows Terminal re-joins argv, so executable paths, resolved launcher prefixes,
