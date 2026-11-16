@@ -109,17 +109,23 @@ function recognizeShim(
   env: NodeJS.ProcessEnv,
 ): Shim | { refused: string } | undefined {
   // Match whole templates. A familiar final invocation alone is not sufficient.
-  const npm =
-    /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n\nIF EXIST "%dp0%\\node.exe" \(\n  SET "_prog=%dp0%\\node.exe"\n\) ELSE \(\n  SET "_prog=node"\n\)\n\nendLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "([^"\n]+)" %\*$/i.exec(
+  // npm's cmd-shim writes the PATHEXT change in one of two places: after
+  // endLocal (cmd-shim 6), where the child inherits it, or inside the ELSE
+  // block (cmd-shim 7 and 8, npm 11), where endLocal discards it.
+  const npmMatch =
+    /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n\nIF EXIST "%dp0%\\node.exe" \(\n  SET "_prog=%dp0%\\node.exe"\n\) ELSE \(\n  SET "_prog=node"\n(  SET PATHEXT=%PATHEXT:;\.JS;=;%\n)?\)\n\nendLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & (set PATHEXT=%PATHEXT:;\.JS;=;% & )?"%_prog%"  "([^"\n]+)" %\*$/i.exec(
       source,
     );
+  // Exactly one of the two places, never both or neither.
+  const npm = npmMatch && !npmMatch[1] !== !npmMatch[2] ? npmMatch : null;
+  const npmChildPathext = Boolean(npm?.[2]);
   // pnpm's common node template, including optional NODE_PATH prefixing.
   const pnpm =
     /^@SETLOCAL\n(?:@IF NOT DEFINED NODE_PATH \(\n  @SET "NODE_PATH=([^"\n]+)"\n\) ELSE \(\n  @SET "NODE_PATH=\1;%NODE_PATH%"\n\)\n)?@IF EXIST "%~dp0\\node.exe" \(\n  "%~dp0\\node.exe"  "([^"\n]+)" %\*\n\) ELSE \(\n  @SET PATHEXT=%PATHEXT:;.JS;=;%\n  node  "\2" %\*\n\)$/i.exec(
       source,
     );
   if (npm || pnpm) {
-    const script = expandPath(npm?.[1] ?? pnpm?.[2] ?? "", directory);
+    const script = expandPath(npm?.[3] ?? pnpm?.[2] ?? "", directory);
     const command = nodeExecutable(directory, env);
     if (!script || !command || isScriptHostInput(script) || !isFile(script))
       return;
@@ -135,10 +141,19 @@ function recognizeShim(
         entries.join(";") + (previous ? ";" + previous : ""),
       );
     }
-    // npm's endLocal still executes this PATHEXT assignment for the child.
+    // The child sees the PATHEXT change only from cmd-shim 6's npm shim, which
+    // makes it after endLocal, and from pnpm's ELSE branch. cmd-shim 6 writes
+    // `set PATHEXT=… & "%_prog%"`, so cmd.exe keeps the space before the `&`.
     const pathext = getEnv(env, "PATHEXT");
-    if (pathext && (npm || !existsSync(path.join(directory, "node.exe"))))
-      setEnv(env, "PATHEXT", pathext.replace(/;\.JS;/gi, ";"));
+    if (
+      pathext &&
+      (npm ? npmChildPathext : !existsSync(path.join(directory, "node.exe")))
+    )
+      setEnv(
+        env,
+        "PATHEXT",
+        pathext.replace(/;\.JS;/gi, ";") + (npm ? " " : ""),
+      );
     return { command, prefix: [script] };
   }
   const yarn =

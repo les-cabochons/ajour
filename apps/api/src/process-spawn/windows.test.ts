@@ -44,6 +44,26 @@ IF EXIST "%dp0%\\node.exe" (
 
 endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "%dp0%\\argv.mjs" %*
 `;
+// Generated verbatim by npm 11.20's cmd-shim 8.0.0, with only the script path
+// changed: it moves the PATHEXT change inside the ELSE block.
+const npmCmdShim8 = `@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\\node.exe" (
+  SET "_prog=%dp0%\\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\argv.mjs" %*
+`;
 const pnpm = `@SETLOCAL
 @IF EXIST "%~dp0\\node.exe" (
   "%~dp0\\node.exe"  "%~dp0\\argv.mjs" %*
@@ -81,6 +101,7 @@ exit /b %t3_exit%
 `;
 const fixtures = {
   npm,
+  "npm-cmd-shim-8": npmCmdShim8,
   pnpm,
   "pnpm-env": pnpmEnv,
   "yarn-classic": `@"${process.execPath}"  "${script}"  %*\n`,
@@ -292,6 +313,12 @@ describe.skipIf(process.platform !== "win32")(
             expect(result.env.NODE_PATH).toBe(
               `${root}\\\\deps;${root}\\\\..\\shared;old-node-path`,
             );
+          // cmd-shim 6 changes PATHEXT after endLocal, so the child keeps the
+          // change; cmd-shim 8 changes it inside SETLOCAL, so endLocal drops it.
+          if (format === "npm")
+            expect(result.env.PATHEXT).toBe(".COM;.EXE;.BAT;.CMD; ");
+          if (format === "npm-cmd-shim-8")
+            expect(result.env.PATHEXT).toBe(".COM;.EXE;.BAT;.CMD;.JS;");
           batch = [];
         };
         for (const value of corpus) {
