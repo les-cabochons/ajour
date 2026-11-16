@@ -6,7 +6,7 @@ Note (#231, built in #390): the plugin's code runs in a dedicated worker inside 
 
 Two guarantees stay separate in code, tests and docs:
 
-- **G1, hard and tested.** No plugin can obtain another plugin's credentials, storage or identity by any path: the API, the filesystem, forged IPC, the network, logs or errors. No plugin's code holds any credential, not even its own (ADR 0010).
+- **G1, hard and tested.** No plugin can obtain another plugin's credentials, storage or identity by any path: the API, the filesystem, forged IPC, the network, logs or errors. No plugin's code holds any credential, not even its own (ADR 0010). This holds for plugins that start no process: a plugin with process access can reach every plugin's credentials through the commands it runs (ADR 0019).
 - **G2, best effort.** A plugin can still misuse the access it was given, for example by writing what it read to an endpoint it may call. Endpoint allowlists, deny-by-default egress, least-privilege tokens and audit logs reduce this. Nothing in Ajour claims to prevent it.
 
 ## Considered options
@@ -18,7 +18,7 @@ Two guarantees stay separate in code, tests and docs:
 
 ## Consequences
 
-- There is no full-access class. If the sandbox cannot be applied, third-party plugins do not run.
+- There is no full-access class. If the sandbox cannot be applied, third-party plugins do not run. A plugin that needs a process asks Ajour's process broker, under the user's consent and command mode (ADR 0019).
 - Measured on Windows (#230) and macOS (#260):
   - Each plugin costs about 21 to 31 MB of its own memory.
   - A warm call takes under 0.2 ms.

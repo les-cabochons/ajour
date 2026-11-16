@@ -899,8 +899,10 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
 
 ## The plugin guarantees
 
-- **G1, hard and tested:** no plugin can obtain any credential, its own or
-  another plugin's, by any path. The broker in main holds every credential, a
+- **G1, hard and tested, for plugins that start no process:** no plugin can
+  obtain any credential, its own or another plugin's, by any path. A plugin
+  with a `processes` block is outside G1, declared commands and every command
+  mode included (ADR 0019). The broker in main holds every credential, a
   plugin's connection reaches it without secrets, and the renderer has no
   Node, no network and no storage of its own. A release claims G1 only after
   the malicious-plugin and lifecycle suites (`check:plugin-sandbox`) and the
@@ -926,6 +928,18 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
   - Agent tasks run through their declared MCP tools and reviewed prompts; the
     external coding agent is not a plugin renderer and is not sandboxed by
     Ajour.
+- **Plugins that start processes (ADR 0019).** A plugin with a `processes`
+  block reaches the user's programs through the process broker. G1 holds only
+  for plugins that start no process: a process runs as the user, and on
+  Windows DPAPI doesn't protect the vault from the user's own programs. G2
+  widens:
+  - Declared commands run as approved with the plugin's access.
+  - Undeclared commands follow the plugin's command mode: Always ask, Auto
+    (asks for what the rules or the command reviewer mark risky) or Accept
+    everything, which gives G1 up for that plugin.
+
+  Access review and the mode's warning say this, and a release claims G1
+  only for plugins without process access.
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the
