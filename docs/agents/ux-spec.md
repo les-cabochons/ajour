@@ -1392,3 +1392,11 @@ Pausing a handoff preserves the tool's native data. The record carries a separat
 pause reason and time, cleared by a successful refresh. Reloading an older record
 whose native data exceeds 4 KB keeps the handoff with capped status and label and
 `native.truncated: true`. Its next successful refresh replaces that compact data.
+
+### Undeclared commands
+
+The plugin's Access tab offers Always ask, Auto and Accept everything. Signed plugins start in Auto. Unsigned and development-directory plugins start in Always ask. Losing a signature drops the mode to Always ask. Accept everything shows a red warning that it gives up G1, the credential guarantee, and that commands can access every plugin's credentials.
+
+Always ask asks for each undeclared command unless its exact line and folder were remembered. Auto asks only for a risky verdict; no verdict and review run. Accept everything runs regardless of verdict. Every mode still passes activation, consent and unsigned process gates.
+
+A centered dialog names the plugin and folder and shows the executable and every argument as a JSON array so spaces and argument boundaries remain visible. It shows any rule reason in red when risky. Allow once, Always and Deny answer the current ask. Escape denies. Always remembers precisely that executable, every argument and the folder id. Access lists those approvals with Remove. An update, package change, lost signature or changed development directory clears them. Asks queue one at a time. Each visible ask denies after two minutes. No connected window denies immediately with a reason.

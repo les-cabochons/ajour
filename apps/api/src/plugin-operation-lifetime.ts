@@ -526,7 +526,7 @@ export class PluginOperationLifetime<TMethod extends string> {
           void finalize("settled", this.runFailure(outcome, operation, method));
         }
       });
-      timeout = setTimeout(() => {
+      const expire = () => {
         if (!finalizationPromise) this.options.onTimeout?.(prepared.invocation);
         void finalize(
           "timeout",
@@ -535,7 +535,22 @@ export class PluginOperationLifetime<TMethod extends string> {
             "timeout",
           ),
         );
-      }, this.options.requestTimeoutMs);
+      };
+      let remaining = this.options.requestTimeoutMs;
+      let resumedAt = Date.now();
+      let paused = false;
+      timeout = setTimeout(expire, remaining);
+      prepared.invocation.processBroker?.onWaiting?.((waiting) => {
+        if (finalizationPromise || waiting === paused) return;
+        paused = waiting;
+        if (waiting) {
+          clearTimeout(timeout);
+          remaining -= Date.now() - resumedAt;
+        } else {
+          resumedAt = Date.now();
+          timeout = setTimeout(expire, Math.max(0, remaining));
+        }
+      });
     });
   }
 }

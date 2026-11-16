@@ -1,3 +1,4 @@
+import { CommandAskHost } from "./command-ask-dialog";
 import {
   useCallback,
   useEffect,
@@ -676,6 +677,7 @@ export function AppShell() {
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
       <AgentBridgeHost />
+      <CommandAskHost />
       <SyncConflictToasts />
       <LossySaveDialogHost />
       <AgentIndicator />

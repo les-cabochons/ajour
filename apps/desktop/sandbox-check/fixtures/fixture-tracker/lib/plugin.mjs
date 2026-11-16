@@ -25,10 +25,10 @@ export async function syncConnection(connection) {
   if (version.exitCode !== 0 || !/^v\d+\./.test(version.stdout))
     throw new Error("The process broker did not return a Node version.");
   try {
-    await ajour.process.run({ command: "undeclared", args: {} });
+    await ajour.process.run({ executable: "node", argv: ["--version"] });
     throw new Error("An undeclared process escaped.");
   } catch (error) {
-    if (error.name !== "AjourProcessError" || error.code !== "undeclared")
+    if (error.name !== "AjourProcessError" || error.code !== "user_denied")
       throw error;
   }
   const found = await call(connection, "/api/items");

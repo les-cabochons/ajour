@@ -1,3 +1,16 @@
+import {
+  undeclaredCommandSchema,
+  type CommandPolicy,
+  type CommandMode,
+  type CommandAsk,
+  type UndeclaredCommand,
+} from "../../../packages/shared/command-modes.ts";
+import {
+  commandDecision,
+  noCommandReview,
+  sameCommand,
+  type CommandReview,
+} from "./command-review.ts";
 import { spawn, execFile } from "node:child_process";
 import path from "node:path";
 import { z } from "zod";
@@ -35,6 +48,9 @@ export type ProcessReason =
   | "unsigned_processes_off"
   | "process_acceptance_required"
   | "package_unverified"
+  | "user_denied"
+  | "no_window"
+  | "ask_timeout"
   | "undeclared"
   | "not_yet"
   | "folder_refused"
@@ -60,6 +76,21 @@ export class ProcessBrokerError extends Error {
 }
 export interface ProcessBrokerOptions {
   folders: FolderResolver;
+  review?: CommandReview;
+  policy?(caller: BrokerCaller): Promise<CommandPolicy>;
+  remember?(
+    caller: BrokerCaller,
+    command: UndeclaredCommand,
+    policy: CommandPolicy,
+  ): Promise<void>;
+  ask?(
+    ask: Omit<CommandAsk, "id" | "expiresAt">,
+    signal: AbortSignal,
+  ): Promise<{
+    answer: "once" | "always" | "deny";
+    reason?: "no_window" | "ask_timeout" | "user_denied" | "operation_ended";
+  }>;
+  folderName?(id: string): Promise<string | undefined>;
   gate(
     caller: BrokerCaller,
   ): Promise<
@@ -114,13 +145,23 @@ export class ProcessBroker implements ProcessBrokerPort {
   }
   forOperation(caller: BrokerCaller) {
     const ended = new AbortController();
+    let waiting = 0;
+    let listener: ((waiting: boolean) => void) | undefined;
+    const wait = (value: boolean) => {
+      waiting += value ? 1 : -1;
+      listener?.(waiting > 0);
+    };
     return {
+      onWaiting: (next: (waiting: boolean) => void) => {
+        listener = next;
+        listener(waiting > 0);
+      },
       run: (request: ProcessRunRequest) => {
         const controller = new AbortController();
         const abort = () => controller.abort();
         ended.signal.addEventListener("abort", abort, { once: true });
         if (ended.signal.aborted || this.stopping) controller.abort();
-        const task = this.run(caller, request, controller.signal);
+        const task = this.run(caller, request, controller.signal, wait);
         this.runs.set(task, controller);
         const cleanup = () => {
           this.runs.delete(task);
@@ -134,7 +175,7 @@ export class ProcessBroker implements ProcessBrokerPort {
   }
   private async argument(
     arg: DeclaredArgument,
-    values: ProcessRunRequest["args"],
+    values: Readonly<Record<string, string | number>>,
     projectId?: string,
   ) {
     if (arg.kind === "literal") return arg.value;
@@ -202,6 +243,7 @@ export class ProcessBroker implements ProcessBrokerPort {
     caller: BrokerCaller,
     given: ProcessRunRequest,
     signal: AbortSignal,
+    waiting: (value: boolean) => void,
   ): Promise<ProcessRunResult> {
     const unit = this.options.events?.start("plugin.process", {
       kind: "job",
@@ -213,44 +255,143 @@ export class ProcessBroker implements ProcessBrokerPort {
     let started = false;
     let reason: ProcessReason | undefined;
     let commandId = "undeclared";
+    let mode: CommandMode | undefined;
+    let decidedBy: "gate" | "rule" | "user" | "mode" | "remembered" = "gate";
+    let ruleId: string | undefined;
     try {
       if (signal.aborted) refuse("operation_ended");
       const gate = await this.options.gate(caller);
       if (gate) refuse(gate);
-      const parsed = requestSchema.safeParse(given);
-      if (!parsed.success) return refuse("invalid_request");
-      const request = parsed.data;
-      const command = caller.manifest.processes?.commands.find(
-        (c) => c.id === request.command,
-      );
-      if (!command) return refuse("undeclared");
-      commandId = command.id;
-      if (command.mode !== "capture") return refuse("not_yet");
-      if (request.stdin !== undefined && command.stdin !== "text")
-        return refuse("invalid_request");
-      const slots = command.args
-        .flatMap((a) => ("if" in a ? a.args : [a]))
-        .filter((a) => a.kind !== "literal")
-        .map((a) => a.name);
-      if (Object.keys(request.args).some((k) => !slots.includes(k)))
-        return refuse("invalid_request");
-      const argv: string[] = [];
-      for (const group of command.args) {
-        if ("if" in group) {
-          if (!Object.hasOwn(request.args, group.if)) {
-            if (
-              group.args.some(
-                (a) =>
-                  a.kind !== "literal" && Object.hasOwn(request.args, a.name),
-              )
-            )
-              refuse("invalid_request");
-            continue;
+      let command: import("../../../packages/shared/plugin-api-4.ts").DeclaredCommand;
+      let argv: string[] = [];
+      let cwd = osCwd();
+      let cwdFolder: string | undefined;
+      let stdin = "";
+      let names: readonly string[];
+      if (
+        typeof given === "object" &&
+        given !== null &&
+        "executable" in given
+      ) {
+        const parsed = undeclaredCommandSchema.safeParse(given);
+        if (!parsed.success) refuse("invalid_request");
+        const request = parsed.data!;
+        if (!caller.manifest.processes) refuse("undeclared");
+        cwdFolder = request.cwdFolder;
+        if (request.cwdFolder) {
+          try {
+            cwd =
+              (await this.options.folders.resolve(
+                request.cwdFolder,
+                caller.projectId,
+              )) ?? refuse("folder_refused");
+          } catch {
+            refuse("folder_refused");
           }
-          for (const arg of group.args)
-            argv.push(await this.argument(arg, request.args, caller.projectId));
-        } else
-          argv.push(await this.argument(group, request.args, caller.projectId));
+        }
+        const policy = (await this.options.policy?.(caller)) ?? {
+          identity: "",
+          signed: false,
+          mode: "always-ask",
+          approvals: [],
+        };
+        mode = policy.mode;
+        const review = await (this.options.review ?? noCommandReview).review(
+          request,
+        );
+        ruleId = review.ruleId;
+        if (policy.approvals.some((a) => sameCommand(a, request)))
+          decidedBy = "remembered";
+        else if (commandDecision(mode, review.verdict) === "ask") {
+          decidedBy = review.verdict === "risky" ? "rule" : "mode";
+          waiting(true);
+          let answer;
+          try {
+            answer = (await this.options.ask?.(
+              {
+                ...request,
+                pluginId: caller.pluginId,
+                pluginName: caller.manifest.displayName,
+                folderName: request.cwdFolder
+                  ? ((await this.options.folderName?.(request.cwdFolder)) ??
+                    request.cwdFolder)
+                  : "System root",
+                risky: review.verdict === "risky",
+                reason: review.reason,
+              },
+              signal,
+            )) ?? { answer: "deny" as const, reason: "no_window" as const };
+          } finally {
+            waiting(false);
+          }
+          decidedBy =
+            answer.reason === "no_window" || answer.reason === "operation_ended"
+              ? "gate"
+              : answer.reason === "ask_timeout"
+                ? "mode"
+                : "user";
+          if (answer.answer === "deny") refuse(answer.reason ?? "user_denied");
+          const gate = await this.options.gate(caller);
+          if (gate) {
+            decidedBy = "gate";
+            refuse(gate);
+          }
+          if (answer.answer === "always")
+            await this.options.remember?.(caller, request, policy);
+        } else decidedBy = "mode";
+        command = {
+          id: "undeclared",
+          executable: request.executable,
+          args: [],
+          mode: "capture",
+          timeoutSeconds: 60,
+        };
+        argv = request.argv;
+        names = [request.executable];
+      } else {
+        const parsed = requestSchema.safeParse(given);
+        if (!parsed.success) return refuse("invalid_request");
+        const request = parsed.data;
+        const declared = caller.manifest.processes?.commands.find(
+          (c) => c.id === request.command,
+        );
+        if (!declared) return refuse("undeclared");
+        command = declared;
+        commandId = command.id;
+        if (command.mode !== "capture") return refuse("not_yet");
+        if (request.stdin !== undefined && command.stdin !== "text")
+          return refuse("invalid_request");
+        const slots = command.args
+          .flatMap((a) => ("if" in a ? a.args : [a]))
+          .filter((a) => a.kind !== "literal")
+          .map((a) => a.name);
+        if (Object.keys(request.args).some((k) => !slots.includes(k)))
+          return refuse("invalid_request");
+
+        for (const group of command.args) {
+          if ("if" in group) {
+            if (!Object.hasOwn(request.args, group.if)) {
+              if (
+                group.args.some(
+                  (a) =>
+                    a.kind !== "literal" && Object.hasOwn(request.args, a.name),
+                )
+              )
+                refuse("invalid_request");
+              continue;
+            }
+            for (const arg of group.args)
+              argv.push(
+                await this.argument(arg, request.args, caller.projectId),
+              );
+          } else
+            argv.push(
+              await this.argument(group, request.args, caller.projectId),
+            );
+        }
+        stdin = request.stdin ?? "";
+        names =
+          caller.manifest.processes!.executables[command.executable]!.names;
       }
       if ((this.active.get(caller.pluginId) ?? 0) >= 4)
         return refuse("concurrency");
@@ -267,9 +408,7 @@ export class ProcessBroker implements ProcessBrokerPort {
       let executable = override;
       if (override && !path.isAbsolute(override))
         return refuse("spawn_refused");
-      for (const name of caller.manifest.processes!.executables[
-        command.executable
-      ]!.names) {
+      for (const name of names) {
         if (executable) break;
         executable = (await findExecutable(name, userPath)) ?? undefined;
       }
@@ -282,8 +421,20 @@ export class ProcessBroker implements ProcessBrokerPort {
       const plan = resolveSpawn(executable, argv, env);
       if ("refused" in plan) return refuse("spawn_refused");
       if (signal.aborted) return refuse("operation_ended");
+      if (cwdFolder) {
+        try {
+          cwd =
+            (await this.options.folders.resolve(cwdFolder, caller.projectId)) ??
+            refuse("folder_refused");
+        } catch {
+          refuse("folder_refused");
+        }
+      }
       const finalGate = await this.options.gate(caller);
-      if (finalGate) return refuse(finalGate);
+      if (finalGate) {
+        decidedBy = "gate";
+        return refuse(finalGate);
+      }
       if (signal.aborted) return refuse("operation_ended");
       const result = await new Promise<ProcessRunResult>((resolve, reject) => {
         const child = spawn(plan.command, plan.args, {
@@ -291,7 +442,7 @@ export class ProcessBroker implements ProcessBrokerPort {
           shell: false,
           windowsHide: true,
           detached: process.platform !== "win32",
-          cwd: osCwd(),
+          cwd,
         });
         const buffers: { stdout: Buffer[]; stderr: Buffer[] } = {
           stdout: [],
@@ -390,7 +541,7 @@ export class ProcessBroker implements ProcessBrokerPort {
             else buffers[stream].push(chunk);
           });
         child.stdin.on("error", () => undefined);
-        child.stdin.end(request.stdin ?? "");
+        child.stdin.end(stdin);
         child.once("error", () => {
           failure ??= new ProcessBrokerError("spawn_failed");
           drain();
@@ -415,6 +566,14 @@ export class ProcessBroker implements ProcessBrokerPort {
         error instanceof ProcessBrokerError ? error.reason : "spawn_failed";
       throw new ProcessBrokerError(reason);
     } finally {
+      // Audit even an early gate refusal without changing its result.
+      if (mode === undefined) {
+        try {
+          mode = (await this.options.policy?.(caller))?.mode ?? "always-ask";
+        } catch {
+          /* A failed audit lookup never changes a refusal. */
+        }
+      }
       if (reserved)
         this.active.set(
           caller.pluginId,
@@ -424,20 +583,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         plugin: { id: caller.pluginId },
         process: {
           command_id: commandId,
-          decided_by:
-            reason === "plugin_off" || reason === "needs_consent"
-              ? "gate"
-              : reason === "timeout"
-                ? "timeout"
-                : reason === "executable_missing"
-                  ? "missing_executable"
-                  : reason === "operation_ended"
-                    ? "cancelled"
-                    : reason === "spawn_failed"
-                      ? "spawn"
-                      : reason
-                        ? "policy"
-                        : "ok",
+          mode,
+          rule_id: ruleId,
+          decided_by: decidedBy,
         },
       });
       unit?.end(

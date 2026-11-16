@@ -305,6 +305,7 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
         if (
           !options.processRun ||
           (manifest &&
+            "command" in request &&
             !manifest.processes?.commands?.some(
               (command) => command.id === request.command,
             ))

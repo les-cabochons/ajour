@@ -1,3 +1,4 @@
+import { PluginCommandAccess } from "./plugin-command-access";
 import { PluginProcessAcceptance } from "./plugin-process-gates";
 import {
   RiArrowRightSLine as ChevronRight,
@@ -192,6 +193,12 @@ export function PluginAccessSection({
           gate={group.processGate}
           disabled={processDisabled}
           onChange={onProcessAcceptanceChange}
+        />
+      ) : null}
+      {group.processGate ? (
+        <PluginCommandAccess
+          key={`${group.plugin.id}:${group.plugin.version}:${group.processGate.packageKey}:${group.processGate.required}`}
+          pluginId={group.plugin.id}
         />
       ) : null}
       {listed ? (

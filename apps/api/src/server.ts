@@ -1,5 +1,12 @@
 import { Handoffs, HandoffRefused } from "./handoffs.ts";
 import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
+
+import { randomUUID as commandId } from "node:crypto";
+import {
+  commandModeSchema,
+  commandAnswerSchema,
+} from "../../../packages/shared/command-modes.ts";
+import { CommandAsks } from "./command-asks.ts";
 import { z } from "zod";
 import { ProcessBroker } from "./process-broker.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
@@ -1395,8 +1402,54 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       install: path.resolve(import.meta.dirname, "../.."),
     },
   );
+  const commandBridge = new McpBridge({
+    onDetach: () => commandAsks.disconnect(),
+    onAttach: () =>
+      commandBridge.publish("command-ask", commandAsks.snapshot()),
+  });
+  const commandAsks = new CommandAsks({
+    connected: () => commandBridge.connected,
+    publish: (ask) => commandBridge.publish("command-ask", ask),
+  });
+  const commandIdentity = (caller: import("./broker-port.ts").BrokerCaller) =>
+    JSON.stringify([
+      caller.manifest.version,
+      caller.packageKey,
+      caller.development === true,
+    ]);
   const processBroker = new ProcessBroker({
     folders: folderResolver,
+    policy: (caller) =>
+      storage.commandPolicy(
+        caller.pluginId,
+        commandIdentity(caller),
+        caller.development === true,
+      ),
+    ask: (ask, signal) => commandAsks.ask(ask, signal),
+    folderName: async (id) =>
+      (await storage.listRepositoryFolders()).find((f) => f.id === id)?.name,
+    remember: async (caller, command, approvedPolicy) => {
+      await storage.changeCommandPolicy(
+        caller.pluginId,
+        commandIdentity(caller),
+        caller.development === true,
+        (current) => {
+          if (
+            current.identity !== approvedPolicy.identity ||
+            current.signed !== approvedPolicy.signed
+          )
+            return current;
+          return {
+            ...current,
+            approvals: [
+              ...current.approvals.slice(-255),
+              { ...command, id: commandId() },
+            ],
+          };
+        },
+      );
+      commandBridge.publish("command-access", caller.pluginId);
+    },
     gate: (caller) => processConsentGate(storage, caller),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);
@@ -2391,6 +2444,87 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    commandBridge: async ({ response, origin, stream }) => {
+      if (!origin) {
+        writeJson(response, 403, { error: "The bridge needs an Origin." });
+        return;
+      }
+      stream();
+      commandBridge.attach(response);
+    },
+    commandAnswer: async ({ request, response }) => {
+      const payload = await readRequest(request, commandAnswerSchema);
+      writeJson(response, 200, {
+        answered: commandAsks.answer(payload.id, payload.answer),
+      });
+    },
+    commandAccessRead: async ({ params, response }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === pluginId,
+      );
+      if (!plugin || !isPluginApi4Manifest(plugin) || !plugin.processes) {
+        writeJson(response, 404, {
+          error: "Plugin with process access not found.",
+        });
+        return;
+      }
+      const identity = await pluginManager.processPackage(pluginId);
+      const policy = await storage.commandPolicy(
+        pluginId,
+        commandIdentity({
+          pluginId,
+          manifest: plugin,
+          method: "access",
+          ...identity,
+        }),
+        identity.development,
+      );
+      writeJson(response, 200, {
+        mode: policy.mode,
+        approvals: policy.approvals,
+      });
+    },
+    commandAccessUpdate: async ({ params, request, response }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const payload = await readRequest(
+        request,
+        z.union([
+          z.object({ mode: commandModeSchema }).strict(),
+          z.object({ remove: z.string() }).strict(),
+        ]),
+      );
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === pluginId,
+      );
+      if (!plugin || !isPluginApi4Manifest(plugin) || !plugin.processes) {
+        writeJson(response, 404, {
+          error: "Plugin with process access not found.",
+        });
+        return;
+      }
+      const identity = await pluginManager.processPackage(pluginId);
+      const next = await storage.changeCommandPolicy(
+        pluginId,
+        commandIdentity({
+          pluginId,
+          manifest: plugin,
+          method: "access",
+          ...identity,
+        }),
+        identity.development,
+        (policy) =>
+          "mode" in payload
+            ? { ...policy, mode: payload.mode }
+            : {
+                ...policy,
+                approvals: policy.approvals.filter(
+                  (a) => a.id !== payload.remove,
+                ),
+              },
+      );
+      writeJson(response, 200, { mode: next.mode, approvals: next.approvals });
+    },
     pluginProcessRead: async ({ response, params, unit }) => {
       unit.set({
         plugin: { id: readInput(() => pluginIdSchema.parse(params.pluginId)) },
@@ -4554,6 +4688,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    commandBridge.close();
     mcpBridge.close();
     clearInterval(stallTimer);
     agentSessions.close();

@@ -378,3 +378,19 @@ Prompts and settings are not stored in handoff records or events.
 ## License
 
 MIT
+
+### Undeclared commands
+
+A plugin with process access may request a command outside its declared commands:
+
+```ts
+const result = await ajour.process.run({
+  executable: "git",
+  argv: ["status", "--short"],
+  cwdFolder: folder.id,
+});
+```
+
+Use a bare executable name, never a path, shell or script host. Each argv element remains one text argument. NUL, CR and LF are refused; a leading dash is allowed. `cwdFolder` is a host-owned repository folder id. Without it the command runs at the system root, never Ajour's data or installation folder.
+
+The user's command mode controls undeclared commands after all process gates pass. Always ask requests permission. Auto runs unless review marks the command risky. Accept everything runs without asking. An ask holds the operation until Allow once, Always or Deny, and denies after two minutes or when no window is connected. Always remembers only the exact executable, arguments and folder id for this package. The Access tab lists and removes these approvals. Package or version changes, lost signatures and changed development directories invalidate them. No rule reviewer is installed by this feature.

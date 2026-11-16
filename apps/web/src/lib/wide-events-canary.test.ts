@@ -857,7 +857,7 @@ describe("the privacy canary", () => {
           outcome: "ok",
           process: expect.objectContaining({
             command_id: "echo",
-            decided_by: "ok",
+            decided_by: "gate",
           }),
         }),
       ]),

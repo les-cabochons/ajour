@@ -189,7 +189,7 @@ API and shows the same refusal reason as the broker. Declared schemes must use
 this gate when scheme opening is implemented.
 
 `ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
-one runtime operation access to declared `capture` commands. The runtime supplies
+one runtime operation access to declared and undeclared `capture` commands. The runtime supplies
 the plugin id and manifest. The host closes this access when the operation ends,
 including cancellation and timeout. `ajour.open` reports that opening links is not yet supported.
 The SDK's `ajour.process.run` follows the
@@ -207,15 +207,16 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable and start at the filesystem root, never Ajour's
-working directory.
+inherit no `AJOUR_` variable. Undeclared commands use the resolved `cwdFolder`
+when supplied. Otherwise children start at the filesystem root, never Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
 calls may run concurrently per plugin across operations. Timeout, excess output
 and operation completion stop the owned process tree with Windows taskkill or a
 POSIX process group. The broker checks activation and consent before starting;
-the unsigned process gates above also apply. #716 supplies command modes. Undeclared commands are refused. Detached and terminal commands report
+the unsigned process gates above also apply. Undeclared commands follow the
+command modes below. Detached and terminal commands report
 that they are not yet supported, pending #718.
 
 `GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
@@ -1154,3 +1155,11 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+### Undeclared command modes
+
+`command-review.ts` owns the decision table and the `CommandReview` port. Its only implementation returns no verdict. Rules arrive in #717. Undeclared `process.run` accepts a bare executable name and an argv list. Text arguments reject NUL, CR and LF but allow a leading dash. The broker resolves `cwdFolder` through the repository folder resolver and rechecks gates immediately before spawn.
+
+The API state keeps the user's mode and exact remembered approvals per plugin. Signed plugins default to Auto; unsigned and development plugins default to Always ask. Losing a signature resets the mode to Always ask. Version, package identity, signature loss and development-directory changes invalidate approvals. Only window-token routes change the user's mode or remove approvals. Plugin operations cannot call those routes.
+
+`command-asks.ts` holds at most 64 requests and shows one at a time over `/api/process/bridge`, an SSE stream independent of MCP. The visible ask expires after two minutes. Disconnection or no window denies it. Operation cancellation removes it. The operation lifetime pauses its execution timeout while a command waits for its answer, including queue time. A reply never bypasses a subsequent gate refusal. The window posts answers through `/api/process/answer` with its window token. Events hold mode and `decided_by`, never command text.

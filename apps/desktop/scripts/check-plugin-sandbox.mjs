@@ -304,6 +304,11 @@ async function checkSandbox() {
     "the real worker runs a declared process, refuses an undeclared one, and records both",
   );
 
+  expect(
+    findings["command-ask"]?.denied === 1,
+    "the real worker holds an undeclared command, shows the exact ask and honours Deny",
+  );
+
   const where = findings.where?.outcome?.result ?? {};
   expect(
     where.origin === "ajour-plugin://fixture-tracker" &&

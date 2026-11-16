@@ -1,5 +1,5 @@
 import os from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InvalidPluginResultError } from "./event-errors.ts";
 import { PluginOperationLifetime } from "./plugin-operation-lifetime.ts";
 import type {
@@ -29,7 +29,10 @@ describe("plugin operation lifetime", () => {
   afterEach(async () => {
     await Promise.all(lifetimes.splice(0).map((host) => host.shutdown()));
   });
-  function setup(timeout = 1000) {
+  function setup(
+    timeout = 1000,
+    processBroker?: import("./broker-port.ts").OperationProcessBroker,
+  ) {
     const runs: {
       complete: (outcome: PluginRunOutcome) => void;
       terminated: string[];
@@ -58,11 +61,38 @@ describe("plugin operation lifetime", () => {
     lifetimes.push(host);
     const run = (id = "test") =>
       host.run(id, "sync", async () => ({
-        invocation: { ...invocation, pluginId: id },
+        invocation: { ...invocation, pluginId: id, processBroker },
         parse: (value: unknown) => value,
       }));
     return { host, runs, run };
   }
+  it("Given an ask, the execution timeout waits for the answer and resumes its remaining budget", async () => {
+    vi.useFakeTimers();
+    try {
+      let waiting: ((value: boolean) => void) | undefined;
+      const processBroker: import("./broker-port.ts").OperationProcessBroker = {
+        run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        close: () => {},
+        onWaiting: (listener) => {
+          waiting = listener;
+        },
+      };
+      const { run, runs } = setup(30000, processBroker);
+      const pending = run().catch((error) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(waiting).toBeTypeOf("function");
+      waiting!(true);
+      await vi.advanceTimersByTimeAsync(120000);
+      expect(runs[0]!.terminated).toEqual([]);
+      waiting!(false);
+      await vi.advanceTimersByTimeAsync(28999);
+      expect(runs[0]!.terminated).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toMatchObject({ reason: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("reserves four calls per plugin during discovery and releases them on shutdown", async () => {
     const { host } = setup();
     const ready = deferred<void>();

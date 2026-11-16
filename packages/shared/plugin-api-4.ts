@@ -576,7 +576,7 @@ const refusedExecutables = new Set(
   ),
 );
 
-const executableNameSchema = z
+export const executableNameSchema = z
   .string()
   .min(1)
   .max(100)

@@ -101,11 +101,13 @@ export interface AjourProcessError extends Error {
   name: "AjourProcessError";
   code: string;
 }
-export interface AjourProcessRequest {
-  command: string;
-  args: Readonly<Record<string, string | number>>;
-  stdin?: string;
-}
+export type AjourProcessRequest =
+  | { executable: string; argv: readonly string[]; cwdFolder?: string }
+  | {
+      command: string;
+      args: Readonly<Record<string, string | number>>;
+      stdin?: string;
+    };
 export interface AjourProcessResult {
   exitCode: number | null;
   stdout: string;

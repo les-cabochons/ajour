@@ -449,3 +449,19 @@ it("Given a process fixture and manifest without the command, refuses", async ()
     fake.process.run({ command: "undeclared", args: {} }),
   ).rejects.toMatchObject({ code: "undeclared" });
 });
+
+it("Given an undeclared process fixture, passes every argument and folder id unchanged", async () => {
+  const fake = createFakeAjour({
+    processRun: async (request) => ({
+      exitCode: 0,
+      stdout: JSON.stringify(request),
+      stderr: "",
+    }),
+  });
+  const request = {
+    executable: "git",
+    argv: ["--message", "a  b & c"],
+    cwdFolder: "repository",
+  };
+  expect(JSON.parse((await fake.process.run(request)).stdout)).toEqual(request);
+});
