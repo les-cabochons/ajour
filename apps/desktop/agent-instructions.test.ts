@@ -22,10 +22,13 @@ afterEach(async () => {
   for (const home of homes.splice(0))
     await rm(home, { recursive: true, force: true });
 });
-async function fixture() {
+async function fixture(env: NodeJS.ProcessEnv = {}) {
   const home = await mkdtemp(path.join(os.tmpdir(), "ajour-instructions-"));
   homes.push(home);
-  return { home, controller: createInstructionController({ home, editor }) };
+  return {
+    home,
+    controller: createInstructionController({ home, editor, env }),
+  };
 }
 it("previews without writing, then creates a known file", async () => {
   const { home, controller } = await fixture();
@@ -34,7 +37,7 @@ it("previews without writing, then creates a known file", async () => {
   await expect(readFile(path.join(home, ".codex/AGENTS.md"))).rejects.toThrow();
   await controller.apply("codex", preview.token);
   expect(await readFile(path.join(home, ".codex/AGENTS.md"), "utf8")).toBe(
-    editor.THREAD_NAMING_BLOCK,
+    "<!-- ajour:padding=0 -->\n" + editor.THREAD_NAMING_BLOCK + "\n",
   );
   await expect(controller.preview("../secret", "add")).rejects.toThrow(
     /Unknown/,
@@ -50,8 +53,9 @@ it("preserves UTF-16 BOM and CRLF and refuses stale previews", async () => {
   await controller.apply("claude", preview.token);
   expect(await readFile(file)).toEqual(
     Buffer.from(
-      "\uFEFFUser rules\r\n" +
-        editor.THREAD_NAMING_BLOCK.replace(/\n/g, "\r\n"),
+      "\uFEFFUser rules\r\n<!-- ajour:padding=0 -->\r\n" +
+        editor.THREAD_NAMING_BLOCK.replace(/\n/g, "\r\n") +
+        "\r\n",
       "utf16le",
     ),
   );
@@ -188,4 +192,137 @@ it("refuses UTF-32 and invalid Unicode without changing the file", async () => {
     await expect(controller.preview("codex", "add")).rejects.toThrow();
     expect(await readFile(file)).toEqual(bytes);
   }
+});
+
+it("uses a non-empty Codex override for status, preview and writes", async () => {
+  const { home, controller } = await fixture();
+  await mkdir(path.join(home, ".codex"));
+  const base = path.join(home, ".codex/AGENTS.md");
+  const override = path.join(home, ".codex/AGENTS.override.md");
+  await writeFile(base, "Base rules");
+  await writeFile(override, "Override rules");
+  expect((await controller.list())[0]).toMatchObject({
+    path: override,
+    status: "no block",
+  });
+  const preview = await controller.preview("codex", "add");
+  expect(preview.before).toBe("Override rules");
+  await controller.apply("codex", preview.token);
+  expect(await readFile(base, "utf8")).toBe("Base rules");
+  expect(await readFile(override, "utf8")).toContain(
+    editor.THREAD_NAMING_BLOCK,
+  );
+  await writeFile(override, "");
+  expect((await controller.list())[0].path).toBe(base);
+});
+
+it("resolves location variables and Gemini's context filename without changing settings", async () => {
+  const { home } = await fixture();
+  const env = {
+    CODEX_HOME: path.join(home, "codex"),
+    CLAUDE_CONFIG_DIR: path.join(home, "claude"),
+    GEMINI_CLI_HOME: path.join(home, "gemini"),
+    OPENCODE_CONFIG_DIR: path.join(home, "open"),
+    XDG_CONFIG_HOME: path.join(home, "xdg"),
+    COPILOT_HOME: path.join(home, "copilot"),
+  };
+  const controller = createInstructionController({ home, env, editor });
+  const settings = path.join(env.GEMINI_CLI_HOME, ".gemini/settings.json");
+  await mkdir(path.dirname(settings), { recursive: true });
+  const json = '{"context":{"fileName":"RULES.md"}}';
+  await writeFile(settings, json);
+  for (const [id, file] of Object.entries({
+    codex: path.join(env.CODEX_HOME, "AGENTS.md"),
+    claude: path.join(env.CLAUDE_CONFIG_DIR, "CLAUDE.md"),
+    gemini: path.join(env.GEMINI_CLI_HOME, ".gemini/RULES.md"),
+    opencode: path.join(env.OPENCODE_CONFIG_DIR, "AGENTS.md"),
+    copilot: path.join(env.COPILOT_HOME, "copilot-instructions.md"),
+  })) {
+    expect(
+      (await controller.list()).find(
+        (row: editor.InstructionFileState) => row.id === id,
+      )?.path,
+    ).toBe(file);
+    const preview = await controller.preview(id, "add");
+    await controller.apply(id, preview.token);
+    expect(await readFile(file, "utf8")).toContain(editor.THREAD_NAMING_BLOCK);
+  }
+  expect(await readFile(settings, "utf8")).toBe(json);
+  delete (env as Partial<typeof env>).OPENCODE_CONFIG_DIR;
+  expect(
+    (await controller.list()).find(
+      (row: editor.InstructionFileState) => row.id === "opencode",
+    ).path,
+  ).toBe(path.join(env.XDG_CONFIG_HOME, "opencode/AGENTS.md"));
+  await writeFile(settings, "{broken");
+  expect(
+    (await controller.list()).find(
+      (row: editor.InstructionFileState) => row.id === "gemini",
+    ).error,
+  ).toMatch(/settings.json/);
+  await expect(controller.preview("gemini", "add")).rejects.toThrow(
+    /settings.json/,
+  );
+});
+
+it("warns that creating OpenCode instructions replaces its Claude fallback", async () => {
+  const { home, controller } = await fixture();
+  await mkdir(path.join(home, ".claude"));
+  const claude = path.join(home, ".claude/CLAUDE.md");
+  await writeFile(claude, editor.THREAD_NAMING_BLOCK);
+  const row = (await controller.list()).find(
+    (row: editor.InstructionFileState) => row.id === "opencode",
+  );
+  expect(row.notice).toMatch(/already covers OpenCode/);
+  const preview = await controller.preview("opencode", "add");
+  expect(preview.notice).toMatch(/stop reading/);
+  await controller.apply("opencode", preview.token);
+  expect(
+    (await controller.list()).find(
+      (row: editor.InstructionFileState) => row.id === "opencode",
+    ).notice,
+  ).toBeUndefined();
+  expect(await readFile(claude, "utf8")).toBe(editor.THREAD_NAMING_BLOCK);
+});
+it("lists read-only files and refuses access-denied or foreign-owned replacements", async () => {
+  const { home } = await fixture();
+  await mkdir(path.join(home, ".codex"));
+  const file = path.join(home, ".codex/AGENTS.md");
+  await writeFile(file, "Rules");
+  const fs = await import("node:fs/promises");
+  for (const options of [
+    {
+      io: {
+        ...fs,
+        access: async () => {
+          throw new Error("denied");
+        },
+      },
+    },
+    { userId: 987654 },
+  ]) {
+    const controller = createInstructionController({
+      home,
+      editor,
+      env: {},
+      ...options,
+    });
+    expect((await controller.list())[0].readOnly).toBe(true);
+    await expect(controller.preview("codex", "add")).rejects.toThrow(
+      /read-only/i,
+    );
+    expect(await readFile(file, "utf8")).toBe("Rules");
+  }
+});
+
+it("refuses a preview if Codex switches to an override before confirmation", async () => {
+  const { home, controller } = await fixture();
+  const preview = await controller.preview("codex", "add");
+  await mkdir(path.join(home, ".codex"));
+  const override = path.join(home, ".codex/AGENTS.override.md");
+  await writeFile(override, "New override");
+  await expect(controller.apply("codex", preview.token)).rejects.toThrow(
+    /preview/,
+  );
+  expect(await readFile(override, "utf8")).toBe("New override");
 });

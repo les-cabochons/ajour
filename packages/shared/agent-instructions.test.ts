@@ -9,7 +9,9 @@ import {
 
 it("adds the exact block to a missing file", () => {
   expect(instructionStatus(null)).toBe("missing file");
-  expect(editInstructions(null, "add")).toBe(THREAD_NAMING_BLOCK);
+  expect(editInstructions(null, "add")).toBe(
+    "<!-- ajour:padding=0 -->\n" + THREAD_NAMING_BLOCK + "\n",
+  );
 });
 
 it.each(["\n", "\r\n"])(
@@ -27,7 +29,11 @@ it.each(["\n", "\r\n"])(
     expect(editInstructions(updated, "remove")).toBe(before + after);
     expect(instructionStatus(before)).toBe("no block");
     expect(editInstructions(before, "add")).toBe(
-      before + THREAD_NAMING_BLOCK.replace(/\n/g, eol),
+      before +
+        "<!-- ajour:padding=0 -->" +
+        eol +
+        THREAD_NAMING_BLOCK.replace(/\n/g, eol) +
+        eol,
     );
   },
 );
@@ -43,3 +49,23 @@ it.each([
   expect(() => instructionStatus(text)).toThrow(/marker/i);
   expect(() => editInstructions(text, "remove")).toThrow(/marker/i);
 });
+
+it.each([
+  "",
+  "Rules",
+  "Rules\n",
+  "Rules\n\n",
+  "\uFEFF",
+  "Rules\r\n",
+  "Rules  ",
+])(
+  "Add ends with EOL and Remove restores %j exactly, including in the middle",
+  (source) => {
+    const added = editInstructions(source, "add");
+    expect(added.endsWith("\n")).toBe(true);
+    expect(editInstructions(added, "remove")).toBe(source);
+    expect(editInstructions(added + "Footer\n", "remove")).toBe(
+      source + "Footer\n",
+    );
+  },
+);

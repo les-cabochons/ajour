@@ -17,6 +17,15 @@ import {
  * page, next to the connection settings of other plugins.
  */
 export function SettingsAgentsPage() {
+  return (
+    <div className="settings-sections settings-measure">
+      <AgentInstructionsSetting />
+      <AgentRunnerSetting />
+    </div>
+  );
+}
+
+function AgentRunnerSetting() {
   const state = useAgentRunner();
   const [error, setError] = useState<string | null>(null);
 
@@ -35,25 +44,9 @@ export function SettingsAgentsPage() {
     }
   };
 
-  if (state.kind === "loading") return <AgentInstructionsSetting />;
-  if (state.kind === "unavailable") {
-    return (
-      <>
-        <p className="settings-section-desc">
-          Agents need the Ajour desktop app.
-        </p>
-        <AgentInstructionsSetting />
-      </>
-    );
-  }
-  if (state.kind === "error") {
-    return (
-      <>
-        <p className="text-sm text-destructive">{state.message}</p>
-        <AgentInstructionsSetting />
-      </>
-    );
-  }
+  if (state.kind === "loading" || state.kind === "unavailable") return null;
+  if (state.kind === "error")
+    return <p className="text-sm text-destructive">{state.message}</p>;
   const { settings, clis } = state.overview;
   const cliOptions = clis
     .filter((cli) => cli.supported)
@@ -70,7 +63,7 @@ export function SettingsAgentsPage() {
   const showInstallHint = noneInstalled || selectedCli?.installed === false;
 
   return (
-    <div className="settings-sections settings-measure">
+    <>
       <section className="settings-section">
         <h2 className="settings-section-title">Agent</h2>
         <p className="settings-section-desc">
@@ -194,8 +187,7 @@ export function SettingsAgentsPage() {
         </AppPanel>
       </section>
 
-      <AgentInstructionsSetting />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
+    </>
   );
 }

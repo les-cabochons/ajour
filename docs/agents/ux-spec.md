@@ -1103,15 +1103,23 @@ Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/68
 
 When a CLI version probe is refused, Settings > Agents shows the selected CLI's plain-English refusal reason beside the Agent control.
 
-Settings > Agents > Agent instructions lists the global Codex, OpenCode, Claude Code
-and Gemini CLI instruction files. Each shows its resolved path and Missing file,
+Settings > Agents > Agent instructions lists the global Codex, OpenCode, Claude Code,
+Gemini CLI and Copilot CLI instruction files. Each shows its resolved path and Missing file,
 No block, Block current or Block outdated. Add, Update and Remove open a centered
 dialog with a text diff. Only Confirm writes the change. Cancel writes nothing.
 Errors, including read-only files and malformed or duplicate markers, remain
 visible. A changed file requires a fresh preview. The managed thread-naming block
 asks agents to include the ticket number in their title. Other text, line endings
 and encoding stay intact. Missing folders and files are created on confirmation.
-Copilot CLI offers Copy until its global file is verified. The web build says
+Codex uses its non-empty override file when present. Resolved paths follow the
+agents' location environment variables. Gemini uses the configured context
+filename, or refuses malformed settings. Read-only files show Read-only without
+write actions. When OpenCode would fall back to Claude Code rules, Add warns that
+creating the OpenCode file stops reading them. The row says when those rules
+already cover OpenCode. Add supplies a final newline, and Remove removes only
+its own padding. A successful write closes the dialog even if the list refresh
+fails, with that error shown in the section. Agent instructions stay in place
+while the runner loads. The web build shows one notice,
 "Agent instructions need the Ajour desktop app."
 
 Decided in [Settings and Sync review under the new conventions](https://github.com/les-cabochons/ajour/issues/27).

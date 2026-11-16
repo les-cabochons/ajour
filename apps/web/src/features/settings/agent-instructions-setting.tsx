@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   INSTRUCTION_FILES,
-  THREAD_NAMING_BLOCK,
   type InstructionAction,
   type InstructionFileState,
   type InstructionPreview,
@@ -55,7 +54,6 @@ export function AgentInstructionsSetting() {
   const [files, setFiles] = useState<InstructionFileState[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [review, setReview] = useState<{
     file: InstructionFileState;
     action: InstructionAction;
@@ -128,13 +126,22 @@ export function AgentInstructionsSetting() {
                     <>
                       <span className="break-all">{file.path}</span>
                       <span className="block" role="status">
-                        {file.error ?? file.status}
+                        {file.error ??
+                          (file.readOnly
+                            ? "Read-only"
+                            : file.status
+                              ? file.status[0]!.toUpperCase() +
+                                file.status.slice(1)
+                              : "")}
                       </span>
+                      {file.notice && (
+                        <span className="block">{file.notice}</span>
+                      )}
                     </>
                   }
                   stacked
                 >
-                  {!file.error && (
+                  {!file.error && !file.readOnly && (
                     <div className="flex flex-wrap gap-2">
                       {(file.status === "missing file" ||
                         file.status === "no block") && (
@@ -176,24 +183,6 @@ export function AgentInstructionsSetting() {
                 </SettingRow>
               );
             })}
-            <SettingRow
-              label="Copilot CLI"
-              description="Copy the block into your instructions. Ajour has not verified a global file for Copilot CLI."
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    await navigator.clipboard.writeText(THREAD_NAMING_BLOCK);
-                    setCopied(true);
-                  })
-                }
-              >
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </SettingRow>
           </AppPanel>
         </>
       )}
@@ -216,6 +205,9 @@ export function AgentInstructionsSetting() {
           <DialogDescription className="break-all">
             {review?.file.path}
           </DialogDescription>
+          {review?.preview.notice && (
+            <p className="text-sm">{review.preview.notice}</p>
+          )}
           <pre
             aria-label="Proposed diff"
             className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs break-words whitespace-pre-wrap"
@@ -247,8 +239,8 @@ export function AgentInstructionsSetting() {
                     review.file.id,
                     review.preview.token,
                   );
-                  setFiles(await desktop!.listAgentInstructions!());
                   setReview(null);
+                  setFiles(await desktop!.listAgentInstructions!());
                 })
               }
             >

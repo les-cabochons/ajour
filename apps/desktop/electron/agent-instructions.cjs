@@ -1,4 +1,5 @@
 const fs = require("node:fs/promises");
+const { constants } = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 
@@ -41,7 +42,13 @@ function decode(bytes) {
 }
 
 /** All paths come from the fixed catalog. Tests inject a disposable home. */
-function createInstructionController({ home, editor }) {
+function createInstructionController({
+  home,
+  editor,
+  env = process.env,
+  io = fs,
+  userId = process.getuid?.(),
+}) {
   const pending = new Map();
   let writing = Promise.resolve();
   const load = async () =>
@@ -50,39 +57,128 @@ function createInstructionController({ home, editor }) {
     const module = await load();
     const file = module.INSTRUCTION_FILES.find((entry) => entry.id === id);
     if (!file) throw new Error("Unknown agent instruction file.");
-    return { module, file: path.join(home, file.path) };
+    let resolved = path.join(home, file.path);
+    try {
+      if (id === "codex") {
+        const root = env.CODEX_HOME || path.join(home, ".codex");
+        resolved = path.join(root, "AGENTS.md");
+        const override = path.join(root, "AGENTS.override.md");
+        if (decode((await read(override)).bytes).text?.trim())
+          resolved = override;
+      }
+      if (id === "claude")
+        resolved = path.join(
+          env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"),
+          "CLAUDE.md",
+        );
+      if (id === "opencode")
+        resolved = path.join(
+          env.OPENCODE_CONFIG_DIR ||
+            path.join(
+              env.XDG_CONFIG_HOME || path.join(home, ".config"),
+              "opencode",
+            ),
+          "AGENTS.md",
+        );
+      if (id === "copilot")
+        resolved = path.join(
+          env.COPILOT_HOME || path.join(home, ".copilot"),
+          "copilot-instructions.md",
+        );
+      if (id === "gemini") {
+        const root = path.join(env.GEMINI_CLI_HOME || home, ".gemini");
+        resolved = path.join(root, "GEMINI.md");
+        const settings = await read(path.join(root, "settings.json"));
+        if (settings.bytes !== null) {
+          let name;
+          try {
+            name = JSON.parse(decode(settings.bytes).text)?.context?.fileName;
+          } catch {
+            throw new Error(
+              "Cannot parse Gemini settings.json. No changes made.",
+            );
+          }
+          if (name !== undefined) {
+            // Multiple context names have no single write target.
+            if (Array.isArray(name) && name.length === 1) name = name[0];
+            if (
+              typeof name !== "string" ||
+              !name ||
+              name === "." ||
+              name === ".." ||
+              /[\\/:]/.test(name)
+            )
+              throw new Error(
+                "Gemini settings.json must select one context filename. No changes made.",
+              );
+            resolved = path.join(root, name);
+          }
+        }
+      }
+    } catch (error) {
+      error.instructionPath = resolved;
+      throw error;
+    }
+    return { module, file: resolved };
   }
   async function read(file) {
     try {
-      const info = await fs.lstat(file);
+      const info = await io.lstat(file);
       if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1)
         throw new Error(
           "Instruction file must be a regular file, without links.",
         );
       if (info.size > 1024 * 1024)
         throw new Error("Instruction file exceeds 1 MB. No changes made.");
-      return { bytes: await fs.readFile(file), mode: info.mode };
+      let readOnly =
+        !(info.mode & 0o222) || (userId !== undefined && info.uid !== userId);
+      try {
+        await io.access(file, constants.W_OK);
+      } catch {
+        readOnly = true;
+      }
+      return { bytes: await io.readFile(file), mode: info.mode, readOnly };
     } catch (error) {
       if (error.code === "ENOENT") return { bytes: null, mode: 0o600 };
       throw error;
     }
+  }
+  async function fallbackNotice(id, bytes) {
+    if (id !== "opencode" || bytes !== null) return undefined;
+    // OpenCode V1's compatibility fallback is the fixed ~/.claude path.
+    const fallback = path.join(home, ".claude/CLAUDE.md");
+    const source = decode((await read(fallback)).bytes).text;
+    if (source === null) return undefined;
+    let covered = false;
+    try {
+      covered = ["block current", "block outdated"].includes(
+        (await load()).instructionStatus(source),
+      );
+    } catch {}
+    return `${covered ? "The Claude Code file already covers OpenCode. " : ""}Creating this file makes OpenCode V1 stop reading your Claude Code rules in ${fallback}.`;
   }
   return {
     async list() {
       const module = await load();
       return Promise.all(
         module.INSTRUCTION_FILES.map(async (entry) => {
-          const { file } = await target(entry.id);
+          let file = path.join(home, entry.path);
           try {
+            ({ file } = await target(entry.id));
+            const current = await read(file);
             return {
               id: entry.id,
+              readOnly: current.readOnly ?? false,
+              notice: await fallbackNotice(entry.id, current.bytes),
               path: file,
-              status: module.instructionStatus(
-                decode((await read(file)).bytes).text,
-              ),
+              status: module.instructionStatus(decode(current.bytes).text),
             };
           } catch (error) {
-            return { id: entry.id, path: file, error: error.message };
+            return {
+              id: entry.id,
+              path: error.instructionPath ?? file,
+              error: error.message,
+            };
           }
         }),
       );
@@ -91,18 +187,25 @@ function createInstructionController({ home, editor }) {
       const { module, file } = await target(id);
       if (!["add", "update", "remove"].includes(action))
         throw new Error("Unknown instruction action.");
-      const { bytes } = await read(file);
+      const { bytes, readOnly } = await read(file);
+      if (readOnly)
+        throw new Error("The instruction file is read-only. No changes made.");
       const decoded = decode(bytes);
       const after = module.editInstructions(decoded.text, action);
       const token = randomUUID();
-      pending.set(id, { token, bytes, next: decoded.encode(after) });
-      return { token, before: decoded.text ?? "", after };
+      pending.set(id, { token, file, bytes, next: decoded.encode(after) });
+      return {
+        token,
+        before: decoded.text ?? "",
+        after,
+        notice: await fallbackNotice(id, bytes),
+      };
     },
     async apply(id, token) {
       const run = async () => {
         const { file } = await target(id);
         const preview = pending.get(id);
-        if (!preview || preview.token !== token)
+        if (!preview || preview.token !== token || preview.file !== file)
           throw new Error("Reopen the preview before saving.");
         const current = await read(file);
         if (
@@ -113,14 +216,14 @@ function createInstructionController({ home, editor }) {
           throw new Error(
             "The file changed. Reopen the preview before saving.",
           );
-        if (current.bytes && !(current.mode & 0o222))
+        if (current.readOnly)
           throw new Error(
             "The instruction file is read-only. No changes made.",
           );
-        await fs.mkdir(path.dirname(file), { recursive: true });
+        await io.mkdir(path.dirname(file), { recursive: true });
         const temporary = `${file}.${randomUUID()}.tmp`;
         try {
-          await fs.writeFile(temporary, preview.next, {
+          await io.writeFile(temporary, preview.next, {
             flag: "wx",
             mode: current.mode & 0o777,
           });
@@ -134,10 +237,14 @@ function createInstructionController({ home, editor }) {
             throw new Error(
               "The file changed. Reopen the preview before saving.",
             );
-          await fs.rename(temporary, file);
+          if (latest.readOnly)
+            throw new Error(
+              "The instruction file is read-only. No changes made.",
+            );
+          await io.rename(temporary, file);
           pending.delete(id);
         } finally {
-          await fs.rm(temporary, { force: true });
+          await io.rm(temporary, { force: true });
         }
       };
       const result = writing.then(run);

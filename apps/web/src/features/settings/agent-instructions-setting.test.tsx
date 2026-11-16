@@ -46,7 +46,7 @@ it("shows a diff before writing and keeps a write error visible", async () => {
   );
 });
 
-it("updates and removes after confirmation, cancels without writing and copies for Copilot", async () => {
+it("updates and removes after confirmation, cancels without writing", async () => {
   let status = "block outdated";
   const apply = vi.fn(async () => {
     status = status === "block outdated" ? "block current" : "no block";
@@ -54,11 +54,6 @@ it("updates and removes after confirmation, cancels without writing and copies f
   const preview = vi
     .fn()
     .mockResolvedValue({ token: "reviewed", before: "old", after: "new" });
-  const copy = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText: copy },
-  });
   window.ajourDesktop = {
     listAgentInstructions: vi.fn(async () => [
       {
@@ -80,7 +75,7 @@ it("updates and removes after confirmation, cancels without writing and copies f
   fireEvent.click(
     await screen.findByRole("button", { name: "Confirm Update" }),
   );
-  await screen.findByText("block current");
+  await screen.findByText("Block current");
   expect(preview).toHaveBeenLastCalledWith("claude", "update");
   fireEvent.click(
     screen.getByRole("button", { name: "Remove from Claude Code" }),
@@ -88,9 +83,58 @@ it("updates and removes after confirmation, cancels without writing and copies f
   fireEvent.click(
     await screen.findByRole("button", { name: "Confirm Remove" }),
   );
-  await screen.findByText("no block");
+  await screen.findByText("No block");
   expect(apply).toHaveBeenCalledTimes(2);
-  fireEvent.click(screen.getByRole("button", { name: "Copy" }));
-  await waitFor(() => expect(copy).toHaveBeenCalledOnce());
-  expect(copy.mock.calls[0]?.[0]).toContain("<!-- ajour:thread-naming -->");
+});
+
+it("closes a successful write even when refresh fails, showing the section error", async () => {
+  window.ajourDesktop = {
+    listAgentInstructions: vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "opencode",
+          path: "/fake/AGENTS.md",
+          status: "missing file",
+          notice: "The Claude Code file already covers OpenCode.",
+        },
+      ])
+      .mockRejectedValueOnce(new Error("Refresh failed")),
+    previewAgentInstructions: vi.fn().mockResolvedValue({
+      token: "preview",
+      before: "",
+      after: "block",
+      notice:
+        "Creating this file makes OpenCode stop reading your Claude Code rules.",
+    }),
+    applyAgentInstructions: vi.fn().mockResolvedValue(undefined),
+  };
+  await renderRoutes({ routes: { "/": AgentInstructionsSetting } });
+  expect(await screen.findByText("Missing file")).toBeTruthy();
+  expect(screen.getByText(/already covers OpenCode/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Add to OpenCode" }));
+  expect(await screen.findByText(/stop reading/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm Add" }));
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "Refresh failed",
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("shows Read-only without offering writes", async () => {
+  window.ajourDesktop = {
+    listAgentInstructions: vi.fn().mockResolvedValue([
+      {
+        id: "codex",
+        path: "/fake/AGENTS.md",
+        status: "no block",
+        readOnly: true,
+      },
+    ]),
+    previewAgentInstructions: vi.fn(),
+    applyAgentInstructions: vi.fn(),
+  };
+  await renderRoutes({ routes: { "/": AgentInstructionsSetting } });
+  expect(await screen.findByText("Read-only")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add to Codex" })).toBeNull();
 });
