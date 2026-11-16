@@ -882,6 +882,9 @@ channel to read the event each emits.
 | `agent_client.create`                | command, request                   | route, client call                               |
 | `agent_client.revoke`                | command, request                   | route, client call                               |
 | `agent_comment.send`                 | job                                | renderer                                         |
+| `agent_instructions.apply`           | ipc                                | IPC channel                                      |
+| `agent_instructions.list`            | ipc                                | IPC channel                                      |
+| `agent_instructions.preview`         | ipc                                | IPC channel                                      |
 | `agent_run.start`                    | command, request                   | route, client call                               |
 | `agent_run.status`                   | request                            | route                                            |
 | `agent_run.stop`                     | command, request                   | route, client call                               |

@@ -2,6 +2,45 @@
 
 Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep architectural changes aligned with the privacy boundary in `docs/local-first-architecture.md`.
 
+## Global agent instructions
+
+`packages/shared/agent-instructions.ts` owns the fixed file ids, exact thread-naming
+block and deterministic status and edit rules. Desktop main loads it from the
+same internal runtime directory as the API. `electron/agent-instructions.cjs`
+owns file I/O, with an injected home and environment for tests. It supports UTF-8 with or without
+a BOM and BOM-marked UTF-16 LE/BE, and refuses unsupported encodings. Writes use
+an exclusive temporary file beside the target and an atomic rename, preserving
+the existing mode. Duplicate or broken markers and linked files are refused.
+The user text outside the managed span stays unchanged. Add ends with a newline. An adjacent `ajour:padding` HTML comment records whether
+Add supplied a preceding newline. Remove deletes that comment and only the padding
+Add introduced, including when the block has a user footer. Older blocks without
+this comment retain their surrounding whitespace.
+
+The restricted preload exposes list, preview and apply IPC calls. Main's shared
+IPC wrapper checks the window session; each handler also checks the active
+window. Requests contain a known file id, an action or an opaque preview token,
+never a renderer-selected path or replacement text. Main retains previews and
+compares the current bytes before replacing the file. Applies run serially.
+Events record IPC metadata only, never instruction contents or paths.
+
+The catalog resolves `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`,
+`OPENCODE_CONFIG_DIR`, `XDG_CONFIG_HOME` and `COPILOT_HOME` from main's environment.
+Gemini appends `.gemini` to its replacement home and reads `context.fileName` from
+its user settings without writing them. Malformed settings or multiple context
+filenames refuse editing with a message. Codex uses a non-empty
+`AGENTS.override.md` before `AGENTS.md`. OpenCode V1 falls back to
+`~/.claude/CLAUDE.md` only while its own global file is absent, so Add warns that
+creating its file stops reading those Claude Code rules. The list names that
+fallback when it already holds the block. Files must pass `access(W_OK)` and,
+on POSIX, belong to the current user. Read-only files remain visible without actions.
+Main retains the resolved preview path and refuses confirmation if the target changes.
+It does not edit managed policy files. Path references checked on
+2026-11-16: [Codex](https://learn.chatgpt.com/docs/agent-configuration/agents-md),
+[OpenCode](https://opencode.ai/docs/instructions),
+[Claude Code](https://code.claude.com/docs/en/memory),
+[Gemini CLI](https://geminicli.com/docs/reference/configuration/), and
+[Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions).
+
 ## Runtime Surfaces
 
 - `apps/web`: React 19 + Vite renderer. This is the main product UI for timers, time entries, backlog, projects, settings, and local import review.
