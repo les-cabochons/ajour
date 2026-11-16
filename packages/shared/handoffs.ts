@@ -6,6 +6,21 @@ import {
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(20_000);
+
+/** Whether a link is an https URL, the only kind a pull request may have. */
+export function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+const pullRequestSchema = z
+  .object({
+    url: z.string().max(2000),
+    title: z.string().max(500).optional(),
+  })
+  .strict();
 export const handoffStateSchema = z.enum([
   "working",
   "needs-you",
@@ -92,17 +107,9 @@ export const handoffUpdateSchema = z
     native: handoffNativeSchema,
     title: z.string().min(1).max(500).optional(),
     branch: z.string().max(500).optional(),
-    pullRequests: z
-      .array(
-        z
-          .object({
-            url: z.string().max(2000),
-            title: z.string().max(500).optional(),
-          })
-          .strict(),
-      )
-      .max(100)
-      .optional(),
+    // A tool's answer may list any link: the API drops the ones that aren't
+    // https before it stores them, and the record refuses them.
+    pullRequests: z.array(pullRequestSchema).max(100).optional(),
   })
   .strict();
 export const readHandoffStatesResultSchema = z
@@ -117,7 +124,17 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
   folderId: id,
   title: z.string().min(1).max(500),
   branch: z.string().max(500).optional(),
-  pullRequests: handoffUpdateSchema.shape.pullRequests,
+  pullRequests: z
+    .array(
+      pullRequestSchema.extend({
+        url: pullRequestSchema.shape.url.refine(
+          isHttpsUrl,
+          "A pull request link must be https.",
+        ),
+      }),
+    )
+    .max(100)
+    .optional(),
   startedAt: z.number().finite(),
   state: handoffStateSchema,
   checkedAt: z.number().finite(),

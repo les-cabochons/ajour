@@ -28,27 +28,37 @@ export function listenForHandoffRequests(
   };
 }
 
+/**
+ * The items whose hand off is on its way: from the moment the host accepts a
+ * request until the thread starts, fails or the user cancels. The host
+ * ignores further requests for them, and every entry point waits.
+ */
 const starting = new Set<string>();
 const startingListeners = new Set<() => void>();
 let startingVersion = 0;
 
 export function setHandoffStarting(itemId: string, value: boolean) {
+  if (starting.has(itemId) === value) return;
   if (value) starting.add(itemId);
   else starting.delete(itemId);
   startingVersion++;
   startingListeners.forEach((listener) => listener());
 }
 
+export function isHandoffStarting(itemId: string) {
+  return starting.has(itemId);
+}
+
+function subscribeStarting(listener: () => void) {
+  startingListeners.add(listener);
+  return () => {
+    startingListeners.delete(listener);
+  };
+}
+const getStartingVersion = () => startingVersion;
+
 /** Whether a hand off of the item is on its way, so its button waits. */
 export function useHandoffStarting(itemId: string) {
-  useSyncExternalStore(
-    (listener) => {
-      startingListeners.add(listener);
-      return () => {
-        startingListeners.delete(listener);
-      };
-    },
-    () => startingVersion,
-  );
+  useSyncExternalStore(subscribeStarting, getStartingVersion);
   return starting.has(itemId);
 }

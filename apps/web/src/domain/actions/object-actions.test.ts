@@ -499,6 +499,18 @@ describe("backlog item actions", () => {
         ),
       ),
     ).toMatchObject({ "hand-off:agent-handoff:t3": "Restore the item first" });
+    // One hand off per item at a time.
+    expect(
+      disabledReasons(
+        getBacklogItemActions(
+          { ...syncedItem, projectId: "p" },
+          { ...options, handoffStarting: true },
+        ),
+      ),
+    ).toEqual({
+      "hand-off:agent-handoff:t3": "A hand off of this item is starting",
+      "hand-off:agent-handoff:claude": "A hand off of this item is starting",
+    });
     expect(
       ids(getBacklogItemActions(syncedItem, { ...options, handoffTools: [] })),
     ).not.toContain("hand-off:agent-handoff:t3");

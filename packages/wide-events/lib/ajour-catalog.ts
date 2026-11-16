@@ -1814,8 +1814,9 @@ export const catalog = defineCatalog({
       reasons: [
         ...requestReasons,
         ...pluginOperationReasons,
-        "refresh_failed",
         "handoff_refused",
+        /** A plugin's threads opened 5 terminals in the last minute. */
+        "rate_limit",
       ],
       fields: {
         ...requestFields,

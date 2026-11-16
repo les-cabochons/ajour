@@ -13,6 +13,7 @@ import {
 import { showToast } from "@/components/ui/toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { getHandOffActionTools } from "@/lib/handoff-tools";
+import { isHandoffStarting } from "@/features/backlog/handoff-request";
 import {
   buildPaletteSections,
   type PaletteCommand,
@@ -449,6 +450,7 @@ export function CommandPalette({
         platform,
         settleOpensDialog,
         handoffTools: getHandOffActionTools(),
+        isHandoffStarting,
       })
     : [];
 

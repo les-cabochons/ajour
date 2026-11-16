@@ -1,4 +1,5 @@
 import {
+  isHttpsUrl,
   startHandoffRequestSchema,
   startHandoffResultSchema,
   detectToolsResultSchema,
@@ -1085,8 +1086,9 @@ export class PluginManager {
    * Opens a handoff's thread for the window: its link through the broker's
    * open path (https, or a scheme the manifest declares), else its resume
    * command, which must be a declared `terminal` command. A folder slot the
-   * resume leaves out gets the handoff's folder, so it opens where it ran.
-   * Every gate of the broker applies, as for the plugin's own calls.
+   * resume leaves out gets the handoff's folder, so it opens where it ran:
+   * an unconditional slot, or one in a group whose condition the resume
+   * sets. Every gate of the broker applies, as for the plugin's own calls.
    */
   async openHandoff(
     pluginId: string,
@@ -1108,6 +1110,7 @@ export class PluginManager {
         "Plugins need the desktop app",
         "not_supported",
       );
+    requireCapability("handoff")(manifest);
     if (!target.link && !target.resume)
       throw new PluginOperationRefused(
         "This thread has no link or command to open it.",
@@ -1138,8 +1141,14 @@ export class PluginManager {
           "not_supported",
         );
       const args: Record<string, string | number> = { ...resume.args };
+      // A group whose condition is missing stays off; filling its folder
+      // slot would make the broker refuse the run.
       for (const arg of command.args.flatMap((arg) =>
-        "if" in arg ? arg.args : [arg],
+        !("if" in arg)
+          ? [arg]
+          : Object.hasOwn(resume.args, arg.if)
+            ? arg.args
+            : [],
       ))
         if (arg.kind === "folder" && args[arg.name] === undefined)
           args[arg.name] = target.folderId;
@@ -1179,7 +1188,7 @@ export class PluginManager {
               ...(pullRequests
                 ? {
                     pullRequests: pullRequests.filter((pr) =>
-                      validHttps(pr.url),
+                      isHttpsUrl(pr.url),
                     ),
                   }
                 : {}),
@@ -1758,13 +1767,6 @@ function lifecycleOf(
   };
 }
 
-function validHttps(link: string): boolean {
-  try {
-    return new URL(link).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 function validHandoffLink(link: string, manifest: PluginManifest): boolean {
   try {
     const scheme = new URL(link).protocol.slice(0, -1).toLowerCase();

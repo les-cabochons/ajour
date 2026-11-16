@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   fillHandoffTemplates,
   handoffTemplateDefaults,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/handoff-tools";
 import { localStore } from "@/lib/local-store";
 import {
+  isHandoffStarting,
   listenForHandoffRequests,
   setHandoffStarting,
 } from "@/features/backlog/handoff-request";
@@ -111,31 +112,26 @@ async function start(
   const state = localStore.snapshot();
   const current =
     state.workItems.find((candidate) => candidate._id === item._id) ?? item;
-  setHandoffStarting(item._id, true);
-  try {
-    const record = await startHandoff({
-      pluginId: tool.pluginId,
-      toolId: tool.toolId,
-      folderId: folder.id,
-      projectId,
-      workItemId: current._id,
-      projectName: getHandoffProjectName(current, state.projects),
-      item: getHandoffItem(current, state.workItems),
-      ...overrides,
-      settings: {},
-    });
-    upsertHandoff(record);
-    setLastHandoffTool(tool.key);
-    // No Undo: the thread already runs in the tool.
-    showActionToast({
-      title: `Handed off to ${tool.label}`,
-      actionLabel: "Open",
-      onAction: () => void openHandoffThread(record.id),
-      timeout: UNDO_TOAST_TIMEOUT_MS,
-    });
-  } finally {
-    setHandoffStarting(item._id, false);
-  }
+  const record = await startHandoff({
+    pluginId: tool.pluginId,
+    toolId: tool.toolId,
+    folderId: folder.id,
+    projectId,
+    workItemId: current._id,
+    projectName: getHandoffProjectName(current, state.projects),
+    item: getHandoffItem(current, state.workItems),
+    ...overrides,
+    settings: {},
+  });
+  upsertHandoff(record);
+  setLastHandoffTool(tool.key);
+  // No Undo: the thread already runs in the tool.
+  showActionToast({
+    title: `Handed off to ${tool.label}`,
+    actionLabel: "Open",
+    onAction: () => void openHandoffThread(record.id),
+    timeout: UNDO_TOAST_TIMEOUT_MS,
+  });
 }
 
 async function startWithToast(job: Job, folder: RepositoryFolder) {
@@ -151,10 +147,43 @@ async function startWithToast(job: Job, folder: RepositoryFolder) {
 
 export function HandoffHost() {
   const [step, setStep] = useState<Step>(IDLE);
+  /**
+   * The items whose folder lookup or start runs with no dialog showing them.
+   * An item stays starting from the accepted request until its thread
+   * starts, the start fails, or the user cancels a dialog.
+   */
+  const pending = useRef(new Set<string>());
+  const release = (itemId: string) => {
+    pending.current.delete(itemId);
+    setHandoffStarting(itemId, false);
+  };
 
-  /** A project with one folder starts at once; none or several ask which. */
+  // A dialog that closes, or gives way to another item's, ends its item's
+  // hand off, unless a lookup or a start for it still runs.
+  const shown = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const before = shown.current;
+    shown.current = step.kind === "idle" ? undefined : step.job.item._id;
+    if (before && before !== shown.current && !pending.current.has(before))
+      setHandoffStarting(before, false);
+  }, [step]);
+
+  async function startInBackground(job: Job, folder: RepositoryFolder) {
+    try {
+      await startWithToast(job, folder);
+    } finally {
+      release(job.item._id);
+    }
+  }
+
+  /**
+   * A project with one folder starts at once; none or several ask which.
+   * The caller has marked the job's item pending.
+   */
   async function proceed(job: Job) {
+    const itemId = job.item._id;
     if (job.review) {
+      pending.current.delete(itemId);
       setStep({ kind: "review", job });
       return;
     }
@@ -166,14 +195,21 @@ export function HandoffHost() {
         title: `Couldn't hand off to ${job.tool.label}`,
         description: errorMessage(error, "Could not load folders."),
       });
+      release(itemId);
       return;
     }
-    if (folders.length === 1) void startWithToast(job, folders[0]!);
-    else setStep({ kind: "picker", job });
+    if (folders.length === 1) {
+      await startInBackground(job, folders[0]!);
+      return;
+    }
+    pending.current.delete(itemId);
+    setStep({ kind: "picker", job });
   }
 
   useEffect(() => {
     return listenForHandoffRequests((request) => {
+      // One hand off per item at a time, whichever surface asks again.
+      if (isHandoffStarting(request.itemId)) return;
       const tool = getHandoffTools().find(
         (candidate) => candidate.key === request.toolKey,
       );
@@ -196,9 +232,15 @@ export function HandoffHost() {
         projectId: item.projectId,
         review: Boolean(request.review),
       };
-      if (!hasSeenHandoffNotice(tool.key)) setStep({ kind: "notice", job });
-      else void proceed(job);
+      setHandoffStarting(item._id, true);
+      if (!hasSeenHandoffNotice(tool.key)) {
+        setStep({ kind: "notice", job });
+        return;
+      }
+      pending.current.add(item._id);
+      void proceed(job);
     });
+    // `proceed` reads only refs and setters, so the first one serves.
   }, []);
 
   const close = () => setStep(IDLE);
@@ -225,6 +267,7 @@ export function HandoffHost() {
         onConfirm={() => {
           if (step.kind !== "notice") return;
           markHandoffNoticeSeen(step.job.tool.key);
+          pending.current.add(step.job.item._id);
           setStep(IDLE);
           void proceed(step.job);
         }}
@@ -246,12 +289,13 @@ export function HandoffHost() {
         onSelect={(folder) => {
           if (step.kind !== "picker") return;
           const picked = step.job;
-          setStep(
-            picked.review
-              ? { kind: "review", job: { ...picked, folder } }
-              : IDLE,
-          );
-          if (!picked.review) void startWithToast(picked, folder);
+          if (picked.review) {
+            setStep({ kind: "review", job: { ...picked, folder } });
+            return;
+          }
+          pending.current.add(picked.item._id);
+          setStep(IDLE);
+          void startInBackground(picked, folder);
         }}
       />
       <Dialog

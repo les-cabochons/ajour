@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { RiArrowDownSLine as MenuIcon } from "@remixicon/react";
 
+import { DisabledReason } from "@/components/disabled-reason";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ export function SplitButton({
   onClick,
   disabled,
   title,
+  disabledReason,
   children,
   menuLabel,
   menuDisabled,
@@ -38,6 +40,11 @@ export function SplitButton({
   onClick: () => void;
   disabled?: boolean;
   title?: string;
+  /**
+   * Why the main half is disabled, in a tooltip that takes focus, with the
+   * main half's name for its accessible label.
+   */
+  disabledReason?: { label: string; reason?: string };
   children: ReactNode;
   /** The arrow's tooltip and accessible name. */
   menuLabel: string;
@@ -47,18 +54,33 @@ export function SplitButton({
   menu: ReactNode;
   onMenuOpenChange?: (open: boolean) => void;
 }) {
+  const main = (
+    <Button
+      variant={variant}
+      size={size}
+      className="rounded-r-none"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+    >
+      {children}
+    </Button>
+  );
   return (
     <span ref={ref} className="flex">
-      <Button
-        variant={variant}
-        size={size}
-        className="rounded-r-none"
-        onClick={onClick}
-        disabled={disabled}
-        title={title}
-      >
-        {children}
-      </Button>
+      {/* Always under DisabledReason when given, so the button keeps its
+          place, and its focus, when it is disabled without a reason. */}
+      {disabledReason ? (
+        <DisabledReason
+          label={disabledReason.label}
+          reason={disabled ? disabledReason.reason : undefined}
+          className="flex"
+        >
+          {main}
+        </DisabledReason>
+      ) : (
+        main
+      )}
       <DropdownMenu onOpenChange={onMenuOpenChange}>
         <TooltipButton
           label={menuLabel}

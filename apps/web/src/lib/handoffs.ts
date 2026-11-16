@@ -89,13 +89,12 @@ export function useHandoffs(workItemId?: string): readonly Handoff[] {
  * snapshots, and the item page's card loads the list.
  */
 export function useHandoffMarks(): ReadonlyMap<string, HandoffMark> {
-  return useSyncExternalStore(
-    (listener) => {
-      markListeners.add(listener);
-      return () => {
-        markListeners.delete(listener);
-      };
-    },
-    () => marks,
-  );
+  return useSyncExternalStore(subscribeMarks, getMarks);
 }
+function subscribeMarks(listener: () => void) {
+  markListeners.add(listener);
+  return () => {
+    markListeners.delete(listener);
+  };
+}
+const getMarks = () => marks;

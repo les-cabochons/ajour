@@ -180,17 +180,20 @@ function getLastHandoffTool() {
   return lastTool;
 }
 
+function subscribeLastTool(listener: () => void) {
+  lastToolListeners.add(listener);
+  return () => {
+    lastToolListeners.delete(listener);
+  };
+}
+const noLastTool = () => undefined;
+
 /** The tool last handed off to on this device, which the split button names. */
 export function useLastHandoffTool() {
   return useSyncExternalStore(
-    (listener) => {
-      lastToolListeners.add(listener);
-      return () => {
-        lastToolListeners.delete(listener);
-      };
-    },
+    subscribeLastTool,
     getLastHandoffTool,
-    () => undefined,
+    noLastTool,
   );
 }
 

@@ -390,16 +390,22 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
       item: { ...input.item, title: "resume" },
     });
     expect(resume.status, JSON.stringify(resume.body)).toBe(200);
+    const resumeId = (resume.body as { id: string }).id;
     // A development plugin starts no process until the user allows it.
-    expect(
-      await call(
-        "POST",
-        `/api/handoffs/${(resume.body as { id: string }).id}/open`,
-      ),
-    ).toMatchObject({
+    expect(await call("POST", `/api/handoffs/${resumeId}/open`)).toMatchObject({
       status: 409,
       body: { error: expect.stringContaining("Settings › Plugins") },
     });
+    // At most five terminals a minute per plugin, as for links.
+    for (let i = 0; i < 4; i++)
+      await call("POST", `/api/handoffs/${resumeId}/open`);
+    expect(await call("POST", `/api/handoffs/${resumeId}/open`)).toMatchObject({
+      status: 409,
+      body: { error: expect.stringContaining("Too many threads") },
+    });
+    expect(
+      sink.events.filter((e) => e.name === "handoff.open").at(-1),
+    ).toMatchObject({ outcome_reason: "rate_limit" });
     expect((await call("POST", "/api/handoffs/missing/open")).status).toBe(404);
     expect(sink.events.map((e) => e.name)).toContain("handoff.open");
   } finally {

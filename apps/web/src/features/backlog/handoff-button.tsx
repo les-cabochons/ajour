@@ -58,7 +58,9 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
       variant="outline"
       onClick={() => requestHandoff({ itemId: item._id, toolKey: tool.key })}
       disabled={Boolean(refusal) || busy}
-      title={refusal}
+      // Only a lasting refusal gets the tooltip: wrapping the button while a
+      // hand off starts would remount it and drop its focus.
+      disabledReason={{ label: `Hand off to ${tool.label}`, reason: refusal }}
       menuLabel="Other ways to hand off"
       menuDisabled={busy}
       menuClassName="min-w-64"

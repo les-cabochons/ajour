@@ -15,6 +15,7 @@ import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
 import type { HandoffMark } from "@/domain/handoffs/handoffs";
 import { getHandOffActionTools } from "@/lib/handoff-tools";
+import { isHandoffStarting } from "@/features/backlog/handoff-request";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
@@ -364,6 +365,7 @@ export function getBacklogSurfaceActions(
     otherSourceStateCount: getOtherSourceStates(item).length,
     settleOpensDialog: settleOpensDialog(item),
     handoffTools: getHandOffActionTools(),
+    handoffStarting: isHandoffStarting(item._id),
   });
 }
 export function BacklogItemSurface({

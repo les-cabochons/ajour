@@ -343,6 +343,23 @@ describe("buildPaletteSections", () => {
     ]);
   });
 
+  it("disables a backlog item's Hand off while its hand off starts", () => {
+    const item = workItem("item", "Checkout", { projectId: "p" });
+    const handOff = (starting: boolean) =>
+      buildPaletteSections(
+        input({
+          focused: { kind: "backlog-item", workItemId: "item" },
+          workItems: [item],
+          handoffTools: [{ key: "agent-handoff:t3", label: "T3 Code" }],
+          isHandoffStarting: (id) => starting && id === "item",
+        }),
+      )[0]!.items.find((entry) => entry.label === "Hand off to T3 Code");
+    expect(handOff(false)?.disabledReason).toBeUndefined();
+    expect(handOff(true)?.disabledReason).toBe(
+      "A hand off of this item is starting",
+    );
+  });
+
   it("lists active projects for Create task in…", () => {
     const archived = project("old", "Old", [], { status: "archived" });
     const [section] = buildPaletteSections(

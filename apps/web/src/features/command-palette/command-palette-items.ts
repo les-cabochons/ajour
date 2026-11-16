@@ -133,6 +133,8 @@ export interface PaletteInput {
   settleOpensDialog?: (workItem: LocalWorkItem) => boolean;
   /** The coding tools a backlog item can be handed off to. */
   handoffTools?: BacklogItemActionOptions["handoffTools"];
+  /** Whether a hand off of the backlog item is on its way. */
+  isHandoffStarting?: (workItemId: string) => boolean;
 }
 
 /** Search results stop here; typing more narrows them. */
@@ -403,6 +405,7 @@ function backlogItemSection(
   settleOpensDialog: PaletteInput["settleOpensDialog"],
   keysPlatform?: ShortcutPlatform,
   handoffTools?: PaletteInput["handoffTools"],
+  isHandoffStarting?: PaletteInput["isHandoffStarting"],
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
@@ -415,6 +418,7 @@ function backlogItemSection(
     settleOpensDialog: settleOpensDialog?.(workItem),
     otherSourceStateCount: getOtherSourceStates(workItem).length,
     handoffTools,
+    handoffStarting: isHandoffStarting?.(workItem._id),
   });
 
   return {
@@ -551,6 +555,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         input.settleOpensDialog,
         platform,
         input.handoffTools,
+        input.isHandoffStarting,
       );
       // Subitems follow their parent; only top-level items are sortable.
       return isSubtaskWorkItem(workItem)

@@ -613,6 +613,8 @@ export interface BacklogItemActionOptions {
    * each. Absent or empty, as in the web build, lists none.
    */
   handoffTools?: readonly HandOffActionTool[];
+  /** A hand off of this item is on its way, so Hand off waits. */
+  handoffStarting?: boolean;
 }
 
 function formatDeleteLabel(subitemCount: number) {
@@ -717,6 +719,9 @@ export function getBacklogItemActions(
       disabledReason:
         archivedReason ??
         (item.projectId ? undefined : "Add the item to a project first") ??
+        (options.handoffStarting
+          ? "A hand off of this item is starting"
+          : undefined) ??
         tool.disabledReason,
     });
   }

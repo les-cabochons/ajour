@@ -26,6 +26,7 @@ import { HandoffButton } from "./handoff-button";
 import { HandoffHost } from "./handoff-workflow";
 import { runBacklogItemAction } from "./backlog-item-actions";
 import { HandoffsCard } from "./backlog-item-side-cards";
+import { getBacklogSurfaceActions } from "./backlog-item-surface";
 import {
   handoffOverview,
   handoffRecord,
@@ -281,6 +282,21 @@ it("lists the other tools in the menu, a missing one disabled with why, then Rev
   expect(screen.getByRole("menuitem", { name: /Review prompt…/ })).toBeTruthy();
 });
 
+it("says why the main half is disabled in a focusable tooltip", async () => {
+  act(() => {
+    localStore.updateWorkItem(itemId, { projectId: undefined });
+  });
+  await renderPage();
+  const wrapper = await screen.findByLabelText(
+    "Hand off to T3 Code: Add the item to a project first",
+  );
+  expect(wrapper.getAttribute("tabindex")).toBe("0");
+  expect(within(wrapper).getByRole("button").hasAttribute("disabled")).toBe(
+    true,
+  );
+  expect(within(wrapper).getByRole("button").getAttribute("title")).toBeNull();
+});
+
 it("reviews the filled prompt, folder and branch, and sends the edits as overrides", async () => {
   window.localStorage.setItem(
     "ajour.handoff-notices",
@@ -411,6 +427,62 @@ it("runs a row menu's Hand off to <tool> through the same flow", async () => {
   ).toBeTruthy();
 });
 
+it("starts one hand off when the item is asked twice before the first answers", async () => {
+  window.localStorage.setItem(
+    "ajour.handoff-notices",
+    JSON.stringify(["agent-handoff:t3"]),
+  );
+  let answerFolders: (folders: (typeof folder)[]) => void = () => {};
+  vi.mocked(api.listRepositoryFolders).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answerFolders = resolve;
+      }),
+  );
+  const button = await renderPage();
+  const item = localStore
+    .snapshot()
+    .workItems.find((candidate) => candidate._id === itemId)!;
+  act(() => {
+    runBacklogItemAction(item, "hand-off:agent-handoff:t3", () => {});
+  });
+  // The button waits, and the row menu's entry says why it can't run.
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
+  expect(
+    getBacklogSurfaceActions(item, localStore.snapshot(), 0).find(
+      (action) => action.id === "hand-off:agent-handoff:t3",
+    )?.disabledReason,
+  ).toBe("A hand off of this item is starting");
+  act(() => {
+    runBacklogItemAction(item, "hand-off:agent-handoff:t3", () => {});
+    runBacklogItemAction(item, "hand-off:agent-handoff:claude", () => {});
+  });
+  await act(async () => answerFolders([{ ...folder, projectId }]));
+  await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
+  await screen.findByText("Handed off to T3 Code");
+  expect(api.listRepositoryFolders).toHaveBeenCalledTimes(1);
+  // Once it has started, the item can be handed off again.
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+});
+
+it("lets the item be handed off again after the notice is cancelled", async () => {
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  const button = await renderPage();
+  fireEvent.click(button);
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Cancel",
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(button.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(button);
+  acceptNotice();
+  await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
+});
+
 it("renders nothing in the web build, where no tool can run", async () => {
   delete window.ajourDesktop;
   await renderRoutes({ routes: { "/": Page } });
@@ -461,6 +533,25 @@ it.each([
     expect(row.textContent).toContain("3 min ago");
   },
 );
+
+it.each([
+  "http://github.com/acme/pay/pull/41",
+  "javascript:alert(1)",
+  "file:///C:/Users/me/secrets.txt",
+])("shows a pull request at %s as text, not a link", async (url) => {
+  await renderPage();
+  act(() =>
+    setHandoffs([
+      handoffRecord({
+        workItemId: itemId,
+        pullRequests: [{ url, title: "Unsafe" }],
+      }),
+    ]),
+  );
+  const row = await cardRow("[PAY-12] Fix login redirect");
+  expect(within(row).getByText("Unsafe").closest("a")).toBeNull();
+  expect(within(row).queryByRole("link")).toBeNull();
+});
 
 it("shows a paused thread muted with the reason", async () => {
   await renderPage();

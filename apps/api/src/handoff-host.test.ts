@@ -234,3 +234,105 @@ export function readHandoffStates(r) { return r.handoffs.map(h => ({ id: h.id, s
     }
   },
 );
+
+it("opens a resume in the handoff's folder only where a slot is unconditional or its group is on, for handoff plugins only", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-open-host-"));
+  const manifest = (id: string, handoff: boolean) => ({
+    id,
+    version: "1.0.0",
+    apiVersion: 4,
+    displayName: "Tools",
+    description: "Test",
+    iconSvg: "<svg/>",
+    entrypoint: "plugin.mjs",
+    // A plugin needs a capability; a code host needs connection fields.
+    connectionFields: handoff
+      ? []
+      : [{ id: "name", label: "Name", type: "text" }],
+    processes: {
+      executables: { t3: { names: ["t3"] } },
+      commands: [
+        {
+          id: "resume",
+          executable: "t3",
+          args: [
+            "{thread:id}",
+            "{folder:folder}",
+            {
+              if: "branch",
+              args: ["--branch", "{branch:text}", "{base:folder}"],
+            },
+            { if: "other", args: ["{other:folder}"] },
+          ],
+          mode: "terminal",
+        },
+      ],
+      openSchemes: [],
+    },
+    capabilities: handoff
+      ? {
+          handoff: {
+            tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+          },
+        }
+      : { codeHost: {} },
+  });
+  const directories: string[] = [];
+  for (const [id, handoff] of [
+    ["tools", true],
+    ["plain", false],
+  ] as const) {
+    const directory = path.join(root, id);
+    directories.push(directory);
+    await mkdir(directory);
+    await writeFile(
+      path.join(directory, "plugin.json"),
+      JSON.stringify(manifest(id, handoff)),
+    );
+    await writeFile(path.join(directory, "plugin.mjs"), "export {};\n");
+  }
+  const runs: Record<string, string | number>[] = [];
+  const manager = new PluginManager({
+    runtime: new InProcessPluginRuntime(),
+    installedPluginDirectory: path.join(root, "installed"),
+    allowDevelopmentPlugins: true,
+    developmentPluginDirectories: directories,
+    processBroker: {
+      forOperation() {
+        return {
+          async open() {},
+          async run(request) {
+            if ("command" in request) runs.push(request.args);
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+          close() {},
+        };
+      },
+    },
+  });
+  const resume = (args: Record<string, string | number>) =>
+    manager.openHandoff("tools", "p", {
+      resume: { command: "resume", args },
+      folderId: "f",
+    });
+  try {
+    await resume({ thread: "r" });
+    await resume({ thread: "r", branch: "b" });
+    expect(runs).toEqual([
+      { thread: "r", folder: "f" },
+      { thread: "r", branch: "b", folder: "f", base: "f" },
+    ]);
+    await expect(
+      manager.openHandoff("plain", "p", {
+        link: "https://example.test/thread",
+        folderId: "f",
+      }),
+    ).rejects.toMatchObject({
+      reason: "not_supported",
+      message: expect.stringContaining('Plugin "plain"'),
+    });
+  } finally {
+    await manager.shutdown();
+    await rm(root, { recursive: true, force: true });
+  }
+});

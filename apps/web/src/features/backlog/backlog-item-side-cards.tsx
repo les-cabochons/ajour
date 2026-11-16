@@ -7,7 +7,7 @@ import {
   RiGitPullRequestLine as PullRequestIcon,
   RiMoreLine as MoreIcon,
 } from "@remixicon/react";
-import type { Handoff } from "@ajour/shared/handoffs";
+import { isHttpsUrl, type Handoff } from "@ajour/shared/handoffs";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -580,17 +580,24 @@ function HandoffRow({
             aria-label="Pull requests"
             className="size-3 shrink-0"
           />
-          {handoff.pullRequests.map((pullRequest) => (
-            <a
-              key={pullRequest.url}
-              href={pullRequest.url}
-              target="_blank"
-              rel="noreferrer"
-              className="max-w-full truncate"
-            >
-              {pullRequestLabel(pullRequest)}
-            </a>
-          ))}
+          {handoff.pullRequests.map((pullRequest) =>
+            // Only an https link opens; any other shows as text.
+            isHttpsUrl(pullRequest.url) ? (
+              <a
+                key={pullRequest.url}
+                href={pullRequest.url}
+                target="_blank"
+                rel="noreferrer"
+                className="max-w-full truncate"
+              >
+                {pullRequestLabel(pullRequest)}
+              </a>
+            ) : (
+              <span key={pullRequest.url} className="max-w-full truncate">
+                {pullRequestLabel(pullRequest)}
+              </span>
+            ),
+          )}
         </div>
       ) : null}
     </li>

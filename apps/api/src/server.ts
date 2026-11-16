@@ -1645,6 +1645,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     onChange: () => mcpBridge.publish("agents", agentSessions.snapshot()),
     events,
   });
+  // When each plugin's threads last opened a terminal: Open resumes at most
+  // five a minute per plugin, as the broker opens links.
+  const handoffResumes = new Map<string, number[]>();
   const handoffs = new Handoffs({
     storage,
     plugins: pluginManager,
@@ -1956,6 +1959,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         plugin: { id: record.pluginId },
         handoff: { id: record.id, tool: record.toolId },
       });
+      if (!record.link && record.resume) {
+        const now = Date.now();
+        const recent = (handoffResumes.get(record.pluginId) ?? []).filter(
+          (at) => now - at < 60_000,
+        );
+        if (recent.length >= 5) {
+          unit.refuse("rate_limit");
+          writeJson(response, 409, {
+            error:
+              "Too many threads opened in a terminal. Try again in a minute.",
+          });
+          return;
+        }
+        handoffResumes.set(record.pluginId, [...recent, now]);
+      }
       try {
         await pluginManager.openHandoff(record.pluginId, record.projectId, {
           ...(record.link ? { link: record.link } : {}),
