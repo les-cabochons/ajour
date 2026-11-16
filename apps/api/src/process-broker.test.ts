@@ -1259,60 +1259,93 @@ describe("detached commands with stdin", () => {
     }
   }
 
-  it("Given the operation ends before the child has read its input, refuses and stops the child", async () => {
-    const { op, folder, root } = await detachedFixture(idle);
-    try {
-      const run = op.run({
-        command: "run",
-        args: { folder: folder.id },
-        stdin: "x".repeat(1024 * 1024),
-      });
-      const pid = await readPid(root);
-      op.close();
-      await expect(run).rejects.toMatchObject({ reason: "operation_ended" });
-      await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
-    } finally {
-      op.close();
-    }
-  });
+  it(
+    "Given the operation ends before the child has read its input, refuses and stops the child",
+    { timeout: 30_000 },
+    async () => {
+      const { op, folder, root } = await detachedFixture(idle);
+      try {
+        const run = op.run({
+          command: "run",
+          args: { folder: folder.id },
+          stdin: "x".repeat(1024 * 1024),
+        });
+        const pid = await readPid(root);
+        op.close();
+        await expect(run).rejects.toMatchObject({ reason: "operation_ended" });
+        await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
+      } finally {
+        op.close();
+      }
+    },
+  );
 
-  it("Given a child that doesn't read its input before the stdin deadline, stops it and refuses without a timeout", async () => {
-    const records: unknown[][] = [];
-    const { op, folder, root, sink } = await detachedFixture(idle, {
-      stdinDeadlineMs: 500,
-      record: (...args) => {
-        records.push(args);
-      },
-    });
-    try {
-      const run = op.run({
-        command: "run",
-        args: { folder: folder.id },
-        // Past any pipe buffer, so the child has to read for delivery to end.
-        stdin: "x".repeat(1024 * 1024),
+  it(
+    "Given a child that doesn't read its input before the stdin deadline, stops it and refuses without a timeout",
+    { timeout: 30_000 },
+    async () => {
+      const records: unknown[][] = [];
+      const { op, folder, root, sink } = await detachedFixture(idle, {
+        // Long enough for a slow runner to start node and write the pid.
+        stdinDeadlineMs: 5000,
+        record: (...args) => {
+          records.push(args);
+        },
       });
-      const pid = await readPid(root);
-      await expect(run).rejects.toMatchObject({ reason: "stdin_failed" });
-      await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
-      expect(sink.events).toEqual([
-        expect.objectContaining({
-          name: "plugin.process",
-          outcome: "refused",
-          outcome_reason: "stdin_failed",
-        }),
-      ]);
-      await expect.poll(() => records.length).toBe(1);
-      // Refused, not a timeout: it never counts toward suspending the plugin.
-      expect(records[0]).toEqual([
-        "process-test",
-        expect.any(Number),
-        true,
-        false,
-      ]);
-    } finally {
-      op.close();
-    }
-  });
+      try {
+        const run = op.run({
+          command: "run",
+          args: { folder: folder.id },
+          // Past any pipe buffer, so the child has to read for delivery to end.
+          stdin: "x".repeat(1024 * 1024),
+        });
+        const pid = await readPid(root);
+        await expect(run).rejects.toMatchObject({ reason: "stdin_failed" });
+        await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
+        expect(sink.events).toEqual([
+          expect.objectContaining({
+            name: "plugin.process",
+            outcome: "refused",
+            outcome_reason: "stdin_failed",
+          }),
+        ]);
+        await expect.poll(() => records.length).toBe(1);
+        // Refused, not a timeout: it never counts toward suspending the plugin.
+        expect(records[0]).toEqual([
+          "process-test",
+          expect.any(Number),
+          true,
+          false,
+        ]);
+      } finally {
+        op.close();
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "Given a launcher that exits while a descendant holds its stdin, the deadline stops the descendant",
+    { timeout: 30_000 },
+    async () => {
+      // The launcher hands its stdin to a child in its group, then exits.
+      const launcher = `require('child_process').spawn(process.execPath,['-e',${JSON.stringify(idle)}],{stdio:['inherit','ignore','ignore']});setTimeout(()=>process.exit(0),500)`;
+      const { op, folder, root } = await detachedFixture(launcher, {
+        stdinDeadlineMs: 5000,
+      });
+      try {
+        const run = op.run({
+          command: "run",
+          args: { folder: folder.id },
+          stdin: "x".repeat(1024 * 1024),
+        });
+        const pid = await readPid(root);
+        await expect(run).rejects.toMatchObject({ reason: "stdin_failed" });
+        await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
+      } finally {
+        op.close();
+      }
+    },
+  );
 
   it("Given a terminal command and stdin, refuses at run time and starts nothing", async () => {
     const records: unknown[][] = [];

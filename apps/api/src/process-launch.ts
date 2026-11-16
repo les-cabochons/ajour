@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { findExecutable } from "./agent-runner/cli-path.ts";
 import { resolveSpawn, type SpawnResolution } from "./process-spawn/index.ts";
-import { endProcessTree } from "./process-tree.ts";
+import { endProcessGroup, endProcessTree } from "./process-tree.ts";
 
 export class ProcessLaunchRefused extends Error {
   readonly reason:
@@ -78,7 +78,9 @@ export async function startUnowned(
       clearTimeout(deadline);
       input.signal?.removeEventListener("abort", abort);
       stdin.destroy();
-      endProcessTree(child, plan.env, () => exited);
+      // A launcher that exited can leave a descendant holding its stdin.
+      if (exited) endProcessGroup(child);
+      else endProcessTree(child, plan.env, () => exited);
       reject(error);
     };
     const abort = () =>

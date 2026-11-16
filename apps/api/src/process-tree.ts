@@ -54,3 +54,17 @@ export function endProcessTree(
     killChild();
   }
 }
+
+/**
+ * Ends what is left of a detached child's process group on POSIX once the
+ * child itself exited: a descendant it started may outlive it. Windows
+ * keeps no group, and a tree whose root ended can't be found there.
+ */
+export function endProcessGroup(child: ChildProcess): void {
+  if (process.platform === "win32" || child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    /* No process of the group is left. */
+  }
+}
