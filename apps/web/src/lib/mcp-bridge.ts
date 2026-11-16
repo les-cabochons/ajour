@@ -1,3 +1,5 @@
+import { handoffsSnapshotSchema } from "@ajour/shared/handoffs";
+import { setHandoffs } from "./handoffs";
 import {
   agentsSnapshotSchema,
   bridgeToolCallSchema,
@@ -112,14 +114,17 @@ async function runToolCall(
 }
 
 /** Opens the bridge. Returns a function that closes it. */
-export function connectMcpBridge(handlers: McpBridgeHandlers): () => void {
+export function connectMcpBridge(
+  handlers: McpBridgeHandlers,
+  endpoint = "/api/mcp/bridge",
+): () => void {
   let source: EventSource | undefined;
   let connection: Unit<AjourCatalog, "mcp_bridge.connection"> | undefined;
   let reopenTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<void> = Promise.resolve();
 
   const open = () => {
-    const stream = new EventSource(appApiUrl("/api/mcp/bridge"));
+    const stream = new EventSource(appApiUrl(endpoint));
     const job = wideEvents.start("mcp_bridge.connection", {
       kind: "job",
       trigger: "system",
@@ -142,6 +147,16 @@ export function connectMcpBridge(handlers: McpBridgeHandlers): () => void {
       job.end("error", "disconnected");
       reopenTimer = setTimeout(open, REOPEN_DELAY_MS);
     };
+    stream.addEventListener("handoffs", (message) => {
+      try {
+        const parsed = handoffsSnapshotSchema.safeParse(
+          JSON.parse((message as MessageEvent<string>).data),
+        );
+        if (parsed.success) setHandoffs(parsed.data);
+      } catch {
+        /* Ignore an invalid snapshot. */
+      }
+    });
     stream.addEventListener("agents", (message) => {
       const parsed = agentsSnapshotSchema.safeParse(
         JSON.parse((message as MessageEvent<string>).data),

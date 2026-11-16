@@ -1,3 +1,4 @@
+import { handoffsSnapshotSchema, type Handoff } from "@ajour/shared/handoffs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { recordingEvents } from "../../../desktop/recording-events.ts";
@@ -81,6 +82,9 @@ const canaryPlugin: TestPlugin = {
       },
       description: { write: true },
     },
+    handoff: {
+      tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+    },
     calendar: {},
     codeHost: {},
   },
@@ -103,6 +107,8 @@ const canaryPlugin: TestPlugin = {
   },
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
+export function startHandoff() { return { threadId: "thread", native: { label: MARKER }, link: "https://example.test/" + MARKER }; }
+export function readHandoffStates(request) { return request.handoffs.map(h => ({ id: h.id, state: "ready", native: { label: MARKER }, title: MARKER, branch: MARKER })); }
 const person = { id: "person-" + MARKER, displayName: "Ana " + MARKER, email: MARKER + "@example.test" };
 async function check(connection) {
   const { siteUrl } = connection.config;
@@ -651,6 +657,55 @@ afterAll(async () => {
 });
 
 describe("the privacy canary", () => {
+  it("keeps handoff prompts, titles, native state, links and folders out of events", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "handoff-canary-"));
+    const folder = await api.addRepositoryFolder("handoff-project", folderPath);
+    const from = mark();
+    const snapshots: Handoff[][] = [];
+    const stream = new FetchEventSource(`${api.baseUrl}/api/handoffs/bridge`);
+    stream.addEventListener("handoffs", (message) =>
+      snapshots.push(handoffsSnapshotSchema.parse(JSON.parse(message.data))),
+    );
+    try {
+      await vi.waitFor(() => expect(snapshots).toEqual([[]]));
+      const started = await app.appApi.startHandoff({
+        pluginId: "canary",
+        toolId: "t3",
+        workItemId: "item",
+        projectId: "handoff-project",
+        folderId: folder.id,
+        title: MARKER,
+        prompt: MARKER,
+        item: { key: MARKER, url: SITE },
+        settings: {},
+      });
+      await vi.waitFor(() =>
+        expect(snapshots.at(-1)).toMatchObject([
+          { id: started.id, state: "working" },
+        ]),
+      );
+      await app.appApi.refreshHandoffs(started.id);
+      await vi.waitFor(() =>
+        expect(snapshots.at(-1)).toMatchObject([
+          { id: started.id, state: "ready" },
+        ]),
+      );
+      await app.appApi.removeHandoff(started.id);
+      await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));
+    } finally {
+      stream.close();
+      await rm(folderPath, { recursive: true, force: true });
+    }
+    expect(namesSince(from)).toEqual(
+      expect.arrayContaining([
+        "api request handoff.start",
+        "api request handoff.refresh",
+        "api request handoff.remove",
+      ]),
+    );
+    expectNoLeak();
+  });
+
   it("keeps a chosen repository folder path out of choose, list, use and remove events, including a moved folder", async () => {
     const require = createRequire(import.meta.url);
     const {

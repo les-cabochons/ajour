@@ -1,5 +1,11 @@
 import { z } from "zod";
 import {
+  handoffRecordSchema,
+  type Handoff,
+  type HandoffUpdate,
+} from "../../../packages/shared/handoffs.ts";
+import { updateHandoff, removeHandoff } from "./handoff-state.ts";
+import {
   repositoryFolderSchema,
   type RepositoryFolder,
 } from "../../../packages/shared/repository-folders.ts";
@@ -445,6 +451,7 @@ function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
 }
 
 interface AppApiStateV8 {
+  handoffs: Handoff[];
   repositoryFolders: RepositoryFolder[];
   version: number;
   connections: StoredConnection[];
@@ -613,6 +620,7 @@ function withCapabilityChoice(
 
 function createDefaultState(): AppApiState {
   return {
+    handoffs: [],
     repositoryFolders: [],
     version: STATE_VERSION,
     connections: [],
@@ -1012,6 +1020,12 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
+    handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
+      (value) => {
+        const parsed = handoffRecordSchema.safeParse(value);
+        return parsed.success ? [parsed.data] : [];
+      },
+    ),
     repositoryFolders: (Array.isArray(raw.repositoryFolders)
       ? raw.repositoryFolders
       : []
@@ -1326,6 +1340,36 @@ export class AppApiStorage {
   /** Loads the state file now, with its migrations, if it isn't loaded yet. */
   async ready(): Promise<void> {
     await this.readState();
+  }
+
+  async listHandoffs(): Promise<Handoff[]> {
+    return structuredClone((await this.readState()).handoffs);
+  }
+  async addHandoff(record: Handoff): Promise<void> {
+    const parsed = handoffRecordSchema.parse(record);
+    await this.mutate((state) => ({
+      nextState: { ...state, handoffs: [...state.handoffs, parsed] },
+      result: undefined,
+    }));
+  }
+  async updateHandoffs(updates: HandoffUpdate[], now: number): Promise<void> {
+    const byId = new Map(updates.map((value) => [value.id, value]));
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        handoffs: state.handoffs.map((record) => {
+          const update = byId.get(record.id);
+          return update ? updateHandoff(record, update, now) : record;
+        }),
+      },
+      result: undefined,
+    }));
+  }
+  async removeHandoff(id: string): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: { ...state, handoffs: removeHandoff(state.handoffs, id) },
+      result: undefined,
+    }));
   }
 
   async listRepositoryFolders(projectId?: string): Promise<RepositoryFolder[]> {

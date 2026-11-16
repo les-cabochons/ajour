@@ -1683,6 +1683,88 @@ export const catalog = defineCatalog({
         update: { release_allowed: operational<boolean>() },
       },
     },
+    "handoff.list": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "handoff.visibility": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "handoff.start": {
+      kinds: ["request", "plugin_operation", "job", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        "refresh_failed",
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          count: operational<number>(),
+        },
+      },
+    },
+    "handoff.refresh": {
+      kinds: ["request", "plugin_operation", "job", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        "refresh_failed",
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          count: operational<number>(),
+        },
+      },
+    },
+    "handoff.remove": {
+      kinds: ["request", "plugin_operation", "job", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        "refresh_failed",
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          count: operational<number>(),
+        },
+      },
+    },
+    "handoff.detect": {
+      kinds: ["request", "plugin_operation", "job", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        "refresh_failed",
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          count: operational<number>(),
+        },
+      },
+    },
     "repository_folder.list": {
       kinds: ["request", "command"],
       reasons: [...requestReasons],

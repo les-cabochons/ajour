@@ -1,3 +1,4 @@
+import { setHandoffVisibility } from "@/lib/app-api";
 import { useEffect } from "react";
 import type { AgentsSnapshot } from "@ajour/shared/agent-tools";
 import { showActionToast } from "@/components/ui/toast";
@@ -51,16 +52,31 @@ export function AgentBridgeHost() {
   const enabled = settings.kind === "ready" && settings.settings.enabled;
 
   useEffect(() => {
-    if (!enabled) {
+    if (settings.kind !== "ready") {
       setAgentBridgeStatus("off");
       return;
     }
-    return connectMcpBridge({
-      runToolCall: runAgentToolCall,
-      onStatus: setAgentBridgeStatus,
-      onAgents: setAgentsSnapshot,
-    });
-  }, [enabled]);
+    return connectMcpBridge(
+      {
+        runToolCall: runAgentToolCall,
+        onStatus: (status) => setAgentBridgeStatus(enabled ? status : "off"),
+        onAgents: setAgentsSnapshot,
+      },
+      "/api/handoffs/bridge",
+    );
+  }, [enabled, settings.kind]);
+
+  useEffect(() => {
+    if (settings.kind !== "ready") return;
+    const update = () => {
+      void setHandoffVisibility(document.visibilityState !== "hidden").catch(
+        () => undefined,
+      );
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [settings.kind]);
 
   // Snapshots come from the stream and from the panel's answers.
   useEffect(() => {

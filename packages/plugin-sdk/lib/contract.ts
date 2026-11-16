@@ -61,6 +61,40 @@ export type PluginManifest = {
     team?: { apiVersion: 1 } | undefined;
     projectSource?: {} | undefined;
     timeSync?: {} | undefined;
+    handoff?:
+      | {
+          tools: {
+            id: string;
+            iconSvg: string;
+            label: string;
+            settings: {
+              type:
+                "number" | "url" | "text" | "password" | "select" | "checkbox";
+              id: string;
+              label: string;
+              options?: { value: string; label: string }[] | undefined;
+              required?: boolean | undefined;
+              placeholder?: string | undefined;
+              helpText?: string | undefined;
+              secret?: boolean | undefined;
+              defaultValue?: string | number | boolean | undefined;
+              min?: number | undefined;
+              max?: number | undefined;
+              step?: number | undefined;
+              capability?:
+                | "connector"
+                | "codeHost"
+                | "calendar"
+                | "team"
+                | "projectSource"
+                | "timeSync"
+                | "handoff"
+                | undefined;
+              passToPlugin?: boolean | undefined;
+            }[];
+          }[];
+        }
+      | undefined;
     agentTask?:
       | {
           tasks: {
@@ -132,6 +166,7 @@ export type PluginManifest = {
                     | "team"
                     | "projectSource"
                     | "timeSync"
+                    | "handoff"
                     | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
@@ -185,6 +220,7 @@ export type PluginManifest = {
           | "team"
           | "projectSource"
           | "timeSync"
+          | "handoff"
           | undefined;
         passToPlugin?: boolean | undefined;
       }[]
@@ -304,6 +340,7 @@ export type PluginField = {
     | "team"
     | "projectSource"
     | "timeSync"
+    | "handoff"
     | undefined;
   passToPlugin?: boolean | undefined;
 };
@@ -478,6 +515,7 @@ export type ValidationContext = {
     | "team"
     | "projectSource"
     | "timeSync"
+    | "handoff"
   )[];
 };
 
@@ -1505,4 +1543,51 @@ export type TimeSyncRemoteEntry = {
   countingSince?: string | undefined;
   taskRemoteId?: string | undefined;
   clientRef?: string | undefined;
+};
+
+export type StartHandoffRequest = {
+  settings: Record<string, string | number | boolean>;
+  tool: string;
+  prompt: string;
+  title: string;
+  folder: { name: string; id: string };
+  item: { key: string; url: string };
+  branch?: string | undefined;
+};
+
+export type StartHandoffResult = {
+  native: Record<string, unknown>;
+  threadId: string;
+  link?: string | undefined;
+  resume?:
+    { args: Record<string, string | number>; command: string } | undefined;
+};
+
+export type ReadHandoffStatesRequest = {
+  tool: string;
+  handoffs: {
+    native: Record<string, unknown>;
+    id: string;
+    threadId: string;
+    folderId: string;
+  }[];
+};
+
+export type ReadHandoffStatesResult = {
+  native: Record<string, unknown>;
+  id: string;
+  state:
+    "unknown" | "failed" | "done" | "working" | "needs-you" | "ready" | "gone";
+  title?: string | undefined;
+  pullRequests?: { url: string; title?: string | undefined }[] | undefined;
+  branch?: string | undefined;
+}[];
+
+export type DetectToolsResult = {
+  tools: {
+    id: string;
+    available: boolean;
+    version?: string | undefined;
+    reason?: string | undefined;
+  }[];
 };

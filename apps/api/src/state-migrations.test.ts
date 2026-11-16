@@ -9,6 +9,18 @@ import {
 } from "./state-migrations.ts";
 
 describe("state migrations", () => {
+  it("adds handoffs at version 12 without changing existing folders or connections", async () => {
+    const state = {
+      version: 11,
+      connections: [{ id: "connection" }],
+      repositoryFolders: [{ id: "folder" }],
+    };
+    expect(await runStateMigrations(state, 11)).toEqual({
+      ...state,
+      version: 12,
+      handoffs: [],
+    });
+  });
   const trail = (version: number): StateMigration => ({
     version,
     migrate: (state) => ({
@@ -74,7 +86,7 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(11);
+    expect(STATE_VERSION).toBe(12);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));

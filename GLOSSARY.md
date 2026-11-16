@@ -302,6 +302,10 @@ _Avoid_: Permissions, scopes, capabilities (a capability is what a plugin provid
 Something one connection may do that the user turns on for that connection, such as "Edit work items", which unlocks part of a plugin's access and names the token scope it needs. Every access choice starts off, except one the plugin marks as always on.
 _Avoid_: Permission, scope, toggle, feature flag
 
+**Handoff**:
+A coding tool's thread linked to one backlog item, with its tool, repository folder and current state. Removing a handoff from the item leaves the thread in the tool.
+_Avoid_: Agent run, agent session, job
+
 **Process broker**:
 The part of Ajour that starts a process for a plugin, such as `t3 thread start`, after checking the plugin's access, its gates and its command mode. A plugin never starts a process itself (ADR 0019).
 _Avoid_: Shell, launcher, runner (the agent runner is something else)

@@ -761,6 +761,34 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
     agentTask: z
       .object({ tasks: z.array(pluginApi4AgentTaskSchema).min(1).max(10) })
       .optional(),
+    handoff: z
+      .object({
+        tools: z
+          .array(
+            z
+              .object({
+                id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
+                label: z.string().min(1).max(120),
+                iconSvg: z.string().min(1).max(20000),
+                settings: z
+                  .array(pluginApi4FieldSchema)
+                  .max(50)
+                  .refine(
+                    (fields) => fields.every((f) => !f.secret),
+                    "Handoff settings cannot contain secrets.",
+                  ),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(50)
+          .refine(
+            (tools) => new Set(tools.map((t) => t.id)).size === tools.length,
+            "Tool ids must be unique.",
+          ),
+      })
+      .strict()
+      .optional(),
     /**
      * A project data shape, with data shape API 1's dataset contract. It
      * moves into the main manifest and runs in the shared runtime.
@@ -953,6 +981,7 @@ function checkNetwork(
 /** Whether the plugin runs code: everything but agent tasks and project properties. */
 function api4RunsCode(capabilities: PluginApi4Capabilities) {
   return (
+    capabilities.handoff !== undefined ||
     capabilities.connector !== undefined ||
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
