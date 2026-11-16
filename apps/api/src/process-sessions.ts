@@ -233,6 +233,9 @@ export class ProcessSessions {
     child.stdout?.on("data", (chunk: Buffer) => this.stdout(session, chunk));
     const decoder = new StringDecoder("utf8");
     child.stderr?.on("data", (chunk: Buffer) => {
+      // An ended session's pipes are still read, so its program never
+      // blocks on a full one, but what it writes is dropped.
+      if (session.ended) return;
       session.stderr = utf8Tail(
         session.stderr + decoder.write(chunk),
         SESSION_LIMITS.stderrBytes,
@@ -242,7 +245,7 @@ export class ProcessSessions {
     const finished = () => {
       clearTimeout(exitTimer);
       if (session.exited) return;
-      if (!session.overlong && session.partialBytes > 0)
+      if (!session.ended && !session.overlong && session.partialBytes > 0)
         this.push(session, Buffer.concat(session.partial));
       session.partial = [];
       session.partialBytes = 0;
@@ -442,6 +445,7 @@ export class ProcessSessions {
   }
 
   private stdout(session: Session, chunk: Buffer) {
+    if (session.ended) return;
     let start = 0;
     for (;;) {
       const newline = chunk.indexOf(0x0a, start);
@@ -501,6 +505,9 @@ export class ProcessSessions {
     clearTimeout(session.idleTimer);
     session.lines = [];
     session.bytes = 0;
+    session.partial = [];
+    session.partialBytes = 0;
+    session.overlong = false;
     session.stderr = "";
     this.wake(session);
   }

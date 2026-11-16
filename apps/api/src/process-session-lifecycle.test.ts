@@ -280,6 +280,40 @@ describe("Given a session Ajour ends whose program survives the kill", () => {
     );
   });
 
+  it("a survivor's output, kept or later, is dropped while its pipes keep draining", async () => {
+    const { sessions, first, end } = survivor(triggers[0]!);
+    type Kept = {
+      lines: string[];
+      bytes: number;
+      partial: Buffer[];
+      partialBytes: number;
+      stderr: string;
+    };
+    const kept = () =>
+      (sessions as unknown as { sessions: Map<string, Kept> }).sessions.get(
+        first.id,
+      )!;
+    // A line without its end and some stderr wait when Ajour ends it.
+    first.child.stdout.write("half a line");
+    first.child.stderr.write("an error");
+    await vi.advanceTimersByTimeAsync(0);
+    await end();
+    first.child.stdout.write(" and the rest\nanother line\nmore");
+    first.child.stderr.write("another error");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(kept()).toMatchObject({
+      lines: [],
+      bytes: 0,
+      partial: [],
+      partialBytes: 0,
+      stderr: "",
+    });
+    // Its pipes are still read, so the program never blocks on a full one.
+    expect(first.child.stdout.readableFlowing).toBe(true);
+    expect(first.child.stdout.readableLength).toBe(0);
+    expect(first.child.stderr.readableLength).toBe(0);
+  });
+
   it("a survivor that later reports its exit is forgotten, with no output kept", async () => {
     const { sessions, first, end, read, released } = survivor(triggers[0]!);
     await end();
