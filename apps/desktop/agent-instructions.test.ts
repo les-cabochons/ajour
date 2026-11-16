@@ -219,6 +219,20 @@ it("uses a non-empty Codex override for status, preview and writes", async () =>
   expect((await controller.list())[0].path).toBe(base);
 });
 
+it("Given OPENCODE_CONFIG_DIR, ignores an unused relative XDG_CONFIG_HOME", async () => {
+  const { home } = await fixture();
+  const env = {
+    OPENCODE_CONFIG_DIR: path.join(home, "open"),
+    XDG_CONFIG_HOME: "relative-unused",
+  };
+  const controller = createInstructionController({ home, env, editor });
+  const row = (await controller.list()).find(
+    (entry: editor.InstructionFileState) => entry.id === "opencode",
+  );
+  expect(row?.error).toBeUndefined();
+  expect(row?.path).toBe(path.join(env.OPENCODE_CONFIG_DIR, "AGENTS.md"));
+});
+
 it("resolves location variables and Gemini's context filename without changing settings", async () => {
   const { home } = await fixture();
   const env = {

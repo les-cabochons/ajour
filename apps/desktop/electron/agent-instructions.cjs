@@ -180,15 +180,16 @@ function createInstructionController({
           root("CLAUDE_CONFIG_DIR", path.join(home, ".claude")),
           "CLAUDE.md",
         );
+      // OPENCODE_CONFIG_DIR wins; XDG_CONFIG_HOME is read, and checked, only
+      // when it is unset.
       if (id === "opencode")
         resolved = path.join(
-          root(
-            "OPENCODE_CONFIG_DIR",
-            path.join(
-              root("XDG_CONFIG_HOME", path.join(home, ".config")),
-              "opencode",
-            ),
-          ),
+          env.OPENCODE_CONFIG_DIR
+            ? root("OPENCODE_CONFIG_DIR", "")
+            : path.join(
+                root("XDG_CONFIG_HOME", path.join(home, ".config")),
+                "opencode",
+              ),
           "AGENTS.md",
         );
       if (id === "copilot")
