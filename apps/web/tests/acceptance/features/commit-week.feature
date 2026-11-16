@@ -84,10 +84,10 @@ Feature: Commit the week
     When I follow Edit task in the warning
     Then the task editor opens on "Temp migration"
 
-  Scenario: Open the Commit page from the sidebar
+  Scenario: Open the Commit page from the top bar beside the sidebar
     Given I have a committed week of entries
     When I open Monday's Day list
-    And I press Commit week in the sidebar
+    And I press the labeled Commit week button
     Then the Commit page says everything is committed
 
   Scenario: Open the Commit page from the top bar while the sidebar is hidden

@@ -2,7 +2,7 @@
 
 The sidebar shows what is on your plate on every page: the running entry, your active backlog items and the pull requests that need you.
 
-<Shot name="sidebar" alt="The sidebar with the nav rows, the running entry, the search row and the backlog items" />
+<Shot name="sidebar" alt="The sidebar with the nav rows, the search row, the backlog items and the running entry at the bottom" />
 
 Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 
@@ -10,14 +10,15 @@ Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 
 From top to bottom, the sidebar has:
 
+- **Settings**, at the right of the logo.
 - **The views**: Time, Backlog, Pull requests and Projects, each with a count.
-- **The running entry**, or **Start** when nothing runs, with **+** for a new time entry. See [Running entries](/time/running-entries).
 - **Search**, **Filter and order**, and **+** for a new backlog item.
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
 - **Snoozed** and **Settled** sections, collapsed by default.
-- **Settings** and **Commit** at the bottom left. **Commit** opens the [Commit page](/time/commit) for the week on screen.
-- **Check for updates** at the bottom right, in the desktop app. See [Application updates](#application-updates).
+- **The running entry** at the bottom, or **Start** when nothing runs, with **+** for a new time entry. See [Running entries](/time/running-entries).
+
+**Commit week** is in the Day and Week title bar, and in the command palette. The version and **Check for updates** are at the bottom left of the Settings window. See [Application updates](#application-updates).
 
 ## Switch views
 
@@ -25,7 +26,7 @@ The rows at the top open **Time**, **Backlog**, **Pull requests** and **Projects
 
 ## Search and filter
 
-Click **Search** under the running entry and type. Every word must appear in the item's title or its project's name or code. A pull request matches on its title and repository. Case and accents do not matter. Press <kbd>Esc</kbd> to clear the search, and again to leave the field.
+Click **Search** under the views and type. Every word must appear in the item's title or its project's name or code. A pull request matches on its title and repository. Case and accents do not matter. Press <kbd>Esc</kbd> to clear the search, and again to leave the field.
 
 Press **Filter and order** to show one project's items only. With [managed projects](/projects/#managed-projects), the menu also lists their clients under **Clients**: pick one to show the items of all its projects. Ajour remembers the filter on this device. While a project is picked, a new item from the **+** starts in that project. Search and filter apply to the sidebar only, not to the Backlog page.
 
@@ -59,11 +60,15 @@ The card opens with a mouse only, and never takes focus. From the keyboard, the 
 
 ## Application updates
 
-In the desktop app, the arrow at the bottom right, **Check for updates**, checks for a new version of Ajour. When one is available, the arrow stands out and its tooltip names the version. Click it then to update. While it works, it spins, and its tooltip shows the progress. See [Updates](/start/install#updates).
+In the desktop app, the Settings window shows Ajour's version at the bottom left, with an arrow, **Check for updates**, that checks for a new version of Ajour. When one is available, the arrow stands out and its tooltip names the version. Click it then to update. While it works, it spins, and its tooltip shows the progress. See [Updates](/start/install#updates).
+
+## Group by project
+
+In **Settings › General › Sidebar**, set **Grouping** to **By project** to list your items in one section per project. Each section's header shows the project and what its items have left. The project with your most urgent item comes first, and items without a project come last. Click a header to collapse its section. Drag items to reorder them within their project. **One list**, the default, lists every item in one order.
 
 ## Density and width
 
-Choose **Comfortable** or **Compact** rows in **Settings › General › Sidebar**. Comfortable rows show the project, the title, the state and the remaining estimate. Compact rows show the title only, in a narrower sidebar. On macOS, **View › Compact or comfortable sidebar** in the menu bar switches it too.
+Choose **Comfortable** or **Compact** rows in **Settings › General › Sidebar**. Comfortable rows show the state, the title and the remaining estimate, with the project under the title. Compact rows show the title only, in a narrower sidebar. On macOS, **View › Compact or comfortable sidebar** in the menu bar switches it too.
 
 Drag the sidebar's edge to resize it, between 200 and 400 pixels. Double-click the edge to reset it. Dragging it well past the 200 pixel minimum hides the sidebar.
 

@@ -126,7 +126,9 @@ const shots = [
       await go(page, "/time/today");
       return page.getByRole("region", { name: "Running entry" });
     },
-    margin: 12,
+    // The dock is the sidebar's foot, edge to edge: any margin shows the
+    // row above it and the page beside it.
+    margin: 0,
   },
   {
     name: "timer-dock-editor",

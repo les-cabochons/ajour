@@ -768,6 +768,13 @@
     opacity: 0.85;
   }
 
+  /* A Comfortable row bleeds past the list's padding to rule its hairline
+     edge to edge; the preview already has the row's measured width. */
+  .sidebar-drag-preview > * {
+    margin-inline: 0;
+    border-bottom-color: transparent;
+  }
+
   /* -- Item page ------------------------------------------------- */
 
   /* The page fills the column from the page gutter; prose keeps its own

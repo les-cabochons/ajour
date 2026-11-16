@@ -17,7 +17,7 @@ import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
 import { getSectionPathname } from "@/features/backlog/backlog-item-search";
 import { requestNewBacklogItem } from "@/features/backlog/new-backlog-item-dialog";
-import { AppSidebarFooter } from "@/features/layout/sidebar-footer";
+import { SidebarHeaderActions } from "@/features/layout/sidebar-header-actions";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
   SidebarPullRequests,
@@ -179,11 +179,11 @@ function NewBacklogItemButton({ projectId }: { projectId?: string }) {
 
 /**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
- * logo beside the macOS traffic lights (in the corner elsewhere), the nav
- * rows, the timer dock, the search row with the project filter and New
- * backlog item, the work list, narrowed by the search and the filter, then a
- * foot row with Settings and Commit week, icons only. It shows beside the
- * page. `useAppSidebar` owns whether it shows.
+ * logo beside the macOS traffic lights (in the corner elsewhere), with
+ * Settings at the row's end, then the nav rows,
+ * the search row with the project filter and New backlog item, the work list,
+ * narrowed by the search and the filter, and the timer dock as the foot. It
+ * shows beside the page. `useAppSidebar` owns whether it shows.
  */
 export function AppNavigationSidebar({
   pathname,
@@ -259,7 +259,14 @@ export function AppNavigationSidebar({
           side="right"
           className={cn(isDesktopShell && "desktop-no-drag")}
         />
-        <BrandLogo linked className={cn(isDesktopShell && "desktop-no-drag")} />
+        <BrandLogo
+          linked
+          className={cn(
+            "ajour-app-sidebar-logo",
+            isDesktopShell && "desktop-no-drag",
+          )}
+        />
+        <SidebarHeaderActions />
       </SidebarHeader>
 
       <SidebarNav
@@ -267,8 +274,6 @@ export function AppNavigationSidebar({
         selectedTimeDate={selectedTimeDate}
         options={views}
       />
-
-      <TimerDock />
 
       {/* The search row. Its hairline parts it from the list. */}
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-[var(--border-row)] px-2">
@@ -292,7 +297,7 @@ export function AppNavigationSidebar({
         </SidebarBacklogList>
       </SidebarContent>
 
-      <AppSidebarFooter selectedTimeDate={selectedTimeDate} />
+      <TimerDock />
       <SidebarResizeHandle onStateChange={onStateChange} />
     </Sidebar>
   );

@@ -17,6 +17,7 @@ import {
   updateSidebarLayout,
   useSidebarLayout,
   type SidebarDensity,
+  type SidebarGrouping,
 } from "@/lib/sidebar-layout";
 import type { ThemeMode, WeeklyCapacityTargets } from "@/domain/local-state";
 import {
@@ -246,7 +247,7 @@ export function SettingsGeneralPage() {
         <AppPanel>
           <SettingRow
             label="Density"
-            description="Three lines, or one line in a narrower sidebar."
+            description="Two lines, or one line in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"
@@ -260,6 +261,25 @@ export function SettingsGeneralPage() {
             >
               <ToggleGroupItem value="comfortable">Comfortable</ToggleGroupItem>
               <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
+            </ToggleGroup>
+          </SettingRow>
+          {/* Here only, with no menu entry, shortcut or sidebar control: one
+              list in the Backlog's order stays the way the sidebar reads. */}
+          <SettingRow
+            label="Grouping"
+            description="One list in the Backlog's order, or a section per project."
+          >
+            <ToggleGroup
+              aria-label="Sidebar grouping"
+              variant="outline"
+              value={[sidebarLayout.grouping]}
+              onValueChange={(next) => {
+                const grouping = next[0] as SidebarGrouping | undefined;
+                if (grouping) updateSidebarLayout({ grouping });
+              }}
+            >
+              <ToggleGroupItem value="list">One list</ToggleGroupItem>
+              <ToggleGroupItem value="project">By project</ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
         </AppPanel>

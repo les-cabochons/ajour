@@ -59,9 +59,14 @@ Feature: Backlog list and board views
   Scenario: Show the project and remaining estimate on comfortable sidebar rows
     Given the other Backlog item has 1.5 hours remaining
     Then the other item's sidebar row shows "Example project" and "1h30"
-    And the other item's sidebar row shows its workflow state "In progress"
+    And the other item's sidebar row leads with its workflow state "In progress"
     When I hover the other item in the sidebar
     Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
+
+  Scenario: Keep the hover actions inside a row with a long project name
+    Given the project is named "Example project with a name far too long for the sidebar"
+    When I hover the other item in the sidebar
+    Then its sidebar row's hover actions end inside the row
 
   Scenario: Start and stop a focused sidebar item with S
     When I press S on the other item in the sidebar

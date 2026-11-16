@@ -33,7 +33,7 @@ Feature: Open the local time workspace
     Then the timer dock opens the running entry
     And the window title shows the running entry
     When I open Settings from the desktop sidebar
-    Then Settings shows the running entry in its window
+    Then the Settings window shows no timer and the dock does not float
     When I go back to the app from Settings
     And I hide the app sidebar with its button
     Then the running entry floats at the bottom left
@@ -62,7 +62,7 @@ Feature: Open the local time workspace
 
   Scenario: Copy a week's lines from the Commit page
     Given I have a week of saved entries
-    When I open the Commit page from the sidebar on the Week view
+    When I open the Commit page from the Week view's header
     Then the Commit page merges Monday's task entries
     And copying the merged line gives decimal hours and merged comments
 
@@ -73,7 +73,7 @@ Feature: Open the local time workspace
 
   Scenario: Open the selected week's Commit page from the Backlog
     Given I have a week of saved entries
-    When I open the Commit page from the sidebar on the Backlog
+    When I open the Commit page from the command palette on the Backlog
     Then the Commit page lists the week's entries
 
   Scenario: Save a valid entry draft before opening the Commit page

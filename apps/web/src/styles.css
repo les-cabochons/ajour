@@ -1945,6 +1945,19 @@
   padding-left: 5rem;
 }
 
+/* The header holds the toggle, the logo and Settings. Beside the macOS
+   traffic lights a narrow sidebar drops the wordmark, so Settings keeps its
+   place. */
+.ajour-app-navigation-sidebar {
+  container: app-sidebar / inline-size;
+}
+
+@container app-sidebar (max-width: 239px) {
+  .desktop-shell-macos .ajour-app-sidebar-logo .ajour-wordmark {
+    display: none;
+  }
+}
+
 .ajour-app-sidebar-toggle {
   color: var(--text-secondary);
 }
@@ -1953,7 +1966,7 @@
   color: var(--text);
 }
 
-/* Settings in the sidebar foot while a Settings page is open. */
+/* Settings in the sidebar header while a Settings page is open. */
 .ajour-app-sidebar-toggle[data-active="true"] {
   color: var(--text);
   background: var(--app-sidebar-active-bg);

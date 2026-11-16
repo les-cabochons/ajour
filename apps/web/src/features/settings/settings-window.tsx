@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TimerDock } from "@/features/layout/timer-dock";
+import { AppVersionFoot } from "@/features/settings/app-version-foot";
 import {
   SettingsLink,
   useCloseSettings,
@@ -33,8 +33,9 @@ function isOpen(page: string, entry: string) {
  * Settings in wide windows: a window over the page, as in T3 Code. The page
  * behind stays where it was, blurred and dimmed, and Esc or Close returns to
  * it with nothing moved. The window has the settings pages in a column at
- * the left, under their App, Work and Data groups, with the timer card at
- * its foot, and the open page at the right under a "Settings / Page" header.
+ * the left, under their App, Work and Data groups, with the version and the
+ * desktop update button at its foot, and the open page at the right under a
+ * "Settings / Page" header.
  * Which page is open lives in the page's `settings` search, so the browser
  * shows `/settings/...` meanwhile and Back closes the window.
  */
@@ -100,10 +101,8 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
               </div>
             ))}
           </div>
-          {/* The app sidebar's timer card, so Settings shows the one form of
-              the timer beside a sidebar (council round 25). */}
           <div className="settings-window-nav-foot">
-            <TimerDock inWindow />
+            <AppVersionFoot />
           </div>
         </nav>
         <div className="settings-window-body">

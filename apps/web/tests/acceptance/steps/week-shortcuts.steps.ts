@@ -32,7 +32,7 @@ async function pressModified(page: Page, key: string) {
 }
 
 When("I press the labeled Commit week button", async ({ page }) => {
-  // The sidebar foot's icon has the same name; this one shows its words.
+  // The narrow bottom row's button has the same name; this one shows its words.
   await page
     .getByRole("button", { name: "Commit week" })
     .filter({ hasText: "Commit week" })

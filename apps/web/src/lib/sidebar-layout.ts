@@ -9,8 +9,17 @@ import { recordDeviceSettingChange } from "@/lib/preference-events";
  */
 export type SidebarDensity = "comfortable" | "compact";
 
+/** One list in the Backlog's order, or a section per project. */
+export type SidebarGrouping = "list" | "project";
+
 export interface SidebarLayout {
   density: SidebarDensity;
+  grouping: SidebarGrouping;
+  /**
+   * The projects whose section is collapsed while the list groups by
+   * project. "none" stands for the items without a project.
+   */
+  collapsedProjects: string[];
   /** The width the user dragged to. Missing means the density's default. */
   width?: number;
   pullRequestsOpen: boolean;
@@ -35,6 +44,8 @@ const DEFAULT_WIDTH: Record<SidebarDensity, number> = {
 
 const DEFAULT_LAYOUT: SidebarLayout = {
   density: "comfortable",
+  grouping: "list",
+  collapsedProjects: [],
   pullRequestsOpen: true,
   snoozedOpen: false,
   settledOpen: false,
@@ -57,6 +68,13 @@ export function parseSidebarLayout(value: string | null): SidebarLayout {
     const parsed = value ? (JSON.parse(value) as Partial<SidebarLayout>) : {};
     return {
       density: parsed.density === "compact" ? "compact" : "comfortable",
+      grouping: parsed.grouping === "project" ? "project" : "list",
+      collapsedProjects: Array.isArray(parsed.collapsedProjects)
+        ? parsed.collapsedProjects.filter(
+            (projectId): projectId is string =>
+              typeof projectId === "string" && projectId !== "",
+          )
+        : [],
       width:
         typeof parsed.width === "number" && Number.isFinite(parsed.width)
           ? clampSidebarWidth(parsed.width)
@@ -128,6 +146,7 @@ export function saveSidebarLayout() {
   if (savedLayout && recordsEqual(savedLayout, current)) return;
   recordDeviceSettingChange("sidebar_layout", savedLayout ?? current, current, [
     "density",
+    "grouping",
   ]);
   savedLayout = current;
   try {

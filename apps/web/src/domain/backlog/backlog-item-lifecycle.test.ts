@@ -21,6 +21,7 @@ import {
   selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
   groupSidebarBacklogItemsByLevel,
+  groupSidebarBacklogItemsByProject,
   selectUpNextBacklogItem,
   settleBacklogItem,
   snoozeBacklogItem,
@@ -1117,6 +1118,33 @@ describe("the sidebar's backlog items", () => {
       3,
       2,
       1,
+    ]);
+  });
+
+  it("groups the list by project, in the order of each project's first item", () => {
+    const listed = [
+      item("harbor-pinned", { projectId: "harbor", pinnedAt: 1 }),
+      item("loose"),
+      item("atlas-1", { projectId: "atlas" }),
+      item("harbor-1", { projectId: "harbor" }),
+      item("gone", { projectId: "deleted" }),
+      item("atlas-2", { projectId: "atlas" }),
+    ];
+    const groups = groupSidebarBacklogItemsByProject(
+      listed,
+      (projectId) => projectId !== "deleted",
+    ).map(({ projectId, pinned, others }) => [
+      projectId,
+      ids(pinned),
+      ids(others),
+    ]);
+
+    // A pinned item leads its project; items without a known project, as
+    // when the project is gone, come last together.
+    expect(groups).toEqual([
+      ["harbor", ["harbor-pinned"], ["harbor-1"]],
+      ["atlas", [], ["atlas-1", "atlas-2"]],
+      [undefined, [], ["loose", "gone"]],
     ]);
   });
 });

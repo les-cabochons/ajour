@@ -360,13 +360,6 @@ When("I press Commit week in the top bar", async ({ page }) => {
     .click();
 });
 
-When("I press Commit week in the sidebar", async ({ page }) => {
-  await page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("button", { name: "Commit week", exact: true })
-    .click();
-});
-
 function weekCompleteDialog(page: Page) {
   return page.getByRole("alertdialog", { name: "Week complete" });
 }

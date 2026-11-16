@@ -15,6 +15,16 @@ describe("parseSidebarLayout", () => {
     }
   });
 
+  it("keeps one list unless By project was saved, and its collapsed projects", () => {
+    expect(parseSidebarLayout(null).grouping).toBe("list");
+    expect(parseSidebarLayout('{"grouping":"tags"}').grouping).toBe("list");
+    const layout = parseSidebarLayout(
+      '{"grouping":"project","collapsedProjects":["atlas","",7,"none"]}',
+    );
+    expect(layout.grouping).toBe("project");
+    expect(layout.collapsedProjects).toEqual(["atlas", "none"]);
+  });
+
   it("drops a project filter that is not a project id", () => {
     for (const projectId of ['""', "42", "null"]) {
       expect(

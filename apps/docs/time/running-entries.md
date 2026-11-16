@@ -2,7 +2,7 @@
 
 A running entry counts your time as you work. When you stop it, Ajour saves it as an entry on the day it started.
 
-<Shot name="timer-dock" alt="The running entry at the top of the sidebar" />
+<Shot name="timer-dock" alt="The running entry at the bottom of the sidebar" />
 
 ## Start an entry
 
@@ -18,7 +18,7 @@ Only one entry runs at a time. Starting another one stops the running entry and 
 
 ## While it runs
 
-The sidebar shows the running entry at the top: its title, the time with seconds, and the project code and task. If the entry is on a backlog item with an estimate, a bar shows how much of the estimate is used, such as `0.7h left` or `0.4h over`. While the sidebar is hidden, the running entry floats at the bottom left with its title, its time and the stop button.
+The sidebar shows the running entry at the bottom: its title, the time with seconds, and the project code and task. If the entry is on a backlog item with an estimate, a bar along its top edge shows how much of the estimate is used, such as `0.7h left` or `0.4h over`. While the sidebar is hidden, the running entry floats at the bottom left with its title, its time and the stop button.
 
 The window title shows the time too, such as `● 1:24 · Fix export rounding`, so you can see it from the taskbar or the window switcher.
 

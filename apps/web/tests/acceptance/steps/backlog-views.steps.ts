@@ -228,6 +228,29 @@ Given("the other Backlog item has 1.5 hours remaining", async ({ page }) => {
   });
   await page.reload();
 });
+Given("the project is named {string}", async ({ page }, name: string) => {
+  await page.evaluate((name) => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    for (const project of state.projects) {
+      project.name = name;
+      project.displayName = name;
+    }
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  }, name);
+  await page.reload();
+});
+Then("its sidebar row's hover actions end inside the row", async ({ page }) => {
+  const row = otherSidebarRow(page);
+  const settle = row.getByRole("button", { name: "Settle", exact: true });
+  await expect(settle).toBeVisible();
+  const [rowBox, settleBox] = await Promise.all([
+    row.boundingBox(),
+    settle.boundingBox(),
+  ]);
+  expect(settleBox!.x + settleBox!.width).toBeLessThanOrEqual(
+    rowBox!.x + rowBox!.width,
+  );
+});
 function otherSidebarRow(page: Page) {
   return page
     .getByRole("navigation", { name: "Primary navigation" })
@@ -243,18 +266,17 @@ Then(
   },
 );
 Then(
-  "the other item's sidebar row shows its workflow state {string}",
+  "the other item's sidebar row leads with its workflow state {string}",
   async ({ page }, state: string) => {
     const row = otherSidebarRow(page);
-    const stateLine = row.getByText(state, { exact: true });
-    await expect(stateLine).toBeVisible();
-    // The third line is faint, as in T3 Code's thread list (council round 5).
-    const tertiary = await row.evaluate(() =>
-      getComputedStyle(document.documentElement)
-        .getPropertyValue("--text-tertiary")
-        .trim(),
-    );
-    await expect(stateLine).toHaveCSS("color", tertiary);
+    // The state's ring leads the title's line, named by the state.
+    const ring = row.getByRole("img", { name: state, exact: true });
+    await expect(ring).toBeVisible();
+    const [ringBox, titleBox] = await Promise.all([
+      ring.boundingBox(),
+      row.locator("[data-row-title]").boundingBox(),
+    ]);
+    expect(ringBox!.x).toBeLessThan(titleBox!.x);
   },
 );
 When("I press S on the other item on the Backlog page", async ({ page }) => {

@@ -1662,6 +1662,47 @@ export function groupSidebarBacklogItemsByLevel(
   }));
 }
 
+/** One project's rows when the sidebar groups by project. */
+export interface SidebarProjectGroup {
+  /** Missing for the items without a project, or whose project is gone. */
+  projectId: string | undefined;
+  pinned: LocalWorkItem[];
+  others: LocalWorkItem[];
+}
+
+/**
+ * The sidebar's rows grouped by project, for the By project grouping. The
+ * projects come in the order of their first item in the list, so the one
+ * with the most urgent work, or a pinned item, leads. The items without a
+ * project come last. Each group keeps the list's order and keeps its pinned
+ * items apart from the rest, as the list does.
+ */
+export function groupSidebarBacklogItemsByProject(
+  listed: readonly LocalWorkItem[],
+  hasProject: (projectId: string) => boolean,
+): SidebarProjectGroup[] {
+  const groups = new Map<string | undefined, SidebarProjectGroup>();
+  for (const workItem of listed) {
+    const projectId =
+      workItem.projectId && hasProject(workItem.projectId)
+        ? workItem.projectId
+        : undefined;
+    let group = groups.get(projectId);
+    if (!group) {
+      group = { projectId, pinned: [], others: [] };
+      groups.set(projectId, group);
+    }
+    (workItem.pinnedAt === undefined ? group.others : group.pinned).push(
+      workItem,
+    );
+  }
+  const ordered = [...groups.values()];
+  return [
+    ...ordered.filter((group) => group.projectId !== undefined),
+    ...ordered.filter((group) => group.projectId === undefined),
+  ];
+}
+
 /**
  * The item the sidebar and the timer dock offer as Up next: the first listed
  * item that is not pinned. Pinning keeps an item in view without making it

@@ -74,7 +74,7 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
 - `--page-gutter: 24px` (12px in the narrow view): one left edge per page. The top bar's title or breadcrumb, list rows (Day, Week grid, Backlog), detail pages, Commit and Settings content all start this far from the content's edge (council round 7).
 - `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
-- The top bar is 48px. Sidebar backlog rows are 80px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px (52px and two lines in the narrow view). Backlog rows are 36px (52px and two lines in the narrow view).
+- The top bar is 48px. Sidebar backlog rows are 56px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px (52px and two lines in the narrow view). Backlog rows are 36px (52px and two lines in the narrow view).
 
 ## Week Grid
 

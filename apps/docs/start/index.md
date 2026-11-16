@@ -26,12 +26,12 @@ Give a task a number with **Assign shortcut…**. Press that number anywhere to 
 
 ## 2. Track time as you work
 
-1. Press **Start** at the top of the sidebar. A running entry starts and its editor opens. <kbd>S</kbd> starts one too; click it in the sidebar to open its editor.
+1. Press **Start** at the bottom of the sidebar. A running entry starts and its editor opens. <kbd>S</kbd> starts one too; click it in the sidebar to open its editor.
 2. Pick a project and task, type a note, and press **Save**. The entry keeps running.
 3. Keep working. The running entry counts up in the sidebar and in the window title.
 4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on the day it started.
 
-<Shot name="timer-dock" alt="The running entry at the top of the sidebar, with its time and estimate" />
+<Shot name="timer-dock" alt="The running entry at the bottom of the sidebar, with its time and estimate" />
 
 To switch to other work, start another entry. Ajour stops the running one and saves it. See [Running entries](/time/running-entries).
 
@@ -47,7 +47,7 @@ Double-click any row of the day to open it in the side panel. Change the task, t
 
 ## 5. Commit the week
 
-At the end of the week, click **Commit**, the calendar with a check mark at the bottom left of the sidebar. Ajour also asks you once when your saved time reaches the week's target. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**. When the whole week is in, press **Submit week** to lock it.
+At the end of the week, click **Commit week** in the Day or Week title bar. Ajour also asks you once when your saved time reaches the week's target. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**. When the whole week is in, press **Submit week** to lock it.
 
 <Shot name="commit-week" alt="The Commit week page with the changes and the lines to copy" />
 

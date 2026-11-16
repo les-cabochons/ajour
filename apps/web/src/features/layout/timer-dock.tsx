@@ -2,7 +2,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
@@ -177,38 +176,6 @@ function NewEntryButton() {
   );
 }
 
-/**
- * The settings window's "+": the new entry editor opens in the card's own
- * popover, inside the window, never in the Time page's side panel behind it,
- * whose navigation would close the window.
- */
-function WindowNewEntryButton() {
-  const today = useTodayIsoDate();
-  const [open, setOpen] = useState(false);
-  // One entry editor at a time, as the titlebar's host keeps it: opening
-  // either of the card's editors closes the other.
-  const runningOpen = useRunningEntryEditor(true);
-  useEffect(() => {
-    if (runningOpen) setOpen(false);
-  }, [runningOpen]);
-  return (
-    <TimeEntryEditorPopover
-      target={{ kind: "create", localDate: today }}
-      open={open && !runningOpen}
-      onOpenChange={(next) => {
-        if (next) setRunningEntryEditorOpen(false);
-        setOpen(next);
-      }}
-      triggerLabel="Create time entry"
-      triggerShortcut="entry.new"
-      iconTrigger
-      triggerClassName={NEW_ENTRY_BUTTON_CLASS}
-    >
-      <PlusIcon className="size-4" />
-    </TimeEntryEditorPopover>
-  );
-}
-
 /** The dock's Start and Stop: the strongest control in the card. */
 export const DOCK_PRIMARY_BUTTON_CLASS =
   "flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background outline-none hover:bg-foreground/85 focus-visible:ring-2 focus-visible:ring-ring";
@@ -230,8 +197,8 @@ function StartButton() {
 
 /**
  * What the running entry's card shows: its title, the time counted, and how
- * much of the item's remaining estimate it uses. The sidebar dock and the
- * desktop tray panel share it.
+ * much of the item's remaining estimate it uses, as a card. The desktop tray
+ * panel shows it; the sidebar's dock lays it out as a foot instead.
  */
 export function RunningEntryCardBody({
   summary,
@@ -279,28 +246,80 @@ export function RunningEntryCardBody({
 }
 
 /**
- * The timer box in the expanded sidebar. While an entry runs: its title, the
- * time counted, "+", Stop, and how much of the item's remaining estimate it
- * uses. Clicking it opens the running entry's editor. Otherwise, one row holds
- * "+", Start for an empty entry, and today's total. `inWindow` is the settings
- * window's copy: its editors open in the card's own popover, never on the
- * page behind the window.
+ * The running entry at the sidebar's foot: how much of the item's remaining
+ * estimate it uses as a line along the dock's top edge, then its title, the
+ * time counted with what is left beside it, and the project and task.
  */
-export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
+function RunningEntryFootBody({
+  summary,
+  runningDurationMs,
+}: {
+  summary: NonNullable<ReturnType<typeof useRunningEntry>["summary"]>;
+  runningDurationMs: number;
+}) {
+  const over = summary.remainingMs !== undefined && summary.remainingMs < 0;
+  return (
+    <>
+      {summary.estimateUsed !== undefined ? (
+        <span
+          aria-hidden
+          className="absolute inset-x-0 -top-px block h-0.5 overflow-hidden"
+        >
+          <span
+            className={cn(
+              "block h-full",
+              over ? "bg-destructive" : "bg-[var(--success)]",
+            )}
+            style={{ width: `${summary.estimateUsed * 100}%` }}
+          />
+        </span>
+      ) : null}
+      <span className="flex min-w-0 items-center gap-2 pr-16">
+        <RunningDot />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {summary.title}
+        </span>
+      </span>
+      <span className="mt-2 flex items-baseline justify-between gap-2">
+        <span className="font-mono text-xl leading-none font-medium tabular-nums">
+          {formatElapsedDuration(runningDurationMs)}
+        </span>
+        {summary.remainingMs !== undefined ? (
+          <span
+            className={cn(
+              "shrink-0 text-xs text-muted-foreground",
+              over && "text-destructive",
+            )}
+          >
+            {formatRemainingEstimate(summary.remainingMs)}
+          </span>
+        ) : null}
+      </span>
+      {summary.meta ? (
+        <span className="mt-1.5 block truncate text-xs text-muted-foreground">
+          {summary.meta}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The timer box at the app sidebar's foot, edge to edge under a hairline.
+ * While an entry runs: its title, the time counted, "+", Stop, and how much
+ * of the item's remaining estimate it uses, as a line along its top edge.
+ * Clicking it opens the running entry's editor. Otherwise, one row holds
+ * "+", Start for an empty entry, and today's total.
+ */
+export function TimerDock() {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const editorOpen = useRunningEntryEditor(Boolean(timer));
-  // While the settings window is open, its own card shows the editor and the
-  // sidebar's card behind the window stays quiet.
+  // The settings window covers the sidebar: the editor waits behind it.
   const windowOpen = useSettingsWindowLocation() !== null;
-  const showsEditor = editorOpen && (inWindow || !windowOpen);
-  const newEntryButton = inWindow ? (
-    <WindowNewEntryButton />
-  ) : (
-    <NewEntryButton />
-  );
+  const showsEditor = editorOpen && !windowOpen;
   // Whether focus was in the running card or its editor, which React's focus
   // events reach through the editor's portal. When the entry stops from
   // there, its card goes away with the focused button, so focus moves to
@@ -321,9 +340,9 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
       <section
         ref={idleCardRef}
         aria-label="Timer"
-        className="mx-2 mt-1 mb-2 flex items-center gap-1.5 rounded-md border bg-background p-2.5 text-xs"
+        className="flex h-12 shrink-0 items-center gap-1.5 border-t bg-background px-3 text-xs"
       >
-        {newEntryButton}
+        <NewEntryButton />
         <StartButton />
         <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">
           Today {formatClockDuration(todayTotalMs)}
@@ -335,7 +354,7 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
   return (
     <section
       aria-label="Running entry"
-      className="relative mx-2 mt-1 mb-2 rounded-md border bg-background"
+      className="relative shrink-0 border-t bg-background"
       onFocus={() => {
         focusInRunningCard.current = true;
       }}
@@ -347,22 +366,18 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
         open={showsEditor}
-        onOpenChange={(open) =>
-          inWindow
-            ? setRunningEntryEditorOpen(open)
-            : openRunningEditor(open, timer._id, pathname)
-        }
+        onOpenChange={(open) => openRunningEditor(open, timer._id, pathname)}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
-        triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring"
+        triggerClassName="block w-full p-3 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <RunningEntryCardBody
+        <RunningEntryFootBody
           summary={summary}
           runningDurationMs={runningDurationMs}
         />
       </TimeEntryEditorPopover>
-      <span className="absolute top-2 right-2 flex gap-1">
-        {newEntryButton}
+      <span className="absolute top-2.5 right-2 flex gap-1">
+        <NewEntryButton />
         <StopButton timerId={timer._id} />
       </span>
     </section>
