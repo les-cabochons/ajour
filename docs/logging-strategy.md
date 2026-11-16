@@ -1039,6 +1039,11 @@ channel to read the event each emits.
 | `pull_request.unsnooze`              | command                            | store command                                    |
 | `pull_request.update`                | command, request, plugin_operation | route, plugin method                             |
 | `question.answer`                    | command, request                   | route, client call                               |
+| `repository_folder.add`              | request, command                   | route                                            |
+| `repository_folder.choose`           | ipc                                | IPC channel                                      |
+| `repository_folder.list`             | request, command                   | route, client call                               |
+| `repository_folder.remove`           | request, command                   | route, client call                               |
+| `repository_folder.use`              | request, command                   | route, client call                               |
 | `route.change`                       | navigation                         | renderer                                         |
 | `schema.list`                        | command, request                   | route, client call                               |
 | `settle_comment.send`                | job                                | renderer                                         |

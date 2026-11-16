@@ -1629,6 +1629,31 @@ export const catalog = defineCatalog({
         update: { release_allowed: operational<boolean>() },
       },
     },
+    "repository_folder.list": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "repository_folder.add": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "repository_folder.remove": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "repository_folder.use": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "repository_folder.choose": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
     /** A plugin installed from an archive the user picked, or downloaded from the catalog. */
     "plugin.install": {
       kinds: ["command", "ipc"],

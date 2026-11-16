@@ -1034,3 +1034,9 @@ The desktop tray panel, specified in [#609](https://github.com/les-cabochons/ajo
 `apps/desktop/electron/tray-panel.cjs` owns native visibility, placement, dismissal and destruction. The owner alone sends ready, hide and open-main commands through `ajour:tray-panel-command`. Child navigation and child-created windows are blocked. The default session serves only the app and this trusted child; plugin renderers keep their isolated partitions.
 
 `components/ui/portal-container.tsx` supplies the child document to shared popup wrappers. The normal app uses their default container. Each window renders the same Undo toast manager in its own document. Cross-document events use the element's owner document rather than assuming the main window's Node constructor.
+
+## Repository folders
+
+API state version 11 adds `repositoryFolders`, with stable ids, project ids, names, absolute paths and optional last-use timestamps. Only the local API file stores these per-device records. They never enter renderer project records, bootstrap or team sync. `FolderResolver` in `apps/api/src/repository-folders.ts` resolves ids for the process broker, rechecks real paths at use, and refuses Ajour's user-data and install directories and their descendants.
+
+The restricted `ajour:choose-folder` IPC accepts only a project id from the active main frame. Main opens the native directory chooser and calls `addRepositoryFolderForServer` directly. HTTP exposes list, remove and remember-use routes under `/api/projects/:projectId/repository-folders`; POST to the collection refuses paths and directs callers to the chooser. Removal deletes only the mapping. No directory is deleted or scanned.

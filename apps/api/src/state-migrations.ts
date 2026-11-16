@@ -351,6 +351,13 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 9, migrate: toVersion9 },
   // The official GitHub plugin's saved addresses, for API 4 (#403).
   { version: 10, migrate: toVersion10 },
+  {
+    version: 11,
+    migrate: (state) => ({
+      ...state,
+      repositoryFolders: state.repositoryFolders ?? [],
+    }),
+  },
 ];
 
 /** The version this build writes. */

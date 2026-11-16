@@ -1,3 +1,7 @@
+import {
+  repositoryFolderSchema,
+  type RepositoryFolder,
+} from "../../../packages/shared/repository-folders.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -440,6 +444,7 @@ function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
 }
 
 interface AppApiStateV8 {
+  repositoryFolders: RepositoryFolder[];
   version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
@@ -599,6 +604,7 @@ function withCapabilityChoice(
 
 function createDefaultState(): AppApiState {
   return {
+    repositoryFolders: [],
     version: STATE_VERSION,
     connections: [],
     stagedImports: [],
@@ -996,6 +1002,13 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
+    repositoryFolders: (Array.isArray(raw.repositoryFolders)
+      ? raw.repositoryFolders
+      : []
+    ).flatMap((folder) => {
+      const parsed = repositoryFolderSchema.safeParse(folder);
+      return parsed.success ? [parsed.data] : [];
+    }),
     // A step that held keeps the file below the current version.
     version:
       typeof raw.version === "number"
@@ -1284,6 +1297,76 @@ export class AppApiStorage {
   /** Loads the state file now, with its migrations, if it isn't loaded yet. */
   async ready(): Promise<void> {
     await this.readState();
+  }
+
+  async listRepositoryFolders(projectId?: string): Promise<RepositoryFolder[]> {
+    return structuredClone(
+      (await this.readState()).repositoryFolders.filter(
+        (folder) => projectId === undefined || folder.projectId === projectId,
+      ),
+    );
+  }
+
+  async addRepositoryFolder(
+    projectId: string,
+    folderPath: string,
+    name: string,
+  ): Promise<RepositoryFolder> {
+    return this.mutate((state) => {
+      const existing = state.repositoryFolders.find(
+        (folder) =>
+          folder.projectId === projectId && folder.path === folderPath,
+      );
+      const folder = existing ?? {
+        id: randomUUID(),
+        projectId,
+        name,
+        path: folderPath,
+      };
+      return {
+        nextState: existing
+          ? state
+          : {
+              ...state,
+              repositoryFolders: [...state.repositoryFolders, folder],
+            },
+        result: structuredClone(folder),
+      };
+    });
+  }
+
+  async removeRepositoryFolder(projectId: string, id: string): Promise<void> {
+    return this.mutate((state) => ({
+      nextState: {
+        ...state,
+        repositoryFolders: state.repositoryFolders.filter(
+          (folder) => folder.projectId !== projectId || folder.id !== id,
+        ),
+      },
+      result: undefined,
+    }));
+  }
+
+  async useRepositoryFolder(projectId: string, id: string): Promise<void> {
+    return this.mutate((state) => {
+      if (
+        !state.repositoryFolders.some(
+          (folder) => folder.projectId === projectId && folder.id === id,
+        )
+      )
+        throw new Error("This repository folder is no longer available.");
+      return {
+        nextState: {
+          ...state,
+          repositoryFolders: state.repositoryFolders.map((folder) =>
+            folder.projectId === projectId && folder.id === id
+              ? { ...folder, lastUsedAt: Date.now() }
+              : folder,
+          ),
+        },
+        result: undefined,
+      };
+    });
   }
 
   /** Whether the vault can keep and give back secrets now. */

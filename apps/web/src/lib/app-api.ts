@@ -1,3 +1,4 @@
+import { repositoryFoldersSchema } from "@ajour/shared/repository-folders";
 import {
   startBacklogSync,
   setBacklogSyncAvailability,
@@ -1860,5 +1861,30 @@ export async function markAgentsSeen() {
     "/api/mcp/seen",
     { method: "POST", body: "{}" },
     agentsSnapshotSchema,
+  );
+}
+
+export function listRepositoryFolders(projectId: string) {
+  return appApiRequest(
+    "listRepositoryFolders",
+    `/api/projects/${encodeURIComponent(projectId)}/repository-folders`,
+    undefined,
+    repositoryFoldersSchema,
+  );
+}
+export function removeRepositoryFolder(projectId: string, folderId: string) {
+  return appApiRequest(
+    "removeRepositoryFolder",
+    `/api/projects/${encodeURIComponent(projectId)}/repository-folders/${encodeURIComponent(folderId)}`,
+    { method: "DELETE" },
+    repositoryFoldersSchema,
+  );
+}
+export function useRepositoryFolder(projectId: string, folderId: string) {
+  return appApiRequest(
+    "useRepositoryFolder",
+    `/api/projects/${encodeURIComponent(projectId)}/repository-folders/${encodeURIComponent(folderId)}/use`,
+    { method: "POST" },
+    repositoryFoldersSchema,
   );
 }

@@ -141,6 +141,7 @@ const desktopApi = {
     invoke("ajour:configure-automatic-updates", track, ...traced(trace)),
   openUpdateRelease: (releaseUrl, trace) =>
     invoke("ajour:open-update-release", releaseUrl, ...traced(trace)),
+  chooseFolder: (projectId) => invoke("ajour:choose-folder", projectId),
   installPlugin: (trace) => invoke("ajour:install-plugin", ...traced(trace)),
   getPluginCatalog: (trace) =>
     invoke("ajour:get-plugin-catalog", ...traced(trace)),

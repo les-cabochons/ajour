@@ -1,3 +1,4 @@
+import type { RepositoryFolder } from "@ajour/shared/repository-folders";
 import type {
   CatalogPluginDownloadResponse,
   PluginInstallResponse,
@@ -352,6 +353,7 @@ declare global {
         releaseUrl: string,
         trace?: TraceCarrier,
       ) => Promise<void>;
+      chooseFolder?: (projectId: string) => Promise<RepositoryFolder | null>;
       installPlugin?: (
         trace?: TraceCarrier,
       ) => Promise<PluginInstallResponse | null>;
