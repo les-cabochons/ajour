@@ -81,6 +81,8 @@ function dependencies() {
     }),
     subscribeCatalog: () => () => {},
     setPluginEnabled: unused,
+    setPluginProcessAcceptance: unused,
+    setUnsignedPluginProcessesEnabled: unused,
     setPluginRuntimeSettings: unused,
     resumePlugin: unused,
     savePluginConnection: unused,

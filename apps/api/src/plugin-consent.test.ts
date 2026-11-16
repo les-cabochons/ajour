@@ -1,9 +1,21 @@
+import { ProcessBroker } from "./process-broker.ts";
+import { AppApiStorage } from "./storage.ts";
+import { processConsentGate } from "./plugin-consent.ts";
+import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import os from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  symlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { create } from "tar";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAppApiServer,
   installPluginForServer,
@@ -29,6 +41,14 @@ import {
  * allows it.
  */
 
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readFile: vi.fn(actual.readFile),
+    readlink: vi.fn(actual.readlink),
+  };
+});
 const ICON = "<svg viewBox='0 0 16 16' />";
 const ID = "fixture-tracker";
 
@@ -214,6 +234,186 @@ describe("consent on plugin installs and updates", () => {
         : { enableAfterInstall: options.enableAfterInstall }),
     });
   }
+
+  it.each(["version", "package"])(
+    "drops process acceptance after a %s update and rejects a stale page",
+    async (kind) => {
+      const root = await tempDir();
+      const server = startServer(root);
+      const value = manifest("1.0.0", (value) => {
+        value.processes = {
+          executables: { node: { names: ["node"] } },
+          commands: [
+            {
+              id: "version",
+              executable: "node",
+              args: ["--version"],
+              mode: "capture",
+              timeoutSeconds: 10,
+            },
+          ],
+          openSchemes: ["codex"],
+        };
+      });
+      await install(server, root, value);
+      async function post(route: string, body: unknown) {
+        return dispatchJsonRequest(server, {
+          method: "POST",
+          path: route,
+          body: JSON.stringify(body),
+        });
+      }
+      expect(
+        (await post("/api/plugins/unsigned-processes", { enabled: true }))
+          .status,
+      ).toBe(200);
+      const before = (await group(server)).processGate;
+      expect(before).toMatchObject({
+        required: true,
+        accepted: false,
+        reason: "process_acceptance_required",
+      });
+      expect(
+        (
+          await post(`/api/plugins/${ID}/process-acceptance`, {
+            packageKey: before.packageKey,
+            accepted: true,
+          })
+        ).status,
+      ).toBe(200);
+      expect((await group(server)).processGate).toMatchObject({
+        accepted: true,
+      });
+      async function runThroughBroker(value: unknown) {
+        const storage = new AppApiStorage(path.join(root, "state.json"));
+        const manifest = pluginApi4ManifestSchema.parse(value);
+        return new ProcessBroker({
+          folders: { resolve: async () => undefined },
+          gate: (caller) => processConsentGate(storage, caller),
+          executableOverride: async () => process.execPath,
+        })
+          .forOperation({
+            pluginId: ID,
+            manifest,
+            packageKey: (await group(server)).processGate.packageKey,
+            method: "syncConnection",
+          })
+          .run({ command: "version", args: {} });
+      }
+      await activate(server, true);
+      expect((await runThroughBroker(value)).exitCode).toBe(0);
+      const next = {
+        ...value,
+        version: kind === "version" ? "2.0.0" : "1.0.0",
+      };
+      await install(server, root, next, {
+        source: "export const changed = true;",
+      });
+      expect((await group(server)).processGate).toMatchObject({
+        accepted: false,
+        reason: "process_acceptance_required",
+      });
+      await expect(runThroughBroker(next)).rejects.toMatchObject({
+        reason: "process_acceptance_required",
+      });
+      expect(
+        (
+          await post(`/api/plugins/${ID}/process-acceptance`, {
+            packageKey: before.packageKey,
+            accepted: true,
+          })
+        ).status,
+      ).toBe(409);
+    },
+  );
+
+  it("requires fresh acceptance when development files change, even with a signed installed origin", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "dev");
+    await writePackage(
+      directory,
+      manifest("1.0.0", (value) => {
+        value.processes = { openSchemes: ["codex"] };
+      }),
+    );
+    await writeFile(
+      path.join(root, "state.json"),
+      JSON.stringify({
+        version: 11,
+        pluginOrigins: {
+          [ID]: {
+            kind: "source",
+            signed: true,
+            installedAt: new Date().toISOString(),
+          },
+        },
+      }),
+    );
+    const server = startServer(root, {
+      developmentPluginDirectories: [directory],
+    });
+    const post = (route: string, body: unknown) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: route,
+        body: JSON.stringify(body),
+      });
+    const initial = (await group(server)).processGate;
+    expect(initial).toMatchObject({
+      required: true,
+      accepted: false,
+      reason: "unsigned_processes_off",
+    });
+    await post("/api/plugins/unsigned-processes", { enabled: true });
+    await post(`/api/plugins/${ID}/process-acceptance`, {
+      packageKey: initial.packageKey,
+      accepted: true,
+    });
+    expect((await group(server)).processGate.accepted).toBe(true);
+    await writeFile(
+      path.join(directory, "plugin.mjs"),
+      "export const changed = true;",
+    );
+    expect((await group(server)).processGate).toMatchObject({
+      accepted: false,
+      reason: "process_acceptance_required",
+    });
+    await writeFile(path.join(directory, "plugin.mjs"), "export {};");
+    expect((await group(server)).processGate.accepted).toBe(false);
+  });
+
+  it("an unchanged development overview reads no package files, and verification failure stays local", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "dev");
+    await writePackage(
+      directory,
+      manifest("1.0.0", (value) => {
+        value.processes = { openSchemes: ["codex"] };
+      }),
+    );
+    await symlink(root, path.join(directory, "node_modules"), "junction");
+    const server = startServer(root, {
+      developmentPluginDirectories: [directory],
+    });
+    expect((await group(server)).processGate.reason).toBe(
+      "unsigned_processes_off",
+    );
+    vi.mocked(readFile).mockClear();
+    await group(server);
+    expect(
+      vi
+        .mocked(readFile)
+        .mock.calls.filter(([file]) => String(file).startsWith(directory)),
+    ).toEqual([]);
+    vi.mocked(readlink).mockRejectedValueOnce(new Error("unreadable link"));
+    expect((await group(server)).processGate).toMatchObject({
+      reason: "package_unverified",
+      accepted: false,
+    });
+    expect((await group(server)).processGate.reason).toBe(
+      "unsigned_processes_off",
+    );
+  });
 
   async function group(server: Server) {
     const response = await dispatchJsonRequest(server, {

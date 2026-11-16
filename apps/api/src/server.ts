@@ -1140,7 +1140,8 @@ async function getOverview(
   unit?: Unit<AjourCatalog, "plugin.list">,
 ) {
   const startedAt = Date.now();
-  const { plugins, unavailable, access } = await pluginManager.inspectPlugins();
+  const { plugins, unavailable, access, packages } =
+    await pluginManager.inspectPlugins();
   unit?.set({
     plugin_list: {
       plugin_count: plugins.length,
@@ -1156,11 +1157,43 @@ async function getOverview(
     ),
   );
   const listed = await storage.getPluginsOverview(plugins, unavailable, access);
+  const processGates = new Map(
+    await Promise.all(
+      plugins
+        .filter((p) => isPluginApi4Manifest(p) && p.processes)
+        .map(async (plugin) => {
+          const identity = await pluginManager.processPackage(
+            plugin.id,
+            packages.get(plugin.id),
+          );
+          return [
+            plugin.id,
+            identity.packageVerificationFailed
+              ? {
+                  required: true,
+                  accepted: false,
+                  packageKey: "",
+                  reason: "package_unverified" as const,
+                }
+              : await storage.getPluginProcessGate(
+                  plugin.id,
+                  identity.packageKey,
+                  identity.development,
+                ),
+          ] as const;
+        }),
+    ),
+  );
   const overview = {
     ...listed,
     connectionGroups: listed.connectionGroups.map((group) => {
       const suspended = pluginManager.suspension(group.plugin.id);
-      return suspended ? { ...group, suspended } : group;
+      const processGate = processGates.get(group.plugin.id);
+      return {
+        ...group,
+        ...(suspended ? { suspended } : {}),
+        ...(processGate ? { processGate } : {}),
+      };
     }),
   };
   const sandbox = pluginManager.sandboxStatus();
@@ -1403,6 +1436,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         [read.connection.config],
       );
     },
+    processOrigin: (pluginId) => storage.getPluginOrigin(pluginId),
     pluginState: async (pluginId, runnable) => ({
       on: await pluginMayRun(storage, pluginId, runnable),
       settings: await storage.getPluginRuntimeSettings(pluginId),
@@ -2106,6 +2140,44 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    unsignedPluginProcessesToggle: async ({ request, response, unit }) => {
+      const payload = await readRequest(
+        request,
+        unsignedPluginsActivationUpdateSchema,
+      );
+      unit.set({ process_access: { enabled: payload.enabled } });
+      await storage.setUnsignedPluginProcessesEnabled(payload.enabled);
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+    pluginProcessAcceptance: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const payload = await readRequest(
+        request,
+        z.object({ packageKey: z.string(), accepted: z.boolean() }).strict(),
+      );
+      const { plugins, packages } = await pluginManager.inspectPlugins();
+      const plugin = plugins.find((p) => p.id === pluginId);
+      if (!plugin || !isPluginApi4Manifest(plugin) || !plugin.processes) {
+        unit.refuse("invalid_request");
+        writeJson(response, 404, {
+          error: "Plugin with process access not found.",
+        });
+        return;
+      }
+      const { packageKey: key, packageVerificationFailed } =
+        await pluginManager.processPackage(pluginId, packages.get(pluginId));
+      if (packageVerificationFailed || key !== payload.packageKey) {
+        unit.refuse("invalid_request");
+        writeJson(response, 409, {
+          error: "The plugin changed. Review its access again.",
+        });
+        return;
+      }
+      unit.set({ process_access: { accepted: payload.accepted } });
+      await storage.setPluginProcessAcceptance(pluginId, key, payload.accepted);
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
     schemaList: async ({ response, unit }) => {
       const pluginsEnabled = await storage.getPluginSystemEnabled();
       const plugins = pluginsEnabled
@@ -4568,7 +4640,17 @@ export async function installPluginForServer(
     async (installed) => {
       // First, so a signed package replaced by an unsigned one never runs as
       // signed, even when a later step fails.
-      await runtime.storage.setPluginOrigin(installed.manifest.id, origin);
+      const previousOrigin = await runtime.storage.getPluginOrigin(
+        installed.manifest.id,
+      );
+      await runtime.storage.setPluginOrigin(installed.manifest.id, {
+        ...origin,
+        installedAt: previousOrigin
+          ? new Date(
+              Math.max(Date.now(), Date.parse(previousOrigin.installedAt) + 1),
+            ).toISOString()
+          : origin.installedAt,
+      });
       // An update keeps the activation the user chose for the previous version.
       const pluginId = installed.manifest.id;
       if (!installed.replaced && options.enableAfterInstall === false) {

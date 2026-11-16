@@ -12,6 +12,7 @@ import type {
   OperationProcessBroker,
 } from "./broker-port.ts";
 import path from "node:path";
+import { pluginProcessPackageKey } from "./plugin-package.ts";
 import {
   PluginOperationRefused,
   PluginOperationLifetime,
@@ -191,6 +192,9 @@ interface PluginHostOptions {
    */
   broker?: CredentialBrokerPort;
   processBroker?: ProcessBrokerPort;
+  processOrigin?: (
+    pluginId: string,
+  ) => Promise<{ signed: boolean; installedAt: string } | undefined>;
   /**
    * Whether an API 4 plugin is on, and its Advanced section: what its
    * renderer's start reads, and which plugins stay "Always ready".
@@ -410,6 +414,7 @@ export class PluginManager {
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
   private readonly processBroker?: ProcessBrokerPort;
+  private readonly processOrigin?: PluginHostOptions["processOrigin"];
   private readonly pluginState?: PluginHostOptions["pluginState"];
   private readonly outsideOperations?: () => number;
   private readonly secretValues?: PluginHostOptions["secretValues"];
@@ -444,6 +449,7 @@ export class PluginManager {
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
     this.processBroker = options.processBroker;
+    this.processOrigin = options.processOrigin;
     this.pluginState = options.pluginState;
     this.outsideOperations = options.outsideOperations;
     this.secretValues = options.secretValues;
@@ -577,6 +583,7 @@ export class PluginManager {
     unavailable: UnavailablePlugin[];
     /** What each runnable plugin reaches, by plugin ID. */
     access: Map<string, PluginAccessView>;
+    packages: Map<string, ResolvedPlugin>;
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -585,12 +592,40 @@ export class PluginManager {
         .map((plugin) => plugin.manifest)
         .sort(comparePlugins),
       unavailable: Array.from(unavailable.values()),
+      packages: plugins,
       access: new Map(
         Array.from(plugins.values()).map(
           (plugin) => [plugin.manifest.id, plugin.access] as const,
         ),
       ),
     };
+  }
+
+  async processPackage(pluginId: string, resolved?: ResolvedPlugin) {
+    const plugin = resolved ?? (await this.getPlugin(pluginId));
+    const development = plugin.source === "development";
+    const origin = await this.processOrigin?.(pluginId);
+    if (!development) {
+      return {
+        packageKey: origin?.signed
+          ? ""
+          : JSON.stringify([
+              plugin.manifest.version,
+              origin?.installedAt ?? "legacy",
+            ]),
+        development,
+        packageVerificationFailed: false,
+      };
+    }
+    try {
+      return {
+        packageKey: await pluginProcessPackageKey(plugin.directory),
+        development,
+        packageVerificationFailed: false,
+      };
+    } catch {
+      return { packageKey: "", development, packageVerificationFailed: true };
+    }
   }
 
   /**
@@ -1280,6 +1315,9 @@ export class PluginManager {
             processBroker = this.processBroker?.forOperation({
               pluginId,
               manifest: plugin.manifest,
+              ...(plugin.manifest.processes
+                ? await this.processPackage(pluginId, plugin)
+                : {}),
               traceparent: this.events?.current()?.traceparent(),
               method,
               ...(typeof params.projectId === "string"

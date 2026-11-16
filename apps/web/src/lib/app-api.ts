@@ -866,6 +866,33 @@ export async function setUnsignedPluginsEnabled(
   );
 }
 
+export async function setUnsignedPluginProcessesEnabled(
+  enabled: boolean,
+): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "setUnsignedPluginProcessesEnabled",
+      "/api/plugins/unsigned-processes",
+      { method: "POST", body: JSON.stringify({ enabled }) },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+export async function setPluginProcessAcceptance(
+  pluginId: string,
+  packageKey: string,
+  accepted: boolean,
+): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "setPluginProcessAcceptance",
+      `/api/plugins/${encodeURIComponent(pluginId)}/process-acceptance`,
+      { method: "POST", body: JSON.stringify({ packageKey, accepted }) },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
 export async function installPlugin(): Promise<PluginInstallResponse | null> {
   const install = window.ajourDesktop?.installPlugin;
   if (!install) {

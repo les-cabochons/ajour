@@ -706,6 +706,43 @@ describe("the privacy canary", () => {
     expectNoLeak();
   });
 
+  it("records process switch and acceptance separately without package keys", async () => {
+    const from = mark();
+    await app.appApi.setUnsignedPluginProcessesEnabled(true);
+    const overview = await app.appApi.getPluginsOverview();
+    const key = overview.connectionGroups.find((g) => g.plugin.id === "canary")!
+      .processGate!.packageKey;
+    await app.appApi.setPluginProcessAcceptance("canary", key, true);
+    await app.appApi.setPluginProcessAcceptance("canary", key, false);
+    await app.appApi.setUnsignedPluginProcessesEnabled(false);
+    await waitForEvent(
+      api.events,
+      (e) =>
+        e.name === "unsigned_plugins.process_toggle" &&
+        e.process_access?.enabled === false,
+    );
+    const events = [
+      ...renderer.events.slice(from.renderer),
+      ...api.events.slice(from.api),
+    ];
+    expect(
+      events
+        .filter((e) => e.name === "unsigned_plugins.process_toggle")
+        .map((e) => e.process_access?.enabled),
+    ).toContain(true);
+    const changes = events.filter(
+      (e) => e.name === "plugin.process_update" && e.kind === "request",
+    );
+    expect(changes.map((e) => e.process_access?.accepted)).toEqual([
+      true,
+      false,
+    ]);
+    expect(JSON.stringify(events)).not.toContain(key);
+    expectNoLeak(events);
+    await app.appApi.setUnsignedPluginProcessesEnabled(true);
+    await app.appApi.setPluginProcessAcceptance("canary", key, true);
+  });
+
   it("keeps a chosen repository folder path out of choose, list, use and remove events, including a moved folder", async () => {
     const require = createRequire(import.meta.url);
     const {

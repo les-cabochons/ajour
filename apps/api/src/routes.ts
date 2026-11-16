@@ -183,6 +183,16 @@ export const ROUTES = {
     path: "/api/plugins/unsigned-activation",
     name: "unsigned_plugins.toggle",
   },
+  unsignedPluginProcessesToggle: {
+    method: "POST",
+    path: "/api/plugins/unsigned-processes",
+    name: "unsigned_plugins.process_toggle",
+  },
+  pluginProcessAcceptance: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/process-acceptance",
+    name: "plugin.process_update",
+  },
   schemaList: {
     method: "GET",
     path: "/api/project-data-shapes",
