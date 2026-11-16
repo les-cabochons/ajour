@@ -34,6 +34,7 @@ export type ProcessReason =
   | "needs_consent"
   | "unsigned_processes_off"
   | "process_acceptance_required"
+  | "package_unverified"
   | "undeclared"
   | "not_yet"
   | "folder_refused"
@@ -66,6 +67,7 @@ export interface ProcessBrokerOptions {
     | "needs_consent"
     | "unsigned_processes_off"
     | "process_acceptance_required"
+    | "package_unverified"
     | undefined
   >;
   executableOverride?(

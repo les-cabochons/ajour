@@ -106,6 +106,7 @@ export interface BrokerCaller {
   manifest: PluginApi4Manifest;
   /** Package identity and development status supplied by the host. */
   packageKey?: string;
+  packageVerificationFailed?: boolean;
   development?: boolean;
   /** The plugin method the operation runs, such as `syncConnection`. */
   method: string;

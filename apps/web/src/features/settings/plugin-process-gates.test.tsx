@@ -54,9 +54,7 @@ it("Given an unsigned plugin, explicit acceptance saves and Access shows its gat
     );
   }
   await renderRoutes({ routes: { "/": Page } });
-  expect(
-    screen.getByText("Allow this plugin to start processes on its page"),
-  ).toBeTruthy();
+  expect(screen.getByText("Allow it below.")).toBeTruthy();
   fireEvent.click(
     screen.getByRole("checkbox", {
       name: "Allow this plugin to start processes",
@@ -70,7 +68,7 @@ it.each([
   [
     "unsigned_processes_off",
     true,
-    "Turn on Unsigned plugins can start processes in Settings › Plugins",
+    "Turn on Unsigned plugins can start processes in Settings › Plugins.",
   ],
   [undefined, false, "Signed plugin. No unsigned process gates required."],
 ] as const)(

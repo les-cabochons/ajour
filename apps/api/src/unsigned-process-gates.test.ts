@@ -156,3 +156,23 @@ it("Given saved gates, an API reload preserves acceptance", async () => {
       .exitCode,
   ).toBe(0);
 });
+
+it("a late operation with an old key cannot revoke a newer acceptance", async () => {
+  const { storage, manifest } = await fixture();
+  await storage.setPluginProcessAcceptance(manifest.id, "new-package", true);
+  expect(
+    (await storage.getPluginProcessGate(manifest.id, "old-package")).accepted,
+  ).toBe(false);
+  expect(
+    (await storage.getPluginProcessGate(manifest.id, "new-package")).accepted,
+  ).toBe(true);
+});
+
+it("an unverifiable package refuses only its process broker calls", async () => {
+  const { caller, broker } = await fixture();
+  await expect(
+    broker
+      .forOperation({ ...caller, packageVerificationFailed: true })
+      .run({ command: "version", args: {} }),
+  ).rejects.toMatchObject({ reason: "package_unverified" });
+});

@@ -2009,25 +2009,6 @@ export class AppApiStorage {
       development || !isSignedPlugin({ origin: state.pluginOrigins[pluginId] });
     const acceptance = this.processSettingsIn(state, pluginId)?.acceptance;
     const accepted = acceptance === packageKey;
-    if (acceptance !== undefined && !accepted) {
-      // An observed development edit drops acceptance, including after a revert.
-      await this.mutate(async (current) => {
-        const saved = this.processSettingsIn(current, pluginId);
-        if (!saved || saved.acceptance !== acceptance)
-          return { nextState: current, result: undefined };
-        const { acceptance: _, ...settings } = saved;
-        return {
-          nextState: {
-            ...current,
-            pluginProcesses: {
-              ...current.pluginProcesses,
-              [pluginId]: settings,
-            },
-          },
-          result: undefined,
-        };
-      });
-    }
     return {
       required,
       accepted,
@@ -2064,6 +2045,10 @@ export class AppApiStorage {
   async listUnsignedPluginIds(pluginIds: readonly string[]): Promise<string[]> {
     const state = await this.readState();
     return pluginIds.filter((id) => state.pluginOrigins[id]?.signed !== true);
+  }
+
+  async getPluginOrigin(pluginId: string): Promise<PluginOrigin | undefined> {
+    return (await this.readState()).pluginOrigins[pluginId];
   }
 
   async setPluginOrigin(pluginId: string, origin: PluginOrigin): Promise<void> {

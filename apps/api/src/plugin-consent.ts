@@ -76,6 +76,7 @@ export async function processConsentGate(
   | "needs_consent"
   | "unsigned_processes_off"
   | "process_acceptance_required"
+  | "package_unverified"
   | undefined
 > {
   if (
@@ -85,6 +86,7 @@ export async function processConsentGate(
     ))
   )
     return "plugin_off";
+  if (caller.packageVerificationFailed) return "package_unverified";
   const consent = await storage.getPluginConsent(caller.pluginId);
   const access = summarizePluginAccess(caller.manifest, {
     agentPrompts: Object.fromEntries(

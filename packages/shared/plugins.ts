@@ -828,7 +828,11 @@ export const pluginOverviewGroupSchema = z.object({
       accepted: z.boolean(),
       packageKey: z.string(),
       reason: z
-        .enum(["unsigned_processes_off", "process_acceptance_required"])
+        .enum([
+          "unsigned_processes_off",
+          "process_acceptance_required",
+          "package_unverified",
+        ])
         .optional(),
     })
     .optional(),

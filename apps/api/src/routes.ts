@@ -150,7 +150,7 @@ export const ROUTES = {
   unsignedPluginProcessesToggle: {
     method: "POST",
     path: "/api/plugins/unsigned-processes",
-    name: "unsigned_plugins.toggle",
+    name: "unsigned_plugins.process_toggle",
   },
   pluginProcessAcceptance: {
     method: "POST",

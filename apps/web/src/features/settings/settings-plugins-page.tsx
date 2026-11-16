@@ -907,9 +907,7 @@ export function SettingsPluginsPage({
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
     const { unavailableReason } = group.plugin;
-    const signed = group.processGate
-      ? !group.processGate.required
-      : isSignedPlugin(group.plugin);
+    const signed = isSignedPlugin(group.plugin);
     const blockedAsUnsigned = !unsignedPluginsEnabled && !signed;
     // Saving runs the plugin, so it waits until the plugin may run (on, its
     // access allowed, and signed or unsigned plugins on); the form says so

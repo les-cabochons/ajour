@@ -42,21 +42,23 @@ export function PluginProcessAcceptance({
     );
   const reason =
     gate.reason === "unsigned_processes_off"
-      ? "Turn on Unsigned plugins can start processes in Settings › Plugins"
+      ? "Turn on Unsigned plugins can start processes in Settings › Plugins."
       : gate.reason === "process_acceptance_required"
-        ? "Allow this plugin to start processes on its page"
-        : "Process access allowed.";
+        ? "Allow it below."
+        : gate.reason === "package_unverified"
+          ? "Ajour can't verify the package. Process access is blocked."
+          : "Process access allowed.";
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-muted-foreground">{reason}</p>
       <SettingRow
         label="Allow this plugin to start processes"
-        description="Applies to this package and version. An update clears your acceptance."
+        description="Applies to this package and version. An update clears your acceptance. Withdrawing access stops new starts, but does not end processes already running."
       >
         <Checkbox
           aria-label="Allow this plugin to start processes"
           checked={gate.accepted}
-          disabled={disabled}
+          disabled={disabled || gate.reason === "package_unverified"}
           onCheckedChange={onChange}
         />
       </SettingRow>

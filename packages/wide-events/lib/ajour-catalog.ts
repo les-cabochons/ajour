@@ -622,7 +622,11 @@ export const catalog = defineCatalog({
     "plugin.process_update": {
       kinds: ["command", "request"],
       reasons: requestReasons,
-      fields: { ...requestFields, plugin: { id: operational() } },
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        process_access: { accepted: operational<boolean>() },
+      },
     },
     /** An API 4 plugin's Advanced section saved: Start and Memory ceiling. */
     "plugin.runtime_update": {
@@ -674,6 +678,7 @@ export const catalog = defineCatalog({
         "needs_consent",
         "unsigned_processes_off",
         "process_acceptance_required",
+        "package_unverified",
         "undeclared",
         "not_yet",
         "folder_refused",
@@ -789,6 +794,14 @@ export const catalog = defineCatalog({
       },
     },
     /** Unsigned plugins allowed to run again, or all of them deactivated. */
+    "unsigned_plugins.process_toggle": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        process_access: { enabled: operational<boolean>() },
+      },
+    },
     "unsigned_plugins.toggle": {
       kinds: ["command", "request"],
       reasons: requestReasons,

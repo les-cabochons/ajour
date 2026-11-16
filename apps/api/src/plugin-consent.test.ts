@@ -5,9 +5,17 @@ import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.
 import os from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  symlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { create } from "tar";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAppApiServer,
   installPluginForServer,
@@ -33,6 +41,14 @@ import {
  * allows it.
  */
 
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readFile: vi.fn(actual.readFile),
+    readlink: vi.fn(actual.readlink),
+  };
+});
 const ICON = "<svg viewBox='0 0 16 16' />";
 const ID = "fixture-tracker";
 
@@ -364,6 +380,39 @@ describe("consent on plugin installs and updates", () => {
     });
     await writeFile(path.join(directory, "plugin.mjs"), "export {};");
     expect((await group(server)).processGate.accepted).toBe(false);
+  });
+
+  it("an unchanged development overview reads no package files, and verification failure stays local", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "dev");
+    await writePackage(
+      directory,
+      manifest("1.0.0", (value) => {
+        value.processes = { openSchemes: ["codex"] };
+      }),
+    );
+    await symlink(root, path.join(directory, "node_modules"), "junction");
+    const server = startServer(root, {
+      developmentPluginDirectories: [directory],
+    });
+    expect((await group(server)).processGate.reason).toBe(
+      "unsigned_processes_off",
+    );
+    vi.mocked(readFile).mockClear();
+    await group(server);
+    expect(
+      vi
+        .mocked(readFile)
+        .mock.calls.filter(([file]) => String(file).startsWith(directory)),
+    ).toEqual([]);
+    vi.mocked(readlink).mockRejectedValueOnce(new Error("unreadable link"));
+    expect((await group(server)).processGate).toMatchObject({
+      reason: "package_unverified",
+      accepted: false,
+    });
+    expect((await group(server)).processGate.reason).toBe(
+      "unsigned_processes_off",
+    );
   });
 
   async function group(server: Server) {

@@ -1217,6 +1217,30 @@ network policy does not limit external commands or apps.
   - It also reaches more when it removes a gate: an endpoint no longer behind its access choice, or behind another one, or an operation that no longer sits behind any choice, listed as "No longer behind an access choice: settle backlog items in the source". The manifest lists only gated operations, so a removed operation can't be told from an ungated one, and the line says either may be the case. An endpoint put behind a choice, and any other removal, does not count.
   - An update that reaches no more keeps the plugin as it was, active or not.
 
+### Unsigned plugin process access
+
+Settings › Plugins has an "Unsigned plugins can start processes" switch. It is
+off on a new install and after loading older state without this setting. It is
+separate from allowing unsigned installs and deactivating unsigned plugins.
+
+The Access section on an unsigned or development-directory plugin with a
+`processes` block has an "Allow this plugin to start processes" checkbox. It
+saves acceptance for that plugin's package and version. Any package replacement,
+version change or development package change requires acceptance again. A page
+for a replaced package cannot accept the replacement without a fresh review.
+
+The section shows "Turn on Unsigned plugins can start processes in Settings ›
+Plugins." while the global switch is off, then "Allow it below." until accepted.
+With both gates on it shows "Process access allowed." The broker refuses commands while either gate is off. Signed
+plugins from verified sources need neither unsigned gate. Development-directory
+plugins always need both. Commands run as the user and can reach their files
+and credentials outside the sandbox.
+
+If Ajour cannot verify a package, its process controls say "Ajour can't verify
+the package. Process access is blocked." Other plugin operations remain available.
+Signed plugins show "Signed plugin. No unsigned process gates required."
+Withdrawing access stops new starts and does not end processes already running.
+
 ## Connection access and held edits
 
 Decided in [the connection access decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322442188) and [the held-edit decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322497778), built in [#395](https://github.com/les-cabochons/ajour/issues/395).
@@ -1348,23 +1372,3 @@ The project page has a Repositories section headed "On this computer". Each row 
 The repository picker is a centered dialog listing a project's folders as radio options. It preselects the last confirmed folder, or the first when none was used. With no folders it offers Add folder…. Use folder remembers the choice locally before returning it to the caller. Cancel and Escape close without remembering. Adding a folder selects it. The section disables controls while loading without adding a status line. Errors appear inline. The hand-off workflow supplies open state and the selection callback.
 
 Repository folders survive project archive and Undo, including Undo of creating a project. The current project lifecycle has no permanent-delete command. A future permanent-delete operation must prune the project's local folder associations after it commits.
-
-## Unsigned plugin process access
-
-Settings › Plugins has an "Unsigned plugins can start processes" switch. It is
-off on a new install and after loading older state without this setting. It is
-separate from allowing unsigned installs and deactivating unsigned plugins.
-
-The Access section on an unsigned or development-directory plugin with a
-`processes` block has an "Allow this plugin to start processes" checkbox. It
-saves acceptance for that plugin's package and version. Any package replacement,
-version change or development package change requires acceptance again. A page
-for a replaced package cannot accept the replacement without a fresh review.
-
-The section shows "Turn on Unsigned plugins can start processes in Settings ›
-Plugins" while the global switch is off, then "Allow this plugin to start
-processes on its page" until accepted. With both gates on it shows "Process
-access allowed." The broker refuses commands while either gate is off. Signed
-plugins from verified sources need neither unsigned gate. Development-directory
-plugins always need both. Commands run as the user and can reach their files
-and credentials outside the sandbox.
