@@ -32,16 +32,14 @@ afterEach(async () => {
   }
   await Promise.all(
     // A program can still hold its folder open while it exits on Windows.
-    roots
-      .splice(0)
-      .map((p) =>
-        rm(p, {
-          recursive: true,
-          force: true,
-          maxRetries: 20,
-          retryDelay: 100,
-        }),
-      ),
+    roots.splice(0).map((p) =>
+      rm(p, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      }),
+    ),
   );
 });
 
@@ -62,6 +60,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     send({ jsonrpc: "2.0", id, result: { pids: [process.pid, child.pid] } });
   } else if (method === "flood") {
     for (let n = 0; n < params.lines; n++) process.stdout.write(JSON.stringify({ n, pad: "x".repeat(params.pad ?? 0) }) + "\n");
+    // Says when every line has left for the pipe.
+    if (params.done) process.stdout.write("", () => require("node:fs").writeFileSync(params.done, "done"));
   } else if (method === "long") {
     process.stdout.write("y".repeat(params.bytes) + "\n");
     send({ jsonrpc: "2.0", id, result: "after" });
@@ -358,39 +358,48 @@ describe("Given a declared session command", () => {
     expect(rest.dropped).toBe(false);
   });
 
-  it("drops the oldest lines past the buffer and says so once", async () => {
-    const { operation } = await fixture();
-    const op = operation();
-    const id = await open(op);
-    const pad = 1000;
-    const lines = Math.ceil((SESSION_LIMITS.bufferBytes * 1.5) / pad);
-    await send(
-      op,
-      id,
-      JSON.stringify({ method: "flood", params: { lines, pad } }),
-    );
-    let last = -1;
-    const seen: number[] = [];
-    let dropped = false;
-    await vi.waitFor(
-      async () => {
-        const result = await read(op, id, {
-          max: SESSION_LIMITS.readLines,
-          waitMs: 200,
-        });
-        dropped ||= result.dropped;
-        for (const line of result.lines) seen.push(JSON.parse(line).n);
-        if (seen.length) last = seen[seen.length - 1]!;
-        expect(last).toBe(lines - 1);
-      },
-      { timeout: 10_000 },
-    );
-    expect(dropped).toBe(true);
-    expect(seen.length).toBeLessThan(lines);
-    // Lines arrive in order, with the dropped ones missing from the front.
-    expect([...seen].sort((a, b) => a - b)).toEqual(seen);
-    expect((await read(op, id)).dropped).toBe(false);
-  });
+  it(
+    "drops the oldest lines past the buffer and says so once",
+    { timeout: 30_000 },
+    async () => {
+      const { operation, root } = await fixture();
+      const op = operation();
+      const id = await open(op);
+      const pad = 1000;
+      const lines = Math.ceil((SESSION_LIMITS.bufferBytes * 1.5) / pad);
+      const done = path.join(root, "flooded");
+      await send(
+        op,
+        id,
+        JSON.stringify({ method: "flood", params: { lines, pad, done } }),
+      );
+      // Read only once the program wrote everything: a fast reader could
+      // otherwise keep up with it and the buffer would never overflow.
+      await vi.waitFor(() => readFile(done, "utf8"), { timeout: 10_000 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      let last = -1;
+      const seen: number[] = [];
+      let dropped = false;
+      await vi.waitFor(
+        async () => {
+          const result = await read(op, id, {
+            max: SESSION_LIMITS.readLines,
+            waitMs: 200,
+          });
+          dropped ||= result.dropped;
+          for (const line of result.lines) seen.push(JSON.parse(line).n);
+          if (seen.length) last = seen[seen.length - 1]!;
+          expect(last).toBe(lines - 1);
+        },
+        { timeout: 10_000 },
+      );
+      expect(dropped).toBe(true);
+      expect(seen.length).toBeLessThan(lines);
+      // Lines arrive in order, with the dropped ones missing from the front.
+      expect([...seen].sort((a, b) => a - b)).toEqual(seen);
+      expect((await read(op, id)).dropped).toBe(false);
+    },
+  );
 
   it("drops a line over 1 MB with the flag and keeps the next line whole", async () => {
     const { operation } = await fixture();
