@@ -291,10 +291,12 @@ For a literal containing braces, use `{"kind":"literal","value":"{literal}"}`.
 Slot names are unique within a command. A conditional group includes its whole
 `args` list only when its `if` slot is supplied, and must contain that slot.
 Groups cannot nest. Free text belongs on stdin; `stdin: "text"` declares that
-input. Omit `stdin` for no input. Modes are `capture`, `detached` and `terminal`.
-`capture` and `detached` accept `stdin`; `terminal` refuses it. Only `capture`
-accepts `timeoutSeconds`. The optional timeout is an
-integer between 1 and 600. Literals and enum values refuse lone surrogates.
+input. Omit `stdin` for no input. Modes are `capture`, `detached`, `terminal`
+and `session`. `capture` and `detached` accept `stdin`; `terminal` and `session`
+refuse it. Only `capture` accepts `timeoutSeconds`. The optional timeout is an
+integer between 1 and 600. A `session` command must declare
+`idleTimeoutSeconds`, an integer between 1 and 3600, which no other mode
+accepts. Literals and enum values refuse lone surrogates.
 A parsed command is limited to 12 KB of UTF-8 JSON, leaving room for executable
 names in its 16 KB Access policy. A processes block is limited to 256 KB of
 UTF-8 JSON, 256 executables and 256 commands. Access argv and policy strings
@@ -317,7 +319,7 @@ HTTPS opening is separate from these declarations.
 Access review lists each command as its argv shape and each scheme. Turning the
 plugin on approves that access. Added schemes and added or changed commands need
 approval again. Removals do not. Command comparison includes executable names,
-slot kinds, enum choices, conditional groups, stdin, mode and timeout. It treats
+slot kinds, enum choices, conditional groups, stdin, mode, timeout and idle timeout. It treats
 all command policy changes conservatively as needing review, even a restriction.
 
 These commands and links run as you, outside the sandbox. A plugin that starts processes
@@ -361,6 +363,69 @@ The user must turn the plugin on and approve its declared commands. Undeclared
 commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
+
+## Process sessions
+
+A `session` command keeps a program running for the plugin to talk to one line
+at a time, such as a JSON-RPC server on stdio (Codex's `app-server`). Access
+review shows it as "Keeps a program running and talks to it".
+
+```json
+{
+  "id": "app-server",
+  "executable": "codex",
+  "args": ["app-server"],
+  "mode": "session",
+  "idleTimeoutSeconds": 900
+}
+```
+
+```ts
+const id = await ajour.process.session.open({
+  command: "app-server",
+  args: {},
+});
+await ajour.process.session.send(
+  id,
+  JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params }),
+);
+const { lines, dropped, stderr, exited, exitCode } =
+  await ajour.process.session.read(id, { max: 100, waitMs: 5000 });
+await ajour.process.session.close(id);
+```
+
+- `open` checks the same consent, unsigned plugin gates and argument kinds as
+  `run`, and returns an unguessable id. The program starts in the first
+  folder slot's folder, or at the filesystem root. A plugin keeps at most 2
+  sessions; a third open is refused with `session_limit`.
+- A session belongs to the plugin, not to the operation that opened it. Keep
+  its id, such as in a handoff's `native` state, and a later operation can use
+  it. Only the plugin and package that opened it can; any other caller is
+  refused with `session_ended`, as for an unknown id.
+- `send` writes one line to stdin and adds the newline: at most 1 MB in
+  UTF-8, with no NUL, carriage return or newline (`invalid_request`). More
+  than 4 MB the program hasn't taken yet is refused with `input_limit`.
+- `read` returns the stdout lines since the last read, oldest first, at most
+  `max` (1 to 1000, default 100). With none waiting, it waits up to `waitMs`
+  (0 to 30,000, default 0), and never past the operation's own time. Ajour
+  keeps at most 2 MB and 10,000 lines between reads, dropping the oldest, and
+  drops a line over 1 MB; `dropped` says either happened. `stderr` is the
+  newest 64 KB written since the last read. Once the program ended and every
+  line was read, `exited` is true with its `exitCode`, and the id is gone.
+- Ajour owns the program and ends it with everything it started: on `close`,
+  after `idleTimeoutSeconds` without a send or read, when the plugin is turned
+  off, uninstalled, updated or suspended, when the unsigned plugin gates turn
+  off or consent no longer covers the command, and when Ajour quits. A later
+  call is refused with `session_ended`, or with the gate's reason.
+- Ajour logs one `plugin.process` event when a session opens and one when it
+  ends, never a line, stderr, an argument or the id.
+
+The test fake takes a `processSession(request, program)` responder. Its
+handler's `receive(line)` returns the lines the program writes back, and
+`program.write`, `writeStderr` and `exit` act on their own. `fake.sessions`
+records what the plugin sent. The fake checks declarations, the 2-session cap
+and lines as the broker does, but doesn't bound the buffer, wait for lines or
+end idle sessions.
 
 ## Handoff tools
 

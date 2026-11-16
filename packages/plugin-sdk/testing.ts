@@ -9,6 +9,9 @@ export {
   type FakePublicRoute,
   type FakeResponder,
   type FakeResponseInit,
+  type FakeSessionHandler,
+  type FakeSessionProgram,
   type RecordedHttpRequest,
   type RecordedPublicRequest,
+  type RecordedSession,
 } from "./lib/fake.js";

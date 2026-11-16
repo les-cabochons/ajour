@@ -4,6 +4,8 @@ import type {
   AjourHttpRequest,
   AjourProcessRequest,
   AjourProcessResult,
+  AjourSessionOpenRequest,
+  AjourSessionRead,
   AjourLogFields,
   AjourLogLevel,
   AjourPublicFetchInit,
@@ -73,6 +75,14 @@ export interface FakeAjourOptions {
   routes?: readonly FakeHttpRoute[];
   openExternal?: (url: string) => Promise<void>;
   processRun?: (request: AjourProcessRequest) => Promise<AjourProcessResult>;
+  /**
+   * Starts the program behind a fake process session. Without it, every
+   * `ajour.process.session.open` is refused with `undeclared`.
+   */
+  processSession?: (
+    request: AjourSessionOpenRequest,
+    program: FakeSessionProgram,
+  ) => FakeSessionHandler | Promise<FakeSessionHandler>;
   publicRoutes?: readonly FakePublicRoute[];
   /**
    * The plugin's manifest. With it, the fake refuses what Ajour's broker
@@ -130,10 +140,41 @@ export interface FakeLogLine {
   fields?: AjourLogFields;
 }
 
+/** What a fake session's program can do on its own, at any time. */
+export interface FakeSessionProgram {
+  /** Writes one line to the session's stdout. */
+  write(line: string): void;
+  /** Writes text to the session's stderr. */
+  writeStderr(text: string): void;
+  /** Ends the program, as if it exited by itself. */
+  exit(code?: number): void;
+}
+
+/** Answers what the plugin sends to a fake session. */
+export interface FakeSessionHandler {
+  /** Receives one line the plugin sent; the lines it returns go to stdout. */
+  receive?(
+    line: string,
+  ): void | readonly string[] | Promise<void | readonly string[]>;
+  /** Called when the plugin closes the session. */
+  close?(): void;
+}
+
+/** A fake session as the plugin used it, for assertions. */
+export interface RecordedSession {
+  id: string;
+  command: string;
+  args: Readonly<Record<string, string | number>>;
+  /** The lines the plugin sent, without the newline Ajour adds. */
+  sent: string[];
+  state: "open" | "exited" | "closed";
+}
+
 /** An `ajour` that answers from fixtures and records every call. */
 export interface FakeAjour extends Ajour {
   readonly requests: RecordedHttpRequest[];
   readonly publicRequests: RecordedPublicRequest[];
+  readonly sessions: RecordedSession[];
   readonly logs: FakeLogLine[];
 }
 
@@ -328,6 +369,7 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
   const publicRequests: RecordedPublicRequest[] = [];
   const logs: FakeLogLine[] = [];
   const { manifest } = options;
+  const sessions = createFakeSessions(options);
 
   return {
     open: async (url) => {
@@ -395,9 +437,11 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
         }
         return options.processRun(request);
       },
+      session: sessions.api,
     },
     requests,
     publicRequests,
+    sessions: sessions.recorded,
     logs,
 
     async http(request) {
@@ -467,4 +511,135 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
       logs.push({ level, message, ...(fields ? { fields } : {}) });
     },
   };
+}
+
+function processError(code: string, message: string) {
+  return Object.assign(new Error(message), {
+    name: "AjourProcessError" as const,
+    code,
+  });
+}
+
+/**
+ * Process sessions as Ajour's broker keeps them: declared `session`
+ * commands only, at most 2 open, lines checked as the broker checks them.
+ * It doesn't bound the buffer, wait for lines or end idle sessions.
+ */
+function createFakeSessions(options: FakeAjourOptions) {
+  interface Live {
+    record: RecordedSession;
+    handler: FakeSessionHandler;
+    lines: string[];
+    stderr: string;
+    exitCode: number | null;
+  }
+  const recorded: RecordedSession[] = [];
+  const live = new Map<string, Live>();
+  let next = 1;
+  const find = (id: string) => {
+    const session = live.get(id);
+    if (!session)
+      throw processError("session_ended", "This process session has ended.");
+    return session;
+  };
+  const api: Ajour["process"]["session"] = {
+    async open(request) {
+      const declared = options.manifest?.processes?.commands?.find(
+        (command) => command.id === request.command,
+      );
+      if (!options.processSession || (options.manifest && !declared))
+        throw processError(
+          "undeclared",
+          "No process session fixture supplied.",
+        );
+      if (declared && declared.mode !== "session")
+        throw processError("invalid_request", "Not a session command.");
+      if (
+        [...live.values()].filter((s) => s.record.state === "open").length >= 2
+      )
+        throw processError(
+          "session_limit",
+          "A plugin keeps at most 2 process sessions.",
+        );
+      const id = `fake-session-${next++}`;
+      const record: RecordedSession = {
+        id,
+        command: request.command,
+        args: { ...request.args },
+        sent: [],
+        state: "open",
+      };
+      const session: Live = {
+        record,
+        handler: {},
+        lines: [],
+        stderr: "",
+        exitCode: null,
+      };
+      live.set(id, session);
+      recorded.push(record);
+      session.handler = await options.processSession(request, {
+        write: (line) => {
+          if (record.state === "open") session.lines.push(line);
+        },
+        writeStderr: (text) => {
+          if (record.state === "open") session.stderr += text;
+        },
+        exit: (code = 0) => {
+          if (record.state !== "open") return;
+          record.state = "exited";
+          session.exitCode = code;
+        },
+      });
+      return id;
+    },
+    async send(id, line) {
+      const session = find(id);
+      if (
+        typeof line !== "string" ||
+        /[\0\r\n]/.test(line) ||
+        new TextEncoder().encode(line).length > 1024 * 1024
+      )
+        throw processError("invalid_request", "Send one line of at most 1 MB.");
+      if (session.record.state !== "open")
+        throw processError("session_ended", "This process session has ended.");
+      session.record.sent.push(line);
+      const answer = await session.handler.receive?.(line);
+      if (answer && session.record.state === "open")
+        session.lines.push(...answer);
+    },
+    async read(id, readOptions = {}): Promise<AjourSessionRead> {
+      const session = find(id);
+      const { max = 100, waitMs = 0 } = readOptions;
+      if (
+        !Number.isInteger(max) ||
+        max < 1 ||
+        max > 1000 ||
+        !Number.isInteger(waitMs) ||
+        waitMs < 0 ||
+        waitMs > 30_000
+      )
+        throw processError("invalid_request", "Invalid read options.");
+      const lines = session.lines.splice(0, max);
+      const result: AjourSessionRead = {
+        lines,
+        dropped: false,
+        stderr: session.stderr,
+        exited: session.record.state === "exited" && session.lines.length === 0,
+        exitCode: session.exitCode,
+      };
+      session.stderr = "";
+      if (result.exited) live.delete(id);
+      return result;
+    },
+    async close(id) {
+      const session = find(id);
+      live.delete(id);
+      if (session.record.state === "open") {
+        session.record.state = "closed";
+        session.handler.close?.();
+      }
+    },
+  };
+  return { api, recorded };
 }

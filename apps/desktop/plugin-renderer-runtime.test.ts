@@ -622,7 +622,7 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
-  it.each(["process", "open"])(
+  it.each(["process", "open", "session"])(
     "relays %s calls only to the sender's own operation",
     async (type) => {
       const { start, ready } = setUp();
@@ -631,7 +631,9 @@ describe("the sandboxed renderer runtime", () => {
         stdout: "answer",
         stderr: "",
       }));
-      start("jira", { processBroker: { run, open: run, close: vi.fn() } });
+      start("jira", {
+        processBroker: { run, open: run, session: run, close: vi.fn() },
+      });
       const { driver } = await ready();
       const { runId } = (await driver.send({ type: "next" })) as {
         runId: string;
@@ -648,7 +650,12 @@ describe("the sandboxed renderer runtime", () => {
         response: { exitCode: 0, stdout: "answer", stderr: "" },
       });
       start("github", {
-        processBroker: { run: vi.fn(), open: vi.fn(), close: vi.fn() },
+        processBroker: {
+          run: vi.fn(),
+          open: vi.fn(),
+          session: vi.fn(),
+          close: vi.fn(),
+        },
       });
       const other = await ready(1);
       const foreign = (await other.driver.send({ type: "next" })) as {

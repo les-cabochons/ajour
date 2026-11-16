@@ -174,16 +174,24 @@ export function summarizePluginAccess(
             ? "Captures output."
             : command.mode === "detached"
               ? "Starts a detached process."
-              : "Opens in your terminal.",
+              : command.mode === "session"
+                ? "Keeps a program running and talks to it."
+                : "Opens in your terminal.",
           command.args
             .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
             .some((arg) => arg.kind === "connection-url")
             ? "Receives the connection's address."
             : "",
-          command.stdin === "text" ? "Takes text on stdin." : "No stdin.",
-          command.timeoutSeconds === undefined
-            ? "Uses the broker's default timeout."
-            : `Timeout: ${command.timeoutSeconds} seconds.`,
+          command.mode === "session"
+            ? `Ends after ${idleWords(command.idleTimeoutSeconds ?? 300)} unused, and when Ajour quits.`
+            : command.stdin === "text"
+              ? "Takes text on stdin."
+              : "No stdin.",
+          command.mode === "session"
+            ? ""
+            : command.timeoutSeconds === undefined
+              ? "Uses the broker's default timeout."
+              : `Timeout: ${command.timeoutSeconds} seconds.`,
         ]
           .filter(Boolean)
           .join(" "),
@@ -467,4 +475,11 @@ export function commandArgvShape(
         : argument(arg),
     ),
   ].join(" ");
+}
+
+/** A session's idle timeout in words: whole minutes as minutes. */
+function idleWords(seconds: number): string {
+  const [count, unit] =
+    seconds % 60 === 0 ? [seconds / 60, "minute"] : [seconds, "second"];
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
 }

@@ -718,6 +718,9 @@ export const catalog = defineCatalog({
         "timeout",
         "operation_ended",
         "spawn_failed",
+        "session_limit",
+        "session_ended",
+        "input_limit",
       ],
       fields: {
         plugin: { id: operational() },
@@ -729,7 +732,13 @@ export const catalog = defineCatalog({
             | "capture"
             | "detached"
             | "terminal"
+            | "session"
           >(),
+          /** A session's open or its end: one event each, never per line. */
+          session: operational<"open" | "close">(),
+          /** Why a session ended: the plugin closed it, idle, a gate, quit, or the program exited. */
+          ended_by: operational<"plugin" | "idle" | "gate" | "quit" | "exit">(),
+          session_ms: operational<number>(),
 
           command_id: operational(),
           exit_code: operational<number>(),
@@ -1365,6 +1374,7 @@ export const catalog = defineCatalog({
             | "publicFetch"
             | "open"
             | "process"
+            | "session"
             | "abort"
             | "blocked"
             | "other"

@@ -540,6 +540,10 @@ export class PluginOperationLifetime<TMethod extends string> {
       let resumedAt = Date.now();
       let paused = false;
       timeout = setTimeout(expire, remaining);
+      // A process session's read waits no longer than the operation has left.
+      prepared.invocation.processBroker?.setRemainingTime?.(() =>
+        paused ? remaining : remaining - (Date.now() - resumedAt),
+      );
       prepared.invocation.processBroker?.onWaiting?.((waiting) => {
         if (finalizationPromise || waiting === paused) return;
         paused = waiting;

@@ -328,11 +328,41 @@ export interface ProcessCaptureResult {
   stdout: string;
   stderr: string;
 }
+/**
+ * One call on a process session (#743): open a declared `session` command,
+ * send it a line, read the lines it wrote, or close it. A session belongs
+ * to the plugin, so a later operation reaches it by its id.
+ */
+export type ProcessSessionRequest =
+  | {
+      action: "open";
+      command: string;
+      args: Readonly<Record<string, string | number>>;
+    }
+  | { action: "send"; id: string; line: string }
+  | { action: "read"; id: string; max?: number; waitMs?: number }
+  | { action: "close"; id: string };
+
+/** What a session read returns: the stdout lines since the last read. */
+export interface ProcessSessionRead {
+  lines: string[];
+  dropped: boolean;
+  stderr: string;
+  exited: boolean;
+  exitCode: number | null;
+}
+
+/** An open's id, a read, or nothing for a send or close. */
+export type ProcessSessionResult = string | ProcessSessionRead | undefined;
+
 export interface OperationProcessBroker {
   onWaiting?(listener: (waiting: boolean) => void): void;
+  /** The operation's time left, so a session read never outwaits it. */
+  setRemainingTime?(remaining: () => number): void;
   open(url: string): Promise<void>;
 
   run(request: ProcessRunRequest): Promise<ProcessRunResult>;
+  session?(request: ProcessSessionRequest): Promise<ProcessSessionResult>;
   close(): void;
 }
 export interface ProcessBrokerPort {

@@ -147,6 +147,7 @@ async function runCheck(
     ...new Set([
       ...(quitting?.appPids ?? []),
       ...(quitting?.rendererPids ?? []),
+      ...(quitting?.sessionPids ?? []),
     ]),
   ].filter((pid) => pid !== child.pid);
   const left = await waitGone(pids, 5_000);
@@ -793,7 +794,34 @@ async function checkLifecycle() {
     resident,
   );
 
+  const session = findings.session ?? {};
+  expect(
+    session.saveStatus === 200 && session.saveError === null,
+    "a plugin opens a process session and exchanges a message with it",
+    session,
+  );
+  expect(
+    session.syncStatus === 200 &&
+      session.syncError === null &&
+      session.answer?.method === "turn/start" &&
+      session.answer?.seen === 2,
+    "a later operation exchanges a message with the same process",
+    session,
+  );
+  expect(
+    session.rendererClosed === true && session.aliveAfterOperations === true,
+    "the session's process outlives its operations and the plugin's renderer",
+    session,
+  );
+
   const quit = findings.quit ?? {};
+  expect(
+    Array.isArray(quit.sessionPids) &&
+      quit.sessionPids.length === 2 &&
+      quit.sessionGoneAtStop === true,
+    "a quit ends the session's whole process tree",
+    { sessionPids: quit.sessionPids, gone: quit.sessionGoneAtStop },
+  );
   expect(
     quit.drained?.status === 200 &&
       quit.drained.error === null &&

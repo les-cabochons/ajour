@@ -30,6 +30,8 @@ import type {
   ProcessBrokerPort,
   ProcessRunRequest,
   ProcessRunResult,
+  ProcessSessionRequest,
+  ProcessSessionResult,
 } from "./broker-port.ts";
 import type {
   AjourCatalog,
@@ -42,6 +44,11 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { resolveSpawn } from "./process-spawn/index.ts";
 import { endProcessTree } from "./process-tree.ts";
+import {
+  ProcessSessions,
+  SessionRefused,
+  sessionRequestSchema,
+} from "./process-sessions.ts";
 
 const requestSchema = z
   .object({
@@ -78,7 +85,10 @@ export type ProcessReason =
   | "output_limit"
   | "timeout"
   | "operation_ended"
-  | "spawn_failed";
+  | "spawn_failed"
+  | "session_limit"
+  | "session_ended"
+  | "input_limit";
 export class ProcessBrokerError extends Error {
   override readonly name = "AjourProcessError";
   readonly reason: ProcessReason;
@@ -140,6 +150,15 @@ export interface ProcessBrokerOptions {
     started: boolean,
   ): void | Promise<void>;
   events?: ApiEvents;
+  /**
+   * Why the plugin may no longer keep a process session, beyond `gate`,
+   * such as a suspension. Rechecked on every session call and on a timer.
+   */
+  sessionGate?(caller: BrokerCaller): Promise<ProcessReason | undefined>;
+  /** How often open sessions' gates are rechecked. */
+  sessionCheckMs?: number;
+  /** The plugin holds no process session now: what its gate kept can go. */
+  sessionsReleased?(pluginId: string): void;
   /** How long a detached child has to read its stdin; tests shorten it. */
   stdinDeadlineMs?: number;
 }
@@ -159,16 +178,20 @@ const refuse = (reason: ProcessReason): never => {
 export class ProcessBroker implements ProcessBrokerPort {
   private stopping = false;
   private readonly opens = new Map<string, number[]>();
-  private readonly runs = new Map<Promise<ProcessRunResult>, AbortController>();
+  private readonly runs = new Map<Promise<unknown>, AbortController>();
   private readonly records = new Set<Promise<void>>();
+  private readonly sessions: ProcessSessions;
   async shutdown(): Promise<void> {
     this.stopping = true;
     for (const controller of this.runs.values()) controller.abort();
+    // Sessions end beside the calls under way, before activity is written.
+    const sessions = this.sessions.shutdown();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         (async () => {
           await Promise.allSettled([...this.runs.keys()]);
+          await sessions;
           await Promise.allSettled([...this.records]);
         })(),
         new Promise<void>((resolve) => {
@@ -183,37 +206,127 @@ export class ProcessBroker implements ProcessBrokerPort {
   private readonly options: ProcessBrokerOptions;
   constructor(options: ProcessBrokerOptions) {
     this.options = options;
+    this.sessions = new ProcessSessions({
+      events: options.events,
+      checkMs: options.sessionCheckMs,
+      check: async (caller) =>
+        (await options.gate(caller)) ?? (await options.sessionGate?.(caller)),
+      released: (pluginId) => options.sessionsReleased?.(pluginId),
+    });
+  }
+  /**
+   * Ajour is quitting: the host calls it before stopping the plugins, so
+   * a session their stop ends is recorded as ended by the quit.
+   */
+  quitting(): void {
+    this.sessions.quitting();
+  }
+  /**
+   * Ends the plugin's process sessions and their trees. The host calls it
+   * when the plugin is turned off, removed or replaced; the session gates'
+   * timer catches every other change.
+   */
+  async endSessions(pluginId: string): Promise<void> {
+    await this.sessions.endPlugin(pluginId);
   }
   forOperation(caller: BrokerCaller) {
     const ended = new AbortController();
+    let remaining: (() => number) | undefined;
     let waiting = 0;
     let listener: ((waiting: boolean) => void) | undefined;
     const wait = (value: boolean) => {
       waiting += value ? 1 : -1;
       listener?.(waiting > 0);
     };
+    /** A call the operation's end aborts, and quit waits for. */
+    const track = <T>(start: (signal: AbortSignal) => Promise<T>) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      ended.signal.addEventListener("abort", abort, { once: true });
+      if (ended.signal.aborted || this.stopping) controller.abort();
+      const task = start(controller.signal);
+      this.runs.set(task, controller);
+      const cleanup = () => {
+        this.runs.delete(task);
+        ended.signal.removeEventListener("abort", abort);
+      };
+      void task.then(cleanup, cleanup);
+      return task;
+    };
     return {
       onWaiting: (next: (waiting: boolean) => void) => {
         listener = next;
         listener(waiting > 0);
       },
-      run: (request: ProcessRunRequest) => {
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        ended.signal.addEventListener("abort", abort, { once: true });
-        if (ended.signal.aborted || this.stopping) controller.abort();
-        const task = this.run(caller, request, controller.signal, wait);
-        this.runs.set(task, controller);
-        const cleanup = () => {
-          this.runs.delete(task);
-          ended.signal.removeEventListener("abort", abort);
-        };
-        void task.then(cleanup, cleanup);
-        return task;
+      setRemainingTime: (next: () => number) => {
+        remaining = next;
       },
+      run: (request: ProcessRunRequest) =>
+        track(
+          (signal) =>
+            this.run(
+              caller,
+              request,
+              signal,
+              wait,
+            ) as Promise<ProcessRunResult>,
+        ),
+      session: (request: ProcessSessionRequest) =>
+        this.session(
+          caller,
+          request,
+          ended.signal,
+          () => remaining?.(),
+          (open) =>
+            track((signal) => this.run(caller, open, signal, wait, true)),
+        ),
       open: (url: string) => this.open(caller, url, ended.signal),
       close: () => ended.abort(),
     };
+  }
+  private async session(
+    caller: BrokerCaller,
+    given: unknown,
+    signal: AbortSignal,
+    remaining: () => number | undefined,
+    opening: (request: {
+      command: string;
+      args: Readonly<Record<string, string | number>>;
+    }) => Promise<ProcessRunResult | { sessionId: string }>,
+  ): Promise<ProcessSessionResult> {
+    const parsed = sessionRequestSchema.safeParse(given);
+    if (!parsed.success) return refuse("invalid_request");
+    const request = parsed.data;
+    if (request.action === "open") {
+      const opened = await opening({
+        command: request.command,
+        args: request.args,
+      });
+      return (opened as { sessionId: string }).sessionId;
+    }
+    if (signal.aborted) return refuse("operation_ended");
+    try {
+      switch (request.action) {
+        case "send":
+          await this.sessions.send(caller, request.id, request.line);
+          return undefined;
+        case "read":
+          return await this.sessions.read(
+            caller,
+            request.id,
+            request,
+            signal,
+            remaining,
+          );
+        case "close":
+          await this.sessions.close(caller, request.id);
+          return undefined;
+      }
+    } catch (error) {
+      if (error instanceof SessionRefused)
+        throw new ProcessBrokerError(error.reason as ProcessReason);
+      throw error;
+    }
   }
   private async open(
     caller: BrokerCaller,
@@ -389,7 +502,8 @@ export class ProcessBroker implements ProcessBrokerPort {
     given: ProcessRunRequest,
     signal: AbortSignal,
     waiting: (value: boolean) => void,
-  ): Promise<ProcessRunResult> {
+    opening = false,
+  ): Promise<ProcessRunResult | { sessionId: string }> {
     const unit = this.options.events?.start("plugin.process", {
       kind: "job",
       trigger: "system",
@@ -397,6 +511,7 @@ export class ProcessBroker implements ProcessBrokerPort {
       ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
     });
     let reserved = false;
+    let releaseSession: (() => void) | undefined;
     let started = false;
     let reason: ProcessReason | undefined;
     let commandId = "undeclared";
@@ -552,9 +667,21 @@ export class ProcessBroker implements ProcessBrokerPort {
         if (!declared) return refuse("undeclared");
         command = declared;
         commandId = command.id;
-        unit?.set({ process: { mode: command.mode } });
-        // A terminal command runs in another app, so Ajour can't write its stdin.
-        if (command.mode === "terminal" && request.stdin !== undefined)
+        unit?.set({
+          process: {
+            mode: command.mode,
+            ...(opening ? { session: "open" as const } : {}),
+          },
+        });
+        // A session opens only through `session.open`, and nothing else does.
+        if ((command.mode === "session") !== opening)
+          return refuse("invalid_request");
+        // A terminal command runs in another app, so Ajour can't write its
+        // stdin, and a session takes its lines through `session.send`.
+        if (
+          (command.mode === "terminal" || command.mode === "session") &&
+          request.stdin !== undefined
+        )
           refuse("invalid_request");
         if (request.stdin !== undefined && command.stdin !== "text")
           return refuse("invalid_request");
@@ -585,7 +712,8 @@ export class ProcessBroker implements ProcessBrokerPort {
         names =
           caller.manifest.processes!.executables[command.executable]!.names;
       }
-      if (command.mode !== "capture" && !cwd) refuse("folder_refused");
+      if (command.mode !== "capture" && command.mode !== "session" && !cwd)
+        refuse("folder_refused");
       if ((this.active.get(caller.pluginId) ?? 0) >= 4)
         return refuse("concurrency");
       this.active.set(
@@ -593,6 +721,17 @@ export class ProcessBroker implements ProcessBrokerPort {
         (this.active.get(caller.pluginId) ?? 0) + 1,
       );
       reserved = true;
+      if (command.mode === "session") {
+        try {
+          releaseSession = this.sessions.reserve(caller.pluginId);
+        } catch (error) {
+          return refuse(
+            error instanceof SessionRefused
+              ? (error.reason as ProcessReason)
+              : "session_limit",
+          );
+        }
+      }
       const userPath = await resolveLoginShellPath();
       const override = undeclared
         ? undefined
@@ -647,6 +786,43 @@ export class ProcessBroker implements ProcessBrokerPort {
           refuse(gate);
         }
         if (signal.aborted) refuse("operation_ended");
+      }
+      if (command.mode === "session") {
+        if (signal.aborted || this.stopping) return refuse("operation_ended");
+        const child = spawn(plan.command, plan.args, {
+          env: plan.env,
+          shell: false,
+          windowsHide: true,
+          // On POSIX the child leads a group, so its tree ends with it.
+          detached: process.platform !== "win32",
+          cwd,
+          stdio: "pipe",
+        });
+        await new Promise<void>((resolve, reject) => {
+          child.once("spawn", () => resolve());
+          child.once("error", () =>
+            reject(new ProcessBrokerError("spawn_failed")),
+          );
+        });
+        started = true;
+        // The operation may have ended while the program started.
+        if (signal.aborted || this.stopping) {
+          child.on("error", () => undefined);
+          endProcessTree(
+            child,
+            plan.env,
+            () => child.exitCode !== null || child.signalCode !== null,
+          );
+          return refuse("operation_ended");
+        }
+        const sessionId = this.sessions.register(
+          caller,
+          command.id,
+          command.idleTimeoutSeconds ?? 300,
+          child,
+          plan.env,
+        );
+        return { sessionId };
       }
       if (command.mode !== "capture") {
         if (!cwd) return refuse("folder_refused");
@@ -803,6 +979,7 @@ export class ProcessBroker implements ProcessBrokerPort {
                       ? "policy"
                       : "ok";
       }
+      releaseSession?.();
       if (reserved)
         this.active.set(
           caller.pluginId,

@@ -68,3 +68,19 @@ export function endProcessGroup(child: ChildProcess): void {
     /* No process of the group is left. */
   }
 }
+
+/**
+ * Whether a child the broker started may still run: false only once it
+ * reported its end, or no process has its pid any more. A process another
+ * user owns still runs.
+ */
+export function childRunning(child: ChildProcess): boolean {
+  if (child.exitCode !== null || child.signalCode !== null) return false;
+  if (child.pid === undefined) return false;
+  try {
+    process.kill(child.pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}

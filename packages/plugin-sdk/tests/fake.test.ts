@@ -488,6 +488,135 @@ it("Given a manifest that allows undeclared commands, runs an executable request
   ).resolves.toMatchObject({ stdout: "ok" });
 });
 
+describe("process sessions", () => {
+  const sessionManifest = {
+    ...manifest,
+    processes: {
+      executables: { codex: { names: ["codex"] } },
+      commands: [
+        {
+          id: "app-server",
+          executable: "codex",
+          args: ["app-server"],
+          mode: "session",
+          idleTimeoutSeconds: 600,
+        },
+        {
+          id: "version",
+          executable: "codex",
+          args: ["--version"],
+          mode: "capture",
+        },
+      ],
+    },
+  } as PluginManifest;
+
+  it("answers a JSON-RPC line, keeps lines the program writes, and records what was sent", async () => {
+    let notify: ((line: string) => void) | undefined;
+    const fake = createFakeAjour({
+      manifest: sessionManifest,
+      processSession: (_request, program) => {
+        notify = program.write;
+        return {
+          receive: (line) => {
+            const { id } = JSON.parse(line);
+            return [JSON.stringify({ jsonrpc: "2.0", id, result: "ok" })];
+          },
+        };
+      },
+    });
+    const id = await fake.process.session.open({
+      command: "app-server",
+      args: {},
+    });
+    await fake.process.session.send(
+      id,
+      '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
+    );
+    notify?.('{"jsonrpc":"2.0","method":"turn/completed"}');
+    const read = await fake.process.session.read(id, { max: 10 });
+    expect(read.lines.map((line) => JSON.parse(line))).toEqual([
+      { jsonrpc: "2.0", id: 1, result: "ok" },
+      { jsonrpc: "2.0", method: "turn/completed" },
+    ]);
+    expect(read).toMatchObject({ dropped: false, exited: false });
+    expect(fake.sessions).toEqual([
+      {
+        id,
+        command: "app-server",
+        args: {},
+        sent: ['{"jsonrpc":"2.0","id":1,"method":"initialize"}'],
+        state: "open",
+      },
+    ]);
+    await fake.process.session.close(id);
+    expect(fake.sessions[0]!.state).toBe("closed");
+    await expect(fake.process.session.read(id)).rejects.toMatchObject({
+      name: "AjourProcessError",
+      code: "session_ended",
+    });
+  });
+
+  it("refuses what the broker refuses", async () => {
+    const fake = createFakeAjour({
+      manifest: sessionManifest,
+      processSession: () => ({}),
+    });
+    await expect(
+      fake.process.session.open({ command: "version", args: {} }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      fake.process.session.open({ command: "missing", args: {} }),
+    ).rejects.toMatchObject({ code: "undeclared" });
+    const id = await fake.process.session.open({
+      command: "app-server",
+      args: {},
+    });
+    await fake.process.session.open({ command: "app-server", args: {} });
+    await expect(
+      fake.process.session.open({ command: "app-server", args: {} }),
+    ).rejects.toMatchObject({ code: "session_limit" });
+    for (const line of ["a\nb", "a\0", "x".repeat(1024 * 1024 + 1)])
+      await expect(fake.process.session.send(id, line)).rejects.toMatchObject({
+        code: "invalid_request",
+      });
+    await expect(
+      fake.process.session.read(id, { max: 0 }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      createFakeAjour().process.session.open({ command: "x", args: {} }),
+    ).rejects.toMatchObject({ code: "undeclared" });
+  });
+
+  it("reports a program that exited once its lines are read", async () => {
+    const fake = createFakeAjour({
+      manifest: sessionManifest,
+      processSession: (_request, program) => ({
+        receive: () => {
+          program.write("last");
+          program.writeStderr("bye");
+          program.exit(2);
+        },
+      }),
+    });
+    const id = await fake.process.session.open({
+      command: "app-server",
+      args: {},
+    });
+    await fake.process.session.send(id, "{}");
+    expect(await fake.process.session.read(id)).toEqual({
+      lines: ["last"],
+      dropped: false,
+      stderr: "bye",
+      exited: true,
+      exitCode: 2,
+    });
+    await expect(fake.process.session.send(id, "{}")).rejects.toMatchObject({
+      code: "session_ended",
+    });
+  });
+});
+
 describe("a connection-url slot", () => {
   const attach = {
     ...manifest,

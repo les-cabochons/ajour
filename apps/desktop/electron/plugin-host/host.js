@@ -16,6 +16,7 @@ const RELAYED = new Set([
   "publicFetch",
   "open",
   "process",
+  "session",
   "abort",
   "blocked",
 ]);
@@ -58,7 +59,8 @@ function start({ runId, url, method, args }) {
       data.type === "http" ||
       data.type === "publicFetch" ||
       data.type === "open" ||
-      data.type === "process"
+      data.type === "process" ||
+      data.type === "session"
     ) {
       void call.then((answer) => {
         if (workers.get(runId) === worker) {

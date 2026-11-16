@@ -59,7 +59,7 @@ function call(type, payload, signal) {
       signal?.removeEventListener("abort", onAbort);
       if (answer?.ok)
         resolve(
-          type === "process" || type === "open"
+          type === "process" || type === "open" || type === "session"
             ? answer.response
             : ajourResponse(answer.response),
         );
@@ -78,7 +78,39 @@ function withoutSignal(value) {
 Object.defineProperty(globalThis, "ajour", {
   value: Object.freeze({
     open: (url) => call("open", { url }),
-    process: Object.freeze({ run: (request) => call("process", { request }) }),
+    process: Object.freeze({
+      run: (request) => call("process", { request }),
+      // A session is the plugin's: its id works in a later operation too.
+      session: Object.freeze({
+        open: (request) =>
+          call("session", {
+            request: {
+              action: "open",
+              command: request?.command,
+              args: request?.args,
+            },
+          }),
+        send: (id, line) =>
+          call("session", { request: { action: "send", id, line } }).then(
+            () => undefined,
+          ),
+        read: (id, options) =>
+          call("session", {
+            request: {
+              action: "read",
+              id,
+              ...(options?.max === undefined ? {} : { max: options.max }),
+              ...(options?.waitMs === undefined
+                ? {}
+                : { waitMs: options.waitMs }),
+            },
+          }),
+        close: (id) =>
+          call("session", { request: { action: "close", id } }).then(
+            () => undefined,
+          ),
+      }),
+    }),
     http: (request) =>
       call("http", { request: withoutSignal(request) }, request?.signal),
     publicFetch: (url, init) =>

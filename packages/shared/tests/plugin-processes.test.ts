@@ -574,3 +574,67 @@ it("names enum slots inside conditional groups", () => {
     "git [<format:json|text> if format]",
   );
 });
+
+describe("session commands (#743)", () => {
+  const session = (change: Record<string, unknown> = {}) => ({
+    ...processes,
+    commands: [
+      {
+        id: "app-server",
+        executable: "t3",
+        args: ["app-server"],
+        mode: "session",
+        idleTimeoutSeconds: 600,
+        ...change,
+      },
+    ],
+  });
+  const parse = (value: unknown) =>
+    pluginApi4ManifestSchema.safeParse({ ...jiraManifest(), processes: value });
+
+  it("declares an idle timeout of at most an hour", () => {
+    expect(parse(session()).success).toBe(true);
+    expect(parse(session({ idleTimeoutSeconds: 3600 })).success).toBe(true);
+    for (const idleTimeoutSeconds of [undefined, 0, 3601, 1.5])
+      expect(parse(session({ idleTimeoutSeconds })).success).toBe(false);
+  });
+
+  it("takes no stdin or capture timeout, and no other mode takes an idle timeout", () => {
+    expect(parse(session({ stdin: "text" })).success).toBe(false);
+    expect(parse(session({ timeoutSeconds: 60 })).success).toBe(false);
+    for (const mode of ["capture", "detached", "terminal"])
+      expect(parse(session({ mode })).success).toBe(false);
+  });
+
+  it("reads in Access review as a program kept running", () => {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: session(),
+    });
+    const [command] = summarizePluginAccess(manifest, {
+      agentPrompts: {},
+    }).commands!;
+    expect(command!.argv).toBe("t3 app-server");
+    expect(command!.description).toContain(
+      "Keeps a program running and talks to it.",
+    );
+    expect(command!.description).toContain("Ends after 10 minutes unused");
+    expect(command!.description).not.toMatch(/stdin|timeout/i);
+  });
+
+  it.each([
+    [60, "1 minute"],
+    [90, "90 seconds"],
+    [1, "1 second"],
+    [3600, "60 minutes"],
+  ])("says %i seconds unused as %s", (idleTimeoutSeconds, words) => {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: session({ idleTimeoutSeconds }),
+    });
+    const [command] = summarizePluginAccess(manifest, {
+      agentPrompts: {},
+    }).commands!;
+    expect(command!.description).toContain(`Ends after ${words} unused,`);
+  });
+});

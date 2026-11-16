@@ -418,20 +418,20 @@ traces.
 
 The local API emits these (#305, #306):
 
-| Event                                 | Where                                                                                                             |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                 |
-| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                        |
-| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                     |
-| one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                |
-| `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call                                        |
-| `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                    |
-| `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it |
-| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                            |
-| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable`                |
-| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on                    |
-| `agent.session`                       | `AgentSessions`, from begin to end                                                                                |
-| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                            |
+| Event                                 | Where                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                  |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                         |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                      |
+| one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                 |
+| `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call; `ProcessSessions` once per session end |
+| `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                     |
+| `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it  |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                             |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable`                 |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on                     |
+| `agent.session`                       | `AgentSessions`, from begin to end                                                                                 |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                             |
 
 ### Requests
 
@@ -1209,6 +1209,15 @@ read-only allowlist and no danger rule names it, or `unchecked` when the rules
 could not run; it is absent when an allowlisted command got no verdict. A rule's reason is shown in the ask dialog
 and never logged. Reviewer fields remain absent until their ticket ships.
 Arguments, stdin, output and executable or folder paths have no catalog fields.
+
+A process session (#743) emits one `plugin.process` at open and one when it
+ends, never one per send or read. Both carry `process.mode` `session` and
+`process.session` `open` or `close`. The open is the broker call's event, with
+its gates and outcome; a refused open gives `session_limit` when the plugin
+already keeps two. The end, emitted by `ProcessSessions` in
+`apps/api/src/process-sessions.ts`, adds `process.ended_by` (`plugin`, `idle`,
+`gate`, `quit` or `exit`), `process.session_ms` and the exit code when known.
+Lines sent or read, stderr and the session id have no catalog fields.
 The broker port's marked privacy fixture in `process-broker.test.ts` covers all
 four forms of process content and asserts one event per call.
 

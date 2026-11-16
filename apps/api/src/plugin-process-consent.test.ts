@@ -75,6 +75,7 @@ describe("process access update consent", () => {
 it.each([
   { args: ["{title:text}"] },
   { mode: "detached", timeoutSeconds: undefined },
+  { mode: "session", timeoutSeconds: undefined, idleTimeoutSeconds: 60 },
   { stdin: "text" },
   { timeoutSeconds: 600 },
   { args: [{ kind: "enum", name: "format", values: ["json", "text"] }] },
@@ -89,6 +90,26 @@ it.each([
       }),
     ).turnOff,
   ).toBe(true);
+});
+
+it("holds a session command's widened idle timeout until approved", () => {
+  const session = {
+    ...declaration,
+    commands: [
+      {
+        ...declaration.commands[0],
+        mode: "session",
+        timeoutSeconds: undefined,
+        idleTimeoutSeconds: 60,
+      },
+    ],
+  };
+  const widened = {
+    ...session,
+    commands: [{ ...session.commands[0], idleTimeoutSeconds: 3600 }],
+  };
+  expect(decision(access(session), access(widened)).turnOff).toBe(true);
+  expect(decision(access(session), access(session)).turnOff).toBe(false);
 });
 
 it("keeps an old consent record and treats its missing process lists as empty", () => {

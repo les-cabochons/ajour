@@ -24,6 +24,10 @@ import {
   ProcessBrokerError,
   type ProcessReason,
 } from "./process-broker.ts";
+import {
+  createSessionPackageGate,
+  type SessionPackageGate,
+} from "./session-package-gate.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { processRules } from "./process-rules.ts";
@@ -383,6 +387,8 @@ interface AppApiRuntime {
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
   processBroker: ProcessBroker;
+  /** The package each plugin with a process session has, kept between checks. */
+  sessionPackages: SessionPackageGate;
   stopping: boolean;
   pluginDrainMs: number;
   /**
@@ -1462,6 +1468,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       caller.packageKey,
       caller.development === true,
     ]);
+  // A process session also ends when its plugin is suspended, or when
+  // another package of it replaced the one that opened the session.
+  const sessionPackages = createSessionPackageGate({
+    suspended: (pluginId) => pluginManager.suspension(pluginId) !== undefined,
+    find: async (pluginId) =>
+      (await pluginManager.inspectPlugins()).packages.get(pluginId),
+    processPackage: (pluginId, resolved) =>
+      pluginManager.processPackage(pluginId, resolved),
+  });
   const processBroker = new ProcessBroker({
     folders: folderResolver,
     review: processRules({
@@ -1532,6 +1547,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     enabledGate: (caller) => processConsentGate(storage, caller, false),
 
     gate: (caller) => processConsentGate(storage, caller),
+    sessionGate: (caller) => sessionPackages.check(caller),
+    sessionsReleased: (pluginId) => sessionPackages.invalidate(pluginId),
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);
       return Object.hasOwn(overrides, executable)
@@ -1748,6 +1765,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     projectDataShapePluginManager,
     agentRunner,
     processBroker,
+    sessionPackages,
     stopping: false,
     pluginDrainMs: options.pluginDrainMs ?? 5_000,
     inFlight: new Set(),
@@ -2674,6 +2692,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             pluginId,
           ));
         unit.set({ activation: { operations_cancelled: cancelled } });
+        await processBroker.endSessions(pluginId);
       }
       await pluginManager.syncReadiness();
       writeJson(response, 200, await getOverview(storage, pluginManager));
@@ -4933,9 +4952,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     clearInterval(stallTimer);
     agentSessions.close();
     void agentRunner.shutdown();
+    sessionPackages.close();
     // A stop closes the server first, and drains the plugins itself.
     if (!runtime.stopping) {
       void (async () => {
+        processBroker.quitting();
         await Promise.all([
           pluginManager.shutdown(),
           projectDataShapePluginManager.shutdown(),
@@ -5068,6 +5089,10 @@ export async function installPluginForServer(
       );
     },
   );
+  runtime.sessionPackages.invalidate(installedPlugin.manifest.id);
+  // The sessions the previous package opened end with it.
+  if (installedPlugin.replaced)
+    await runtime.processBroker.endSessions(installedPlugin.manifest.id);
   await runtime.pluginManager.syncReadiness();
   return pluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
@@ -5094,6 +5119,8 @@ export async function uninstallPluginForServer(
     pluginId,
   );
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
+  runtime.sessionPackages.invalidate(removedPlugin.id);
+  await runtime.processBroker.endSessions(removedPlugin.id);
   await runtime.storage.removePluginData(removedPlugin.id);
   await runtime.pluginManager.syncReadiness();
   return pluginUninstallResponseSchema.parse({
@@ -5233,6 +5260,9 @@ export async function stopAppApiServer(server: Server): Promise<void> {
         runtime.projectDataShapePluginManager.whenIdle(runtime.pluginDrainMs),
       ]);
       unit?.set({ api: { drain_ms: Date.now() - phaseStartedAt } });
+      // The plugins stopping turns their gates off: their sessions end
+      // with the quit, not with a gate.
+      runtime.processBroker.quitting();
       await Promise.all([
         runtime.pluginManager.shutdown(),
         runtime.projectDataShapePluginManager.shutdown(),

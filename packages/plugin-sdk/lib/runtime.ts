@@ -119,6 +119,53 @@ export interface AjourCaptureResult {
   stdout: string;
   stderr: string;
 }
+
+/** Opens a declared `session` command: its id and argument slots. */
+export interface AjourSessionOpenRequest {
+  command: string;
+  args: Readonly<Record<string, string | number>>;
+}
+
+export interface AjourSessionReadOptions {
+  /** Lines to return at most, 1 to 1000. Defaults to 100. */
+  max?: number;
+  /**
+   * How long to wait for a line when none is waiting, 0 to 30000 ms, and
+   * never past the operation's own time. Defaults to 0.
+   */
+  waitMs?: number;
+}
+
+/** The stdout lines the program wrote since the last read, oldest first. */
+export interface AjourSessionRead {
+  lines: string[];
+  /** Lines were dropped since the last read: too many waiting, or one over 1 MB. */
+  dropped: boolean;
+  /** Stderr since the last read, its newest 64 KB. */
+  stderr: string;
+  /** The program ended and every line it wrote was read: the id is gone. */
+  exited: boolean;
+  exitCode: number | null;
+}
+
+/**
+ * A program a declared `session` command keeps running, which the plugin
+ * talks to one line at a time, such as a JSON-RPC server on stdio. A session
+ * belongs to the plugin, not to the operation that opened it: a later
+ * operation reaches it by its id. A plugin keeps at most 2.
+ */
+export interface AjourProcessSessions {
+  /** Starts the program and returns the session's id. */
+  open(request: AjourSessionOpenRequest): Promise<string>;
+  /** Writes one line to its stdin, with a newline added: at most 1 MB, no NUL or line break. */
+  send(id: string, line: string): Promise<void>;
+  read(
+    id: string,
+    options?: AjourSessionReadOptions,
+  ): Promise<AjourSessionRead>;
+  /** Ends the program and everything it started. */
+  close(id: string): Promise<void>;
+}
 /**
  * The `ajour` global a plugin's code receives in its sandboxed worker. It
  * is the plugin's one way out: there is no `fetch` to the network, no Node
@@ -126,7 +173,10 @@ export interface AjourCaptureResult {
  */
 export interface Ajour {
   open(url: string): Promise<void>;
-  process: { run(request: AjourProcessRequest): Promise<AjourProcessResult> };
+  process: {
+    run(request: AjourProcessRequest): Promise<AjourProcessResult>;
+    session: AjourProcessSessions;
+  };
   /** Sends a request through one of the plugin's connections. */
   http(request: AjourHttpRequest): Promise<AjourResponse>;
   /**
