@@ -123,6 +123,30 @@ function parseBaseAddress(value: unknown, onPremises: boolean): URL {
   return url;
 }
 
+/**
+ * The base address a connection's requests go to, as the broker would
+ * reach it: on-premises counts only while the manifest allows it. A
+ * `connection-url` process argument gets it, without a trailing slash.
+ * Throws the broker's refusal when the address can't be reached.
+ */
+export function connectionBaseAddress(
+  manifest: PluginApi4Manifest,
+  connection: BrokerConnection,
+): string {
+  const field = manifest.network?.baseAddress?.field;
+  if (!field)
+    throw refused(
+      "not_allowed",
+      "The plugin's manifest declares no address its connections reach.",
+    );
+  const url = parseBaseAddress(
+    connection.values[field],
+    connection.onPremises &&
+      manifest.network?.baseAddress?.allowOnPremises === true,
+  );
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 /** Whether `path` is `basePath` or below it. */
 function isUnder(path: string, basePath: string) {
   return (

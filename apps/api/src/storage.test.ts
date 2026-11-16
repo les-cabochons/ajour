@@ -1139,6 +1139,7 @@ describe("state files from earlier versions", () => {
   const emptyCurrentState = {
     handoffs: [],
     handoffTemplates: {},
+    handoffToolConnections: {},
     repositoryFolders: [],
     version: 12,
     connections: [],

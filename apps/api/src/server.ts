@@ -7,7 +7,10 @@ import {
   HandoffRefused,
   HandoffTemplateRefused,
 } from "./handoffs.ts";
-import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
+import {
+  handoffStartRouteSchema,
+  handoffToolConnectionsSchema,
+} from "../../../packages/shared/handoffs.ts";
 
 import { randomUUID as commandId } from "node:crypto";
 import {
@@ -160,6 +163,7 @@ import {
   type SecretFieldDeclaration,
 } from "./connection-credentials.ts";
 import { secretAddressHoldsUserinfo } from "./broker-policy.ts";
+import { handoffConnectionAddress } from "./handoff-connection-address.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import {
   BrokerRequestError,
@@ -1488,6 +1492,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         commandAsks.approveMatching(caller.pluginId, command);
       commandBridge.publish("command-access", caller.pluginId);
     },
+    // A `connection-url` argument: the handoff connection's base address,
+    // refused while the connection is paused.
+    connectionAddress: (caller) => handoffConnectionAddress(storage, caller),
     openExternal: options.openExternal,
     terminal: options.terminal,
     enabledGate: (caller) => processConsentGate(storage, caller, false),
@@ -1616,6 +1623,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const handoffs = new Handoffs({
     storage,
     plugins: pluginManager,
+    // Paused, with a throw, when a secret it needs can't reach the plugin.
+    connection: async (pluginId, connectionId) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === pluginId,
+      );
+      if (!plugin) return undefined;
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
+      return connection ? pluginConnection(connection) : undefined;
+    },
     unavailableReason: async (pluginId) => {
       const { plugins, access } = await pluginManager.inspectPlugins();
       const inactive = await inactiveCapability(
@@ -1836,6 +1856,59 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       await storage.setHandoffTemplates(params.pluginId, templates);
       writeJson(response, 200, templates);
     },
+    handoffConnectionsGet: async ({ response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      writeJson(
+        response,
+        200,
+        await storage.getHandoffToolConnections(params.pluginId),
+      );
+    },
+    handoffConnectionsSave: async ({ request, response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      const picks = await readRequest(request, handoffToolConnectionsSchema);
+      const connected = new Set(
+        plugin.capabilities.handoff.tools
+          .filter((tool) => tool.connection === "required")
+          .map((tool) => tool.id),
+      );
+      const unknown = Object.keys(picks).find((id) => !connected.has(id));
+      const connections = new Set(
+        (await storage.listConnections(params.pluginId)).map((c) => c.id),
+      );
+      const missing = Object.values(picks).some((id) => !connections.has(id));
+      if (unknown !== undefined || missing) {
+        writeJson(response, 400, {
+          error:
+            unknown !== undefined
+              ? `The handoff tool "${unknown}" uses no connection.`
+              : "This connection no longer exists.",
+        });
+        return;
+      }
+      await storage.setHandoffToolConnections(params.pluginId, picks);
+      writeJson(
+        response,
+        200,
+        await storage.getHandoffToolConnections(params.pluginId),
+      );
+    },
     handoffList: async ({ response }) => {
       writeJson(response, 200, await storage.listHandoffs());
     },
@@ -1919,7 +1992,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(
         response,
         200,
-        await pluginManager.detectTools(params.pluginId, payload.projectId),
+        await handoffs.detect(params.pluginId, payload.projectId),
       );
     },
     handoffVisibility: async ({ request, response }) => {
@@ -2972,6 +3045,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
+      // The handoffs that ran through it pause as unknown, with why. They
+      // queue behind any running refresh, so the delete doesn't wait.
+      void handoffs
+        .refreshConnection(pluginId, connectionId)
+        .catch(() => undefined);
 
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },

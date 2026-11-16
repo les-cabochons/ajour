@@ -9,7 +9,9 @@ import {
 import { z } from "zod";
 import {
   handoffRecordSchema,
+  handoffToolConnectionsSchema,
   type Handoff,
+  type HandoffToolConnections,
 } from "../../../packages/shared/handoffs.ts";
 import {
   updateHandoff,
@@ -465,6 +467,8 @@ function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
 
 interface AppApiStateV8 {
   handoffTemplates: Record<string, HandoffTemplates>;
+  /** The connection each handoff tool hands off through, by plugin id. */
+  handoffToolConnections: Record<string, HandoffToolConnections>;
   handoffs: Handoff[];
   repositoryFolders: RepositoryFolder[];
   version: number;
@@ -638,6 +642,7 @@ function withCapabilityChoice(
 function createDefaultState(): AppApiState {
   return {
     handoffTemplates: {},
+    handoffToolConnections: {},
     handoffs: [],
     repositoryFolders: [],
     version: STATE_VERSION,
@@ -1048,6 +1053,20 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           : {},
       ).flatMap(([key, value]) => {
         const parsed = handoffTemplatesSchema.safeParse(value);
+        return parsed.success && !UNSAFE_KEYS.has(key)
+          ? [[key, parsed.data]]
+          : [];
+      }),
+    ),
+    handoffToolConnections: Object.fromEntries(
+      Object.entries(
+        raw.handoffToolConnections &&
+          typeof raw.handoffToolConnections === "object" &&
+          !Array.isArray(raw.handoffToolConnections)
+          ? raw.handoffToolConnections
+          : {},
+      ).flatMap(([key, value]) => {
+        const parsed = handoffToolConnectionsSchema.safeParse(value);
         return parsed.success && !UNSAFE_KEYS.has(key)
           ? [[key, parsed.data]]
           : [];
@@ -2332,6 +2351,49 @@ export class AppApiStorage {
     }));
   }
   /**
+   * The connection each of a plugin's handoff tools hands off through, as
+   * its settings picked it. A deleted connection is no longer listed.
+   */
+  async getHandoffToolConnections(
+    pluginId: string,
+  ): Promise<HandoffToolConnections> {
+    if (UNSAFE_KEYS.has(pluginId)) return {};
+    return structuredClone(
+      (await this.readState()).handoffToolConnections[pluginId] ?? {},
+    );
+  }
+  /** Saves the tools' picks. Each must be one of the plugin's connections. */
+  async setHandoffToolConnections(
+    pluginId: string,
+    picks: HandoffToolConnections,
+  ): Promise<void> {
+    if (UNSAFE_KEYS.has(pluginId)) throw new Error("Invalid plugin id.");
+    const parsed = handoffToolConnectionsSchema.parse(picks);
+    if (Object.keys(parsed).some((toolId) => UNSAFE_KEYS.has(toolId)))
+      throw new Error("Invalid tool id.");
+    await this.mutate((state) => {
+      for (const connectionId of Object.values(parsed))
+        if (
+          !state.connections.some(
+            (connection) =>
+              connection.pluginId === pluginId &&
+              connection.id === connectionId,
+          )
+        )
+          throw new Error("This connection no longer exists.");
+      return {
+        nextState: {
+          ...state,
+          handoffToolConnections: {
+            ...state.handoffToolConnections,
+            [pluginId]: parsed,
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
+  /**
    * The agent task settings the user filled in for a plugin, or none, with
    * the secrets the vault holds as far as they can be read. With the
    * plugin's `manifest`, a secret still in plain text, waiting to move into
@@ -2859,6 +2921,11 @@ export class AppApiStorage {
             ([id]) => id !== pluginId,
           ),
         ),
+        handoffToolConnections: Object.fromEntries(
+          Object.entries(state.handoffToolConnections).filter(
+            ([id]) => id !== pluginId,
+          ),
+        ),
         pluginOrigins: Object.fromEntries(
           Object.entries(state.pluginOrigins).filter(
             ([candidate]) => candidate !== pluginId,
@@ -3107,6 +3174,20 @@ export class AppApiStorage {
             !(
               status.source === pluginId && status.connectionId === connectionId
             ),
+        ),
+        // A tool that picked it has none until its settings pick another.
+        // Its handoffs keep the id, so a refresh pauses them with a reason.
+        handoffToolConnections: Object.fromEntries(
+          Object.entries(state.handoffToolConnections).map(([id, picks]) => [
+            id,
+            id === pluginId
+              ? Object.fromEntries(
+                  Object.entries(picks).filter(
+                    ([, picked]) => picked !== connectionId,
+                  ),
+                )
+              : picks,
+          ]),
         ),
       };
 
