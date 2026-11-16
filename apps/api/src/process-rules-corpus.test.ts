@@ -18,6 +18,10 @@ import { reviewCommand } from "./process-rules.ts";
  * Home and profile variables are expanded as a plugin would pass the path,
  * and a shell comment stays as arguments. Each command runs in a
  * repository folder.
+ *
+ * Since round 1 of #740 the rule table is allowlist-first: only an
+ * allowlisted read-only command gets no verdict, so most ordinary fixtures,
+ * the shim injections and the parity edges are `risky` as `unknown`.
  */
 const contexts = {
   posix: {
@@ -54,9 +58,6 @@ interface Fixture {
 }
 const fixtures = corpus as Fixture[];
 const reachable = fixtures.filter((f) => f.reach !== "not-applicable");
-/** The history rewrites ticket #717 lists as `review`, not `risky`. */
-const REVIEW_RULES = ["git-force-push", "git-discard", "git-branch-delete"];
-
 it("keeps all 267 fixtures, in every shell", () => {
   expect(fixtures).toHaveLength(267);
   const count = (reach: Fixture["reach"]) =>
@@ -87,26 +88,31 @@ it.each(reachable.map((f) => [f.id, f.command, f] as const))(
   },
 );
 
-it("marks every dangerous fixture risky, or review where the ticket says so", () => {
+it("marks every dangerous fixture risky", () => {
   const dangerous = reachable.filter(
     (f) => f.group === "dangerous" || f.group === "prompt-injection",
   );
   expect(dangerous.length).toBe(104);
   for (const fixture of dangerous)
-    expect(
-      fixture.expected === "risky" ||
-        (fixture.expected === "review" &&
-          REVIEW_RULES.includes(fixture.ruleId!) &&
-          fixture.executable === "git"),
-      `${fixture.id} ${fixture.command}`,
-    ).toBe(true);
+    expect(fixture.expected, `${fixture.id} ${fixture.command}`).toBe("risky");
 });
 
-it("never marks an ordinary fixture risky", () => {
+it("lets an ordinary fixture run only from the allowlist, and asks for the rest as unknown", () => {
   const ordinary = reachable.filter((f) => f.group === "ordinary");
   expect(ordinary.length).toBe(135);
+  // git's read-only subcommands, version probes, `ls`, `dir` and `pwd`.
+  expect(ordinary.filter((f) => f.expected === "none")).toHaveLength(50);
   for (const fixture of ordinary)
-    expect(fixture.expected, `${fixture.id} ${fixture.command}`).not.toBe(
-      "risky",
+    expect(
+      [fixture.expected, fixture.ruleId],
+      `${fixture.id} ${fixture.command}`,
+    ).toSatisfy(
+      ([expected, ruleId]: [string, string | undefined]) =>
+        (expected === "none" && ruleId === undefined) ||
+        (expected === "risky" && ruleId === "unknown"),
     );
+});
+
+it("never returns review: the rule table only asks or lets an allowlisted command run", () => {
+  expect(reachable.filter((f) => f.expected === "review")).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { UndeclaredCommand } from "../../../packages/shared/command-modes.ts";
 import type {
@@ -10,8 +11,14 @@ import type {
  * The fixed rule table for undeclared commands (ADR 0019). It reads only the
  * executable's name, the argument list and the folder the command runs in,
  * and never the file system, so the same command always gets the same
- * verdict. A rule only adds friction: `risky` asks in Auto, `review` shows
- * its reason in the dialog and the audit and asks for nothing by itself.
+ * verdict.
+ *
+ * Allowlist first: a command gets no verdict only when the allowlist below
+ * holds it, a short list of read-only commands with strictly parsed
+ * arguments. A danger rule names why a command is risky, and any other
+ * command is risky as `unknown`, so Auto asks for anything Ajour doesn't
+ * know to be safe. A denylist over arbitrary commands can't be complete:
+ * round 1 of #740 found dozens of ways around one.
  */
 export const processRuleTable = [
   {
@@ -64,6 +71,11 @@ export const processRuleTable = [
       "Changes system settings, user accounts, startup tasks or the power state.",
   },
   {
+    id: "remote-change",
+    verdict: "risky",
+    reason: "Changes or deletes something on a remote service.",
+  },
+  {
     id: "elevate",
     verdict: "risky",
     reason: "Runs a command as an administrator.",
@@ -80,27 +92,37 @@ export const processRuleTable = [
   },
   {
     id: "download",
-    verdict: "review",
+    verdict: "risky",
     reason: "Downloads from the internet.",
   },
   {
+    id: "git-push-delete",
+    verdict: "risky",
+    reason: "Deletes a branch or tag on the remote.",
+  },
+  {
     id: "git-force-push",
-    verdict: "review",
+    verdict: "risky",
     reason: "Overwrites the history of a remote branch.",
   },
   {
     id: "git-discard",
-    verdict: "review",
+    verdict: "risky",
     reason: "Throws away uncommitted changes or untracked files.",
   },
   {
     id: "git-branch-delete",
-    verdict: "review",
+    verdict: "risky",
     reason: "Deletes a branch even if it isn't merged.",
+  },
+  {
+    id: "unknown",
+    verdict: "risky",
+    reason: "Ajour doesn't know what this command does, so it asks.",
   },
 ] as const satisfies readonly {
   id: string;
-  verdict: "risky" | "review";
+  verdict: "risky";
   reason: string;
 }[];
 export type ProcessRuleId = (typeof processRuleTable)[number]["id"];
@@ -125,12 +147,32 @@ export interface RuleInput {
   home?: string;
 }
 
-/** Adapts the rule table to the broker's `CommandReview` port. */
+/**
+ * Adapts the rule table to the broker's `CommandReview` port. The broker
+ * runs a command in the folder `FolderResolver` resolved, a real path, while
+ * the API state keeps the path the user chose, which may pass through a
+ * junction or symlink (`/tmp` is `/private/tmp` on macOS). The rules get
+ * both forms of every repository folder and protected root.
+ */
 export function processRules(options: {
   repositoryFolders(projectId?: string): Promise<readonly string[]>;
   protectedRoots: readonly string[];
   home?: string;
+  realpath?: (value: string) => Promise<string>;
 }): CommandReview {
+  const real = options.realpath ?? ((value: string) => fs.realpath(value));
+  const bothForms = async (paths: readonly string[]) => [
+    ...new Set(
+      (
+        await Promise.all(
+          paths.map(async (value) => [
+            value,
+            await real(value).catch(() => value),
+          ]),
+        )
+      ).flat(),
+    ),
+  ];
   return {
     async review(command: UndeclaredCommand, context: CommandReviewContext) {
       try {
@@ -138,8 +180,10 @@ export function processRules(options: {
           executable: command.executable,
           argv: command.argv,
           cwd: context.cwd,
-          repositoryFolders: await options.repositoryFolders(context.projectId),
-          protectedRoots: options.protectedRoots,
+          repositoryFolders: await bothForms(
+            await options.repositoryFolders(context.projectId),
+          ),
+          protectedRoots: await bothForms(options.protectedRoots),
           home: options.home,
         });
       } catch {
@@ -165,7 +209,9 @@ export function reviewCommand(input: RuleInput): CommandVerdict {
     ),
   };
   const command = { name: commandName(input.executable), args: input.argv };
-  const id = riskyRule(command, context, 0) ?? reviewRule(command);
+  const id =
+    riskyRule(command, context, 0) ??
+    (allowlisted(command, context) ? undefined : "unknown");
   if (!id) return { verdict: "none" };
   const rule = processRuleTable.find((r) => r.id === id)!;
   return { verdict: rule.verdict, ruleId: rule.id, reason: rule.reason };
@@ -192,19 +238,16 @@ export function commandName(executable: string): string {
 
 // ---------------------------------------------------------------- arguments
 
-/** A POSIX short option cluster such as `-rf`, never `--long` or `-`. */
-function cluster(arg: string): string | undefined {
-  return /^-[A-Za-z0-9]+$/.test(arg) ? arg.slice(1) : undefined;
-}
 /**
  * The letters a short option cluster sets before an option that takes the
- * rest of the cluster as its value, which is included: `-sd@x` sets s, d.
+ * rest of the cluster as its value, which is included: `-sd@x` sets s, d,
+ * and `-cimport os` sets c. Never `--long` or `-`.
  */
 function shortFlags(arg: string, takesValue: string): string {
-  const letters = cluster(arg);
-  if (letters === undefined) return "";
+  if (!/^-[A-Za-z0-9]/.test(arg)) return "";
   let flags = "";
-  for (const letter of letters) {
+  for (const letter of arg.slice(1)) {
+    if (!/[A-Za-z0-9]/.test(letter)) break;
     flags += letter;
     if (takesValue.includes(letter)) break;
   }
@@ -226,6 +269,18 @@ function long(arg: string, ...names: string[]): boolean {
 }
 function hasLong(args: readonly string[], ...names: string[]): boolean {
   return args.some((arg) => long(arg, ...names));
+}
+/**
+ * A long option given whole or as any prefix, as getopt_long and git's
+ * parser accept an unambiguous one: `--upload-pac=x` is `--upload-pack`.
+ * An ambiguous prefix makes the tool fail, so matching it only adds an ask.
+ */
+function longPrefix(arg: string, ...names: string[]): boolean {
+  const given = /^--([A-Za-z0-9][\w-]*)(?:=|$)/.exec(arg)?.[1]?.toLowerCase();
+  return given !== undefined && names.some((name) => name.startsWith(given));
+}
+function hasLongPrefix(args: readonly string[], ...names: string[]): boolean {
+  return args.some((arg) => longPrefix(arg, ...names));
 }
 /** A PowerShell parameter, which may be shortened: `-Rec` is `-Recurse`. */
 function psParam(arg: string, name: string, shortest = 1): boolean {
@@ -349,16 +404,21 @@ interface PathFact {
 
 /**
  * The values inside an argument that may name a path: the argument, what
- * follows `=` (`of=/dev/sda`, `--file=x`), `@` (`-d @.env`) or a switch's
- * `:` (`/w:C:\`), and a `file:` URL's path.
+ * follows `=` (`of=/dev/sda`, `--file=x`), `@` (`-d @.env`), a short
+ * option's attached value (`-o/home/u/.bashrc`) or a switch's `:`
+ * (`/w:C:\`), and a `file:` URL's path (`file:/etc/passwd`).
  */
 function pathCandidates(arg: string): string[] {
   const values = [arg];
   const equals = arg.indexOf("=");
   if (equals > 0) values.push(arg.slice(equals + 1));
+  const attached =
+    /^-[A-Za-z]+?([A-Za-z]:[\\/].*)$/.exec(arg)?.[1] ??
+    /^-[A-Za-z]+([\\/~$%.].*)$/.exec(arg)?.[1];
+  if (attached) values.push(attached);
   for (const value of [...values]) {
     if (value.startsWith("@")) values.push(value.slice(1));
-    const fileUrl = /^file:\/\/(?:localhost)?(\/.*)$/i.exec(value)?.[1];
+    const fileUrl = /^file:(?:\/\/(?:localhost)?)?(\/.*)$/i.exec(value)?.[1];
     if (fileUrl)
       values.push(/^\/[A-Za-z]:/.test(fileUrl) ? fileUrl.slice(1) : fileUrl);
   }
@@ -405,9 +465,13 @@ function pathFacts(arg: string, context: Context): PathFact[] {
   return facts;
 }
 
+/** Devices that discard what is written, which name no file. */
+const NULL_DEVICES = new Set(["/dev/null", "nul", "nul:", "\\\\.\\nul"]);
+
 function pathFact(raw: string, context: Context): PathFact | undefined {
   const { flavor, windows } = context;
-  if (!raw || isUrl(raw)) return undefined;
+  if (!raw || isUrl(raw) || NULL_DEVICES.has(raw.toLowerCase()))
+    return undefined;
   let value = raw;
   const expanded = expandStart(value, context.home);
   if (expanded && "unknown" in expanded)
@@ -492,7 +556,7 @@ function riskyRule(
   depth: number,
 ): ProcessRuleId | undefined {
   const { name, args } = command;
-  if (SHELLS.has(name)) return "shell";
+  if (SHELLS.has(name) || WSL_LAUNCHER.test(name)) return "shell";
   if (inlineCode(command)) return "inline-code";
   if (anyPath(args, context, (fact) => fact.ajour)) return "ajour-folder";
   if (credentials(command, context)) return "credentials";
@@ -501,6 +565,8 @@ function riskyRule(
   if (sends(command)) return "send";
   if (installs(command)) return "install";
   if (system(command)) return "system";
+  if (remoteChange(command)) return "remote-change";
+  if (container(command, context)) return "elevate";
   const wrapped = wrapper(command);
   if (wrapped) {
     const inner =
@@ -511,7 +577,7 @@ function riskyRule(
   }
   if (launches(command)) return "launch";
   if (anyPath(args, context, (fact) => fact.outside)) return "path-outside";
-  return undefined;
+  return historyRule(command);
 }
 
 const SHELLS = words(`
@@ -519,6 +585,47 @@ const SHELLS = words(`
   command powershell powershell_ise pwsh wsl wslhost wscript cscript mshta
   rundll32 regsvr32 conhost explorer start invoke-expression iex
 `);
+/** WSL distribution launchers, which open a Linux shell: `ubuntu2204.exe`. */
+const WSL_LAUNCHER =
+  /^(ubuntu[\d.]*|debian|kali|alpine|fedoraremix|archlinux|opensuse.*|sles.*|oraclelinux.*|almalinux.*|rockylinux.*)$/;
+
+const PYTHON = /^(python|pythonw|py)(\d+(\.\d+)*)?$/;
+/**
+ * Python's own options, before the script or module: `python train.py -c
+ * x` passes `-c` to the script. The last one may be `-c` or `-m`.
+ */
+function pythonOptions(args: readonly string[]): string[] {
+  const options: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "-" || !arg.startsWith("-") || arg === "--") break;
+    options.push(arg);
+    if (["-W", "-X", "-Q"].includes(arg)) options.push(args[++i] ?? "");
+    const flags = shortFlags(arg, "cmWXQ");
+    if (flags.endsWith("c")) break;
+    if (flags.endsWith("m")) {
+      if (arg.length === flags.length + 1) options.push(args[i + 1] ?? "");
+      break;
+    }
+  }
+  return options;
+}
+/** The module `-m` runs, given as `-m name` or `-mname`. */
+function pythonModule(options: readonly string[]): string | undefined {
+  const last = options.at(-1);
+  const before = options.at(-2);
+  if (before !== undefined && shortFlags(before, "cmWXQ").endsWith("m"))
+    return before.length === shortFlags(before, "cmWXQ").length + 1
+      ? last
+      : undefined;
+  if (last === undefined) return undefined;
+  const flags = shortFlags(last, "cmWXQ");
+  return flags.endsWith("m") ? last.slice(flags.length + 1) : undefined;
+}
+
+/** A sed script with the `e` command or flag, or a `w` that writes a file. */
+const SED_RUNS_OR_WRITES =
+  /(^|[;\n{}])\s*(\d+|\$|\/[^/]*\/)?(,(\d+|\$|\/[^/]*\/))?\s*!?\s*[ewW](\s|$)|(^|[;\n{}])\s*s(.).*\7.*\7[A-Za-z0-9]*[ewW]/;
 
 function inlineCode({ name, args }: Command): boolean {
   if (/^node(js)?\d*$/.test(name) || /^(tsx|ts-node|esno)$/.test(name))
@@ -535,10 +642,22 @@ function inlineCode({ name, args }: Command): boolean {
       hasLong(args, "eval") ||
       args.some((arg) => /^data:/i.test(arg))
     );
-  if (/^(python|pythonw|py)(\d+(\.\d+)*)?$/.test(name))
-    return hasShort(args, "c", "mWXQ");
+  if (PYTHON.test(name)) {
+    const options = pythonOptions(args);
+    return hasShort(options, "c", "mWXQ") || pythonModule(options) === "timeit";
+  }
   if (/^ruby\d*(\.\d+)*$/.test(name)) return hasShort(args, "e", "rIECFTx0W");
-  if (/^perl\d*(\.\d+)*$/.test(name)) return hasShort(args, "eE", "IMmCxiFdDV");
+  if (/^perl\d*(\.\d+)*$/.test(name))
+    return hasShort(args, "eEM", "IMmCxiFdDV");
+  if (name === "julia") return hasShort(args, "eE") || hasLong(args, "eval");
+  if (["sed", "gsed"].includes(name))
+    return args.some((arg) => SED_RUNS_OR_WRITES.test(arg));
+  if (/^(vim?|nvim|gvim|ex|view|vimdiff|evim)$/.test(name))
+    return args.some(
+      (arg) =>
+        ["-c", "-S", "--cmd"].includes(arg) ||
+        (arg.startsWith("+") && arg.length > 1),
+    );
   if (/^php\d*(\.\d+)*$/.test(name))
     return (
       hasShort(args, "rBRE", "rBREFcdzt") ||
@@ -669,6 +788,13 @@ function credentials({ name, args }: Command, context: Context): boolean {
       );
     case "npm":
       return first === "token";
+    case "curl":
+      // `--variable %NAME` reads an environment variable into the request.
+      return args.some(
+        (arg, i) =>
+          (arg === "--variable" && (args[i + 1] ?? "").startsWith("%")) ||
+          arg.startsWith("--variable=%"),
+      );
     case "reg":
       return (
         ["query", "export", "save"].includes(first ?? "") &&
@@ -893,14 +1019,109 @@ function sends({ name, args }: Command): boolean {
       ].some((p) => hasPs(args, p, 2));
     case "rsync":
       return positionals(args).some(isRemote);
+    case "aws": {
+      const [service, action] = positionals(args).map((a) => a.toLowerCase());
+      return service === "s3" && ["sync", "cp", "mv"].includes(action ?? "");
+    }
     case "git": {
       const sub = gitSubcommand(args);
+      // A remote's address set for this run: `-c remote.origin.pushurl=…`.
+      if (
+        sub?.settings.some((setting) =>
+          /^(remote\..+\.(push)?url|url\..+\.(push)?insteadof)=/i.test(setting),
+        )
+      )
+        return true;
+      if (sub?.name === "send-email" || sub?.name === "imap-send") return true;
       if (sub?.name !== "push") return false;
       const remote = positionals(sub.args)[0];
       return remote !== undefined && (isUrl(remote) || isRemote(remote));
     }
   }
   return false;
+}
+
+/** Deletes or changes resources on a cloud or hosting service. */
+function remoteChange({ name, args }: Command): boolean {
+  const list = positionals(args).map((a) => a.toLowerCase());
+  const [first, second] = list;
+  switch (name) {
+    case "gh":
+      return (
+        ((first === "repo" || first === "release" || first === "secret") &&
+          /^(delete|archive|rename|edit|set|remove)$/.test(second ?? "")) ||
+        (first === "api" &&
+          curlMethods(args).some((m) => /^(delete|put|patch|post)$/i.test(m)))
+      );
+    case "terraform":
+    case "tofu":
+    case "terragrunt":
+      return /^(apply|destroy|import|taint|untaint|state)$/.test(first ?? "");
+    case "pulumi":
+      return /^(up|update|destroy|import|cancel|state)$/.test(first ?? "");
+    case "kubectl":
+    case "oc":
+      return /^(delete|apply|create|replace|patch|scale|drain|cordon|edit|set|label|annotate|rollout)$/.test(
+        first ?? "",
+      );
+    case "helm":
+      return /^(install|upgrade|uninstall|delete|rollback)$/.test(first ?? "");
+    case "aws":
+      return (
+        (first === "s3" && (second === "rm" || second === "rb")) ||
+        list
+          .slice(1)
+          .some((a) =>
+            /^(delete|terminate|put|create|update|modify|remove|stop|reboot)-/.test(
+              a,
+            ),
+          )
+      );
+    case "az":
+    case "gcloud":
+    case "doctl":
+    case "flyctl":
+    case "fly":
+    case "heroku":
+    case "vercel":
+    case "netlify":
+    case "wrangler":
+      return list.some((a) =>
+        /^(delete|destroy|remove|rm|create|deploy|update|set|purge)$/.test(a),
+      );
+  }
+  return false;
+}
+
+/**
+ * A container started with the host's privileges or root folder, which
+ * gives the command in it the computer's administrator rights.
+ */
+function container({ name, args }: Command, context: Context): boolean {
+  if (!["docker", "podman", "nerdctl"].includes(name)) return false;
+  const [first, second] = positionals(args).map((a) => a.toLowerCase());
+  const sub = first === "container" ? second : first;
+  if (!["run", "create", "exec"].includes(sub ?? "")) return false;
+  return args.some((arg, i) => {
+    if (
+      arg === "--privileged" ||
+      /^--(pid|ipc|userns|uts|cgroupns)=host$/.test(arg) ||
+      long(arg, "cap-add", "device", "security-opt")
+    )
+      return true;
+    if (arg !== "--mount" && !arg.startsWith("--mount=")) return false;
+    const spec = arg.startsWith("--mount=")
+      ? arg.slice(8)
+      : (args[i + 1] ?? "");
+    return spec
+      .split(",")
+      .map((part) => /^(source|src)=(.*)$/.exec(part)?.[2])
+      .some(
+        (source) =>
+          source !== undefined &&
+          pathFacts(source, context).some((fact) => fact.outside),
+      );
+  });
 }
 function curlMethods(args: readonly string[]): string[] {
   const methods: string[] = [];
@@ -932,17 +1153,21 @@ function installs({ name, args }: Command): boolean {
     case "npm":
     case "pnpm":
     case "bun":
+      // Any positional, since an option's value comes before the
+      // subcommand in `npm --prefix x install -g y`.
       return (
-        [
-          "i",
-          "install",
-          "add",
-          "update",
-          "up",
-          "upgrade",
-          "link",
-          "ln",
-        ].includes(first ?? "") &&
+        positionals(args).some((a) =>
+          [
+            "i",
+            "install",
+            "add",
+            "update",
+            "up",
+            "upgrade",
+            "link",
+            "ln",
+          ].includes(a.toLowerCase()),
+        ) &&
         (hasShort(args, "g") ||
           hasLong(args, "global") ||
           args.includes("--location=global") ||
@@ -958,7 +1183,14 @@ function installs({ name, args }: Command): boolean {
     case "pipx":
       return first === "install" && positionals(args).slice(1).some(remoteSpec);
     case "cargo":
-      return first === "install" && hasLong(args, "git");
+      return first === "install" && !hasLong(args, "path");
+    case "go":
+      return (
+        first === "install" &&
+        positionals(args)
+          .slice(1)
+          .some((a) => a.includes("@"))
+      );
     case "winget":
     case "choco":
     case "scoop":
@@ -1092,6 +1324,11 @@ function system({ name, args }: Command): boolean {
   return false;
 }
 
+const LAUNCH_WRAPPERS = words(`
+  caffeinate arch flock systemd-run strace ltrace dtruss valgrind tmux screen
+  wt unbuffer cpulimit firejail bwrap proot catchsegv sg nsenter unshare
+`);
+
 /**
  * A command that runs another command it is given: its rule, and the inner
  * command when the rule table can read it, to name a more precise rule.
@@ -1184,6 +1421,14 @@ function wrapper(
     case "watch":
     case "entr":
       return { rule: "launch" };
+    case "runuser":
+      return { rule: "elevate" };
+  }
+  // Programs that start the command they are given, which the rules don't
+  // read: `caffeinate sh -c id`, `flock lock -c id`, `wt cmd`.
+  if (LAUNCH_WRAPPERS.has(name) && args.length > 0 && !args.every(isHelp))
+    return { rule: "launch" };
+  switch (name) {
     case "find": {
       const exec = args.findIndex((a) => /^-(exec|execdir|ok|okdir)$/.test(a));
       if (exec === -1) return undefined;
@@ -1222,7 +1467,8 @@ function gitLaunchSetting(key: string, value: string | undefined): boolean {
 }
 
 function launches({ name, args }: Command): boolean {
-  const [first] = positionals(args).map((a) => a.toLowerCase());
+  const given = positionals(args).map((a) => a.toLowerCase());
+  const [first] = given;
   switch (name) {
     case "npx":
     case "pnpx":
@@ -1237,22 +1483,64 @@ function launches({ name, args }: Command): boolean {
     case "pcalua":
     case "script":
       return !(args.length > 0 && args.every(isHelp));
+    case "uvx":
+      return !(args.length > 0 && args.every(isHelp));
+    // Any positional, since an option's value comes before the subcommand
+    // in `npm --prefix x exec y`.
     case "npm":
-      return (
-        ["exec", "x", "explore", "create", "init"].includes(first ?? "") &&
-        (first !== "init" || positionals(args).length > 1)
+      return given.some(
+        (w, i) =>
+          ["exec", "x", "explore", "create"].includes(w) ||
+          (w === "init" && i < given.length - 1),
       );
     case "pnpm":
     case "yarn":
-      return ["dlx", "exec", "create"].includes(first ?? "");
+      return given.some((w) => ["dlx", "exec", "create"].includes(w));
     case "bun":
-      return first === "x" || first === "create";
+      return given.some((w) => w === "x" || w === "create");
+    case "pipx":
+      return first === "run";
+    case "uv":
+      return (
+        (first === "tool" && given[1] === "run") ||
+        (first === "run" && given.some(isUrl))
+      );
+    case "deno":
+      return ["run", "install", "x"].includes(first ?? "") && given.some(isUrl);
+    case "go":
+      return first === "run" && given.slice(1).some((w) => w.includes("@"));
+    case "tar":
+    case "gtar":
+    case "bsdtar":
+      return tarLaunches(args);
     case "wmic":
       return args.some((a) => /^create$/i.test(a));
     case "git":
       return gitLaunches(args);
   }
   return false;
+}
+/**
+ * tar options whose value is a program it runs, by any prefix getopt_long
+ * accepts, and `-I`, `-F` or an old-style `xIf` bundle.
+ */
+function tarLaunches(args: readonly string[]): boolean {
+  const bundle =
+    args[0] !== undefined && /^[A-Za-z]+$/.test(args[0]) ? args[0] : "";
+  return (
+    hasLongPrefix(
+      args,
+      "use-compress-program",
+      "checkpoint-action",
+      "to-command",
+      "info-script",
+      "new-volume-script",
+      "rsh-command",
+      "rmt-command",
+    ) ||
+    hasShort(args, "IF", "IFbfCgHKLNTVX") ||
+    /[IF]/.test(bundle)
+  );
 }
 function gitLaunches(args: readonly string[]): boolean {
   if (args.some((a) => /^ext::/i.test(a))) return true;
@@ -1270,18 +1558,56 @@ function gitLaunches(args: readonly string[]): boolean {
   }
   if (!sub) return false;
   const rest = sub.args;
+  // Git takes any unambiguous prefix of a long option: `--upload-pac=`.
   if (
-    rest.some((a) =>
-      long(a, "upload-pack", "receive-pack", "exec", "extcmd"),
-    ) ||
+    hasLongPrefix(rest, "upload-pack", "receive-pack", "exec", "extcmd") ||
     (["fetch", "clone", "pull", "ls-remote", "archive"].includes(sub.name) &&
-      rest.includes("-u"))
+      hasShort(rest, "u", "u"))
   )
     return true;
   const [first] = positionals(rest);
   switch (sub.name) {
+    case "clone": {
+      // `clone -c` and `--config` set a value in the new repository's
+      // configuration before its first checkout; a template brings hooks.
+      if (hasLongPrefix(rest, "template")) return true;
+      const settings = rest.flatMap((arg, i) => {
+        if (arg === "-c" || longPrefix(arg, "config"))
+          return [
+            arg.includes("=")
+              ? arg.slice(arg.indexOf("=") + 1)
+              : (rest[i + 1] ?? ""),
+          ];
+        return arg.startsWith("-c") && !arg.startsWith("--")
+          ? [arg.slice(2)]
+          : [];
+      });
+      return settings.some((setting) => {
+        const equals = setting.indexOf("=");
+        return gitLaunchSetting(
+          equals === -1 ? setting : setting.slice(0, equals),
+          equals === -1 ? undefined : setting.slice(equals + 1),
+        );
+      });
+    }
     case "config": {
-      const keys = positionals(rest);
+      // The names and values, skipping the values of `-f file` and others.
+      const keys: string[] = [];
+      for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i]!;
+        if (
+          [
+            "-f",
+            "--file",
+            "--blob",
+            "--type",
+            "--default",
+            "--comment",
+          ].includes(arg)
+        )
+          i++;
+        else if (!arg.startsWith("-")) keys.push(arg);
+      }
       const offset = ["set", "get", "unset", "add", "replace-all"].includes(
         keys[0] ?? "",
       )
@@ -1301,10 +1627,10 @@ function gitLaunches(args: readonly string[]): boolean {
     case "bisect":
       return first === "run";
     case "rebase":
-      return rest.includes("-x") || hasLong(rest, "exec");
+      return hasShort(rest, "x", "x");
     case "difftool":
     case "mergetool":
-      return rest.includes("-x") || hasLong(rest, "extcmd", "tool");
+      return hasShort(rest, "xt", "xt") || hasLongPrefix(rest, "tool");
     case "filter-branch":
       return true;
   }
@@ -1322,6 +1648,10 @@ function gitSubcommand(
       settings.push(args[++i] ?? "");
       continue;
     }
+    if (arg.startsWith("--config-env=")) {
+      settings.push(arg.slice("--config-env=".length));
+      continue;
+    }
     if (arg.startsWith("-c") && arg.length > 2) {
       settings.push(arg.slice(2));
       continue;
@@ -1334,6 +1664,8 @@ function gitSubcommand(
         "--namespace",
         "--exec-path",
         "--super-prefix",
+        "--attr-source",
+        "--list-cmds",
       ].includes(arg)
     ) {
       i++;
@@ -1345,9 +1677,10 @@ function gitSubcommand(
   return settings.length ? { name: "", args: [], settings } : undefined;
 }
 
-// ---------------------------------------------------------------- review
+// ---------------------------------------------------------------- history
 
-function reviewRule({ name, args }: Command): ProcessRuleId | undefined {
+/** Downloads and git commands that rewrite or delete history. */
+function historyRule({ name, args }: Command): ProcessRuleId | undefined {
   switch (name) {
     case "curl":
     case "wget":
@@ -1370,16 +1703,22 @@ function reviewRule({ name, args }: Command): ProcessRuleId | undefined {
     case "bitsadmin":
       return hasSwitch(args, "transfer", "addfile") ? "download" : undefined;
     case "git":
-      return gitReview(args);
+      return gitHistory(args);
   }
   return undefined;
 }
-function gitReview(args: readonly string[]): ProcessRuleId | undefined {
+function gitHistory(args: readonly string[]): ProcessRuleId | undefined {
   const sub = gitSubcommand(args);
   if (!sub) return undefined;
   const rest = sub.args;
   switch (sub.name) {
     case "push":
+      if (
+        hasLongPrefix(rest, "delete", "prune") ||
+        hasShort(rest, "d", "o") ||
+        positionals(rest).some((a) => /^\+?:/.test(a))
+      )
+        return "git-push-delete";
       return hasLong(
         rest,
         "force",
@@ -1426,4 +1765,323 @@ function gitReview(args: readonly string[]): ProcessRuleId | undefined {
         : undefined;
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------- allowlist
+
+/**
+ * The only commands that run in Auto without asking: read-only commands
+ * whose every argument is parsed strictly. Each option must be on the
+ * entry's list by its exact spelling: no long-option prefixes, no short
+ * clusters such as `-sb`, and no attached short value unless the list
+ * spells its form (`-U3`, `-uno`). Anything else is `unknown`.
+ *
+ * A read-only command still runs the repository's own git configuration,
+ * such as `core.fsmonitor` or a diff driver, which only the user or an
+ * approved command writes.
+ */
+function allowlisted(command: Command, context: Context): boolean {
+  const { name, args } = command;
+  if (versionProbe(command)) return true;
+  switch (name) {
+    case "git":
+      return gitReadOnly(args, context);
+    case "ls":
+    case "dir":
+      return listsInside(args, context);
+    // Prints the folder it runs in, which the broker chose.
+    case "pwd":
+      return (
+        args.length === 0 ||
+        (args.length === 1 && ["-L", "-P"].includes(args[0]!))
+      );
+    // Prints the user's name.
+    case "whoami":
+      return args.length === 0;
+  }
+  return false;
+}
+
+/** Tools whose `version` subcommand prints their version and nothing else. */
+const VERSION_SUBCOMMAND = words(`git go gh terraform tofu helm`);
+
+/**
+ * `<tool> --version` or `-V`, alone, prints a version for any program a
+ * plugin can name, unless a danger rule names the program by itself, such
+ * as `shutdown` or `format`, whose Windows builds don't read GNU options.
+ */
+function versionProbe({ name, args }: Command): boolean {
+  if (args.length !== 1) return false;
+  const [only] = args;
+  if (
+    only !== "--version" &&
+    only !== "-V" &&
+    !(only === "version" && VERSION_SUBCOMMAND.has(name))
+  )
+    return false;
+  return riskyRule({ name, args: [] }, NO_FOLDERS, 0) === undefined;
+}
+const NO_FOLDERS: Context = {
+  flavor: path.posix,
+  windows: false,
+  cwd: "/",
+  repositories: [],
+  protectedRoots: [],
+  inRepository: false,
+};
+
+/**
+ * A folder argument, resolved from `base`, when it is inside a repository
+ * folder and outside Ajour's folders. A variable, `~`, a wildcard or a
+ * leading dash never is.
+ */
+function folderInside(
+  value: string,
+  base: string,
+  context: Context,
+): string | undefined {
+  const { flavor, windows } = context;
+  if (!value || /^[-~$%]|[*?[\]]/.test(value)) return undefined;
+  if (NULL_DEVICES.has(value.toLowerCase())) return undefined;
+  if (!windows && /^[A-Za-z]:|^\\\\/.test(value)) return undefined;
+  const resolved = flavor.resolve(base, value);
+  return context.repositories.some((folder) =>
+    inside(flavor, windows, folder, resolved),
+  ) &&
+    !context.protectedRoots.some((root) =>
+      inside(flavor, windows, root, resolved),
+    )
+    ? resolved
+    : undefined;
+}
+
+interface Options {
+  /** Options taken as they are. */
+  flags: ReadonlySet<string>;
+  /** Whole-argument forms, for options with an attached value. */
+  forms?: readonly RegExp[];
+  /** Options whose value is the next argument, with its allowed form. */
+  values?: Readonly<Record<string, RegExp>>;
+}
+/**
+ * Splits `args` into positionals, or `undefined` when an option isn't
+ * allowed. `--` ends the options; a lone `-` is never allowed.
+ */
+function strictPositionals(
+  args: readonly string[],
+  options: Options,
+): string[] | undefined {
+  const result: string[] = [];
+  let ended = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (ended || !arg.startsWith("-")) {
+      result.push(arg);
+      continue;
+    }
+    if (arg === "--") {
+      ended = true;
+      continue;
+    }
+    if (options.flags.has(arg)) continue;
+    if (options.forms?.some((form) => form.test(arg))) continue;
+    const value = options.values?.[arg];
+    if (value && Object.hasOwn(options.values!, arg)) {
+      const next = args[++i];
+      if (next === undefined || !value.test(next)) return undefined;
+      continue;
+    }
+    return undefined;
+  }
+  return result;
+}
+
+const DIFF_FLAGS = words(`
+  --stat --numstat --shortstat --summary --name-only --name-status --raw -p
+  --patch -u --no-patch -s --patch-with-stat --minimal --patience
+  --histogram -w --ignore-all-space -b --ignore-space-change
+  --ignore-space-at-eol --ignore-blank-lines --ignore-cr-at-eol --word-diff
+  --color --no-color --color-words --no-renames -M --find-renames
+  --full-index --abbrev --no-ext-diff --no-textconv --check --exit-code
+  --quiet -z -R --text
+`);
+const DIFF_FORMS = [
+  /^-U\d+$/,
+  /^--unified=\d+$/,
+  /^--word-diff=(plain|color|porcelain|none)$/,
+  /^--diff-filter=[ACDMRTUXBacdmrtuxb*]+$/,
+  /^--stat=\d+(,\d+){0,2}$/,
+  /^--color=(always|never|auto)$/,
+  /^--abbrev=\d+$/,
+  /^--find-renames=\d+%?$/,
+];
+const LOG_FLAGS = words(`
+  --oneline --graph --decorate --no-decorate --all --branches --tags
+  --remotes --abbrev-commit --no-abbrev-commit --no-merges --merges
+  --first-parent --reverse --follow --left-right --cherry-pick --cherry-mark
+  --topo-order --date-order --author-date-order --no-walk --boundary
+  --full-history --simplify-by-decoration --regexp-ignore-case
+  --extended-regexp --fixed-strings --all-match --invert-grep --source
+  --parents --children --relative-date --pretty --use-mailmap --no-mailmap
+`);
+/** Values that only select or format what git prints. */
+const LOG_FORMS = [
+  /^-\d+$/,
+  /^-n\d+$/,
+  /^--max-count=\d+$/,
+  /^--skip=\d+$/,
+  /^--(since|until|after|before|author|committer|grep|date|format|pretty)=.*$/,
+  /^--decorate=(short|full|auto|no)$/,
+  /^--(branches|tags|remotes|glob)=\S+$/,
+  /^--(max|min)-parents=\d+$/,
+];
+const flagsOf = (...lists: ReadonlySet<string>[]) =>
+  new Set(lists.flatMap((list) => [...list]));
+
+/**
+ * Read-only git subcommands and their options. Left out on purpose:
+ * `--output` and `-o`, which write a file; `--ext-diff`, `--textconv` and
+ * `--show-signature`, which run a program; `--no-index`, which compares
+ * any two files; and options that read a file of their own, such as
+ * `--contents` or `--exclude-from`.
+ */
+const GIT_READ_ONLY: Readonly<
+  Record<
+    string,
+    Options & { positionals?: (rest: readonly string[]) => boolean }
+  >
+> = {
+  status: {
+    flags: words(`
+      -s --short -b --branch --porcelain --long -v --verbose -z --ignored
+      --ahead-behind --no-ahead-behind --show-stash --renames --no-renames
+    `),
+    forms: [
+      /^--porcelain=v[12]$/,
+      /^--untracked-files=(no|normal|all)$/,
+      /^-u(no|normal|all)?$/,
+      /^--ignore-submodules(=(none|untracked|dirty|all))?$/,
+      /^--ignored=(traditional|no|matching)$/,
+    ],
+  },
+  diff: {
+    flags: flagsOf(DIFF_FLAGS, words(`--cached --staged --merge-base`)),
+    forms: DIFF_FORMS,
+  },
+  log: {
+    flags: flagsOf(DIFF_FLAGS, LOG_FLAGS),
+    forms: [...DIFF_FORMS, ...LOG_FORMS],
+    values: { "-n": /^\d+$/ },
+  },
+  show: {
+    flags: flagsOf(
+      DIFF_FLAGS,
+      words(`
+        --oneline --abbrev-commit --no-abbrev-commit --decorate
+        --no-decorate --pretty
+      `),
+    ),
+    forms: [
+      ...DIFF_FORMS,
+      /^--(format|pretty|date)=.*$/,
+      /^--decorate=(short|full|auto|no)$/,
+    ],
+  },
+  "rev-parse": {
+    flags: words(`
+      --abbrev-ref --short --show-toplevel --git-dir --absolute-git-dir
+      --git-common-dir --is-inside-work-tree --is-inside-git-dir
+      --is-bare-repository --is-shallow-repository --verify -q --quiet
+      --symbolic-full-name --show-prefix --show-cdup
+      --show-superproject-working-tree
+    `),
+    forms: [/^--short=\d+$/, /^--abbrev-ref=(strict|loose)$/],
+  },
+  "ls-files": {
+    flags: words(`
+      --cached --modified -m --others --deleted -d --stage -s
+      --exclude-standard --directory --no-empty-directory --full-name -z
+      --error-unmatch --eol --deduplicate --unmerged -u -t
+    `),
+  },
+  blame: {
+    flags: words(`
+      -w -M -C -s -e -l -t -f -n -p --porcelain --line-porcelain
+      --show-email --show-name --show-number --root --incremental
+    `),
+    forms: [/^-L\d+(,[-+]?\d+)?$/, /^--date=.*$/, /^--abbrev=\d+$/],
+    values: { "-L": /^\d+(,[-+]?\d+)?$/ },
+  },
+  describe: {
+    flags: words(`
+      --tags --always --long --all --exact-match --contains --first-parent
+      --dirty
+    `),
+    forms: [/^--abbrev=\d+$/, /^--candidates=\d+$/, /^--(match|exclude)=.+$/],
+  },
+  // Lists branches only: a name without `--list` would create one.
+  branch: {
+    flags: words(`--list -a -r -v -vv --show-current`),
+    positionals: (rest) =>
+      rest.includes("--list") && !rest.includes("--show-current"),
+  },
+};
+
+/**
+ * `git [-C <repository folder>] <subcommand> <options> <positionals>`: no
+ * other global option, since `-c`, `--config-env`, `--exec-path`,
+ * `--git-dir` and `--work-tree` choose what git runs or reads. Git runs in
+ * a repository folder, and a positional that is a path stays inside one.
+ */
+function gitReadOnly(args: readonly string[], context: Context): boolean {
+  let folder = context.inRepository ? context.cwd : undefined;
+  let i = 0;
+  if (args[0] === "-C") {
+    folder = folderInside(args[1] ?? "", context.cwd, context);
+    i = 2;
+  }
+  const name = args[i];
+  if (!folder || name === undefined || !Object.hasOwn(GIT_READ_ONLY, name))
+    return false;
+  const spec = GIT_READ_ONLY[name]!;
+  const rest = args.slice(i + 1);
+  const given = strictPositionals(rest, spec);
+  if (!given) return false;
+  if (given.length > 0 && spec.positionals && !spec.positionals(rest))
+    return false;
+  return given.every((value) => gitPositional(value, folder, context));
+}
+/**
+ * A revision or a path. A value that reads as a path outside the folder,
+ * such as `/etc`, `C:\x` or `../x`, must stay inside a repository folder;
+ * `HEAD~1..main` and `HEAD:src/a.ts` aren't paths.
+ */
+function gitPositional(value: string, folder: string, context: Context) {
+  if (!value || value === "-") return false;
+  const pathLike =
+    /^[\\/~$%]/.test(value) ||
+    /^[A-Za-z]:/.test(value) ||
+    value.split(/[\\/]/).includes("..");
+  return !pathLike || folderInside(value, folder, context) !== undefined;
+}
+
+const LS_FLAGS = words(`
+  --all --almost-all --human-readable --recursive --reverse --classify
+  --directory
+`);
+/**
+ * `ls` and `dir` with options from `aAlhR1trSFd` and folders inside a
+ * repository folder. With no folder, they list the folder they run in,
+ * which must be one.
+ */
+function listsInside(args: readonly string[], context: Context): boolean {
+  const given = strictPositionals(args, {
+    flags: LS_FLAGS,
+    forms: [/^-[aAlhR1trSFd]+$/],
+  });
+  if (!given) return false;
+  if (given.length === 0) return context.inRepository;
+  return given.every(
+    (value) => folderInside(value, context.cwd, context) !== undefined,
+  );
 }

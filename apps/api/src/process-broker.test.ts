@@ -916,32 +916,56 @@ describe("Given the rule table", () => {
     await broker.shutdown();
   });
 
-  it("Auto runs a review command without asking, and Always ask shows its reason", async () => {
+  it("Auto asks for a history rewrite with its reason, and Always ask shows the same", async () => {
     // `--git-dir=missing` makes git fail before it reads any repository.
     const request = {
       executable: "git",
       argv: ["--git-dir=missing", "branch", "-D", "old"],
       cwdFolder: "repo",
     };
-    const auto = await ruleBroker("auto");
-    expect((await auto.op.run(request)).exitCode).not.toBe(0);
-    expect(auto.ask).not.toHaveBeenCalled();
-    expect(auto.sink.events[0]!.process).toMatchObject({
-      rule_id: "git-branch-delete",
-      decided_by: "mode",
-    });
-    await auto.broker.shutdown();
+    for (const mode of ["auto", "always-ask"] as const) {
+      const { broker, op, ask, sink } = await ruleBroker(mode);
+      expect((await op.run(request)).exitCode).not.toBe(0);
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          risky: true,
+          reason: reasonOf("git-branch-delete"),
+        }),
+        expect.anything(),
+      );
+      expect(sink.events[0]!.process).toMatchObject({
+        rule_id: "git-branch-delete",
+        decided_by: "user",
+      });
+      await broker.shutdown();
+    }
+  });
 
-    const always = await ruleBroker("always-ask");
-    await always.op.run(request);
-    expect(always.ask).toHaveBeenCalledWith(
+  it("Auto asks for a command Ajour doesn't know, and the event carries only the rule id", async () => {
+    const { broker, op, ask, sink } = await ruleBroker("auto");
+    const result = await op.run({
+      executable: "node",
+      argv: ["missing-secret-script.js", "--token=hunter2"],
+    });
+    expect(result.exitCode).not.toBe(0);
+    expect(ask).toHaveBeenCalledWith(
       expect.objectContaining({
-        risky: false,
-        reason: reasonOf("git-branch-delete"),
+        risky: true,
+        reason: "Ajour doesn't know what this command does, so it asks.",
       }),
       expect.anything(),
     );
-    await always.broker.shutdown();
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]!.process).toMatchObject({
+      mode: "auto",
+      rule_id: "unknown",
+      decided_by: "user",
+    });
+    const logged = JSON.stringify(sink.events);
+    expect(logged).not.toContain("missing-secret-script");
+    expect(logged).not.toContain("hunter2");
+    expect(logged).not.toContain("doesn't know");
+    await broker.shutdown();
   });
 });
 
