@@ -1,6 +1,10 @@
 import { handoffCapabilitySchema } from "./handoffs.ts";
 import { z } from "zod";
-import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
+import {
+  allowedTaskSlots,
+  listTemplateSlots,
+  fillTemplate,
+} from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
 import {
   backlogCommentsCapabilitySchema,
@@ -234,6 +238,19 @@ export function checkAgentTaskWeekLink(
         message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
       });
     }
+  }
+  try {
+    fillTemplate(
+      task.weekLink,
+      Object.fromEntries([...allowed].map((slot) => [slot, ""])),
+    );
+  } catch (error) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["weekLink"],
+      message:
+        error instanceof Error ? error.message : "Invalid week link template.",
+    });
   }
 }
 

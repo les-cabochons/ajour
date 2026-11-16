@@ -979,6 +979,8 @@ channel to read the event each emits.
 | `handoff.refresh`                    | request, plugin_operation, job, command | route, plugin method, client call, local API     |
 | `handoff.remove`                     | request, plugin_operation, job, command | route, client call                               |
 | `handoff.start`                      | request, plugin_operation, job, command | route, plugin method, client call                |
+| `handoff.templates_read`             | request, job                            | route, client call                               |
+| `handoff.templates_update`           | request, command                        | route, client call                               |
 | `handoff.visibility`                 | request, job                            | route, client call                               |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
@@ -1208,3 +1210,5 @@ The broker port's marked privacy fixture in `process-broker.test.ts` covers all
 four forms of process content and asserts one event per call.
 
 Process access uses `unsigned_plugins.process_toggle` with `process_access.enabled`. Per-package acceptance and revocation use `plugin.process_update` with `process_access.accepted`. Package keys are never logged.
+
+Handoff template reads emit `handoff.templates_read` as request or job; saves emit `handoff.templates_update` as request or command. They record request metadata only, never template source or preview item fields.

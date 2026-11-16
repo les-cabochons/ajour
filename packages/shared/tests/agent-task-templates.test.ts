@@ -27,3 +27,32 @@ describe("agent task templates", () => {
     );
   });
 });
+
+it("keeps prose and JSX braces literal while allowing spaced identifiers", () => {
+  const literal = "{{ the week }} style={{ color: 'red' }}";
+  expect(listTemplateSlots(literal)).toEqual([]);
+  expect(fillTemplate(literal + " {{ weekOf }}", { weekOf: "Monday" })).toBe(
+    literal + " Monday",
+  );
+});
+
+it("preserves hyphenated agent-task setting identifiers", () => {
+  expect(
+    fillTemplate("{{ settings.week-url }}", {
+      "settings.week-url": "https://example.test",
+    }),
+  ).toBe("https://example.test");
+});
+it("rejects an unknown week-link filter when parsing the manifest", async () => {
+  const { agentTaskSchema } = await import("../plugins.ts");
+  expect(
+    agentTaskSchema.safeParse({
+      id: "task",
+      label: "Task",
+      placement: "commit-week",
+      prompt: "prompt.md",
+      estimateMinutes: 1,
+      weekLink: "https://example.test/{{weekOf|bogus}}",
+    }).success,
+  ).toBe(false);
+});

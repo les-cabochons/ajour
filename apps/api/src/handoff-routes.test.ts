@@ -30,6 +30,7 @@ it("starts, reads, refreshes and removes a fake tool's thread without logging co
       connectionFields: [],
       capabilities: {
         handoff: {
+          promptTemplate: "Plugin {{item.title}}",
           tools: ["t3", "other"].map((id) => ({
             id,
             label: id,
@@ -89,14 +90,112 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
       workItemId: "i",
       projectId: "p",
       folderId: folder.id,
-      title: "CANARY-HANDOFF",
-      prompt: "CANARY-HANDOFF",
+      projectName: "Project",
       item: {
         key: "CANARY-HANDOFF",
+        title: "CANARY-HANDOFF",
+        type: "Bug",
         url: "https://example.test/CANARY-HANDOFF",
       },
       settings: {},
     };
+    const templatesPath = "/api/plugins/handoff/handoffs/templates";
+    expect((await call("GET", templatesPath)).body).toMatchObject({
+      prompt: "Plugin {{item.title}}",
+      title: "[{{item.key}}] {{item.title}}",
+      branch: "{{item.key|slug}}-{{item.title|slug}}",
+    });
+    const templates = {
+      prompt: "{{item.title}}",
+      title: "{{item.title}}",
+      branch: "{{item.key|slug}}",
+    };
+    const invalid = await call("POST", templatesPath, {
+      ...templates,
+      title: "{{item.unknown}}",
+    });
+    expect(invalid.status).toBe(400);
+    expect(JSON.stringify(invalid.body)).toContain("item.unknown");
+    expect((await call("POST", templatesPath, templates)).status).toBe(200);
+    expect((await call("GET", templatesPath)).body).toEqual(templates);
+    expect(
+      (
+        await call("POST", "/api/handoffs", {
+          ...input,
+          prompt: "Old finished prompt",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call("POST", templatesPath, {
+          ...templates,
+          prompt: "x".repeat(16385),
+        })
+      ).status,
+    ).toBe(400);
+    for (const branch of [
+      "bad name",
+      "@",
+      "a..b",
+      "-option",
+      "a.lock",
+      "a/.hidden",
+      "a/",
+      "a\\b",
+    ]) {
+      await call("POST", templatesPath, { ...templates, branch });
+      const refused = await call("POST", "/api/handoffs", input);
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain("branch template");
+    }
+    await call("POST", templatesPath, { ...templates, branch: "" });
+    const noBranch = await call("POST", "/api/handoffs", input);
+    expect(noBranch.status).toBe(200);
+    expect(noBranch.body).not.toHaveProperty("branch");
+    await call(
+      "DELETE",
+      `/api/handoffs/${(noBranch.body as { id: string }).id}`,
+    );
+    await call("POST", templatesPath, {
+      ...templates,
+      title: "{{item.title}}😀suffix",
+      branch: "valid",
+    });
+    const bounded = await call("POST", "/api/handoffs", {
+      ...input,
+      branchOverride: "",
+      item: { ...input.item, title: "a".repeat(499) },
+    });
+    expect(bounded.status, JSON.stringify(bounded.body)).toBe(200);
+    expect(bounded.body).toMatchObject({ title: "a".repeat(499) });
+    expect(bounded.body).not.toHaveProperty("branch");
+    await call(
+      "DELETE",
+      `/api/handoffs/${(bounded.body as { id: string }).id}`,
+    );
+    await call("POST", templatesPath, templates);
+    const multiline = await call("POST", "/api/handoffs", {
+      ...input,
+      branchOverride: "feature/override",
+      item: { ...input.item, title: "first\r\nsecond\nthird" },
+    });
+    expect(multiline.body).toMatchObject({
+      title: "first second third",
+      branch: "feature/override",
+    });
+    await call(
+      "DELETE",
+      `/api/handoffs/${(multiline.body as { id: string }).id}`,
+    );
+    expect(
+      (
+        await call("POST", "/api/handoffs", {
+          ...input,
+          branchOverride: "bad branch",
+        })
+      ).status,
+    ).toBe(400);
     const started = await call("POST", "/api/handoffs", input);
     expect(started.status, JSON.stringify(started.body)).toBe(200);
     expect(started.body).toMatchObject({
@@ -107,15 +206,19 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
     const id = (started.body as { id: string }).id;
     const refused = await call("POST", "/api/handoffs", {
       ...input,
-      title: "refuse",
+      item: { ...input.item, title: "refuse" },
     });
     expect(refused).toMatchObject({
       status: 409,
       body: { error: "Tool says no" },
     });
     expect(
-      (await call("POST", "/api/handoffs", { ...input, title: "unsafe" }))
-        .status,
+      (
+        await call("POST", "/api/handoffs", {
+          ...input,
+          item: { ...input.item, title: "unsafe" },
+        })
+      ).status,
     ).toBe(409);
     expect((await call("GET", "/api/handoffs")).body).toHaveLength(1);
     expect(
@@ -135,7 +238,10 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
         .status,
     ).toBe(409);
     expect((await call("DELETE", `/api/handoffs/${id}`)).body).toEqual([]);
-    await call("POST", "/api/handoffs", { ...input, title: "fail-refresh" });
+    await call("POST", "/api/handoffs", {
+      ...input,
+      item: { ...input.item, title: "fail-refresh" },
+    });
     const allFailed = await call("POST", "/api/handoffs/refresh");
     expect(allFailed.body).toHaveProperty(
       "error",

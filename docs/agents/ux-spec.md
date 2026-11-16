@@ -1412,6 +1412,14 @@ pause reason and time, cleared by a successful refresh. Reloading an older recor
 whose native data exceeds 4 KB keeps the handoff with capped status and label and
 `native.truncated: true`. Its next successful refresh replaces that compact data.
 
+### Handoff templates
+
+A handoff plugin's settings page has editable prompt, title and branch templates, saved together on this computer. The prompt starts with the plugin's default when present. The title starts as `[{{item.key}}] {{item.title}}`; the branch starts as `{{item.key|slug}}-{{item.title|slug}}`. Unknown slots and filters prevent saving and name the error.
+
+Slot buttons insert at the caret in the last focused field. A searchable backlog item list selects the live preview. Missing descriptions and parents produce empty text. Descriptions exclude frontmatter and have a 32 KiB limit with an ellipsis line. `|slug` folds accents, lowercases, replaces punctuation with single hyphens and limits each segment to 60 characters. An empty segment becomes `item`.
+
+Title and branch templates use single-line inputs. Filled titles join line breaks with spaces and keep at most 500 UTF-16 units without splitting a code point; an empty title falls back to the item's title, and an empty prompt is refused. The preview flags invalid git branches. An empty branch starts without a worktree. The start route validates a one-off branch override by the same rules. Uninstalling a plugin removes its saved templates.
+
 ### Undeclared commands
 
 Undeclared commands require `processes.undeclaredCommands: true`. Without it, every mode refuses them. Access review lists this as its own item and adding it requires consent again, including for historical consent records. It says the plugin may run commands it does not declare; under Auto, only commands Ajour knows are read-only run without asking; under Accept everything, any command runs.

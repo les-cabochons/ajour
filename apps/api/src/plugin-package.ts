@@ -37,6 +37,7 @@ import {
 import {
   allowedTaskSlots,
   listTemplateSlots,
+  fillTemplate,
 } from "../../../packages/shared/agent-task-templates.ts";
 
 export const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
@@ -247,6 +248,10 @@ export async function readAgentTaskPromptFile(
       );
     }
   }
+  fillTemplate(
+    prompt,
+    Object.fromEntries([...allowed].map((slot) => [slot, ""])),
+  );
   return prompt;
 }
 

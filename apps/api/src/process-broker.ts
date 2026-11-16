@@ -1,3 +1,4 @@
+import { isValidHandoffBranch } from "../../../packages/shared/handoff-templates.ts";
 import {
   undeclaredCommandSchema,
   type CommandPolicy,
@@ -303,13 +304,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         if (!/^[A-Za-z0-9:._-]+$/.test(value)) return refuse("invalid_request");
         break;
       case "ref":
-        if (
-          value === "@" ||
-          value.endsWith(".") ||
-          /[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|\/\/|^\/|\/$/.test(value) ||
-          value.split("/").some((p) => p.startsWith(".") || p.endsWith(".lock"))
-        )
-          return refuse("invalid_request");
+        if (!isValidHandoffBranch(value)) return refuse("invalid_request");
         break;
       case "number":
         if (
