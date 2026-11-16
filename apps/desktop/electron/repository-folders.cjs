@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { cliInstallDirectory } = require("./cli-command.cjs");
 
 /** The one list used by the chooser and the process broker's FolderResolver. */
 function protectedRepositoryFolders({
@@ -7,8 +8,8 @@ function protectedRepositoryFolders({
   userData,
   exe,
   resources,
-  appPath,
-  localAppData,
+  runtimeRoot,
+  home,
   env,
 }) {
   const roots = {
@@ -17,9 +18,9 @@ function protectedRepositoryFolders({
       ? platform === "darwin"
         ? path.resolve(resources, "../..")
         : path.dirname(exe)
-      : appPath,
+      : runtimeRoot,
   };
-  if (localAppData) roots.cli = path.join(localAppData, "Ajour", "bin");
+  roots.cli = cliInstallDirectory({ platform, packaged, home, env });
   if (env.AJOUR_APP_API_STATE_PATH)
     roots.stateOverride = path.dirname(
       path.resolve(env.AJOUR_APP_API_STATE_PATH),

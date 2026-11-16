@@ -40,7 +40,10 @@ const {
   getAppMenuModel,
 } = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
-const { createCliCommandController } = require("./cli-command.cjs");
+const {
+  createCliCommandController,
+  cliInstallDirectory,
+} = require("./cli-command.cjs");
 const { createTrayPanelController } = require("./tray-panel.cjs");
 const { createManualRedirectFetch } = require("./manual-redirect-fetch.cjs");
 const {
@@ -429,22 +432,12 @@ const cliCommand = createCliCommandController({
   allowAdHocSignature:
     !app.isPackaged && process.env.AJOUR_CLI_ADHOC_SIGNATURE === "1",
   paths: {
-    installDir:
-      (!app.isPackaged && process.env.AJOUR_CLI_INSTALL_DIR) ||
-      (process.platform === "darwin"
-        ? path.join(
-            os.homedir(),
-            "Library",
-            "Application Support",
-            "Ajour",
-            "bin",
-          )
-        : path.join(
-            process.env.LOCALAPPDATA ||
-              path.join(os.homedir(), "AppData", "Local"),
-            "Ajour",
-            "bin",
-          )),
+    installDir: cliInstallDirectory({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      home: os.homedir(),
+      env: process.env,
+    }),
     recordFile: path.join(app.getPath("userData"), "cli-command.json"),
     // The system's tar by its absolute path: a bare name would search the
     // working folder first.
@@ -1662,12 +1655,8 @@ async function ensureInternalAppApiRunning() {
         userData: app.getPath("userData"),
         exe: app.getPath("exe"),
         resources: process.resourcesPath,
-        appPath: app.getAppPath(),
-        localAppData:
-          process.env.LOCALAPPDATA ??
-          (process.platform === "win32"
-            ? path.join(app.getPath("home"), "AppData", "Local")
-            : undefined),
+        runtimeRoot: internalAppApiRuntimeRoot,
+        home: os.homedir(),
         env: process.env,
       }),
       vault: internalAppApiVault(internalAppApiModule, statePath),

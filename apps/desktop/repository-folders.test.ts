@@ -18,9 +18,10 @@ it.each(["win32", "darwin", "development"])(
       userData: "/data",
       exe: "/install/ajour.exe",
       resources: "/Applications/Ajour.app/Contents/Resources",
-      appPath: "/source",
-      localAppData: "/local",
+      runtimeRoot: "/source",
+      home: "/home",
       env: {
+        LOCALAPPDATA: "/local",
         AJOUR_APP_API_STATE_PATH: "/state/custom.json",
         AJOUR_USER_DATA_PATH: "/override",
       },
@@ -28,7 +29,6 @@ it.each(["win32", "darwin", "development"])(
     expect(Object.values(roots)).toEqual(
       expect.arrayContaining([
         "/data",
-        path.join("/local", "Ajour", "bin"),
         path.dirname(path.resolve("/state/custom.json")),
         path.resolve("/override"),
       ]),
@@ -42,6 +42,82 @@ it.each(["win32", "darwin", "development"])(
     );
   },
 );
+it.each([
+  {
+    platform: "win32",
+    packaged: true,
+    env: { LOCALAPPDATA: "/local" },
+    expected: path.join("/local", "Ajour", "bin"),
+  },
+  {
+    platform: "win32",
+    packaged: true,
+    env: {},
+    expected: path.join("/home", "AppData", "Local", "Ajour", "bin"),
+  },
+  {
+    platform: "darwin",
+    packaged: true,
+    env: {},
+    expected: path.join(
+      "/home",
+      "Library",
+      "Application Support",
+      "Ajour",
+      "bin",
+    ),
+  },
+  {
+    platform: "win32",
+    packaged: false,
+    env: { AJOUR_CLI_INSTALL_DIR: "/custom-cli" },
+    expected: "/custom-cli",
+  },
+  {
+    platform: "darwin",
+    packaged: false,
+    env: { AJOUR_CLI_INSTALL_DIR: "/custom-cli" },
+    expected: "/custom-cli",
+  },
+  {
+    platform: "darwin",
+    packaged: true,
+    env: { AJOUR_CLI_INSTALL_DIR: "/ignored" },
+    expected: path.join(
+      "/home",
+      "Library",
+      "Application Support",
+      "Ajour",
+      "bin",
+    ),
+  },
+])(
+  "Given $platform, packaged=$packaged and $env, protects the CLI install directory",
+  ({ platform, packaged, env, expected }) => {
+    const roots = protectedRepositoryFolders({
+      platform,
+      packaged,
+      env,
+      home: "/home",
+      userData: "/data",
+      runtimeRoot: "/checkout",
+      exe: "/install/ajour.exe",
+      resources: "/Applications/Ajour.app/Contents/Resources",
+    });
+    expect(roots.cli).toBe(expected);
+  },
+);
+it("Given a development build, protects its whole running checkout", () => {
+  const roots = protectedRepositoryFolders({
+    platform: "win32",
+    packaged: false,
+    userData: "/data",
+    runtimeRoot: "/checkout",
+    home: "/home",
+    env: {},
+  });
+  expect(roots.install).toBe("/checkout");
+});
 it("refuses foreign senders and invalid projects before opening, records cancel and passes only the chosen path", async () => {
   const show = vi.fn().mockResolvedValue({ canceled: true, filePaths: [] });
   const add = vi.fn();
@@ -68,10 +144,9 @@ it("refuses foreign senders and invalid projects before opening, records cancel 
 });
 
 it("Given the registered main handler, refuses other senders and frames, validates projects and records cancellation", async () => {
-  const source = await readFile(
-    new URL("./electron/main.cjs", import.meta.url),
-    "utf8",
-  );
+  const source = (
+    await readFile(new URL("./electron/main.cjs", import.meta.url), "utf8")
+  ).replace(/\r\n/g, "\n");
   const mainWindow = { webContents: { mainFrame: {} } };
   const { events, recorded } = recordingEvents();
   const {
@@ -97,11 +172,13 @@ it("Given the registered main handler, refuses other senders and frames, validat
       { events, windowSession: noWindowSession },
     ),
   });
-  const slice = (start: string, end: string) =>
-    source.slice(
-      source.indexOf(start),
-      source.indexOf(end, source.indexOf(start)),
-    );
+  const slice = (start: string, end: string) => {
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex);
+    expect(startIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(startIndex);
+    return source.slice(startIndex, endIndex);
+  };
   vm.runInContext(
     slice(
       "function assertActiveDesktopWindow(",
