@@ -111,12 +111,23 @@ export class Handoffs {
       throw new HandoffTemplateRefused(
         "The branch template produces an invalid git branch. Edit the branch template or leave it empty for no worktree.",
       );
+    // An empty title (an empty template, or a slot the item doesn't have)
+    // falls back to the item's own title; an empty prompt can't be sent.
+    const title =
+      handoffTitle(filled.title).trim() ||
+      handoffTitle(input.item.title).trim() ||
+      input.item.key;
+    const prompt = input.promptOverride ?? filled.prompt;
+    if (!prompt.trim())
+      throw new HandoffTemplateRefused(
+        "The prompt template produces an empty prompt for this item. Edit the prompt template.",
+      );
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
-      title: handoffTitle(filled.title),
+      title,
       ...(branch ? { branch } : {}),
-      prompt: input.promptOverride ?? filled.prompt,
+      prompt,
       item: { key: input.item.key, url: input.item.url },
       settings: input.settings,
     });

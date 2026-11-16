@@ -545,6 +545,23 @@ it("fills persisted templates at start, preserves overrides and bounds titles be
     await service.start(input);
     expect(received).toMatchObject({ title: "x".repeat(500) });
     expect(calls).toBe(3);
+    // An empty filled title falls back to the item's title.
+    await reopened.setHandoffTemplates("agent", {
+      prompt: "P",
+      title: "{{item.parent.title}}",
+      branch: "",
+    });
+    await service.start(input);
+    expect(received).toMatchObject({ title: "Fix" });
+    expect(received).not.toHaveProperty("branch");
+    // An empty filled prompt is refused with the template named, before the plugin.
+    await reopened.setHandoffTemplates("agent", {
+      prompt: "{{item.parent.key}}",
+      title: "T",
+      branch: "",
+    });
+    await expect(service.start(input)).rejects.toThrow(/prompt template/);
+    expect(calls).toBe(4);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
