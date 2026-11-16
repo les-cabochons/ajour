@@ -458,6 +458,205 @@ const publicHostSchema = z
     "A public host is a public host name such as avatars.githubusercontent.com, without a scheme, path, wildcard, or a local name such as .local or .internal.",
   );
 
+const processIdSchema = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/);
+const processLiteralSchema = z
+  .string()
+  .max(1000)
+  .regex(/^[^\x00\r\n]*$/)
+  .refine(
+    (value) => !/[\uD800-\uDFFF]/u.test(value),
+    "Lone surrogates are not allowed.",
+  );
+const processSlotKindSchema = z.enum([
+  "text",
+  "id",
+  "ref",
+  "number",
+  "https-url",
+  "folder",
+]);
+const processEnumSchema = strictObject({
+  kind: z.literal("enum"),
+  name: processIdSchema,
+  values: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(1000)
+        .regex(/^[A-Za-z0-9_./:=+@][A-Za-z0-9_./:=+@-]*$/),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (values) => new Set(values).size === values.length,
+      "Enum values must be unique.",
+    ),
+});
+/** One argv element. Compact slots are whole elements, never interpolation. */
+export const declaredArgumentSchema = z.union([
+  processLiteralSchema.transform((value, context) => {
+    if (!/[{}]/.test(value)) return { kind: "literal" as const, value };
+    const match = /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):([^{}:]+)\}$/.exec(value);
+    const kind = processSlotKindSchema.safeParse(match?.[2]);
+    const name = match?.[1];
+    if (!name || !kind.success) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Use a whole typed slot such as {title:text}, or an enum object.",
+      });
+      return z.NEVER;
+    }
+    return { kind: kind.data, name };
+  }),
+  processEnumSchema,
+  strictObject({ kind: z.literal("literal"), value: processLiteralSchema }),
+]);
+export type DeclaredArgument = z.infer<typeof declaredArgumentSchema>;
+export const declaredConditionalGroupSchema = strictObject({
+  if: processIdSchema,
+  args: z.array(declaredArgumentSchema).min(1).max(100),
+}).superRefine((group, context) => {
+  if (
+    !group.args.some((arg) => arg.kind !== "literal" && arg.name === group.if)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["if"],
+      message: "A conditional group must contain the slot it tests.",
+    });
+  }
+});
+export type DeclaredConditionalGroup = z.infer<
+  typeof declaredConditionalGroupSchema
+>;
+export const declaredCommandSchema = strictObject({
+  id: processIdSchema,
+  executable: processIdSchema,
+  args: z
+    .array(z.union([declaredArgumentSchema, declaredConditionalGroupSchema]))
+    .max(100),
+  stdin: z.literal("text").optional(),
+  mode: z.enum(["capture", "detached", "terminal"]),
+  timeoutSeconds: z.number().int().min(1).max(600).optional(),
+}).superRefine((command, context) => {
+  if (new TextEncoder().encode(JSON.stringify(command)).length > 12 * 1024)
+    issue(context, [], "A command may use at most 12 KB.");
+  if (command.mode !== "capture") {
+    for (const field of ["stdin", "timeoutSeconds"] as const) {
+      if (command[field] !== undefined)
+        issue(
+          context,
+          [field],
+          "Only capture commands may declare this field.",
+        );
+    }
+  }
+  const slots = new Set<string>();
+  for (const arg of command.args.flatMap((arg) =>
+    "if" in arg ? arg.args : [arg],
+  )) {
+    if (arg.kind === "literal") continue;
+    if (slots.has(arg.name))
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["args"],
+        message: `Duplicate slot "${arg.name}".`,
+      });
+    slots.add(arg.name);
+  }
+});
+/** Parsed declaration for the process broker, with typed slots and groups. */
+export type DeclaredCommand = z.infer<typeof declaredCommandSchema>;
+const refusedExecutables = new Set(
+  "cmd command powershell pwsh sh bash zsh fish dash ksh csh tcsh wsl wscript cscript mshta rundll32 regsvr32 conhost start explorer".split(
+    " ",
+  ),
+);
+
+const executableNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/)
+  .refine(
+    (name) => !/[. ]$/.test(name),
+    "Use a bare executable name, never a path.",
+  )
+  .refine((name) => {
+    const normalized = name.toLowerCase();
+    return (
+      !/\.(ps1|vbs|js|wsf|hta|msc|cpl|scr|pif)$/.test(normalized) &&
+      !refusedExecutables.has(
+        normalized.replace(
+          /\.(exe|cmd|bat|com|ps1|vbs|js|wsf|msc|cpl|scr|pif|hta)$/,
+          "",
+        ),
+      )
+    );
+  }, "Shells and script hosts cannot be declared.");
+const refusedSchemes = new Set([
+  "http",
+  "https",
+  "file",
+  "javascript",
+  "data",
+  "vbscript",
+  "about",
+  "blob",
+  "ajour",
+  "ajour-plugin",
+  "app",
+  ..."search search-ms shell view-source devtools filesystem chrome chrome-extension edge res its mk ftp smb nfs jar ldap telnet ssh".split(
+    " ",
+  ),
+]);
+export const pluginProcessesSchema = strictObject({
+  executables: z
+    .record(
+      processIdSchema,
+      strictObject({ names: z.array(executableNameSchema).min(1).max(10) }),
+    )
+    .default({}),
+  commands: z.array(declaredCommandSchema).max(256).default([]),
+  openSchemes: z
+    .array(
+      z
+        .string()
+        .max(64)
+        .regex(/^[a-z][a-z0-9+.-]*$/)
+        .refine(
+          (scheme) => !scheme.startsWith("ms-") && !refusedSchemes.has(scheme),
+          "This scheme cannot be declared by a plugin.",
+        ),
+    )
+    .max(30)
+    .default([]),
+}).superRefine((processes, context) => {
+  if (new TextEncoder().encode(JSON.stringify(processes)).length > 256 * 1024)
+    issue(context, [], "The processes block may use at most 256 KB.");
+  if (Object.keys(processes.executables).length > 256)
+    issue(context, ["executables"], "Declare at most 256 executables.");
+  const ids = new Set<string>();
+  processes.commands.forEach((command, index) => {
+    if (ids.has(command.id))
+      issue(
+        context,
+        ["commands", index, "id"],
+        `Duplicate command "${command.id}".`,
+      );
+    ids.add(command.id);
+    if (!Object.hasOwn(processes.executables, command.executable))
+      issue(
+        context,
+        ["commands", index, "executable"],
+        "Declare the executable this command uses.",
+      );
+  });
+});
+export type PluginProcesses = z.infer<typeof pluginProcessesSchema>;
+
 export const pluginNetworkSchema = strictObject({
   /** Absent when the plugin's requests carry no credential. */
   auth: pluginAuthSchema.optional(),
@@ -771,6 +970,7 @@ export const pluginApi4ManifestSchema = strictObject(
     connectionFields: z.array(pluginApi4FieldSchema).max(50).default([]),
     capabilities: pluginApi4CapabilitiesSchema,
     network: pluginNetworkSchema.optional(),
+    processes: pluginProcessesSchema.optional(),
     connectionAccess: z
       .array(pluginConnectionAccessChoiceSchema)
       .max(10)

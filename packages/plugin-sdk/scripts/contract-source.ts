@@ -14,6 +14,8 @@ import type {
   pluginEndpointSchema,
   pluginHttpMethodSchema,
   pluginNetworkSchema,
+  pluginProcessesSchema,
+  declaredCommandSchema,
 } from "../../shared/plugin-api-4.ts";
 import type {
   backlogPluginSyncResultSchema,
@@ -79,6 +81,10 @@ export type PluginField = Input<typeof pluginApi4FieldSchema>;
 export type PluginAuth = Input<typeof pluginAuthSchema>;
 /** What the plugin reaches through `ajour.http` and `ajour.publicFetch`. */
 export type PluginNetwork = Input<typeof pluginNetworkSchema>;
+/** Commands and app schemes declared in the manifest. No process executes at declaration time. */
+export type PluginProcesses = Input<typeof pluginProcessesSchema>;
+/** Parsed command, with typed slots and conditional groups, for host integrations. */
+export type DeclaredCommand = Output<typeof declaredCommandSchema>;
 /** A host derived from the base address, such as `api.{host}`. */
 export type PluginDerivedHost = Input<typeof pluginDerivedHostSchema>;
 /** A method and path pattern: `*` matches one segment, `**` the rest. */

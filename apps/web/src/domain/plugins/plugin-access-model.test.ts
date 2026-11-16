@@ -447,3 +447,40 @@ describe("the activity lines", () => {
     ).toBeUndefined();
   });
 });
+
+it.each(["patBasic", "secretAddress"] as const)(
+  "states the process exception for %s credentials",
+  (scheme) => {
+    const items = describeAccess(
+      {
+        ...view,
+        summary: {
+          ...view.summary,
+          authSchemes: [{ scheme, fields: ["personalAccessToken"] }],
+          commands: [{ id: "run", argv: "git", policy: "{}" }],
+        },
+      },
+      labels,
+    );
+    const credential = items.find((item) => item.kind === "credential");
+    expect(credential?.detail).toContain("commands run as you");
+    expect(credential?.detail).toContain(
+      "every plugin's credentials, not only its own",
+    );
+    expect(credential?.detail).not.toMatch(/never sees/);
+  },
+);
+it("names each scheme as opening another app on this computer", () => {
+  const items = describeAccess(
+    { ...view, summary: { ...view.summary, openSchemes: ["codex", "t3"] } },
+    labels,
+  );
+  expect(
+    items
+      .filter((item) => item.id.startsWith("scheme:"))
+      .map((item) => [item.title, item.detail]),
+  ).toEqual([
+    ["codex:", "Opens another app on this computer."],
+    ["t3:", "Opens another app on this computer."],
+  ]);
+});

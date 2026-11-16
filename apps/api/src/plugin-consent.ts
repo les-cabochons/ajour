@@ -9,7 +9,8 @@ import type { PluginConsent } from "../../../packages/shared/plugin-access-schem
 /**
  * What an update does to a plugin's activation (#394). Turning a plugin on is
  * the user's consent to what it reaches; an update that reaches more than
- * they allowed installs off, until they allow it.
+ * they allowed installs off, until they allow it. Declared commands and URL
+ * schemes use this same gate, including changes to a command's policy.
  */
 export interface UpdateConsentDecision {
   /** The update reaches more than was allowed: the plugin stays off. */

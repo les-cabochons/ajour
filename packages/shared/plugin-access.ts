@@ -13,6 +13,9 @@ import type {
 import type {
   PluginAuth,
   PluginNetwork,
+  PluginProcesses,
+  DeclaredArgument,
+  DeclaredCommand,
   PluginStartMode,
 } from "./plugin-api-4.ts";
 
@@ -54,6 +57,7 @@ export interface PluginAccessManifest {
     };
   };
   network?: PluginNetwork;
+  processes?: PluginProcesses;
   connectionAccess?: readonly {
     id: string;
     always: boolean;
@@ -81,6 +85,9 @@ function byText<Item>(text: (item: Item) => string) {
     return a < b ? -1 : a > b ? 1 : 0;
   };
 }
+
+const codeInterpreters =
+  /^(node|python|py|pypy|ruby|perl|php|deno|bun|java|osascript)(?:\d+(?:\.\d+)*)?$/;
 
 /**
  * What the manifest reaches. `agentPrompts` holds each agent task's prompt,
@@ -137,6 +144,44 @@ export function summarizePluginAccess(
       }))
       .sort(byText(endpointKey)),
     publicHosts: [...(network?.publicHosts ?? [])].sort(),
+    commands: (manifest.processes?.commands ?? [])
+      .map((command) => ({
+        id: command.id,
+        argv: commandArgvShape(
+          command,
+          manifest.processes?.executables[command.executable]?.names ?? [],
+        ),
+        description: [
+          `Executable names: ${(manifest.processes?.executables[command.executable]?.names ?? []).join(", ")}.`,
+          (
+            manifest.processes?.executables[command.executable]?.names ?? []
+          ).some((name) =>
+            codeInterpreters.test(
+              name.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, ""),
+            ),
+          )
+            ? "This command runs code it is given: as wide as Accept everything."
+            : "",
+          command.mode === "capture"
+            ? "Captures output."
+            : command.mode === "detached"
+              ? "Starts a detached process."
+              : "Opens in your terminal.",
+          command.stdin === "text" ? "Takes text on stdin." : "No stdin.",
+          command.timeoutSeconds === undefined
+            ? "Uses the broker's default timeout."
+            : `Timeout: ${command.timeoutSeconds} seconds.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        policy: JSON.stringify({
+          command,
+          names:
+            manifest.processes?.executables[command.executable]?.names ?? [],
+        }),
+      }))
+      .sort(byText((command) => command.id)),
+    openSchemes: [...new Set(manifest.processes?.openSchemes ?? [])].sort(),
     mcpTools: tasks
       .flatMap((task) =>
         (task.tools ?? []).map((tool) => ({ task: task.id, tool })),
@@ -221,6 +266,8 @@ export const NO_PLUGIN_ACCESS: Readonly<PluginAccessSummary> = Object.freeze({
   derivedHosts: [],
   endpoints: [],
   publicHosts: [],
+  commands: [],
+  openSchemes: [],
   mcpTools: [],
   agentPrompts: [],
   alwaysOnAccess: [],
@@ -290,6 +337,16 @@ export function pluginAccessDifference(
     ),
     endpoints: widenedEndpoints(before.endpoints, next.endpoints),
     publicHosts: added(before.publicHosts, next.publicHosts, String),
+    commands: added(
+      before.commands ?? [],
+      next.commands ?? [],
+      (command) => command.policy,
+    ),
+    openSchemes: added(
+      before.openSchemes ?? [],
+      next.openSchemes ?? [],
+      String,
+    ),
     mcpTools: added(before.mcpTools, next.mcpTools, mcpToolKey),
     agentPrompts: next.agentPrompts
       .filter((entry) => prompts.get(entry.task) !== entry.prompt)
@@ -320,6 +377,8 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.derivedHosts,
       difference.endpoints,
       difference.publicHosts,
+      difference.commands ?? [],
+      difference.openSchemes ?? [],
       difference.mcpTools,
       difference.agentPrompts,
       difference.alwaysOnAccess,
@@ -349,4 +408,27 @@ export function pluginAccessView(
       always: choice.always,
     })),
   };
+}
+
+/** Each slot stays one argv element; brackets show a conditional group. */
+export function commandArgvShape(
+  command: DeclaredCommand,
+  names: readonly string[],
+): string {
+  const quote = (value: string) =>
+    /^[A-Za-z0-9_./:=+@-]+$/.test(value) ? value : JSON.stringify(value);
+  const argument = (arg: DeclaredArgument, named = false): string =>
+    arg.kind === "literal"
+      ? quote(arg.value)
+      : arg.kind === "enum"
+        ? `<${named ? `${arg.name}:` : ""}${arg.values.map(quote).join("|")}>`
+        : `<${named ? `${arg.name}:` : ""}${arg.kind}>`;
+  return [
+    names.map(quote).join("|"),
+    ...command.args.map((arg) =>
+      "if" in arg
+        ? `[${arg.args.map((value) => argument(value, true)).join(" ")} if ${arg.if}]`
+        : argument(arg),
+    ),
+  ].join(" ");
 }

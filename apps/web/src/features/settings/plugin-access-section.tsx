@@ -53,6 +53,18 @@ function ActivityWarning({ children, ...props }: ComponentProps<"p">) {
   );
 }
 
+function ProcessWarning({ hasSchemes }: { hasSchemes: boolean }) {
+  return (
+    <ActivityWarning>
+      These {hasSchemes ? "commands and links" : "commands"} run as you, outside
+      the sandbox. A plugin that starts processes is outside G1, Ajour's
+      guarantee that plugins cannot obtain credentials. These processes can do
+      whatever you can, including reading your files and accessing every
+      plugin's credentials, not only its own.
+    </ActivityWarning>
+  );
+}
+
 function EndpointDisclosure({ item }: { item: AccessItem }) {
   const endpoints = item.endpoints ?? [];
   if (endpoints.length === 0) return null;
@@ -163,6 +175,13 @@ export function PluginAccessSection({
           hasAgentTasks: labels.tasks.length > 0,
         })}
       </p>
+      {listed &&
+      ((group.access?.summary.commands?.length ?? 0) > 0 ||
+        (group.access?.summary.openSchemes?.length ?? 0) > 0) ? (
+        <ProcessWarning
+          hasSchemes={(group.access?.summary.openSchemes?.length ?? 0) > 0}
+        />
+      ) : null}
       {listed ? (
         <>
           <p className="text-sm text-muted-foreground" data-access-activity>
@@ -210,6 +229,12 @@ export function PluginAccessUpdatePanel({
         It stays inactive until you allow it. Your connections and settings are
         kept.
       </p>
+      {(pendingAccess.difference.commands?.length ?? 0) > 0 ||
+      (pendingAccess.difference.openSchemes?.length ?? 0) > 0 ? (
+        <ProcessWarning
+          hasSchemes={(access.summary.openSchemes?.length ?? 0) > 0}
+        />
+      ) : null}
       <div className="mt-3">
         <AccessList items={items} label="New access" />
       </div>

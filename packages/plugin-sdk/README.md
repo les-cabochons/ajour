@@ -240,7 +240,9 @@ With the manifest, an endpoint behind an access choice answers only for a connec
 
 ## Limits
 
-Plugin API 4 is built so that no plugin can obtain a credential, its own or another plugin's. Within what a manifest declares, two limits remain, and Ajour never claims to prevent them:
+Plugin API 4 isolates credentials for plugins without process access. A plugin with
+process access can reach every plugin's credentials, not only its own, because
+its commands run as the user outside the sandbox. Within what a manifest declares, two limits remain, and Ajour never claims to prevent them:
 
 - **GraphQL reaches everything the token allows.** An endpoint such as GitHub's `POST /graphql` is allowed as a whole: the broker doesn't read queries, so a plugin that may call it may run any query or mutation the token's scopes allow. The token's scopes are the limit there.
 - **A DNS-rebinding window remains through a system proxy.** Unless the connection is on-premises, the broker resolves a host, refuses private addresses, and connects only to the addresses it checked, so a host whose DNS answer changes can't move a direct request. Through a system proxy the proxy connects, and when a PAC file falls back to a direct connection, a host whose DNS answer changes between the check and the connection could reach a private address: the broker then refuses only the answer. Credentials still attach only to hosts the user configured. The same goes for a public-looking name that only the proxy can resolve, such as `127.0.0.1.nip.io` when this computer's DNS can't: the broker can't judge an address it can't see, and the proxy connects to wherever it resolves the name. That can happen for a redirect from a service the user chose, and the proxy's own rules still apply.
@@ -253,6 +255,69 @@ For Ajour's maintainers. The package is built ready for npm but not published ye
 2. Set `version` in `package.json`.
 3. Pack it: `npm pack` in `packages/plugin-sdk` builds `dist` and writes `ajour-plugin-sdk-<version>.tgz`. Plugin repos vendor that file until publication.
 4. Publish it: `npm publish --access public` from `packages/plugin-sdk`, with an npm account that owns the `@ajour` scope.
+
+## Declaring commands and app schemes
+
+API 4 manifests may declare a `processes` block. Ajour doesn't run declared
+commands yet; the process broker (#713) will.
+
+```json
+"processes": {
+  "executables": { "t3": { "names": ["t3"] } },
+  "commands": [{
+    "id": "thread-start",
+    "executable": "t3",
+    "args": ["thread", "start", "{folder:folder}", "-", "--title", "{title:text}", "--json",
+      {"if": "branch", "args": ["--worktree", "{base:ref}", "--branch", "{branch:ref}"]}],
+    "stdin": "text",
+    "mode": "capture",
+    "timeoutSeconds": 60
+  }],
+  "openSchemes": ["codex"]
+}
+```
+
+Executable keys identify declarations. Their `names` are bare names to look up
+on PATH, never paths or command lines. Shells and script hosts are refused,
+including cmd, PowerShell, Unix shells, wsl and Windows script hosts, regardless
+of case or .exe/.cmd/.bat/.com suffix. Interpreters such as node and python are
+allowed, but Access marks them "runs code it is given: as wide as Accept everything". Commands reference a declared key and have
+unique IDs. Each argument is one argv element. Strings are literals unless the
+whole string is a slot such as `{title:text}`. Slot kinds are `text`, `id`, `ref`,
+`number`, `https-url` and `folder`. An enum is an object such as
+`{"kind":"enum","name":"format","values":["json","text"]}`. Values use `[A-Za-z0-9_./:=+@-]`, cannot start with `-` and cannot repeat.
+For a literal containing braces, use `{"kind":"literal","value":"{literal}"}`.
+
+Slot names are unique within a command. A conditional group includes its whole
+`args` list only when its `if` slot is supplied, and must contain that slot.
+Groups cannot nest. Free text belongs on stdin; `stdin: "text"` declares that
+input. Omit `stdin` for no input. Modes are `capture`, `detached` and `terminal`.
+Only `capture` accepts `stdin` and `timeoutSeconds`. The optional timeout is an
+integer between 1 and 600. Literals and enum values refuse lone surrogates.
+A parsed command is limited to 12 KB of UTF-8 JSON, leaving room for executable
+names in its 16 KB Access policy. A processes block is limited to 256 KB of
+UTF-8 JSON, 256 executables and 256 commands. Access argv and policy strings
+are each limited to 16,384 characters. Runtime argument
+checks and default timeouts belong to the broker, not manifest parsing.
+The host resolves a `folder` slot from a repository folder ID, never a plugin path.
+`DeclaredCommand` exports the parsed host contract with typed slots and groups.
+
+Schemes must be lowercase RFC 3986 names without a colon. Ajour refuses `http`,
+`https`, `file`, `javascript`, `data`, `vbscript`, `about`, `blob`, `ajour`,
+`ajour-plugin` and `app`, any `ms-*` scheme, and `search`, `search-ms`, `shell`,
+`view-source`, `devtools`, `filesystem`, `chrome`, `chrome-extension`, `edge`,
+`res`, `its`, `mk`, `ftp`, `smb`, `nfs`, `jar`, `ldap`, `telnet` and `ssh`.
+HTTPS opening is separate from these declarations.
+
+Access review lists each command as its argv shape and each scheme. Turning the
+plugin on approves that access. Added schemes and added or changed commands need
+approval again. Removals do not. Command comparison includes executable names,
+slot kinds, enum choices, conditional groups, stdin, mode and timeout. It treats
+all command policy changes conservatively as needing review, even a restriction.
+
+These commands and links run as you, outside the sandbox. A plugin that starts processes
+is outside G1. A process can read your files and access every plugin's credentials, not only its own.
+Ajour's sandbox network policy does not restrict external processes or apps.
 
 ## License
 
