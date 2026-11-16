@@ -1245,9 +1245,9 @@ export type ProjectSourceSyncResult =
                 unit: "hours" | "money";
                 consumed: number;
                 status?: "unknown" | "ok" | "warning" | "over" | undefined;
+                since?: string | undefined;
                 total?: number | undefined;
                 remaining?: number | undefined;
-                since?: string | undefined;
               }
             | undefined;
         }[];
@@ -1290,9 +1290,9 @@ export type ProjectSourceSnapshot = {
           unit: "hours" | "money";
           consumed: number;
           status?: "unknown" | "ok" | "warning" | "over" | undefined;
+          since?: string | undefined;
           total?: number | undefined;
           remaining?: number | undefined;
-          since?: string | undefined;
         }
       | undefined;
   }[];
@@ -1331,9 +1331,9 @@ export type ProjectSourceProject = {
         unit: "hours" | "money";
         consumed: number;
         status?: "unknown" | "ok" | "warning" | "over" | undefined;
+        since?: string | undefined;
         total?: number | undefined;
         remaining?: number | undefined;
-        since?: string | undefined;
       }
     | undefined;
 };
@@ -1354,9 +1354,9 @@ export type ProjectSourceBudget = {
   unit: "hours" | "money";
   consumed: number;
   status?: "unknown" | "ok" | "warning" | "over" | undefined;
+  since?: string | undefined;
   total?: number | undefined;
   remaining?: number | undefined;
-  since?: string | undefined;
 };
 
 /** What `syncTimeEntries` receives: the window to list, as local dates in the
