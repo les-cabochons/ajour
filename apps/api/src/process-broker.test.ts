@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { copyFile, link, mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.
 import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
-import { ProcessBroker } from "./process-broker.ts";
+import { gitEnvironment, ProcessBroker } from "./process-broker.ts";
 import { processRuleTable, processRules } from "./process-rules.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -159,6 +159,108 @@ it("Given a hanging child, the declared timeout ends it", async () => {
     reason: "timeout",
   });
 });
+describe("Given a git child", () => {
+  const printGitEnvironment =
+    "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(process.env).filter(([k])=>/^GIT_/i.test(k))))))";
+  const saved: Record<string, string | undefined> = {};
+  function setEnv(values: Record<string, string | undefined>) {
+    for (const [key, value] of Object.entries(values)) {
+      saved[key] = process.env[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+      delete saved[key];
+    }
+  });
+  /** A broker whose executable is a copy of node named git. */
+  async function gitBroker(name = "git") {
+    const { manifest, root } = await fixture([], printGitEnvironment);
+    const git = path.join(
+      root,
+      process.platform === "win32" ? `${name}.exe` : name,
+    );
+    await link(process.execPath, git).catch(() =>
+      copyFile(process.execPath, git),
+    );
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => undefined,
+      executableOverride: async () => git,
+    });
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    return async () =>
+      JSON.parse(
+        (await op.run({ command: "run", args: {} })).stdout!,
+      ) as Record<string, string>;
+  }
+
+  it("refuses bare repositories it wasn't pointed at and takes no optional locks", async () => {
+    setEnv({ GIT_CONFIG_COUNT: undefined, GIT_OPTIONAL_LOCKS: undefined });
+    const run = await gitBroker();
+    expect(await run()).toMatchObject({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "safe.bareRepository",
+      GIT_CONFIG_VALUE_0: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+  });
+
+  it("keeps the configuration entries Ajour's environment already has", async () => {
+    setEnv({
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "core.pager",
+      GIT_CONFIG_VALUE_0: "cat",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "all",
+    });
+    const run = await gitBroker();
+    expect(await run()).toMatchObject({
+      GIT_CONFIG_COUNT: "3",
+      GIT_CONFIG_KEY_0: "core.pager",
+      GIT_CONFIG_VALUE_0: "cat",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "all",
+      // The last entry wins.
+      GIT_CONFIG_KEY_2: "safe.bareRepository",
+      GIT_CONFIG_VALUE_2: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+  });
+
+  it("replaces a count git couldn't read, and reuses the key's spelling", () => {
+    expect(gitEnvironment({ GIT_CONFIG_COUNT: "x" })).toEqual({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "safe.bareRepository",
+      GIT_CONFIG_VALUE_0: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+    expect(
+      gitEnvironment({ Git_Config_Count: "1", Git_Optional_Locks: "1" }),
+    ).toEqual({
+      Git_Config_Count: "2",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "explicit",
+      Git_Optional_Locks: "0",
+    });
+  });
+
+  it("gives other programs no git settings", async () => {
+    setEnv({ GIT_CONFIG_COUNT: undefined, GIT_OPTIONAL_LOCKS: undefined });
+    const run = await gitBroker("gitk");
+    expect(await run()).not.toHaveProperty("GIT_CONFIG_COUNT");
+    expect(await run()).not.toHaveProperty("GIT_OPTIONAL_LOCKS");
+  });
+});
+
 it.each(["stdout", "stderr"])(
   "Given more than 1 MB on %s, ends the child",
   async (stream) => {

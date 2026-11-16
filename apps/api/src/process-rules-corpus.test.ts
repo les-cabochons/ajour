@@ -100,8 +100,10 @@ it("marks every dangerous fixture risky", () => {
 it("lets an ordinary fixture run only from the allowlist, and asks for the rest as unknown", () => {
   const ordinary = reachable.filter((f) => f.group === "ordinary");
   expect(ordinary.length).toBe(135);
-  // git's read-only subcommands, version probes, `ls`, `dir` and `pwd`.
-  expect(ordinary.filter((f) => f.expected === "none")).toHaveLength(50);
+  // git's read-only subcommands, version probes of claude, codex and node,
+  // and `pwd`. Since round 2 of #740, `ls`, `dir`, and npm's and pnpm's
+  // version probes ask: they read the project or follow its symlinks.
+  expect(ordinary.filter((f) => f.expected === "none")).toHaveLength(40);
   for (const fixture of ordinary)
     expect(
       [fixture.expected, fixture.ruleId],

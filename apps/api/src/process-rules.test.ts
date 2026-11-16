@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -774,15 +782,48 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
   {
     "version probe": {
       allowed: [
+        ["git", "--version"],
         ["node", "--version"],
-        ["python3", "-V"],
+        ["node.exe", "--version"],
+        ["python", "--version"],
+        ["python3", "--version"],
+        ["py", "--version"],
+        ["gh", "--version"],
+        ["t3", "--version"],
+        ["claude", "--version"],
+        ["codex", "--version"],
+        ["opencode", "--version"],
+        ["copilot", "--version"],
+        ["code", "--version"],
+      ],
+      refused: [
+        // These read the project before they print a version: pytest loads
+        // conftest.py, Corepack reads packageManager and installs that
+        // version, mvn reads .mvn/jvm.config, gradlew is the project's own
+        // script, go reads go.mod's toolchain line, cargo reads
+        // rust-toolchain.toml, and npm loads the project's .npmrc, which
+        // chooses folders it writes.
+        ["pytest", "--version"],
+        ["yarn", "--version"],
+        ["pnpm", "--version"],
+        ["npm", "--version"],
+        ["mvn", "--version"],
+        ["gradlew", "--version"],
+        ["./gradlew", "--version"],
+        ["go", "--version"],
+        ["cargo", "--version"],
         ["cargo.exe", "--version"],
+        // `-V` and a `version` subcommand never count.
+        ["python3", "-V"],
+        ["git", "-V"],
         ["git", "version"],
         ["go", "version"],
         ["gh", "version"],
         ["terraform", "version"],
-      ],
-      refused: [
+        // A batch file or .com program of that name is another program.
+        ["node.cmd", "--version"],
+        ["git.bat", "--version"],
+        ["code.com", "--version"],
         ["node", "--version", "x"],
         ["node", "version"],
         ["rm", "version"],
@@ -807,8 +848,6 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "status", "-uno"],
         ["git", "status", "--untracked-files=all"],
         ["git", "status", "--", "src"],
-        ["git", "-C", "/home/dev/code/lib", "status"],
-        ["git", "-C", "src", "status"],
       ],
       refused: [
         ["git", "status", "--porcelain=v3"],
@@ -824,6 +863,12 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "--work-tree", "src", "status"],
         ["git", "--exec-path=/tmp", "status"],
         ["git", "--attr-source", "HEAD", "status"],
+        // Git already runs in its repository folder. `-C` into a
+        // subfolder could reach a committed bare repository, whose
+        // core.fsmonitor git would run.
+        ["git", "-C", "src", "status"],
+        ["git", "-C", "/home/dev/code/lib", "status"],
+        ["git", "-C", ".", "status"],
         ["git", "-C", "/tmp/x", "status"],
         ["git", "-C", "../other", "status"],
         ["git", "-C", "~", "status"],
@@ -869,6 +914,10 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "log", "--max-count=3", "--format=%H %s"],
         ["git", "log", "--since=2.weeks", "--author=dev"],
         ["git", "log", "--graph", "--all", "--decorate"],
+        ["git", "log", "--pretty=fuller"],
+        ["git", "log", "--pretty=format:%h %(trailers:key=Fixes)"],
+        ["git", "log", "--format=%h%d %(decorate:prefix=[)"],
+        ["git", "log", "--format=100%% %s"],
         ["git", "log", "-p", "--follow", "--", "src/app.ts"],
         ["git", "log", "origin/main..HEAD"],
       ],
@@ -882,6 +931,15 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "log", "-c"],
         ["git", "log", "--exec-path"],
         ["git", "log", "--since", "2.weeks"],
+        // A signature atom starts gpg to check the signature.
+        ["git", "log", "--format=%G?"],
+        ["git", "log", "--format=%h %GS"],
+        ["git", "log", "--pretty=format:%GK"],
+        ["git", "log", "--pretty=tformat:%GG"],
+        // An atom Ajour can't vouch for, or a name git reads from config.
+        ["git", "log", "--format=%(describe)"],
+        ["git", "log", "--format=%(trailersx)"],
+        ["git", "log", "--pretty=mine"],
       ],
     },
     "git show": {
@@ -897,6 +955,9 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "show", "-o", "x"],
         ["git", "show", "--output=x"],
         ["git", "show", "--show-signature"],
+        ["git", "show", "--format=%G?", "HEAD"],
+        ["git", "show", "--pretty=%GF", "-s"],
+        ["git", "show", "--format=%(describe:tags)"],
       ],
     },
     "git rev-parse": {
@@ -977,16 +1038,16 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
         ["git", "branch", "--show-current", "x"],
       ],
     },
-    "ls and dir": {
-      allowed: [
+    // A listing follows a symlink or junction inside the repository folder
+    // to wherever it leads, and the rules never read the disk.
+    "ls and dir (not allowlisted)": {
+      allowed: [],
+      refused: [
         ["ls"],
         ["ls", "-la"],
         ["ls", "-lah", "src"],
-        ["ls", "--all", "src", "/home/dev/code/lib"],
         ["dir"],
         ["dir", "src"],
-      ],
-      refused: [
         ["ls", "/etc"],
         ["ls", "../other"],
         ["ls", "-I", "x"],
@@ -1010,6 +1071,8 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
     whoami: {
       allowed: [["whoami"]],
       refused: [
+        ["whoami.com"],
+        ["whoami.cmd"],
         ["whoami", "/all"],
         ["whoami", "--help"],
       ],
@@ -1017,7 +1080,9 @@ const allowlist: Record<string, { allowed: string[][]; refused: string[][] }> =
   };
 
 describe.each(Object.entries(allowlist))("Allowlist %s", (_, entry) => {
-  it.each(entry.allowed.map((line) => [line.join(" "), line]))(
+  it
+    .skipIf(entry.allowed.length === 0)
+    .each(entry.allowed.map((line) => [line.join(" "), line]))(
     "Given %s in a repository folder, returns no verdict",
     (_, line) => {
       expect(review("posix", line)).toEqual({ verdict: "none" });
@@ -1032,7 +1097,10 @@ describe.each(Object.entries(allowlist))("Allowlist %s", (_, entry) => {
 });
 
 it("Given an allowlisted command outside a repository folder, asks as unknown", () => {
-  for (const line of [["git", "status"], ["ls"], ["dir", "src"]])
+  for (const line of [
+    ["git", "status"],
+    ["git", "log", "--oneline"],
+  ])
     expect(review("posix", line, systemRoot.posix), line.join(" ")).toEqual(
       UNKNOWN,
     );
@@ -1044,27 +1112,32 @@ it("Given an allowlisted command outside a repository folder, asks as unknown", 
     expect(review("posix", line, systemRoot.posix)).toEqual({
       verdict: "none",
     });
-  // `-C` into a repository folder makes git's folder a repository folder.
+  // `-C` doesn't make git's folder a repository folder.
   expect(
     review(
       "posix",
       ["git", "-C", "/home/dev/code/app", "status"],
       systemRoot.posix,
     ),
-  ).toEqual({ verdict: "none" });
+  ).toEqual(UNKNOWN);
   expect(
     review(
       "windows",
       ["git.exe", "-C", "D:\\work\\lib", "diff", "--stat"],
       systemRoot.windows,
     ),
-  ).toEqual({ verdict: "none" });
+  ).toEqual(UNKNOWN);
 });
 
 it("Given a Windows repository folder, the allowlist reads Windows paths", () => {
-  expect(review("windows", ["git.exe", "-C", "src", "status"])).toEqual({
+  expect(review("windows", ["git.exe", "status", "--", "src"])).toEqual({
     verdict: "none",
   });
+  expect(review("windows", ["git.exe", "-C", "src", "status"])).toEqual(
+    UNKNOWN,
+  );
+  for (const name of ["git.cmd", "git.bat", "GIT.CMD"])
+    expect(review("windows", [name, "status"]), name).toEqual(UNKNOWN);
   expect(review("windows", ["git", "diff", "--", "src\\app.ts"])).toEqual({
     verdict: "none",
   });
@@ -1075,6 +1148,65 @@ it("Given a Windows repository folder, the allowlist reads Windows paths", () =>
   expect(review("windows", ["git", "-C", "..\\other", "status"]).verdict).toBe(
     "risky",
   );
+});
+
+/**
+ * The rules never read the disk, so a path inside a repository folder may
+ * be a symlink that leads outside it. That is why `ls` and `dir` aren't
+ * allowlisted. Git keeps its positional paths: it stores a symlink as a
+ * blob holding the target's path and never reads through it.
+ */
+describe("Given a committed symlink that leads outside the repository folder", () => {
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  it("git reads the link itself, never the file it leads to", async () => {
+    const base = await realpath(
+      await mkdtemp(path.join(os.tmpdir(), "rules-link-")),
+    );
+    try {
+      const repo = path.join(base, "repo");
+      const outside = path.join(base, "outside");
+      await mkdir(repo);
+      await mkdir(outside);
+      await writeFile(path.join(outside, "secret.txt"), "SECRET-CONTENT\n");
+      git(repo, "init", "-q");
+      git(repo, "config", "user.email", "dev@example.invalid");
+      git(repo, "config", "user.name", "Dev");
+      // A symlink entry, written without the file system so the test runs
+      // where creating symlinks needs a privilege.
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+        cwd: repo,
+        input: outside,
+        encoding: "utf8",
+      }).trim();
+      git(repo, "update-index", "--add", "--cacheinfo", `120000,${blob},out`);
+      git(repo, "commit", "-q", "-m", "link");
+      const context = {
+        cwd: repo,
+        repositoryFolders: [repo],
+        protectedRoots: [],
+      };
+      for (const argv of [
+        ["show", "HEAD:out"],
+        ["log", "-p", "--", "out"],
+        ["diff", "HEAD~0", "--", "out/secret.txt"],
+        ["ls-files", "--", "out/secret.txt"],
+      ]) {
+        expect(
+          reviewCommand({ ...context, executable: "git", argv }),
+          argv.join(" "),
+        ).toEqual({ verdict: "none" });
+        expect(git(repo, ...argv)).not.toContain("SECRET-CONTENT");
+      }
+      expect(git(repo, "show", "HEAD:out")).toBe(outside);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
 });
 
 /**
@@ -1306,7 +1438,10 @@ describe("processRules", () => {
         rules.review({ executable: "git", argv: ["status"] }, { cwd }),
       ).resolves.toEqual({ verdict: "none" });
       await expect(
-        rules.review({ executable: "git", argv: ["-C", link, "log"] }, { cwd }),
+        rules.review(
+          { executable: "git", argv: ["log", "--", path.join(link, "src")] },
+          { cwd },
+        ),
       ).resolves.toEqual({ verdict: "none" });
       await expect(
         rules.review(

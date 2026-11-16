@@ -211,7 +211,9 @@ export function reviewCommand(input: RuleInput): CommandVerdict {
   const command = { name: commandName(input.executable), args: input.argv };
   const id =
     riskyRule(command, context, 0) ??
-    (allowlisted(command, context) ? undefined : "unknown");
+    (allowlistName(input.executable) && allowlisted(command, context)
+      ? undefined
+      : "unknown");
   if (!id) return { verdict: "none" };
   const rule = processRuleTable.find((r) => r.id === id)!;
   return { verdict: rule.verdict, ruleId: rule.id, reason: rule.reason };
@@ -1770,15 +1772,30 @@ function gitHistory(args: readonly string[]): ProcessRuleId | undefined {
 // ---------------------------------------------------------------- allowlist
 
 /**
+ * An allowlist entry names a program, so only `name` or `name.exe` can
+ * match one: `git.cmd`, `git.bat` or `git.com` is another program that
+ * happens to share the name.
+ */
+function allowlistName(executable: string): boolean {
+  return !/\.(cmd|bat|com)$/i.test(executable);
+}
+
+/**
  * The only commands that run in Auto without asking: read-only commands
  * whose every argument is parsed strictly. Each option must be on the
  * entry's list by its exact spelling: no long-option prefixes, no short
  * clusters such as `-sb`, and no attached short value unless the list
  * spells its form (`-U3`, `-uno`). Anything else is `unknown`.
  *
- * A read-only command still runs the repository's own git configuration,
- * such as `core.fsmonitor` or a diff driver, which only the user or an
- * approved command writes.
+ * What the allowlist still trusts: git reads the repository's own
+ * configuration (`.git/config`), which can name a program such as
+ * `core.fsmonitor` or a diff driver, and which only the user or an
+ * approved command writes. Committed files can carry configuration too,
+ * an embedded bare repository or a tool's config file, so the allowlist
+ * leaves out anything that reads configuration beyond that: git's `-C`
+ * and every other global option, version probes of tools that read the
+ * project, and listings that follow a symlink out of the folder. The
+ * broker also starts every git child with `safe.bareRepository=explicit`.
  */
 function allowlisted(command: Command, context: Context): boolean {
   const { name, args } = command;
@@ -1786,9 +1803,6 @@ function allowlisted(command: Command, context: Context): boolean {
   switch (name) {
     case "git":
       return gitReadOnly(args, context);
-    case "ls":
-    case "dir":
-      return listsInside(args, context);
     // Prints the folder it runs in, which the broker chose.
     case "pwd":
       return (
@@ -1802,33 +1816,24 @@ function allowlisted(command: Command, context: Context): boolean {
   return false;
 }
 
-/** Tools whose `version` subcommand prints their version and nothing else. */
-const VERSION_SUBCOMMAND = words(`git go gh terraform tofu helm`);
-
 /**
- * `<tool> --version` or `-V`, alone, prints a version for any program a
- * plugin can name, unless a danger rule names the program by itself, such
- * as `shutdown` or `format`, whose Windows builds don't read GNU options.
+ * Programs whose `--version` prints a version without reading the project.
+ * Many others read it first: pytest loads `conftest.py`, Corepack's `yarn`
+ * and `pnpm` read `packageManager` and run that version, `mvn` reads
+ * `.mvn/`, `gradlew` is the project's own script, `go` reads go.mod's
+ * toolchain line, `cargo` reads `rust-toolchain.toml`, and `npm` loads the
+ * project's `.npmrc`, which chooses the folders it writes.
  */
+const VERSION_PROBES = words(`
+  git node python python3 py gh t3 claude codex opencode copilot code
+`);
+
+/** `<program> --version`, alone, for a program in `VERSION_PROBES`. */
 function versionProbe({ name, args }: Command): boolean {
-  if (args.length !== 1) return false;
-  const [only] = args;
-  if (
-    only !== "--version" &&
-    only !== "-V" &&
-    !(only === "version" && VERSION_SUBCOMMAND.has(name))
-  )
-    return false;
-  return riskyRule({ name, args: [] }, NO_FOLDERS, 0) === undefined;
+  return (
+    VERSION_PROBES.has(name) && args.length === 1 && args[0] === "--version"
+  );
 }
-const NO_FOLDERS: Context = {
-  flavor: path.posix,
-  windows: false,
-  cwd: "/",
-  repositories: [],
-  protectedRoots: [],
-  inRepository: false,
-};
 
 /**
  * A folder argument, resolved from `base`, when it is inside a repository
@@ -1859,7 +1864,7 @@ interface Options {
   /** Options taken as they are. */
   flags: ReadonlySet<string>;
   /** Whole-argument forms, for options with an attached value. */
-  forms?: readonly RegExp[];
+  forms?: readonly { test(arg: string): boolean }[];
   /** Options whose value is the next argument, with its allowed form. */
   values?: Readonly<Record<string, RegExp>>;
 }
@@ -1915,6 +1920,37 @@ const DIFF_FORMS = [
   /^--abbrev=\d+$/,
   /^--find-renames=\d+%?$/,
 ];
+/** git's built-in `--pretty` names; any other name is read from config. */
+const PRETTY_NAMES = words(`
+  oneline short medium full fuller reference email raw mboxrd
+`);
+/**
+ * `--format=` or `--pretty=` with a built-in name or a format string that
+ * prints only what git has already read. `%G` atoms start gpg to check a
+ * signature, and `%(…)` atoms other than `trailers` and `decorate` are
+ * left out, `%(describe)` included.
+ */
+const PRETTY_FORM = {
+  test(arg: string): boolean {
+    const match = /^--(format|pretty)=(.*)$/s.exec(arg);
+    if (!match) return false;
+    const value = match[2]!;
+    if (PRETTY_NAMES.has(value)) return true;
+    const format = /^t?format:/.test(value)
+      ? value.replace(/^t?format:/, "")
+      : value.includes("%")
+        ? value
+        : undefined;
+    if (format === undefined) return false;
+    const atoms = format.replace(/%%/g, "");
+    return (
+      !/%G/.test(atoms) &&
+      [...atoms.matchAll(/%\(([^):]*)/g)].every(([, atom]) =>
+        ["trailers", "decorate"].includes(atom!),
+      )
+    );
+  },
+};
 const LOG_FLAGS = words(`
   --oneline --graph --decorate --no-decorate --all --branches --tags
   --remotes --abbrev-commit --no-abbrev-commit --no-merges --merges
@@ -1930,7 +1966,8 @@ const LOG_FORMS = [
   /^-n\d+$/,
   /^--max-count=\d+$/,
   /^--skip=\d+$/,
-  /^--(since|until|after|before|author|committer|grep|date|format|pretty)=.*$/,
+  /^--(since|until|after|before|author|committer|grep|date)=.*$/,
+  PRETTY_FORM,
   /^--decorate=(short|full|auto|no)$/,
   /^--(branches|tags|remotes|glob)=\S+$/,
   /^--(max|min)-parents=\d+$/,
@@ -1983,7 +2020,8 @@ const GIT_READ_ONLY: Readonly<
     ),
     forms: [
       ...DIFF_FORMS,
-      /^--(format|pretty|date)=.*$/,
+      /^--date=.*$/,
+      PRETTY_FORM,
       /^--decorate=(short|full|auto|no)$/,
     ],
   },
@@ -2028,23 +2066,20 @@ const GIT_READ_ONLY: Readonly<
 };
 
 /**
- * `git [-C <repository folder>] <subcommand> <options> <positionals>`: no
- * other global option, since `-c`, `--config-env`, `--exec-path`,
- * `--git-dir` and `--work-tree` choose what git runs or reads. Git runs in
- * a repository folder, and a positional that is a path stays inside one.
+ * `git <subcommand> <options> <positionals>`, run in a repository folder,
+ * with no global option: `-c`, `--config-env`, `--exec-path`, `--git-dir`
+ * and `--work-tree` choose what git runs or reads, and `-C` into a
+ * subfolder can reach a committed bare repository whose `core.fsmonitor`
+ * git would run. A positional that is a path stays inside a repository
+ * folder; git stores a symlink as a blob and never reads through it.
  */
 function gitReadOnly(args: readonly string[], context: Context): boolean {
-  let folder = context.inRepository ? context.cwd : undefined;
-  let i = 0;
-  if (args[0] === "-C") {
-    folder = folderInside(args[1] ?? "", context.cwd, context);
-    i = 2;
-  }
-  const name = args[i];
+  const folder = context.inRepository ? context.cwd : undefined;
+  const name = args[0];
   if (!folder || name === undefined || !Object.hasOwn(GIT_READ_ONLY, name))
     return false;
   const spec = GIT_READ_ONLY[name]!;
-  const rest = args.slice(i + 1);
+  const rest = args.slice(1);
   const given = strictPositionals(rest, spec);
   if (!given) return false;
   if (given.length > 0 && spec.positionals && !spec.positionals(rest))
@@ -2063,25 +2098,4 @@ function gitPositional(value: string, folder: string, context: Context) {
     /^[A-Za-z]:/.test(value) ||
     value.split(/[\\/]/).includes("..");
   return !pathLike || folderInside(value, folder, context) !== undefined;
-}
-
-const LS_FLAGS = words(`
-  --all --almost-all --human-readable --recursive --reverse --classify
-  --directory
-`);
-/**
- * `ls` and `dir` with options from `aAlhR1trSFd` and folders inside a
- * repository folder. With no folder, they list the folder they run in,
- * which must be one.
- */
-function listsInside(args: readonly string[], context: Context): boolean {
-  const given = strictPositionals(args, {
-    flags: LS_FLAGS,
-    forms: [/^-[aAlhR1trSFd]+$/],
-  });
-  if (!given) return false;
-  if (given.length === 0) return context.inRepository;
-  return given.every(
-    (value) => folderInside(value, context.cwd, context) !== undefined,
-  );
 }

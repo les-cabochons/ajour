@@ -335,7 +335,8 @@
     "executable": "npm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-033",
@@ -345,7 +346,8 @@
     "executable": "pnpm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-034",
@@ -705,7 +707,8 @@
     "executable": "npm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-068",
@@ -715,7 +718,8 @@
     "executable": "pnpm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-069",
@@ -1075,7 +1079,8 @@
     "executable": "npm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-103",
@@ -1085,7 +1090,8 @@
     "executable": "pnpm",
     "argv": ["--version"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-104",
@@ -1117,7 +1123,8 @@
     "executable": "ls",
     "argv": [],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-107",
@@ -1127,7 +1134,8 @@
     "executable": "ls",
     "argv": ["-la"],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-108",
@@ -1323,7 +1331,8 @@
     "executable": "dir",
     "argv": [],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-126",
@@ -1333,7 +1342,8 @@
     "executable": "dir",
     "argv": [],
     "reach": "broker",
-    "expected": "none"
+    "expected": "risky",
+    "ruleId": "unknown"
   },
   {
     "id": "case-127",
