@@ -362,21 +362,30 @@ async function main() {
         `/api/plugins/fixture-tracker/connections/${connectionId}/sync`,
         { trigger: "auto", workItems: [] },
       );
-    const refusedSync = async () => {
+    // The broker records a refusal after the run settles, never delaying the
+    // run, so the count may land just after the sync answers: read it until it
+    // reaches the expected number, for up to 2 s.
+    const refusedSync = async (expectedRefusals) => {
       const result = await sync();
+      let activity;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        activity = (
+          await request("GET", "/api/plugins/fixture-tracker/processes")
+        ).body;
+        if ((activity?.refusedCount ?? 0) >= expectedRefusals) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       return {
         error: result.body?.connection?.lastError ?? result.body?.error ?? null,
         itemCount: (result.body?.items ?? []).length,
-        activity: (
-          await request("GET", "/api/plugins/fixture-tracker/processes")
-        ).body,
+        activity,
       };
     };
-    const switchOff = await refusedSync();
+    const switchOff = await refusedSync(1);
     const enabled = await request("POST", "/api/plugins/unsigned-processes", {
       enabled: true,
     });
-    const acceptanceMissing = await refusedSync();
+    const acceptanceMissing = await refusedSync(2);
     const overview = await request("GET", "/api/plugins");
     const gate = overview.body.connectionGroups.find(
       (group) => group.plugin.id === "fixture-tracker",
