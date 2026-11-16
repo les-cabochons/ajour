@@ -1495,17 +1495,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       commandBridge.publish("command-access", caller.pluginId);
     },
     // A `connection-url` argument: the handoff connection's base address,
-    // as the credential broker would reach it.
+    // as the credential broker would reach it. The base address field is
+    // never secret, so the saved config holds it without a vault read.
     connectionAddress: async (caller) => {
       if (!caller.connectionId) return undefined;
-      const connection = await brokerConnection(
-        storage,
+      const connection = await storage.getConnection(
         caller.pluginId,
         caller.connectionId,
-        caller.manifest,
       );
       return connection
-        ? connectionBaseAddress(caller.manifest, connection)
+        ? connectionBaseAddress(caller.manifest, {
+            id: connection.id,
+            values: connection.config,
+            secrets: [],
+            onPremises: connection.onPremises === true,
+            access: connection.access ?? [],
+          })
         : undefined;
     },
     openExternal: options.openExternal,

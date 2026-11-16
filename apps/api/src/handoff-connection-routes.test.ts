@@ -129,11 +129,20 @@ async function openCodeServer() {
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-connection-"));
   roots.push(root);
-  const plugin = path.join(root, "plugin");
-  await mkdir(plugin);
+  // A second plugin like the first, whose connections are never the first's.
+  const plugins = await Promise.all(
+    ["opencode", "other"].map(async (id) => {
+      const plugin = path.join(root, id);
+      await mkdir(plugin);
+      await writeFile(
+        path.join(plugin, "plugin.json"),
+        JSON.stringify({ ...MANIFEST, id }),
+      );
+      await writeFile(path.join(plugin, "plugin.mjs"), PLUGIN_SOURCE);
+      return plugin;
+    }),
+  );
   await mkdir(path.join(root, "repo"));
-  await writeFile(path.join(plugin, "plugin.json"), JSON.stringify(MANIFEST));
-  await writeFile(path.join(plugin, "plugin.mjs"), PLUGIN_SOURCE);
   const sink = createRecordingSink<AjourEvent>();
   const server = createAppApiServer({
     ...windowServerOptions,
@@ -144,7 +153,7 @@ async function setup() {
       userData: path.join(root, "data"),
       install: path.join(root, "install"),
     },
-    developmentPluginDirectories: [plugin],
+    developmentPluginDirectories: plugins,
     projectDataShapePluginDirectories: [],
     allowDevelopmentPlugins: true,
     pluginRuntime: new InProcessPluginRuntime(),
@@ -158,8 +167,12 @@ async function setup() {
       path: route,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  const saveConnection = async (label: string, serverUrl: string) => {
-    const saved = await call("POST", "/api/plugins/opencode/connections", {
+  const saveConnection = async (
+    label: string,
+    serverUrl: string,
+    pluginId = "opencode",
+  ) => {
+    const saved = await call("POST", `/api/plugins/${pluginId}/connections`, {
       values: {
         label,
         tenantLabel: label,
@@ -318,6 +331,45 @@ it("detects, starts, refreshes and pauses a tool's handoffs through the connecti
     ]);
     // Events name the connection's id, never its address.
     expect(JSON.stringify(sink.events)).not.toContain(first.url);
+  } finally {
+    await stopAppApiServer(server);
+  }
+});
+
+it("refuses a pick or a start with another plugin's connection, and a pick for a tool that uses none", async () => {
+  const { server, call, saveConnection, input } = await setup();
+  try {
+    const service = await openCodeServer();
+    const own = await saveConnection("Own", service.url);
+    const foreign = await saveConnection("Other", service.url, "other");
+    const connectionsPath = "/api/plugins/opencode/handoffs/connections";
+
+    const plain = await call("POST", connectionsPath, { plain: own });
+    expect(plain.status).toBe(400);
+    expect(plain.body).toEqual({
+      error: 'The handoff tool "plain" uses no connection.',
+    });
+    const borrowed = await call("POST", connectionsPath, {
+      opencode: foreign,
+    });
+    expect(borrowed.status).toBe(400);
+    expect(borrowed.body).toEqual({
+      error: "This connection no longer exists.",
+    });
+    expect((await call("GET", connectionsPath)).body).toEqual({});
+
+    const started = await call("POST", "/api/handoffs", {
+      ...input,
+      connectionId: foreign,
+    });
+    expect(started.status).toBe(409);
+    expect(started.body).toEqual({
+      error: "This connection no longer exists.",
+    });
+    expect((await call("GET", "/api/handoffs")).body).toEqual([]);
+    expect(
+      service.received.filter((r) => r.startsWith("POST /session")),
+    ).toEqual([]);
   } finally {
     await stopAppApiServer(server);
   }

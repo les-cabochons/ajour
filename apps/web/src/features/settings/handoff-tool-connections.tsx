@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { HandoffToolConnections } from "@ajour/shared/handoffs";
 import { SettingRow } from "@/components/app-surface";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -28,18 +28,18 @@ export function PluginHandoffConnections({
   connections: readonly { id: string; label: string }[];
 }) {
   const connected = tools.filter((tool) => tool.connection === "required");
-  const [picks, setPicks] = useState<HandoffToolConnections>();
+  const [loaded, setLoaded] = useState<HandoffToolConnections>();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const uses = connected.length > 0;
   useEffect(() => {
     if (!uses) return;
     let live = true;
-    setPicks(undefined);
+    setLoaded(undefined);
     setError("");
     void getHandoffToolConnections(pluginId)
       .then((value) => {
-        if (live) setPicks(value);
+        if (live) setLoaded(value);
       })
       .catch((reason: unknown) => {
         if (live)
@@ -53,6 +53,18 @@ export function PluginHandoffConnections({
       live = false;
     };
   }, [pluginId, uses]);
+  // A pick whose connection was deleted since the picks loaded is gone: the
+  // server forgot it, and saving it again would refuse every other pick.
+  const picks = useMemo(
+    () =>
+      loaded &&
+      Object.fromEntries(
+        Object.entries(loaded).filter(([, id]) =>
+          connections.some((connection) => connection.id === id),
+        ),
+      ),
+    [loaded, connections],
+  );
   if (!uses) return null;
 
   const pick = async (toolId: string, connectionId: string) => {
@@ -60,7 +72,7 @@ export function PluginHandoffConnections({
     setSaving(true);
     setError("");
     try {
-      setPicks(
+      setLoaded(
         await saveHandoffToolConnections(pluginId, {
           ...picks,
           [toolId]: connectionId,

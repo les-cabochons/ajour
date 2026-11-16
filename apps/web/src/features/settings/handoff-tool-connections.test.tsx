@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 
@@ -124,4 +125,56 @@ it("renders nothing for a plugin whose tools use no connection", async () => {
   await render({ tools: [tools[1]!] });
   expect(screen.queryByText(/connection/i)).toBeNull();
   expect(api.getHandoffToolConnections).not.toHaveBeenCalled();
+});
+
+it("forgets a deleted connection's pick, so another tool's pick still saves", async () => {
+  api.getHandoffToolConnections.mockResolvedValue({ opencode: "c1" });
+  api.saveHandoffToolConnections.mockImplementation(
+    async (_plugin: string, picks: Record<string, string>) => picks,
+  );
+  const twoTools = [
+    tools[0]!,
+    { id: "claude", label: "Claude", connection: "required" as const },
+  ];
+  // The plugin's page passes its connections, and deleting one changes them.
+  function Page() {
+    const [list, setList] = useState(connections);
+    return (
+      <>
+        <button type="button" onClick={() => setList([connections[1]!])}>
+          Delete Laptop server
+        </button>
+        <PluginHandoffConnections
+          pluginId="opencode"
+          tools={twoTools}
+          connections={list}
+        />
+      </>
+    );
+  }
+  await renderRoutes({ routes: { "/": Page } });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "OpenCode connection" }).textContent,
+    ).toContain("Laptop server"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Delete Laptop server" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "OpenCode connection" }).textContent,
+    ).not.toContain("c1"),
+  );
+  expect(
+    screen.getByRole("combobox", { name: "OpenCode connection" }).textContent,
+  ).toContain("Choose a connection");
+  await choose(
+    screen.getByRole("combobox", { name: "Claude connection" }),
+    "Desktop server",
+  );
+  await waitFor(() =>
+    expect(api.saveHandoffToolConnections).toHaveBeenCalledWith("opencode", {
+      claude: "c2",
+    }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
 });

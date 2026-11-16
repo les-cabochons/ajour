@@ -49,6 +49,13 @@ async function setup() {
     "tools",
     connectionInput("Second"),
   );
+  // Another plugin's connection: real, but never this plugin's.
+  const foreign = await storage.upsertConnection(
+    "other",
+    connectionInput("Other"),
+  );
+  // A plugin update can make a tool hand off through a connection.
+  let openCodeConnection: "required" | "none" = "required";
   const calls: Call[] = [];
   let now = 1000;
   const service = new Handoffs({
@@ -81,7 +88,7 @@ async function setup() {
                   {
                     id: "opencode",
                     label: "OpenCode",
-                    connection: "required" as const,
+                    connection: openCodeConnection,
                   },
                   { id: "t3", label: "T3", connection: "none" as const },
                 ],
@@ -159,6 +166,10 @@ async function setup() {
     input,
     first,
     second,
+    foreign,
+    setOpenCodeConnection: (value: "required" | "none") => {
+      openCodeConnection = value;
+    },
     tick: (ms: number) => {
       now += ms;
     },
@@ -189,14 +200,15 @@ it("starts through the connection the tool's settings picked, and keeps it on th
 });
 
 it("refuses a connection that isn't the plugin's, or one for a tool that uses none", async () => {
-  const { service, input, calls } = await setup();
+  const { storage, service, input, calls, first, foreign } = await setup();
+  const refused = service.start({ ...input, connectionId: foreign.id });
+  await expect(refused).rejects.toBeInstanceOf(HandoffRefused);
+  await expect(refused).rejects.toThrow("no longer exists");
   await expect(
-    service.start({ ...input, connectionId: "missing" }),
-  ).rejects.toThrow("no longer exists");
-  await expect(
-    service.start({ ...input, toolId: "t3", connectionId: "missing" }),
+    service.start({ ...input, toolId: "t3", connectionId: first.id }),
   ).rejects.toBeInstanceOf(HandoffRefused);
   expect(calls).toEqual([]);
+  expect(await storage.listHandoffs()).toEqual([]);
 });
 
 it("starts a tool without a connection exactly as before", async () => {
@@ -333,4 +345,30 @@ it("forgets a deleted connection as a tool's pick", async () => {
   expect(await storage.getHandoffToolConnections("tools")).toEqual({
     opencode: first.id,
   });
+});
+
+it("pauses a handoff started before its tool used a connection, and asks for a new one", async () => {
+  const { storage, service, calls, input, setOpenCodeConnection } =
+    await setup();
+  setOpenCodeConnection("none");
+  const old = await service.start(input);
+  expect(old.connectionId).toBeUndefined();
+  setOpenCodeConnection("required");
+  calls.length = 0;
+  const result = await service.refresh();
+  expect(calls).toEqual([]);
+  expect(result.failures).toEqual([
+    {
+      pluginId: "tools",
+      toolId: "opencode",
+      projectId: "p",
+      reason:
+        "This tool now hands off through a connection. Start a new handoff.",
+    },
+  ]);
+  const [record] = await storage.listHandoffs();
+  expect(record?.state).toBe("unknown");
+  expect(record?.paused?.reason).toBe(
+    "This tool now hands off through a connection. Start a new handoff.",
+  );
 });
