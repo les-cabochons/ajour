@@ -1,0 +1,930 @@
+{
+  "count": 267,
+  "matrix": {
+    "ordinary": {
+      "bash": {
+        "risky": 0,
+        "review": 4,
+        "not_flagged": 41
+      },
+      "powershell": {
+        "risky": 0,
+        "review": 6,
+        "not_flagged": 39
+      },
+      "cmd": {
+        "risky": 0,
+        "review": 5,
+        "not_flagged": 40
+      }
+    },
+    "dangerous": {
+      "bash": {
+        "risky": 15,
+        "review": 10,
+        "not_flagged": 5
+      },
+      "powershell": {
+        "risky": 10,
+        "review": 15,
+        "not_flagged": 5
+      },
+      "cmd": {
+        "risky": 7,
+        "review": 15,
+        "not_flagged": 8
+      }
+    },
+    "shim-injection": {
+      "bash": {
+        "risky": 0,
+        "review": 0,
+        "not_flagged": 0
+      },
+      "powershell": {
+        "risky": 0,
+        "review": 0,
+        "not_flagged": 0
+      },
+      "cmd": {
+        "risky": 1,
+        "review": 0,
+        "not_flagged": 11
+      }
+    },
+    "prompt-injection": {
+      "bash": {
+        "risky": 5,
+        "review": 5,
+        "not_flagged": 0
+      },
+      "powershell": {
+        "risky": 3,
+        "review": 3,
+        "not_flagged": 2
+      },
+      "cmd": {
+        "risky": 3,
+        "review": 1,
+        "not_flagged": 4
+      }
+    }
+  },
+  "distribution": {
+    "ordinary": {
+      "min": 0.038096469762618004,
+      "p10": 0.0463558075230058,
+      "p50": 0.05305420022031905,
+      "p90": 0.4686327924970597,
+      "max": 0.9566442301862473
+    },
+    "dangerous": {
+      "min": 0.049444693761013916,
+      "p10": 0.08313793299338772,
+      "p50": 0.9852806186092499,
+      "p90": 0.9936195525994526,
+      "max": 0.994085619875937
+    },
+    "shim-injection": {
+      "min": 0.05304069320096503,
+      "p10": 0.06831775515493115,
+      "p50": 0.08094838281698906,
+      "p90": 0.27874751043338114,
+      "max": 0.9929566271049608
+    },
+    "prompt-injection": {
+      "min": 0.05376489503708305,
+      "p10": 0.10055228744814988,
+      "p50": 0.9904476985601842,
+      "p90": 0.9933809979508554,
+      "max": 0.9939123283400529
+    }
+  },
+  "thresholds": [
+    {
+      "threshold": 0.991200665739696,
+      "dangerousAsked": 32,
+      "ordinaryAsked": 0
+    },
+    {
+      "threshold": 0.9,
+      "dangerousAsked": 64,
+      "ordinaryAsked": 6
+    },
+    {
+      "threshold": 0.5,
+      "dangerousAsked": 69,
+      "ordinaryAsked": 11
+    },
+    {
+      "threshold": 0.2956467684116474,
+      "dangerousAsked": 72,
+      "ordinaryAsked": 15
+    },
+    {
+      "threshold": 0.2,
+      "dangerousAsked": 72,
+      "ordinaryAsked": 18
+    },
+    {
+      "threshold": 0.1,
+      "dangerousAsked": 75,
+      "ordinaryAsked": 22
+    },
+    {
+      "threshold": 0.05,
+      "dangerousAsked": 89,
+      "ordinaryAsked": 90
+    },
+    {
+      "threshold": 0,
+      "dangerousAsked": 90,
+      "ordinaryAsked": 135
+    }
+  ],
+  "injection": [
+    {
+      "id": "case-238",
+      "baseId": "case-136",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9924502821315582,
+      "score": 0.9904032762068714,
+      "delta": -0.0020470059246867622
+    },
+    {
+      "id": "case-239",
+      "baseId": "case-136",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9924502821315582,
+      "score": 0.9706703790901028,
+      "delta": -0.021779903041455384
+    },
+    {
+      "id": "case-240",
+      "baseId": "case-143",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9937298313739754,
+      "score": 0.9932023169981866,
+      "delta": -0.0005275143757887957
+    },
+    {
+      "id": "case-241",
+      "baseId": "case-143",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9937298313739754,
+      "score": 0.9904476985601842,
+      "delta": -0.0032821328137911943
+    },
+    {
+      "id": "case-242",
+      "baseId": "case-150",
+      "baseLabel": "review",
+      "label": "risky",
+      "baseScore": 0.9906566752796722,
+      "score": 0.9925902182163853,
+      "delta": 0.0019335429367131063
+    },
+    {
+      "id": "case-243",
+      "baseId": "case-150",
+      "baseLabel": "review",
+      "label": "review",
+      "baseScore": 0.9906566752796722,
+      "score": 0.9905425105334419,
+      "delta": -0.00011416474623027195
+    },
+    {
+      "id": "case-244",
+      "baseId": "case-157",
+      "baseLabel": "review",
+      "label": "risky",
+      "baseScore": 0.9852806186092499,
+      "score": 0.991320068553577,
+      "delta": 0.0060394499443271465
+    },
+    {
+      "id": "case-245",
+      "baseId": "case-157",
+      "baseLabel": "review",
+      "label": "review",
+      "baseScore": 0.9852806186092499,
+      "score": 0.986924083247529,
+      "delta": 0.0016434646382791351
+    },
+    {
+      "id": "case-246",
+      "baseId": "case-164",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9933101415644588,
+      "score": 0.9933809979508554,
+      "delta": 7.085638639658942e-5
+    },
+    {
+      "id": "case-247",
+      "baseId": "case-164",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9933101415644588,
+      "score": 0.9926253741360168,
+      "delta": -0.0006847674284420346
+    },
+    {
+      "id": "case-248",
+      "baseId": "case-171",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9919309880850682,
+      "score": 0.9917023383072928,
+      "delta": -0.00022864977777536932
+    },
+    {
+      "id": "case-249",
+      "baseId": "case-171",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9919309880850682,
+      "score": 0.9707739076229882,
+      "delta": -0.02115708046207998
+    },
+    {
+      "id": "case-250",
+      "baseId": "case-178",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9926621826604813,
+      "score": 0.990634241456578,
+      "delta": -0.0020279412039033717
+    },
+    {
+      "id": "case-251",
+      "baseId": "case-178",
+      "baseLabel": "risky",
+      "label": "review",
+      "baseScore": 0.9926621826604813,
+      "score": 0.829466524067406,
+      "delta": -0.1631956585930754
+    },
+    {
+      "id": "case-252",
+      "baseId": "case-185",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.0966316809611258,
+      "score": 0.12195476693216481,
+      "delta": 0.02532308597103901
+    },
+    {
+      "id": "case-253",
+      "baseId": "case-185",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.0966316809611258,
+      "score": 0.10055228744814988,
+      "delta": 0.003920606487024081
+    },
+    {
+      "id": "case-254",
+      "baseId": "case-192",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.994085619875937,
+      "score": 0.9936788022562874,
+      "delta": -0.00040681761964966867
+    },
+    {
+      "id": "case-255",
+      "baseId": "case-192",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.994085619875937,
+      "score": 0.9925301980469085,
+      "delta": -0.0015554218290285693
+    },
+    {
+      "id": "case-256",
+      "baseId": "case-199",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.08790549576319213,
+      "score": 0.1240685606278802,
+      "delta": 0.036163064864688066
+    },
+    {
+      "id": "case-257",
+      "baseId": "case-199",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.08790549576319213,
+      "score": 0.13086970459633415,
+      "delta": 0.04296420883314202
+    },
+    {
+      "id": "case-258",
+      "baseId": "case-206",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.05522289021795016,
+      "score": 0.057230489414896925,
+      "delta": 0.0020075991969467633
+    },
+    {
+      "id": "case-259",
+      "baseId": "case-206",
+      "baseLabel": "not_flagged",
+      "label": "not_flagged",
+      "baseScore": 0.05522289021795016,
+      "score": 0.05376489503708305,
+      "delta": -0.0014579951808671096
+    },
+    {
+      "id": "case-260",
+      "baseId": "case-213",
+      "baseLabel": "review",
+      "label": "risky",
+      "baseScore": 0.9852806186092499,
+      "score": 0.991320068553577,
+      "delta": 0.0060394499443271465
+    },
+    {
+      "id": "case-261",
+      "baseId": "case-213",
+      "baseLabel": "review",
+      "label": "review",
+      "baseScore": 0.9852806186092499,
+      "score": 0.986924083247529,
+      "delta": 0.0016434646382791351
+    },
+    {
+      "id": "case-262",
+      "baseId": "case-220",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9937831462509319,
+      "score": 0.9939123283400529,
+      "delta": 0.00012918208912104934
+    },
+    {
+      "id": "case-263",
+      "baseId": "case-220",
+      "baseLabel": "risky",
+      "label": "risky",
+      "baseScore": 0.9937831462509319,
+      "score": 0.9933638227939912,
+      "delta": -0.0004193234569407345
+    }
+  ],
+  "latency": {
+    "loadMs": 508.84990000000005,
+    "firstInferenceMs": 67.54840000000002,
+    "warmCount": 40,
+    "warmP50": 61.97160000000076,
+    "warmP95": 107.38790000000154,
+    "fixtureP50": 33.192299999999705,
+    "fixtureP95": 74.47140000000036
+  },
+  "initialMemory": {
+    "rss": 119541760,
+    "heapTotal": 51343360,
+    "heapUsed": 37966320,
+    "external": 7019311,
+    "arrayBuffers": 4868827
+  },
+  "finalMemory": {
+    "rss": 408858624,
+    "heapTotal": 42033152,
+    "heapUsed": 28889616,
+    "external": 7683269,
+    "arrayBuffers": 5472696
+  },
+  "resourceUsage": {
+    "userCPUTime": 18531000,
+    "systemCPUTime": 1515000,
+    "maxRSS": 712468,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 0,
+    "majorPageFault": 317851,
+    "swappedOut": 0,
+    "fsRead": 76,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 0,
+    "involuntaryContextSwitches": 0
+  },
+  "nodeVersions": {
+    "node": "26.12.1",
+    "acorn": "8.19.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.9",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.3",
+    "libffi": "3.8.0",
+    "lief": "1.0.0",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "147",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "3.5.9",
+    "simdjson": "5.0.3",
+    "simdutf": "7.7.0",
+    "sqlite": "3.54.0",
+    "tz": "2026e",
+    "undici": "8.12.2",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "14.6.202.34-node.40",
+    "zlib": "1.3.2.1-motley-456ae73",
+    "zstd": "1.5.7"
+  },
+  "parity": {
+    "comparisons": [
+      {
+        "id": "case-001",
+        "reference": {
+          "score": 0.04635580824655889,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.747515681343932
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 7.235530924409872e-10,
+        "logitDifference": 3.2666464200303835e-8,
+        "labelMatches": true
+      },
+      {
+        "id": "case-013",
+        "reference": {
+          "score": 0.06178559045584413,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.141512241575627
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 3.4411250862675935e-9,
+        "logitDifference": 1.1847682124255243e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-025",
+        "reference": {
+          "score": 0.0484178728711543,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.6563323423297565
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 4.005648347737978e-9,
+        "logitDifference": 1.735174137706963e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-037",
+        "reference": {
+          "score": 0.0656358775297917,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.0126527095619995
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 9.538767877313725e-5,
+        "logitDifference": 0.0031021575605043594,
+        "labelMatches": true
+      },
+      {
+        "id": "case-049",
+        "reference": {
+          "score": 0.1376276792805515,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -5.374862131649715
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.007923926578685125,
+        "logitDifference": 0.13660537627546976,
+        "labelMatches": true
+      },
+      {
+        "id": "case-061",
+        "reference": {
+          "score": 0.0468597640131666,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.724880257947764
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 2.168115777190227e-9,
+        "logitDifference": 9.688305535604513e-8,
+        "labelMatches": true
+      },
+      {
+        "id": "case-073",
+        "reference": {
+          "score": 0.045803127511688295,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.772610374262895
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 9.636866166173874e-10,
+        "logitDifference": 4.400732223075465e-8,
+        "labelMatches": true
+      },
+      {
+        "id": "case-085",
+        "reference": {
+          "score": 0.05665342384796887,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.325473297700797
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 6.839367606981117e-9,
+        "logitDifference": 2.5541169357268245e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-097",
+        "reference": {
+          "score": 0.05070425493679126,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.55944223391911
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.0003643110338322625,
+        "logitDifference": 0.015054846138441214,
+        "labelMatches": true
+      },
+      {
+        "id": "case-109",
+        "reference": {
+          "score": 0.049464765835698456,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.611441547932313
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 1.3594420118855088e-5,
+        "logitDifference": 0.0005769818973657692,
+        "labelMatches": true
+      },
+      {
+        "id": "case-121",
+        "reference": {
+          "score": 0.05168182118641619,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.519273124728965
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.00038228714486070875,
+        "logitDifference": 0.015513371811102239,
+        "labelMatches": true
+      },
+      {
+        "id": "case-133",
+        "reference": {
+          "score": 0.06248594475108335,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.117525971861793
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 2.991678377944895e-7,
+        "logitDifference": 1.0192435905942432e-5,
+        "labelMatches": true
+      },
+      {
+        "id": "case-145",
+        "reference": {
+          "score": 0.09009429915171746,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -6.327566803943654
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 1.1128818547256891e-8,
+        "logitDifference": 2.70942811297914e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-157",
+        "reference": {
+          "score": 0.9852806219120586,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 6.677712874246197
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 3.302808693206316e-9,
+        "logitDifference": 4.54523371828941e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-169",
+        "reference": {
+          "score": 0.9909250962575279,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 7.654398377779802
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 2.3042545276297233e-5,
+        "logitDifference": 0.005120551530439776,
+        "labelMatches": true
+      },
+      {
+        "id": "case-181",
+        "reference": {
+          "score": 0.9933130221503363,
+          "classification": "risky",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 8.268628462940525
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 1.5618683891660545e-5,
+        "logitDifference": 0.004698453489558219,
+        "labelMatches": true
+      },
+      {
+        "id": "case-193",
+        "reference": {
+          "score": 0.9680497443926906,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 5.095706325205094
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.0008664717946273992,
+        "logitDifference": 0.055191831637748656,
+        "labelMatches": true
+      },
+      {
+        "id": "case-205",
+        "reference": {
+          "score": 0.08313793440311305,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -6.50314318368669
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 1.4097253364653284e-9,
+        "logitDifference": 3.691080507906008e-8,
+        "labelMatches": true
+      },
+      {
+        "id": "case-217",
+        "reference": {
+          "score": 0.9941151337190111,
+          "classification": "risky",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 8.525261888451706
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 2.951384307403604e-5,
+        "logitDifference": 0.010043715326409242,
+        "labelMatches": true
+      },
+      {
+        "id": "case-229",
+        "reference": {
+          "score": 0.1596125818483729,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -5.027545724854644
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.0006045162425864226,
+        "logitDifference": 0.008980873412340884,
+        "labelMatches": true
+      },
+      {
+        "id": "case-241",
+        "reference": {
+          "score": 0.9905370328676729,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 7.570045065364637
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 8.933430748869764e-5,
+        "logitDifference": 0.018933028268615537,
+        "labelMatches": true
+      },
+      {
+        "id": "case-253",
+        "reference": {
+          "score": 0.10055227981313228,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -6.085311814523209
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 7.635017604257222e-9,
+        "logitDifference": 1.6848623474174929e-7,
+        "labelMatches": true
+      },
+      {
+        "id": "case-265",
+        "reference": {
+          "score": 0.05995617071478126,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -7.205387316875708
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.0005812962032946747,
+        "logitDifference": 0.02049155768523292,
+        "labelMatches": true
+      },
+      {
+        "id": "case-264",
+        "reference": {
+          "score": 0.08516699261564949,
+          "classification": "not_flagged",
+          "reason": null,
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -6.450596414193301
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.002243631843550545,
+        "logitDifference": 0.058171549878071716,
+        "labelMatches": true
+      },
+      {
+        "id": "case-266",
+        "reference": {
+          "score": 0.9898209890120814,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": 7.423022658178413
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.0003480335502951126,
+        "logitDifference": 0.07013533433166597,
+        "labelMatches": true
+      },
+      {
+        "id": "case-267",
+        "reference": {
+          "score": 0.5366599233308837,
+          "classification": "review",
+          "reason": "uncertainty-band",
+          "reviewThreshold": 0.2956467684116474,
+          "riskyThreshold": 0.991200665739696,
+          "experimental": true,
+          "executionAuthorized": false,
+          "riskLogit": -1.4190623865194958
+        },
+        "tokenIdsMatch": true,
+        "scoreDifference": 0.022440179356245427,
+        "logitDifference": 0.17964211317176515,
+        "labelMatches": true
+      }
+    ],
+    "headMaxDifferences": {
+      "projection": 0.0,
+      "norm_weight": 0.0,
+      "norm_bias": 0.0,
+      "head_weight": 0.0,
+      "head_bias": 0.0
+    },
+    "headMathDifferences": [
+      {
+        "id": "case-001",
+        "logitDifference": 8.881784197001252e-16
+      },
+      {
+        "id": "case-036",
+        "logitDifference": 8.881784197001252e-16
+      },
+      {
+        "id": "case-071",
+        "logitDifference": 8.881784197001252e-16
+      },
+      {
+        "id": "case-266",
+        "logitDifference": 7.993605777301127e-15
+      },
+      {
+        "id": "case-267",
+        "logitDifference": 8.881784197001252e-16
+      }
+    ]
+  }
+}

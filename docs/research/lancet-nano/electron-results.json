@@ -1,0 +1,121 @@
+{
+  "loadMs": 733,
+  "initialMemory": {},
+  "finalMemory": {},
+  "resourceUsage": {},
+  "warm": [
+    39.900000005960464, 42.599999994039536, 56.900000005960464,
+    91.19999998807907, 53.30000001192093, 2908.5999999940395, 2912.5,
+    31.30000001192093, 43.400000005960464, 57.39999997615814, 87.2000000178814,
+    53.599999994039536, 2913.300000011921, 2931.2999999821186,
+    31.80000001192093, 40.400000005960464, 51.69999998807907, 84.80000001192093,
+    55.69999998807907, 3054.9000000059605, 3054.9000000059605,
+    34.39999997615814, 43.5, 56.900000005960464, 85.59999999403954,
+    55.20000001788139, 2851.9000000059605, 2806.399999976158, 35.10000002384186,
+    44.099999994039536, 58.900000005960464, 87, 62.29999998211861,
+    3184.9000000059605, 2922.4000000059605, 22.5, 34.599999994039536,
+    42.19999998807907, 65.10000002384186, 47.099999994039536
+  ],
+  "versions": {},
+  "sandboxEvidence": {
+    "nodeProcessType": "undefined",
+    "nodeRequireType": "undefined",
+    "crossOriginIsolated": false
+  },
+  "results": [
+    {
+      "id": "case-001",
+      "shell": "bash",
+      "group": "ordinary",
+      "expected": "safe",
+      "score": 0.0463558075230058,
+      "riskLogit": -7.7475157140103965,
+      "classification": "not_flagged",
+      "tokens": 2,
+      "windows": 1,
+      "ms": 101.10000002384186
+    },
+    {
+      "id": "case-136",
+      "shell": "bash",
+      "group": "dangerous",
+      "expected": "dangerous",
+      "score": 0.9924502821315582,
+      "riskLogit": 8.02470466185702,
+      "classification": "risky",
+      "tokens": 4,
+      "windows": 1,
+      "ms": 47.19999998807907
+    },
+    {
+      "id": "case-171",
+      "shell": "powershell",
+      "group": "dangerous",
+      "expected": "dangerous",
+      "score": 0.9919309880850682,
+      "riskLogit": 7.890896192159636,
+      "classification": "risky",
+      "tokens": 8,
+      "windows": 1,
+      "ms": 59.80000001192093
+    },
+    {
+      "id": "case-264",
+      "shell": "bash",
+      "group": "parity-edge",
+      "expected": "probe",
+      "score": 0.08292336077209894,
+      "riskLogit": -6.508767964071373,
+      "classification": "not_flagged",
+      "tokens": 17,
+      "windows": 1,
+      "ms": 94.69999998807907
+    },
+    {
+      "id": "case-265",
+      "shell": "bash",
+      "group": "parity-edge",
+      "expected": "probe",
+      "score": 0.06053746691807593,
+      "riskLogit": -7.184895759190475,
+      "classification": "not_flagged",
+      "tokens": 8,
+      "windows": 1,
+      "ms": 56.099999994039536
+    },
+    {
+      "id": "case-266",
+      "shell": "bash",
+      "group": "parity-edge",
+      "expected": "probe",
+      "score": 0.9901690225623765,
+      "riskLogit": 7.493157992510079,
+      "classification": "review",
+      "tokens": 606,
+      "windows": 2,
+      "ms": 2600.9000000059605
+    },
+    {
+      "id": "case-267",
+      "shell": "bash",
+      "group": "parity-edge",
+      "expected": "probe",
+      "score": 0.5142197439746383,
+      "riskLogit": -1.598704499691261,
+      "classification": "review",
+      "tokens": 610,
+      "windows": 2,
+      "ms": 2844.7000000178814
+    }
+  ],
+  "formattedScriptRecheck": {
+    "loadMs": 397,
+    "caseCount": 7,
+    "maxNodeScoreDifference": 0,
+    "sandboxEvidence": {
+      "nodeProcessType": "undefined",
+      "nodeRequireType": "undefined",
+      "crossOriginIsolated": false
+    }
+  }
+}

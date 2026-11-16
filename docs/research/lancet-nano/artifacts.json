@@ -1,0 +1,263 @@
+{
+  "revision": "f5285faa92c03f0f7705506d5d0ddf1920747521",
+  "artifacts": [
+    {
+      "path": "bundle/classify.py",
+      "bytes": 7414,
+      "sha256": "ccff76b3842a56b06a0abba75ea432aaea8c278b8f900a0b9d5889ec14c00320",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/classify.py"
+    },
+    {
+      "path": "bundle/LICENSE.md",
+      "bytes": 2403,
+      "sha256": "04f6d7fe560287cfa8ddf07a4f4c762953f519d5a751f8d91bb0dd78ea787df0",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/LICENSE.md"
+    },
+    {
+      "path": "bundle/licenses/Apache-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/Apache-2.0.txt"
+    },
+    {
+      "path": "bundle/licenses/atomic-red-team-MIT.txt",
+      "bytes": 1077,
+      "sha256": "6f8b130133ac31ade98c446bceb47382a6b373028ac8d6a0094500220c556972",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/atomic-red-team-MIT.txt"
+    },
+    {
+      "path": "bundle/licenses/azure-cli-LICENSE.txt",
+      "bytes": 1099,
+      "sha256": "36ddd63237361cf5a2b6a0055f57723db47f46d89bf912d6b92a18cff2090114",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/azure-cli-LICENSE.txt"
+    },
+    {
+      "path": "bundle/licenses/botocore-NOTICE.txt",
+      "bytes": 2467,
+      "sha256": "1d1c5a6f3d68cb11f4fad1afa86a7450d0286f15c176ef0ea048f255b46d95b0",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/botocore-NOTICE.txt"
+    },
+    {
+      "path": "bundle/licenses/CodeT5-BSD-3-Clause.txt",
+      "bytes": 1481,
+      "sha256": "d9d01e877963904b9c62f38bacb7237191a8ce069d3a0be4f2418a5f6153a577",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/CodeT5-BSD-3-Clause.txt"
+    },
+    {
+      "path": "bundle/licenses/codet5-small-upstream-model-card.md",
+      "bytes": 4603,
+      "sha256": "3465312de5021aa7092e9e905e3d8c33a1636d7ecd72e0e30e5d5dc8cc9bce1e",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/codet5-small-upstream-model-card.md"
+    },
+    {
+      "path": "bundle/licenses/codet5p-220m-upstream-model-card.md",
+      "bytes": 5308,
+      "sha256": "18702f8090b5b7828b7a80cb2bcf4bf9ecfca4e68a56f7cac8e8495c8cd2caca",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/codet5p-220m-upstream-model-card.md"
+    },
+    {
+      "path": "bundle/licenses/docker-cli-LICENSE.txt",
+      "bytes": 10956,
+      "sha256": "737c0b1c449cb08a5c58c66650ac623fa0104673b26d92af660ef52bcc5e7f27",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/docker-cli-LICENSE.txt"
+    },
+    {
+      "path": "bundle/licenses/docker-cli-NOTICE.txt",
+      "bytes": 654,
+      "sha256": "a6dc343629353d41f43fa5398e05594b47eca9b404c0ebb839610a50910fd230",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/docker-cli-NOTICE.txt"
+    },
+    {
+      "path": "bundle/licenses/gh-cli-LICENSE.txt",
+      "bytes": 1089,
+      "sha256": "8999137010582da29456c10e0a628bf3fa7ead05ab3ae5f424ad25cd0dd94574",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/gh-cli-LICENSE.txt"
+    },
+    {
+      "path": "bundle/licenses/history/LANCET-extraction-provenance.md",
+      "bytes": 997,
+      "sha256": "e29fd5d700fbab0faf4447e3fd8a9fa25d3b569e2f06bfa8420d1b9f58539958",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/history/LANCET-extraction-provenance.md"
+    },
+    {
+      "path": "bundle/licenses/kubectl-LICENSE.txt",
+      "bytes": 11558,
+      "sha256": "e03ba41d7fab20700769fe4118bab50d800cb74f990353a05d2f5fff1c228363",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/kubectl-LICENSE.txt"
+    },
+    {
+      "path": "bundle/licenses/MIT.txt",
+      "bytes": 1036,
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/MIT.txt"
+    },
+    {
+      "path": "bundle/licenses/NL2Bash-data-MIT.txt",
+      "bytes": 1075,
+      "sha256": "4ac5c8b7fb1d1fccfa52916749674d67b2024c76616fed89db7f67a976056750",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/NL2Bash-data-MIT.txt"
+    },
+    {
+      "path": "bundle/licenses/pi-jev-guard-MIT.txt",
+      "bytes": 1073,
+      "sha256": "41384dc5cf15ef69653ce54c918e0e90e6771eec108ab080ab02021f56b07ebe",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/pi-jev-guard-MIT.txt"
+    },
+    {
+      "path": "bundle/licenses/shell-safety-v2-license-declaration.md",
+      "bytes": 976,
+      "sha256": "d20865f8a746239b4074a7962645a83a780dc2fcdc86bd21d152edd0457b2407",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/shell-safety-v2-license-declaration.md"
+    },
+    {
+      "path": "bundle/licenses/SWE-smith-license-declaration.md",
+      "bytes": 1141,
+      "sha256": "e78c28e07c27958c4454495b4569e0ab43814645ccd37076b1d2a8fb9f02cd16",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/SWE-smith-license-declaration.md"
+    },
+    {
+      "path": "bundle/licenses/Terminal-Bench-license-declaration.md",
+      "bytes": 1140,
+      "sha256": "7b620c00a167eeeb68168b3b3fc99444b9ce2276ec898aaedffea3ac7850505d",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/Terminal-Bench-license-declaration.md"
+    },
+    {
+      "path": "bundle/licenses/tldr-pages-LICENSE.md",
+      "bytes": 1572,
+      "sha256": "826498c9793c53709035760c33bd6681e48380d34031320447febe675420ef4d",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/licenses/tldr-pages-LICENSE.md"
+    },
+    {
+      "path": "bundle/model/classify.py",
+      "bytes": 7414,
+      "sha256": "ccff76b3842a56b06a0abba75ea432aaea8c278b8f900a0b9d5889ec14c00320",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/classify.py"
+    },
+    {
+      "path": "bundle/model/encoder-int8.onnx",
+      "bytes": 110550587,
+      "sha256": "4e7d6a53d27a7321a2638a4bf446301e8e343c51000963331469e3ab20aae2a4",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/encoder-int8.onnx"
+    },
+    {
+      "path": "bundle/model/export.json",
+      "bytes": 1231,
+      "sha256": "2276cd2d2644024bb73db7a3e56636cc12a7226b049287a1d80f27f9641293ea",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/export.json"
+    },
+    {
+      "path": "bundle/model/head.bin",
+      "bytes": 4730888,
+      "sha256": "80def54b93bd97191a6e57a09164885a479cad228a3ec83f04efec32576d3c42",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/head.bin"
+    },
+    {
+      "path": "bundle/model/head.json",
+      "bytes": 1059,
+      "sha256": "dc4911d9cb469326cbf7a5eca7dc41328f80d9d394d10333b407345fa007cff2",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/head.json"
+    },
+    {
+      "path": "bundle/model/head.npz",
+      "bytes": 4732426,
+      "sha256": "0dfbd5aa5a6891d05cd7bc364fa69bc662de77b11d93fa526ae863af1bac256e",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/head.npz"
+    },
+    {
+      "path": "bundle/model/merges.txt",
+      "bytes": 294364,
+      "sha256": "5d346f84939a98df0cde902df7d60154b461cde1b90dc653ab9b81d74e752a4d",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/merges.txt"
+    },
+    {
+      "path": "bundle/model/model.json",
+      "bytes": 1996,
+      "sha256": "85f6682e709a3dcfb59f2a9b3d79e83184a9deef0ef5f85f8912d369ae091b89",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/model.json"
+    },
+    {
+      "path": "bundle/model/README.md",
+      "bytes": 102,
+      "sha256": "97883ba96bd38bad0720b4da48764838933c0042c53db6568c1283060f8c064e",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/README.md"
+    },
+    {
+      "path": "bundle/model/requirements.txt",
+      "bytes": 126,
+      "sha256": "655b26213458fd9c4638503501e88f3b8e2384c3e50a403cb17154f07208daad",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/requirements.txt"
+    },
+    {
+      "path": "bundle/model/vocab.json",
+      "bytes": 703051,
+      "sha256": "43bb485f4de0f2fd49b370bef4efab23ea3ab6d0019e72bdd9cec1436a6eaa2b",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/model/vocab.json"
+    },
+    {
+      "path": "bundle/MODEL-LICENSE.md",
+      "bytes": 2378,
+      "sha256": "58dead362837a67162c78729d5c2f4614ee0399bbbe5b109fe8b92d8256e0817",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/MODEL-LICENSE.md"
+    },
+    {
+      "path": "bundle/MODEL_CARD.md",
+      "bytes": 8558,
+      "sha256": "ce6e26328c8315b4d74b47f81aba7cd17c82a6c294cd37fd0b4e59a8bd40f635",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/MODEL_CARD.md"
+    },
+    {
+      "path": "bundle/MODIFICATIONS.md",
+      "bytes": 2213,
+      "sha256": "d71084a5a2df8acec75bd8669e4631bb997e77fc0d9fc7c1c880c4d33a953ce5",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/MODIFICATIONS.md"
+    },
+    {
+      "path": "bundle/NOTICE.txt",
+      "bytes": 4872,
+      "sha256": "1b631b00a85f322591d801ba4e74f948228002c7120e88fae8a4ee6426048451",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/NOTICE.txt"
+    },
+    {
+      "path": "bundle/provenance/nano-training-receipt.json",
+      "bytes": 16078,
+      "sha256": "d5dea61b1c652bdbf4c0159129a4dfa46069f4354ad7bb2811783a0c080ae2d9",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/provenance/nano-training-receipt.json"
+    },
+    {
+      "path": "bundle/provenance/v5-lineage-audit.json",
+      "bytes": 14070,
+      "sha256": "d9c29fdc79b49293efa27aeb4183b6d3e4b7c6005e07fafff63febfddb00420a",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/provenance/v5-lineage-audit.json"
+    },
+    {
+      "path": "bundle/README.md",
+      "bytes": 6805,
+      "sha256": "04af906a5cbdadeff93a97ca3746011357041d2ff40f439c999daff986f91f13",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/README.md"
+    },
+    {
+      "path": "bundle/RELEASE-MANIFEST.json",
+      "bytes": 5785,
+      "sha256": "324e3e5c7ff2f69e6275b9e3c2d867b1a3d71d219b2555cdd815ada5814b05dd",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/RELEASE-MANIFEST.json"
+    },
+    {
+      "path": "bundle/requirements.txt",
+      "bytes": 126,
+      "sha256": "655b26213458fd9c4638503501e88f3b8e2384c3e50a403cb17154f07208daad",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/requirements.txt"
+    },
+    {
+      "path": "bundle/THIRD-PARTY-NOTICES.md",
+      "bytes": 6408,
+      "sha256": "b492884a055bf4e61e94d9241e0cf3fa6c491e80d753728d7c7470cf6070c4b5",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/THIRD-PARTY-NOTICES.md"
+    },
+    {
+      "path": "bundle/verify_bundle.py",
+      "bytes": 2845,
+      "sha256": "183acb0c7ad823ade3255659f7607b06be60e061916c6d9ff367754b99376a32",
+      "url": "https://huggingface.co/fingerthief/lancet-nano/resolve/f5285faa92c03f0f7705506d5d0ddf1920747521/bundle/verify_bundle.py"
+    }
+  ]
+}
