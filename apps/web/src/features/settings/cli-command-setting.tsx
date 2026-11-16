@@ -1,3 +1,4 @@
+import { TerminalAppSetting } from "./terminal-app-setting";
 import { useEffect, useState } from "react";
 import { RiExternalLinkLine as ExternalLink } from "@remixicon/react";
 import { AppPanel, SettingRow } from "@/components/app-surface";
@@ -163,6 +164,7 @@ export function CliCommandSetting() {
       <p className="settings-section-desc">
         Use Ajour from your shell with the ajour command.
       </p>
+      <TerminalAppSetting />
       <AppPanel>
         <SettingRow
           label="ajour command"

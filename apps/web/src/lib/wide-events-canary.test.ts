@@ -118,6 +118,7 @@ async function check(connection) {
 }
 export async function validateConnection({ config }) {
   const result = await ajour.process.run({command:"echo",args:{title:MARKER},stdin:MARKER});
+  try { await ajour.open("https://example.test/" + MARKER + "?q=" + MARKER); } catch {}
   if (result.stdout !== MARKER) throw new Error("Process capture failed");
   return { normalizedConfig: config, connectionSummary: {} };
 }
@@ -797,6 +798,9 @@ describe("the privacy canary", () => {
     );
     expect(api.events).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          name: "plugin.open",
+        }),
         expect.objectContaining({
           name: "plugin.process",
           outcome: "ok",

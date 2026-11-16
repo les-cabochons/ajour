@@ -71,6 +71,7 @@ export interface FakePublicRoute {
 
 export interface FakeAjourOptions {
   routes?: readonly FakeHttpRoute[];
+  openExternal?: (url: string) => Promise<void>;
   processRun?: (request: AjourProcessRequest) => Promise<AjourProcessResult>;
   publicRoutes?: readonly FakePublicRoute[];
   /**
@@ -294,11 +295,19 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
   const { manifest } = options;
 
   return {
-    open: async () => {
-      throw Object.assign(new Error("Opening links is not yet supported."), {
-        name: "AjourProcessError",
-        code: "not_yet",
-      });
+    open: async (url) => {
+      const scheme = new URL(url).protocol.slice(0, -1);
+      if (
+        !options.openExternal ||
+        (scheme !== "https" &&
+          !manifest?.processes?.openSchemes?.includes(scheme))
+      ) {
+        throw Object.assign(new Error("No allowed link fixture supplied."), {
+          name: "AjourProcessError",
+          code: "undeclared",
+        });
+      }
+      await options.openExternal(url);
     },
     process: {
       run: async (request) => {

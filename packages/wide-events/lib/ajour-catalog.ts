@@ -670,6 +670,27 @@ export const catalog = defineCatalog({
         },
       },
     },
+    "terminal.read": { kinds: ["ipc"], reasons: [], fields: {} },
+    "terminal.update": { kinds: ["ipc"], reasons: [], fields: {} },
+    "plugin.open": {
+      kinds: ["job"],
+      reasons: [
+        "invalid_request",
+        "plugin_off",
+        "needs_consent",
+        "unsigned_processes_off",
+        "process_acceptance_required",
+        "package_unverified",
+        "undeclared",
+        "spawn_refused",
+        "operation_ended",
+        "spawn_failed",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        open: { scheme: operational() },
+      },
+    },
     "plugin.process": {
       kinds: ["job"],
       reasons: [
@@ -680,7 +701,6 @@ export const catalog = defineCatalog({
         "process_acceptance_required",
         "package_unverified",
         "undeclared",
-        "not_yet",
         "folder_refused",
         "executable_missing",
         "spawn_refused",
@@ -694,6 +714,7 @@ export const catalog = defineCatalog({
       fields: {
         plugin: { id: operational() },
         process: {
+          mode: operational<"capture" | "detached" | "terminal">(),
           command_id: operational(),
           exit_code: operational<number>(),
           decided_by: operational<
@@ -1325,6 +1346,7 @@ export const catalog = defineCatalog({
             | "settled"
             | "http"
             | "publicFetch"
+            | "open"
             | "process"
             | "abort"
             | "blocked"

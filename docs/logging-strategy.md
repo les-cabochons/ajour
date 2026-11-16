@@ -424,6 +424,9 @@ The local API emits these (#305, #306):
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                        |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                     |
 | one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                |
+| `plugin.open`                         | `ProcessBroker`, once per link call, scheme only                                                                  |
+| `terminal.read`                       | Main, reading the terminal preference                                                                             |
+| `terminal.update`                     | Main, saving the terminal preference                                                                              |
 | `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call                                        |
 | `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                    |
 | `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it |
@@ -991,6 +994,7 @@ channel to read the event each emits.
 | `plugin.activate`                    | command, request                   | route, client call                               |
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
+| `plugin.open`                        | job                                | local API                                        |
 | `plugin.process`                     | job                                | local API                                        |
 | `plugin.process_read`                | request                            | route                                            |
 | `plugin.process_update`              | command, request                   | route, client call                               |
@@ -1070,6 +1074,8 @@ channel to read the event each emits.
 | `team.create`                        | command, request, plugin_operation | route, plugin method, store command, client call |
 | `team.resolve_arrival`               | command                            | store command                                    |
 | `team.sync`                          | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `terminal.read`                      | ipc                                | IPC channel                                      |
+| `terminal.update`                    | ipc                                | IPC channel                                      |
 | `time_entry.commit`                  | command                            | store command                                    |
 | `time_entry.continue`                | command                            | store command                                    |
 | `time_entry.create`                  | command                            | store command                                    |

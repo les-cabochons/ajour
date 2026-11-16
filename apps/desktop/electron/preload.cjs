@@ -107,6 +107,8 @@ const desktopApi = {
     ipcRenderer.on("ajour:tray-action", listener);
     return () => ipcRenderer.removeListener("ajour:tray-action", listener);
   },
+  getTerminalApp: () => invoke("ajour:get-terminal-app"),
+  setTerminalApp: (value) => invoke("ajour:set-terminal-app", value),
   getCliCommand: (trace) => invoke("ajour:get-cli-command", ...traced(trace)),
   listAgentInstructions: () => invoke("ajour:instruction-list"),
   previewAgentInstructions: (id, action) =>

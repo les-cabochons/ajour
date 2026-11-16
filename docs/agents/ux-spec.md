@@ -1378,3 +1378,20 @@ The project page has a Repositories section headed "On this computer". Each row 
 The repository picker is a centered dialog listing a project's folders as radio options. It preselects the last confirmed folder, or the first when none was used. With no folders it offers Add folder…. Use folder remembers the choice locally before returning it to the caller. Cancel and Escape close without remembering. Adding a folder selects it. The section disables controls while loading without adding a status line. Errors appear inline. The hand-off workflow supplies open state and the selection callback.
 
 Repository folders survive project archive and Undo, including Undo of creating a project. The current project lifecycle has no permanent-delete command. A future permanent-delete operation must prune the project's local folder associations after it commits.
+
+### Plugin terminals and links
+
+Settings > General > Terminal offers a terminal app on this computer. Windows
+has Windows Terminal, PowerShell and Command Prompt. macOS has Terminal and iTerm.
+The default is Windows Terminal or Terminal.
+The preference saves on change. It does not change the ajour command installation.
+
+An approved declared command can start detached or open in a terminal in its
+repository folder. Ajour reports that it started and leaves the process running
+when the plugin operation ends or Ajour quits. Launches cannot take stdin.
+Windows Terminal refuses semicolons in arguments and folder paths.
+
+An enabled plugin may open HTTPS links. A custom link scheme must be declared
+and approved, and unsigned plugins also need the global switch and per-plugin
+acceptance. File, script and undeclared schemes are refused. Content links keep
+their existing desktop policy.

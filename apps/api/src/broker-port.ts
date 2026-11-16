@@ -309,12 +309,17 @@ export interface ProcessRunRequest {
   args: Readonly<Record<string, string | number>>;
   stdin?: string;
 }
-export interface ProcessRunResult {
+export type ProcessRunResult =
+  | { started: true; exitCode?: never; stdout?: never; stderr?: never }
+  | ProcessCaptureResult;
+export interface ProcessCaptureResult {
+  started?: never;
   exitCode: number | null;
   stdout: string;
   stderr: string;
 }
 export interface OperationProcessBroker {
+  open(url: string): Promise<void>;
   run(request: ProcessRunRequest): Promise<ProcessRunResult>;
   close(): void;
 }

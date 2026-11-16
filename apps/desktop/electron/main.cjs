@@ -726,6 +726,33 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
   return { keepRunning: windowSettings.keep_running };
 });
 
+const terminalApps =
+  process.platform === "win32"
+    ? ["wt", "powershell", "cmd"]
+    : ["Terminal", "iTerm"];
+const terminalFile = () =>
+  path.join(app.getPath("userData"), "terminal-app.json");
+async function readTerminalApp() {
+  try {
+    const value = JSON.parse(await fsPromises.readFile(terminalFile(), "utf8"));
+    if (terminalApps.includes(value)) return value;
+  } catch (error) {
+    if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+  }
+  return terminalApps[0];
+}
+ipc.handle("ajour:get-terminal-app", async (event) => {
+  assertActiveDesktopWindow(event, "read the terminal app");
+  return readTerminalApp();
+});
+ipc.handle("ajour:set-terminal-app", async (event, value) => {
+  assertActiveDesktopWindow(event, "set the terminal app");
+  if (!terminalApps.includes(value))
+    throw new Error("Unsupported terminal app");
+  await fsPromises.writeFile(terminalFile(), JSON.stringify(value));
+  return value;
+});
+
 ipc.handle("ajour:get-cli-command", async (event) => {
   assertActiveDesktopWindow(event, "read the ajour command's state");
   return await cliCommand.state();
@@ -1689,6 +1716,8 @@ async function ensureInternalAppApiRunning() {
       }),
       vault: internalAppApiVault(internalAppApiModule, statePath),
       brokerTransport: internalAppApiBrokerNetwork().transport,
+      openExternal: (url) => shell.openExternal(url),
+      terminal: readTerminalApp,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),

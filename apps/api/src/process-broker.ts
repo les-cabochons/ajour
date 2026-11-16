@@ -1,3 +1,11 @@
+import {
+  launchProcess,
+  cleanupLaunchScripts,
+  startUnowned,
+  ProcessLaunchRefused,
+  type TerminalApp,
+} from "./process-launch.ts";
+import { pluginProcessesSchema } from "../../../packages/shared/plugin-api-4.ts";
 import { spawn, execFile } from "node:child_process";
 import path from "node:path";
 import { z } from "zod";
@@ -9,6 +17,10 @@ import type {
   ProcessRunRequest,
   ProcessRunResult,
 } from "./broker-port.ts";
+import type {
+  AjourCatalog,
+  ReasonOf,
+} from "../../../packages/wide-events/catalog.ts";
 import type { ApiEvents } from "./events.ts";
 import {
   findExecutable,
@@ -36,7 +48,6 @@ export type ProcessReason =
   | "process_acceptance_required"
   | "package_unverified"
   | "undeclared"
-  | "not_yet"
   | "folder_refused"
   | "executable_missing"
   | "spawn_refused"
@@ -50,16 +61,15 @@ export class ProcessBrokerError extends Error {
   override readonly name = "AjourProcessError";
   readonly reason: ProcessReason;
   constructor(reason: ProcessReason) {
-    super(
-      reason === "not_yet"
-        ? "Detached and terminal commands are not yet supported."
-        : `Process request refused: ${reason}.`,
-    );
+    super(`Process request refused: ${reason}.`);
     this.reason = reason;
   }
 }
 export interface ProcessBrokerOptions {
   folders: FolderResolver;
+  terminal?: () => Promise<TerminalApp>;
+  openExternal?: (url: string) => Promise<void>;
+  enabledGate?: ProcessBrokerOptions["gate"];
   gate(
     caller: BrokerCaller,
   ): Promise<
@@ -105,6 +115,7 @@ export class ProcessBroker implements ProcessBrokerPort {
       ]);
     } finally {
       clearTimeout(timer);
+      await cleanupLaunchScripts();
     }
   }
   private readonly active = new Map<string, number>();
@@ -129,8 +140,77 @@ export class ProcessBroker implements ProcessBrokerPort {
         void task.then(cleanup, cleanup);
         return task;
       },
+      open: (url: string) => this.open(caller, url, ended.signal),
       close: () => ended.abort(),
     };
+  }
+  private async open(
+    caller: BrokerCaller,
+    given: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const unit = this.options.events?.start("plugin.open", {
+      kind: "job",
+      trigger: "system",
+      detached: true,
+      ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
+    });
+    unit?.set({ plugin: { id: caller.pluginId } });
+    let reason: ReasonOf<AjourCatalog, "plugin.open"> | undefined;
+    try {
+      if (signal.aborted || this.stopping) return refuse("operation_ended");
+      const enabled = await (this.options.enabledGate ?? this.options.gate)(
+        caller,
+      );
+      if (enabled) return refuse(enabled);
+      if (
+        typeof given !== "string" ||
+        given.length > 32767 ||
+        /[\x00-\x20\x7f]/.test(given)
+      )
+        return refuse("invalid_request");
+      let url: URL;
+      try {
+        url = new URL(given);
+      } catch {
+        return refuse("invalid_request");
+      }
+      const scheme = url.protocol.slice(0, -1);
+      if (scheme !== "https") {
+        const declared = caller.manifest.processes?.openSchemes ?? [];
+        if (
+          !declared.includes(scheme) ||
+          !pluginProcessesSchema.safeParse({ openSchemes: [scheme] }).success
+        )
+          return refuse("undeclared");
+        const gate = await this.options.gate(caller);
+        if (gate) return refuse(gate);
+      }
+      unit?.set({ open: { scheme }, plugin: { id: caller.pluginId } });
+      if (!this.options.openExternal) return refuse("spawn_refused");
+      if (url.username || url.password) return refuse("invalid_request");
+      if (signal.aborted || this.stopping) return refuse("operation_ended");
+      await this.options.openExternal(url.href);
+    } catch (error) {
+      reason =
+        error instanceof ProcessBrokerError &&
+        [
+          "invalid_request",
+          "plugin_off",
+          "needs_consent",
+          "unsigned_processes_off",
+          "process_acceptance_required",
+          "package_unverified",
+          "undeclared",
+          "spawn_refused",
+          "operation_ended",
+        ].includes(error.reason)
+          ? (error.reason as ReasonOf<AjourCatalog, "plugin.open">)
+          : "spawn_failed";
+      throw new ProcessBrokerError(reason as ProcessReason);
+    } finally {
+      unit?.end(reason ? "refused" : "ok", reason);
+    }
   }
   private async argument(
     arg: DeclaredArgument,
@@ -225,7 +305,10 @@ export class ProcessBroker implements ProcessBrokerPort {
       );
       if (!command) return refuse("undeclared");
       commandId = command.id;
-      if (command.mode !== "capture") return refuse("not_yet");
+      unit?.set({ process: { mode: command.mode } });
+      let cwd: string | undefined;
+      if (command.mode !== "capture" && request.stdin !== undefined)
+        return refuse("invalid_request");
       if (request.stdin !== undefined && command.stdin !== "text")
         return refuse("invalid_request");
       const slots = command.args
@@ -247,10 +330,24 @@ export class ProcessBroker implements ProcessBrokerPort {
               refuse("invalid_request");
             continue;
           }
-          for (const arg of group.args)
-            argv.push(await this.argument(arg, request.args, caller.projectId));
-        } else
-          argv.push(await this.argument(group, request.args, caller.projectId));
+          for (const arg of group.args) {
+            const value = await this.argument(
+              arg,
+              request.args,
+              caller.projectId,
+            );
+            argv.push(value);
+            if (arg.kind === "folder") cwd ??= value;
+          }
+        } else {
+          const value = await this.argument(
+            group,
+            request.args,
+            caller.projectId,
+          );
+          argv.push(value);
+          if (group.kind === "folder") cwd ??= value;
+        }
       }
       if ((this.active.get(caller.pluginId) ?? 0) >= 4)
         return refuse("concurrency");
@@ -285,6 +382,27 @@ export class ProcessBroker implements ProcessBrokerPort {
       const finalGate = await this.options.gate(caller);
       if (finalGate) return refuse(finalGate);
       if (signal.aborted) return refuse("operation_ended");
+      if (command.mode !== "capture") {
+        if (!cwd) return refuse("folder_refused");
+        const terminal =
+          command.mode === "terminal"
+            ? ((await this.options.terminal?.()) ??
+              (process.platform === "win32" ? "wt" : "Terminal"))
+            : undefined;
+        const lastGate = await this.options.gate(caller);
+        if (lastGate) return refuse(lastGate);
+        if (signal.aborted) return refuse("operation_ended");
+        await launchProcess(plan, cwd, terminal, {
+          start: async (launch, folder, hidden) => {
+            const gate = await this.options.gate(caller);
+            if (gate) return refuse(gate);
+            if (signal.aborted) return refuse("operation_ended");
+            await startUnowned(launch, folder, hidden);
+          },
+        });
+        started = true;
+        return { started: true };
+      }
       const result = await new Promise<ProcessRunResult>((resolve, reject) => {
         const child = spawn(plan.command, plan.args, {
           env: plan.env,
@@ -408,11 +526,20 @@ export class ProcessBroker implements ProcessBrokerPort {
         });
         if (signal.aborted) abort();
       });
-      unit?.set({ process: { exit_code: result.exitCode ?? undefined } });
+      unit?.set({
+        process: {
+          exit_code:
+            ("exitCode" in result ? result.exitCode : undefined) ?? undefined,
+        },
+      });
       return result;
     } catch (error) {
       reason =
-        error instanceof ProcessBrokerError ? error.reason : "spawn_failed";
+        error instanceof ProcessBrokerError
+          ? error.reason
+          : error instanceof ProcessLaunchRefused
+            ? "spawn_refused"
+            : "spawn_failed";
       throw new ProcessBrokerError(reason);
     } finally {
       if (reserved)
