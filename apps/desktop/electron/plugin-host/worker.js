@@ -59,7 +59,9 @@ function call(type, payload, signal) {
       signal?.removeEventListener("abort", onAbort);
       if (answer?.ok)
         resolve(
-          type === "process" ? answer.response : ajourResponse(answer.response),
+          type === "process" || type === "open"
+            ? answer.response
+            : ajourResponse(answer.response),
         );
       else reject(requestError(answer?.error));
     });
@@ -75,13 +77,7 @@ function withoutSignal(value) {
 
 Object.defineProperty(globalThis, "ajour", {
   value: Object.freeze({
-    open: async () => {
-      throw requestError({
-        name: "AjourProcessError",
-        code: "not_yet",
-        message: "Opening links is not yet supported.",
-      });
-    },
+    open: (url) => call("open", { url }),
     process: Object.freeze({ run: (request) => call("process", { request }) }),
     http: (request) =>
       call("http", { request: withoutSignal(request) }, request?.signal),

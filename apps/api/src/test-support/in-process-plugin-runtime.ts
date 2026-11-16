@@ -64,6 +64,7 @@ function installAjourGlobal() {
       ajourResponse(await brokerOfThisRun().http(request)),
     publicFetch: async (url: string, init?: BrokerPublicFetchInit) =>
       ajourResponse(await brokerOfThisRun().publicFetch(url, init)),
+    open: (url: string) => currentProcessBroker.getStore()!.open(url),
     process: {
       run: (request: ProcessRunRequest) => {
         const broker = currentProcessBroker.getStore();

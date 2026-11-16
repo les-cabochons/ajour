@@ -55,6 +55,8 @@ const IPC_CHANNELS = {
     event: "cli_command.wsl_remove",
     mode: "invoke",
   },
+  "ajour:get-terminal-app": { event: "terminal.read", mode: "invoke" },
+  "ajour:set-terminal-app": { event: "terminal.update", mode: "invoke" },
   "ajour:get-cli-command": { event: "cli_command.get_state", mode: "invoke" },
   "ajour:instruction-list": {
     event: "agent_instructions.list",

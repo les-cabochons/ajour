@@ -185,13 +185,12 @@ an acceptance submitted from a page for a different package.
 The host supplies development status, which always requires both gates even when
 an installed plugin with that id has a signed origin. Other packages use the
 catalog's `isSignedPlugin` rule. Access review receives the gate state from the
-API and shows the same refusal reason as the broker. Declared schemes must use
-this gate when scheme opening is implemented.
+API and shows the same refusal reason as the broker. Declared schemes use this same gate.
 
 `ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
-one runtime operation access to declared `capture` commands. The runtime supplies
+one runtime operation access to declared commands and approved links. The runtime supplies
 the plugin id and manifest. The host closes this access when the operation ends,
-including cancellation and timeout. `ajour.open` reports that opening links is not yet supported.
+including cancellation and timeout. `ajour.open` delegates approved links to main.
 The SDK's `ajour.process.run` follows the
 worker, host page, preload invoke, main and API path used by `ajour.http`. The
 page replaces the worker's run id and main accepts only its sender's own runs.
@@ -207,16 +206,16 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable and start at the filesystem root, never Ajour's
-working directory.
+inherit no `AJOUR_` variable. Capture starts at the filesystem root; launch modes
+use the resolved repository folder, never Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
 calls may run concurrently per plugin across operations. Timeout, excess output
 and operation completion stop the owned process tree with Windows taskkill or a
 POSIX process group. The broker checks activation and consent before starting;
-the unsigned process gates above also apply. #716 supplies command modes. Undeclared commands are refused. Detached and terminal commands report
-that they are not yet supported, pending #718.
+the unsigned process gates above also apply. #716 supplies command modes.
+Undeclared commands are refused. Detached and terminal launches are described below.
 
 `GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
 and refused count. `POST` accepts `{ executable, path }`, with an absolute path
@@ -1103,6 +1102,35 @@ The desktop tray panel, specified in [#609](https://github.com/les-cabochons/ajo
 API state version 11 adds `repositoryFolders`, with stable ids, project ids, names, absolute paths and optional last-use timestamps. Only the local API file stores these per-device records. They never enter renderer project records, bootstrap or team sync. `FolderResolver` in `apps/api/src/repository-folders.ts` resolves ids for the process broker, rechecks real paths at use, and refuses Ajour's user-data and install directories and their descendants.
 
 The restricted `ajour:choose-folder` IPC accepts only a project id from the active main frame. Main opens the native directory chooser and calls `addRepositoryFolderForServer` directly. HTTP exposes list, remove and remember-use routes under `/api/projects/:projectId/repository-folders`; POST to the collection refuses paths and directs callers to the chooser. Removal deletes only the mapping. No directory is deleted or scanned.
+
+## Declared launch modes and plugin links
+
+The process broker validates every command and resolves its executable through
+`process-spawn`. Capture remains owned by the operation. Detached and terminal
+launches return `{ started: true }` after spawn, ignore stdio and unref the child.
+Ajour never kills those children when an operation ends or the app quits.
+Both launch modes require a resolved repository folder argument and use the first
+folder argument as cwd. They refuse stdin, which these modes cannot deliver.
+
+`process-launch.ts` supports Windows Terminal on Windows and Terminal on macOS.
+Windows Terminal re-joins argv, so executable paths, resolved launcher prefixes,
+arguments and cwd must use the strict terminal allowlist: non-empty ASCII letters,
+digits, spaces and `. _ - : / \ @ + = , ~ ( )`, with no trailing backslash.
+Only manifest literals may start with a dash. Invalid values return `invalid_request`
+with a terminal-mode reason. Missing Windows Terminal asks the user to install it.
+On macOS, private executable `.command` files use POSIX single-quoted arguments.
+Each is deleted after five minutes, never at broker shutdown; the next launch
+sweeps script directories older than an hour. Main persists the terminal choice
+on this computer through restricted IPC and migrates retired choices to the
+supported app. Linux has no terminal choice.
+
+`OperationProcessBroker.open` checks activation and consent for HTTPS and the
+process gates for declared custom schemes. It calls an injected main-process
+`openExternal` port. The worker relays requests through its owning operation;
+no renderer opens links itself. The page-content policy in `navigation.cjs`
+is unchanged. Main checks HTTPS or the manifest schemes again before opening.
+A plugin may open at most five links in a rolling minute across operations.
+`plugin.open` records the approved scheme, never the URL.
 
 ## Handoffs
 

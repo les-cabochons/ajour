@@ -1,3 +1,4 @@
+import { TerminalAppSetting } from "./terminal-app-setting";
 import { useEffect, useState } from "react";
 import { RiExternalLinkLine as ExternalLink } from "@remixicon/react";
 import { AppPanel, SettingRow } from "@/components/app-surface";
@@ -161,9 +162,10 @@ export function CliCommandSetting() {
     <section className="settings-section">
       <h2 className="settings-section-title">Terminal</h2>
       <p className="settings-section-desc">
-        Use Ajour from your shell with the ajour command.
+        Choose where plugin commands open and install the ajour shell command.
       </p>
       <AppPanel>
+        <TerminalAppSetting />
         <SettingRow
           label="ajour command"
           description={
