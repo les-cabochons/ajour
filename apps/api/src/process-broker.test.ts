@@ -685,7 +685,12 @@ it("Given an undeclared capture command, preserves leading options and resolves 
     ],
     cwdFolder: folder.id,
   });
-  expect(JSON.parse(result.stdout!)).toEqual([root, ["-value", "a  b & c"]]);
+  // The child reports its real cwd: macOS's /var is a link to /private/var.
+  const { realpath } = await import("node:fs/promises");
+  expect(JSON.parse(result.stdout!)).toEqual([
+    await realpath(root),
+    ["-value", "a  b & c"],
+  ]);
   await expect(
     op.run({ executable: "node", argv: [], cwdFolder: "missing" }),
   ).rejects.toMatchObject({ reason: "folder_refused" });
