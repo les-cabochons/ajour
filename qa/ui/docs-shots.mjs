@@ -288,6 +288,15 @@ const shots = [
     margin: 0,
   },
   {
+    name: "sidebar-by-project",
+    seed: { sidebarLayout: { grouping: "project" } },
+    run: async (page) => {
+      await go(page, "/time/today");
+      return page.locator(".ajour-app-navigation-sidebar").first();
+    },
+    margin: 0,
+  },
+  {
     name: "sidebar-hover-card",
     keepPointer: true,
     run: async (page) => {
