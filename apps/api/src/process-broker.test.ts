@@ -685,12 +685,12 @@ it("Given an undeclared capture command, preserves leading options and resolves 
     ],
     cwdFolder: folder.id,
   });
-  // The child reports its real cwd: macOS's /var is a link to /private/var.
+  // The child reports its cwd as the system sees it: macOS turns /var into
+  // /private/var, while Windows keeps a short 8.3 name such as RUNNER~1.
   const { realpath } = await import("node:fs/promises");
-  expect(JSON.parse(result.stdout!)).toEqual([
-    await realpath(root),
-    ["-value", "a  b & c"],
-  ]);
+  const [cwd, argv] = JSON.parse(result.stdout!);
+  expect([root, await realpath(root)]).toContain(cwd);
+  expect(argv).toEqual(["-value", "a  b & c"]);
   await expect(
     op.run({ executable: "node", argv: [], cwdFolder: "missing" }),
   ).rejects.toMatchObject({ reason: "folder_refused" });
