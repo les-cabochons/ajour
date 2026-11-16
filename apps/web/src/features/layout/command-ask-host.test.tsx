@@ -60,7 +60,7 @@ it("Given a routed ask stream, delays approval, shows answer errors inside the d
   expect(screen.getByText("Plugin: p, Signed")).toBeTruthy();
   expect(
     screen.getByLabelText("Exact command arguments").textContent,
-  ).toContain("\\u00a0");
+  ).toContain("\\u{A0}");
   expect(
     (screen.getByRole("button", { name: "Allow once" }) as HTMLButtonElement)
       .disabled,

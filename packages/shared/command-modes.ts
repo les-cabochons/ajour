@@ -14,7 +14,12 @@ export const undeclaredCommandSchema = z
         z
           .string()
           .max(32767)
-          .refine((v) => !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(v)),
+          .refine(
+            (v) =>
+              !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\p{Cs}\p{Cn}]/u.test(
+                v,
+              ),
+          ),
       )
       .max(100),
     cwdFolder: z.string().min(1).max(200).optional(),
@@ -57,14 +62,32 @@ export const commandAnswerSchema = z
   })
   .strict();
 
-/** Escape invisible whitespace while preserving argument boundaries. */
-export function commandDisplay(value: unknown): string {
-  return JSON.stringify(value, null, 2).replace(/[^\x00-\x7f]/gu, (c) =>
-    /[\s\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(c)
-      ? "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")
-      : c,
+/**
+ * Shows a resolved executable, folder name or path as-is, except that
+ * invisible, blank, unassigned and surrogate characters, whitespace other
+ * than a space, and a backslash that would read as an escape become
+ * `\u{XXXX}`.
+ */
+export function displayCommandText(value: string): string {
+  return value.replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\p{Cs}\p{Cn}⠀]|[^\S ]|\\(?=u\{)/gu,
+    (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase()}}`,
   );
 }
-export function safeCommandDisplay(value: string): boolean {
-  return !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
+
+/**
+ * Shows argv with visible boundaries: an element with a space or quote, or
+ * an empty one, is quoted, with inner quotes and the backslashes before
+ * them or before the closing quote escaped.
+ */
+export function displayCommandLine(argv: readonly string[]): string {
+  return argv
+    .map((arg) => {
+      const shown = displayCommandText(arg);
+      if (shown !== "" && !/[ "]/.test(shown)) return shown;
+      return `"${shown
+        .replace(/(\\*)"/g, '$1$1\\"')
+        .replace(/(\\+)$/, "$1$1")}"`;
+    })
+    .join(" ");
 }

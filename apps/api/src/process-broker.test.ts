@@ -736,6 +736,13 @@ it.each([
   "x\u2029y",
   "x\ty",
   "x\u007fy",
+  "xㅤy",
+  "xᅟy",
+  "xﾠy",
+  "x͏y",
+  "x️y",
+  "x\ud800y",
+  "x͸y",
 ])("Given an invalid argument, refuses %j", async (value) => {
   const { op } = await fixture();
   await expect(
@@ -1177,12 +1184,21 @@ it("Given an undeclared executable with a declared key, ignores the override and
   });
 });
 
-it.each(["x\u202ey", "x\u2028y", "x\u2029y", "x\ty"])(
-  "Given spoofed folder display %j, refuses before ask",
+it.each([
+  "x\u202ey",
+  "x\u2028y",
+  "x\ty",
+  "\ud83d\udc68\u200d\ud83d\udc69",
+  "re\u00adport",
+])(
+  "Given folder display %j chosen by the user, asks with it for the dialog to escape",
   async (value) => {
     const { manifest, root } = await fixture();
     manifest.processes!.undeclaredCommands = true;
-    const ask = vi.fn();
+    const ask = vi.fn(async (_ask: unknown) => ({
+      answer: "deny" as const,
+      reason: "user_denied" as const,
+    }));
     for (const spoofName of [true, false]) {
       const broker = new ProcessBroker({
         folders: { resolve: async () => (spoofName ? root : value) },
@@ -1198,9 +1214,12 @@ it.each(["x\u202ey", "x\u2028y", "x\u2029y", "x\ty"])(
             method: "syncConnection",
           })
           .run({ executable: "node", argv: [], cwdFolder: "folder" }),
-      ).rejects.toMatchObject({ reason: "invalid_request" });
+      ).rejects.toMatchObject({ reason: "user_denied" });
     }
-    expect(ask).not.toHaveBeenCalled();
+    expect(ask.mock.calls.map(([a]) => a)).toMatchObject([
+      { folderName: value, folderPath: root },
+      { folderName: "Repo", folderPath: value },
+    ]);
   },
 );
 it("Given a missing executable, never asks or saves Always", async () => {

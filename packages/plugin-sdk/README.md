@@ -343,7 +343,10 @@ defaults to 60 seconds. Four calls may run at once per plugin. Ending the plugin
 operation cancels its capture children. Refusals reject with `AjourProcessError` and a
 `code` such as `invalid_request`, `undeclared`, `concurrency`,
 `output_limit`, `timeout` or `operation_ended`. The test fake accepts a
-`processRun` responder and otherwise refuses process requests.
+`processRun` responder and otherwise refuses process requests. Given the
+manifest, it refuses with `undeclared` a command id the manifest doesn't
+declare and an `{ executable, argv }` request from a manifest without
+`processes.undeclaredCommands: true`.
 
 The user must turn the plugin on and approve its declared commands. Undeclared
 commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
@@ -391,7 +394,7 @@ const result = await ajour.process.run({
 });
 ```
 
-Use a bare executable name, never a path, shell or script host. Each argv element remains one text argument. Unicode controls, format characters and line or paragraph separators are refused; a leading dash is allowed. `cwdFolder` is a host-owned repository folder id. Without it the command runs at the system root, never Ajour's data or installation folder.
+Use a bare executable name, never a path, shell or script host. Each argv element remains one text argument. Unicode controls, format, default-ignorable, surrogate and unassigned characters and line or paragraph separators are refused; a leading dash is allowed. `cwdFolder` is a host-owned repository folder id. Without it the command runs at the system root, never Ajour's data or installation folder.
 
 The user's command mode controls undeclared commands after all process gates pass. Always ask requests permission. Auto runs unless review marks the command risky. Accept everything runs without asking. An ask shows the resolved executable, plugin id, signature status and folder name and path. Allow once and Always have a 600 ms input delay. Deny all from this plugin refuses its queued asks. At most two asks per plugin may be pending; overflow refuses with `ask_queue_full`. An ask holds the operation until Allow once, Always or Deny, and denies after two minutes or when no window is connected. Always remembers only the exact executable, arguments and folder id for this package. The Access tab lists and removes these approvals. Package or version changes, lost signatures and changed development directories invalidate them. No rule reviewer is installed by this feature.
 

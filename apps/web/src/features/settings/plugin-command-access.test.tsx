@@ -81,7 +81,12 @@ it("Given a remembered folder, shows its name and path and visible non-ASCII whi
             argv: ["a\u00a0b"],
             cwdFolder: "opaque-id",
             folderName: "Repo",
-            folderPath: "C:/repo",
+            folderPath: "C:\\repo",
+          },
+          {
+            id: "b",
+            executable: "C:\\Program Files\\Git\\cmd\\git.exe",
+            argv: ["-C", "C:\\repo", "status"],
           },
         ],
       }}
@@ -89,7 +94,14 @@ it("Given a remembered folder, shows its name and path and visible non-ASCII whi
       onChange={() => {}}
     />,
   );
-  expect(screen.getByText(/Folder:/).textContent).toContain("C:/repo");
+  expect(screen.getAllByText(/Folder:/)[0]!.textContent).toBe(
+    "Folder: Repo C:\\repo",
+  );
   expect(document.body.textContent).not.toContain("opaque-id");
-  expect(document.body.textContent).toContain("\\u00a0");
+  expect(screen.getByText("git a\\u{A0}b")).toBeTruthy();
+  expect(
+    screen.getByText(
+      '"C:\\Program Files\\Git\\cmd\\git.exe" -C C:\\repo status',
+    ),
+  ).toBeTruthy();
 });

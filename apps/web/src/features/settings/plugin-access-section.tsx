@@ -197,7 +197,7 @@ export function PluginAccessSection({
           onChange={onProcessAcceptanceChange}
         />
       ) : null}
-      {group.processGate ? (
+      {group.processGate && group.access?.summary.undeclaredCommands ? (
         <PluginCommandAccess
           key={`${group.plugin.id}:${group.plugin.version}:${group.processGate.packageKey}:${group.processGate.required}`}
           pluginId={group.plugin.id}

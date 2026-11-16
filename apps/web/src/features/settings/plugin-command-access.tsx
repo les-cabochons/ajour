@@ -1,4 +1,7 @@
-import { commandDisplay } from "@ajour/shared/command-modes";
+import {
+  displayCommandLine,
+  displayCommandText,
+} from "@ajour/shared/command-modes";
 import { subscribeCommandAccess } from "@/lib/command-access-events";
 import { useEffect, useState } from "react";
 import type { z } from "zod";
@@ -65,17 +68,17 @@ export function CommandAccessControls({
             >
               <div className="min-w-0">
                 <pre className="text-xs break-all whitespace-pre-wrap">
-                  {commandDisplay([a.executable, ...a.argv])}
+                  {displayCommandLine([a.executable, ...a.argv])}
                 </pre>
                 <p className="text-xs text-muted-foreground">
                   Folder:{" "}
-                  {commandDisplay(
+                  {displayCommandText(
                     a.folderName ??
                       (a.cwdFolder
                         ? "Repository folder unavailable"
                         : "System root"),
                   )}{" "}
-                  {commandDisplay(a.folderPath ?? "Path unavailable")}
+                  {displayCommandText(a.folderPath ?? "Path unavailable")}
                 </p>
               </div>
               <Button

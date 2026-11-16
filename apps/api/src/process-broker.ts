@@ -1,6 +1,5 @@
 import {
   undeclaredCommandSchema,
-  safeCommandDisplay,
   type CommandPolicy,
   type CommandMode,
   type CommandAsk,
@@ -427,13 +426,10 @@ export class ProcessBroker implements ProcessBrokerPort {
           ? ((await this.options.folderName?.(request.cwdFolder)) ??
             "Repository folder")
           : "System root";
-        if (!safeCommandDisplay(cwd!) || !safeCommandDisplay(folderName))
-          refuse("invalid_request");
         const userPath = await resolveLoginShellPath();
         resolvedExecutable =
           (await findExecutable(request.executable, userPath)) ?? undefined;
         if (!resolvedExecutable) refuse("executable_missing");
-        if (!safeCommandDisplay(resolvedExecutable!)) refuse("invalid_request");
         const policy = (await this.options.policy?.(caller)) ?? {
           identity: "",
           signed: false,
@@ -581,8 +577,6 @@ export class ProcessBroker implements ProcessBrokerPort {
           cwd =
             (await this.options.folders.resolve(cwdFolder, caller.projectId)) ??
             refuse("folder_refused");
-          if (undeclared && !safeCommandDisplay(cwd!))
-            refuse("invalid_request");
         } catch {
           refuse("folder_refused");
         }

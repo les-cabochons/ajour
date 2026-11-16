@@ -1,5 +1,8 @@
 import { connectMcpBridge } from "@/lib/mcp-bridge";
-import { commandDisplay } from "@ajour/shared/command-modes";
+import {
+  displayCommandLine,
+  displayCommandText,
+} from "@ajour/shared/command-modes";
 import { commandAccessChanged } from "@/lib/command-access-events";
 import { useEffect, useState } from "react";
 import { commandAskSchema, type CommandAsk } from "@ajour/shared/command-modes";
@@ -49,16 +52,17 @@ export function CommandAskDialog({
           aria-label="Exact command arguments"
           className="overflow-auto text-xs break-all whitespace-pre-wrap"
         >
-          {commandDisplay([ask.executable, ...ask.argv])}
+          {displayCommandLine([ask.executable, ...ask.argv])}
         </pre>
         <p>
           Plugin: {ask.pluginId}, {ask.signed ? "Signed" : "Unsigned"}
         </p>
         <p>
-          Executable: {commandDisplay(ask.resolvedExecutable ?? ask.executable)}
+          Executable:{" "}
+          {displayCommandText(ask.resolvedExecutable ?? ask.executable)}
         </p>
-        <p>Folder: {commandDisplay(ask.folderName)}</p>
-        <p>{commandDisplay(ask.folderPath ?? "Path unavailable")}</p>
+        <p>Folder: {displayCommandText(ask.folderName)}</p>
+        <p>{displayCommandText(ask.folderPath ?? "Path unavailable")}</p>
         {error ? <p role="alert">{error}</p> : null}
         {ask.reason ? (
           <p
@@ -74,17 +78,18 @@ export function CommandAskDialog({
         <DialogFooter>
           <Button
             variant="outline"
-            disabled={disabled}
-            onClick={() => onAnswer("deny-all")}
-          >
-            Deny all from this plugin
-          </Button>
-          <Button
-            variant="outline"
+            autoFocus
             disabled={disabled}
             onClick={() => onAnswer("deny")}
           >
             Deny
+          </Button>
+          <Button
+            variant="outline"
+            disabled={disabled}
+            onClick={() => onAnswer("deny-all")}
+          >
+            Deny all from this plugin
           </Button>
           <Button
             variant="outline"

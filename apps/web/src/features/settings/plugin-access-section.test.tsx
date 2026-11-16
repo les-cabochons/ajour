@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
+vi.mock("./plugin-command-access", () => ({
+  PluginCommandAccess: () => <p>Command mode controls</p>,
+}));
 import { NO_PLUGIN_ACCESS } from "@ajour/shared";
 import {
   PluginAccessSection,
@@ -113,5 +116,51 @@ it.each(["commands", "schemes", "both", "neither"])(
         openSchemes.length ? "commands and links" : "commands",
       );
     }
+  },
+);
+
+it.each([true, false])(
+  "Given a process gate and undeclared commands %s, shows command mode controls only when declared and the G1 note either way",
+  async (undeclaredCommands) => {
+    await renderRoutes({
+      routes: {
+        "/": () => (
+          <PluginAccessSection
+            now={1}
+            group={{
+              enabled: true,
+              connections: [],
+              processGate: {
+                required: true,
+                accepted: true,
+                packageKey: "key",
+              },
+              plugin: {
+                id: "handoff",
+                version: "1.0.0",
+                apiVersion: 4,
+                displayName: "Handoff",
+                iconSvg: "<svg />",
+                connectionFields: [],
+                capabilities: {},
+              },
+              access: {
+                hostLabels: {},
+                choices: [],
+                summary: {
+                  ...NO_PLUGIN_ACCESS,
+                  undeclaredCommands,
+                  commands: [{ id: "run", argv: "git status", policy: "{}" }],
+                },
+              },
+            }}
+          />
+        ),
+      },
+    });
+    expect(Boolean(screen.queryByText("Command mode controls"))).toBe(
+      undeclaredCommands,
+    );
+    expect(screen.getByText(/outside G1/)).toBeTruthy();
   },
 );
