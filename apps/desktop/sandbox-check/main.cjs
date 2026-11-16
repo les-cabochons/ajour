@@ -356,6 +356,43 @@ async function main() {
     // 1. A sync through the broker, in the plugin's own renderer.
     const saved = await saveConnection("fixture-tracker");
     const connectionId = saved.body?.connection?.id;
+    const sync = () =>
+      request(
+        "POST",
+        `/api/plugins/fixture-tracker/connections/${connectionId}/sync`,
+        { trigger: "auto", workItems: [] },
+      );
+    const refusedSync = async () => {
+      const result = await sync();
+      return {
+        error: result.body?.connection?.lastError ?? result.body?.error ?? null,
+        itemCount: (result.body?.items ?? []).length,
+        activity: (
+          await request("GET", "/api/plugins/fixture-tracker/processes")
+        ).body,
+      };
+    };
+    const switchOff = await refusedSync();
+    const enabled = await request("POST", "/api/plugins/unsigned-processes", {
+      enabled: true,
+    });
+    const acceptanceMissing = await refusedSync();
+    const overview = await request("GET", "/api/plugins");
+    const gate = overview.body.connectionGroups.find(
+      (group) => group.plugin.id === "fixture-tracker",
+    )?.processGate;
+    const accepted = await request(
+      "POST",
+      "/api/plugins/fixture-tracker/process-acceptance",
+      { packageKey: gate?.packageKey, accepted: true },
+    );
+    report("process-gates", {
+      switchOff,
+      enabledStatus: enabled.status,
+      acceptanceMissing,
+      packageKey: gate?.packageKey,
+      acceptedStatus: accepted.status,
+    });
     const synced = await request(
       "POST",
       `/api/plugins/fixture-tracker/connections/${connectionId}/sync`,
