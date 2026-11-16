@@ -1081,6 +1081,73 @@ export class PluginManager {
       },
     );
   }
+  /**
+   * Opens a handoff's thread for the window: its link through the broker's
+   * open path (https, or a scheme the manifest declares), else its resume
+   * command, which must be a declared `terminal` command. A folder slot the
+   * resume leaves out gets the handoff's folder, so it opens where it ran.
+   * Every gate of the broker applies, as for the plugin's own calls.
+   */
+  async openHandoff(
+    pluginId: string,
+    projectId: string,
+    target: {
+      link?: string;
+      resume?: { command: string; args: Record<string, string | number> };
+      folderId: string;
+    },
+  ) {
+    const plugin = await this.getPlugin(pluginId);
+    const manifest = plugin.manifest;
+    if (
+      !this.runsPluginApi4 ||
+      !this.processBroker ||
+      !isPluginApi4Manifest(manifest)
+    )
+      throw new PluginOperationRefused(
+        "Plugins need the desktop app",
+        "not_supported",
+      );
+    if (!target.link && !target.resume)
+      throw new PluginOperationRefused(
+        "This thread has no link or command to open it.",
+        "not_supported",
+      );
+    const broker = this.processBroker.forOperation({
+      pluginId,
+      manifest,
+      ...(manifest.processes
+        ? await this.processPackage(pluginId, plugin)
+        : {}),
+      traceparent: this.events?.current()?.traceparent(),
+      method: "openHandoff",
+      projectId,
+    });
+    try {
+      if (target.link) {
+        await broker.open(target.link);
+        return;
+      }
+      const resume = target.resume!;
+      const command = manifest.processes?.commands.find(
+        (candidate) => candidate.id === resume.command,
+      );
+      if (command?.mode !== "terminal")
+        throw new PluginOperationRefused(
+          "The tool's resume command doesn't open a terminal.",
+          "not_supported",
+        );
+      const args: Record<string, string | number> = { ...resume.args };
+      for (const arg of command.args.flatMap((arg) =>
+        "if" in arg ? arg.args : [arg],
+      ))
+        if (arg.kind === "folder" && args[arg.name] === undefined)
+          args[arg.name] = target.folderId;
+      await broker.run({ command: command.id, args });
+    } finally {
+      broker.close();
+    }
+  }
   async readHandoffStates(
     pluginId: string,
     request: ReadHandoffStatesRequest,

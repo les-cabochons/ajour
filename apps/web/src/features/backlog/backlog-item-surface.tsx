@@ -4,6 +4,8 @@ import {
   RiPlayFill,
   RiStopFill,
   RiCheckboxCircleLine,
+  RiChatSmile2Line,
+  RiRobot2Line,
   RiTimeLine,
 } from "@remixicon/react";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
@@ -11,6 +13,8 @@ import { stateDotStyle } from "@/features/backlog/state-dot";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
+import type { HandoffMark } from "@/domain/handoffs/handoffs";
+import { getHandOffActionTools } from "@/lib/handoff-tools";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
@@ -359,6 +363,7 @@ export function getBacklogSurfaceActions(
     subitemCount: getDirectChildWorkItems(item, state.workItems).length,
     otherSourceStateCount: getOtherSourceStates(item).length,
     settleOpensDialog: settleOpensDialog(item),
+    handoffTools: getHandOffActionTools(),
   });
 }
 export function BacklogItemSurface({
@@ -378,8 +383,14 @@ export function BacklogItemSurface({
   onPointerDown,
   beforeChange,
   selectionMenu,
+  handoffMark,
 }: {
   item: LocalWorkItem;
+  /**
+   * The item's handoff mark from the page's one map: Working or Needs you
+   * while a handed-off thread runs or waits. Rows subscribe to nothing.
+   */
+  handoffMark?: HandoffMark;
   state: LocalAppState;
   view: BacklogViewSettings;
   icons: ReturnType<typeof useWorkItemIconData>;
@@ -484,6 +495,18 @@ export function BacklogItemSurface({
           Snoozed
         </span>
       )}
+      {/* A handed-off thread that works or waits, named like Running. */}
+      {handoffMark === "working" ? (
+        <span className="backlog-item-marker is-handoff-working">
+          <RiRobot2Line className="size-3" aria-hidden />
+          Working
+        </span>
+      ) : handoffMark === "needs-you" ? (
+        <span className="backlog-item-marker is-handoff-needs-you">
+          <RiChatSmile2Line className="size-3" aria-hidden />
+          Needs you
+        </span>
+      ) : null}
       {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
     </>
   );

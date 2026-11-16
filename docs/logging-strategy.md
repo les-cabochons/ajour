@@ -974,8 +974,9 @@ channel to read the event each emits.
 | `edit.run`                           | ipc                                     | IPC channel                                      |
 | `event_rule.forget`                  | command                                 | store command                                    |
 | `event_rule.hide`                    | command                                 | store command                                    |
-| `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method                             |
+| `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
 | `handoff.list`                       | request, job                            | route, client call                               |
+| `handoff.open`                       | request, plugin_operation, job, command | route, client call                               |
 | `handoff.refresh`                    | request, plugin_operation, job, command | route, plugin method, client call, local API     |
 | `handoff.remove`                     | request, plugin_operation, job, command | route, client call                               |
 | `handoff.start`                      | request, plugin_operation, job, command | route, plugin method, client call                |

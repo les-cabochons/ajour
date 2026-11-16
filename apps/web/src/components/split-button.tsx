@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 /**
  * A button with a menu of related actions: the main half runs the button's
  * action, and the arrow half, 1px apart, opens `menu`. The comment editor's
- * send button and the backlog item page's Start entry use it. Callers own
+ * send button and the backlog item page's Start entry and Hand off use it. Callers own
  * the menu's items and decide what the main half runs.
  */
 export function SplitButton({
@@ -29,6 +29,7 @@ export function SplitButton({
   side = "bottom",
   menuClassName,
   menu,
+  onMenuOpenChange,
 }: {
   /** The pair's wrapper, for popovers anchored to the whole button. */
   ref?: Ref<HTMLSpanElement>;
@@ -44,6 +45,7 @@ export function SplitButton({
   side?: "top" | "bottom";
   menuClassName?: string;
   menu: ReactNode;
+  onMenuOpenChange?: (open: boolean) => void;
 }) {
   return (
     <span ref={ref} className="flex">
@@ -57,7 +59,7 @@ export function SplitButton({
       >
         {children}
       </Button>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={onMenuOpenChange}>
         <TooltipButton
           label={menuLabel}
           side={side}

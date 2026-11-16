@@ -106,6 +106,7 @@ import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { NewBacklogItemDialogHost } from "@/features/backlog/new-backlog-item-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
+import { HandoffHost } from "@/features/backlog/handoff-workflow";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useRunningClock } from "@/lib/use-now";
@@ -683,6 +684,7 @@ export function AppShell() {
       <AgentIndicator />
       <CommandPalette selectedTimeDate={selectedTimeDate} />
       <SnoozePickerHost />
+      <HandoffHost />
       <SettleDialogHost />
       <NewBacklogItemDialogHost />
       <CloseSubitemsDialogHost />

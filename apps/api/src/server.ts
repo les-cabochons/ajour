@@ -16,7 +16,11 @@ import {
 } from "../../../packages/shared/command-modes.ts";
 import { CommandAsks } from "./command-asks.ts";
 import { z } from "zod";
-import { ProcessBroker } from "./process-broker.ts";
+import {
+  ProcessBroker,
+  ProcessBrokerError,
+  type ProcessReason,
+} from "./process-broker.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { processRules } from "./process-rules.ts";
@@ -724,6 +728,34 @@ function requestUrlOf(request: IncomingMessage) {
  * secrets. Every event a route that runs a plugin operation emits lists
  * these reasons in the catalog, or this fails to compile.
  */
+/** Why a handoff didn't open, in the words of the setting that decides it. */
+function handoffOpenRefusal(reason: ProcessReason) {
+  switch (reason) {
+    case "plugin_off":
+      return "Turn the plugin on in Settings › Plugins to open its threads.";
+    case "needs_consent":
+      return "Review the plugin's access in Settings › Plugins first.";
+    case "unsigned_processes_off":
+      return "Unsigned plugins can't start processes. Turn that on in Settings › Plugins.";
+    case "process_acceptance_required":
+    case "package_unverified":
+      return "Accept this plugin's processes in Settings › Plugins first.";
+    case "undeclared":
+      return "The plugin didn't declare this link.";
+    case "executable_missing":
+      return "The tool isn't installed on this computer.";
+    case "folder_refused":
+      return "This repository folder is no longer available.";
+    case "user_denied":
+    case "ask_timeout":
+      return "The command was denied.";
+    case "rate_limit":
+      return "Too many links opened. Try again in a minute.";
+    default:
+      return "Couldn't open the thread.";
+  }
+}
+
 function recordPluginFailure(
   unit: {
     refuse(reason?: PluginFailureReason): unknown;
@@ -1910,6 +1942,39 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit.set({ handoff: { id: params.handoffId } });
       await handoffs.remove(params.handoffId);
       writeJson(response, 200, await storage.listHandoffs());
+    },
+    handoffOpen: async ({ response, params, unit }) => {
+      unit.set({ handoff: { id: params.handoffId } });
+      const record = (await storage.listHandoffs()).find(
+        (h) => h.id === params.handoffId,
+      );
+      if (!record) {
+        writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      unit.set({
+        plugin: { id: record.pluginId },
+        handoff: { id: record.id, tool: record.toolId },
+      });
+      try {
+        await pluginManager.openHandoff(record.pluginId, record.projectId, {
+          ...(record.link ? { link: record.link } : {}),
+          ...(record.resume ? { resume: record.resume } : {}),
+          folderId: record.folderId,
+        });
+        writeJson(response, 200, {
+          opened: record.link ? "link" : "terminal",
+        });
+      } catch (error) {
+        if (error instanceof PluginOperationRefused) {
+          unit.refuse(error.reason);
+          writeJson(response, 409, { error: error.message });
+          return;
+        }
+        if (!(error instanceof ProcessBrokerError)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: handoffOpenRefusal(error.reason) });
+      }
     },
     handoffDetect: async ({ request, response, params }) => {
       const payload = await readRequest(

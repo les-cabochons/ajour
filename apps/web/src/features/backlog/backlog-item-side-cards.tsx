@@ -3,10 +3,38 @@ import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArrowRightSLine as ChevronIcon,
+  RiGitBranchLine as BranchIcon,
+  RiGitPullRequestLine as PullRequestIcon,
+  RiMoreLine as MoreIcon,
 } from "@remixicon/react";
+import type { Handoff } from "@ajour/shared/handoffs";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Value } from "@/components/ui/value";
+import {
+  getHandoffChip,
+  sortHandoffs,
+  type HandoffTool,
+} from "@/domain/handoffs/handoffs";
+import { syncAge } from "@/domain/backlog/sync-freshness";
+import { HandoffToolIcon } from "@/features/backlog/handoff-button";
+import {
+  openHandoffThread,
+  refreshHandoffThread,
+  removeHandoffFromItem,
+} from "@/features/backlog/handoff-workflow";
 import {
   getSubitemHoursLeft,
   getSubitemProgress,
@@ -371,5 +399,200 @@ export function TimeEntriesCard({
         </div>
       )}
     </FoldingCard>
+  );
+}
+
+/** "#12" for a pull request link without a title, else the link's last part. */
+function pullRequestLabel(pullRequest: { url: string; title?: string }) {
+  if (pullRequest.title) return pullRequest.title;
+  const number = /\/(?:pull|pullrequest|merge_requests)\/(\d+)/i.exec(
+    pullRequest.url,
+  )?.[1];
+  return number ? `#${number}` : pullRequest.url;
+}
+
+/**
+ * The threads the item was handed off to, newest change first. Each shows
+ * its tool, title and state chip (the tool's own words in its tooltip), its
+ * branch, pull requests and last change, Open, and a menu with Refresh and
+ * Remove from item. Closed, it counts the threads and says which wait.
+ */
+export function HandoffsCard({
+  handoffs,
+  tools,
+  now,
+  open,
+  onOpenChange,
+}: {
+  handoffs: readonly Handoff[];
+  /** For each thread's tool name and icon. */
+  tools: readonly HandoffTool[];
+  now: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const sorted = sortHandoffs(handoffs);
+  const waiting = handoffs.filter(
+    (handoff) => !handoff.paused && handoff.state === "needs-you",
+  ).length;
+  const empty = (
+    <p className="text-xs text-muted-foreground">Not handed off yet.</p>
+  );
+  return (
+    <FoldingCard
+      label="Handoffs"
+      trailing={handoffs.length ? <Value>{handoffs.length}</Value> : undefined}
+      open={open}
+      onOpenChange={onOpenChange}
+      addLabel="Hand off"
+      summary={
+        sorted[0] ? (
+          <span>
+            <Value tone="muted">{handoffs.length}</Value>{" "}
+            {handoffs.length === 1 ? "thread" : "threads"}
+            {waiting ? ` · ${waiting} needs you` : ""} · changed{" "}
+            {syncAge(sorted[0].changedAt, now)}
+          </span>
+        ) : (
+          empty
+        )
+      }
+    >
+      {sorted.length === 0 ? (
+        empty
+      ) : (
+        <ul className="handoff-rows" aria-label="Handoffs">
+          {sorted.map((handoff) => (
+            <HandoffRow
+              key={handoff.id}
+              handoff={handoff}
+              tool={tools.find(
+                (tool) =>
+                  tool.pluginId === handoff.pluginId &&
+                  tool.toolId === handoff.toolId,
+              )}
+              now={now}
+            />
+          ))}
+        </ul>
+      )}
+    </FoldingCard>
+  );
+}
+
+function HandoffRow({
+  handoff,
+  tool,
+  now,
+}: {
+  handoff: Handoff;
+  tool: HandoffTool | undefined;
+  now: number;
+}) {
+  const chip = getHandoffChip(handoff);
+  const toolLabel = tool?.label ?? handoff.toolId;
+  return (
+    <li className="handoff-row" aria-label={handoff.title}>
+      <div className="handoff-row-head">
+        {tool ? (
+          <HandoffToolIcon tool={tool} className="size-4 shrink-0" />
+        ) : (
+          <span className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        <span className="handoff-row-title" title={handoff.title}>
+          {handoff.title}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Open ${handoff.title} in ${toolLabel}`}
+          onClick={() => void openHandoffThread(handoff.id)}
+        >
+          Open
+        </Button>
+        <DropdownMenu>
+          <TooltipButton
+            label="Handoff actions"
+            render={
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground"
+                  />
+                }
+              />
+            }
+          >
+            <MoreIcon className="size-4" />
+          </TooltipButton>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => void refreshHandoffThread(handoff.id)}
+            >
+              Refresh
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => void removeHandoffFromItem(handoff.id, toolLabel)}
+            >
+              Remove from item
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <div className="handoff-row-meta">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Chip
+                tone={chip.tone === "muted" ? "neutral" : chip.tone}
+                className={cn(chip.tone === "muted" && "opacity-70")}
+                tabIndex={0}
+                aria-label={
+                  chip.detail ? `${chip.label}: ${chip.detail}` : chip.label
+                }
+              />
+            }
+          >
+            {chip.label}
+          </TooltipTrigger>
+          <TooltipContent>
+            {chip.detail ?? `${toolLabel} gave no status`}
+          </TooltipContent>
+        </Tooltip>
+        <span className="truncate">{toolLabel}</span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0">{syncAge(handoff.changedAt, now)}</span>
+      </div>
+      {handoff.branch ? (
+        <div className="handoff-row-meta">
+          <BranchIcon aria-label="Branch" className="size-3 shrink-0" />
+          <span className="truncate font-mono" title={handoff.branch}>
+            {handoff.branch}
+          </span>
+        </div>
+      ) : null}
+      {handoff.pullRequests?.length ? (
+        <div className="handoff-row-meta flex-wrap">
+          <PullRequestIcon
+            aria-label="Pull requests"
+            className="size-3 shrink-0"
+          />
+          {handoff.pullRequests.map((pullRequest) => (
+            <a
+              key={pullRequest.url}
+              href={pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              className="max-w-full truncate"
+            >
+              {pullRequestLabel(pullRequest)}
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </li>
   );
 }

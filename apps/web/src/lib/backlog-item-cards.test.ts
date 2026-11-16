@@ -5,27 +5,38 @@ import {
 } from "@/lib/backlog-item-cards";
 
 describe("parseBacklogItemCards", () => {
-  it("starts with Time entries closed, Subitems unchosen and the source section open", () => {
+  it("starts with Time entries closed, Subitems unchosen and the source section and Handoffs open", () => {
     expect(parseBacklogItemCards(null)).toEqual({
       subitemsOpen: undefined,
       timeEntriesOpen: false,
       sourceOpen: true,
+      handoffsOpen: true,
     });
   });
 
   it("keeps the cards the user opened or closed", () => {
     expect(
       parseBacklogItemCards('{"subitemsOpen":true,"timeEntriesOpen":false}'),
-    ).toEqual({ subitemsOpen: true, timeEntriesOpen: false, sourceOpen: true });
+    ).toEqual({
+      subitemsOpen: true,
+      timeEntriesOpen: false,
+      sourceOpen: true,
+      handoffsOpen: true,
+    });
     expect(parseBacklogItemCards('{"subitemsOpen":false}')).toEqual({
       subitemsOpen: false,
       timeEntriesOpen: false,
       sourceOpen: true,
+      handoffsOpen: true,
     });
     expect(parseBacklogItemCards('{"sourceOpen":false}')).toEqual({
       subitemsOpen: undefined,
       timeEntriesOpen: false,
       sourceOpen: false,
+      handoffsOpen: true,
+    });
+    expect(parseBacklogItemCards('{"handoffsOpen":false}')).toMatchObject({
+      handoffsOpen: false,
     });
   });
 
@@ -34,12 +45,14 @@ describe("parseBacklogItemCards", () => {
       subitemsOpen: undefined,
       timeEntriesOpen: false,
       sourceOpen: true,
+      handoffsOpen: true,
     });
     for (const broken of ["not json", "null", "[true]", '"open"']) {
       expect(parseBacklogItemCards(broken)).toEqual({
         subitemsOpen: undefined,
         timeEntriesOpen: false,
         sourceOpen: true,
+        handoffsOpen: true,
       });
     }
   });

@@ -568,7 +568,27 @@ export type BacklogItemActionId =
   | "change-source-state"
   | "open-in-source"
   | "archive"
-  | "delete";
+  | "delete"
+  | HandOffActionId;
+
+/** Hand off to one tool, by its `pluginId:toolId` key. */
+export type HandOffActionId = `hand-off:${string}`;
+
+export function isHandOffAction(id: string): id is HandOffActionId {
+  return id.startsWith("hand-off:");
+}
+
+/** The tool a Hand off action names. */
+export function getHandOffToolKey(id: HandOffActionId) {
+  return id.slice("hand-off:".length);
+}
+
+/** A coding tool a row menu offers Hand off to, and why it can't, if so. */
+export interface HandOffActionTool {
+  key: string;
+  label: string;
+  disabledReason?: string;
+}
 
 export interface BacklogItemActionOptions {
   /** Subitems removed together with the item, stated in the Delete label. */
@@ -588,6 +608,11 @@ export interface BacklogItemActionOptions {
    * source state… is listed only when there are some.
    */
   otherSourceStateCount?: number;
+  /**
+   * The coding tools of the active handoff plugins, one Hand off to <tool>
+   * each. Absent or empty, as in the web build, lists none.
+   */
+  handoffTools?: readonly HandOffActionTool[];
 }
 
 function formatDeleteLabel(subitemCount: number) {
@@ -601,8 +626,8 @@ function formatDeleteLabel(subitemCount: number) {
 /**
  * Lists a backlog item's actions:
  * Start entry/Stop · New entry… | Edit · Add subitem | Snooze…/Unsnooze ·
- * Pin/Unpin · Settle/Unsettle/Restore | Change source state… · Open in
- * source | Archive · Delete.
+ * Pin/Unpin · Settle/Unsettle/Restore | Hand off to <tool>, per tool |
+ * Change source state… · Open in source | Archive · Delete.
  *
  * Open in source is listed only when a plugin provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
@@ -614,6 +639,7 @@ export function getBacklogItemActions(
     source: string;
     sourceUrl?: string;
     pinnedAt?: number;
+    projectId?: string;
   },
   options: BacklogItemActionOptions,
 ): ObjectAction<BacklogItemActionId>[] {
@@ -681,6 +707,19 @@ export function getBacklogItemActions(
             group: "triage",
           },
   ];
+
+  for (const tool of options.handoffTools ?? []) {
+    actions.push({
+      id: `hand-off:${tool.key}`,
+      label: `Hand off to ${tool.label}`,
+      group: "hand-off",
+      // A hand off works in the item's project's repository folder.
+      disabledReason:
+        archivedReason ??
+        (item.projectId ? undefined : "Add the item to a project first") ??
+        tool.disabledReason,
+    });
+  }
 
   if ((options.otherSourceStateCount ?? 0) > 0) {
     actions.push({

@@ -98,7 +98,10 @@ describe.each([0, 1])(
 );
 
 describe("row controls", () => {
-  function renderRow(alwaysLive: boolean) {
+  function renderRow(
+    alwaysLive: boolean,
+    handoffMark?: "working" | "needs-you",
+  ) {
     vi.stubGlobal("window", {
       localStorage: {
         length: 0,
@@ -129,6 +132,7 @@ describe("row controls", () => {
         now={1}
         selected={false}
         alwaysLive={alwaysLive}
+        handoffMark={handoffMark}
         beforeChange={() => true}
         onSelect={noop}
         onOpen={noop}
@@ -137,6 +141,15 @@ describe("row controls", () => {
       />,
     );
   }
+
+  it("names a working or waiting handoff beside the title, and nothing otherwise", () => {
+    expect(renderRow(false)).not.toContain("is-handoff");
+    const working = renderRow(false, "working");
+    expect(working).toContain("is-handoff-working");
+    expect(working).toMatch(/is-handoff-working[^>]*>.*Working<\/span>/);
+    const waiting = renderRow(false, "needs-you");
+    expect(waiting).toMatch(/is-handoff-needs-you[^>]*>.*Needs you<\/span>/);
+  });
 
   it("keeps the buttons and their labels but mounts the menus once live", () => {
     const resting = renderRow(false);

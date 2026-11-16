@@ -10,6 +10,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { getHandOffActionTools } from "@/lib/handoff-tools";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
 import { hasWorkItemSyncIssue } from "@/domain/local-state";
@@ -315,6 +316,7 @@ function useBacklogItemRow(
         subitemCount: subitemCount ?? countSubitems(workItem, state.workItems),
         settleOpensDialog: settleOpensDialog(workItem),
         otherSourceStateCount: getOtherSourceStates(workItem).length,
+        handoffTools: getHandOffActionTools(),
       });
     }
 
