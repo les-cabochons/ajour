@@ -44,7 +44,11 @@ afterEach(async () => {
 
 describe("findExecutable", () => {
   it("Given relative PATH entries, skips them and finds the absolute installation", async () => {
-    const bin = await tempDir("ajour-path-");
+    // The folder sits under the working directory so its relative form is
+    // truly relative: on CI the checkout and the temp folder are on different
+    // Windows drives, where path.relative returns an absolute path.
+    const bin = await mkdtemp(path.join(process.cwd(), ".ajour-path-"));
+    tempDirs.push(bin);
     const executable = path.join(
       bin,
       process.platform === "win32" ? "claude.exe" : "claude",
@@ -52,6 +56,7 @@ describe("findExecutable", () => {
     await writeFile(executable, "");
     await chmod(executable, 0o755);
     const relative = path.relative(process.cwd(), bin);
+    expect(path.isAbsolute(relative)).toBe(false);
     expect(await findExecutable("claude", relative)).toBeNull();
     expect(
       await findExecutable(
