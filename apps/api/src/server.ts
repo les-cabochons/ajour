@@ -19,6 +19,7 @@ import { z } from "zod";
 import { ProcessBroker } from "./process-broker.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import { FolderResolver } from "./repository-folders.ts";
+import { processRules } from "./process-rules.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -1405,13 +1406,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const developmentPluginDirectories =
     options.developmentPluginDirectories ??
     (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
-  const folderResolver = new FolderResolver(
-    storage,
-    options.protectedRepositoryFolders ?? {
-      userData: path.dirname(statePath),
-      install: path.resolve(import.meta.dirname, "../.."),
-    },
-  );
+  const protectedFolders = options.protectedRepositoryFolders ?? {
+    userData: path.dirname(statePath),
+    install: path.resolve(import.meta.dirname, "../.."),
+  };
+  const folderResolver = new FolderResolver(storage, protectedFolders);
   const commandBridge = new McpBridge({
     onDetach: () => commandAsks.disconnect(),
     onAttach: () =>
@@ -1429,6 +1428,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ]);
   const processBroker = new ProcessBroker({
     folders: folderResolver,
+    review: processRules({
+      repositoryFolders: async (projectId) =>
+        (await storage.listRepositoryFolders(projectId)).map((f) => f.path),
+      protectedRoots: Object.values(protectedFolders),
+      home: os.homedir(),
+    }),
     policy: (caller) =>
       storage.commandPolicy(
         caller.pluginId,

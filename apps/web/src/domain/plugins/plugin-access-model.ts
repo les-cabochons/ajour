@@ -316,7 +316,7 @@ export function describeAccess(
       kind: "runtime",
       title: "Undeclared commands",
       detail:
-        "This plugin may run commands it doesn't declare; under Auto, a command no rule marks risky runs without asking; under Accept everything, any command runs.",
+        "This plugin may run commands it doesn't declare; under Auto, only commands Ajour knows are read-only run without asking; under Accept everything, any command runs.",
       isNew: difference?.undeclaredCommands === true,
     });
   for (const command of summary.commands ?? []) {

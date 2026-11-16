@@ -57,7 +57,9 @@ it("shows declared argv and schemes with the process G1 warning", async () => {
   expect(screen.getByText("codex:")).toBeTruthy();
   expect(screen.getByText("Undeclared commands")).toBeTruthy();
   expect(
-    screen.getByText(/a command no rule marks risky runs without asking/),
+    screen.getByText(
+      /only commands Ajour knows are read-only run without asking/,
+    ),
   ).toBeTruthy();
   expect(
     screen.getByText(

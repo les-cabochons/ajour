@@ -1199,7 +1199,12 @@ are `plugin.id`, `process.command_id`, `process.exit_code`,
 `process.decided_by`, `process.rule_id`, `process.reviewer_label` and
 `process.reviewer_score`. The envelope records outcome, reason and duration.
 Unknown command ids become `undeclared`; raw caller text never becomes an event
-identifier. Rules and reviewer fields remain absent until their tickets ship.
+identifier. `process.rule_id` is the id of the rule-table rule that matched an
+undeclared command (`apps/api/src/process-rules.ts`), a fixed name such as
+`inline-code` or `git-force-push`, `unknown` when the command is not on the
+read-only allowlist and no danger rule names it, or `unchecked` when the rules
+could not run; it is absent when an allowlisted command got no verdict. A rule's reason is shown in the ask dialog
+and never logged. Reviewer fields remain absent until their ticket ships.
 Arguments, stdin, output and executable or folder paths have no catalog fields.
 The broker port's marked privacy fixture in `process-broker.test.ts` covers all
 four forms of process content and asserts one event per call.

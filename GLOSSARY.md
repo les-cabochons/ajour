@@ -315,11 +315,11 @@ A command a plugin names in its manifest, with the shape of each argument. The u
 _Avoid_: Allowed command, whitelisted command
 
 **Command mode**:
-What a plugin may do with a command it didn't declare: Always ask, Auto (asks only for risky commands) or Accept everything. Only the user changes it.
+What a plugin may do with a command it didn't declare: Always ask, Auto (runs commands Ajour knows are read-only, asks for anything else) or Accept everything. Only the user changes it.
 _Avoid_: Yolo (in user-facing text), trust level, permission mode
 
 **Command review**:
-The checks Ajour runs on a command a plugin didn't declare: a fixed set of rules, then the command reviewer if the user downloaded it. A review can only make Ajour ask or refuse, never let a command through.
+The checks Ajour runs on a command a plugin didn't declare: a fixed set of rules, then the command reviewer if the user downloaded it. The rules mark a command safe only from a short allowlist of read-only commands; anything else is risky. A review can only make Ajour ask or refuse, never let a command through.
 _Avoid_: Scan, vetting, approval
 
 **Command reviewer**:

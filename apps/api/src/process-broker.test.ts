@@ -1,12 +1,13 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { copyFile, link, mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
-import { ProcessBroker } from "./process-broker.ts";
+import { gitEnvironment, ProcessBroker } from "./process-broker.ts";
+import { processRuleTable, processRules } from "./process-rules.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { AppApiStorage } from "./storage.ts";
 const roots: string[] = [];
@@ -158,6 +159,108 @@ it("Given a hanging child, the declared timeout ends it", async () => {
     reason: "timeout",
   });
 });
+describe("Given a git child", () => {
+  const printGitEnvironment =
+    "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(process.env).filter(([k])=>/^GIT_/i.test(k))))))";
+  const saved: Record<string, string | undefined> = {};
+  function setEnv(values: Record<string, string | undefined>) {
+    for (const [key, value] of Object.entries(values)) {
+      saved[key] = process.env[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+      delete saved[key];
+    }
+  });
+  /** A broker whose executable is a copy of node named git. */
+  async function gitBroker(name = "git") {
+    const { manifest, root } = await fixture([], printGitEnvironment);
+    const git = path.join(
+      root,
+      process.platform === "win32" ? `${name}.exe` : name,
+    );
+    await link(process.execPath, git).catch(() =>
+      copyFile(process.execPath, git),
+    );
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => undefined,
+      executableOverride: async () => git,
+    });
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    return async () =>
+      JSON.parse(
+        (await op.run({ command: "run", args: {} })).stdout!,
+      ) as Record<string, string>;
+  }
+
+  it("refuses bare repositories it wasn't pointed at and takes no optional locks", async () => {
+    setEnv({ GIT_CONFIG_COUNT: undefined, GIT_OPTIONAL_LOCKS: undefined });
+    const run = await gitBroker();
+    expect(await run()).toMatchObject({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "safe.bareRepository",
+      GIT_CONFIG_VALUE_0: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+  });
+
+  it("keeps the configuration entries Ajour's environment already has", async () => {
+    setEnv({
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "core.pager",
+      GIT_CONFIG_VALUE_0: "cat",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "all",
+    });
+    const run = await gitBroker();
+    expect(await run()).toMatchObject({
+      GIT_CONFIG_COUNT: "3",
+      GIT_CONFIG_KEY_0: "core.pager",
+      GIT_CONFIG_VALUE_0: "cat",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "all",
+      // The last entry wins.
+      GIT_CONFIG_KEY_2: "safe.bareRepository",
+      GIT_CONFIG_VALUE_2: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+  });
+
+  it("replaces a count git couldn't read, and reuses the key's spelling", () => {
+    expect(gitEnvironment({ GIT_CONFIG_COUNT: "x" })).toEqual({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "safe.bareRepository",
+      GIT_CONFIG_VALUE_0: "explicit",
+      GIT_OPTIONAL_LOCKS: "0",
+    });
+    expect(
+      gitEnvironment({ Git_Config_Count: "1", Git_Optional_Locks: "1" }),
+    ).toEqual({
+      Git_Config_Count: "2",
+      GIT_CONFIG_KEY_1: "safe.bareRepository",
+      GIT_CONFIG_VALUE_1: "explicit",
+      Git_Optional_Locks: "0",
+    });
+  });
+
+  it("gives other programs no git settings", async () => {
+    setEnv({ GIT_CONFIG_COUNT: undefined, GIT_OPTIONAL_LOCKS: undefined });
+    const run = await gitBroker("gitk");
+    expect(await run()).not.toHaveProperty("GIT_CONFIG_COUNT");
+    expect(await run()).not.toHaveProperty("GIT_OPTIONAL_LOCKS");
+  });
+});
+
 it.each(["stdout", "stderr"])(
   "Given more than 1 MB on %s, ends the child",
   async (stream) => {
@@ -849,6 +952,124 @@ it.each([
     expect(JSON.stringify(sink.events)).not.toContain(marker);
   },
 );
+
+describe("Given the rule table", () => {
+  async function ruleBroker(mode: "auto" | "always-ask") {
+    const { manifest, root } = await fixture();
+    manifest.processes!.undeclaredCommands = true;
+    const sink = createRecordingSink<AjourEvent>();
+    const ask = vi.fn(async () => ({ answer: "once" as const }));
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => undefined,
+      events: createApiEvents({ sink, userDataPath: root }),
+      review: processRules({
+        repositoryFolders: async () => [root],
+        protectedRoots: [path.join(root, "ajour-data")],
+        home: os.homedir(),
+      }),
+      policy: async () => ({
+        identity: "v",
+        signed: true,
+        mode,
+        approvals: [],
+      }),
+      ask,
+    });
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    return { broker, op, ask, sink };
+  }
+  const reasonOf = (id: string) =>
+    processRuleTable.find((rule) => rule.id === id)!.reason;
+
+  it("Auto asks for a risky command with the rule's reason and runs a plain one", async () => {
+    const { broker, op, ask, sink } = await ruleBroker("auto");
+    const plain = await op.run({ executable: "git", argv: ["--version"] });
+    expect(plain.exitCode).toBe(0);
+    expect(ask).not.toHaveBeenCalled();
+
+    const risky = await op.run({
+      executable: "node",
+      argv: ["-e", "process.exit(3)"],
+    });
+    expect(risky.exitCode).toBe(3);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: "node",
+        risky: true,
+        reason: reasonOf("inline-code"),
+      }),
+      expect.anything(),
+    );
+    expect(sink.events.map((e) => e.process)).toMatchObject([
+      { mode: "auto", decided_by: "mode" },
+      { mode: "auto", rule_id: "inline-code", decided_by: "user" },
+    ]);
+    expect(sink.events[0]!.process).not.toHaveProperty(
+      "rule_id",
+      expect.anything(),
+    );
+    expect(JSON.stringify(sink.events)).not.toContain("process.exit");
+    await broker.shutdown();
+  });
+
+  it("Auto asks for a history rewrite with its reason, and Always ask shows the same", async () => {
+    // `--git-dir=missing` makes git fail before it reads any repository.
+    const request = {
+      executable: "git",
+      argv: ["--git-dir=missing", "branch", "-D", "old"],
+      cwdFolder: "repo",
+    };
+    for (const mode of ["auto", "always-ask"] as const) {
+      const { broker, op, ask, sink } = await ruleBroker(mode);
+      expect((await op.run(request)).exitCode).not.toBe(0);
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          risky: true,
+          reason: reasonOf("git-branch-delete"),
+        }),
+        expect.anything(),
+      );
+      expect(sink.events[0]!.process).toMatchObject({
+        rule_id: "git-branch-delete",
+        decided_by: "user",
+      });
+      await broker.shutdown();
+    }
+  });
+
+  it("Auto asks for a command Ajour doesn't know, and the event carries only the rule id", async () => {
+    const { broker, op, ask, sink } = await ruleBroker("auto");
+    const result = await op.run({
+      executable: "node",
+      argv: ["missing-secret-script.js", "--token=hunter2"],
+    });
+    expect(result.exitCode).not.toBe(0);
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        risky: true,
+        reason: "Ajour doesn't know what this command does, so it asks.",
+      }),
+      expect.anything(),
+    );
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]!.process).toMatchObject({
+      mode: "auto",
+      rule_id: "unknown",
+      decided_by: "user",
+    });
+    const logged = JSON.stringify(sink.events);
+    expect(logged).not.toContain("missing-secret-script");
+    expect(logged).not.toContain("hunter2");
+    expect(logged).not.toContain("doesn't know");
+    await broker.shutdown();
+  });
+});
 
 it("Given a detached command, returns started and leaves the child alive after close and shutdown", async () => {
   const { manifest, broker, root, folder, sink } = await fixture(

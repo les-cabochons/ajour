@@ -434,6 +434,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         mode = policy.mode;
         const review = await (this.options.review ?? noCommandReview).review(
           request,
+          { cwd: cwd!, projectId: caller.projectId },
         );
         ruleId = review.ruleId;
         if (policy.approvals.some((a) => sameCommand(a, request)))
@@ -564,7 +565,14 @@ export class ProcessBroker implements ProcessBrokerPort {
           ([key]) => !/^AJOUR_/i.test(key),
         ),
       );
-      const plan = resolveSpawn(executable, argv, env);
+      let plan = resolveSpawn(
+        executable,
+        argv,
+        isGit(executable) ? gitEnvironment(env) : env,
+      );
+      // A shim such as scoop's `git.cmd` may lead to git.
+      if (!("refused" in plan) && !isGit(executable) && isGit(plan.command))
+        plan = resolveSpawn(executable, argv, gitEnvironment(env));
       if ("refused" in plan) return refuse("spawn_refused");
       if (signal.aborted) return refuse("operation_ended");
       if (cwdFolder) {
@@ -825,4 +833,36 @@ export class ProcessBroker implements ProcessBrokerPort {
 // Never inherit Ajour's installation or data directory as the child's working directory.
 function osCwd() {
   return path.parse(process.execPath).root;
+}
+
+/** `git`, `git.exe`, or a path to either. */
+function isGit(executable: string): boolean {
+  return /^git(\.exe)?$/i.test(executable.split(/[\\/]/).pop() ?? "");
+}
+
+/**
+ * The environment for a git child (ADR 0019). `safe.bareRepository=explicit`
+ * keeps git from using a bare repository it finds by itself, such as one
+ * committed inside the repository folder, whose configuration could run a
+ * program (`core.fsmonitor`). It is appended after any `GIT_CONFIG_COUNT`
+ * entries Ajour's own environment has, so it wins over them. A
+ * `GIT_CONFIG_PARAMETERS` the user set in their own environment still
+ * applies and can change it; plugins can't set the environment, so only the
+ * user can. `GIT_OPTIONAL_LOCKS=0`
+ * keeps read-only commands such as `git status` from writing the index.
+ */
+export function gitEnvironment(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  const result = { ...env };
+  const key = (name: string) =>
+    Object.keys(result).find((k) => k.toUpperCase() === name) ?? name;
+  const countKey = key("GIT_CONFIG_COUNT");
+  const given = result[countKey]?.trim() ?? "";
+  const count = /^\d+$/.test(given) ? Number(given) : 0;
+  result[countKey] = String(count + 1);
+  result[key(`GIT_CONFIG_KEY_${count}`)] = "safe.bareRepository";
+  result[key(`GIT_CONFIG_VALUE_${count}`)] = "explicit";
+  result[key("GIT_OPTIONAL_LOCKS")] = "0";
+  return result;
 }
