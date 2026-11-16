@@ -6,6 +6,7 @@ import {
   writeFile,
   rm,
   chmod,
+  realpath,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +27,11 @@ afterEach(async () => {
     await rm(home, { recursive: true, force: true });
 });
 async function fixture(env: NodeJS.ProcessEnv = {}) {
-  const home = await mkdtemp(path.join(temporaryRoot, "ajour-instructions-"));
+  // Real paths, since the controller compares them: CI's Windows temp folder
+  // is an 8.3 short name (RUNNER~1).
+  const home = await realpath(
+    await mkdtemp(path.join(temporaryRoot, "ajour-instructions-")),
+  );
   homes.push(home);
   return {
     home,
@@ -485,10 +490,12 @@ it.each([
 it.each(["access", "owner"])(
   "checks %s on the deepest existing ancestor and again at apply",
   async (kind) => {
-    const { home } = await fixture();
+    const fs = await import("node:fs/promises");
+    // The controller checks real paths: CI's temp folder is an 8.3 short name
+    // on Windows (RUNNER~1) and a /var link to /private/var on macOS.
+    const home = await fs.realpath((await fixture()).home);
     const ancestor = path.join(home, "custom");
     await mkdir(ancestor);
-    const fs = await import("node:fs/promises");
     let denied = true;
     const controller = createInstructionController({
       home,
