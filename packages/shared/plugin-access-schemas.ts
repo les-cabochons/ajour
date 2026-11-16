@@ -180,7 +180,7 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
       )
       .max(256)
       .default([]),
-    openSchemes: z.array(shortText).max(30).default([]),
+    openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z
       .array(z.object({ task: shortText, prompt: shortText }))
@@ -213,7 +213,7 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
       )
       .max(256)
       .default([]),
-    openSchemes: z.array(shortText).max(30).default([]),
+    openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z.array(shortText).max(10),
     alwaysOnAccess: z.array(shortText).max(10),

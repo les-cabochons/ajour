@@ -86,9 +86,8 @@ function byText<Item>(text: (item: Item) => string) {
   };
 }
 
-const codeInterpreters = new Set(
-  "node python python3 py ruby perl php deno bun java osascript".split(" "),
-);
+const codeInterpreters =
+  /^(node|python|py|pypy|ruby|perl|php|deno|bun|java|osascript)(?:\d+(?:\.\d+)*)?$/;
 
 /**
  * What the manifest reaches. `agentPrompts` holds each agent task's prompt,
@@ -157,7 +156,7 @@ export function summarizePluginAccess(
           (
             manifest.processes?.executables[command.executable]?.names ?? []
           ).some((name) =>
-            codeInterpreters.has(
+            codeInterpreters.test(
               name.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, ""),
             ),
           )

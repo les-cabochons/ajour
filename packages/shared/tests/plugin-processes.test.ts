@@ -120,6 +120,34 @@ describe("process declaration validation", () => {
   });
   it("accepts lowercase RFC 3986 schemes", () =>
     expect(parse({ openSchemes: ["my-app.v2+local"] }).success).toBe(true));
+  it("accepts a 64-character scheme through manifest, Access and consent schemas", () => {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: { openSchemes: ["a".repeat(64)] },
+    });
+    const summary = summarizePluginAccess(manifest, { agentPrompts: {} });
+    expect(summary.openSchemes).toEqual(["a".repeat(64)]);
+    expect(pluginAccessSummarySchema.safeParse(summary).success).toBe(true);
+    expect(
+      pluginAccessDifferenceSchema.safeParse(
+        pluginAccessDifference(undefined, summary),
+      ).success,
+    ).toBe(true);
+  });
+  it.each([65, 1001])(
+    "refuses a %i-character scheme at admission and in Access",
+    (length) => {
+      const openSchemes = ["a".repeat(length)];
+      expect(parse({ openSchemes }).success).toBe(false);
+      const summary = { ...NO_PLUGIN_ACCESS, openSchemes };
+      expect(pluginAccessSummarySchema.safeParse(summary).success).toBe(false);
+      expect(
+        pluginAccessDifferenceSchema.safeParse(
+          pluginAccessDifference(undefined, summary),
+        ).success,
+      ).toBe(false);
+    },
+  );
   it.each([
     "/bin/t3",
     "C:\\tools\\t3.exe",
@@ -279,7 +307,22 @@ describe("review declaration boundaries", () => {
     "start",
     "explorer",
   ])("refuses shell or host %s with every executable suffix", (name) => {
-    for (const suffix of ["", ".exe", ".cmd", ".bat", ".com"]) {
+    for (const suffix of [
+      "",
+      ".exe",
+      ".cmd",
+      ".bat",
+      ".com",
+      ".ps1",
+      ".vbs",
+      ".js",
+      ".wsf",
+      ".msc",
+      ".cpl",
+      ".scr",
+      ".pif",
+      ".hta",
+    ]) {
       expect(
         parse({
           ...processes,
@@ -288,6 +331,59 @@ describe("review declaration boundaries", () => {
       ).toBe(false);
     }
   });
+  it.each([
+    "cmd.exe.",
+    "cmd.exe..",
+    "cmd.",
+    "tool.",
+    "tool ",
+    "cmd.exe ",
+    "tool:stream",
+    "CMD~1",
+    "tool~2.exe",
+    "tool$",
+    "tool@",
+    "tool\u00e9",
+    "tool\n",
+    "tool\t",
+    "tool name",
+  ])("refuses ambiguous or nonconservative executable name %j", (name) => {
+    expect(parse({ executables: { tool: { names: [name] } } }).success).toBe(
+      false,
+    );
+  });
+  it.each([
+    ".ps1",
+    ".vbs",
+    ".js",
+    ".wsf",
+    ".hta",
+    ".msc",
+    ".cpl",
+    ".scr",
+    ".pif",
+  ])(
+    "refuses arbitrary script-host executable suffix %s case-insensitively",
+    (suffix) => {
+      for (const name of ["tool" + suffix, "TOOL" + suffix.toUpperCase()]) {
+        expect(
+          parse({ executables: { tool: { names: [name] } } }).success,
+        ).toBe(false);
+      }
+    },
+  );
+  it.each([
+    "t3",
+    "t3.cmd",
+    "tool.bat",
+    "tool.com",
+    "tool.exe",
+    "tool_v2-1+local",
+  ])("accepts conservative executable name %s", (name) =>
+    expect(parse({ executables: { tool: { names: [name] } } }).success).toBe(
+      true,
+    ),
+  );
   it.each([
     "ms-settings",
     "ms-custom",
@@ -384,19 +480,42 @@ it.each([
   "bun",
   "java",
   "osascript",
+  "python3.12",
+  "python3.11",
+  "node22",
+  "ruby3.3",
+  "perl5.38",
+  "php8.3",
+  "pypy3",
 ])("allows %s but warns about code execution in Access", (name) => {
-  const manifest = pluginApi4ManifestSchema.parse({
-    ...jiraManifest(),
-    processes: {
-      ...processes,
-      executables: { t3: { names: [name.toUpperCase() + ".EXE"] } },
-    },
-  });
-  expect(
-    summarizePluginAccess(manifest, { agentPrompts: {} }).commands?.[0]
-      ?.description,
-  ).toContain("runs code it is given: as wide as Accept everything");
+  for (const executable of [name, name.toUpperCase() + ".EXE"]) {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: {
+        ...processes,
+        executables: { t3: { names: [executable] } },
+      },
+    });
+    expect(
+      summarizePluginAccess(manifest, { agentPrompts: {} }).commands?.[0]
+        ?.description,
+    ).toContain("runs code it is given: as wide as Accept everything");
+  }
 });
+
+it.each(["python-tools", "node22-helper", "rubygems", "perldoc", "phpunit"])(
+  "does not label the unrelated tool %s as a code interpreter",
+  (name) => {
+    const manifest = pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      processes: { ...processes, executables: { t3: { names: [name] } } },
+    });
+    expect(
+      summarizePluginAccess(manifest, { agentPrompts: {} }).commands?.[0]
+        ?.description,
+    ).not.toContain("runs code it is given");
+  },
+);
 
 it("keeps manifest count and aggregate size limits consistent with Access", () => {
   const commands = Array.from({ length: 256 }, (_, i) => ({

@@ -581,16 +581,21 @@ const executableNameSchema = z
   .max(100)
   .regex(/^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/)
   .refine(
-    (name) => name !== "." && name !== "..",
+    (name) => !/[. ]$/.test(name),
     "Use a bare executable name, never a path.",
   )
-  .refine(
-    (name) =>
+  .refine((name) => {
+    const normalized = name.toLowerCase();
+    return (
+      !/\.(ps1|vbs|js|wsf|hta|msc|cpl|scr|pif)$/.test(normalized) &&
       !refusedExecutables.has(
-        name.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, ""),
-      ),
-    "Shells and script hosts cannot be declared.",
-  );
+        normalized.replace(
+          /\.(exe|cmd|bat|com|ps1|vbs|js|wsf|msc|cpl|scr|pif|hta)$/,
+          "",
+        ),
+      )
+    );
+  }, "Shells and script hosts cannot be declared.");
 const refusedSchemes = new Set([
   "http",
   "https",
@@ -619,6 +624,7 @@ export const pluginProcessesSchema = strictObject({
     .array(
       z
         .string()
+        .max(64)
         .regex(/^[a-z][a-z0-9+.-]*$/)
         .refine(
           (scheme) => !scheme.startsWith("ms-") && !refusedSchemes.has(scheme),
