@@ -45,22 +45,31 @@ afterEach(async () => {
 describe("findExecutable", () => {
   it("Given relative PATH entries, skips them and finds the absolute installation", async () => {
     const bin = await tempDir("ajour-path-");
-    const executable = path.join(bin, "claude.exe");
+    const executable = path.join(
+      bin,
+      process.platform === "win32" ? "claude.exe" : "claude",
+    );
     await writeFile(executable, "");
     await chmod(executable, 0o755);
     const relative = path.relative(process.cwd(), bin);
-    expect(await findExecutable("claude", relative, "win32")).toBeNull();
+    expect(await findExecutable("claude", relative)).toBeNull();
     expect(
       await findExecutable(
         "claude",
         [relative, bin].join(path.delimiter),
-        "win32",
+        process.platform,
       ),
     ).toBe(executable);
-    if (process.platform === "win32") {
-      expect(await findExecutable("claude", bin.slice(2), "win32")).toBeNull();
-    }
   });
+  // Root-relative Windows paths depend on the current drive; POSIX has no such paths.
+  it.skipIf(process.platform !== "win32")(
+    "Given a root-relative Windows PATH entry, skips the installation",
+    async () => {
+      const bin = await tempDir("ajour-path-");
+      await writeFile(path.join(bin, "claude.exe"), "");
+      expect(await findExecutable("claude", bin.slice(2))).toBeNull();
+    },
+  );
   it("finds an executable on PATH and skips folders without it", async () => {
     const empty = await tempDir("ajour-path-");
     const bin = await tempDir("ajour-path-");

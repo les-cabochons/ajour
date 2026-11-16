@@ -199,6 +199,56 @@ describe.skipIf(process.platform !== "win32")(
       },
     );
 
+    it.each([
+      "python",
+      "python3",
+      "pythonw",
+      "py",
+      "pyw",
+      "ruby",
+      "rubyw",
+      "perl",
+      "php",
+      "php-cgi",
+      "deno",
+      "bun",
+      "java",
+      "javaw",
+      "lua",
+      "tclsh",
+      "wish",
+      "Rscript",
+      "python3.12",
+      "pythonw3.12",
+      "ruby3.3",
+      "rubyw3.3",
+      "perl5.38",
+      "php8.3",
+      "php-cgi8.3",
+      "deno2.1",
+      "bun1.2",
+      "java21",
+      "javaw21",
+      "lua5.4",
+      "tclsh8.6",
+      "wish8.6",
+      "Rscript4.4",
+      "PYTHON3.12",
+      "RuBy3.3",
+      "PeRl5.38",
+    ])("Given a no-prefix Yarn wrapper targeting %s.exe, refuses", (name) => {
+      const shim = path.join(root, "interpreter-no-prefix.cmd");
+      for (const preamble of [
+        "@",
+        "@goto #_undefined_# 2>NUL || @title %COMSPEC% & @setlocal & @",
+      ]) {
+        writeFileSync(shim, `${preamble}"C:\\tools\\${name}.exe"  %*`);
+        expect(resolveSpawn(shim, ["--version"], {})).toEqual({
+          refused: "native_exe_required",
+        });
+      }
+    });
+
     it("Given a Yarn native wrapper with a prefix, refuses", () => {
       const shim = path.join(root, "native-prefix.cmd");
       writeFileSync(shim, `@"C:\\tools\\tool.exe" "${script}" %*`);

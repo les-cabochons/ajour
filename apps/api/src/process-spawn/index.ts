@@ -222,7 +222,7 @@ function isNodeScript(value: string): boolean {
 }
 
 function isInterpreter(value: string): boolean {
-  return /^(?:cmd|command|powershell|powershell_ise|pwsh|wscript|cscript|mshta|bash|sh|dash|zsh|csh|ksh|wsl|conhost|rundll32|regsvr32|msbuild|installutil)\.exe$/i.test(
+  return /^(?:cmd|command|powershell|powershell_ise|pwsh|wscript|cscript|mshta|bash|sh|dash|zsh|csh|ksh|wsl|conhost|rundll32|regsvr32|msbuild|installutil|(?:python|pythonw|py|pyw|ruby|rubyw|perl|php|php-cgi|deno|bun|java|javaw|lua|tclsh|wish|rscript)(?:\d+(?:\.\d+)*)?)\.exe$/i.test(
     path.basename(value),
   );
 }
