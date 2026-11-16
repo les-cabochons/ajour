@@ -1,6 +1,6 @@
 # Settings
 
-Press <kbd>⌘</kbd> <kbd>,</kbd> or **Settings** at the top of the sidebar, right of the logo. **Back to app** returns to the page you were on.
+Press <kbd>⌘</kbd> <kbd>,</kbd> or **Settings** at the top of the sidebar, right of the logo. In a wide window, Settings opens as a window over the page. Press <kbd>Esc</kbd> or the **×** to return to the page as you left it. In a [narrow window](/app/narrow-windows), Settings is a page of its own.
 
 <Shot name="settings-general" alt="Settings › General" />
 
