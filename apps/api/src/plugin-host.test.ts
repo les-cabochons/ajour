@@ -16,7 +16,15 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createApiEvents } from "./events.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
-import { readPlugin } from "./plugin-package.ts";
+import { readPlugin, pluginProcessPackageKey } from "./plugin-package.ts";
+import { ProcessBroker } from "./process-broker.ts";
+vi.mock("./plugin-package.ts", async (original) => {
+  const actual = await original<typeof import("./plugin-package.ts")>();
+  return {
+    ...actual,
+    pluginProcessPackageKey: vi.fn(actual.pluginProcessPackageKey),
+  };
+});
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
@@ -189,6 +197,49 @@ describe("PluginManager", () => {
         .map((dir) => rm(dir, { recursive: true, force: true })),
     );
   });
+
+  it.each(["development", "installed"] as const)(
+    "%s package verification never blocks non-process operations",
+    async (source) => {
+      const root = await tempDir();
+      const installed = path.join(root, "installed");
+      const directory = await createPluginDirectory(
+        source === "installed" ? installed : root,
+        "process-fixture",
+        "export async function validateConnection({config}) { return { normalizedConfig: config, connectionSummary: {} }; }",
+        { ...API_4_MANIFEST, processes: { openSchemes: ["codex"] } },
+      );
+      const keys = vi.mocked(pluginProcessPackageKey);
+      keys.mockClear();
+      keys.mockRejectedValueOnce(new Error("Cannot read package"));
+      const host = manager({
+        installedPluginDirectory: installed,
+        developmentPluginDirectories:
+          source === "development" ? [directory] : [],
+        allowDevelopmentPlugins: true,
+        processOrigin: async () => ({
+          signed: true,
+          installedAt: "2026-11-16T00:00:00Z",
+        }),
+        processBroker: new ProcessBroker({
+          folders: { resolve: async () => undefined },
+          gate: async () => undefined,
+        }),
+      });
+      try {
+        await expect(
+          host.validateConnection("process-fixture", {
+            baseUrl: "https://example.test",
+            email: "alex",
+            apiToken: "secret",
+          }),
+        ).resolves.toMatchObject({ normalizedConfig: { email: "alex" } });
+        expect(keys).toHaveBeenCalledTimes(source === "development" ? 1 : 0);
+      } finally {
+        keys.mockReset();
+      }
+    },
+  );
 
   it("lets a comment call's admission check stop the plugin at the last moment", async () => {
     const root = await tempDir();

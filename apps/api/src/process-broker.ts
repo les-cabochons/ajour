@@ -32,6 +32,9 @@ export type ProcessReason =
   | "invalid_request"
   | "plugin_off"
   | "needs_consent"
+  | "unsigned_processes_off"
+  | "process_acceptance_required"
+  | "package_unverified"
   | "undeclared"
   | "not_yet"
   | "folder_refused"
@@ -59,7 +62,14 @@ export interface ProcessBrokerOptions {
   folders: FolderResolver;
   gate(
     caller: BrokerCaller,
-  ): Promise<"plugin_off" | "needs_consent" | undefined>;
+  ): Promise<
+    | "plugin_off"
+    | "needs_consent"
+    | "unsigned_processes_off"
+    | "process_acceptance_required"
+    | "package_unverified"
+    | undefined
+  >;
   executableOverride?(
     pluginId: string,
     executable: string,

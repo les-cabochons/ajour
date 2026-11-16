@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   readdir,
   realpath,
   rename,
@@ -237,7 +238,7 @@ export async function readAgentTaskPromptFile(
   if (size > MAX_AGENT_TASK_PROMPT_BYTES) {
     throw new Error(`${description} is over 64 KB.`);
   }
-  const prompt = await readFile(promptPath, "utf8");
+  const prompt = await readPackageText(promptPath);
   const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
   for (const slot of listTemplateSlots(prompt)) {
     if (!allowed.has(slot)) {
@@ -362,6 +363,25 @@ export function parsePluginManifest(raw: unknown): PluginManifest {
   return manifest;
 }
 
+const packageTextCache = new Map<string, { signature: string; text: string }>();
+async function readPackageText(file: string): Promise<string> {
+  const info = await stat(file);
+  const signature = JSON.stringify([
+    info.size,
+    info.mtimeMs,
+    info.ctimeMs,
+    info.ino,
+  ]);
+  const cached = packageTextCache.get(file);
+  if (cached?.signature === signature) return cached.text;
+  const text = await readFile(file, "utf8");
+  packageTextCache.delete(file);
+  packageTextCache.set(file, { signature, text });
+  if (packageTextCache.size > 1000)
+    packageTextCache.delete(packageTextCache.keys().next().value!);
+  return text;
+}
+
 export async function readPlugin(
   directory: string,
   source: ResolvedPlugin["source"],
@@ -375,7 +395,7 @@ export async function readPlugin(
     manifestPath,
     "Plugin manifest",
   );
-  const rawManifest = await readFile(manifestPath, "utf8");
+  const rawManifest = await readPackageText(manifestPath);
   const manifest = parsePluginManifest(JSON.parse(rawManifest));
 
   let entrypointPath: string | undefined;
@@ -650,4 +670,62 @@ export async function uninstallPluginPackage(options: {
   }
 
   return plugin;
+}
+
+/** Cached content digests, bounded to the most recently inspected development packages. */
+const processPackageFiles = new Map<
+  string,
+  Map<string, { signature: string; digest: string }>
+>();
+
+/** Links identify the link itself. Their targets are never traversed. */
+export async function pluginProcessPackageKey(
+  directory: string,
+): Promise<string> {
+  const root = await realpath(directory);
+  const previous = processPackageFiles.get(root);
+  const next = new Map<string, { signature: string; digest: string }>();
+  const hash = createHash("sha256").update(root);
+  async function visit(folder: string) {
+    const entries = await readdir(folder, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === ".git") continue;
+      const file = path.join(folder, entry.name);
+      const relative = path.relative(root, file);
+      if (entry.isSymbolicLink()) {
+        hash.update(JSON.stringify([relative, "link", await readlink(file)]));
+      } else if (entry.isDirectory()) {
+        hash.update(JSON.stringify([relative, "directory"]));
+        await visit(file);
+      } else if (entry.isFile()) {
+        const info = await lstat(file);
+        if (!info.isFile())
+          throw new Error("Plugin package changed during verification.");
+        const signature = JSON.stringify([
+          info.size,
+          info.mtimeMs,
+          info.ctimeMs,
+          info.ino,
+          info.dev,
+        ]);
+        const cached = previous?.get(relative);
+        const digest =
+          cached?.signature === signature
+            ? cached.digest
+            : createHash("sha256")
+                .update(await readFile(file))
+                .digest("hex");
+        next.set(relative, { signature, digest });
+        hash.update(
+          JSON.stringify([relative, info.size, info.mtimeMs, digest]),
+        );
+      } else throw new Error("Plugin package contains an unsupported file.");
+    }
+  }
+  await visit(root);
+  processPackageFiles.delete(root);
+  processPackageFiles.set(root, next);
+  if (processPackageFiles.size > 100)
+    processPackageFiles.delete(processPackageFiles.keys().next().value!);
+  return hash.digest("hex");
 }

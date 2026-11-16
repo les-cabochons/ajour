@@ -993,7 +993,7 @@ channel to read the event each emits.
 | `plugin.list`                        | command, request                   | route, client call                               |
 | `plugin.process`                     | job                                | local API                                        |
 | `plugin.process_read`                | request                            | route                                            |
-| `plugin.process_update`              | request                            | route                                            |
+| `plugin.process_update`              | command, request                   | route, client call                               |
 | `plugin.remove_data`                 | command, request                   | route, client call                               |
 | `plugin.request`                     | job                                | local API                                        |
 | `plugin.resume`                      | command, request                   | route, client call                               |
@@ -1100,6 +1100,7 @@ channel to read the event each emits.
 | `undo.expire`                        | command                            | store command                                    |
 | `undo.group`                         | command                            | store command                                    |
 | `undo.restore`                       | command                            | store command                                    |
+| `unsigned_plugins.process_toggle`    | command, request                   | route, client call                               |
 | `unsigned_plugins.toggle`            | command, request                   | route, client call                               |
 | `update.check`                       | command, job, ipc                  | IPC channel, main process                        |
 | `update.get_state`                   | ipc                                | IPC channel                                      |
@@ -1185,3 +1186,5 @@ identifier. Rules and reviewer fields remain absent until their tickets ship.
 Arguments, stdin, output and executable or folder paths have no catalog fields.
 The broker port's marked privacy fixture in `process-broker.test.ts` covers all
 four forms of process content and asserts one event per call.
+
+Process access uses `unsigned_plugins.process_toggle` with `process_access.enabled`. Per-package acceptance and revocation use `plugin.process_update` with `process_access.accepted`. Package keys are never logged.

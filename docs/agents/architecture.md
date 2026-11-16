@@ -167,6 +167,27 @@ Plugins use the API 4 sandbox and credential broker defined by ADR 0007 and ADR 
 
 ### Process broker
 
+`processConsentGate` checks activation and declared consent before the unsigned
+process gates on every broker call, including the check immediately before spawn.
+The API state keeps `unsignedPluginProcessesEnabled`, defaulting to false for
+older files, beside `unsignedPluginsEnabled`. `pluginProcesses` keeps acceptance
+by plugin id and package identity. A package replacement clears acceptance in the
+same state mutation that records its origin. Installed unsigned packages key
+acceptance on their version and install time, so an update or reinstall at the
+same version needs acceptance again. Development directories use file hashes
+and their directory, with cached hashes invalidated by file metadata changes:
+size, mtime, ctime and identity, including inode and device. This change detection
+is best effort, which is acceptable because development builds are for plugin
+authors. Edits to the managed plugin folder by other programs running as the
+user are out of scope under ADR 0007's same-user code boundary. The API rejects
+an acceptance submitted from a page for a different package.
+
+The host supplies development status, which always requires both gates even when
+an installed plugin with that id has a signed origin. Other packages use the
+catalog's `isSignedPlugin` rule. Access review receives the gate state from the
+API and shows the same refusal reason as the broker. Declared schemes must use
+this gate when scheme opening is implemented.
+
 `ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
 one runtime operation access to declared `capture` commands. The runtime supplies
 the plugin id and manifest. The host closes this access when the operation ends,
@@ -194,8 +215,7 @@ The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
 calls may run concurrently per plugin across operations. Timeout, excess output
 and operation completion stop the owned process tree with Windows taskkill or a
 POSIX process group. The broker checks activation and consent before starting;
-#714 supplies the additional unsigned process gates, and #716 supplies command
-modes. Undeclared commands are refused. Detached and terminal commands report
+the unsigned process gates above also apply. #716 supplies command modes. Undeclared commands are refused. Detached and terminal commands report
 that they are not yet supported, pending #718.
 
 `GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time

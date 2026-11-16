@@ -248,6 +248,34 @@ async function checkSandbox() {
   if (findings.error) process.stdout.write(`${findings.error.error}\n`);
   expect(exit.code === 0, "the check ran to the end", { exit, stderr });
 
+  const gates = findings["process-gates"] ?? {};
+  expect(
+    gates.switchOff?.error ===
+      "Process request refused: unsigned_processes_off." &&
+      gates.switchOff?.itemCount === 0 &&
+      !gates.switchOff?.activity?.lastRunAt &&
+      gates.switchOff?.activity?.refusedCount === 1,
+    "with the unsigned process switch off, the real worker's declared process is refused with unsigned_processes_off",
+    gates.switchOff,
+  );
+  expect(
+    gates.enabledStatus === 200 &&
+      gates.acceptanceMissing?.error ===
+        "Process request refused: process_acceptance_required." &&
+      gates.acceptanceMissing?.itemCount === 0 &&
+      !gates.acceptanceMissing?.activity?.lastRunAt &&
+      gates.acceptanceMissing?.activity?.refusedCount === 2,
+    "with the switch on but no acceptance, the declared process is refused with process_acceptance_required",
+    gates,
+  );
+  expect(
+    typeof gates.packageKey === "string" &&
+      gates.packageKey.length > 0 &&
+      gates.acceptedStatus === 200,
+    "the settings API accepts the fixture package key reported by the overview",
+    gates,
+  );
+
   const broker = findings.broker ?? {};
   expect(
     broker.saveStatus === 200,

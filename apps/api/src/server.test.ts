@@ -518,6 +518,27 @@ describe("plugin installation boundary", () => {
       { id: "jira", origin: signedOrigin },
       { id: "local", origin: { kind: "file", signed: false } },
     ]);
+    const replacement = await installPluginForServer(
+      server,
+      await archiveOf("local"),
+      "local.ajour-connector",
+      {
+        origin: {
+          kind: "file",
+          signed: false,
+          installedAt: fileInstall.overview.plugins.find(
+            (p) => p.id === "local",
+          )!.origin!.installedAt,
+        },
+      },
+    );
+    expect(
+      replacement.overview.plugins.find((p) => p.id === "local")!.origin!
+        .installedAt,
+    ).not.toBe(
+      fileInstall.overview.plugins.find((p) => p.id === "local")!.origin!
+        .installedAt,
+    );
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",

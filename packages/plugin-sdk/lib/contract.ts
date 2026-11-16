@@ -984,7 +984,7 @@ export type CalendarOperations = {
         endsAt: number;
         allDay: boolean;
         response:
-          "unknown" | "tentative" | "accepted" | "declined" | "needsAction";
+          "unknown" | "accepted" | "tentative" | "declined" | "needsAction";
         busy: boolean;
         seriesId?: string | undefined;
         isOrganizer?: boolean | undefined;

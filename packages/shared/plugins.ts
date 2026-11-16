@@ -822,6 +822,20 @@ export const pluginOverviewGroupSchema = z.object({
    * off until they allow it, and this lists only what is new.
    */
   pendingAccess: pluginPendingAccessSchema.optional(),
+  processGate: z
+    .object({
+      required: z.boolean(),
+      accepted: z.boolean(),
+      packageKey: z.string(),
+      reason: z
+        .enum([
+          "unsigned_processes_off",
+          "process_acceptance_required",
+          "package_unverified",
+        ])
+        .optional(),
+    })
+    .optional(),
   /** What the broker recorded for the plugin's requests. */
   accessActivity: pluginAccessActivitySchema.optional(),
   /**
@@ -906,6 +920,7 @@ export const pluginsOverviewSchema = z.object({
    * before the switch existed reads as true.
    */
   unsignedPluginsEnabled: z.boolean().default(true),
+  unsignedPluginProcessesEnabled: z.boolean().optional(),
   plugins: z.array(pluginOverviewItemSchema),
   connectionGroups: z.array(pluginOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),

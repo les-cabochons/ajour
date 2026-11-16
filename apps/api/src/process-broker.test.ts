@@ -558,6 +558,11 @@ it.each(["missing", "changed", "off", "during-operation"])(
       await import("../../../packages/shared/plugin-access.ts");
     const storage = new AppApiStorage(path.join(root, "consent.json"));
     const access = summarizePluginAccess(manifest, { agentPrompts: {} });
+    await storage.setPluginOrigin(manifest.id, {
+      kind: "source",
+      signed: true,
+      installedAt: new Date().toISOString(),
+    });
     if (scenario === "missing") access.commands = [];
     await storage.recordPluginConsent(manifest.id, {
       version: "1.0.0",

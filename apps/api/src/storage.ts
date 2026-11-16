@@ -20,6 +20,7 @@ import {
   agentAccessSchema,
   connectionAgentAccess,
   pluginOriginSchema,
+  isSignedPlugin,
   type AgentAccess,
   type BacklogSourceStatus,
   type BacklogSourceStatusInput,
@@ -466,6 +467,7 @@ interface AppApiStateV8 {
   pluginsEnabled: boolean;
   /** False when the user deactivated every unsigned plugin. */
   unsignedPluginsEnabled: boolean;
+  unsignedPluginProcessesEnabled: boolean;
   /** Where each installed plugin came from. A plugin without one is unsigned. */
   pluginOrigins: Record<string, PluginOrigin>;
   mcp: StoredMcpState;
@@ -481,6 +483,7 @@ interface AppApiStateV8 {
       overrides: Record<string, string>;
       lastRunAt?: number;
       refusedCount: number;
+      acceptance?: string;
     }
   >;
   /**
@@ -624,6 +627,7 @@ function createDefaultState(): AppApiState {
     enabledCapabilities: {},
     pluginsEnabled: true,
     unsignedPluginsEnabled: true,
+    unsignedPluginProcessesEnabled: false,
     pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
     agentRunner: {
@@ -1144,6 +1148,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       typeof raw.pluginsEnabled === "boolean"
         ? raw.pluginsEnabled!
         : defaults.pluginsEnabled,
+    unsignedPluginProcessesEnabled: raw.unsignedPluginProcessesEnabled === true,
     unsignedPluginsEnabled:
       typeof raw.unsignedPluginsEnabled === "boolean"
         ? raw.unsignedPluginsEnabled!
@@ -1171,6 +1176,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
             overrides: z.record(z.string()).default({}),
             lastRunAt: z.number().finite().optional(),
             refusedCount: z.number().nonnegative().default(0),
+            acceptance: z.string().optional(),
           })
           .safeParse(value);
         return parsed.success ? [[id, parsed.data]] : [];
@@ -1860,6 +1866,7 @@ export class AppApiStorage {
       vault: status,
       pluginsEnabled: state.pluginsEnabled,
       unsignedPluginsEnabled: state.unsignedPluginsEnabled,
+      unsignedPluginProcessesEnabled: state.unsignedPluginProcessesEnabled,
       plugins: allPlugins,
       connectionGroups,
       totalPendingImportCount: connectionGroups.reduce(
@@ -1958,6 +1965,66 @@ export class AppApiStorage {
     }));
   }
 
+  async setUnsignedPluginProcessesEnabled(enabled: boolean): Promise<void> {
+    await this.mutate(async (state) => ({
+      nextState: { ...state, unsignedPluginProcessesEnabled: enabled },
+      result: undefined,
+    }));
+  }
+
+  async setPluginProcessAcceptance(
+    pluginId: string,
+    packageKey: string,
+    accepted: boolean,
+  ): Promise<void> {
+    await this.mutate(async (state) => {
+      const previous = this.processSettingsIn(state, pluginId) ?? {
+        overrides: {},
+        refusedCount: 0,
+      };
+      const { acceptance: _, ...settings } = previous;
+      return {
+        nextState: {
+          ...state,
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            [pluginId]: {
+              ...settings,
+              ...(accepted ? { acceptance: packageKey } : {}),
+            },
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
+
+  async getPluginProcessGate(
+    pluginId: string,
+    packageKey: string,
+    development = false,
+  ) {
+    const state = await this.readState();
+    const required =
+      development || !isSignedPlugin({ origin: state.pluginOrigins[pluginId] });
+    const acceptance = this.processSettingsIn(state, pluginId)?.acceptance;
+    const accepted = acceptance === packageKey;
+    return {
+      required,
+      accepted,
+      packageKey,
+      ...(required
+        ? {
+            reason: !state.unsignedPluginProcessesEnabled
+              ? ("unsigned_processes_off" as const)
+              : !accepted
+                ? ("process_acceptance_required" as const)
+                : undefined,
+          }
+        : {}),
+    };
+  }
+
   async getUnsignedPluginsEnabled(): Promise<boolean> {
     return (await this.readState()).unsignedPluginsEnabled;
   }
@@ -1980,15 +2047,30 @@ export class AppApiStorage {
     return pluginIds.filter((id) => state.pluginOrigins[id]?.signed !== true);
   }
 
+  async getPluginOrigin(pluginId: string): Promise<PluginOrigin | undefined> {
+    return (await this.readState()).pluginOrigins[pluginId];
+  }
+
   async setPluginOrigin(pluginId: string, origin: PluginOrigin): Promise<void> {
     const parsed = pluginOriginSchema.parse(origin);
-    await this.mutate(async (state) => ({
-      nextState: {
-        ...state,
-        pluginOrigins: { ...state.pluginOrigins, [pluginId]: parsed },
-      },
-      result: undefined,
-    }));
+    await this.mutate(async (state) => {
+      const previous = this.processSettingsIn(state, pluginId);
+      const { acceptance: _, ...settings } = previous ?? {
+        overrides: {},
+        refusedCount: 0,
+      };
+      return {
+        nextState: {
+          ...state,
+          pluginOrigins: { ...state.pluginOrigins, [pluginId]: parsed },
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            ...(previous ? { [pluginId]: settings } : {}),
+          },
+        },
+        result: undefined,
+      };
+    });
   }
 
   /** MCP settings for the Settings page. Revoked clients and token hashes stay out. */

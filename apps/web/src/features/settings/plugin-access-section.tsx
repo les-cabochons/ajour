@@ -1,3 +1,4 @@
+import { PluginProcessAcceptance } from "./plugin-process-gates";
 import {
   RiArrowRightSLine as ChevronRight,
   RiCpuLine as Cpu,
@@ -149,9 +150,13 @@ function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
 export function PluginAccessSection({
   group,
   now,
+  processDisabled = true,
+  onProcessAcceptanceChange = () => {},
 }: {
   group: PluginOverviewGroup;
   now: number;
+  processDisabled?: boolean;
+  onProcessAcceptanceChange?: (accepted: boolean) => void;
 }) {
   const labels = labelsOf(group);
   const listed = hasListedAccess(group);
@@ -180,6 +185,13 @@ export function PluginAccessSection({
         (group.access?.summary.openSchemes?.length ?? 0) > 0) ? (
         <ProcessWarning
           hasSchemes={(group.access?.summary.openSchemes?.length ?? 0) > 0}
+        />
+      ) : null}
+      {group.processGate ? (
+        <PluginProcessAcceptance
+          gate={group.processGate}
+          disabled={processDisabled}
+          onChange={onProcessAcceptanceChange}
         />
       ) : null}
       {listed ? (

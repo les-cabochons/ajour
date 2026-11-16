@@ -42,6 +42,8 @@ export const APP_API_CLIENT = {
   resumePlugin: "plugin.resume",
   setPluginSystemEnabled: "plugin_system.toggle",
   setUnsignedPluginsEnabled: "unsigned_plugins.toggle",
+  setUnsignedPluginProcessesEnabled: "unsigned_plugins.process_toggle",
+  setPluginProcessAcceptance: "plugin.process_update",
   getBacklogSourceStatuses: "source_state.list",
   upsertBacklogSourceStatuses: "source_state.update",
   savePluginConnection: "connection.save",
