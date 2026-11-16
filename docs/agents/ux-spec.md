@@ -1403,7 +1403,7 @@ their existing desktop policy. A plugin may open at most five links per minute; 
 
 Built in [#721](https://github.com/les-cabochons/ajour/issues/721), from spec [#710](https://github.com/les-cabochons/ajour/issues/710). Only the desktop app hands off: the web build shows no button, card, menu entry or row mark.
 
-- **Item page.** Beside Start entry, an outline split button **Hand off to <tool>** names the tool last handed off to on this device, or the first tool this computer has. Its arrow lists the other tools, each "Hand off to <tool>", those the plugin's detection didn't find disabled with its reason on a second line, then **Review prompt…**. Opening the menu detects the tools again, at most once a minute per plugin. A disabled main half says why in a tooltip. From the moment a hand off is asked for until the thread starts, the start fails or a dialog is cancelled, the item has one hand off on its way. A start that runs when its dialog closes keeps the item waiting until it ends, and its end closes no other item's dialog. Meanwhile both halves are disabled ("A hand off of this item is starting"), the row menus and the command palette disable Hand off to <tool> with the same words, and a second request for the item is ignored. The label never changes.
+- **Item page.** Beside Start entry, an outline split button **Hand off to <tool>** names the tool last handed off to on this device, or the first tool this computer has. Its arrow lists the other tools, each "Hand off to <tool>", those the plugin's detection didn't find disabled with its reason on a second line, then **Review prompt…**. Opening the menu detects the tools again, at most once a minute per plugin, or at once after the plugin's page saves a new connection pick. A disabled main half says why in a tooltip. From the moment a hand off is asked for until the thread starts, the start fails or a dialog is cancelled, the item has one hand off on its way. A start that runs when its dialog closes keeps the item waiting until it ends, and its end closes no other item's dialog. Meanwhile both halves are disabled ("A hand off of this item is starting"), the row menus and the command palette disable Hand off to <tool> with the same words, and a second request for the item is ignored. The label never changes.
 - **One click** sends the item's key, title, description, link, type, parent key and title, and project name, with the folder. The API fills the templates. A project with one repository folder starts at once; with none or several, the repository picker opens first and the hand off starts in the folder chosen.
 - **Review prompt…** opens a centered dialog: the filled prompt (editable), the folder (Change… opens the picker and returns), and the branch (editable; empty starts without a worktree; an invalid git branch disables Start and says why). Until edited, the prompt and branch follow the folder. Start sends the prompt and branch as the hand off's overrides. A refusal stays in the dialog in the tool's words.
 - **Row menus and the command palette** list Hand off to <tool> (see the action model). It runs the same flow as the button.
@@ -1440,7 +1440,10 @@ without one is missing with "Pick a connection for <tool> in its settings on the
 plugin's page.", and a connection that fails marks only its own tools missing,
 with the reason. A start uses the pick unless the request names a connection,
 and refuses a tool that uses none when one is named. Each handoff keeps its
-connection. Deleting the connection forgets it as a pick and pauses its handoffs
+connection, and Open runs its resume command through it, so an
+`opencode attach` gets that connection's address. A handoff started before its
+tool used a connection doesn't open: "This tool now hands off through a
+connection. Start a new handoff." Deleting the connection forgets it as a pick and pauses its handoffs
 as Unknown with "The connection this handoff ran through was deleted."; they stay
 paused until removed. Access review lists each tool that hands off through a
 connection, and an update that makes a tool use one needs approval again.

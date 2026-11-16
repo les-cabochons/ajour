@@ -84,7 +84,7 @@ function subscribe(listener: () => void) {
 /**
  * Asks each handoff plugin which of its tools this computer has, for the
  * item's project. Detection is the plugin's own call, so it runs at most once
- * a minute per plugin unless `force`.
+ * a minute per plugin unless `force` or the plugin's detection was forgotten.
  */
 export function detectHandoffToolsFor(projectId: string, force = false) {
   const plugins = new Set(getHandoffTools().map((tool) => tool.pluginId));
@@ -98,7 +98,7 @@ export function detectHandoffToolsFor(projectId: string, force = false) {
           DETECTION_MAX_AGE_MS
       )
         return Promise.resolve();
-      const task = detectHandoffTools(pluginId, projectId)
+      const task: Promise<void> = detectHandoffTools(pluginId, projectId)
         .then(
           (result) => result.tools,
           (error: unknown): DetectedTools => {
@@ -111,15 +111,29 @@ export function detectHandoffToolsFor(projectId: string, force = false) {
           },
         )
         .then((tools) => {
+          // A detection forgotten while it ran answered for an old pick.
+          if (inFlight.get(pluginId) !== task) return;
           detections = new Map(detections).set(pluginId, tools);
           detectedAt.set(pluginId, Date.now());
           listeners.forEach((listener) => listener());
         })
-        .finally(() => inFlight.delete(pluginId));
+        .finally(() => {
+          if (inFlight.get(pluginId) === task) inFlight.delete(pluginId);
+        });
       inFlight.set(pluginId, task);
       return task;
     }),
   );
+}
+
+/**
+ * Forgets the plugin's detection, so the next ask runs it again: its answer
+ * depends on the connection each tool picked, which the plugin's page just
+ * changed. A detection still running is not kept.
+ */
+export function forgetHandoffToolDetection(pluginId: string) {
+  detectedAt.delete(pluginId);
+  inFlight.delete(pluginId);
 }
 
 /**
