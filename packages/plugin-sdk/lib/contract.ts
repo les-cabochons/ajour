@@ -308,10 +308,11 @@ export type PluginManifest = {
                     if: string;
                   }
               )[];
-              mode: "capture" | "detached" | "terminal";
+              mode: "capture" | "detached" | "terminal" | "session";
               executable: string;
               stdin?: "text" | undefined;
               timeoutSeconds?: number | undefined;
+              idleTimeoutSeconds?: number | undefined;
             }[]
           | undefined;
         undeclaredCommands?: true | undefined;
@@ -424,10 +425,11 @@ export type PluginProcesses = {
               if: string;
             }
         )[];
-        mode: "capture" | "detached" | "terminal";
+        mode: "capture" | "detached" | "terminal" | "session";
         executable: string;
         stdin?: "text" | undefined;
         timeoutSeconds?: number | undefined;
+        idleTimeoutSeconds?: number | undefined;
       }[]
     | undefined;
   undeclaredCommands?: true | undefined;
@@ -461,10 +463,11 @@ export type DeclaredCommand = {
         if: string;
       }
   )[];
-  mode: "capture" | "detached" | "terminal";
+  mode: "capture" | "detached" | "terminal" | "session";
   executable: string;
   stdin?: "text" | undefined;
   timeoutSeconds?: number | undefined;
+  idleTimeoutSeconds?: number | undefined;
 };
 
 /** A host derived from the base address, such as `api.{host}`. */

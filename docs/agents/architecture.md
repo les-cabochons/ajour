@@ -215,6 +215,7 @@ and operation completion stop the owned process tree with Windows taskkill or a
 POSIX process group. The broker checks activation and consent before starting;
 the unsigned process gates above also apply. Undeclared commands require `processes.undeclaredCommands: true`, covered by consent, and follow the
 command modes below. Detached and terminal launches use the declared mode.
+Session commands open through `ajour.process.session` (see Process sessions).
 
 `GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
 and refused count. `POST` accepts `{ executable, path }`, with an absolute path
@@ -579,7 +580,9 @@ API 3 runtime or fallback to Node workers.
 - **Quit**: `stopAppApiServer` refuses new requests, then gives the
   requests that run plugin operations and the operations themselves up to
   5 s to finish (`pluginDrainMs`) while the agent runner stops, cancels
-  what is left, and main closes every renderer.
+  what is left, and main closes every renderer. Then `ProcessBroker.shutdown`
+  ends the capture children and every process session's tree, and only
+  after it the broker activity is flushed.
 - **Orphans**: main records each live plugin renderer's process id and
   start time in `plugin-renderers.json` in user data
   (`plugin-renderer-sweep.cjs`). Right after the single-instance lock, the
@@ -1130,6 +1133,50 @@ no renderer opens links itself. The page-content policy in `navigation.cjs`
 is unchanged. Main checks HTTPS or the manifest schemes again before opening.
 A plugin may open at most five links in a rolling minute across operations.
 `plugin.open` records the approved scheme, never the URL.
+
+## Process sessions
+
+A declared command with `mode: "session"` and `idleTimeoutSeconds` (1 to 3600)
+is a program the broker keeps running for its plugin to talk to one line at a
+time, such as Codex's `app-server` speaking JSON-RPC on stdio (#743). Access
+review says "Keeps a program running and talks to it" with the idle timeout;
+the timeout is part of the command's policy, so adding or widening a session
+needs consent again.
+
+`OperationProcessBroker.session` carries four actions, relayed on the same
+worker, page, preload, main and API path as `run` under the `session` message
+type. `open` goes through `ProcessBroker.run` with the session flag, so the
+gates, argument kinds, executable resolution, git environment and `AJOUR_`
+scrub are the ones capture uses; only `session.open` opens a session command,
+and `run` refuses one. The child starts with piped stdio, detached on POSIX so
+it leads a process group, in the first folder slot's folder or at the
+filesystem root. `ProcessSessions` in `apps/api/src/process-sessions.ts` then
+owns it under a 192-bit random id.
+
+A session belongs to the plugin and package that opened it, not to the
+operation: a later operation of the same plugin and package uses the id, and
+any other caller is refused with `session_ended`, as for an unknown id. A
+plugin keeps at most 2, counting opens under way. `send` writes one line of at
+most 1 MB with Ajour's newline, refusing NUL and line breaks, and refuses more
+than 4 MB the program hasn't taken. `read` returns up to 1000 stdout lines,
+waiting up to 30 s for one but never past the operation's remaining time, which
+`PluginOperationLifetime` hands the broker through `setRemainingTime`; the
+operation's end interrupts the wait. Between reads Ajour keeps 2 MB and 10,000
+lines, dropping the oldest, drops a line over 1 MB, and keeps the newest 64 KB of
+stderr; `dropped` reports either loss once.
+
+Ajour ends the tree, with `endProcessTree` in `process-tree.ts` as capture
+does (taskkill `/T /F` on Windows, the process group on POSIX), on `close`,
+after the idle timeout without a send or read, and when the gates refuse:
+every call rechecks `processConsentGate` and the server's `sessionGate`
+(suspension, or another package of the plugin), and a 2 s timer rechecks them
+for open sessions, which covers the unsigned switch, a revoked acceptance or
+consent and suspension. The server also ends a plugin's sessions at once when
+it is turned off, uninstalled or replaced (`ProcessBroker.endSessions`), and
+`ProcessBroker.shutdown` ends them all at quit. A program that exits by itself
+keeps its unread lines until a read reports `exited`. Each session emits one
+`plugin.process` event at open and one at its end, never a line, stderr or the
+id.
 
 ## Handoffs
 

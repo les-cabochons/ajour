@@ -539,8 +539,10 @@ export const declaredCommandSchema = strictObject({
     .array(z.union([declaredArgumentSchema, declaredConditionalGroupSchema]))
     .max(100),
   stdin: z.literal("text").optional(),
-  mode: z.enum(["capture", "detached", "terminal"]),
+  mode: z.enum(["capture", "detached", "terminal", "session"]),
   timeoutSeconds: z.number().int().min(1).max(600).optional(),
+  /** A session ends after this long without a send or read (#743). */
+  idleTimeoutSeconds: z.number().int().min(1).max(3600).optional(),
 }).superRefine((command, context) => {
   if (new TextEncoder().encode(JSON.stringify(command)).length > 12 * 1024)
     issue(context, [], "A command may use at most 12 KB.");
@@ -554,6 +556,18 @@ export const declaredCommandSchema = strictObject({
         );
     }
   }
+  if (command.mode === "session" && command.idleTimeoutSeconds === undefined)
+    issue(
+      context,
+      ["idleTimeoutSeconds"],
+      "A session command declares its idle timeout.",
+    );
+  if (command.mode !== "session" && command.idleTimeoutSeconds !== undefined)
+    issue(
+      context,
+      ["idleTimeoutSeconds"],
+      "Only session commands may declare this field.",
+    );
   const slots = new Set<string>();
   for (const arg of command.args.flatMap((arg) =>
     "if" in arg ? arg.args : [arg],

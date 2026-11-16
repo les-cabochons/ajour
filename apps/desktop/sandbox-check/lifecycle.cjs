@@ -3,8 +3,9 @@
 // three modes and reads one `CHECK {json}` line per finding on stdout:
 //
 //   --lifecycle     the start modes, the 4-calls limit, the timeout, the
-//                   memory ceiling, the crash budget, Turn back on and the
-//                   quit's drain, through the real runtime and local API;
+//                   memory ceiling, the crash budget, Turn back on, a process
+//                   session kept across operations (#743) and the quit's
+//                   drain, through the real runtime and local API;
 //   --orphan-spawn  opens a plugin renderer and a stand-in orphan, records
 //                   them as Ajour does, and waits for the script to kill it;
 //   --orphan-sweep  the next launch: the sweep ends what is left;
@@ -225,6 +226,7 @@ async function lifecycle() {
       path.join(FIXTURES, "fixture-lifecycle"),
       path.join(FIXTURES, "fixture-resident"),
       path.join(FIXTURES, "fixture-hostile"),
+      path.join(FIXTURES, "fixture-session"),
     ],
     projectDataShapePluginDirectories: [],
     allowDevelopmentPlugins: true,
@@ -444,12 +446,78 @@ async function lifecycle() {
     residentReopened,
   });
 
-  // 11. Quit: a running call finishes within the drain, then every renderer closes.
+  // 11. A process session (#743): validating the connection opens a fake
+  // JSON-RPC server and exchanges a message; the sync, a later operation,
+  // exchanges another with the same process. It stays open for the quit.
+  await request("POST", "/api/plugins/fixture-session/activation", {
+    enabled: true,
+  });
+  await request("POST", "/api/plugins/fixture-session/processes", {
+    executable: "node",
+    path: process.env.AJOUR_CHECK_NODE,
+  });
+  await request("POST", "/api/plugins/unsigned-processes", { enabled: true });
+  const sessionGate = (await group("fixture-session"))?.processGate;
+  await request("POST", "/api/plugins/fixture-session/process-acceptance", {
+    packageKey: sessionGate?.packageKey,
+    accepted: true,
+  });
+  const sessionSaved = await request(
+    "POST",
+    "/api/plugins/fixture-session/connections",
+    {
+      values: {
+        label: "Session",
+        tenantLabel: "Check",
+        autoSync: true,
+        autoSyncIntervalMinutes: 15,
+        server: path.join(FIXTURES, "fixture-session", "rpc-server.cjs"),
+      },
+    },
+  );
+  const sessionConnection = sessionSaved.body?.connection;
+  const sessionSynced = await request(
+    "POST",
+    `/api/plugins/fixture-session/connections/${sessionConnection?.id}/sync`,
+    { trigger: "auto", workItems: [] },
+  );
+  let sessionAnswer = null;
+  try {
+    sessionAnswer = JSON.parse(sessionSynced.body?.items?.[0]?.title);
+  } catch {
+    /* Reported as missing. */
+  }
+  const sessionPids = sessionAnswer?.pids ?? [];
+  // The plugin's renderer closes between operations; the session doesn't.
+  const sessionRendererClosed = await until(
+    () => runtime.rendererProcessIds()["fixture-session"] === undefined,
+    5_000,
+  );
+  report("session", {
+    saveStatus: sessionSaved.status,
+    saveError: sessionSaved.body?.error ?? null,
+    syncStatus: sessionSynced.status,
+    syncError:
+      sessionSynced.body?.connection?.lastError ??
+      sessionSynced.body?.error ??
+      null,
+    answer: sessionAnswer,
+    rendererClosed: sessionRendererClosed,
+    aliveAfterOperations:
+      sessionPids.length === 2 && sessionPids.every((pid) => isAlive(pid)),
+  });
+
+  // 12. Quit: a running call finishes within the drain, then every renderer
+  // closes, and the session's whole tree ends.
   const draining = slow();
   await sleep(200);
   const stopStartedAt = Date.now();
   await api.stopAppApiServer(server);
   const stopMs = Date.now() - stopStartedAt;
+  const sessionGoneAtStop = await until(
+    () => sessionPids.every((pid) => !isAlive(pid)),
+    5_000,
+  );
   const drained = await draining;
   const pidsBeforeClose = Object.values(runtime.rendererProcessIds());
   await runtime.closeAll();
@@ -460,6 +528,8 @@ async function lifecycle() {
   report("quit", {
     drained,
     stopMs,
+    sessionPids,
+    sessionGoneAtStop,
     pidsBeforeClose,
     goneAfterClose,
     pluginPagesLeft: webContents
@@ -471,6 +541,8 @@ async function lifecycle() {
   });
   report("quitting", {
     appPids: app.getAppMetrics().map((metric) => metric.pid),
+    // The script checks that none of these outlives the quit either.
+    sessionPids,
   });
   app.quit();
 }

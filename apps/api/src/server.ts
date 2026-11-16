@@ -1493,6 +1493,27 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     enabledGate: (caller) => processConsentGate(storage, caller, false),
 
     gate: (caller) => processConsentGate(storage, caller),
+    // A process session also ends when its plugin is suspended, or when
+    // another package of it replaced the one that opened the session.
+    sessionGate: async (caller) => {
+      if (pluginManager.suspension(caller.pluginId)) return "plugin_off";
+      try {
+        const plugin = (await pluginManager.listPlugins()).find(
+          (p) => p.id === caller.pluginId,
+        );
+        const current = await pluginManager.processPackage(caller.pluginId);
+        if (
+          !plugin ||
+          plugin.version !== caller.manifest.version ||
+          current.packageKey !== caller.packageKey ||
+          current.development !== (caller.development === true)
+        )
+          return "plugin_off";
+      } catch {
+        return "plugin_off";
+      }
+      return undefined;
+    },
     executableOverride: async (pluginId, executable) => {
       const { overrides } = await storage.getPluginProcessSettings(pluginId);
       return Object.hasOwn(overrides, executable)
@@ -2516,6 +2537,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             pluginId,
           ));
         unit.set({ activation: { operations_cancelled: cancelled } });
+        await processBroker.endSessions(pluginId);
       }
       await pluginManager.syncReadiness();
       writeJson(response, 200, await getOverview(storage, pluginManager));
@@ -4905,6 +4927,9 @@ export async function installPluginForServer(
       );
     },
   );
+  // The sessions the previous package opened end with it.
+  if (installedPlugin.replaced)
+    await runtime.processBroker.endSessions(installedPlugin.manifest.id);
   await runtime.pluginManager.syncReadiness();
   return pluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
@@ -4931,6 +4956,7 @@ export async function uninstallPluginForServer(
     pluginId,
   );
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
+  await runtime.processBroker.endSessions(removedPlugin.id);
   await runtime.storage.removePluginData(removedPlugin.id);
   await runtime.pluginManager.syncReadiness();
   return pluginUninstallResponseSchema.parse({

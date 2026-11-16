@@ -166,11 +166,19 @@ export function summarizePluginAccess(
             ? "Captures output."
             : command.mode === "detached"
               ? "Starts a detached process."
-              : "Opens in your terminal.",
-          command.stdin === "text" ? "Takes text on stdin." : "No stdin.",
-          command.timeoutSeconds === undefined
-            ? "Uses the broker's default timeout."
-            : `Timeout: ${command.timeoutSeconds} seconds.`,
+              : command.mode === "session"
+                ? "Keeps a program running and talks to it."
+                : "Opens in your terminal.",
+          command.mode === "session"
+            ? `Ends after ${command.idleTimeoutSeconds} seconds unused, and when Ajour quits.`
+            : command.stdin === "text"
+              ? "Takes text on stdin."
+              : "No stdin.",
+          command.mode === "session"
+            ? ""
+            : command.timeoutSeconds === undefined
+              ? "Uses the broker's default timeout."
+              : `Timeout: ${command.timeoutSeconds} seconds.`,
         ]
           .filter(Boolean)
           .join(" "),

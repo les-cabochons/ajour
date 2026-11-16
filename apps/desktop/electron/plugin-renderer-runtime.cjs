@@ -81,6 +81,7 @@ const MESSAGE_TYPES = new Set([
   "next",
   "settled",
   "process",
+  "session",
   "http",
   "publicFetch",
   "open",
@@ -863,7 +864,8 @@ function createPluginRendererRuntime({
       return type === "http" ||
         type === "publicFetch" ||
         type === "open" ||
-        type === "process"
+        type === "process" ||
+        type === "session"
         ? endedAnswer
         : undefined;
     }
@@ -880,12 +882,15 @@ function createPluginRendererRuntime({
       run.aborts.get(message.callId)?.abort();
       return undefined;
     }
-    if (type === "open" || type === "process") {
+    if (type === "open" || type === "process" || type === "session") {
       if (!run.processBroker) return endedAnswer;
+      if (type === "session" && !run.processBroker.session) return endedAnswer;
       return (
         type === "open"
           ? run.processBroker.open(message.url)
-          : run.processBroker.run(message.request)
+          : type === "session"
+            ? run.processBroker.session(message.request)
+            : run.processBroker.run(message.request)
       ).then(
         (response) => ({ ok: true, response }),
         (error) => ({ ok: false, error: brokerErrorOf(error) }),

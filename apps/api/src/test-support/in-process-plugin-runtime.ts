@@ -1,6 +1,7 @@
 import type {
   OperationProcessBroker,
   ProcessRunRequest,
+  ProcessSessionRequest,
 } from "../broker-port.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
@@ -71,6 +72,28 @@ function installAjourGlobal() {
         if (!broker) throw new Error("No process broker for this operation.");
         return broker.run(request);
       },
+      session: (() => {
+        const call = (request: ProcessSessionRequest) => {
+          const broker = currentProcessBroker.getStore();
+          if (!broker?.session)
+            throw new Error("No process broker for this operation.");
+          return broker.session(request);
+        };
+        return {
+          open: (request: {
+            command: string;
+            args: Readonly<Record<string, string | number>>;
+          }) => call({ action: "open", ...request }),
+          send: async (id: string, line: string) => {
+            await call({ action: "send", id, line });
+          },
+          read: (id: string, options?: { max?: number; waitMs?: number }) =>
+            call({ action: "read", id, ...options }),
+          close: async (id: string) => {
+            await call({ action: "close", id });
+          },
+        };
+      })(),
     },
     log: () => undefined,
   };

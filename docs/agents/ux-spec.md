@@ -1388,6 +1388,14 @@ The preference saves on change. It does not change the ajour command installatio
 An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
 when the plugin operation ends or Ajour quits. Launches cannot take stdin.
+
+A declared session command keeps a program running in the background for the
+plugin to talk to, such as a coding tool's server, across the plugin's
+operations. Access review lists it as "Keeps a program running and talks to it"
+with how long it may sit unused. No window opens. Ajour ends the program and
+everything it started when the plugin closes it, after that idle time, when
+the plugin is turned off, removed, updated or suspended, when its process
+access is turned off, and when Ajour quits.
 A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
 Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
 strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour
