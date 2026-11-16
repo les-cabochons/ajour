@@ -1,12 +1,13 @@
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import { createApiEvents } from "./events.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { ProcessBroker } from "./process-broker.ts";
+import { processRuleTable, processRules } from "./process-rules.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { AppApiStorage } from "./storage.ts";
 const roots: string[] = [];
@@ -849,6 +850,100 @@ it.each([
     expect(JSON.stringify(sink.events)).not.toContain(marker);
   },
 );
+
+describe("Given the rule table", () => {
+  async function ruleBroker(mode: "auto" | "always-ask") {
+    const { manifest, root } = await fixture();
+    manifest.processes!.undeclaredCommands = true;
+    const sink = createRecordingSink<AjourEvent>();
+    const ask = vi.fn(async () => ({ answer: "once" as const }));
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => undefined,
+      events: createApiEvents({ sink, userDataPath: root }),
+      review: processRules({
+        repositoryFolders: async () => [root],
+        protectedRoots: [path.join(root, "ajour-data")],
+        home: os.homedir(),
+      }),
+      policy: async () => ({
+        identity: "v",
+        signed: true,
+        mode,
+        approvals: [],
+      }),
+      ask,
+    });
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    return { broker, op, ask, sink };
+  }
+  const reasonOf = (id: string) =>
+    processRuleTable.find((rule) => rule.id === id)!.reason;
+
+  it("Auto asks for a risky command with the rule's reason and runs a plain one", async () => {
+    const { broker, op, ask, sink } = await ruleBroker("auto");
+    const plain = await op.run({ executable: "node", argv: ["--version"] });
+    expect(plain.exitCode).toBe(0);
+    expect(ask).not.toHaveBeenCalled();
+
+    const risky = await op.run({
+      executable: "node",
+      argv: ["-e", "process.exit(3)"],
+    });
+    expect(risky.exitCode).toBe(3);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: "node",
+        risky: true,
+        reason: reasonOf("inline-code"),
+      }),
+      expect.anything(),
+    );
+    expect(sink.events.map((e) => e.process)).toMatchObject([
+      { mode: "auto", decided_by: "mode" },
+      { mode: "auto", rule_id: "inline-code", decided_by: "user" },
+    ]);
+    expect(sink.events[0]!.process).not.toHaveProperty(
+      "rule_id",
+      expect.anything(),
+    );
+    expect(JSON.stringify(sink.events)).not.toContain("process.exit");
+    await broker.shutdown();
+  });
+
+  it("Auto runs a review command without asking, and Always ask shows its reason", async () => {
+    // `--git-dir=missing` makes git fail before it reads any repository.
+    const request = {
+      executable: "git",
+      argv: ["--git-dir=missing", "branch", "-D", "old"],
+      cwdFolder: "repo",
+    };
+    const auto = await ruleBroker("auto");
+    expect((await auto.op.run(request)).exitCode).not.toBe(0);
+    expect(auto.ask).not.toHaveBeenCalled();
+    expect(auto.sink.events[0]!.process).toMatchObject({
+      rule_id: "git-branch-delete",
+      decided_by: "mode",
+    });
+    await auto.broker.shutdown();
+
+    const always = await ruleBroker("always-ask");
+    await always.op.run(request);
+    expect(always.ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        risky: false,
+        reason: reasonOf("git-branch-delete"),
+      }),
+      expect.anything(),
+    );
+    await always.broker.shutdown();
+  });
+});
 
 it("Given a detached command, returns started and leaves the child alive after close and shutdown", async () => {
   const { manifest, broker, root, folder, sink } = await fixture(

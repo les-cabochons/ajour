@@ -7,8 +7,18 @@ export interface CommandVerdict {
   ruleId?: string;
   reason?: string;
 }
+/** Where an undeclared command runs, for rules that read its paths. */
+export interface CommandReviewContext {
+  /** The resolved repository folder, or the system root without one. */
+  cwd: string;
+  /** The caller's project, which scopes its repository folders. */
+  projectId?: string;
+}
 export interface CommandReview {
-  review(command: UndeclaredCommand): Promise<CommandVerdict>;
+  review(
+    command: UndeclaredCommand,
+    context: CommandReviewContext,
+  ): Promise<CommandVerdict>;
 }
 export const noCommandReview: CommandReview = {
   review: async () => ({ verdict: "none" }),

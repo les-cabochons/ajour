@@ -439,6 +439,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         mode = policy.mode;
         const review = await (this.options.review ?? noCommandReview).review(
           request,
+          { cwd: cwd!, projectId: caller.projectId },
         );
         ruleId = review.ruleId;
         if (policy.approvals.some((a) => sameCommand(a, request)))
