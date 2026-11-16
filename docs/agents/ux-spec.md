@@ -1142,6 +1142,20 @@ Decided in [Access review and credential management for existing plugins](https:
 
 ## Access review and consent
 
+API 4's `processes` declarations appear in Access as argv shapes, for example
+`t3 thread start <folder> - --title <text> --json`, with conditional groups in
+brackets, and schemes such as `codex:`. The existing New marker and update
+approval panel cover added or changed commands and added schemes. Changed
+command policies ask again even when they restrict access. Removed commands
+and schemes do not ask again. This declaration does not execute a process;
+the broker arrives in #713.
+
+A plugin declaring commands or app schemes shows this warning: "These commands
+run as you, outside the sandbox." It explains that apps opened through schemes
+do too, that a plugin that starts processes is outside G1, and that these
+processes can read files and access credentials as the user. The sandbox's
+network policy does not limit external commands or apps.
+
 Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
 
 - **The Access section** sits on each plugin's page before Features, in plain words. It says "What this plugin can reach. Ajour runs its code in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here." That is true of a plugin's own code: each plugin runs in its own sandbox and reaches the network only through Ajour's broker, which enforces the list. What the plugin does with the data it may read and the endpoints it may call is not limited by the list (G2 below).

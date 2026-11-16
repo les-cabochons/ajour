@@ -163,6 +163,17 @@ export function PluginAccessSection({
           hasAgentTasks: labels.tasks.length > 0,
         })}
       </p>
+      {listed &&
+      ((group.access?.summary.commands?.length ?? 0) > 0 ||
+        (group.access?.summary.openSchemes?.length ?? 0) > 0) ? (
+        <ActivityWarning>
+          These commands run as you, outside the sandbox. Apps opened through
+          these schemes do too. A plugin that starts processes is outside G1,
+          Ajour's guarantee that plugins cannot obtain credentials. These
+          processes can do whatever you can, including reading your files and
+          accessing credentials.
+        </ActivityWarning>
+      ) : null}
       {listed ? (
         <>
           <p className="text-sm text-muted-foreground" data-access-activity>

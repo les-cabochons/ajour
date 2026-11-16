@@ -300,6 +300,46 @@ describe("consent on plugin installs and updates", () => {
     expect(JSON.stringify(downloaded.access)).not.toContain("Enter the week");
   });
 
+  it.each(["command", "scheme"])(
+    "holds a new process %s off until approved again",
+    async (kind) => {
+      const root = await tempDir();
+      const server = startServer(root);
+      await install(server, root, manifest("1.0.0"));
+      await activate(server, true);
+      await install(
+        server,
+        root,
+        manifest("2.0.0", (value) => {
+          value.processes =
+            kind === "scheme"
+              ? { openSchemes: ["codex"] }
+              : {
+                  executables: { t3: { names: ["t3"] } },
+                  commands: [
+                    {
+                      id: "version",
+                      executable: "t3",
+                      args: ["--version"],
+                      mode: "capture",
+                    },
+                  ],
+                };
+        }),
+      );
+      expect(await group(server)).toMatchObject({
+        enabled: false,
+        pendingAccess: { version: "2.0.0" },
+      });
+      await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/${ID}/activation`,
+        body: JSON.stringify({ enabled: true, allowVersion: "2.0.0" }),
+      });
+      expect(await group(server)).toMatchObject({ enabled: true });
+    },
+  );
+
   it("holds a widening update off until the user allows it, and keeps the connection", async () => {
     const root = await tempDir();
     await writeFile(

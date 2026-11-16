@@ -620,6 +620,14 @@ plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
   gather in memory and are written once per 30 s at most, and as the API
   stops, so a crash loses one window at most. A limit, a paused connection
   or a plugin turned off isn't a refusal.
+- **Process declarations (#712):** API 4 validates `processes` with bare
+  executable names, typed argv slots, conditional groups and declared app
+  schemes. `DeclaredCommand` is the parsed contract for #713. This ticket
+  adds no execution. Access summaries keep the argv shape and a canonical
+  policy, including executable names, for consent comparison. Added or changed
+  command policies and added schemes hold an update off. Removed declarations
+  do not. Changed policies ask conservatively, even when they narrow access.
+  Older consent records default to empty command and scheme lists.
 - **Consent:** the state file keeps `pluginConsent`, per plugin, the version
   the user turned on and the access summary it had
   (`packages/shared/plugin-access.ts`). Turning a plugin on writes it; an
@@ -940,6 +948,7 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
 
   Access review and the mode's warning say this, and a release claims G1
   only for plugins without process access.
+
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the

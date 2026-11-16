@@ -268,7 +268,10 @@ export function describeAccess(
       id: "network:none",
       kind: "network",
       title: "No network access",
-      detail: "This plugin can't reach the network.",
+      detail:
+        summary.commands?.length || summary.openSchemes?.length
+          ? "Its sandbox has no network access. External commands and apps may reach the network."
+          : "This plugin can't reach the network.",
     });
   }
 
@@ -298,6 +301,27 @@ export function describeAccess(
       kind: "credential",
       title: "No credential",
       detail: "Ajour sends no credential for this plugin.",
+    });
+  }
+
+  for (const command of summary.commands ?? []) {
+    add({
+      id: `command:${command.id}`,
+      kind: "runtime",
+      title: command.argv,
+      detail: command.description ?? "Declared command.",
+      isNew: (difference?.commands ?? []).some(
+        (entry) => entry.id === command.id,
+      ),
+    });
+  }
+  for (const scheme of summary.openSchemes ?? []) {
+    add({
+      id: `scheme:${scheme}`,
+      kind: "runtime",
+      title: `${scheme}:`,
+      detail: "Opens links in this app scheme.",
+      isNew: (difference?.openSchemes ?? []).includes(scheme),
     });
   }
 

@@ -40,6 +40,8 @@ const NOTHING: PluginAccessDifference = {
   derivedHosts: [],
   endpoints: [],
   publicHosts: [],
+  commands: [],
+  openSchemes: [],
   mcpTools: [],
   agentPrompts: [],
   alwaysOnAccess: [],
@@ -508,6 +510,8 @@ describe("the access difference between two manifests", () => {
 describe("the access summary", () => {
   it("lists what the plugin reaches, in a stable order", () => {
     expect(summary(gitHubManifest())).toEqual({
+      commands: [],
+      openSchemes: [],
       capabilities: ["codeHost", "connector"],
       authSchemes: [{ scheme: "bearer", fields: ["token"] }],
       hosts: [{ kind: "baseAddress", field: "serverUrl" }],

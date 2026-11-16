@@ -257,3 +257,55 @@ For Ajour's maintainers. The package is built ready for npm but not published ye
 ## License
 
 MIT
+
+## Declaring commands and app schemes
+
+API 4 manifests may declare a `processes` block. It describes access only.
+The process broker and execution API arrive in #713; this declaration starts nothing.
+
+```json
+"processes": {
+  "executables": { "t3": { "names": ["t3"] } },
+  "commands": [{
+    "id": "thread-start",
+    "executable": "t3",
+    "args": ["thread", "start", "{folder:folder}", "-", "--title", "{title:text}", "--json",
+      {"if": "branch", "args": ["--worktree", "{base:ref}", "--branch", "{branch:ref}"]}],
+    "stdin": "text",
+    "mode": "capture",
+    "timeoutSeconds": 60
+  }],
+  "openSchemes": ["codex"]
+}
+```
+
+Executable keys identify declarations. Their `names` are bare names to look up
+on PATH, never paths or command lines. Commands reference a declared key and have
+unique IDs. Each argument is one argv element. Strings are literals unless the
+whole string is a slot such as `{title:text}`. Slot kinds are `text`, `id`, `ref`,
+`number`, `https-url` and `folder`. An enum is an object such as
+`{"kind":"enum","name":"format","values":["json","text"]}`. For a literal
+containing braces, use `{"kind":"literal","value":"{literal}"}`.
+
+Slot names are unique within a command. A conditional group includes its whole
+`args` list only when its `if` slot is supplied, and must contain that slot.
+Groups cannot nest. Free text belongs on stdin; `stdin: "text"` declares that
+input. Omit `stdin` for no input. Modes are `capture`, `detached` and `terminal`.
+An optional `timeoutSeconds` is an integer between 1 and 600. Runtime argument
+checks and default timeouts belong to the broker, not manifest parsing.
+The host resolves a `folder` slot from a repository folder ID, never a plugin path.
+`DeclaredCommand` exports the parsed host contract with typed slots and groups.
+
+Schemes must be lowercase RFC 3986 names without a colon. Ajour refuses `http`,
+`https`, `file`, `javascript`, `data`, `vbscript`, `about`, `blob`, `ajour`,
+`ajour-plugin` and `app`. HTTPS opening is separate from these declarations.
+
+Access review lists each command as its argv shape and each scheme. Turning the
+plugin on approves that access. Added schemes and added or changed commands need
+approval again. Removals do not. Command comparison includes executable names,
+slot kinds, enum choices, conditional groups, stdin, mode and timeout. It treats
+all command policy changes conservatively as needing review, even a restriction.
+
+These commands run as you, outside the sandbox. A plugin that starts processes
+is outside G1. A process can read your files and may access credentials as you.
+Ajour's sandbox network policy does not restrict external processes or apps.
