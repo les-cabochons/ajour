@@ -4,12 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { findExecutable } from "./agent-runner/cli-path.ts";
 import { resolveSpawn, type SpawnResolution } from "./process-spawn/index.ts";
+import { endProcessGroup, endProcessTree } from "./process-tree.ts";
 
 export class ProcessLaunchRefused extends Error {
-  readonly reason: "invalid_request" | "spawn_refused";
+  readonly reason:
+    "invalid_request" | "spawn_refused" | "stdin_failed" | "operation_ended";
   constructor(
     message: string,
-    reason: "invalid_request" | "spawn_refused" = "spawn_refused",
+    reason: ProcessLaunchRefused["reason"] = "spawn_refused",
   ) {
     super(message);
     this.reason = reason;
@@ -17,24 +19,130 @@ export class ProcessLaunchRefused extends Error {
 }
 export type TerminalApp = "wt" | "Terminal";
 type Plan = Exclude<SpawnResolution, { refused: string }>;
+/**
+ * How long a child has to read its input. Shorter than an operation's
+ * deadline, so a child that never reads is refused with `stdin_failed`
+ * rather than run the operation into a timeout, which counts toward
+ * suspending the plugin.
+ */
+export const stdinDeliveryDeadlineMs = 10_000;
+/** Text for the child's stdin, and the signal that abandons its delivery. */
+export interface UnownedInput {
+  stdin: string;
+  signal?: AbortSignal;
+  /** Overrides {@link stdinDeliveryDeadlineMs}. */
+  deadlineMs?: number;
+}
+const stdinChunk = 64 * 1024;
+/**
+ * Starts a process Ajour doesn't own. Given input, only stdin is piped: the
+ * text is written with backpressure and stdin ended before the child is let
+ * go. Delivery ends once the child has read the input (on Windows, all of
+ * it). Until then Ajour owns it, so a failed, late or abandoned delivery
+ * stops it and everything it started rather than leave it running on part
+ * of its input.
+ */
 export async function startUnowned(
   plan: Plan,
   cwd: string,
   windowsHide: boolean,
+  input?: UnownedInput,
 ) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(plan.command, plan.args, {
       env: plan.env,
       cwd,
       shell: false,
-      stdio: "ignore",
+      stdio: input ? ["pipe", "ignore", "ignore"] : "ignore",
       detached: true,
       windowsHide,
     });
     child.once("error", reject);
+    if (!input) {
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+      return;
+    }
+    const stdin = child.stdin!;
+    let settled = false;
+    let exited = false;
+    child.once("exit", () => {
+      exited = true;
+    });
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const fail = (error: ProcessLaunchRefused) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      input.signal?.removeEventListener("abort", abort);
+      stdin.destroy();
+      // A launcher that exited can leave a descendant holding its stdin.
+      if (exited) endProcessGroup(child);
+      else endProcessTree(child, plan.env, () => exited);
+      reject(error);
+    };
+    const abort = () =>
+      fail(
+        new ProcessLaunchRefused(
+          "The operation ended before the input was delivered.",
+          "operation_ended",
+        ),
+      );
+    // EPIPE when the child exits before reading everything.
+    stdin.on("error", () =>
+      fail(
+        new ProcessLaunchRefused(
+          "The process stopped reading its input.",
+          "stdin_failed",
+        ),
+      ),
+    );
     child.once("spawn", () => {
-      child.unref();
-      resolve();
+      void (async () => {
+        if (input.signal?.aborted) return abort();
+        input.signal?.addEventListener("abort", abort, { once: true });
+        deadline = setTimeout(
+          () =>
+            fail(
+              new ProcessLaunchRefused(
+                "The process didn't read its input in time.",
+                "stdin_failed",
+              ),
+            ),
+          input.deadlineMs ?? stdinDeliveryDeadlineMs,
+        );
+        const data = Buffer.from(input.stdin, "utf8");
+        for (let at = 0; at < data.length && !settled; at += stdinChunk) {
+          if (!stdin.write(data.subarray(at, at + stdinChunk)))
+            await new Promise<void>((next) => {
+              const done = () => {
+                stdin.off("drain", done);
+                stdin.off("close", done);
+                next();
+              };
+              stdin.once("drain", done);
+              stdin.once("close", done);
+            });
+        }
+        if (settled) return;
+        stdin.end((error?: Error | null) => {
+          if (error)
+            return fail(
+              new ProcessLaunchRefused(
+                "The process stopped reading its input.",
+                "stdin_failed",
+              ),
+            );
+          if (settled) return;
+          settled = true;
+          clearTimeout(deadline);
+          input.signal?.removeEventListener("abort", abort);
+          child.unref();
+          resolve();
+        });
+      })();
     });
   });
 }
