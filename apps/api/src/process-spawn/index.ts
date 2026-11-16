@@ -142,13 +142,18 @@ function recognizeShim(
       );
     }
     // The child sees the PATHEXT change only from cmd-shim 6's npm shim, which
-    // makes it after endLocal, and from pnpm's ELSE branch.
+    // makes it after endLocal, and from pnpm's ELSE branch. cmd-shim 6 writes
+    // `set PATHEXT=… & "%_prog%"`, so cmd.exe keeps the space before the `&`.
     const pathext = getEnv(env, "PATHEXT");
     if (
       pathext &&
       (npm ? npmChildPathext : !existsSync(path.join(directory, "node.exe")))
     )
-      setEnv(env, "PATHEXT", pathext.replace(/;\.JS;/gi, ";"));
+      setEnv(
+        env,
+        "PATHEXT",
+        pathext.replace(/;\.JS;/gi, ";") + (npm ? " " : ""),
+      );
     return { command, prefix: [script] };
   }
   const yarn =

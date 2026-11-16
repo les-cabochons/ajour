@@ -316,7 +316,7 @@ describe.skipIf(process.platform !== "win32")(
           // cmd-shim 6 changes PATHEXT after endLocal, so the child keeps the
           // change; cmd-shim 8 changes it inside SETLOCAL, so endLocal drops it.
           if (format === "npm")
-            expect(result.env.PATHEXT).toBe(".COM;.EXE;.BAT;.CMD;");
+            expect(result.env.PATHEXT).toBe(".COM;.EXE;.BAT;.CMD; ");
           if (format === "npm-cmd-shim-8")
             expect(result.env.PATHEXT).toBe(".COM;.EXE;.BAT;.CMD;.JS;");
           batch = [];
