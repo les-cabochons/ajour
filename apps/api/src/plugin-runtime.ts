@@ -13,6 +13,7 @@
  * A runtime that cannot restrict plugin code to the broker never runs it.
  */
 
+import type { OperationProcessBroker } from "./broker-port.ts";
 import type { OperationBroker } from "./credential-broker.ts";
 
 /** The largest result, as `v8.serialize` counts it, a runtime returns. */
@@ -39,6 +40,7 @@ export interface PluginInvocation {
    * only way to the network. The host closes it once the operation settles.
    */
   broker?: OperationBroker;
+  processBroker?: OperationProcessBroker;
   /**
    * For an API 4 plugin, how its renderer lives, read when it starts: a
    * renderer already open keeps what it started with.

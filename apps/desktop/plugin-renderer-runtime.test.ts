@@ -622,6 +622,39 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
+  it("relays process calls only to the sender's own operation", async () => {
+    const { start, ready } = setUp();
+    const run = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "answer",
+      stderr: "",
+    }));
+    start("jira", { processBroker: { run, close: vi.fn() } });
+    const { driver } = await ready();
+    const { runId } = (await driver.send({ type: "next" })) as {
+      runId: string;
+    };
+    expect(
+      await driver.send({
+        type: "process",
+        runId,
+        request: { command: "run", args: {} },
+      }),
+    ).toEqual({
+      ok: true,
+      response: { exitCode: 0, stdout: "answer", stderr: "" },
+    });
+    expect(
+      await driver.send({
+        type: "process",
+        runId: "another-plugin-run",
+        request: { command: "run", args: {} },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "refused" } });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith({ command: "run", args: {} });
+  });
+
   it("relays a run's ajour.http to that run's broker only, never another's", async () => {
     const { recorded, start, ready } = setUp();
     const http = vi.fn(async () => ({

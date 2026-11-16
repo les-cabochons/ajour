@@ -92,7 +92,12 @@ async function runCheck(
 ) {
   const userData =
     given ?? (await mkdtemp(path.join(os.tmpdir(), `ajour-sandbox-${name}-`)));
-  const env = { ...process.env, ...extra, AJOUR_USER_DATA_PATH: userData };
+  const env = {
+    ...process.env,
+    ...extra,
+    AJOUR_USER_DATA_PATH: userData,
+    AJOUR_CHECK_NODE: process.execPath,
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_DISABLE_SANDBOX;
   const child = spawn(electron, [main, ...args], {
@@ -264,6 +269,12 @@ async function checkSandbox() {
     broker.serviceReceived,
   );
   expect(broker.pluginSawToken === false, "the plugin never saw the token");
+  expect(
+    broker.syncStatus === 200 &&
+      broker.processActivity?.lastRunAt > 0 &&
+      broker.processActivity?.refusedCount >= 1,
+    "the real worker runs a declared process, refuses an undeclared one, and records both",
+  );
 
   const where = findings.where?.outcome?.result ?? {};
   expect(

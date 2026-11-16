@@ -2,6 +2,8 @@ import type { PluginHttpMethod, PluginManifest } from "./contract.js";
 import type {
   Ajour,
   AjourHttpRequest,
+  AjourProcessRequest,
+  AjourProcessResult,
   AjourLogFields,
   AjourLogLevel,
   AjourPublicFetchInit,
@@ -69,6 +71,7 @@ export interface FakePublicRoute {
 
 export interface FakeAjourOptions {
   routes?: readonly FakeHttpRoute[];
+  processRun?: (request: AjourProcessRequest) => Promise<AjourProcessResult>;
   publicRoutes?: readonly FakePublicRoute[];
   /**
    * The plugin's manifest. With it, the fake refuses what Ajour's broker
@@ -291,6 +294,22 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
   const { manifest } = options;
 
   return {
+    open: async () => {
+      throw Object.assign(new Error("Opening links is not yet supported."), {
+        name: "AjourProcessError",
+        code: "not_yet",
+      });
+    },
+    process: {
+      run: async (request) => {
+        if (!options.processRun)
+          throw Object.assign(new Error("No process fixture supplied."), {
+            name: "AjourProcessError",
+            code: "undeclared",
+          });
+        return options.processRun(request);
+      },
+    },
     requests,
     publicRequests,
     logs,

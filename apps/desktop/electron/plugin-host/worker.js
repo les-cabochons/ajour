@@ -25,7 +25,10 @@ function requestError(error) {
   const failure = new Error(
     typeof error?.message === "string" ? error.message : "The request failed.",
   );
-  failure.name = "AjourRequestError";
+  failure.name =
+    error?.name === "AjourProcessError"
+      ? "AjourProcessError"
+      : "AjourRequestError";
   failure.code = typeof error?.code === "string" ? error.code : "network";
   return failure;
 }
@@ -54,7 +57,10 @@ function call(type, payload, signal) {
     signal?.addEventListener("abort", onAbort, { once: true });
     waiting.set(callId, (answer) => {
       signal?.removeEventListener("abort", onAbort);
-      if (answer?.ok) resolve(ajourResponse(answer.response));
+      if (answer?.ok)
+        resolve(
+          type === "process" ? answer.response : ajourResponse(answer.response),
+        );
       else reject(requestError(answer?.error));
     });
     post({ type, callId, ...payload });
@@ -69,6 +75,14 @@ function withoutSignal(value) {
 
 Object.defineProperty(globalThis, "ajour", {
   value: Object.freeze({
+    open: async () => {
+      throw requestError({
+        name: "AjourProcessError",
+        code: "not_yet",
+        message: "Opening links is not yet supported.",
+      });
+    },
+    process: Object.freeze({ run: (request) => call("process", { request }) }),
     http: (request) =>
       call("http", { request: withoutSignal(request) }, request?.signal),
     publicFetch: (url, init) =>

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -469,6 +470,14 @@ interface AppApiStateV8 {
    * requests, those that named no saved connection of the plugin included.
    */
   pluginBrokerActivity: Record<string, BrokerActivityRecord>;
+  pluginProcesses: Record<
+    string,
+    {
+      overrides: Record<string, string>;
+      lastRunAt?: number;
+      refusedCount: number;
+    }
+  >;
   /**
    * Per plugin API 4 plugin, its Advanced section: Start and Memory
    * ceiling. A plugin left at its own choices has no entry.
@@ -617,6 +626,7 @@ function createDefaultState(): AppApiState {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginProcesses: {},
     pluginRuntimeSettings: {},
     pluginConsent: {},
   };
@@ -1139,6 +1149,16 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         return normalized ? [[pluginId, normalized] as const] : [];
       }),
     ),
+    pluginProcesses: z
+      .record(
+        z.object({
+          overrides: z.record(z.string()).default({}),
+          lastRunAt: z.number().optional(),
+          refusedCount: z.number().nonnegative().default(0),
+        }),
+      )
+      .catch({})
+      .parse(raw.pluginProcesses),
     pluginRuntimeSettings: normalizePluginRuntimeSettings(
       raw.pluginRuntimeSettings,
     ),
@@ -2191,6 +2211,67 @@ export class AppApiStorage {
     });
   }
 
+  /** User executable overrides and process activity for Access review. */
+  private processSettingsIn(state: AppApiState, pluginId: string) {
+    return Object.hasOwn(state.pluginProcesses, pluginId)
+      ? state.pluginProcesses[pluginId]
+      : undefined;
+  }
+  async getPluginProcessSettings(pluginId: string) {
+    return (
+      this.processSettingsIn(await this.readState(), pluginId) ?? {
+        overrides: {},
+        refusedCount: 0,
+      }
+    );
+  }
+  async setPluginProcessOverride(
+    pluginId: string,
+    executable: string,
+    override: string | null,
+  ) {
+    await this.mutate(async (state) => {
+      const previous = this.processSettingsIn(state, pluginId) ?? {
+        overrides: {},
+        refusedCount: 0,
+      };
+      const overrides = { ...previous.overrides };
+      if (override === null) delete overrides[executable];
+      else overrides[executable] = override;
+      return {
+        nextState: {
+          ...state,
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            [pluginId]: { ...previous, overrides },
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
+  async recordPluginProcess(pluginId: string, at: number, refused: boolean) {
+    await this.mutate(async (state) => {
+      const previous = this.processSettingsIn(state, pluginId) ?? {
+        overrides: {},
+        refusedCount: 0,
+      };
+      return {
+        nextState: {
+          ...state,
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            [pluginId]: {
+              ...previous,
+              lastRunAt: at,
+              refusedCount: previous.refusedCount + Number(refused),
+            },
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
   /** The plugin's Advanced section: Start and Memory ceiling. */
   async getPluginRuntimeSettings(
     pluginId: string,
@@ -2347,6 +2428,11 @@ export class AppApiStorage {
         pluginOrigins: Object.fromEntries(
           Object.entries(state.pluginOrigins).filter(
             ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginProcesses: Object.fromEntries(
+          Object.entries(state.pluginProcesses).filter(
+            ([id]) => id !== pluginId,
           ),
         ),
         pluginBrokerActivity: Object.fromEntries(

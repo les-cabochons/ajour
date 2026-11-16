@@ -1,3 +1,7 @@
+import type {
+  ProcessBrokerPort,
+  OperationProcessBroker,
+} from "./broker-port.ts";
 import path from "node:path";
 import {
   PluginOperationRefused,
@@ -177,6 +181,7 @@ interface PluginHostOptions {
    * request is refused, as outside the desktop app.
    */
   broker?: CredentialBrokerPort;
+  processBroker?: ProcessBrokerPort;
   /**
    * Whether an API 4 plugin is on, and its Advanced section: what its
    * renderer's start reads, and which plugins stay "Always ready".
@@ -389,6 +394,7 @@ export class PluginManager {
   private readonly runsPluginApi4: boolean;
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
+  private readonly processBroker?: ProcessBrokerPort;
   private readonly pluginState?: PluginHostOptions["pluginState"];
   private readonly outsideOperations?: () => number;
   private readonly secretValues?: PluginHostOptions["secretValues"];
@@ -422,6 +428,7 @@ export class PluginManager {
     this.runtime = runtime;
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
+    this.processBroker = options.processBroker;
     this.pluginState = options.pluginState;
     this.outsideOperations = options.outsideOperations;
     this.secretValues = options.secretValues;
@@ -1064,6 +1071,7 @@ export class PluginManager {
     const connection = params.connection as
       { id?: unknown; config?: PluginFieldValues } | undefined;
     let broker: OperationBroker | undefined;
+    let processBroker: OperationProcessBroker | undefined;
     try {
       return await this.workers.run(
         pluginId,
@@ -1147,6 +1155,12 @@ export class PluginManager {
               admitted ?? plugin.manifest,
             );
             broker = prepared.broker;
+            processBroker = this.processBroker?.forOperation({
+              pluginId,
+              manifest: plugin.manifest,
+              traceparent: this.events?.current()?.traceparent(),
+              method,
+            });
             args = prepared.args;
           } else {
             throw new PluginOperationRefused(
@@ -1163,6 +1177,7 @@ export class PluginManager {
               method,
               args,
               ...(broker ? { broker } : {}),
+              ...(processBroker ? { processBroker } : {}),
               ...(lifecycle ? { lifecycle } : {}),
             },
             parse: (result: unknown) => schema.parse(result),
@@ -1181,6 +1196,7 @@ export class PluginManager {
     } finally {
       // Its requests end with it, and a plugin that kept one can't send more.
       broker?.close();
+      processBroker?.close();
     }
   }
 

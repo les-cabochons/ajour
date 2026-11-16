@@ -1,3 +1,4 @@
+import type { ProcessBrokerPort } from "./broker-port.ts";
 import {
   PluginOperationRefused,
   PluginOperationLifetime,
@@ -54,6 +55,7 @@ export interface PluginHostPackages {
 }
 
 interface ProjectDataShapeHostOptions {
+  processBroker?: ProcessBrokerPort;
   /**
    * Folders the data shape host reads without a plugin host: the bare
    * format-level host. With a `pluginHost`, only the packages it holds run.
@@ -96,9 +98,11 @@ export class ProjectDataShapePluginManager {
   private readonly runsPluginApi4: boolean;
   private readonly workers: PluginOperationLifetime<PluginMethod>;
 
+  private readonly processBroker?: ProcessBrokerPort;
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
+    this.processBroker = options.processBroker;
     this.pluginHost = options.pluginHost;
     const runtime: PluginRuntime =
       options.runtime ?? new DesktopRequiredPluginRuntime();
@@ -230,6 +234,15 @@ export class ProjectDataShapePluginManager {
       apiVersion: plugin.manifest.apiVersion,
       method,
       args: projectDataShapeMethodArguments(method, params),
+      ...(this.processBroker && isPluginApi4Manifest(plugin.manifest)
+        ? {
+            processBroker: this.processBroker.forOperation({
+              pluginId: plugin.manifest.id,
+              manifest: plugin.manifest,
+              method,
+            }),
+          }
+        : {}),
     };
   }
 

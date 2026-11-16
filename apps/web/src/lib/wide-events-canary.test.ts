@@ -1,3 +1,6 @@
+import { ProcessBroker } from "../../../api/src/process-broker.ts";
+import { pluginApi4ManifestSchema } from "@ajour/shared/plugin-api-4.ts";
+import { createApiEvents } from "../../../api/src/events.ts";
 import {
   afterAll,
   beforeAll,
@@ -1512,4 +1515,66 @@ describe("what the canary lets through", () => {
       ),
     ).toEqual([]);
   });
+});
+
+it("keeps marked process argv, stdin and output out of the wide event", async () => {
+  const sink = createRecordingSink<AjourEvent>();
+  const manifest = pluginApi4ManifestSchema.parse({
+    id: "canary-process",
+    version: "1.0.0",
+    apiVersion: 4,
+    displayName: "Canary process",
+    iconSvg: "<svg/>",
+    entrypoint: "index.js",
+    connectionFields: [{ id: "site", label: "Site", type: "text" }],
+    capabilities: { connector: {} },
+    processes: {
+      executables: { node: { names: ["node"] } },
+      commands: [
+        {
+          id: "echo",
+          executable: "node",
+          args: [
+            "-e",
+            `process.stdout.write('${MARKER}');process.stdin.resume()`,
+            "{title:text}",
+          ],
+          stdin: "text",
+          mode: "capture",
+          timeoutSeconds: 10,
+        },
+      ],
+    },
+  });
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    protectedDirectories: [],
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+    events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  try {
+    expect(
+      (
+        await op.run({
+          command: "echo",
+          args: { title: MARKER },
+          stdin: MARKER,
+        })
+      ).stdout,
+    ).toBe(MARKER);
+  } finally {
+    op.close();
+  }
+  expect(sink.events).toHaveLength(1);
+  expect(sink.events[0]).toMatchObject({
+    name: "plugin.process",
+    outcome: "ok",
+  });
+  expect(JSON.stringify(sink.events)).not.toMatch(MARKED);
 });

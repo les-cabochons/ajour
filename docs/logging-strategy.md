@@ -424,6 +424,7 @@ The local API emits these (#305, #306):
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                        |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                     |
 | one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                |
+| `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call                                        |
 | `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                    |
 | `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it |
 | `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                            |
@@ -891,7 +892,7 @@ channel to read the event each emits.
 | `agent_task.configure`               | command, request                   | route, client call                               |
 | `agent_tool.call`                    | request, job                       | local API, renderer                              |
 | `api.health`                         | request                            | route                                            |
-| `api.request`                        | request                            | local API                                        |
+| `api.request`                        | request                            | route, local API                                 |
 | `api.start`                          | lifecycle                          | local API                                        |
 | `api.stop`                           | lifecycle                          | local API                                        |
 | `app.boot`                           | lifecycle                          | renderer                                         |
@@ -987,6 +988,7 @@ channel to read the event each emits.
 | `plugin.activate`                    | command, request                   | route, client call                               |
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
+| `plugin.process`                     | job                                | local API                                        |
 | `plugin.remove_data`                 | command, request                   | route, client call                               |
 | `plugin.request`                     | job                                | local API                                        |
 | `plugin.resume`                      | command, request                   | route, client call                               |
@@ -1161,3 +1163,15 @@ Two tests hold the whole app to the model (#311):
 - An event on every render, poll or keystroke.
 - Content in a field, or an error message that skipped the scrubber.
 - A field added outside the catalog, or a name that is not in it.
+
+### Process call privacy
+
+`plugin.process` is a detached child event per broker call. Its operational fields
+are `plugin.id`, `process.command_id`, `process.exit_code`,
+`process.decided_by`, `process.rule_id`, `process.reviewer_label` and
+`process.reviewer_score`. The envelope records outcome, reason and duration.
+Unknown command ids become `undeclared`; raw caller text never becomes an event
+identifier. Rules and reviewer fields remain absent until their tickets ship.
+Arguments, stdin, output and executable or folder paths have no catalog fields.
+The broker port's marked privacy fixture in `process-broker.test.ts` covers all
+four forms of process content and asserts one event per call.

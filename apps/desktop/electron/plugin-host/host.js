@@ -11,7 +11,7 @@ const { invoke } = window.ajourPlugin;
 const workers = new Map();
 
 /** The calls a worker may make, with the message main receives for each. */
-const RELAYED = new Set(["http", "publicFetch", "abort", "blocked"]);
+const RELAYED = new Set(["http", "publicFetch", "process", "abort", "blocked"]);
 
 function stop(runId) {
   const worker = workers.get(runId);
@@ -47,7 +47,11 @@ function start({ runId, url, method, args }) {
         },
       }),
     );
-    if (data.type === "http" || data.type === "publicFetch") {
+    if (
+      data.type === "http" ||
+      data.type === "publicFetch" ||
+      data.type === "process"
+    ) {
       void call.then((answer) => {
         if (workers.get(runId) === worker) {
           worker.postMessage({ type: "answer", callId: data.callId, answer });

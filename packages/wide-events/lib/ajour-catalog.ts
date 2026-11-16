@@ -661,6 +661,37 @@ export const catalog = defineCatalog({
      * endpoint pattern it matched, never the path sent, and no header, body
      * or query value is kept.
      */
+    "plugin.process": {
+      kinds: ["job"],
+      reasons: [
+        "invalid_request",
+        "plugin_off",
+        "needs_consent",
+        "undeclared",
+        "not_yet",
+        "folder_refused",
+        "executable_missing",
+        "spawn_refused",
+        "concurrency",
+        "output_limit",
+        "timeout",
+        "operation_ended",
+        "spawn_failed",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        process: {
+          command_id: operational(),
+          exit_code: operational<number>(),
+          decided_by: operational<
+            "gate" | "rule" | "reviewer" | "user" | "mode"
+          >(),
+          rule_id: operational(),
+          reviewer_label: operational(),
+          reviewer_score: operational<number>(),
+        },
+      },
+    },
     "plugin.request": {
       kinds: ["job"],
       reasons: [
@@ -1257,6 +1288,7 @@ export const catalog = defineCatalog({
             | "settled"
             | "http"
             | "publicFetch"
+            | "process"
             | "abort"
             | "blocked"
             | "other"

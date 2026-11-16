@@ -1,3 +1,7 @@
+import { z } from "zod";
+import { ProcessBroker } from "./process-broker.ts";
+import type { FolderResolver } from "./broker-port.ts";
+import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -318,6 +322,8 @@ interface AppApiServerOptions {
   brokerTransport?: BrokerTransport;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
+  processFolders?: FolderResolver;
+  processInstallDirectory?: string;
   /** The clock of the plugins' crash budget. Tests move it. */
   pluginClock?: () => number;
   /**
@@ -1346,8 +1352,55 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const developmentPluginDirectories =
     options.developmentPluginDirectories ??
     (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
+  const processBroker = new ProcessBroker({
+    folders: options.processFolders ?? { resolve: async () => undefined },
+    protectedDirectories: [
+      storage.dataDirectory,
+      options.processInstallDirectory ??
+        path.resolve(import.meta.dirname, "../.."),
+    ],
+    gate: async (caller) => {
+      if (
+        !(await storage.isPluginEnabled(
+          caller.pluginId,
+          new Map([[caller.pluginId, undefined]]),
+        ))
+      )
+        return "plugin_off";
+      const consent = await storage.getPluginConsent(caller.pluginId);
+      const commands = summarizePluginAccess(caller.manifest, {
+        agentPrompts: Object.fromEntries(
+          (caller.manifest.capabilities.agentTask?.tasks ?? []).map((t) => [
+            t.id,
+            "",
+          ]),
+        ),
+      }).commands;
+      if (
+        !consent ||
+        (commands ?? []).some(
+          (c) =>
+            !(consent.access.commands ?? []).some(
+              (a) => a.id === c.id && a.policy === c.policy,
+            ),
+        )
+      )
+        return "needs_consent";
+      return undefined;
+    },
+    executableOverride: async (pluginId, executable) => {
+      const { overrides } = await storage.getPluginProcessSettings(pluginId);
+      return Object.hasOwn(overrides, executable)
+        ? overrides[executable]
+        : undefined;
+    },
+    record: (pluginId, at, refused) =>
+      storage.recordPluginProcess(pluginId, at, refused),
+    events,
+  });
   const pluginManager: PluginManager = new PluginManager({
     broker,
+    processBroker,
     installedPluginDirectory:
       options.installedPluginDirectory ??
       defaultInstalledPluginDirectory(options.statePath),
@@ -1429,6 +1482,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
     pluginHost: pluginManager,
+    processBroker,
     events,
   });
   // "Always ready" plugins start with Ajour.
@@ -2130,6 +2184,41 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    pluginProcessRead: async ({ response, params }) => {
+      writeJson(
+        response,
+        200,
+        await storage.getPluginProcessSettings(
+          readInput(() => pluginIdSchema.parse(params.pluginId)),
+        ),
+      );
+    },
+    pluginProcessUpdate: async ({ request, response, params }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const payload = await readRequest(
+        request,
+        z
+          .object({
+            executable: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+            path: z
+              .string()
+              .max(32767)
+              .refine((v) => path.isAbsolute(v) && !/[\0\r\n]/.test(v))
+              .nullable(),
+          })
+          .strict(),
+      );
+      await storage.setPluginProcessOverride(
+        pluginId,
+        payload.executable,
+        payload.path,
+      );
+      writeJson(
+        response,
+        200,
+        await storage.getPluginProcessSettings(pluginId),
+      );
+    },
     pluginRuntimeUpdate: async ({ request, response, params, unit }) => {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });

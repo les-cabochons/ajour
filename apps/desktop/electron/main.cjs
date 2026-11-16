@@ -1628,6 +1628,11 @@ async function ensureInternalAppApiRunning() {
       port: INTERNAL_APP_API_PORT,
       statePath,
       vault: internalAppApiVault(internalAppApiModule, statePath),
+      processInstallDirectory: app.isPackaged
+        ? process.platform === "darwin"
+          ? path.resolve(process.resourcesPath, "../..")
+          : path.dirname(process.execPath)
+        : path.resolve(__dirname, "../../.."),
       brokerTransport: internalAppApiBrokerNetwork().transport,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),

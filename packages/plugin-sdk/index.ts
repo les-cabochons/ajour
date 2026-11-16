@@ -4,6 +4,9 @@ export type * from "./lib/contract.js";
 export type {
   Ajour,
   AjourHttpRequest,
+  AjourProcessRequest,
+  AjourProcessError,
+  AjourProcessResult,
   AjourLogFields,
   AjourLogLevel,
   AjourPublicFetchInit,

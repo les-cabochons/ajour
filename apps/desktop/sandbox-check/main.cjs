@@ -346,6 +346,13 @@ async function main() {
       serviceRequests: service.received.length,
     });
   } else {
+    await request("POST", "/api/plugins/fixture-tracker/activation", {
+      enabled: true,
+    });
+    await request("POST", "/api/plugins/fixture-tracker/processes", {
+      executable: "node",
+      path: process.env.AJOUR_CHECK_NODE,
+    });
     // 1. A sync through the broker, in the plugin's own renderer.
     const saved = await saveConnection("fixture-tracker");
     const connectionId = saved.body?.connection?.id;
@@ -356,6 +363,9 @@ async function main() {
     );
     const syncText = JSON.stringify(synced.body);
     report("broker", {
+      processActivity: (
+        await request("GET", "/api/plugins/fixture-tracker/processes")
+      ).body,
       saveStatus: saved.status,
       saveError: saved.body?.error ?? null,
       syncStatus: synced.status,
