@@ -56,6 +56,18 @@ const IPC_CHANNELS = {
     mode: "invoke",
   },
   "ajour:get-cli-command": { event: "cli_command.get_state", mode: "invoke" },
+  "ajour:instruction-list": {
+    event: "agent_instructions.list",
+    mode: "invoke",
+  },
+  "ajour:instruction-preview": {
+    event: "agent_instructions.preview",
+    mode: "invoke",
+  },
+  "ajour:instruction-apply": {
+    event: "agent_instructions.apply",
+    mode: "invoke",
+  },
   "ajour:remove-cli-command": { event: "cli_command.remove", mode: "invoke" },
   "ajour:install-cli-command": {
     event: "cli_command.install",

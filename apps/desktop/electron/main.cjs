@@ -44,6 +44,10 @@ const {
   createCliCommandController,
   cliInstallDirectory,
 } = require("./cli-command.cjs");
+const {
+  createInstructionController,
+  registerInstructionIpc,
+} = require("./agent-instructions.cjs");
 const { createTrayPanelController } = require("./tray-panel.cjs");
 const { createManualRedirectFetch } = require("./manual-redirect-fetch.cjs");
 const {
@@ -726,6 +730,30 @@ ipc.handle("ajour:get-cli-command", async (event) => {
   assertActiveDesktopWindow(event, "read the ajour command's state");
   return await cliCommand.state();
 });
+
+registerInstructionIpc(
+  { handle: ipc.handle },
+  createInstructionController({
+    home: os.homedir(),
+    runtime: {
+      packaged: app.isPackaged,
+      userData: app.getPath("userData"),
+      exe: app.getPath("exe"),
+      resources: process.resourcesPath,
+      runtimeRoot: internalAppApiRuntimeRoot,
+    },
+    editor: () =>
+      import(
+        pathToFileURL(
+          path.join(
+            internalAppApiRuntimeRoot,
+            "packages/shared/agent-instructions.ts",
+          ),
+        ).toString()
+      ),
+  }),
+  assertActiveDesktopWindow,
+);
 
 // The renderer passes nothing: main picks the release, the URL and the folder.
 ipc.handle("ajour:install-cli-command", async (event) => {

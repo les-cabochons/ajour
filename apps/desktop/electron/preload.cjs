@@ -108,6 +108,11 @@ const desktopApi = {
     return () => ipcRenderer.removeListener("ajour:tray-action", listener);
   },
   getCliCommand: (trace) => invoke("ajour:get-cli-command", ...traced(trace)),
+  listAgentInstructions: () => invoke("ajour:instruction-list"),
+  previewAgentInstructions: (id, action) =>
+    invoke("ajour:instruction-preview", id, action),
+  applyAgentInstructions: (id, token) =>
+    invoke("ajour:instruction-apply", id, token),
   installCliCommand: (trace) =>
     invoke("ajour:install-cli-command", ...traced(trace)),
   addCliCommandWsl: (options, trace) =>
