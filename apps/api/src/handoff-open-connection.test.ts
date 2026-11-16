@@ -15,6 +15,7 @@ import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime
 // process broker. Only the terminal launch is replaced, so the test reads the
 // argv the terminal would get.
 const launched = vi.hoisted(() => [] as string[][]);
+const opened: string[] = [];
 vi.mock("./process-launch.ts", async (actual) => ({
   ...(await actual<typeof import("./process-launch.ts")>()),
   launchProcess: async (plan: { args: string[] }) => {
@@ -25,6 +26,7 @@ vi.mock("./process-launch.ts", async (actual) => ({
 const roots: string[] = [];
 afterEach(async () => {
   launched.length = 0;
+  opened.length = 0;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -118,6 +120,9 @@ async function setup() {
       folders: new FolderResolver(storage, {}),
       gate: async () => undefined,
       executableOverride: async () => process.execPath,
+      openExternal: async (url) => {
+        opened.push(url);
+      },
       connectionAddress: (caller) => handoffConnectionAddress(storage, caller),
     }),
   });
@@ -146,24 +151,35 @@ it("reopens a thread of a tool that uses a connection with its connection's addr
   }
 });
 
-it("refuses to reopen a record without a connection once its tool needs one", async () => {
+it("refuses to resume a record without a connection once its tool needs one", async () => {
   const { manager, folder } = await setup();
   try {
-    for (const target of [
-      { resume: { command: "attach", args: { session: "ses_123" } } },
-      { link: "https://example.test/session/ses_123" },
-    ])
-      await expect(
-        manager.openHandoff("tools", "p", {
-          toolId: "opencode",
-          folderId: folder.id,
-          ...target,
-        }),
-      ).rejects.toMatchObject({
-        reason: "not_supported",
-        message:
-          "This tool now hands off through a connection. Start a new handoff.",
-      });
+    await expect(
+      manager.openHandoff("tools", "p", {
+        toolId: "opencode",
+        folderId: folder.id,
+        resume: { command: "attach", args: { session: "ses_123" } },
+      }),
+    ).rejects.toMatchObject({
+      reason: "not_supported",
+      message:
+        "This tool now hands off through a connection. Start a new handoff.",
+    });
+    expect(launched).toEqual([]);
+  } finally {
+    await manager.shutdown();
+  }
+});
+
+it("still opens the saved link of a record without a connection, which needs none", async () => {
+  const { manager, folder } = await setup();
+  try {
+    await manager.openHandoff("tools", "p", {
+      toolId: "opencode",
+      folderId: folder.id,
+      link: "https://example.test/session/ses_123",
+    });
+    expect(opened).toEqual(["https://example.test/session/ses_123"]);
     expect(launched).toEqual([]);
   } finally {
     await manager.shutdown();

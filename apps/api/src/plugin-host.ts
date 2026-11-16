@@ -1145,7 +1145,8 @@ export class PluginManager {
       manifest.capabilities.handoff?.tools.find(
         (tool) => tool.id === target.toolId,
       )?.connection === "required";
-    if (usesConnection && !target.connectionId)
+    // A saved link needs no connection; only a resume command fills one in.
+    if (usesConnection && !target.connectionId && !target.link)
       throw new PluginOperationRefused(
         HANDOFF_NEEDS_CONNECTION,
         "not_supported",
@@ -1159,7 +1160,9 @@ export class PluginManager {
       traceparent: this.events?.current()?.traceparent(),
       method: "openHandoff",
       projectId,
-      ...(usesConnection ? { connectionId: target.connectionId } : {}),
+      ...(usesConnection && target.connectionId
+        ? { connectionId: target.connectionId }
+        : {}),
     });
     try {
       if (target.link) {

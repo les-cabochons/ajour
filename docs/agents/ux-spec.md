@@ -1442,8 +1442,8 @@ with the reason. A start uses the pick unless the request names a connection,
 and refuses a tool that uses none when one is named. Each handoff keeps its
 connection, and Open runs its resume command through it, so an
 `opencode attach` gets that connection's address. A handoff started before its
-tool used a connection doesn't open: "This tool now hands off through a
-connection. Start a new handoff." Deleting the connection forgets it as a pick and pauses its handoffs
+tool used a connection still opens its saved link, but doesn't resume: "This
+tool now hands off through a connection. Start a new handoff." Deleting the connection forgets it as a pick and pauses its handoffs
 as Unknown with "The connection this handoff ran through was deleted."; they stay
 paused until removed. Access review lists each tool that hands off through a
 connection, and an update that makes a tool use one needs approval again.
