@@ -172,10 +172,15 @@ process gates on every broker call, including the check immediately before spawn
 The API state keeps `unsignedPluginProcessesEnabled`, defaulting to false for
 older files, beside `unsignedPluginsEnabled`. `pluginProcesses` keeps acceptance
 by plugin id and package identity. A package replacement clears acceptance in the
-same state mutation that records its origin. The host hashes package files and
-its directory for acceptance, so a version change, changed code at the same
-version, or a different development directory needs acceptance again. The API
-rejects an acceptance submitted from a page for a different package.
+same state mutation that records its origin. Installed unsigned packages key
+acceptance on their version and install time, so an update or reinstall at the
+same version needs acceptance again. Development directories use file hashes
+and their directory, with cached hashes invalidated by file metadata changes:
+size, mtime, ctime and identity, including inode and device. This change detection
+is best effort, which is acceptable because development builds are for plugin
+authors. Edits to the managed plugin folder by other programs running as the
+user are out of scope under ADR 0007's same-user code boundary. The API rejects
+an acceptance submitted from a page for a different package.
 
 The host supplies development status, which always requires both gates even when
 an installed plugin with that id has a signed origin. Other packages use the

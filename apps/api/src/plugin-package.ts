@@ -675,7 +675,7 @@ export async function uninstallPluginPackage(options: {
 /** Cached content digests, bounded to the most recently inspected development packages. */
 const processPackageFiles = new Map<
   string,
-  Map<string, { size: number; mtime: number; digest: string }>
+  Map<string, { signature: string; digest: string }>
 >();
 
 /** Links identify the link itself. Their targets are never traversed. */
@@ -684,10 +684,7 @@ export async function pluginProcessPackageKey(
 ): Promise<string> {
   const root = await realpath(directory);
   const previous = processPackageFiles.get(root);
-  const next = new Map<
-    string,
-    { size: number; mtime: number; digest: string }
-  >();
+  const next = new Map<string, { signature: string; digest: string }>();
   const hash = createHash("sha256").update(root);
   async function visit(folder: string) {
     const entries = await readdir(folder, { withFileTypes: true });
@@ -704,14 +701,21 @@ export async function pluginProcessPackageKey(
         const info = await lstat(file);
         if (!info.isFile())
           throw new Error("Plugin package changed during verification.");
+        const signature = JSON.stringify([
+          info.size,
+          info.mtimeMs,
+          info.ctimeMs,
+          info.ino,
+          info.dev,
+        ]);
         const cached = previous?.get(relative);
         const digest =
-          cached?.size === info.size && cached.mtime === info.mtimeMs
+          cached?.signature === signature
             ? cached.digest
             : createHash("sha256")
                 .update(await readFile(file))
                 .digest("hex");
-        next.set(relative, { size: info.size, mtime: info.mtimeMs, digest });
+        next.set(relative, { signature, digest });
         hash.update(
           JSON.stringify([relative, info.size, info.mtimeMs, digest]),
         );

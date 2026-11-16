@@ -1225,9 +1225,15 @@ separate from allowing unsigned installs and deactivating unsigned plugins.
 
 The Access section on an unsigned or development-directory plugin with a
 `processes` block has an "Allow this plugin to start processes" checkbox. It
-saves acceptance for that plugin's package and version. Any package replacement,
-version change or development package change requires acceptance again. A page
-for a replaced package cannot accept the replacement without a fresh review.
+saves acceptance for that plugin's package and version. Installed unsigned
+packages key acceptance on version and install time, so an update or reinstall
+requires acceptance again, including at the same version. Development-directory
+change detection uses file metadata: size, mtime, ctime and identity, including
+inode and device. A metadata change causes Ajour to re-hash the file. This is
+best effort, which is acceptable because development builds are for plugin
+authors. Edits to the managed plugin folder by other programs running as the
+user are out of scope under ADR 0007's same-user code boundary. A page for a
+replaced package cannot accept the replacement without a fresh review.
 
 The section shows "Turn on Unsigned plugins can start processes in Settings ›
 Plugins." while the global switch is off, then "Allow it below." until accepted.

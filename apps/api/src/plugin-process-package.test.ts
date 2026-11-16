@@ -1,4 +1,12 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -50,4 +58,27 @@ it("hashes file symlinks without reading their targets", async (context) => {
     throw error;
   }
   expect(await pluginProcessPackageKey(root)).toMatch(/^[a-f0-9]{64}$/);
+});
+
+it("changes the development package key after a same-length edit with restored mtime", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-package-edit-"));
+  roots.push(root);
+  const file = path.join(root, "index.js");
+  await writeFile(file, "export const value = 1;");
+  // Use a whole-second timestamp so restoring it loses no filesystem precision.
+  const modifiedAt = new Date("2020-01-01T00:00:00.000Z");
+  await utimes(file, modifiedAt, modifiedAt);
+  const before = await pluginProcessPackageKey(root);
+  const original = await stat(file);
+
+  // Let the filesystem's change timestamp advance before editing.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await writeFile(file, "export const value = 2;");
+  await utimes(file, original.atime, modifiedAt);
+
+  const edited = await stat(file);
+  expect(edited.size).toBe(original.size);
+  expect(edited.mtimeMs).toBe(original.mtimeMs);
+  expect(edited.ctimeMs).not.toBe(original.ctimeMs);
+  expect(await pluginProcessPackageKey(root)).not.toBe(before);
 });
