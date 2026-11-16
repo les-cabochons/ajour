@@ -4,7 +4,11 @@
 // modes, limits, crash budget and quit, and for the orphan sweep across a
 // forced kill of main and a relaunch, `sandbox-check/view-collection.cjs`,
 // the repro of #449, `sandbox-check/broker-pinning.cjs`, the broker's pinned
-// requests (#434), and a second Ajour started beside the first. Each run
+// requests (#434), a second Ajour started beside the first, and
+// `sandbox-check/process-attacks.cjs`, the malicious plugin's attacks on the
+// process broker (#725): its gates, text slots against a `.cmd` shim,
+// repository folders, links, the child's environment and the command
+// modes. Each run
 // has a user data folder of its own in the temp folder. It reads the checks'
 // `CHECK {json}` lines, holds them to what the tickets ask, and checks that
 // no process the app started outlives its
@@ -45,6 +49,11 @@ const brokerPinningMain = path.join(
   desktopRoot,
   "sandbox-check",
   "broker-pinning.cjs",
+);
+const processAttacksMain = path.join(
+  desktopRoot,
+  "sandbox-check",
+  "process-attacks.cjs",
 );
 const TOKEN = "fixture-token-7b1e5c9d2a";
 
@@ -1110,6 +1119,228 @@ async function checkBrokerPinning() {
   });
 }
 
+/**
+ * 8. The process broker under attack (#725, ADR 0019): the malicious
+ * plugin's hand offs, against the gates, the argument rules, repository
+ * folders, links, the child's environment and the command modes.
+ */
+async function checkProcessAttacks() {
+  const canary = `canary-${process.pid}-7f3a91`;
+  const { findings, exit, stderr, left, pids } = await runCheck(
+    "process-attacks",
+    [],
+    { main: processAttacksMain, env: { AJOUR_CHECK_CANARY: canary } },
+  );
+  if (findings.error) process.stdout.write(`${findings.error.error}\n`);
+  expect(exit.code === 0, "the check ran to the end", { exit, stderr });
+  const same = (actual, expected) =>
+    JSON.stringify(actual) === JSON.stringify(expected);
+  const refusedAll = (phase, code) =>
+    phase?.status === 200 &&
+    same(phase.attempts, {
+      declared: `!${code}`,
+      undeclared: `!${code}`,
+      "open-declared-scheme": `!${code}`,
+    });
+
+  const gates = findings["process-gates"] ?? {};
+  expect(
+    refusedAll(gates.switchOff, "unsigned_processes_off"),
+    "an unsigned plugin's declared command, undeclared command and declared link are refused while the unsigned process switch is off",
+    gates.switchOff,
+  );
+  expect(
+    refusedAll(gates.acceptanceMissing, "process_acceptance_required"),
+    "with the switch on, each is refused until the user accepts the plugin",
+    gates.acceptanceMissing,
+  );
+  expect(
+    gates.flagOff?.status === 200 &&
+      same(gates.flagOff.attempts, {
+        declared: { argv: ["text", "hello"], env: [] },
+        undeclared: "!undeclared",
+        "open-declared-scheme": "opened",
+      }),
+    "accepted, its declared command runs and its link opens, but an undeclared command is refused without processes.undeclaredCommands",
+    gates.flagOff,
+  );
+  // The host refuses the whole operation before the broker sees a call.
+  expect(
+    gates.widenedWithoutConsent?.status === 409 &&
+      gates.widenedWithoutConsent.error === "Allow the new access first." &&
+      same(gates.widenedWithoutConsent.attempts, {}) &&
+      gates.widenedWithoutConsent.processCalls === 0 &&
+      gates.packageKeyChanged === true,
+    "a package that adds undeclaredCommands without new consent runs nothing, and its acceptance lapses",
+    gates,
+  );
+
+  const attacks = findings["process-attacks"] ?? {};
+  const values = attacks.values ?? [];
+  const inject = attacks.inject ?? {};
+  expect(
+    inject.status === 200 &&
+      values.length > 0 &&
+      values.every((value, index) =>
+        same(inject.attempts[`text-${index}`], {
+          argv: ["text", value],
+          env: [],
+        }),
+      ),
+    `shell metacharacters in a text slot reach ${attacks.windows ? "the .cmd shim's script" : "the tool"} as one argument, unchanged`,
+    inject,
+  );
+  for (const name of [
+    "leading-dash",
+    "leading-dash-short",
+    "line-feed",
+    "carriage-return",
+    "nul",
+  ]) {
+    expect(
+      inject.attempts?.[name] === "!invalid_request",
+      `a text slot refuses: ${name}`,
+      inject.attempts?.[name],
+    );
+  }
+  if (attacks.windows) {
+    expect(
+      inject.attempts?.["unknown-shim"] === "!spawn_refused",
+      "a .cmd launcher the broker doesn't recognise is refused, never run through cmd.exe",
+      inject.attempts?.["unknown-shim"],
+    );
+  }
+  expect(
+    same(attacks.markers, []),
+    "no injection, inline code or unknown launcher wrote its marker",
+    attacks.markers,
+  );
+
+  const reach = attacks.reach?.attempts ?? {};
+  expect(
+    same(reach["own-folder"], {
+      argv: ["folder", attacks.ownFolder],
+      env: [],
+    }),
+    "a folder slot with the hand off project's folder id gets its real path",
+    { got: reach["own-folder"], expected: attacks.ownFolder },
+  );
+  for (const [name, meaning] of [
+    ["other-project-folder", "another project's folder id"],
+    [
+      "data-folder-junction",
+      "a folder that became a junction to Ajour's data folder",
+    ],
+    ["folder-path", "a path in place of a folder id"],
+    ["folder-unknown-id", "a folder id Ajour never saved"],
+    [
+      "undeclared-in-other-project-folder",
+      "an undeclared command in another project's folder",
+    ],
+  ]) {
+    expect(
+      reach[name] === "!folder_refused",
+      `refused with folder_refused: ${meaning}`,
+      reach[name],
+    );
+  }
+  expect(
+    String(attacks.dataFolderAdd).startsWith(
+      "Ajour's data and install folders and their parents cannot be repository folders.",
+    ),
+    "the chooser refuses Ajour's data folder as a repository folder",
+    attacks.dataFolderAdd,
+  );
+  expect(
+    same(reach.environment, { argv: ["text", "environment"], env: [] }),
+    "a command's output shows no AJOUR_ variable: the child's environment has none",
+    reach.environment,
+  );
+  expect(
+    attacks.eventsHoldCanary === false && attacks.eventsHoldValues === false,
+    "no event holds an argument value or an AJOUR_ value",
+    attacks,
+  );
+  expect(
+    reach["undeclared-command-id"] === "!undeclared",
+    "a command id the manifest doesn't declare is refused",
+    reach["undeclared-command-id"],
+  );
+  for (const name of [
+    "open-undeclared-scheme",
+    "open-file",
+    "open-file-posix",
+    "open-javascript",
+  ]) {
+    expect(
+      reach[name] === "!undeclared",
+      `a link is refused as undeclared: ${name}`,
+      reach[name],
+    );
+  }
+  expect(
+    reach["open-https-credentials"] === "!invalid_request",
+    "an https link with credentials is refused",
+    reach["open-https-credentials"],
+  );
+  expect(
+    reach["open-declared-scheme"] === "opened" &&
+      same(attacks.opened, ["escape-check://probe", "escape-check://reach"]),
+    "only the declared scheme's links reached main's open, through its own check",
+    attacks.opened,
+  );
+
+  const unicode = attacks.unicode?.attempts ?? {};
+  expect(
+    attacks.unicode?.status === 200 &&
+      Object.keys(unicode).length === 9 &&
+      Object.values(unicode).every((outcome) => outcome === "!invalid_request"),
+    "an undeclared command with Unicode format, control or separator characters in its argv or name is refused",
+    unicode,
+  );
+
+  expect(
+    attacks.modeBefore === "always-ask" &&
+      same(attacks.askAlways?.attempts, {
+        allowlisted: "!no_window",
+        "inline-code": "!no_window",
+        unknown: "!no_window",
+      }),
+    "Always ask, the unsigned plugin's default, asks even for an allowlisted command, and no window denies each",
+    { mode: attacks.modeBefore, phase: attacks.askAlways },
+  );
+  expect(
+    same(attacks.askAuto?.attempts, {
+      allowlisted: 0,
+      "inline-code": "!user_denied",
+      unknown: "!no_window",
+    }),
+    "in Auto, an allowlisted command runs without asking, inline code is denied by the user, and a command off the allowlist that gets no answer is denied",
+    attacks.askAuto,
+  );
+  const asks = attacks.asks ?? [];
+  expect(
+    asks.length === 2 &&
+      asks.every(
+        (ask) =>
+          ask.executable === "node" &&
+          ask.risky === true &&
+          typeof ask.reason === "string" &&
+          ask.reason.length > 0 &&
+          ask.signed === false,
+      ) &&
+      asks[0].argv[0] === "-e" &&
+      same(asks[1].argv, ["--version"]),
+    "in Auto, inline code and a command off the allowlist each reach the window as a risky ask with its reason and exact argv",
+    asks,
+  );
+  expect(
+    findings.quitting?.pluginPagesLeft === 0 && left.length === 0,
+    "a normal quit leaves no plugin page and no process behind",
+    { pagesLeft: findings.quitting?.pluginPagesLeft, pids, left },
+  );
+}
+
 // Windows and macOS run every section. Elsewhere plugins stay off (#381), so
 // the check proves only that.
 const sections = SANDBOXED_PLATFORMS.has(process.platform)
@@ -1124,6 +1355,7 @@ const sections = SANDBOXED_PLATFORMS.has(process.platform)
       ["A plugin's page and its view", checkViewCollection],
       ["A second Ajour beside the first", checkSecondInstance],
       ["The broker's pinned requests", checkBrokerPinning],
+      ["The process broker under attack", checkProcessAttacks],
     ]
   : [
       [

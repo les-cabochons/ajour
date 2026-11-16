@@ -21,7 +21,19 @@
     },
     { "id": "probe", "label": "Catch-all address", "type": "text" }
   ],
-  "capabilities": { "connector": {} },
+  "capabilities": {
+    "connector": {},
+    "handoff": {
+      "tools": [
+        {
+          "id": "probe",
+          "label": "Probe",
+          "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
+          "settings": []
+        }
+      ]
+    }
+  },
   "network": {
     "auth": { "scheme": "bearer", "secretField": "token" },
     "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
@@ -30,5 +42,35 @@
       { "method": "GET", "path": "/api/**" }
     ],
     "requestHeaders": ["Accept"]
+  },
+  "processes": {
+    "executables": {
+      "echo": { "names": ["ajour-check-echo"] },
+      "unknown": { "names": ["ajour-check-unknown"] }
+    },
+    "commands": [
+      {
+        "id": "echo-text",
+        "executable": "echo",
+        "args": ["text", "{value:text}"],
+        "mode": "capture",
+        "timeoutSeconds": 20
+      },
+      {
+        "id": "echo-folder",
+        "executable": "echo",
+        "args": ["folder", "{folder:folder}"],
+        "mode": "capture",
+        "timeoutSeconds": 20
+      },
+      {
+        "id": "unknown-shim",
+        "executable": "unknown",
+        "args": ["{value:text}"],
+        "mode": "capture",
+        "timeoutSeconds": 20
+      }
+    ],
+    "openSchemes": ["escape-check"]
   }
 }
