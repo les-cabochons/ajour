@@ -899,8 +899,10 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
 
 ## The plugin guarantees
 
-- **G1, hard and tested:** no plugin can obtain any credential, its own or
-  another plugin's, by any path. The broker in main holds every credential, a
+- **G1, hard and tested, for plugins that start no process:** no plugin can
+  obtain any credential, its own or another plugin's, by any path. A plugin
+  with a `processes` block is outside G1, declared commands and every command
+  mode included (ADR 0019). The broker in main holds every credential, a
   plugin's connection reaches it without secrets, and the renderer has no
   Node, no network and no storage of its own. A release claims G1 only after
   the malicious-plugin and lifecycle suites (`check:plugin-sandbox`) and the

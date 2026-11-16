@@ -283,7 +283,7 @@ One person's sign-in with a service such as Microsoft or Google, which Ajour hol
 _Avoid_: Login, identity, credential, token, session
 
 **Vault**:
-Where Ajour keeps the secrets you give it, such as tokens, secret addresses and accounts, protected by the operating system. No plugin can read it, and Ajour never shows a stored value.
+Where Ajour keeps the secrets you give it, such as tokens, secret addresses and accounts, protected by the operating system. No plugin can read it, except through a command it was allowed to start, and Ajour never shows a stored value.
 _Avoid_: Keychain, password manager, secret store
 
 **Token**:
