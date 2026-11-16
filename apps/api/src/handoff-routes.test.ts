@@ -30,7 +30,12 @@ it("starts, reads, refreshes and removes a fake tool's thread without logging co
       connectionFields: [],
       capabilities: {
         handoff: {
-          tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+          tools: ["t3", "other"].map((id) => ({
+            id,
+            label: id,
+            iconSvg: "<svg/>",
+            settings: [],
+          })),
         },
       },
     }),
@@ -39,8 +44,8 @@ it("starts, reads, refreshes and removes a fake tool's thread without logging co
     path.join(plugin, "plugin.mjs"),
     `
 export function detectTools() { return { tools: [{ id: 't3', available: true }] }; }
-export function startHandoff(request) { if (request.title === 'refuse') throw new Error('Tool says no'); return { threadId: 'thread', native: { label: 'CANARY-HANDOFF' }, link: 'https://example.test/CANARY-HANDOFF' }; }
-export function readHandoffStates(request) { return request.handoffs.map(h => ({ id: h.id, state: 'needs-you', native: { label: 'CANARY-HANDOFF' }, title: 'CANARY-HANDOFF', branch: 'CANARY-HANDOFF', pullRequests: [{ url: 'https://example.test/CANARY-HANDOFF' }] })); }
+export function startHandoff(request) { if (request.title === 'unsafe') return { threadId: 'bad', native: {}, link: 'javascript:alert(1)' }; if (request.title === 'refuse') throw new Error('Tool says no'); return { threadId: request.title === 'fail-refresh' ? 'fail' : 'thread', native: { label: 'CANARY-HANDOFF' }, link: 'https://example.test/CANARY-HANDOFF' }; }
+export function readHandoffStates(request) { if (request.handoffs.some(h => h.threadId === "fail")) throw new Error("Refresh refused by tool"); return request.handoffs.map(h => ({ id: h.id, state: 'needs-you', native: { label: 'CANARY-HANDOFF' }, title: 'CANARY-HANDOFF', branch: 'CANARY-HANDOFF', pullRequests: [{ url: 'https://example.test/CANARY-HANDOFF' }] })); }
 `,
   );
   const sink = createRecordingSink();
@@ -63,6 +68,9 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   try {
+    expect((await call("POST", "/api/handoffs/missing/refresh")).status).toBe(
+      404,
+    );
     const folder = await addRepositoryFolderForServer(
       server,
       "p",
@@ -105,21 +113,47 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
       status: 409,
       body: { error: "Tool says no" },
     });
+    expect(
+      (await call("POST", "/api/handoffs", { ...input, title: "unsafe" }))
+        .status,
+    ).toBe(409);
     expect((await call("GET", "/api/handoffs")).body).toHaveLength(1);
     expect(
       (await call("POST", `/api/handoffs/${id}/refresh`)).body,
-    ).toMatchObject([
-      {
-        state: "needs-you",
-        history: [{ state: "needs-you" }],
-        branch: "CANARY-HANDOFF",
-      },
-    ]);
+    ).toMatchObject({
+      handoffs: [
+        {
+          state: "needs-you",
+          history: [{ state: "needs-you" }],
+          branch: "CANARY-HANDOFF",
+        },
+      ],
+      failures: [],
+    });
     expect(
       (await call("POST", "/api/handoffs", { ...input, projectId: "other" }))
         .status,
     ).toBe(409);
     expect((await call("DELETE", `/api/handoffs/${id}`)).body).toEqual([]);
+    await call("POST", "/api/handoffs", { ...input, title: "fail-refresh" });
+    const allFailed = await call("POST", "/api/handoffs/refresh");
+    expect(allFailed.body).toHaveProperty(
+      "error",
+      "t3: Refresh refused by tool",
+    );
+    expect(allFailed).toMatchObject({
+      status: 409,
+      body: { failures: [{ toolId: "t3", reason: "Refresh refused by tool" }] },
+    });
+    await call("POST", "/api/handoffs", { ...input, toolId: "other" });
+    const partial = await call("POST", "/api/handoffs/refresh");
+    expect(partial).toMatchObject({
+      status: 200,
+      body: {
+        failures: [{ toolId: "t3", reason: "Refresh refused by tool" }],
+        handoffs: [{ state: "working" }, { state: "needs-you" }],
+      },
+    });
     const events = sink.events;
     expect(events.map((e) => e.name)).toEqual(
       expect.arrayContaining([

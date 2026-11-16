@@ -45,7 +45,7 @@ function syncQuestionToasts(snapshot: AgentsSnapshot) {
   }
 }
 
-/** Keeps the MCP bridge open while MCP is on. Mount once, in the app shell. */
+/** Keeps the window bridge open for agents and handoffs. Mount once in the app shell. */
 export function AgentBridgeHost() {
   const settings = useMcpSettings();
   const { snapshot, panelOpen } = useAgentBridgeState();
@@ -59,7 +59,13 @@ export function AgentBridgeHost() {
     return connectMcpBridge(
       {
         runToolCall: runAgentToolCall,
-        onStatus: (status) => setAgentBridgeStatus(enabled ? status : "off"),
+        onStatus: (status) => {
+          setAgentBridgeStatus(enabled ? status : "off");
+          if (status === "connected")
+            void setHandoffVisibility(
+              document.visibilityState !== "hidden",
+            ).catch(() => undefined);
+        },
         onAgents: setAgentsSnapshot,
       },
       "/api/handoffs/bridge",

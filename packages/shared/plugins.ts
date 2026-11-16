@@ -1,3 +1,4 @@
+import { handoffCapabilitySchema } from "./handoffs.ts";
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
@@ -360,31 +361,7 @@ export const pluginCapabilitiesObjectSchema = z.object({
    */
   projectSource: projectSourceCapabilitySchema.optional(),
   /** Links a backlog item to a coding tool thread. Plugin API 4 only. */
-  handoff: z
-    .object({
-      tools: z
-        .array(
-          z
-            .object({
-              id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
-              label: z.string().min(1).max(120),
-              iconSvg: z.string().min(1).max(20000),
-              settings: z.array(pluginFieldSchema).max(50),
-            })
-            .strict(),
-        )
-        .min(1)
-        .max(50)
-        .superRefine((tools, ctx) => {
-          if (new Set(tools.map((t) => t.id)).size !== tools.length)
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: "Tool ids must be unique.",
-            });
-        }),
-    })
-    .strict()
-    .optional(),
+  handoff: handoffCapabilitySchema(pluginFieldSchema),
   /**
    * Keeps the user's time entries in step with another system, both ways,
    * on the projects the same connection manages. Plugin API 4 only, beside

@@ -28,6 +28,7 @@ function fakeStream() {
     }),
   };
   return {
+    disconnect: () => closeHandlers.forEach((handler) => handler()),
     response: stream as unknown as ServerResponse,
     stream,
     written,
@@ -91,4 +92,22 @@ describe("McpBridge", () => {
     expect(first.requestIds()).toEqual([]);
     expect(second.requestIds()).toHaveLength(1);
   });
+});
+
+it("reports detach once on disconnect, replacement and shutdown", () => {
+  const detached = vi.fn();
+  const bridge = new McpBridge({ onDetach: detached });
+  const first = fakeStream();
+  bridge.attach(first.response);
+  first.disconnect();
+  expect(detached).toHaveBeenCalledTimes(1);
+  const second = fakeStream();
+  bridge.attach(second.response);
+  bridge.attach(fakeStream().response);
+  expect(detached).toHaveBeenCalledTimes(2);
+  second.disconnect();
+  expect(detached).toHaveBeenCalledTimes(2);
+  bridge.close();
+  bridge.close();
+  expect(detached).toHaveBeenCalledTimes(3);
 });

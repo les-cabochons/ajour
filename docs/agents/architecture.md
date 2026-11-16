@@ -1095,7 +1095,9 @@ requests, answers and local records. API 4 manifests declare tools under
 starts and refreshes. The storage's version 12 migration adds local handoffs.
 Prompt and settings content reaches the plugin for a start and is never kept in
 the handoff record. Only successful starts create records. History keeps the last
-50 common-state changes with their native state; ordinary checks add no history.
+50 common-state changes with their time and optional native status and label, capped
+at 64 and 200 characters. Native results are limited to 4 KB of serialized UTF-8;
+ordinary checks add no history. Existing native history is compacted on load.
 Removing a record does not stop or delete its external thread.
 
 Refreshes batch by plugin, tool and project. The project comes from the saved
@@ -1104,6 +1106,14 @@ another project's folders. The API's 15 second tick checks which records are due
 30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
 refresh after 24 hours since their last common-state change. Manual refresh still
 checks them. A failed read preserves state and retries at the normal cadence.
+Each batch takes its own time and enters one FIFO queue. A manual refresh waits
+for the active batch, before the tick enqueues its next one. Concurrent ticks
+are skipped. No window means hidden cadence; disconnect resets visibility.
+Unavailable plugins, disabled capabilities and removed tools become unknown once,
+with a native label explaining why. Their plugin reads stop until availability
+returns. Refresh runs every batch and returns `{ handoffs, failures }`, with each
+failure's plugin, tool, project and reason. All failed is HTTP 409, partial success
+is 200, and an unknown single-record refresh is 404.
 
 The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE
@@ -1112,7 +1122,13 @@ The authenticated window routes are GET and POST `/api/handoffs`, POST
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
 
-Snapshots publish on the SSE bridge after changes and on attach. The window's
+Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
+data, VBScript, blob and about links are always refused. Resume commands must be
+declared. Refresh drops unsafe links and non-HTTPS pull request URLs.
+
+Snapshots publish on the SSE bridge after visible changes and on attach.
+`checkedAt` is excluded from change detection. The web store reuses unchanged
+records and per-item arrays, including when only `checkedAt` differs. The window's
 `/api/handoffs/bridge` uses the same bridge protocol while MCP is off; it does
 not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by

@@ -1474,9 +1474,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
     timeoutMs: options.mcpBridgeTimeoutMs,
+    onDetach: () => handoffs.setVisible(false),
     onAttach: () => {
       mcpBridge.publish("agents", agentSessions.snapshot());
-      void handoffs.publish().catch(() => undefined);
+      void handoffs.publish(true).catch(() => undefined);
     },
   });
   const agentSessions = new AgentSessions({
@@ -1486,6 +1487,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const handoffs = new Handoffs({
     storage,
     plugins: pluginManager,
+    unavailableReason: async (pluginId) => {
+      const { plugins, access } = await pluginManager.inspectPlugins();
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "handoff",
+        runnablePlugins(plugins, access),
+        "refreshing it",
+      );
+      return inactive?.message;
+    },
     events,
     onChange: (records) => mcpBridge.publish("handoffs", records),
   });
@@ -1689,12 +1701,46 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
     handoffRefreshAll: async ({ response }) => {
-      await handoffs.refresh();
-      writeJson(response, 200, await storage.listHandoffs());
+      const result = await handoffs.refresh();
+      writeJson(
+        response,
+        result.failures.length && !result.succeeded ? 409 : 200,
+        {
+          handoffs: await storage.listHandoffs(),
+          failures: result.failures,
+          ...(!result.succeeded && result.failures.length
+            ? {
+                error: result.failures
+                  .map((f) => `${f.toolId}: ${f.reason}`)
+                  .join("\n"),
+              }
+            : {}),
+        },
+      );
     },
     handoffRefresh: async ({ response, params }) => {
-      await handoffs.refresh(params.handoffId);
-      writeJson(response, 200, await storage.listHandoffs());
+      if (
+        !(await storage.listHandoffs()).some((h) => h.id === params.handoffId)
+      ) {
+        writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      const result = await handoffs.refresh(params.handoffId);
+      writeJson(
+        response,
+        result.failures.length && !result.succeeded ? 409 : 200,
+        {
+          handoffs: await storage.listHandoffs(),
+          failures: result.failures,
+          ...(!result.succeeded && result.failures.length
+            ? {
+                error: result.failures
+                  .map((f) => `${f.toolId}: ${f.reason}`)
+                  .join("\n"),
+              }
+            : {}),
+        },
+      );
     },
     handoffRemove: async ({ response, params, unit }) => {
       unit.set({ handoff: { id: params.handoffId } });

@@ -350,10 +350,6 @@ commands, detached and terminal commands are refused for now. A process runs as
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
 
-## License
-
-MIT
-
 ## Handoff tools
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
@@ -367,7 +363,7 @@ folder id and name, prompt, title, optional branch, item key and URL, and
 settings. It returns `{ threadId, link?, resume?, native }`. Throw an error to
 refuse a start; Ajour returns the reason and records no handoff.
 
-`native` is an opaque JSON object, up to 32 KB, for the tool's own status and
+`native` is an opaque JSON object, up to 4 KB serialized as UTF-8, for the tool's own status and
 label. `resume`, when present, is `{ command, args }` for a declared command.
 The host keeps it for the later Open workflow; this capability does not run it.
 
@@ -378,3 +374,7 @@ Return exactly one answer for each id with `state` and `native`, plus optional
 `gone` and `unknown`. A new handoff starts in `working`. Reads batch within one
 project, and process folder slots can resolve only that project's saved folders.
 Prompts and settings are not stored in handoff records or events.
+
+## License
+
+MIT

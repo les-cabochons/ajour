@@ -56,3 +56,23 @@ describe("handoff transitions", () => {
     ).toBe(true);
   });
 });
+
+it("stores bounded history summaries rather than opaque native objects", () => {
+  const record = updateHandoff(
+    startHandoff(input, { threadId: "t", native: {} }, 0),
+    {
+      id: "h1",
+      state: "ready",
+      native: {
+        status: "s".repeat(100),
+        label: "l".repeat(300),
+        payload: "x".repeat(3000),
+      },
+    },
+    1,
+  );
+  expect(record.history).toEqual([
+    { state: "ready", at: 1, status: "s".repeat(64), label: "l".repeat(200) },
+  ]);
+  expect(JSON.stringify(record.history).length).toBeLessThan(350);
+});

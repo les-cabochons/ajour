@@ -15,8 +15,8 @@ export const handoffStateSchema = z.enum([
 export const handoffNativeSchema = z
   .record(z.unknown())
   .refine(
-    (value) => JSON.stringify(value).length <= 32_768,
-    "Native state is too large.",
+    (value) => new TextEncoder().encode(JSON.stringify(value)).length <= 4096,
+    "Native state exceeds 4 KB serialized.",
   );
 export const startHandoffRequestSchema = z
   .object({
@@ -84,6 +84,7 @@ export const handoffUpdateSchema = z
   .object({
     id,
     state: handoffStateSchema,
+    link: z.string().max(2000).optional(),
     native: handoffNativeSchema,
     title: z.string().min(1).max(500).optional(),
     branch: z.string().max(500).optional(),
@@ -91,7 +92,7 @@ export const handoffUpdateSchema = z
       .array(
         z
           .object({
-            url: z.string().url().max(2000),
+            url: z.string().max(2000),
             title: z.string().max(500).optional(),
           })
           .strict(),
@@ -122,7 +123,8 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
       z
         .object({
           state: handoffStateSchema,
-          native: handoffNativeSchema,
+          status: z.string().max(64).optional(),
+          label: z.string().max(200).optional(),
           at: z.number().finite(),
         })
         .strict(),
@@ -130,6 +132,12 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
     .max(50),
 });
 export const handoffsSnapshotSchema = z.array(handoffRecordSchema);
+export const handoffRefreshResultSchema = z.object({
+  handoffs: handoffsSnapshotSchema,
+  failures: z.array(
+    z.object({ pluginId: id, toolId: id, projectId: id, reason: z.string() }),
+  ),
+});
 export const handoffStartRouteSchema = startHandoffRequestSchema
   .omit({ folder: true, tool: true })
   .extend({
@@ -151,3 +159,36 @@ export type ReadHandoffStatesResult = z.infer<
 >;
 export type HandoffUpdate = z.infer<typeof handoffUpdateSchema>;
 export type HandoffStartRoute = z.infer<typeof handoffStartRouteSchema>;
+
+export function handoffCapabilitySchema<
+  T extends z.ZodType<{ secret?: boolean }>,
+>(fieldSchema: T) {
+  return z
+    .object({
+      tools: z
+        .array(
+          z
+            .object({
+              id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
+              label: z.string().min(1).max(120),
+              iconSvg: z.string().min(1).max(20000),
+              settings: z
+                .array(fieldSchema)
+                .max(50)
+                .refine(
+                  (fields) => fields.every((f) => !f.secret),
+                  "Handoff settings cannot contain secrets.",
+                ),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(50)
+        .refine(
+          (tools) => new Set(tools.map((t) => t.id)).size === tools.length,
+          "Tool ids must be unique.",
+        ),
+    })
+    .strict()
+    .optional();
+}

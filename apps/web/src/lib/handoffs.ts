@@ -11,12 +11,32 @@ let revision = 0;
 export function setHandoffs(records: Handoff[]) {
   revision++;
   loaded = true;
-  current = records;
-  const next = new Map<string, Handoff[]>();
-  for (const record of records) {
+  const previous = new Map(current.map((record) => [record.id, record]));
+  const stable = records.map((record) => {
+    const old = previous.get(record.id);
+    const visible = ({ checkedAt: _checkedAt, ...value }: Handoff) =>
+      JSON.stringify(value);
+    return old && visible(old) === visible(record) ? old : record;
+  });
+  if (
+    stable.length === current.length &&
+    stable.every((record, i) => record === current[i])
+  )
+    return;
+  current = stable;
+  const next = new Map<string, readonly Handoff[]>();
+  for (const record of stable) {
     const group = next.get(record.workItemId) ?? [];
-    group.push(record);
-    next.set(record.workItemId, group);
+    next.set(record.workItemId, [...group, record]);
+  }
+  for (const [id, group] of next) {
+    const old = byItem.get(id);
+    if (
+      old &&
+      old.length === group.length &&
+      group.every((record, i) => record === old[i])
+    )
+      next.set(id, old);
   }
   byItem = next;
   listeners.forEach((listener) => listener());

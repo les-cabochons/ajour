@@ -1,3 +1,4 @@
+import { handoffCapabilitySchema } from "./handoffs.ts";
 import { z } from "zod";
 import {
   agentTaskObjectSchema,
@@ -761,34 +762,7 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
     agentTask: z
       .object({ tasks: z.array(pluginApi4AgentTaskSchema).min(1).max(10) })
       .optional(),
-    handoff: z
-      .object({
-        tools: z
-          .array(
-            z
-              .object({
-                id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
-                label: z.string().min(1).max(120),
-                iconSvg: z.string().min(1).max(20000),
-                settings: z
-                  .array(pluginApi4FieldSchema)
-                  .max(50)
-                  .refine(
-                    (fields) => fields.every((f) => !f.secret),
-                    "Handoff settings cannot contain secrets.",
-                  ),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(50)
-          .refine(
-            (tools) => new Set(tools.map((t) => t.id)).size === tools.length,
-            "Tool ids must be unique.",
-          ),
-      })
-      .strict()
-      .optional(),
+    handoff: handoffCapabilitySchema(pluginApi4FieldSchema),
     /**
      * A project data shape, with data shape API 1's dataset contract. It
      * moves into the main manifest and runs in the shared runtime.

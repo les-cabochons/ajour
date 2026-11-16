@@ -116,3 +116,120 @@ export async function readHandoffStates(request) { await process(); return reque
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it.each([
+  "javascript:alert(1)",
+  "file:///secret",
+  "data:text/plain,x",
+  "vbscript:x",
+  "blob:https://x",
+  "about:blank",
+  "undeclared:thread",
+  "http://example.test/thread",
+  "not a URL",
+  "",
+])(
+  "refuses unsafe start links and strips unsafe refresh links: %s",
+  async (link) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "handoff-links-"));
+    await writeFile(
+      path.join(root, "plugin.json"),
+      JSON.stringify({
+        id: "links",
+        version: "1.0.0",
+        apiVersion: 4,
+        displayName: "Links",
+        description: "Test",
+        iconSvg: "<svg/>",
+        entrypoint: "plugin.mjs",
+        connectionFields: [],
+        processes: {
+          openSchemes: ["t3"],
+          executables: { tool: { names: ["tool"] } },
+          commands: [
+            { id: "resume", executable: "tool", args: [], mode: "capture" },
+          ],
+        },
+        capabilities: {
+          handoff: {
+            tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+          },
+        },
+      }),
+    );
+    await writeFile(
+      path.join(root, "plugin.mjs"),
+      `export function startHandoff(r) { return { threadId: 't', native: r.title === 'large' ? { payload: 'x'.repeat(4096) } : {}, ...(r.title === 'declared' ? { resume: { command: 'resume', args: {} } } : r.title === 'resume' ? { resume: { command: 'missing', args: {} } } : { link: r.title === "empty-link" ? "" : r.title }) }; }
+export function readHandoffStates(r) { return r.handoffs.map(h => ({ id: h.id, state: 'ready', native: h.threadId === 'large' ? { payload: 'x'.repeat(4096) } : {}, link: ${JSON.stringify(link)}, pullRequests: [{ url: ${JSON.stringify(link)} }, { url: 'https://example.test/pr' }] })); }`,
+    );
+    const manager = new PluginManager({
+      runtime: new InProcessPluginRuntime(),
+      installedPluginDirectory: path.join(root, "installed"),
+      allowDevelopmentPlugins: true,
+      developmentPluginDirectories: [root],
+    });
+    try {
+      const request = {
+        tool: "t3",
+        folder: { id: "f", name: "Repo" },
+        title: link || "empty-link",
+        prompt: "P",
+        item: { key: "", url: "" },
+        settings: {},
+      };
+      await expect(manager.startHandoff("links", request, "p")).rejects.toThrow(
+        /link/i,
+      );
+      await expect(
+        manager.startHandoff("links", { ...request, title: "resume" }, "p"),
+      ).rejects.toThrow(/command/i);
+      await expect(
+        manager.startHandoff("links", { ...request, title: "large" }, "p"),
+      ).rejects.toThrow(/4 KB/);
+      await expect(
+        manager.startHandoff("links", { ...request, title: "declared" }, "p"),
+      ).resolves.toMatchObject({ resume: { command: "resume" } });
+      await expect(
+        manager.startHandoff("links", { ...request, title: "t3:thread" }, "p"),
+      ).resolves.toMatchObject({ link: "t3:thread" });
+      await expect(
+        manager.startHandoff(
+          "links",
+          { ...request, title: "https://example.test/thread" },
+          "p",
+        ),
+      ).resolves.toMatchObject({ link: "https://example.test/thread" });
+      const result = await manager.readHandoffStates(
+        "links",
+        {
+          tool: "t3",
+          handoffs: [{ id: "h", threadId: "t", folderId: "f", native: {} }],
+        },
+        "p",
+      );
+      await expect(
+        manager.readHandoffStates(
+          "links",
+          {
+            tool: "t3",
+            handoffs: [
+              { id: "h", threadId: "large", folderId: "f", native: {} },
+            ],
+          },
+          "p",
+        ),
+      ).rejects.toThrow(/4 KB/);
+      expect(result).toEqual([
+        {
+          id: "h",
+          state: "ready",
+          native: {},
+          pullRequests: [{ url: "https://example.test/pr" }],
+        },
+      ]);
+    } finally {
+      await manager.shutdown();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -1007,13 +1007,35 @@ export class PluginManager {
     request: StartHandoffRequest,
     projectId: string,
   ) {
+    let manifestForResult: PluginManifest;
     return this.invokePlugin(
       pluginId,
       "startHandoff",
       { request: startHandoffRequestSchema.parse(request), projectId },
-      startHandoffResultSchema,
+      {
+        parse(value: unknown) {
+          const result = startHandoffResultSchema.parse(value);
+          if (
+            result.link !== undefined &&
+            !validHandoffLink(result.link, manifestForResult)
+          )
+            throw new Error("The handoff link is not allowed by the manifest.");
+          if (
+            result.resume &&
+            (!isPluginApi4Manifest(manifestForResult) ||
+              !manifestForResult.processes?.commands.some(
+                (c) => c.id === result.resume!.command,
+              ))
+          )
+            throw new Error(
+              "The resume command is not declared by the manifest.",
+            );
+          return result;
+        },
+      },
       undefined,
       (manifest) => {
+        manifestForResult = manifest;
         requireCapability("handoff")(manifest);
         if (
           !manifest.capabilities.handoff?.tools.some(
@@ -1029,6 +1051,7 @@ export class PluginManager {
     request: ReadHandoffStatesRequest,
     projectId: string,
   ) {
+    let manifestForResult: PluginManifest;
     const parsed = readHandoffStatesRequestSchema.parse(request);
     return this.invokePlugin(
       pluginId,
@@ -1044,11 +1067,27 @@ export class PluginManager {
             result.some((h) => !ids.has(h.id))
           )
             throw new Error("The tool must answer each handoff exactly once.");
-          return result;
+          return result.map((update) => {
+            const { link, pullRequests, ...rest } = update;
+            return {
+              ...rest,
+              ...(link && validHandoffLink(link, manifestForResult)
+                ? { link }
+                : {}),
+              ...(pullRequests
+                ? {
+                    pullRequests: pullRequests.filter((pr) =>
+                      validHttps(pr.url),
+                    ),
+                  }
+                : {}),
+            };
+          });
         },
       },
       undefined,
       (manifest) => {
+        manifestForResult = manifest;
         requireCapability("handoff")(manifest);
         if (
           !manifest.capabilities.handoff?.tools.some(
@@ -1612,4 +1651,30 @@ function lifecycleOf(
       settings,
     ),
   };
+}
+
+function validHttps(link: string): boolean {
+  try {
+    return new URL(link).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+function validHandoffLink(link: string, manifest: PluginManifest): boolean {
+  try {
+    const scheme = new URL(link).protocol.slice(0, -1).toLowerCase();
+    if (
+      ["javascript", "file", "data", "vbscript", "blob", "about"].includes(
+        scheme,
+      )
+    )
+      return false;
+    return (
+      scheme === "https" ||
+      (isPluginApi4Manifest(manifest) &&
+        !!manifest.processes?.openSchemes.includes(scheme))
+    );
+  } catch {
+    return false;
+  }
 }

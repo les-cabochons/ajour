@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   handoffRecordSchema,
+  handoffRefreshResultSchema,
   handoffsSnapshotSchema,
   type HandoffStartRoute,
 } from "@ajour/shared/handoffs";
@@ -1918,7 +1919,7 @@ export function refreshHandoffs(id?: string) {
       ? `/api/handoffs/${encodeURIComponent(id)}/refresh`
       : "/api/handoffs/refresh",
     { method: "POST", body: "{}" },
-    handoffsSnapshotSchema,
+    handoffRefreshResultSchema,
   );
 }
 export function removeHandoff(id: string) {

@@ -31,6 +31,10 @@ interface Options {
       projectId: string,
     ): Promise<ReadHandoffStatesResult>;
   };
+  unavailableReason?(
+    pluginId: string,
+    toolId: string,
+  ): Promise<string | undefined>;
   onChange(records: Handoff[]): void;
   events?: ApiEvents;
   now?: () => number;
@@ -42,8 +46,10 @@ export class HandoffRefused extends Error {}
 export class Handoffs {
   private readonly options: Options;
   private readonly now: () => number;
-  private visible = true;
-  private refreshing?: Promise<void>;
+  private visible = false;
+  private ticking = false;
+  private refreshing?: Promise<unknown>;
+  private lastPublished?: string;
   constructor(options: Options) {
     this.options = options;
     this.now = options.now ?? Date.now;
@@ -51,8 +57,15 @@ export class Handoffs {
   setVisible(visible: boolean) {
     this.visible = visible;
   }
-  async publish() {
-    this.options.onChange(await this.options.storage.listHandoffs());
+  async publish(force = false) {
+    const records = await this.options.storage.listHandoffs();
+    const visible = JSON.stringify(
+      records.map(({ checkedAt: _checkedAt, ...record }) => record),
+    );
+    if (force || visible !== this.lastPublished) {
+      this.lastPublished = visible;
+      this.options.onChange(records);
+    }
   }
   async start(input: HandoffStartRoute): Promise<Handoff> {
     const folder = (
@@ -117,20 +130,32 @@ export class Handoffs {
     await this.publish();
   }
   async tick() {
-    await this.refresh(undefined, true);
-  }
-  async refresh(id?: string, automatic = false): Promise<void> {
-    // Serialize with manual refresh too, so an older answer cannot overwrite a newer one.
-    while (this.refreshing) {
-      await this.refreshing.catch(() => undefined);
-      if (automatic) return;
-    }
-    const task = this.refreshRecords(id, automatic);
-    this.refreshing = task;
+    if (this.ticking) return;
+    this.ticking = true;
     try {
-      await task;
+      await this.refresh(undefined, true);
     } finally {
-      if (this.refreshing === task) this.refreshing = undefined;
+      this.ticking = false;
+    }
+  }
+  async refresh(id?: string, automatic = false) {
+    return this.refreshRecords(id, automatic);
+  }
+  // Only one batch owns plugin state at a time. Manual work queues behind the
+  // current batch, before the tick can enqueue its next batch.
+  private async runBatch<T>(run: () => Promise<T>): Promise<T> {
+    const previous = this.refreshing;
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.refreshing = turn;
+    await previous?.catch(() => undefined);
+    try {
+      return await run();
+    } finally {
+      release();
+      if (this.refreshing === turn) this.refreshing = undefined;
     }
   }
   private async refreshRecords(id: string | undefined, automatic: boolean) {
@@ -159,44 +184,115 @@ export class Handoffs {
         batches.push(group.slice(i, i + 1000));
       return batches;
     });
-    for (const batch of batches) {
-      const first = batch[0]!;
-      const unit = this.options.events?.start("handoff.refresh", {
-        kind: "job",
-        trigger: automatic ? "system" : "user",
-      });
-      unit?.set({
-        plugin: { id: first.pluginId },
-        handoff: { tool: first.toolId, count: batch.length },
-      });
-      try {
-        const updates = await this.options.plugins.readHandoffStates(
-          first.pluginId,
-          {
-            tool: first.toolId,
-            handoffs: batch.map(({ id, threadId, folderId, native }) => ({
-              id,
-              threadId,
-              folderId,
-              native,
-            })),
-          },
-          first.projectId,
+    const failures: Array<{
+      pluginId: string;
+      toolId: string;
+      projectId: string;
+      reason: string;
+    }> = [];
+    let succeeded = 0;
+    for (const pending of batches) {
+      await this.runBatch(async () => {
+        const ids = new Set(pending.map((h) => h.id));
+        const batch = (await this.options.storage.listHandoffs()).filter((h) =>
+          ids.has(h.id),
         );
-        await this.options.storage.updateHandoffs(updates, now);
-        await this.publish();
-      } catch (error) {
-        // A transport failure is not a native state change. Retry at the normal cadence.
-        await this.options.storage.updateHandoffs(
-          batch.map((h) => ({ id: h.id, state: h.state, native: h.native })),
-          now,
-        );
-        await this.publish();
-        unit?.refuse("refresh_failed");
-        if (!automatic) throw error;
-      } finally {
-        unit?.end();
-      }
+        if (!batch.length) return;
+        const now = this.now();
+        const first = batch[0]!;
+        const openUnit = () => {
+          const unit = this.options.events?.start("handoff.refresh", {
+            kind: "job",
+            trigger: automatic ? "system" : "user",
+          });
+          unit?.set({
+            plugin: { id: first.pluginId },
+            handoff: { tool: first.toolId, count: batch.length },
+          });
+          return unit;
+        };
+        let unit: ReturnType<typeof openUnit>;
+        try {
+          const plugins = await this.options.plugins.listPlugins();
+          const plugin = plugins.find((p) => p.id === first.pluginId);
+          const reason = !plugin
+            ? "The handoff plugin is unavailable."
+            : !plugin.capabilities.handoff?.tools.some(
+                  (t) => t.id === first.toolId,
+                )
+              ? "The handoff tool was removed."
+              : await this.options.unavailableReason?.(
+                  first.pluginId,
+                  first.toolId,
+                );
+          if (
+            automatic &&
+            reason &&
+            batch.every(
+              (h) => h.state === "unknown" && h.native.label === reason,
+            )
+          )
+            return;
+          unit = openUnit();
+          if (reason) {
+            const updates = batch
+              .filter((h) => h.state !== "unknown" || h.native.label !== reason)
+              .map((h) => ({
+                id: h.id,
+                state: "unknown" as const,
+                native: { label: reason },
+              }));
+            if (updates.length) {
+              await this.options.storage.updateHandoffs(updates, now);
+              await this.publish();
+            }
+            failures.push({
+              pluginId: first.pluginId,
+              toolId: first.toolId,
+              projectId: first.projectId,
+              reason,
+            });
+            unit?.refuse("refresh_failed");
+            return;
+          }
+          const updates = await this.options.plugins.readHandoffStates(
+            first.pluginId,
+            {
+              tool: first.toolId,
+              handoffs: batch.map(({ id, threadId, folderId, native }) => ({
+                id,
+                threadId,
+                folderId,
+                native,
+              })),
+            },
+            first.projectId,
+          );
+          await this.options.storage.updateHandoffs(updates, now);
+          succeeded++;
+          await this.publish();
+        } catch (error) {
+          // A transport failure is not a native state change. Retry at the normal cadence.
+          await this.options.storage.updateHandoffs(
+            batch.map((h) => ({ id: h.id, state: h.state, native: h.native })),
+            now,
+          );
+          await this.publish();
+          unit?.refuse("refresh_failed");
+          failures.push({
+            pluginId: first.pluginId,
+            toolId: first.toolId,
+            projectId: first.projectId,
+            reason:
+              error instanceof Error
+                ? error.message
+                : "The tool refused the refresh.",
+          });
+        } finally {
+          unit?.end();
+        }
+      });
     }
+    return { succeeded, failures };
   }
 }

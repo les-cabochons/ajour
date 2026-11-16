@@ -61,3 +61,16 @@ it("accepts a handoff-only API 4 plugin, requires code and includes it in access
     }).success,
   ).toBe(false);
 });
+
+import { handoffNativeSchema } from "../handoffs.ts";
+it("bounds native state by serialized UTF-8 bytes with an explicit refusal", () => {
+  expect(handoffNativeSchema.safeParse({ x: "a".repeat(4088) }).success).toBe(
+    true,
+  );
+  const oversized = handoffNativeSchema.safeParse({ x: "a".repeat(4089) });
+  expect(oversized.success).toBe(false);
+  if (!oversized.success) expect(oversized.error.message).toContain("4 KB");
+  expect(handoffNativeSchema.safeParse({ x: "�".repeat(2045) }).success).toBe(
+    false,
+  );
+});

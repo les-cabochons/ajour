@@ -4,7 +4,11 @@ import {
   type Handoff,
   type HandoffUpdate,
 } from "../../../packages/shared/handoffs.ts";
-import { updateHandoff, removeHandoff } from "./handoff-state.ts";
+import {
+  updateHandoff,
+  removeHandoff,
+  handoffSummary,
+} from "./handoff-state.ts";
 import {
   repositoryFolderSchema,
   type RepositoryFolder,
@@ -1022,7 +1026,30 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   return {
     handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
       (value) => {
-        const parsed = handoffRecordSchema.safeParse(value);
+        const legacy = z
+          .object({
+            history: z.array(
+              z.object({
+                state: z.unknown(),
+                at: z.unknown(),
+                native: z.record(z.unknown()).optional(),
+                status: z.unknown().optional(),
+                label: z.unknown().optional(),
+              }),
+            ),
+          })
+          .passthrough()
+          .safeParse(value);
+        const normalized = legacy.success
+          ? {
+              ...legacy.data,
+              history: legacy.data.history.map(({ native, ...entry }) => ({
+                ...entry,
+                ...(native ? handoffSummary(native) : {}),
+              })),
+            }
+          : value;
+        const parsed = handoffRecordSchema.safeParse(normalized);
         return parsed.success ? [parsed.data] : [];
       },
     ),
