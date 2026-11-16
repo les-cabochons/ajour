@@ -4,7 +4,7 @@ import type { DesktopUpdateState } from "../../../src/lib/desktop-bridge";
 
 declare global {
   interface Window {
-    footerUpdateFixture: {
+    headerUpdateFixture: {
       updates: number;
       version: string | null;
       releases: string[];
@@ -19,7 +19,7 @@ declare global {
 
 const { Given, When, Then } = createBdd();
 
-Given("I use the sidebar footer in the browser", async ({ page }) => {
+Given("I use the sidebar header in the browser", async ({ page }) => {
   await page.route("**/api/plugins", (route) =>
     route.fulfill({
       json: {
@@ -51,22 +51,20 @@ Given("I use the sidebar footer in the browser", async ({ page }) => {
   await page.goto("/time/2026-10-05");
 });
 
-When(
-  "I open the footer's Commit button with the keyboard",
-  async ({ page }) => {
-    const link = page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .getByRole("button", { name: "Commit week", exact: true });
-    await link.focus();
-    await link.press("Enter");
-  },
-);
-
-Then("the footer opens Commit for {word}", async ({ page }, date: string) => {
-  await expect(page).toHaveURL(new RegExp(`/time/${date}/commit(?:\\?.*)?$`));
+Then("the sidebar header ends with Settings alone", async ({ page }) => {
+  const header = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .locator('[data-slot="sidebar-header"]');
+  const actions = header.locator("[data-sidebar-actions]");
+  await expect(actions.locator("a, button")).toHaveCount(1);
+  await expect(actions.getByRole("link")).toHaveAccessibleName("Settings");
+  await expect(
+    header.getByRole("button", { name: "Commit week", exact: true }),
+  ).toHaveCount(0);
+  await expect(header.locator("[data-app-update]")).toHaveCount(0);
 });
 
-When("I open Settings from the footer", async ({ page }) => {
+When("I open Settings from the header", async ({ page }) => {
   await page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Settings", exact: true })
@@ -84,7 +82,7 @@ Then("the browser has no application update button", async ({ page }) => {
 });
 
 Given(
-  "the desktop footer has {string} update state",
+  "the desktop has {string} update state",
   async ({ page }, initial: string) => {
     await page.route("**/api/plugins", (route) =>
       route.fulfill({
@@ -140,7 +138,7 @@ Given(
       };
       let finishCheck: ((state: DesktopUpdateState) => void) | undefined;
       let finishUpdate: ((state: DesktopUpdateState) => void) | undefined;
-      window.footerUpdateFixture = {
+      window.headerUpdateFixture = {
         updates: 0,
         version: null,
         releases: [],
@@ -187,15 +185,15 @@ Given(
           });
         },
         updateAndRestart: async (_track, version) => {
-          window.footerUpdateFixture.updates += 1;
-          window.footerUpdateFixture.version = version;
+          window.headerUpdateFixture.updates += 1;
+          window.headerUpdateFixture.version = version;
           publish({ status: "confirming" });
           return await new Promise<DesktopUpdateState>((resolve) => {
             finishUpdate = resolve;
           });
         },
         openUpdateRelease: async (url) => {
-          window.footerUpdateFixture.releases.push(url);
+          window.headerUpdateFixture.releases.push(url);
         },
       };
     }, initial);
@@ -205,27 +203,27 @@ Given(
 
 function updateButton(page: import("@playwright/test").Page) {
   return page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .locator('[data-slot="sidebar-footer"]')
-    .locator('button[aria-label]:not([aria-label="Commit week"])');
+    .getByRole("navigation", { name: "Settings sections" })
+    .locator("[data-app-update]");
 }
 
-When("I click the footer update button", async ({ page }) => {
+When("I click the update button", async ({ page }) => {
   await updateButton(page).click();
 });
-Then("the footer update button is disabled", async ({ page }) => {
+Then("the update button is disabled", async ({ page }) => {
   await expect(updateButton(page)).toBeDisabled();
 });
 When("the desktop check returns {string}", async ({ page }, status: string) => {
-  await expect(
-    page.getByRole("button", { name: /^Checking(?: for updates)?$/ }),
-  ).toBeDisabled();
+  await expect(updateButton(page)).toHaveAccessibleName(
+    /^Checking(?: for updates)?$/,
+  );
+  await expect(updateButton(page)).toBeDisabled();
   await page.evaluate(
-    (status) => window.footerUpdateFixture.finishCheck(status),
+    (status) => window.headerUpdateFixture.finishCheck(status),
     status,
   );
 });
-Then("the footer offers Ajour 1.0.1", async ({ page }) => {
+Then("the update button offers Ajour 1.0.1", async ({ page }) => {
   await expect(updateButton(page)).toHaveAccessibleName(
     "Update to Ajour 1.0.1",
   );
@@ -237,29 +235,29 @@ Then("the footer offers Ajour 1.0.1", async ({ page }) => {
   ).toContainText("Update to Ajour 1.0.1");
 });
 Then("the desktop has received no update request", async ({ page }) => {
-  expect(await page.evaluate(() => window.footerUpdateFixture.updates)).toBe(0);
+  expect(await page.evaluate(() => window.headerUpdateFixture.updates)).toBe(0);
 });
 Then(
   "the desktop receives a request to confirm updating to 1.0.1",
   async ({ page }) => {
     expect(
       await page.evaluate(() => ({
-        count: window.footerUpdateFixture.updates,
-        version: window.footerUpdateFixture.version,
+        count: window.headerUpdateFixture.updates,
+        version: window.headerUpdateFixture.version,
       })),
     ).toEqual({ count: 1, version: "1.0.1" });
   },
 );
 When("I cancel the desktop update warning", async ({ page }) => {
-  await page.evaluate(() => window.footerUpdateFixture.cancelUpdate());
+  await page.evaluate(() => window.headerUpdateFixture.cancelUpdate());
 });
-Then("the footer update button says the check failed", async ({ page }) => {
+Then("the update button says the check failed", async ({ page }) => {
   await expect(updateButton(page)).toHaveAccessibleName(
     /Update check failed.*Check for updates again/,
   );
   await expect(updateButton(page)).toBeEnabled();
 });
-Then("the footer says Ajour is up to date", async ({ page }) => {
+Then("the update button says Ajour is up to date", async ({ page }) => {
   await expect(updateButton(page)).toHaveAccessibleName(/Ajour is up to date/);
 });
 Then("Settings offers Update and restart", async ({ page }) => {
@@ -273,6 +271,7 @@ When("I choose Update and restart in Settings", async ({ page }) => {
     .click();
   await expect(
     page
+      .locator(".settings-content")
       .getByRole("status")
       .filter({ hasText: "Waiting for update confirmation" }),
   ).toBeVisible();
@@ -281,13 +280,13 @@ When("I choose Update and restart in Settings", async ({ page }) => {
   ).toBeDisabled();
 });
 When("I accept the desktop update warning", async ({ page }) => {
-  await page.evaluate(() => window.footerUpdateFixture.acceptUpdate());
+  await page.evaluate(() => window.headerUpdateFixture.acceptUpdate());
 });
 When(
   "the desktop reports download progress of {int} percent",
   async ({ page }, progress: number) => {
     await page.evaluate(
-      (progress) => window.footerUpdateFixture.progress(progress),
+      (progress) => window.headerUpdateFixture.progress(progress),
       progress,
     );
   },
@@ -295,6 +294,7 @@ When(
 Then("Settings shows the download progress", async ({ page }) => {
   await expect(
     page
+      .locator(".settings-content")
       .getByRole("status")
       .filter({ hasText: "Downloading Ajour update, 42%" }),
   ).toBeVisible();
@@ -313,7 +313,7 @@ Then("Settings allows update track changes", async ({ page }) => {
   ).toBeEnabled();
 });
 When("the desktop starts installing the update", async ({ page }) => {
-  await page.evaluate(() => window.footerUpdateFixture.install());
+  await page.evaluate(() => window.headerUpdateFixture.install());
 });
 Then("Settings disables update track changes", async ({ page }) => {
   await expect(
@@ -327,23 +327,29 @@ Then(
   "the desktop opens the release page without an update request",
   async ({ page }) => {
     expect(
-      await page.evaluate(() => window.footerUpdateFixture.releases),
+      await page.evaluate(() => window.headerUpdateFixture.releases),
     ).toEqual(["https://github.com/les-cabochons/ajour/releases/tag/v1.0.1"]);
-    expect(await page.evaluate(() => window.footerUpdateFixture.updates)).toBe(
+    expect(await page.evaluate(() => window.headerUpdateFixture.updates)).toBe(
       0,
     );
   },
 );
-Then("the footer actions stay at opposite ends", async ({ page }) => {
-  const footer = page.locator('[data-slot="sidebar-footer"]');
-  const settings = await footer
-    .getByRole("link", { name: "Settings", exact: true })
-    .boundingBox();
-  const commit = await footer
-    .getByRole("button", { name: "Commit week", exact: true })
-    .boundingBox();
-  const update = await updateButton(page).boundingBox();
-  expect(settings!.x + settings!.width).toBeLessThanOrEqual(commit!.x);
-  expect(commit!.x + commit!.width + 50).toBeLessThan(update!.x);
-  expect(settings!.y).toBe(update!.y);
-});
+Then(
+  "the Settings window shows Ajour 1.0.0 beside the update button",
+  async ({ page }) => {
+    const foot = page
+      .getByRole("navigation", { name: "Settings sections" })
+      .locator("[data-app-version]");
+    await expect(foot).toContainText(/Ajour\s+1\.0\.0/);
+    const version = await foot.boundingBox();
+    const update = await updateButton(page).boundingBox();
+    // One row, the button at its end.
+    expect(update!.y).toBeGreaterThanOrEqual(version!.y);
+    expect(update!.y + update!.height).toBeLessThanOrEqual(
+      version!.y + version!.height,
+    );
+    expect(
+      version!.x + version!.width - (update!.x + update!.width),
+    ).toBeLessThan(12);
+  },
+);

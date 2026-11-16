@@ -35,6 +35,7 @@ import {
 import {
   getPriorityRefusal,
   groupSidebarBacklogItemsByLevel,
+  groupSidebarBacklogItemsByProject,
   patchBacklogItem,
   isBacklogItemReturned,
   isBacklogItemSnoozed,
@@ -138,6 +139,40 @@ interface SidebarBlock {
    * label, and a row dropped there takes the level.
    */
   level?: { priority: PriorityLevel | undefined };
+  /**
+   * Under the By project grouping, the project section the block sits in:
+   * the project's id, or "none" for the items without one.
+   */
+  section?: string;
+}
+
+/** The section of the items without a project, under the By project grouping. */
+const NO_PROJECT_SECTION = "none";
+
+/** The blocks of each project section, in order, under the By project grouping. */
+function groupSections(blocks: readonly SidebarBlock[]) {
+  const sections: { section: string; blocks: SidebarBlock[] }[] = [];
+  for (const block of blocks) {
+    const last = sections.at(-1);
+    if (last && last.section === block.section) last.blocks.push(block);
+    else sections.push({ section: block.section!, blocks: [block] });
+  }
+  return sections;
+}
+
+/** What a section's items have left, for its header's subtotal. */
+function sumRemainingMs(blocks: readonly SidebarBlock[]) {
+  return blocks.reduce(
+    (sum, block) =>
+      sum +
+      block.workItems.reduce(
+        (blockSum, workItem) =>
+          blockSum + Math.max(0, workItem.remainingEstimateHours ?? 0),
+        0,
+      ) *
+        3_600_000,
+    0,
+  );
 }
 
 function isPriorityOrdering(
@@ -163,12 +198,29 @@ function rowDragProps(dragState: RowDragState | undefined) {
 
 /**
  * The sidebar's blocks for the listed rows: pinned items, then the rest, or
- * under Priority ordering one block per level, empty levels included.
+ * under Priority ordering one block per level, empty levels included. Under
+ * the By project grouping (`hasProject` given), each project's pinned items
+ * and the rest are blocks of their own, each its own drag lane, so a row
+ * never changes project by a drop, and the levels don't show.
  */
 function getSidebarBlocks(
   listed: readonly LocalWorkItem[],
   sortMode: BacklogSortMode,
+  hasProject?: (projectId: string) => boolean,
 ): SidebarBlock[] {
+  if (hasProject) {
+    return groupSidebarBacklogItemsByProject(listed, hasProject).flatMap(
+      ({ projectId, pinned, others }) => {
+        const section = projectId ?? NO_PROJECT_SECTION;
+        // The lane is the key's part before "/", which an id must not end.
+        const lane = encodeURIComponent(section);
+        return [
+          { key: `pinned~${lane}/items`, workItems: pinned, section },
+          { key: `project~${lane}/items`, workItems: others, section },
+        ].filter((block) => block.workItems.length > 0);
+      },
+    );
+  }
   const { pinned, others } = splitSidebarBacklogItems(listed);
   const pinnedBlock = { key: PINNED_BLOCK, workItems: pinned };
   if (!isPriorityOrdering(sortMode)) {
@@ -593,6 +645,11 @@ interface ItemRowProps {
    * Only the rows involved change, so the other rows stay memoized.
    */
   dragState?: RowDragState;
+  /**
+   * Under the By project grouping the section names the project, so a
+   * Comfortable row's second line shows the workflow state's name instead.
+   */
+  inProjectSection?: boolean;
 }
 
 /**
@@ -655,9 +712,10 @@ function ParentLink({
   revealed: boolean;
 }) {
   // The parent's name, not a bare arrow, so the mark says what it links to
-  // (council round 12).
+  // (council round 12). The name gives way to the hover actions, but the
+  // arrow keeps its width, so the link stays in reach on hover.
   const className =
-    "flex min-w-0 items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
+    "flex min-w-3 items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
   const icon = (
     <>
       <ParentIcon aria-hidden className="size-3 shrink-0" />
@@ -687,13 +745,14 @@ function ParentLink({
 }
 
 /**
- * The Comfortable row, laid out like a T3 Code thread: the project's icon and
- * name over the title, with the markers and the remaining estimate at the end
- * of the project line, then the workflow state on a faint third line, which ends with
- * an arrow to the parent on a subitem. Hover and focus replace the end of the
- * project line with Snooze… and Settle, and show Start entry centered at the
- * row's end. Like the compact row, it re-renders for its own
- * props only and mounts its hover controls while hovered or focused.
+ * The Comfortable row, a ledger line: the workflow state's glyph leads, then
+ * the title with the markers and the remaining estimate in one mono column at
+ * the end, and under the title the project's icon and name, then an arrow to
+ * the parent on a subitem. Rows are ruled by hairlines, edge to edge, with no
+ * card. Hover and focus show Start entry, Snooze… and Settle at the end of
+ * the project line, so the title and the estimate stay in view. Like the
+ * compact row, it re-renders for its own props only and mounts its hover
+ * controls while hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
   props: ItemRowProps,
@@ -719,7 +778,9 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           aria-current={isActive ? "page" : undefined}
           {...reveal.props}
           className={cn(
-            "group relative flex h-20 shrink-0 cursor-pointer items-center rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            // -mx-2 and px-4 run the row and its hairline to the sidebar's
+            // edges, past the list's own padding.
+            "group relative -mx-2 flex h-14 shrink-0 cursor-pointer items-start gap-2 border-b border-[var(--border-row)] px-4 pt-[9px] outline-none hover:bg-foreground/[0.04] focus-visible:bg-foreground/[0.04] focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             isActive && "bg-foreground/[0.07]",
             drag.className,
           )}
@@ -730,36 +791,70 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         />
       }
     >
-      {/* 12 / 14 / 12, the title clearly first, as in T3 Code's thread list
-          (council round 5). */}
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
-          {project ? (
-            <ProjectIcon
-              icon={project.icon}
-              color={project.color}
-              className="ajour-sidebar-icon shrink-0"
-            />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate">
-            {project ? getLocalProjectDisplayName(project) : "No project"}
+      {/* The state's glyph, on the title's line. An item without a state
+          keeps the slot, so every title starts at the same edge. */}
+      <span className="flex h-5 w-3.5 shrink-0 items-center">
+        {workflowState ? (
+          <span
+            role="img"
+            aria-label={workflowState.name}
+            title={workflowState.name}
+            className="backlog-state-dot"
+            style={stateDotStyle(workflowState.color, props.workflowStateFill)}
+          />
+        ) : null}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex h-5 min-w-0 items-center gap-2">
+          <span
+            data-row-title
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm leading-5 font-medium",
+              props.isReturned && "font-semibold",
+            )}
+          >
+            {workItem.title}
           </span>
           {/* A sync conflict stays in view on hover, so it can be clicked. */}
           {hasWorkItemSyncIssue(workItem) ? (
             <SyncConflictButton item={workItem} />
           ) : null}
-          <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
+          <span className="flex shrink-0 items-center gap-1.5">
             <Markers
               workItem={workItem}
               isRunning={props.isRunning}
               isReturned={props.isReturned}
             />
             {remainingHours !== undefined ? (
-              <Value tone="muted">
-                {formatCompactDuration(remainingHours * 3_600_000)}
-              </Value>
+              <Value>{formatCompactDuration(remainingHours * 3_600_000)}</Value>
             ) : null}
           </span>
+        </span>
+        <span className="flex h-5 min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {props.inProjectSection ? (
+            workflowState ? (
+              <span className="max-w-[60%] shrink-0 truncate">
+                {workflowState.name}
+              </span>
+            ) : null
+          ) : (
+            <>
+              {project ? (
+                <ProjectIcon
+                  icon={project.icon}
+                  color={project.color}
+                  className="ajour-sidebar-icon shrink-0"
+                />
+              ) : null}
+              {/* The project keeps its width; the parent's name gives way. */}
+              <span className="max-w-[60%] shrink-0 truncate">
+                {project ? getLocalProjectDisplayName(project) : "No project"}
+              </span>
+            </>
+          )}
+          {parent ? (
+            <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
+          ) : null}
           {reveal.active ? (
             <RowActions
               workItem={workItem}
@@ -767,38 +862,8 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               rows={rows}
               showSettle
               buttonClassName="size-5"
-              className="hidden group-focus-within:flex group-hover:flex"
+              className="ml-auto hidden shrink-0 group-focus-within:flex group-hover:flex"
             />
-          ) : null}
-        </span>
-        {/* The title runs to the row's edge, as in T3 Code's thread list:
-            the hover actions sit on the project line, never over it. */}
-        <span
-          data-row-title
-          className={cn(
-            "truncate text-base leading-5 font-medium",
-            props.isReturned && "font-semibold",
-          )}
-        >
-          {workItem.title}
-        </span>
-        {/* Kept empty without a state, so every row is the same height. */}
-        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
-          {workflowState ? (
-            <>
-              <span
-                className="backlog-state-dot size-2.5"
-                style={stateDotStyle(
-                  workflowState.color,
-                  props.workflowStateFill,
-                )}
-              />
-              {/* The state keeps its width; the parent's name gives way. */}
-              <span className="shrink-0">{workflowState.name}</span>
-            </>
-          ) : null}
-          {parent ? (
-            <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
           ) : null}
         </span>
       </span>
@@ -916,6 +981,56 @@ function LevelLabel({
       {label}
       <span className={cn("h-px flex-1 bg-border", active && "bg-primary")} />
     </div>
+  );
+}
+
+/**
+ * A project's section header under the By project grouping, ruled like a
+ * ledger subtotal: the project's icon and name, then the section's remaining
+ * estimate in the rows' estimate column. Clicking it collapses the section;
+ * its chevron shows on hover and focus, and stays while collapsed.
+ */
+function SidebarProjectHeader({
+  project,
+  label,
+  remainingMs,
+  open,
+  onToggle,
+}: {
+  project?: LocalProject;
+  label: string;
+  remainingMs: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className="group/section -mx-2 flex h-[38px] shrink-0 items-end gap-1.5 border-b border-border px-4 pb-2 text-left text-xs font-medium outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+    >
+      {project ? (
+        <ProjectIcon
+          icon={project.icon}
+          color={project.color}
+          className="ajour-sidebar-icon mb-px shrink-0"
+        />
+      ) : null}
+      <span className="min-w-0 truncate">{label}</span>
+      <ChevronDown
+        aria-hidden
+        className={cn(
+          "mb-px size-3.5 shrink-0 text-muted-foreground",
+          open
+            ? "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100"
+            : "-rotate-90",
+        )}
+      />
+      {remainingMs > 0 ? (
+        <Value className="ml-auto">{formatCompactDuration(remainingMs)}</Value>
+      ) : null}
+    </button>
   );
 }
 
@@ -1077,9 +1192,20 @@ export function SidebarBacklogList({
   }, [state, now, matcher]);
 
   const sortMode = state.backlogSortMode;
+  const grouped = layout.grouping === "project";
+  // Apart from the list above so the clock does not rebuild them every minute.
+  const projectById = useMemo(
+    () => new Map(state.projects.map((project) => [project._id, project])),
+    [state.projects],
+  );
+  const hasProject = useMemo(
+    () =>
+      grouped ? (projectId: string) => projectById.has(projectId) : undefined,
+    [grouped, projectById],
+  );
   const blocks = useMemo(
-    () => getSidebarBlocks(listed, sortMode),
-    [listed, sortMode],
+    () => getSidebarBlocks(listed, sortMode, hasProject),
+    [listed, sortMode, hasProject],
   );
   const targets = useMemo(
     (): BacklogDropTarget[] => [
@@ -1099,19 +1225,22 @@ export function SidebarBacklogList({
   );
   // Custom moves top-level items. Priority moves an item among its level's
   // items, subitems included. A row dropped among another level's rows takes
-  // that level, so it moves among them; a pinned row keeps its level.
+  // that level, so it moves among them; a pinned row keeps its level, and so
+  // does every row under the By project grouping, which shows no levels.
   const canReorder = useCallback(
     (itemId: string, draggedId: string) => {
       const workItem = workItemById.get(itemId);
       const dragged = workItemById.get(draggedId);
       if (!workItem || !dragged) return false;
       const landed =
-        isPriorityOrdering(sortMode) && dragged.pinnedAt === undefined
+        isPriorityOrdering(sortMode) &&
+        dragged.pinnedAt === undefined &&
+        !grouped
           ? { ...dragged, priority: workItem.priority }
           : dragged;
       return isBacklogReorderPeer(sortMode, landed, workItem);
     },
-    [sortMode, workItemById],
+    [sortMode, workItemById, grouped],
   );
   const drag = useBacklogDrag({
     targets,
@@ -1127,8 +1256,9 @@ export function SidebarBacklogList({
         getPriorityRefusal(workItem, level.priority) === undefined
       );
     },
-    // The level labels push the rows down as the drag starts.
-    holdOrigin: true,
+    // The level labels push the rows down as the drag starts. The By project
+    // grouping shows none.
+    holdOrigin: !grouped,
     // The labels move with the gap, and the levels with them. Read at a
     // pointer move, from the shifts this render draws below.
     targetShift: (key) => shifts.targets.get(key) ?? 0,
@@ -1197,6 +1327,7 @@ export function SidebarBacklogList({
             matcher.workItem,
           ),
           sortMode,
+          hasProject,
         )
           .find((block) => block.key === key)
           ?.workItems.map((workItem) => workItem._id) ?? []
@@ -1225,6 +1356,7 @@ export function SidebarBacklogList({
     now,
     matcher,
     sortMode,
+    hasProject,
   ]);
   const rowDragState = (itemId: string): RowDragState | undefined => {
     if (!dragging) return undefined;
@@ -1233,14 +1365,11 @@ export function SidebarBacklogList({
     return shift ? shift * dragging.height : undefined;
   };
   // Level labels show while a row of the levels drags, not a pinned one.
-  const showLevels = Boolean(dragging && dragging.originKey !== PINNED_BLOCK);
+  const showLevels = Boolean(
+    dragging && dragging.originKey !== PINNED_BLOCK && !grouped,
+  );
   const rows = useBacklogItemRow(state, now, { targets, canReorder, drag });
 
-  // Apart from the list above so the clock does not rebuild them every minute.
-  const projectById = useMemo(
-    () => new Map(state.projects.map((project) => [project._id, project])),
-    [state.projects],
-  );
   const workflowStateById = useMemo(
     () => new Map(state.workflowStates.map((status) => [status._id, status])),
     [state.workflowStates],
@@ -1272,10 +1401,49 @@ export function SidebarBacklogList({
     isReturned: isBacklogItemReturned(workItem, now),
     iconData,
     rows,
+    inProjectSection: grouped,
   });
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
   const draggedItem = dragging && workItemById.get(dragging.itemId);
+
+  /** A drag lane: blocks a row moves within, under one `data-reorder-block`. */
+  const renderLane = (lane: SidebarBlock[]) => (
+    <div
+      key={lane[0]?.key ?? "empty"}
+      data-reorder-block
+      className="flex flex-col"
+    >
+      {lane.map((block) => (
+        <div
+          key={block.key}
+          ref={(element) => {
+            if (element) drag.groupRefs.current.set(block.key, element);
+            else drag.groupRefs.current.delete(block.key);
+          }}
+          data-drop-target={block.key}
+          className="flex flex-col"
+        >
+          {showLevels && block.level ? (
+            <LevelLabel
+              label={getPriorityLevelName(block.level.priority)}
+              active={dragging?.targetKey === block.key}
+              shift={
+                (shifts.targets.get(block.key) ?? 0) * (dragging?.height ?? 0)
+              }
+            />
+          ) : null}
+          {block.workItems.map((workItem) => (
+            <ItemRow
+              key={workItem._id}
+              {...rowProps(workItem)}
+              dragState={rowDragState(workItem._id)}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -1320,49 +1488,47 @@ export function SidebarBacklogList({
         {/*
         The backlog items have no header, like T3 Code's thread list. Pinned
         items and the rest are separate lanes, so a drag stays in its own.
-        Under Priority ordering the rest is one block per level.
+        Under Priority ordering the rest is one block per level. Under the
+        By project grouping, each project is a section with a header, and its
+        pinned items and the rest are lanes of their own.
       */}
-        <div className="flex shrink-0 flex-col pt-2">
-          {[
-            blocks.filter((block) => block.key === PINNED_BLOCK),
-            blocks.filter((block) => block.key !== PINNED_BLOCK),
-          ].map((lane) => (
-            <div
-              key={lane[0]!.key}
-              data-reorder-block
-              className="flex flex-col"
-            >
-              {lane.map((block) => (
-                <div
-                  key={block.key}
-                  ref={(element) => {
-                    if (element) drag.groupRefs.current.set(block.key, element);
-                    else drag.groupRefs.current.delete(block.key);
-                  }}
-                  data-drop-target={block.key}
-                  className="flex flex-col"
-                >
-                  {showLevels && block.level ? (
-                    <LevelLabel
-                      label={getPriorityLevelName(block.level.priority)}
-                      active={dragging?.targetKey === block.key}
-                      shift={
-                        (shifts.targets.get(block.key) ?? 0) *
-                        (dragging?.height ?? 0)
+        <div className={cn("flex shrink-0 flex-col", !grouped && "pt-2")}>
+          {grouped
+            ? groupSections(blocks).map(({ section, blocks: lanes }) => {
+                const project = projectById.get(section);
+                const label = project
+                  ? getLocalProjectDisplayName(project)
+                  : "No project";
+                const open = !layout.collapsedProjects.includes(section);
+                return (
+                  <section
+                    key={section}
+                    aria-label={label}
+                    className="flex flex-col"
+                  >
+                    <SidebarProjectHeader
+                      project={project}
+                      label={label}
+                      remainingMs={sumRemainingMs(lanes)}
+                      open={open}
+                      onToggle={() =>
+                        updateSidebarLayout({
+                          collapsedProjects: open
+                            ? [...layout.collapsedProjects, section]
+                            : layout.collapsedProjects.filter(
+                                (collapsed) => collapsed !== section,
+                              ),
+                        })
                       }
                     />
-                  ) : null}
-                  {block.workItems.map((workItem) => (
-                    <ItemRow
-                      key={workItem._id}
-                      {...rowProps(workItem)}
-                      dragState={rowDragState(workItem._id)}
-                    />
-                  ))}
-                </div>
-              ))}
-            </div>
-          ))}
+                    {open ? lanes.map((block) => renderLane([block])) : null}
+                  </section>
+                );
+              })
+            : [
+                blocks.filter((block) => block.key === PINNED_BLOCK),
+                blocks.filter((block) => block.key !== PINNED_BLOCK),
+              ].map(renderLane)}
           {listed.length === 0 ? (
             <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
               {matcher.active ? "No matching items." : "Nothing on your plate."}

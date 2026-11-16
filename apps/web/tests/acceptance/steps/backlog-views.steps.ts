@@ -243,18 +243,17 @@ Then(
   },
 );
 Then(
-  "the other item's sidebar row shows its workflow state {string}",
+  "the other item's sidebar row leads with its workflow state {string}",
   async ({ page }, state: string) => {
     const row = otherSidebarRow(page);
-    const stateLine = row.getByText(state, { exact: true });
-    await expect(stateLine).toBeVisible();
-    // The third line is faint, as in T3 Code's thread list (council round 5).
-    const tertiary = await row.evaluate(() =>
-      getComputedStyle(document.documentElement)
-        .getPropertyValue("--text-tertiary")
-        .trim(),
-    );
-    await expect(stateLine).toHaveCSS("color", tertiary);
+    // The state's ring leads the title's line, named by the state.
+    const ring = row.getByRole("img", { name: state, exact: true });
+    await expect(ring).toBeVisible();
+    const [ringBox, titleBox] = await Promise.all([
+      ring.boundingBox(),
+      row.locator("[data-row-title]").boundingBox(),
+    ]);
+    expect(ringBox!.x).toBeLessThan(titleBox!.x);
   },
 );
 When("I press S on the other item on the Backlog page", async ({ page }) => {

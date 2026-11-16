@@ -69,6 +69,7 @@ async function pickUp(page: Page, dragged: string) {
   await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2 + 6, {
     steps: 2,
   });
+  return from;
 }
 
 /**
@@ -81,12 +82,21 @@ async function startDragging(
   edge: "above" | "below",
   target: string,
 ) {
-  await pickUp(page, dragged);
+  const from = await pickUp(page, dragged);
   // Measured once the drag shows its labels, if any.
   const to = await sidebarRow(page, target).boundingBox();
   if (!to) throw new Error("A sidebar row is not rendered");
   // Above the target's middle drops the row in front of it, below it after.
-  const y = edge === "above" ? to.y + 4 : to.y + to.height - 4;
+  let y = edge === "above" ? to.y + 4 : to.y + to.height - 4;
+  // The dragged row keeps its place until the pointer moves half a row from
+  // where it pressed, since the level labels push the rows down as the drag
+  // starts. When they push the target into that reach, the hand goes on to
+  // the target level's label beside it, the same drop place.
+  const pressY = from.y + from.height / 2;
+  const reach = from.height / 2;
+  if (Math.abs(y - pressY) < reach) {
+    y = y < pressY ? pressY - reach - 2 : pressY + reach + 2;
+  }
   await page.mouse.move(to.x + to.width / 3, y, { steps: 10 });
 }
 

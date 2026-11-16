@@ -22,7 +22,7 @@ On macOS, open the app once, then go to **System Settings › Privacy & Security
 
 ## Updates
 
-Ajour checks GitHub for a newer version on startup, every 4 hours, and when you open **Settings › General**. To check now, click the arrow at the bottom right of the sidebar, or press **Check again** in **Settings › General › Application updates**. On macOS, you can also choose **Ajour › Check for updates…** in the menu bar. Checks never download an update.
+Ajour checks GitHub for a newer version on startup, every 4 hours, and when you open **Settings › General**. To check now, click the arrow beside the version at the bottom left of the Settings window, or press **Check again** in **Settings › General › Application updates**. On macOS, you can also choose **Ajour › Check for updates…** in the menu bar. Checks never download an update.
 
 Pick the track in **Settings › General › Application updates**:
 
@@ -31,7 +31,7 @@ Pick the track in **Settings › General › Application updates**:
 
 Until the first stable release, choose **Nightly**, or Ajour never finds an update.
 
-When a version is available, the arrow at the bottom right of the sidebar stands out, and its tooltip names the version.
+When a version is available, the arrow at the bottom left of the Settings window stands out, and its tooltip names the version.
 
 On Windows, click it, or press **Update and restart** in Settings, to open a warning. **Update and restart** downloads the version and restarts Ajour to install it. Save your work first. **Cancel** leaves the update available. Quitting the app never installs an update.
 

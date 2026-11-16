@@ -72,7 +72,6 @@ import {
   MAIN_CONTENT_ID,
   SkipToContent,
 } from "@/features/layout/skip-to-content";
-import { CommitWeekButton } from "@/features/time/commit-week-button";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
 import {
   useOpenSettings,

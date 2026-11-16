@@ -637,17 +637,21 @@ function settingsWindow(page: Page) {
   });
 }
 
-// The settings window shows the sidebar's own timer card, not the floating
-// dock (council round 25).
-Then("Settings shows the running entry in its window", async ({ page }) => {
-  const settings = settingsWindow(page).getByRole("navigation", {
-    name: "Settings sections",
-  });
-  await expect(
-    settings.getByRole("region", { name: "Running entry" }),
-  ).toBeVisible();
-  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
-});
+// The settings window covers the sidebar and its dock. It holds no timer of
+// its own, and the dock never floats over it.
+Then(
+  "the Settings window shows no timer and the dock does not float",
+  async ({ page }) => {
+    const settings = settingsWindow(page).getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect(settings).toBeVisible();
+    await expect(
+      settings.getByRole("region", { name: "Running entry" }),
+    ).toHaveCount(0);
+    await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+  },
+);
 
 Then("the running entry floats at the bottom left", async ({ page }) => {
   const dock = page.locator(".ajour-floating-dock-desktop");
@@ -2136,9 +2140,10 @@ Then(
 );
 
 Then("the week can be committed", async ({ page }) => {
+  // The Day header's Commit week, in words.
   const commitWeek = page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("button", { name: "Commit week", exact: true });
+    .getByRole("button", { name: "Commit week", exact: true })
+    .filter({ hasText: "Commit week" });
 
   await expect(commitWeek).toBeVisible();
   await expect(commitWeek).toBeEnabled();
@@ -2581,20 +2586,17 @@ Given("I have a week of saved entries", async ({ page }) => {
   });
 });
 
-When(
-  "I open the Commit page from the sidebar on the Week view",
-  async ({ page }) => {
-    await page.goto("/time/2026-10-05?view=week");
-    await expect(page.locator(".time-page-stack")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .getByRole("button", { name: "Commit week", exact: true })
-      .click();
-    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit\?view=week/);
-  },
-);
+When("I open the Commit page from the Week view's header", async ({ page }) => {
+  await page.goto("/time/2026-10-05?view=week");
+  await expect(page.locator(".time-page-stack")).toBeVisible({
+    timeout: 15_000,
+  });
+  await page
+    .getByRole("button", { name: "Commit week", exact: true })
+    .filter({ hasText: "Commit week" })
+    .click();
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/commit\?view=week/);
+});
 
 When("I open the Commit page from the narrow bottom row", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 860 });
@@ -2612,7 +2614,7 @@ When("I open the Commit page from the narrow bottom row", async ({ page }) => {
 });
 
 When(
-  "I open the Commit page from the sidebar on the Backlog",
+  "I open the Commit page from the command palette on the Backlog",
   async ({ page }) => {
     await page.goto("/time/2026-10-05");
     await expect(page.locator(".time-page-stack")).toBeVisible({
@@ -2620,9 +2622,19 @@ When(
     });
     await viewLink(page, "Backlog").press("Enter");
     await expect(page).toHaveURL(/\/backlog$/);
-    await page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .getByRole("button", { name: "Commit week", exact: true })
+    // The Backlog has no Commit button: the palette's Commit week opens
+    // the week the Time pages last showed.
+    const isMac = await page.evaluate(() =>
+      /Mac|iPhone|iPad/.test(navigator.userAgent),
+    );
+    await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await palette
+      .getByRole("combobox", { name: "Search commands" })
+      .fill("Commit week");
+    await palette
+      .getByRole("option", { name: /Commit week/ })
+      .first()
       .click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   },
@@ -2637,8 +2649,8 @@ When(
       .fill("Unsaved submission note");
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
     await page
-      .getByRole("navigation", { name: "Primary navigation" })
       .getByRole("button", { name: "Commit week", exact: true })
+      .filter({ hasText: "Commit week" })
       .click();
   },
 );
