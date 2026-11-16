@@ -1154,11 +1154,33 @@ async function getOverview(
     ),
   );
   const listed = await storage.getPluginsOverview(plugins, unavailable, access);
+  const processGates = new Map(
+    await Promise.all(
+      plugins
+        .filter((p) => isPluginApi4Manifest(p) && p.processes)
+        .map(async (plugin) => {
+          const identity = await pluginManager.processPackage(plugin.id);
+          return [
+            plugin.id,
+            await storage.getPluginProcessGate(
+              plugin.id,
+              identity.packageKey,
+              identity.development,
+            ),
+          ] as const;
+        }),
+    ),
+  );
   const overview = {
     ...listed,
     connectionGroups: listed.connectionGroups.map((group) => {
       const suspended = pluginManager.suspension(group.plugin.id);
-      return suspended ? { ...group, suspended } : group;
+      const processGate = processGates.get(group.plugin.id);
+      return {
+        ...group,
+        ...(suspended ? { suspended } : {}),
+        ...(processGate ? { processGate } : {}),
+      };
     }),
   };
   const sandbox = pluginManager.sandboxStatus();
@@ -1976,6 +1998,43 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    unsignedPluginProcessesToggle: async ({ request, response, unit }) => {
+      const payload = await readRequest(
+        request,
+        unsignedPluginsActivationUpdateSchema,
+      );
+      unit.set({ activation: { enabled: payload.enabled } });
+      await storage.setUnsignedPluginProcessesEnabled(payload.enabled);
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+    pluginProcessAcceptance: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const payload = await readRequest(
+        request,
+        z.object({ packageKey: z.string(), accepted: z.boolean() }).strict(),
+      );
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === pluginId,
+      );
+      if (!plugin || !isPluginApi4Manifest(plugin) || !plugin.processes) {
+        unit.refuse("invalid_request");
+        writeJson(response, 404, {
+          error: "Plugin with process access not found.",
+        });
+        return;
+      }
+      const { packageKey: key } = await pluginManager.processPackage(pluginId);
+      if (key !== payload.packageKey) {
+        unit.refuse("invalid_request");
+        writeJson(response, 409, {
+          error: "The plugin changed. Review its access again.",
+        });
+        return;
+      }
+      await storage.setPluginProcessAcceptance(pluginId, key, payload.accepted);
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
     schemaList: async ({ response, unit }) => {
       const pluginsEnabled = await storage.getPluginSystemEnabled();
       const plugins = pluginsEnabled

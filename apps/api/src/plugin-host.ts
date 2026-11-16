@@ -3,6 +3,7 @@ import type {
   OperationProcessBroker,
 } from "./broker-port.ts";
 import path from "node:path";
+import { pluginProcessPackageKey } from "./plugin-package.ts";
 import {
   PluginOperationRefused,
   PluginOperationLifetime,
@@ -575,6 +576,16 @@ export class PluginManager {
           (plugin) => [plugin.manifest.id, plugin.access] as const,
         ),
       ),
+    };
+  }
+
+  async processPackage(pluginId: string) {
+    const { plugins } = await this.discoverPlugins();
+    const plugin = plugins.get(pluginId);
+    if (!plugin) throw new Error("Plugin not found.");
+    return {
+      packageKey: await pluginProcessPackageKey(plugin.directory),
+      development: plugin.source === "development",
     };
   }
 
@@ -1158,6 +1169,9 @@ export class PluginManager {
             processBroker = this.processBroker?.forOperation({
               pluginId,
               manifest: plugin.manifest,
+              ...(plugin.manifest.processes
+                ? await this.processPackage(pluginId)
+                : {}),
               traceparent: this.events?.current()?.traceparent(),
               method,
             });

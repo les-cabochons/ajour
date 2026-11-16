@@ -1,3 +1,4 @@
+import { UnsignedProcessSwitch } from "./plugin-process-gates";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -392,6 +393,8 @@ function PluginsHeader({
   pluginsEnabled,
   unsignedPluginsEnabled,
   allowUnsignedInstalls,
+  unsignedPluginProcessesEnabled,
+  onUnsignedPluginProcessesChange,
   refreshMinutes,
   canConfigureRefresh,
   onPluginsEnabledChange,
@@ -408,6 +411,8 @@ function PluginsHeader({
   pluginsEnabled: boolean;
   unsignedPluginsEnabled: boolean;
   allowUnsignedInstalls: boolean;
+  unsignedPluginProcessesEnabled: boolean;
+  onUnsignedPluginProcessesChange: (enabled: boolean) => void;
   refreshMinutes: PluginCatalogSettings["refreshMinutes"];
   canConfigureRefresh: boolean;
   onPluginsEnabledChange: (enabled: boolean) => void;
@@ -472,6 +477,11 @@ function PluginsHeader({
               onCheckedChange={onAllowUnsignedInstallsChange}
             />
           </SettingRow>
+          <UnsignedProcessSwitch
+            enabled={unsignedPluginProcessesEnabled}
+            disabled={isMutating}
+            onChange={onUnsignedPluginProcessesChange}
+          />
           <SettingRow
             label="Deactivate unsigned plugins"
             description="Stops every installed unsigned plugin without removing it. Signed plugins keep running."
@@ -897,7 +907,9 @@ export function SettingsPluginsPage({
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
     const { unavailableReason } = group.plugin;
-    const signed = isSignedPlugin(group.plugin);
+    const signed = group.processGate
+      ? !group.processGate.required
+      : isSignedPlugin(group.plugin);
     const blockedAsUnsigned = !unsignedPluginsEnabled && !signed;
     // Saving runs the plugin, so it waits until the plugin may run (on, its
     // access allowed, and signed or unsigned plugins on); the form says so
@@ -1381,7 +1393,20 @@ export function SettingsPluginsPage({
         ) : null}
 
         {unavailableReason || group.missing ? null : (
-          <PluginAccessSection group={group} now={Date.now()} />
+          <PluginAccessSection
+            group={group}
+            now={Date.now()}
+            processDisabled={isMutatingPlugin}
+            onProcessAcceptanceChange={(accepted) => {
+              if (group.processGate)
+                void workflow.execute({
+                  type: "processAcceptance",
+                  pluginId: group.plugin.id,
+                  packageKey: group.processGate.packageKey,
+                  accepted,
+                });
+            }}
+          />
         )}
 
         <section className="settings-section">
@@ -1696,6 +1721,12 @@ export function SettingsPluginsPage({
         onFilterChange={setCatalogFilter}
         pluginsEnabled={overview?.pluginsEnabled ?? true}
         unsignedPluginsEnabled={unsignedPluginsEnabled}
+        unsignedPluginProcessesEnabled={
+          overview?.unsignedPluginProcessesEnabled ?? false
+        }
+        onUnsignedPluginProcessesChange={(enabled) =>
+          void workflow.execute({ type: "unsignedProcesses", enabled })
+        }
         allowUnsignedInstalls={catalogSettings.allowUnsignedInstalls}
         refreshMinutes={catalogSettings.refreshMinutes}
         canConfigureRefresh={Boolean(

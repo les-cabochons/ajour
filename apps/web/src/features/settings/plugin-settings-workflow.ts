@@ -71,6 +71,8 @@ export type PluginSettingsDependencies = Pick<
   | "installPlugin"
   | "setPluginSystemEnabled"
   | "setUnsignedPluginsEnabled"
+  | "setUnsignedPluginProcessesEnabled"
+  | "setPluginProcessAcceptance"
   | "configurePluginCatalog"
   | "downloadCatalogPlugin"
   | "inspectPluginSource"
@@ -156,6 +158,13 @@ type PluginSettingsCommand =
   | { type: "system"; enabled: boolean }
   /** Lets unsigned plugins run, or deactivates every one of them. */
   | { type: "unsigned"; enabled: boolean }
+  | { type: "unsignedProcesses"; enabled: boolean }
+  | {
+      type: "processAcceptance";
+      pluginId: string;
+      packageKey: string;
+      accepted: boolean;
+    }
   | { type: "download"; pluginId: string; sourceUrl?: string }
   /** Adds a source, or approves its current key: `keyFingerprint` is the one shown. */
   | { type: "addSource"; url: string; keyFingerprint: string | null }
@@ -178,6 +187,8 @@ const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   install: "Unable to install the plugin.",
   system: "Unable to update the plugin system.",
   unsigned: "Unable to change unsigned plugins.",
+  unsignedProcesses: "Unable to save the process setting.",
+  processAcceptance: "Unable to save process acceptance.",
   download: "Unable to download the plugin.",
   addSource: "Unable to add the plugin source.",
   removeSource: "Unable to remove the plugin source.",
@@ -703,6 +714,24 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.enabled
               ? "Plugins enabled. Each plugin has returned to its previous activation state."
               : "Plugins deactivated. Sync and plugin-provided schemas are paused.",
+          );
+          break;
+        }
+        case "unsignedProcesses": {
+          finish(
+            "Process setting saved.",
+            await deps.setUnsignedPluginProcessesEnabled(command.enabled),
+          );
+          break;
+        }
+        case "processAcceptance": {
+          finish(
+            "Process acceptance saved.",
+            await deps.setPluginProcessAcceptance(
+              command.pluginId,
+              command.packageKey,
+              command.accepted,
+            ),
           );
           break;
         }

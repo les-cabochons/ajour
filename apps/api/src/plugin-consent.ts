@@ -66,9 +66,18 @@ export function decideUpdateConsent(input: {
 
 /** Rechecked immediately before spawn, against current activation and consent. */
 export async function processConsentGate(
-  storage: Pick<AppApiStorage, "isPluginEnabled" | "getPluginConsent">,
+  storage: Pick<
+    AppApiStorage,
+    "isPluginEnabled" | "getPluginConsent" | "getPluginProcessGate"
+  >,
   caller: BrokerCaller,
-): Promise<"plugin_off" | "needs_consent" | undefined> {
+): Promise<
+  | "plugin_off"
+  | "needs_consent"
+  | "unsigned_processes_off"
+  | "process_acceptance_required"
+  | undefined
+> {
   if (
     !(await storage.isPluginEnabled(
       caller.pluginId,
@@ -77,23 +86,32 @@ export async function processConsentGate(
   )
     return "plugin_off";
   const consent = await storage.getPluginConsent(caller.pluginId);
-  const commands = summarizePluginAccess(caller.manifest, {
+  const access = summarizePluginAccess(caller.manifest, {
     agentPrompts: Object.fromEntries(
       (caller.manifest.capabilities.agentTask?.tasks ?? []).map((t) => [
         t.id,
         "",
       ]),
     ),
-  }).commands;
+  });
   if (
     !consent ||
-    (commands ?? []).some(
+    (access.commands ?? []).some(
       (c) =>
         !(consent.access.commands ?? []).some(
           (a) => a.id === c.id && a.policy === c.policy,
         ),
+    ) ||
+    (access.openSchemes ?? []).some(
+      (scheme) => !(consent.access.openSchemes ?? []).includes(scheme),
     )
   )
     return "needs_consent";
-  return undefined;
+  return (
+    await storage.getPluginProcessGate(
+      caller.pluginId,
+      caller.packageKey ?? caller.manifest.version,
+      caller.development,
+    )
+  ).reason;
 }

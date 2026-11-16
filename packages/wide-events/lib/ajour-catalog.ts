@@ -620,7 +620,7 @@ export const catalog = defineCatalog({
       fields: { ...requestFields, plugin: { id: operational() } },
     },
     "plugin.process_update": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: { ...requestFields, plugin: { id: operational() } },
     },
@@ -672,6 +672,8 @@ export const catalog = defineCatalog({
         "invalid_request",
         "plugin_off",
         "needs_consent",
+        "unsigned_processes_off",
+        "process_acceptance_required",
         "undeclared",
         "not_yet",
         "folder_refused",

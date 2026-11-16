@@ -1126,6 +1126,7 @@ describe("state files from earlier versions", () => {
     pluginsEnabled: true,
     // Added to version 7 without a new version: older files read the defaults.
     unsignedPluginsEnabled: true,
+    unsignedPluginProcessesEnabled: false,
     pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
     agentRunner: {

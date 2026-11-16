@@ -651,3 +651,31 @@ export async function uninstallPluginPackage(options: {
 
   return plugin;
 }
+
+/** Development packages have no install transaction, so acceptance binds to their files. */
+export async function pluginProcessPackageKey(
+  directory: string,
+): Promise<string> {
+  const hash = createHash("sha256");
+  hash.update(await realpath(directory));
+  async function visit(folder: string) {
+    const entries = await readdir(folder, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === ".git") continue;
+      const file = path.join(folder, entry.name);
+      if (entry.isDirectory()) await visit(file);
+      else if (entry.isFile()) {
+        const bytes = await readFile(file);
+        hash.update(
+          JSON.stringify([path.relative(directory, file), bytes.length]),
+        );
+        hash.update(bytes);
+      } else
+        throw new Error(
+          "Development plugin process access requires regular files.",
+        );
+    }
+  }
+  await visit(directory);
+  return hash.digest("hex");
+}

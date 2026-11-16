@@ -990,7 +990,7 @@ channel to read the event each emits.
 | `plugin.list`                        | command, request                   | route, client call                               |
 | `plugin.process`                     | job                                | local API                                        |
 | `plugin.process_read`                | request                            | route                                            |
-| `plugin.process_update`              | request                            | route                                            |
+| `plugin.process_update`              | command, request                   | route                                            |
 | `plugin.remove_data`                 | command, request                   | route, client call                               |
 | `plugin.request`                     | job                                | local API                                        |
 | `plugin.resume`                      | command, request                   | route, client call                               |
