@@ -30,6 +30,8 @@ export type ClientEventName = {
 export const APP_API_CLIENT = {
   getHandoffTemplates: "handoff.templates_read",
   saveHandoffTemplates: "handoff.templates_update",
+  getHandoffToolConnections: "handoff.connections_read",
+  saveHandoffToolConnections: "handoff.connections_update",
   listHandoffs: "handoff.list",
   startHandoff: "handoff.start",
   refreshHandoffs: "handoff.refresh",

@@ -49,6 +49,16 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/handoffs/templates",
     name: "handoff.templates_update",
   },
+  handoffConnectionsGet: {
+    method: "GET",
+    path: "/api/plugins/:pluginId/handoffs/connections",
+    name: "handoff.connections_read",
+  },
+  handoffConnectionsSave: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/handoffs/connections",
+    name: "handoff.connections_update",
+  },
   handoffBridge: {
     method: "GET",
     path: "/api/handoffs/bridge",

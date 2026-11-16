@@ -16,8 +16,20 @@ export function handoffOverview(): PluginsOverview {
     capabilities: {
       handoff: {
         tools: [
-          { id: "t3", label: "T3 Code", iconSvg: ICON, settings: [] },
-          { id: "claude", label: "Claude Code", iconSvg: ICON, settings: [] },
+          {
+            id: "t3",
+            label: "T3 Code",
+            iconSvg: ICON,
+            settings: [],
+            connection: "none" as const,
+          },
+          {
+            id: "claude",
+            label: "Claude Code",
+            iconSvg: ICON,
+            settings: [],
+            connection: "none" as const,
+          },
         ],
       },
     },

@@ -708,6 +708,7 @@ export const catalog = defineCatalog({
         "ask_timeout",
         "undeclared",
         "folder_refused",
+        "connection_refused",
         "executable_missing",
         "spawn_refused",
         "concurrency",
@@ -1741,6 +1742,16 @@ export const catalog = defineCatalog({
       fields: { ...requestFields },
     },
     "handoff.templates_update": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "handoff.connections_read": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    "handoff.connections_update": {
       kinds: ["request", "command"],
       reasons: [...requestReasons],
       fields: { ...requestFields },

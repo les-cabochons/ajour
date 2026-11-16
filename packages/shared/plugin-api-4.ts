@@ -475,6 +475,8 @@ const processSlotKindSchema = z.enum([
   "number",
   "https-url",
   "folder",
+  // Filled by the host from the handoff's connection, never by the plugin.
+  "connection-url",
 ]);
 const processEnumSchema = strictObject({
   kind: z.literal("enum"),
@@ -519,6 +521,18 @@ export const declaredConditionalGroupSchema = strictObject({
   if: processIdSchema,
   args: z.array(declaredArgumentSchema).min(1).max(100),
 }).superRefine((group, context) => {
+  if (
+    group.args.some(
+      (arg) => arg.kind === "connection-url" && arg.name === group.if,
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["if"],
+      message:
+        "A conditional group can't test a connection-url slot: the host fills it, the plugin never passes it.",
+    });
+  }
   if (
     !group.args.some((arg) => arg.kind !== "literal" && arg.name === group.if)
   ) {
@@ -953,6 +967,61 @@ function checkNetwork(
   }
 }
 
+/**
+ * A handoff tool that uses a connection reaches it through the broker, so
+ * the plugin declares connection fields and a network, as every networked
+ * capability does. A `connection-url` slot is filled from the connection's
+ * base address, so it needs one, and a tool whose operations have a
+ * connection.
+ */
+function checkHandoffConnections(
+  manifest: {
+    connectionFields: readonly PluginApi4Field[];
+    network?: PluginNetwork;
+    capabilities: PluginApi4Capabilities;
+    processes?: PluginProcesses;
+  },
+  context: z.RefinementCtx,
+) {
+  const tools = manifest.capabilities.handoff?.tools ?? [];
+  const connected = tools.some((tool) => tool.connection === "required");
+  tools.forEach((tool, index) => {
+    if (tool.connection !== "required") return;
+    const path = ["capabilities", "handoff", "tools", index, "connection"];
+    if (manifest.connectionFields.length === 0)
+      issue(
+        context,
+        path,
+        `The handoff tool "${tool.id}" uses a connection, so the plugin needs connection fields.`,
+      );
+    if (!manifest.network)
+      issue(
+        context,
+        path,
+        `The handoff tool "${tool.id}" uses a connection, so the plugin needs a network declaration.`,
+      );
+  });
+  manifest.processes?.commands.forEach((command, index) => {
+    const usesConnection = command.args
+      .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
+      .some((arg) => arg.kind === "connection-url");
+    if (!usesConnection) return;
+    const path = ["processes", "commands", index, "args"];
+    if (!manifest.network?.baseAddress)
+      issue(
+        context,
+        path,
+        "A connection-url slot needs a base address to fill it from: declare network.baseAddress.",
+      );
+    if (!connected)
+      issue(
+        context,
+        path,
+        "A connection-url slot is filled only during an operation with a connection: only a handoff tool that uses a connection has one.",
+      );
+  });
+}
+
 /** Whether the plugin runs code: everything but agent tasks and project properties. */
 function api4RunsCode(capabilities: PluginApi4Capabilities) {
   return (
@@ -1023,6 +1092,7 @@ export const pluginApi4ManifestSchema = strictObject(
       "A project data shape may not declare processes.",
     );
   checkNetwork(manifest, context);
+  checkHandoffConnections(manifest, context);
 });
 export type PluginApi4Manifest = z.infer<typeof pluginApi4ManifestSchema>;
 export type PluginApi4ManifestInput = z.input<typeof pluginApi4ManifestSchema>;

@@ -15,6 +15,7 @@ export type {
   AjourRequestErrorCode,
   AjourResponse,
   DataShapeModule,
+  HandoffArguments,
   PluginModule,
 } from "./lib/runtime.js";
 

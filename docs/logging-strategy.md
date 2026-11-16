@@ -974,6 +974,8 @@ channel to read the event each emits.
 | `edit.run`                           | ipc                                     | IPC channel                                      |
 | `event_rule.forget`                  | command                                 | store command                                    |
 | `event_rule.hide`                    | command                                 | store command                                    |
+| `handoff.connections_read`           | request, job                            | route, client call                               |
+| `handoff.connections_update`         | request, command                        | route, client call                               |
 | `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
 | `handoff.list`                       | request, job                            | route, client call                               |
 | `handoff.open`                       | request, plugin_operation, job, command | route, client call                               |
@@ -1213,3 +1215,5 @@ four forms of process content and asserts one event per call.
 Process access uses `unsigned_plugins.process_toggle` with `process_access.enabled`. Per-package acceptance and revocation use `plugin.process_update` with `process_access.accepted`. Package keys are never logged.
 
 Handoff template reads emit `handoff.templates_read` as request or job; saves emit `handoff.templates_update` as request or command. They record request metadata only, never template source or preview item fields.
+
+A handoff tool's connection pick is read with `handoff.connections_read` and saved with `handoff.connections_update`, with request metadata only. A handoff operation through a connection records the connection's id on its `plugin_operation` event, never its address. A `connection-url` process argument the host can't fill is refused with `connection_refused` on `plugin.process`.

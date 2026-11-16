@@ -1,0 +1,119 @@
+name: Official plugin release check
+
+# The release check of the official plugins (#403, #725): `just
+# plugin-release-package` builds the test-only packaged app
+# (`apps/desktop/plugin-release.config.cjs`, never part of a release), and
+# `just plugin-release-check` runs it against the official plugins at the
+# pinned commit of les-cabochons/ajour-plugins (`releaseCommit` of
+# `apps/desktop/sandbox-check/release-baseline.json`), with fixture services
+# in place of Jira, GitHub, Azure DevOps and a calendar server, and a fake
+# `t3` in place of T3 Code for `agent-handoff`. It covers the real app API,
+# credential broker, process broker and sandboxed renderer.
+#
+# Windows only. The macOS package and its job stay with #614.
+#
+# The `Tests` workflow calls this one for pull requests that can change the
+# desktop app, the local API or the packages they share, and for every push
+# to main. Its Plugin sandbox gate holds the result.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check. Empty checks the caller's commit.
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Official plugin release check (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # The check packages Electron, so download its binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # Outside the workspace, so the clone is never part of Ajour's tree. The
+      # whole history: the check reads the pinned release commit
+      # (`releaseCommit`) and the older catalog commit it upgrades from
+      # (`legacyCatalogCommit`), both in `release-baseline.json`.
+      - name: Clone the official plugins at the pinned commit
+        shell: bash
+        run: |
+          commit=$(node -p "require('./apps/desktop/sandbox-check/release-baseline.json').releaseCommit")
+          git clone --quiet https://github.com/les-cabochons/ajour-plugins.git "$RUNNER_TEMP/ajour-plugins"
+          git -C "$RUNNER_TEMP/ajour-plugins" checkout --quiet --detach "$commit"
+          git -C "$RUNNER_TEMP/ajour-plugins" log -1 --oneline
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Electron 44 runs the app on Node 24. Fetch the newest 24.x patch
+          # rather than the older one cached on the runner.
+          node-version: 24
+          check-latest: true
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install pnpm on Windows
+        run: npm install --global pnpm@10.7.0
+
+      - name: Set up just
+        uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+
+      - name: Find the pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Start Windows PowerShell once
+        # As in `plugin-sandbox.yml`: Windows PowerShell's first start on a
+        # fresh runner can be slower than the checks' process queries allow.
+        shell: pwsh
+        run: |
+          $took = Measure-Command {
+            & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process -Id $PID | Out-Null"
+          }
+          "Windows PowerShell answered in $([math]::Round($took.TotalSeconds, 1)) s."
+
+      - name: Package the release check
+        run: just plugin-release-package
+
+      - name: Run the release check
+        # The pinned commit is the check's default, so AJOUR_PLUGINS_COMMIT
+        # stays unset.
+        shell: bash
+        env:
+          AJOUR_PLUGINS_CHECKOUT: ${{ runner.temp }}/ajour-plugins
+          AJOUR_PLUGIN_RELEASE_EXECUTABLE: apps/desktop/out/plugin-release-check/win-unpacked/Ajour.exe
+          LOG: ${{ runner.temp }}/plugin-release.log
+        run: just plugin-release-check 2>&1 | tee "$LOG"
+
+      - name: Upload the check's log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release-log-Windows
+          path: ${{ runner.temp }}/plugin-release.log
+          retention-days: 14

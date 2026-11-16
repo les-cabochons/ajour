@@ -39,6 +39,7 @@ function labelsOf(group: PluginOverviewGroup): AccessLabels {
   return {
     fields: group.plugin.connectionFields,
     tasks: group.plugin.capabilities.agentTask?.tasks ?? [],
+    tools: group.plugin.capabilities.handoff?.tools ?? [],
   };
 }
 

@@ -13,7 +13,18 @@ import { AppApiStorage } from "./storage.ts";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
+    // A detached child can still hold its folder open while it exits on
+    // Windows, so removal retries instead of failing with EBUSY.
+    roots
+      .splice(0)
+      .map((p) =>
+        rm(p, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 100,
+        }),
+      ),
   );
 });
 async function fixture(
@@ -78,6 +89,27 @@ it("Given text with shell metacharacters, capture preserves one argument", async
         .stdout!,
     ),
   ).toEqual(["hello & echo $(x)"]);
+});
+it("Given a capture command with a folder argument, runs in that repository folder", async () => {
+  // A tool such as Claude Code refuses to start in an untrusted folder like the
+  // filesystem root, so a capture command works in the folder it was given.
+  const printCwd =
+    "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write(JSON.stringify(process.cwd())))";
+  const { op, folder, root } = await fixture(["{repo:folder}"], printCwd);
+  const cwd = JSON.parse(
+    (await op.run({ command: "run", args: { repo: folder.id } })).stdout!,
+  );
+  const { realpath } = await import("node:fs/promises");
+  expect([root, await realpath(root)]).toContain(cwd);
+});
+it("Given a capture command without a folder argument, runs at the filesystem root", async () => {
+  const printCwd =
+    "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write(JSON.stringify(process.cwd())))";
+  const { op } = await fixture(["{title:text}"], printCwd);
+  const cwd: string = JSON.parse(
+    (await op.run({ command: "run", args: { title: "x" } })).stdout!,
+  );
+  expect(path.parse(cwd).root).toBe(cwd);
 });
 it.each(["-option", "a\0b", "a\rb", "a\nb"])(
   "Given invalid text %j, refuses before spawn",

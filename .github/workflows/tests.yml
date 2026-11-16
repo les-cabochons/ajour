@@ -5,7 +5,9 @@ name: Tests
 # two systems the desktop app ships on. The Playwright acceptance suite runs in
 # Chromium on Windows, in four shards at once. The package check, the plugin
 # sandbox check and the desktop lifecycle check run in Electron on both, for
-# pull requests that can change what they check.
+# pull requests that can change what they check. The official-plugin release
+# check runs in a packaged test-only app on Windows, for those pull requests
+# and every push to main; its macOS job stays with #614.
 #
 # macOS runners are scarce (an account runs only a few at once) and each job
 # waits for one, so every macOS check runs in one job, `macOS checks`, one
@@ -170,6 +172,9 @@ jobs:
   # before it publishes, so running it here too would run all three systems
   # twice for every merge. When pushes land while a nightly runs, only the
   # newest gets a nightly, and its check covers the skipped commits' code.
+  # The official-plugin release check runs on every push and manual run, and
+  # for pull requests that can change what it checks: no release workflow
+  # runs it.
   desktop-changes:
     name: Desktop package changes
     runs-on: ubuntu-latest
@@ -178,6 +183,7 @@ jobs:
       package: ${{ steps.diff.outputs.package }}
       sandbox: ${{ steps.diff.outputs.sandbox }}
       lifecycle: ${{ steps.diff.outputs.lifecycle }}
+      release: ${{ steps.diff.outputs.release }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -193,6 +199,7 @@ jobs:
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "package=true" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
             if [ "$EVENT" = "push" ]; then
               echo "sandbox=false" >> "$GITHUB_OUTPUT"
               echo "lifecycle=false" >> "$GITHUB_OUTPUT"
@@ -217,6 +224,14 @@ jobs:
             echo "sandbox=true" >> "$GITHUB_OUTPUT"
           else
             echo "sandbox=false" >> "$GITHUB_OUTPUT"
+          fi
+          # The official-plugin release check packages the app (apps/desktop)
+          # and runs the official plugins through the local API, both
+          # brokers and the renderer runtime (apps/api, packages).
+          if echo "$changed" | grep -qE '^(apps/desktop/|apps/api/|packages/|\.github/workflows/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|tsconfig\.base\.json$|package\.json$|Justfile$)'; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
           fi
           # The lifecycle check runs the whole app: main (apps/desktop), the
           # local API and MCP (apps/api), the window that answers MCP
@@ -440,6 +455,15 @@ jobs:
     with:
       macos: false
 
+  # The official-plugin release check (#403, #725) on Windows, in a packaged
+  # test-only app against les-cabochons/ajour-plugins at the pinned commit.
+  # `plugin-release.yml` holds the job. Its macOS job stays with #614.
+  plugin-release:
+    name: Official plugin release
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.release == 'true'
+    uses: ./.github/workflows/plugin-release.yml
+
   # The real-app check of the window lifecycle (#534) on Windows.
   # `desktop-lifecycle.yml` holds the job. Here `macOS checks` runs it on
   # macOS.
@@ -456,15 +480,16 @@ jobs:
   # no check runs, so requiring the matrix checks themselves would stall every
   # docs-only pull request. This job always runs: it passes when the suite was
   # skipped or passed, and fails when the suite ran and failed or was cancelled.
-  # It holds the desktop lifecycle check the same way, so that check needs no
-  # required status of its own, and `macOS checks`, which runs both checks on
-  # macOS.
+  # It holds the desktop lifecycle check and the official-plugin release check
+  # the same way, so those checks need no required status of their own, and
+  # `macOS checks`, which runs the first two on macOS.
   plugin-sandbox-gate:
     name: Plugin sandbox gate
     needs:
       - desktop-changes
       - plugin-sandbox
       - desktop-lifecycle
+      - plugin-release
       - macos
     if: always()
     runs-on: ubuntu-latest
@@ -475,9 +500,10 @@ jobs:
           CHANGES: ${{ needs.desktop-changes.result }}
           SANDBOX: ${{ needs.plugin-sandbox.result }}
           LIFECYCLE: ${{ needs.desktop-lifecycle.result }}
+          RELEASE: ${{ needs.plugin-release.result }}
           MACOS: ${{ needs.macos.result }}
         run: |
-          echo "desktop-changes: $CHANGES, plugin-sandbox: $SANDBOX, desktop-lifecycle: $LIFECYCLE, macOS checks: $MACOS"
+          echo "desktop-changes: $CHANGES, plugin-sandbox: $SANDBOX, desktop-lifecycle: $LIFECYCLE, plugin-release: $RELEASE, macOS checks: $MACOS"
           if [ "$CHANGES" != "success" ]; then
             echo "The change filter did not finish, so the gate cannot tell." >&2
             exit 1
@@ -493,6 +519,13 @@ jobs:
             success | skipped) ;;
             *)
               echo "The desktop lifecycle check ended as $LIFECYCLE." >&2
+              exit 1
+              ;;
+          esac
+          case "$RELEASE" in
+            success | skipped) ;;
+            *)
+              echo "The official plugin release check ended as $RELEASE." >&2
               exit 1
               ;;
           esac

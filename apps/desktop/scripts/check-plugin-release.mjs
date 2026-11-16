@@ -1,5 +1,6 @@
-// Runs the release check of the six official plugins (#403, seam 3 of the
-// spec #381): `sandbox-check/official-plugins.cjs`, inside the packaged
+// Runs the release check of the official plugins (#403, seam 3 of the spec
+// #381, and `agent-handoff` against a fake `t3` since #725):
+// `sandbox-check/official-plugins.cjs`, inside the packaged
 // check build that `just plugin-release-package` makes, against the plugins
 // at a commit of the official source repository.
 //
@@ -86,6 +87,7 @@ try {
     "ics",
     "workday-agent",
     "workday-project-data",
+    "agent-handoff",
   ];
   for (const folder of folders) {
     const manifest = JSON.parse(
@@ -96,7 +98,7 @@ try {
     );
     if (manifest.apiVersion !== 4)
       throw new Error(
-        `${folder} is API ${manifest.apiVersion} at ${commit}; the six API 4 ports must land before the release check can pass.`,
+        `${folder} is API ${manifest.apiVersion} at ${commit}; every official plugin must be on API 4 before the release check can pass.`,
       );
   }
 
@@ -138,7 +140,7 @@ try {
       `The ajour.json at ${legacyCommit} lists no API 3 package, so there is no upgrade to check. Set AJOUR_PLUGINS_LEGACY_COMMIT to the last release that still listed API 3.`,
     );
   process.stdout.write(
-    `Checking six official plugins at ${commit} (upgrading from ${legacyIds.join(", ")})\n`,
+    `Checking the official plugins at ${commit} (upgrading from ${legacyIds.join(", ")})\n`,
   );
   await mkdir(path.join(root, "user-data"));
   const env = {
