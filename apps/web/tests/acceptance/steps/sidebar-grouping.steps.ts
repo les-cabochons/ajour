@@ -12,7 +12,7 @@ function section(page: Page, name: string) {
 }
 
 function projectSections(page: Page) {
-  return sidebar(page).locator("section:has(> button[aria-expanded])");
+  return sidebar(page).locator("section[data-project-section]");
 }
 
 function quotedList(list: string) {

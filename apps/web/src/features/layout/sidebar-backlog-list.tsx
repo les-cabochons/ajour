@@ -712,10 +712,10 @@ function ParentLink({
   revealed: boolean;
 }) {
   // The parent's name, not a bare arrow, so the mark says what it links to
-  // (council round 12). The name gives way to the hover actions, but the
-  // arrow keeps its width, so the link stays in reach on hover.
+  // (council round 12). The row gives it only the space left over, so the
+  // name gives way first and the project or state never truncates for it.
   const className =
-    "flex min-w-3 shrink-[8] items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
+    "flex min-w-0 max-w-full items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
   const icon = (
     <>
       <ParentIcon aria-hidden className="size-3 shrink-0" />
@@ -854,7 +854,16 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             </>
           )}
           {parent ? (
-            <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
+            // The space left over, never less than the arrow, so the link
+            // stays in reach beside the hover actions. Empty space in it
+            // still opens the row.
+            <span className="flex min-w-3 flex-1 basis-0">
+              <ParentLink
+                parent={parent}
+                rows={rows}
+                revealed={reveal.active}
+              />
+            </span>
           ) : null}
           {reveal.active ? (
             <RowActions
@@ -1505,6 +1514,7 @@ export function SidebarBacklogList({
                   <section
                     key={section}
                     aria-label={label}
+                    data-project-section=""
                     className="flex flex-col"
                   >
                     <SidebarProjectHeader
