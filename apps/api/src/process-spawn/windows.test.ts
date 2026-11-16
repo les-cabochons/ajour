@@ -4,6 +4,7 @@ import {
   readFileSync,
   existsSync,
   linkSync,
+  mkdirSync,
   rmSync,
 } from "node:fs";
 import os from "node:os";
@@ -18,6 +19,8 @@ const root = mkdtempSync(path.join(os.tmpdir(), "ajour cmd & unicode-é-"));
 const script = path.join(root, "argv.mjs");
 const output = path.join(root, "argv.json");
 const marker = path.join(root, "CANARY");
+const exploitRoot = mkdtempSync(path.join(os.tmpdir(), "ajour-exploit-"));
+afterAll(() => rmSync(exploitRoot, { recursive: true, force: true }));
 writeFileSync(
   script,
   `import fs from 'node:fs'; fs.writeFileSync(process.env.ARGV_OUTPUT, JSON.stringify({argv:process.argv.slice(2),env:process.env}));`,
@@ -59,6 +62,8 @@ const pnpmEnv = pnpm.replace(
 )
 `,
 );
+const t3Executable = path.join(root, "T3 Code.exe");
+linkSync(process.execPath, t3Executable);
 const t3 = `@echo off
 rem Written by T3 Code: runs the desktop app's bundled t3 CLI.
 setlocal EnableExtensions DisableDelayedExpansion
@@ -66,11 +71,11 @@ set "T3CODE_CLI_PATH=${path.join(root, "t3.cmd")}"
 if not defined T3CODE_HOME set "T3CODE_HOME=${root}"
 set "ELECTRON_RUN_AS_NODE=1"
 set "T3CODE_DESKTOP_CLI_LAUNCHER=1"
-if exist "${process.execPath}" goto run
+if exist "${t3Executable}" goto run
 echo T3 Code has moved or been removed. Open the app once to update this command. 1>&2
 exit /b 127
 :run
-"${process.execPath}" "${script}" %*
+"${t3Executable}" "${script}" %*
 set "t3_exit=%ERRORLEVEL%"
 exit /b %t3_exit%
 `;
@@ -160,7 +165,6 @@ describe.skipIf(process.platform !== "win32")(
           const start = performance.now();
           const child = spawnSync(plan.command, plan.args, {
             env: plan.env,
-            windowsVerbatimArguments: plan.windowsVerbatimArguments,
             shell: false,
             timeout: 10000,
             encoding: "utf8",
@@ -252,6 +256,166 @@ describe.skipIf(process.platform !== "win32")(
         }
       });
     }
+
+    it.each([
+      "cmd",
+      "powershell",
+      "pwsh",
+      "wscript",
+      "cscript",
+      "mshta",
+      "bash",
+      "wsl",
+      "conhost",
+      "rundll32",
+      "regsvr32",
+      "sh",
+      "zsh",
+      "msbuild",
+    ])("Given interpreter %s, refuses every command path", (name) => {
+      const target = path.join(root, `${name}.exe`);
+      writeFileSync(target, "");
+      expect(resolveSpawn(target, [], env)).toEqual({
+        refused: "native_exe_required",
+      });
+      const shim = path.join(root, "unsafe.cmd");
+      for (const content of [
+        `@"${target}" "${script}" %*`,
+        t3.replaceAll(t3Executable, target),
+      ]) {
+        writeFileSync(shim, content);
+        expect(resolveSpawn(shim, [], env)).toHaveProperty("refused");
+      }
+    });
+
+    it("Given the reported cmd exploit, refuses and leaves the canary absent", () => {
+      const shim = path.join(exploitRoot, "exploit.cmd");
+      writeFileSync(path.join(exploitRoot, "real.bat"), "@echo off");
+      writeFileSync(
+        shim,
+        `@"C:\\Windows\\System32\\cmd.exe" "/d" "/c" "${exploitRoot}\\real.bat" %*`,
+      );
+      const plan = resolveSpawn(
+        shim,
+        [`Fix login" & type nul> ${exploitRoot}\\CANARY & rem "`],
+        env,
+      );
+      expect(plan).toHaveProperty("refused");
+      expect(existsSync(path.join(exploitRoot, "CANARY"))).toBe(false);
+    });
+
+    it.each([
+      "real.bat",
+      "real.cmd",
+      "real.ps1",
+      "real.vbs",
+      "real.wsf",
+      "real.hta",
+    ])("Given prefix naming %s, refuses", (name) => {
+      const target = path.join(root, name);
+      writeFileSync(target, "");
+      const shim = path.join(root, "prefix.cmd");
+      for (const content of [
+        `@"${process.execPath}" "${target}" %*`,
+        npm.replace("%dp0%\\argv.mjs", target),
+        pnpm.replaceAll("%~dp0\\argv.mjs", target),
+        t3.replaceAll(script, target),
+      ]) {
+        writeFileSync(shim, content);
+        expect(resolveSpawn(shim, [], env)).toHaveProperty("refused");
+      }
+    });
+
+    it.each([
+      path.join(root, "%VAR%.mjs"),
+      path.join(root, "bad!path.mjs"),
+      path.join(root, 'bad"path.mjs'),
+      path.join(root, "bad\tpath.mjs"),
+      path.join(root, "bad\x7fpath.mjs"),
+      "relative.mjs",
+      "\\Windows\\node.exe",
+    ])("Given unsafe captured path %j, refuses", (target) => {
+      if (target.includes("%VAR%") || target.includes("!"))
+        writeFileSync(target, "");
+      const shim = path.join(root, "bad-path.cmd");
+      for (const content of [
+        `@"${target}" "${script}" %*`,
+        npm.replace("%dp0%\\argv.mjs", target),
+      ]) {
+        writeFileSync(shim, content);
+        expect(resolveSpawn(shim, [], env)).toHaveProperty("refused");
+      }
+    });
+
+    it.each(["tool.cmd", "tool.bat"])(
+      "Given Yarn target %s, requires a native executable",
+      (name) => {
+        const shim = path.join(root, "bad-target.cmd");
+        writeFileSync(shim, `@"${path.join(root, name)}" "${script}" %*`);
+        expect(resolveSpawn(shim, [], env)).toEqual({
+          refused: "native_exe_required",
+        });
+      },
+    );
+
+    it.each(['"a""b"', '"C:\\dir\\"'])(
+      "Given ambiguous Yarn prefix %s, refuses",
+      (prefix) => {
+        const shim = path.join(root, "ambiguous.cmd");
+        writeFileSync(shim, `@"${process.execPath}" ${prefix} %*`);
+        expect(resolveSpawn(shim, [], env)).toHaveProperty("refused");
+      },
+    );
+
+    it("Given a percent in pnpm NODE_PATH, refuses", () => {
+      const shim = path.join(root, "percent.cmd");
+      writeFileSync(shim, pnpmEnv.replaceAll("deps", "%VAR%"));
+      expect(resolveSpawn(shim, [], env)).toHaveProperty("refused");
+    });
+
+    it("Given duplicate Path and PATH, selects Node's sorted first key", () => {
+      const shim = path.join(root, "sorted.cmd");
+      writeFileSync(shim, pnpm);
+      const plan = resolveSpawn(shim, [], {
+        Path: path.join(root, "missing"),
+        PATH: path.dirname(process.execPath),
+      });
+      expect(plan).toHaveProperty("command", process.execPath);
+    });
+
+    it("Given root-relative PATH or a node.exe directory, refuses", () => {
+      const shim = path.join(root, "directory.cmd");
+      writeFileSync(shim, pnpm);
+      expect(
+        resolveSpawn(shim, [], {
+          PATH: path.dirname(process.execPath).slice(2),
+        }),
+      ).toHaveProperty("refused");
+      const bin = path.join(root, "directory-bin");
+      mkdirSync(path.join(bin, "node.exe"), { recursive: true });
+      expect(resolveSpawn(shim, [], { PATH: bin })).toHaveProperty("refused");
+      mkdirSync(path.join(root, "node.exe"));
+      try {
+        expect(resolveSpawn(shim, [], {})).toHaveProperty("refused");
+      } finally {
+        rmSync(path.join(root, "node.exe"), { recursive: true });
+      }
+    });
+
+    it("Given npm or pnpm with an extensionless Node entry point, preserves it", () => {
+      const entry = path.join(root, "cli-entry");
+      writeFileSync(entry, "");
+      const shim = path.join(root, "extensionless.cmd");
+      for (const content of [
+        npm.replace("%dp0%\\argv.mjs", entry),
+        pnpm.replaceAll("%~dp0\\argv.mjs", entry),
+      ]) {
+        writeFileSync(shim, content);
+        const plan = resolveSpawn(shim, [], env);
+        expect(plan).toHaveProperty("command", process.execPath);
+        expect(plan).toHaveProperty("args", [entry]);
+      }
+    });
 
     it("Given the live T3 shim, resolves it without launching the application", () => {
       const live = path.join(os.homedir(), ".t3", "bin", "t3.cmd");

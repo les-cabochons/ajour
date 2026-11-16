@@ -30,7 +30,8 @@ The runner's version probe (`cli-path.ts`, `defaultReadVersion`) and launch both
 resolve the executable through `process-spawn` before starting it with
 `shell: false` and `windowsHide: true`. A refused launch returns the existing
 400 refusal with its reason and releases the run's client and work folder.
-A refused version probe returns no version and never executes the shim.
+A refused version probe returns no version and never executes the shim. Its
+plain-English refusal reason reaches Settings > Agents through CLI status.
 
 ## Process spawning
 
@@ -38,7 +39,16 @@ A refused version probe returns no version and never executes the shim.
 It returns a fresh command, argument list and environment, or a refusal reason.
 On Windows it resolves complete recognised npm, pnpm, Yarn Classic, Yarn Berry
 and T3 shim templates to a native `.exe` and literal prefix arguments. Unknown
-or changed shims are refused. There is no shell fallback. NUL is refused on all
+or changed shims are refused. npm and pnpm reject batch files and other
+script-host inputs as Node entry points; extensionless Node scripts remain
+supported. Yarn targets only `node.exe`; its quoted prefix values
+must be separated by spaces, cannot end in a backslash, and cannot name batch
+files or other script-host inputs. T3 targets only `T3 Code.exe` or
+`T3 Code (Nightly).exe`, with a Node script prefix. Every resolved Windows
+command refuses known command interpreters and script hosts. Executable paths,
+resolved targets and Node PATH entries require a drive-letter or UNC prefix.
+Node candidates must be files; case-insensitive environment lookup follows
+Node's sorted-key precedence. There is no shell fallback. NUL is refused on all
 systems; Windows also refuses lone surrogates and excessive command lines.
 Other systems keep the original command and arguments. Callers own cwd, stdio,
 timeouts, cancellation and process cleanup. This module performs no approval or
@@ -959,7 +969,6 @@ The release steps (asset lookup, HTTPS-only redirects, the 120 MB cap, the strea
 
   Access review and the mode's warning say this, and a release claims G1
   only for plugins without process access.
-
 - **Access review says it truthfully.** All executable plugins, ours included,
   run in the same sandbox and reach the network only through the broker. So
   "Ajour enforces it" is true on every plugin page that shows it: it covers the

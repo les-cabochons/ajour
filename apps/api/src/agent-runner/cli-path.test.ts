@@ -124,6 +124,7 @@ describe.skipIf(process.platform === "win32")("readLoginShellPath", () => {
   });
 });
 
+// Windows shim probes require Windows path and process semantics.
 describe.skipIf(process.platform !== "win32")("Windows CLI version", () => {
   it.each(["claude", "codex", "opencode"])(
     "detects %s through an npm shim and reads its version",
@@ -146,8 +147,8 @@ describe.skipIf(process.platform !== "win32")("Windows CLI version", () => {
     const bin = await tempDir("ajour unknown-");
     const shim = path.join(bin, "claude.cmd");
     await writeFile(shim, "@echo SHOULD_NOT_RUN");
-    expect(
-      await defaultReadVersion(shim, process.env.PATH ?? ""),
-    ).toBeUndefined();
+    expect(await defaultReadVersion(shim, process.env.PATH ?? "")).toEqual({
+      refused: "unknown_shim",
+    });
   });
 });

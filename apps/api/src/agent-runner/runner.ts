@@ -43,7 +43,7 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
-import { resolveSpawn } from "../process-spawn/index.ts";
+import { resolveSpawn, spawnRefusalMessage } from "../process-spawn/index.ts";
 import { defaultReadVersion } from "./cli-path.ts";
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
@@ -122,7 +122,7 @@ export interface AgentRunnerOptions {
   readVersion?: (
     executable: string,
     pathValue: string,
-  ) => Promise<string | undefined>;
+  ) => Promise<string | { refused: string } | undefined>;
   loginShellPath: () => Promise<string>;
   chromeInstalled: () => Promise<boolean>;
   playwright: (input: {
@@ -268,15 +268,21 @@ export class AgentRunner {
         const output = executable
           ? await readVersion(executable, pathValue)
           : undefined;
-        const version = output
-          ? (adapter?.parseVersion(output) ?? output.trim())
-          : undefined;
+        const refusalReason =
+          output && typeof output !== "string"
+            ? spawnRefusalMessage(output.refused)
+            : undefined;
+        const version =
+          typeof output === "string" && output
+            ? (adapter?.parseVersion(output) ?? output.trim())
+            : undefined;
         return {
           id: cli.id,
           label: cli.label,
           supported: adapter !== undefined,
           installed: executable !== null,
           ...(version ? { version } : {}),
+          ...(refusalReason ? { refusalReason } : {}),
         };
       }),
     );
@@ -576,7 +582,7 @@ export class AgentRunner {
       );
       if ("refused" in plan) {
         throw new AgentRunError(
-          `${adapter.label} can't start: ${plan.refused}. Install a supported CLI shim or a native executable.`,
+          `${adapter.label} can't start: ${spawnRefusalMessage(plan.refused)}`,
           400,
         );
       }

@@ -91,7 +91,7 @@ export function defaultReadVersion(executable: string, pathValue: string) {
     ...process.env,
     PATH: pathValue,
   });
-  if ("refused" in plan) return Promise.resolve(undefined);
+  if ("refused" in plan) return Promise.resolve({ refused: plan.refused });
   return new Promise<string | undefined>((resolve) => {
     execFile(
       plan.command,

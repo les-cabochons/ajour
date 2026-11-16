@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { resolveSpawn } from "./index.ts";
 
 describe("resolveSpawn", () => {
+  it("Given a NUL in an environment key, refuses", () => {
+    expect(
+      resolveSpawn(process.execPath, [], { ["bad\0key"]: "value" }),
+    ).toEqual({ refused: "nul" });
+  });
+  // UTF-16 validation and fully qualified paths apply only to Windows.
+  it.skipIf(process.platform !== "win32")(
+    "Given an invalid environment value or root-relative executable, refuses",
+    () => {
+      expect(resolveSpawn(process.execPath, [], { VALUE: "\ud800" })).toEqual({
+        refused: "invalid_unicode",
+      });
+      expect(resolveSpawn("\\Windows\\node.exe", [], {})).toEqual({
+        refused: "absolute_path_required",
+      });
+    },
+  );
   it("Given a native Node executable, preserves hostile arguments without a shell", () => {
     const argv = ['Fix login" & echo INJECTED & "', "%PATH%", "", "x\\"];
     expect(resolveSpawn(process.execPath, argv, {})).toEqual({
@@ -17,6 +34,7 @@ describe("resolveSpawn", () => {
     });
   });
 
+  // Unix passthrough is intentionally unavailable on Windows.
   it.skipIf(process.platform === "win32")(
     "Given a non-Windows executable, leaves argv and environment unchanged",
     () => {
@@ -29,6 +47,7 @@ describe("resolveSpawn", () => {
     },
   );
 
+  // These refusals depend on Windows CreateProcess semantics.
   it.skipIf(process.platform !== "win32")(
     "Given an unresolved Windows command or excessive command line, refuses",
     () => {

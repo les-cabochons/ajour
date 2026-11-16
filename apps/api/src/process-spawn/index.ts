@@ -6,7 +6,6 @@ export type SpawnResolution =
       command: string;
       args: string[];
       env: NodeJS.ProcessEnv;
-      windowsVerbatimArguments?: boolean;
     }
   | { refused: string };
 
@@ -17,8 +16,8 @@ export function resolveSpawn(
   env: NodeJS.ProcessEnv,
 ): SpawnResolution {
   if (
-    [executablePath, ...argv, ...Object.values(env)].some((v) =>
-      v?.includes("\0"),
+    [executablePath, ...argv, ...Object.keys(env), ...Object.values(env)].some(
+      (v) => v?.includes("\0"),
     )
   )
     return { refused: "nul" };
@@ -26,12 +25,12 @@ export function resolveSpawn(
     return { command: executablePath, args: [...argv], env: { ...env } };
   // CreateProcess uses UTF-16; lone surrogates do not round-trip through Node's UTF-8 IO.
   if (
-    [executablePath, ...argv].some(
-      (v) => Buffer.from(v, "utf8").toString("utf8") !== v,
+    [executablePath, ...argv, ...Object.values(env)].some(
+      (v) => v !== undefined && Buffer.from(v, "utf8").toString("utf8") !== v,
     )
   )
     return { refused: "invalid_unicode" };
-  if (!path.isAbsolute(executablePath))
+  if (!isAbsoluteWindowsPath(executablePath))
     return { refused: "absolute_path_required" };
   let command = executablePath;
   let args = [...argv];
@@ -44,13 +43,18 @@ export function resolveSpawn(
         .trimEnd();
       const shim = recognizeShim(source, path.dirname(command), childEnv);
       if (!shim) return { refused: "unknown_shim" };
+      if ("refused" in shim) return shim;
       command = shim.command;
       args = [...shim.prefix, ...argv];
     } catch {
       return { refused: "shim_unreadable" };
     }
   }
-  if (!path.isAbsolute(command) || !/\.exe$/i.test(command))
+  if (
+    !isAbsoluteWindowsPath(command) ||
+    !/\.exe$/i.test(command) ||
+    isInterpreter(command)
+  )
     return { refused: "native_exe_required" };
   // Conservative upper bound on libuv's CRT quoting, including argv[0] and NUL.
   if ([command, ...args].reduce((n, v) => n + 2 * v.length + 3, 1) > 32767)
@@ -59,9 +63,11 @@ export function resolveSpawn(
 }
 
 function getEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
-  return Object.entries(env).find(
-    ([key]) => key.toLowerCase() === name.toLowerCase(),
-  )?.[1];
+  // Node sorts Windows environment keys before retaining the first case variant.
+  const key = Object.keys(env)
+    .sort()
+    .find((key) => key.toLowerCase() === name.toLowerCase());
+  return key === undefined ? undefined : env[key];
 }
 
 function setEnv(env: NodeJS.ProcessEnv, name: string, value: string) {
@@ -75,13 +81,13 @@ function nodeExecutable(
   env: NodeJS.ProcessEnv,
 ): string | undefined {
   const local = path.join(directory, "node.exe");
-  if (existsSync(local)) return local;
+  if (isFile(local)) return local;
   // No current-directory or PATHEXT lookup and never recurse into another shim.
   return (getEnv(env, "PATH") ?? "")
     .split(";")
-    .filter((part) => path.isAbsolute(part))
+    .filter(isAbsoluteWindowsPath)
     .map((part) => path.join(part, "node.exe"))
-    .find((candidate) => existsSync(candidate));
+    .find(isFile);
 }
 
 function expandPath(
@@ -90,7 +96,8 @@ function expandPath(
   normalize = true,
 ): string | undefined {
   const expanded = value.replace(/%~dp0|%dp0%/g, directory + "\\");
-  if (/[\x00-\x1f%!"]/.test(expanded) || !path.isAbsolute(expanded)) return;
+  if (/[\x00-\x1f\x7f%!"]/.test(expanded) || !isAbsoluteWindowsPath(expanded))
+    return;
   return normalize ? path.normalize(expanded) : expanded;
 }
 
@@ -100,7 +107,7 @@ function recognizeShim(
   source: string,
   directory: string,
   env: NodeJS.ProcessEnv,
-): Shim | undefined {
+): Shim | { refused: string } | undefined {
   // Match whole templates. A familiar final invocation alone is not sufficient.
   const npm =
     /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n\nIF EXIST "%dp0%\\node.exe" \(\n  SET "_prog=%dp0%\\node.exe"\n\) ELSE \(\n  SET "_prog=node"\n\)\n\nendLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "([^"\n]+)" %\*$/i.exec(
@@ -114,7 +121,8 @@ function recognizeShim(
   if (npm || pnpm) {
     const script = expandPath(npm?.[1] ?? pnpm?.[2] ?? "", directory);
     const command = nodeExecutable(directory, env);
-    if (!script || !command || !existsSync(script)) return;
+    if (!script || !command || isScriptHostInput(script) || !isFile(script))
+      return;
     if (pnpm?.[1]) {
       const entries = pnpm[1]
         .split(";")
@@ -134,13 +142,25 @@ function recognizeShim(
     return { command, prefix: [script] };
   }
   const yarn =
-    /^(?:@|@goto #_undefined_# 2>NUL \|\| @title %COMSPEC% & @setlocal & @)"([^"\n]+)" ((?: *"[^"\n]*")*) *%\*$/.exec(
+    /^(?:@|@goto #_undefined_# 2>NUL \|\| @title %COMSPEC% & @setlocal & @)"([^"\n]+)" +((?:"[^"\n]*"(?: +"[^"\n]*")*)?) *%\*$/.exec(
       source,
     );
   if (yarn) {
     const command = expandPath(yarn[1]!, directory);
     const prefix = [...yarn[2]!.matchAll(/"([^"\n]*)"/g)].map((m) => m[1]!);
-    if (!command || prefix.some((v) => /[%!\x00-\x1f]/.test(v))) return;
+    if (
+      !command ||
+      prefix.some(
+        (v) =>
+          /[%!\x00-\x1f\x7f]/.test(v) ||
+          v.endsWith("\\") ||
+          isScriptHostInput(v),
+      )
+    )
+      return;
+    // Yarn's generated node launcher must never turn into an arbitrary script host.
+    if (path.basename(command).toLowerCase() !== "node.exe")
+      return { refused: "native_exe_required" };
     return { command, prefix };
   }
   const t3 =
@@ -155,7 +175,9 @@ function recognizeShim(
       !home ||
       !command ||
       !script ||
-      !existsSync(command) ||
+      !/^T3 Code(?: \(Nightly\))?\.exe$/i.test(path.basename(command)) ||
+      !isNodeScript(script) ||
+      !isFile(command) ||
       !existsSync(script.split(/(?<=\.asar)[\\/]/i)[0]!)
     )
       return;
@@ -166,4 +188,54 @@ function recognizeShim(
     return { command, prefix: [script] };
   }
   return;
+}
+
+// Root-relative paths depend on the child's current drive and are not fully qualified.
+function isAbsoluteWindowsPath(value: string): boolean {
+  return /^(?:[a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+[\\/])/i.test(value);
+}
+
+function isFile(value: string): boolean {
+  try {
+    return statSync(value).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isScriptHostInput(value: string): boolean {
+  return /\.(?:bat|cmd|ps1|psm1|psd1|vbs|vbe|jse|wsf|wsh|hta|sct)(?:$|[ .])/i.test(
+    value,
+  );
+}
+
+function isNodeScript(value: string): boolean {
+  return /\.(?:js|cjs|mjs)$/i.test(value);
+}
+
+function isInterpreter(value: string): boolean {
+  return /^(?:cmd|command|powershell|powershell_ise|pwsh|wscript|cscript|mshta|bash|sh|dash|zsh|csh|ksh|wsl|conhost|rundll32|regsvr32|msbuild|installutil)\.exe$/i.test(
+    path.basename(value),
+  );
+}
+
+/** User-facing explanations shared by launch and CLI detection. */
+export function spawnRefusalMessage(reason: string): string {
+  const messages: Record<string, string> = {
+    nul: "The task's input can't be passed safely because it contains a NUL character.",
+    invalid_unicode:
+      "The task's input can't be passed safely because it contains invalid Unicode.",
+    command_line_too_long:
+      "The task's input can't be passed safely because it exceeds the Windows command line limit.",
+    absolute_path_required: "The CLI needs a fully qualified executable path.",
+    native_exe_required:
+      "The CLI must resolve to a supported native executable, without a command interpreter.",
+    shim_too_large: "The CLI launcher is too large to inspect safely.",
+    unknown_shim: "The CLI launcher is not a supported shim.",
+    shim_unreadable: "The CLI launcher could not be read.",
+  };
+  const message = messages[reason] ?? "The CLI could not be started safely.";
+  return ["nul", "invalid_unicode", "command_line_too_long"].includes(reason)
+    ? message
+    : `${message} Install a supported CLI shim or a native executable.`;
 }

@@ -168,7 +168,7 @@ async function setup(
     /** Replaces the sink that collects `events`. */
     sink?: Sink;
     /** What `<cli> --version` prints. */
-    versionOutput?: string;
+    versionOutput?: string | { refused: string };
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
@@ -844,6 +844,17 @@ describe("AgentRunner", () => {
     ]);
   });
 
+  it("carries a refused version probe into CLI status", async () => {
+    const { runner } = await setup([], {
+      versionOutput: { refused: "unknown_shim" },
+    });
+    expect((await runner.overview()).clis[0]).toMatchObject({
+      installed: true,
+      refusalReason:
+        "The CLI launcher is not a supported shim. Install a supported CLI shim or a native executable.",
+    });
+  });
+
   it("logs a refused argument as a launch failure", async () => {
     const adapter: AgentCliAdapter = {
       ...fakeAdapter([], ""),
@@ -862,7 +873,9 @@ describe("AgentRunner", () => {
         outcome: "error",
         error: expect.objectContaining({
           type: "AgentRunError",
-          message: expect.stringContaining("nul"),
+          message: expect.stringContaining(
+            "task\'s input can\'t be passed safely",
+          ),
         }),
         launch: { failed_step: "spawn" },
       }),
@@ -1640,6 +1653,7 @@ describe("AgentRunner", () => {
   });
 });
 
+// Windows shim resolution requires the real Windows process boundary.
 describe.skipIf(process.platform !== "win32")("Windows runner launch", () => {
   it.each(["claude", "codex", "opencode"])(
     "starts %s through an npm shim with literal argv",
@@ -1697,7 +1711,7 @@ describe.skipIf(process.platform !== "win32")("Windows runner launch", () => {
     });
     await expect(runner.start(request)).rejects.toMatchObject({
       status: 400,
-      message: expect.stringContaining("unknown_shim"),
+      message: expect.stringContaining("CLI launcher is not a supported shim"),
     });
     expect(revoked).toHaveLength(1);
     expect((await runner.overview()).currentRun).toBeNull();
