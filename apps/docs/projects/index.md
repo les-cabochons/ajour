@@ -4,7 +4,7 @@ A project is a body of work you record time against, such as a client engagement
 
 <Shot name="projects-list" alt="The Projects list with tasks, this week's time and budget" />
 
-Press <kbd>G</kbd> then <kbd>P</kbd>, or pick **Projects** in the sidebar's view switcher.
+Press <kbd>G</kbd> then <kbd>P</kbd>, or pick **Projects** in the sidebar's views.
 
 ## The Projects list
 
