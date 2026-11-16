@@ -7,7 +7,9 @@ import {
   handoffRecordSchema,
   handoffRefreshResultSchema,
   handoffsSnapshotSchema,
+  handoffToolConnectionsSchema,
   type HandoffStartRoute,
+  type HandoffToolConnections,
 } from "@ajour/shared/handoffs";
 
 import {
@@ -1992,6 +1994,26 @@ export function saveHandoffTemplates(
     `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/templates`,
     { method: "POST", body: JSON.stringify(templates) },
     handoffTemplatesSchema,
+  );
+}
+/** The connection each of a plugin's handoff tools hands off through. */
+export function getHandoffToolConnections(pluginId: string) {
+  return appApiRequest(
+    "getHandoffToolConnections",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/connections`,
+    undefined,
+    handoffToolConnectionsSchema,
+  );
+}
+export function saveHandoffToolConnections(
+  pluginId: string,
+  picks: HandoffToolConnections,
+) {
+  return appApiRequest(
+    "saveHandoffToolConnections",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/connections`,
+    { method: "POST", body: JSON.stringify(picks) },
+    handoffToolConnectionsSchema,
   );
 }
 export function getCommandAccess(pluginId: string) {

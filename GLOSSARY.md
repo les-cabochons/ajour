@@ -303,7 +303,7 @@ Something one connection may do that the user turns on for that connection, such
 _Avoid_: Permission, scope, toggle, feature flag
 
 **Handoff**:
-A coding tool's thread linked to one backlog item, with its tool, repository folder and current state. Removing a handoff from the item leaves the thread in the tool.
+A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool.
 _Avoid_: Agent run, agent session, job
 
 **Process broker**:

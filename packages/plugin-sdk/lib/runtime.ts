@@ -140,6 +140,14 @@ export interface Ajour {
 
 type Awaitable<Value> = Value | Promise<Value>;
 
+/**
+ * What a handoff operation receives: the request alone for a tool that
+ * uses no connection, the tool's connection and then the request for one
+ * that does.
+ */
+export type HandoffArguments<Request> =
+  [request: Request] | [connection: PluginConnection, request: Request];
+
 type OperationHandlers<
   Table extends Record<string, { request: unknown; result: unknown }>,
 > = {
@@ -194,13 +202,22 @@ export type PluginModule = {
     connection: PluginConnection,
     request: ProjectSourceSyncRequest,
   ) => Awaitable<ProjectSourceSyncResult>;
-  detectTools?: () => Awaitable<DetectToolsResult>;
-  startHandoff?: (
-    request: StartHandoffRequest,
-  ) => Awaitable<StartHandoffResult>;
-  readHandoffStates?: (
-    request: ReadHandoffStatesRequest,
-  ) => Awaitable<ReadHandoffStatesResult>;
+  /**
+   * Called without arguments for the tools that use no connection, and
+   * once with each connection the other tools' settings picked, for those.
+   */
+  detectTools?(connection?: PluginConnection): Awaitable<DetectToolsResult>;
+  /**
+   * A tool with `connection: "required"` receives its connection first,
+   * as every networked operation does; a tool without one receives only
+   * the request. A plugin with both kinds reads `args.length`.
+   */
+  startHandoff?(
+    ...args: HandoffArguments<StartHandoffRequest>
+  ): Awaitable<StartHandoffResult>;
+  readHandoffStates?(
+    ...args: HandoffArguments<ReadHandoffStatesRequest>
+  ): Awaitable<ReadHandoffStatesResult>;
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,

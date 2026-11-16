@@ -195,7 +195,17 @@ The SDK's `ajour.process.run` follows the
 worker, host page, preload invoke, main and API path used by `ajour.http`. The
 page replaces the worker's run id and main accepts only its sender's own runs.
 
-`ProcessBroker` validates typed argument slots and conditional groups. Folder
+`ProcessBroker` validates typed argument slots and conditional groups. A
+`connection-url` slot is filled by the host, never the plugin: during a handoff
+operation (`detectTools`, `startHandoff`, `readHandoffStates`, and opening a
+thread) whose caller carries `connectionId`, the server's `connectionAddress`
+reads the connection through `brokerConnection` and `connectionBaseAddress`
+(`broker-policy.ts`), so the address obeys the broker's https and on-premises
+rules. A value the plugin passes for that slot is `invalid_request`; an
+operation without a connection, or an address that can't be read, is
+`connection_refused`. The manifest refuses the slot without
+`network.baseAddress` or a tool that uses a connection, and as the slot a
+conditional group tests. Folder
 slots resolve repository ids through `FolderResolver.resolve`, which returns an
 absolute path or refuses. The server and process broker share the repository-folder
 resolver and its `protectedRepositoryFolders` roots. It rechecks canonical paths,
@@ -1147,9 +1157,28 @@ at 64 and 200 characters. Native results are limited to 4 KB of serialized UTF-8
 ordinary checks add no history. Existing native history is compacted on load.
 Removing a record does not stop or delete its external thread.
 
-Refreshes batch by plugin, tool and project. The project comes from the saved
-record and binds the operation's process broker, so folder slots cannot resolve
-another project's folders. The API's 15 second tick checks which records are due:
+Refreshes batch by plugin, tool, project and connection. The project comes from
+the saved record and binds the operation's process broker, so folder slots
+cannot resolve another project's folders.
+
+A tool may declare `connection: "required"` (default `"none"`, ticket #745); the
+manifest then needs `connectionFields` and `network`. Such a tool's operations
+follow the connection-first pattern of every networked capability:
+`detectTools(connection)`, `startHandoff(connection, request)` and
+`readHandoffStates(connection, request)`, in `plugin-methods.ts`; a tool without
+one keeps its old arguments. The host refuses a tool's operation without the
+connection it needs, with one it doesn't use, or with another plugin's. The
+start route takes an optional `connectionId`; otherwise `Handoffs` uses the pick
+saved in `handoffToolConnections` state (GET and POST
+`/api/plugins/:pluginId/handoffs/connections`), else the plugin's only
+connection. The record keeps `connectionId`, since a session id is only
+meaningful on its server. Detection runs once without a connection for the
+other tools and once per picked connection for its tools. Deleting a connection
+removes it from the picks and refreshes its handoffs, which pause as unknown
+with a reason through the same path as a removed tool; an older record whose
+tool now needs a connection pauses too. The connection reaches the plugin
+without secrets, and its requests go through the credential broker, so an
+on-premises loopback server such as OpenCode's stays inside G1. The API's 15 second tick checks which records are due:
 30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
 refresh after 24 hours since their last common-state change. Manual refresh still
 checks them. A failed read preserves state and retries at the normal cadence.

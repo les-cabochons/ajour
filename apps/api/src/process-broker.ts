@@ -68,6 +68,7 @@ export type ProcessReason =
   | "ask_timeout"
   | "undeclared"
   | "folder_refused"
+  | "connection_refused"
   | "executable_missing"
   | "spawn_refused"
   | "concurrency"
@@ -106,6 +107,12 @@ export interface ProcessBrokerOptions {
       | "ask_queue_full";
   }>;
   folderName?(id: string): Promise<string | undefined>;
+  /**
+   * The base address of the caller's connection (`caller.connectionId`),
+   * as the credential broker would reach it, for a `connection-url`
+   * argument. Undefined, or a throw, refuses the argument.
+   */
+  connectionAddress?(caller: BrokerCaller): Promise<string | undefined>;
   terminal?: () => Promise<TerminalApp>;
   openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
   enabledGate?: ProcessBrokerOptions["gate"];
@@ -132,6 +139,16 @@ export interface ProcessBrokerOptions {
   ): void | Promise<void>;
   events?: ApiEvents;
 }
+/**
+ * The operations whose commands may receive their connection's address:
+ * a handoff's, and opening one of its threads.
+ */
+const CONNECTION_URL_METHODS = new Set([
+  "detectTools",
+  "startHandoff",
+  "readHandoffStates",
+  "openHandoff",
+]);
 const refuse = (reason: ProcessReason): never => {
   throw new ProcessBrokerError(reason);
 };
@@ -282,9 +299,11 @@ export class ProcessBroker implements ProcessBrokerPort {
   private async argument(
     arg: DeclaredArgument,
     values: Readonly<Record<string, string | number>>,
-    projectId?: string,
+    caller: BrokerCaller,
   ) {
     if (arg.kind === "literal") return arg.value;
+    if (arg.kind === "connection-url") return this.connectionUrl(caller);
+    const projectId = caller.projectId;
     const raw = values[arg.name];
     if (typeof raw !== "string" && typeof raw !== "number")
       return refuse("invalid_request");
@@ -339,6 +358,28 @@ export class ProcessBroker implements ProcessBrokerPort {
     }
     return value;
   }
+  /**
+   * The address a `connection-url` argument gets: the base address of the
+   * connection the handoff operation runs through. The plugin never passes
+   * it, and an operation without a connection has none.
+   */
+  private async connectionUrl(caller: BrokerCaller): Promise<string> {
+    if (
+      !caller.connectionId ||
+      !CONNECTION_URL_METHODS.has(caller.method) ||
+      !this.options.connectionAddress
+    )
+      return refuse("connection_refused");
+    let address: string | undefined;
+    try {
+      address = await this.options.connectionAddress(caller);
+    } catch {
+      return refuse("connection_refused");
+    }
+    if (!address || address.startsWith("-") || /[\0\r\n]/.test(address))
+      return refuse("connection_refused");
+    return address;
+  }
   private async run(
     caller: BrokerCaller,
     given: ProcessRunRequest,
@@ -383,7 +424,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         arg: DeclaredArgument,
         values: Readonly<Record<string, string | number>>,
       ) => {
-        const value = await this.argument(arg, values, caller.projectId);
+        const value = await this.argument(arg, values, caller);
         if (arg.kind === "literal") literals.push(argv.length);
         argv.push(value);
         if (arg.kind === "folder" && command.mode !== "capture") cwd ??= value;
@@ -511,10 +552,11 @@ export class ProcessBroker implements ProcessBrokerPort {
 
         if (request.stdin !== undefined && command.stdin !== "text")
           return refuse("invalid_request");
+        // The host fills a connection-url slot; the plugin never names it.
         const slots = command.args
           .flatMap((a) => ("if" in a ? a.args : [a]))
-          .filter((a) => a.kind !== "literal")
-          .map((a) => a.name);
+          .filter((a) => a.kind !== "literal" && a.kind !== "connection-url")
+          .map((a) => (a as { name: string }).name);
         if (Object.keys(request.args).some((k) => !slots.includes(k)))
           return refuse("invalid_request");
 
