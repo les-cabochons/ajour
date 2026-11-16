@@ -68,7 +68,9 @@ export function AgentBridgeHost() {
         },
         onAgents: setAgentsSnapshot,
       },
-      "/api/handoffs/bridge",
+      // Keep the MCP tool route while enabled. The handoff route also accepts
+      // subscriptions while MCP is off; both carry handoff snapshots.
+      enabled ? "/api/mcp/bridge" : "/api/handoffs/bridge",
     );
   }, [enabled, settings.kind]);
 
