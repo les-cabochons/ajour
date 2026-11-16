@@ -174,3 +174,18 @@ it("the restricted IPC rejects a foreign session and records no contents", async
   expect(recorded).toHaveLength(3);
   expect(JSON.stringify(recorded)).not.toContain("## Thread naming");
 });
+
+it("refuses UTF-32 and invalid Unicode without changing the file", async () => {
+  const { home, controller } = await fixture();
+  await mkdir(path.join(home, ".codex"));
+  const file = path.join(home, ".codex/AGENTS.md");
+  for (const bytes of [
+    Buffer.from([0xff, 0xfe, 0, 0, 65, 0, 0, 0]),
+    Buffer.from([0xff, 0xfe, 0, 0xd8]),
+    Buffer.from([0xc0, 0xaf]),
+  ]) {
+    await writeFile(file, bytes);
+    await expect(controller.preview("codex", "add")).rejects.toThrow();
+    expect(await readFile(file)).toEqual(bytes);
+  }
+});

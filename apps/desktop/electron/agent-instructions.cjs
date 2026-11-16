@@ -7,10 +7,19 @@ function decode(bytes) {
     return { text: null, encode: (text) => Buffer.from(text, "utf8") };
   const be = bytes[0] === 0xfe && bytes[1] === 0xff;
   const le = bytes[0] === 0xff && bytes[1] === 0xfe;
+  if (
+    (le && bytes[2] === 0 && bytes[3] === 0) ||
+    (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0xfe && bytes[3] === 0xff)
+  ) {
+    throw new Error("Unsupported UTF-32 encoding. No changes made.");
+  }
   if (be || le) {
     if (bytes.length % 2)
       throw new Error("Invalid UTF-16 file. No changes made.");
     const copy = Buffer.from(bytes);
+    new TextDecoder(be ? "utf-16be" : "utf-16le", { fatal: true }).decode(
+      bytes,
+    );
     if (be) copy.swap16();
     const text = copy.toString("utf16le");
     return {
