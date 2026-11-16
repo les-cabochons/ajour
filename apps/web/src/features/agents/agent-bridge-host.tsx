@@ -1,3 +1,4 @@
+import { setHandoffVisibility } from "@/lib/app-api";
 import { useEffect } from "react";
 import type { AgentsSnapshot } from "@ajour/shared/agent-tools";
 import { showActionToast } from "@/components/ui/toast";
@@ -44,23 +45,46 @@ function syncQuestionToasts(snapshot: AgentsSnapshot) {
   }
 }
 
-/** Keeps the MCP bridge open while MCP is on. Mount once, in the app shell. */
+/** Keeps the window bridge open for agents and handoffs. Mount once in the app shell. */
 export function AgentBridgeHost() {
   const settings = useMcpSettings();
   const { snapshot, panelOpen } = useAgentBridgeState();
   const enabled = settings.kind === "ready" && settings.settings.enabled;
 
   useEffect(() => {
-    if (!enabled) {
+    if (settings.kind !== "ready") {
       setAgentBridgeStatus("off");
       return;
     }
-    return connectMcpBridge({
-      runToolCall: runAgentToolCall,
-      onStatus: setAgentBridgeStatus,
-      onAgents: setAgentsSnapshot,
-    });
-  }, [enabled]);
+    return connectMcpBridge(
+      {
+        runToolCall: runAgentToolCall,
+        onStatus: (status) => {
+          setAgentBridgeStatus(enabled ? status : "off");
+          if (status === "connected")
+            void setHandoffVisibility(
+              document.visibilityState !== "hidden",
+            ).catch(() => undefined);
+        },
+        onAgents: setAgentsSnapshot,
+      },
+      // Keep the MCP tool route while enabled. The handoff route also accepts
+      // subscriptions while MCP is off; both carry handoff snapshots.
+      enabled ? "/api/mcp/bridge" : "/api/handoffs/bridge",
+    );
+  }, [enabled, settings.kind]);
+
+  useEffect(() => {
+    if (settings.kind !== "ready") return;
+    const update = () => {
+      void setHandoffVisibility(document.visibilityState !== "hidden").catch(
+        () => undefined,
+      );
+    };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [settings.kind]);
 
   // Snapshots come from the stream and from the panel's answers.
   useEffect(() => {

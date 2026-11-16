@@ -427,7 +427,15 @@ describe("each table's entries emit their events", () => {
                   headers: { "Content-Type": "application/json" },
                 }),
             signal: AbortSignal.timeout(10_000),
-          }).then((response) => response.text());
+          }).then(async (response) => {
+            if (
+              response.headers
+                .get("content-type")
+                ?.startsWith("text/event-stream")
+            )
+              await response.body?.cancel();
+            else await response.text();
+          });
           try {
             await waitForEvent(
               api.events,

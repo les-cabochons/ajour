@@ -42,10 +42,18 @@ export class McpBridge {
   private readonly pending = new Map<string, PendingCall>();
   private readonly timeoutMs: number;
   private readonly onAttach?: () => void;
+  private readonly onDetach?: () => void;
 
-  constructor(options: { timeoutMs?: number; onAttach?: () => void } = {}) {
+  constructor(
+    options: {
+      timeoutMs?: number;
+      onAttach?: () => void;
+      onDetach?: () => void;
+    } = {},
+  ) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.onAttach = options.onAttach;
+    this.onDetach = options.onDetach;
   }
 
   get connected() {
@@ -148,6 +156,7 @@ export class McpBridge {
   }
 
   private clearStream() {
+    if (this.stream) this.onDetach?.();
     if (this.keepAlive) clearInterval(this.keepAlive);
     this.keepAlive = undefined;
     this.stream = undefined;

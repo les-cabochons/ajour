@@ -1,3 +1,4 @@
+import { handoffCapabilitySchema } from "./handoffs.ts";
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
@@ -133,6 +134,7 @@ export const switchableCapabilitySchema = z.enum([
   "team",
   "projectSource",
   "timeSync",
+  "handoff",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -145,6 +147,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     team: "Projects",
     projectSource: "Managed projects",
     timeSync: "Time entries",
+    handoff: "Handoffs",
   };
 
 /**
@@ -357,6 +360,8 @@ export const pluginCapabilitiesObjectSchema = z.object({
    * them, read only. Plugin API 4 only: see `project-source.ts`.
    */
   projectSource: projectSourceCapabilitySchema.optional(),
+  /** Links a backlog item to a coding tool thread. Plugin API 4 only. */
+  handoff: handoffCapabilitySchema(pluginFieldSchema),
   /**
    * Keeps the user's time entries in step with another system, both ways,
    * on the projects the same connection manages. Plugin API 4 only, beside
@@ -372,6 +377,7 @@ export const pluginCapabilitiesObjectSchema = z.object({
 
 export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
   (capabilities) =>
+    capabilities.handoff !== undefined ||
     capabilities.connector !== undefined ||
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
@@ -488,7 +494,11 @@ export const pluginManifestObjectSchema = z.object({
 
 export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
   (manifest, context) => {
-    for (const capability of ["projectSource", "timeSync"] as const) {
+    for (const capability of [
+      "projectSource",
+      "timeSync",
+      "handoff",
+    ] as const) {
       if (manifest.capabilities[capability] !== undefined) {
         context.addIssue({
           code: z.ZodIssueCode.custom,

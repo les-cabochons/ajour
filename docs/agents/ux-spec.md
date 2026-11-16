@@ -1381,17 +1381,33 @@ Repository folders survive project archive and Undo, including Undo of creating 
 
 ### Plugin terminals and links
 
-Settings > General > Terminal offers a terminal app on this computer. Windows
-has Windows Terminal, PowerShell and Command Prompt. macOS has Terminal and iTerm.
-The default is Windows Terminal or Terminal.
+Settings > General > Terminal shows the terminal app plugins open commands in:
+Windows Terminal on Windows and Terminal on macOS. Linux hides the setting.
 The preference saves on change. It does not change the ajour command installation.
 
 An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
 when the plugin operation ends or Ajour quits. Launches cannot take stdin.
-Windows supports Windows Terminal only, macOS supports Terminal only, and Linux hides the setting. Saved PowerShell, Command Prompt and iTerm choices migrate to the supported app. Windows terminal mode refuses values outside its strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour asks the user to install it.
+A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
+Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
+strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour
+asks the user to install it.
 
 An enabled plugin may open HTTPS links. A custom link scheme must be declared
 and approved, and unsigned plugins also need the global switch and per-plugin
 acceptance. File, script and undeclared schemes are refused. Content links keep
 their existing desktop policy. A plugin may open at most five links per minute; further requests are refused.
+
+## Coding handoff records
+
+A handoff start refuses unsafe links and undeclared resume commands without
+saving a record. Refresh keeps the record and drops unsafe links. Pull request
+links require HTTPS. Missing or disabled plugins and removed tools show Unknown
+with a reason until they return. Refresh all continues after a tool fails and
+returns each failed group's reason. Removing a handoff leaves the external
+thread in place.
+
+Pausing a handoff preserves the tool's native data. The record carries a separate
+pause reason and time, cleared by a successful refresh. Reloading an older record
+whose native data exceeds 4 KB keeps the handoff with capped status and label and
+`native.truncated: true`. Its next successful refresh replaces that compact data.

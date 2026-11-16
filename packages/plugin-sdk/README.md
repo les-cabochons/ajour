@@ -350,6 +350,31 @@ commands are refused. Detached and terminal commands follow the launch contract 
 the user outside the plugin sandbox and can reach the user's files and
 credentials. See ADR 0019 in Ajour's repository.
 
+## Handoff tools
+
+An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
+`iconSvg` and `settings`. The host treats handoff like the other switchable
+capabilities. Each tool id is unique. Settings cannot contain secrets.
+
+The plugin exports `detectTools()`, `startHandoff(request)` and
+`readHandoffStates(request)`, typed by `PluginModule`. Detection returns
+`{ tools: [{ id, available, version?, reason? }] }`. A start receives the tool,
+folder id and name, prompt, title, optional branch, item key and URL, and
+settings. It returns `{ threadId, link?, resume?, native }`. Throw an error to
+refuse a start; Ajour returns the reason and records no handoff.
+
+`native` is an opaque JSON object, up to 4 KB serialized as UTF-8, for the tool's own status and
+label. `resume`, when present, is `{ command, args }` for a declared command.
+The host keeps it for the later Open workflow; this capability does not run it.
+
+A state read receives `{ tool, handoffs: [{ id, threadId, folderId, native }] }`.
+Return exactly one answer for each id with `state` and `native`, plus optional
+`title`, `branch` and `pullRequests`. Pull requests have `url` and optional
+`title`. Common states are `working`, `needs-you`, `ready`, `done`, `failed`,
+`gone` and `unknown`. A new handoff starts in `working`. Reads batch within one
+project, and process folder slots can resolve only that project's saved folders.
+Prompts and settings are not stored in handoff records or events.
+
 ## License
 
 MIT

@@ -1,3 +1,10 @@
+import { z } from "zod";
+import {
+  handoffRecordSchema,
+  handoffRefreshResultSchema,
+  handoffsSnapshotSchema,
+  type HandoffStartRoute,
+} from "@ajour/shared/handoffs";
 import { repositoryFoldersSchema } from "@ajour/shared/repository-folders";
 import {
   startBacklogSync,
@@ -1913,5 +1920,48 @@ export function useRepositoryFolder(projectId: string, folderId: string) {
     `/api/projects/${encodeURIComponent(projectId)}/repository-folders/${encodeURIComponent(folderId)}/use`,
     { method: "POST" },
     repositoryFoldersSchema,
+  );
+}
+
+export function listHandoffs() {
+  return appApiRequest(
+    "listHandoffs",
+    "/api/handoffs",
+    undefined,
+    handoffsSnapshotSchema,
+  );
+}
+export function startHandoff(input: HandoffStartRoute) {
+  return appApiRequest(
+    "startHandoff",
+    "/api/handoffs",
+    { method: "POST", body: JSON.stringify(input) },
+    handoffRecordSchema,
+  );
+}
+export function refreshHandoffs(id?: string) {
+  return appApiRequest(
+    "refreshHandoffs",
+    id
+      ? `/api/handoffs/${encodeURIComponent(id)}/refresh`
+      : "/api/handoffs/refresh",
+    { method: "POST", body: "{}" },
+    handoffRefreshResultSchema,
+  );
+}
+export function removeHandoff(id: string) {
+  return appApiRequest(
+    "removeHandoff",
+    `/api/handoffs/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    handoffsSnapshotSchema,
+  );
+}
+export function setHandoffVisibility(visible: boolean) {
+  return appApiRequest(
+    "setHandoffVisibility",
+    "/api/handoffs/visibility",
+    { method: "POST", body: JSON.stringify({ visible }) },
+    z.object({ ok: z.boolean() }),
   );
 }

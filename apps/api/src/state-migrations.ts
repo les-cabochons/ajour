@@ -358,6 +358,10 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
       repositoryFolders: state.repositoryFolders ?? [],
     }),
   },
+  {
+    version: 12,
+    migrate: (state) => ({ ...state, handoffs: state.handoffs ?? [] }),
+  },
 ];
 
 /** The version this build writes. */

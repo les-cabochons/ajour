@@ -1,5 +1,15 @@
 import { z } from "zod";
 import {
+  handoffRecordSchema,
+  type Handoff,
+} from "../../../packages/shared/handoffs.ts";
+import {
+  updateHandoff,
+  removeHandoff,
+  handoffSummary,
+  type HostHandoffUpdate,
+} from "./handoff-state.ts";
+import {
   repositoryFolderSchema,
   type RepositoryFolder,
 } from "../../../packages/shared/repository-folders.ts";
@@ -446,6 +456,7 @@ function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
 }
 
 interface AppApiStateV8 {
+  handoffs: Handoff[];
   repositoryFolders: RepositoryFolder[];
   version: number;
   connections: StoredConnection[];
@@ -616,6 +627,7 @@ function withCapabilityChoice(
 
 function createDefaultState(): AppApiState {
   return {
+    handoffs: [],
     repositoryFolders: [],
     version: STATE_VERSION,
     connections: [],
@@ -1016,6 +1028,41 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
+    handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
+      (value) => {
+        const legacy = z
+          .object({
+            native: z.record(z.unknown()),
+            history: z.array(
+              z.object({
+                state: z.unknown(),
+                at: z.unknown(),
+                native: z.record(z.unknown()).optional(),
+                status: z.unknown().optional(),
+                label: z.unknown().optional(),
+              }),
+            ),
+          })
+          .passthrough()
+          .safeParse(value);
+        const normalized = legacy.success
+          ? {
+              ...legacy.data,
+              native:
+                Buffer.byteLength(JSON.stringify(legacy.data.native), "utf8") >
+                4096
+                  ? { ...handoffSummary(legacy.data.native), truncated: true }
+                  : legacy.data.native,
+              history: legacy.data.history.map(({ native, ...entry }) => ({
+                ...entry,
+                ...(native ? handoffSummary(native) : {}),
+              })),
+            }
+          : value;
+        const parsed = handoffRecordSchema.safeParse(normalized);
+        return parsed.success ? [parsed.data] : [];
+      },
+    ),
     repositoryFolders: (Array.isArray(raw.repositoryFolders)
       ? raw.repositoryFolders
       : []
@@ -1332,6 +1379,39 @@ export class AppApiStorage {
   /** Loads the state file now, with its migrations, if it isn't loaded yet. */
   async ready(): Promise<void> {
     await this.readState();
+  }
+
+  async listHandoffs(): Promise<Handoff[]> {
+    return structuredClone((await this.readState()).handoffs);
+  }
+  async addHandoff(record: Handoff): Promise<void> {
+    const parsed = handoffRecordSchema.parse(record);
+    await this.mutate((state) => ({
+      nextState: { ...state, handoffs: [...state.handoffs, parsed] },
+      result: undefined,
+    }));
+  }
+  async updateHandoffs(
+    updates: HostHandoffUpdate[],
+    now: number,
+  ): Promise<void> {
+    const byId = new Map(updates.map((value) => [value.id, value]));
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        handoffs: state.handoffs.map((record) => {
+          const update = byId.get(record.id);
+          return update ? updateHandoff(record, update, now) : record;
+        }),
+      },
+      result: undefined,
+    }));
+  }
+  async removeHandoff(id: string): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: { ...state, handoffs: removeHandoff(state.handoffs, id) },
+      result: undefined,
+    }));
   }
 
   async listRepositoryFolders(projectId?: string): Promise<RepositoryFolder[]> {

@@ -1,3 +1,5 @@
+import { Handoffs, HandoffRefused } from "./handoffs.ts";
+import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
 import { z } from "zod";
 import { ProcessBroker } from "./process-broker.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
@@ -1511,11 +1513,32 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
     timeoutMs: options.mcpBridgeTimeoutMs,
-    onAttach: () => mcpBridge.publish("agents", agentSessions.snapshot()),
+    onDetach: () => handoffs.setVisible(false),
+    onAttach: () => {
+      mcpBridge.publish("agents", agentSessions.snapshot());
+      void handoffs.publish(true).catch(() => undefined);
+    },
   });
   const agentSessions = new AgentSessions({
     onChange: () => mcpBridge.publish("agents", agentSessions.snapshot()),
     events,
+  });
+  const handoffs = new Handoffs({
+    storage,
+    plugins: pluginManager,
+    unavailableReason: async (pluginId) => {
+      const { plugins, access } = await pluginManager.inspectPlugins();
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "handoff",
+        runnablePlugins(plugins, access),
+        "refreshing it",
+      );
+      return inactive?.message;
+    },
+    events,
+    onChange: (records) => mcpBridge.publish("handoffs", records),
   });
   const agentRunner = new AgentRunner({
     storage: {
@@ -1585,6 +1608,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     inFlight: new Set(),
   };
   const stallTimer = setInterval(() => {
+    if (!runtime.stopping) void handoffs.tick().catch(() => undefined);
     agentSessions.tick();
     agentRunner.tick();
   }, 15_000);
@@ -1675,6 +1699,112 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // One handler per route in ROUTES. Each adds its catalog fields to the
   // request's event; the seam records the method, route, status and sizes.
   const handlers: RouteHandlers = {
+    handoffBridge: async ({ response, origin, unit, stream }) => {
+      if (!origin) {
+        unit.refuse("no_origin");
+        writeJson(response, 403, { error: "The bridge needs an Origin." });
+        return;
+      }
+      let calls = 0;
+      unit.set({ mcp_bridge: { call_count: calls } });
+      stream();
+      mcpBridge.attach(response, {
+        onCall: () => {
+          calls++;
+          unit.set({ mcp_bridge: { call_count: calls } });
+        },
+      });
+    },
+    handoffList: async ({ response }) => {
+      writeJson(response, 200, await storage.listHandoffs());
+    },
+    handoffStart: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, handoffStartRouteSchema);
+      unit.set({
+        plugin: { id: payload.pluginId },
+        handoff: { tool: payload.toolId },
+      });
+      try {
+        const record = await handoffs.start(payload);
+        unit.set({ handoff: { id: record.id, count: 1 } });
+        writeJson(response, 200, record);
+      } catch (error) {
+        if (!(error instanceof HandoffRefused)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "The tool refused the handoff.",
+        });
+      }
+    },
+    handoffRefreshAll: async ({ response }) => {
+      const result = await handoffs.refresh();
+      writeJson(
+        response,
+        result.failures.length && !result.succeeded ? 409 : 200,
+        {
+          handoffs: await storage.listHandoffs(),
+          failures: result.failures,
+          ...(!result.succeeded && result.failures.length
+            ? {
+                error: result.failures
+                  .map((f) => `${f.toolId}: ${f.reason}`)
+                  .join("\n"),
+              }
+            : {}),
+        },
+      );
+    },
+    handoffRefresh: async ({ response, params }) => {
+      if (
+        !(await storage.listHandoffs()).some((h) => h.id === params.handoffId)
+      ) {
+        writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      const result = await handoffs.refresh(params.handoffId);
+      writeJson(
+        response,
+        result.failures.length && !result.succeeded ? 409 : 200,
+        {
+          handoffs: await storage.listHandoffs(),
+          failures: result.failures,
+          ...(!result.succeeded && result.failures.length
+            ? {
+                error: result.failures
+                  .map((f) => `${f.toolId}: ${f.reason}`)
+                  .join("\n"),
+              }
+            : {}),
+        },
+      );
+    },
+    handoffRemove: async ({ response, params, unit }) => {
+      unit.set({ handoff: { id: params.handoffId } });
+      await handoffs.remove(params.handoffId);
+      writeJson(response, 200, await storage.listHandoffs());
+    },
+    handoffDetect: async ({ request, response, params }) => {
+      const payload = await readRequest(
+        request,
+        z.object({ projectId: z.string().min(1).max(200) }).strict(),
+      );
+      writeJson(
+        response,
+        200,
+        await pluginManager.detectTools(params.pluginId, payload.projectId),
+      );
+    },
+    handoffVisibility: async ({ request, response }) => {
+      const payload = await readRequest(
+        request,
+        z.object({ visible: z.boolean() }).strict(),
+      );
+      handoffs.setVisible(payload.visible);
+      writeJson(response, 200, { ok: true });
+    },
     repositoryFolderList: async ({ response, params }) => {
       writeJson(
         response,

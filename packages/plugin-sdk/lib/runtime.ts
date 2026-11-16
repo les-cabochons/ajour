@@ -1,4 +1,9 @@
 import type {
+  StartHandoffRequest,
+  StartHandoffResult,
+  ReadHandoffStatesRequest,
+  ReadHandoffStatesResult,
+  DetectToolsResult,
   BacklogCommentOperations,
   BacklogSyncResult,
   BacklogSyncWorkItem,
@@ -185,6 +190,13 @@ export type PluginModule = {
     connection: PluginConnection,
     request: ProjectSourceSyncRequest,
   ) => Awaitable<ProjectSourceSyncResult>;
+  detectTools?: () => Awaitable<DetectToolsResult>;
+  startHandoff?: (
+    request: StartHandoffRequest,
+  ) => Awaitable<StartHandoffResult>;
+  readHandoffStates?: (
+    request: ReadHandoffStatesRequest,
+  ) => Awaitable<ReadHandoffStatesResult>;
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,

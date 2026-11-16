@@ -1,3 +1,4 @@
+import { handoffCapabilitySchema } from "./handoffs.ts";
 import { z } from "zod";
 import {
   agentTaskObjectSchema,
@@ -761,6 +762,7 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
     agentTask: z
       .object({ tasks: z.array(pluginApi4AgentTaskSchema).min(1).max(10) })
       .optional(),
+    handoff: handoffCapabilitySchema(pluginApi4FieldSchema),
     /**
      * A project data shape, with data shape API 1's dataset contract. It
      * moves into the main manifest and runs in the shared runtime.
@@ -953,6 +955,7 @@ function checkNetwork(
 /** Whether the plugin runs code: everything but agent tasks and project properties. */
 function api4RunsCode(capabilities: PluginApi4Capabilities) {
   return (
+    capabilities.handoff !== undefined ||
     capabilities.connector !== undefined ||
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
