@@ -465,7 +465,7 @@ it("splits a large tool group into refresh batches below the runtime's result li
   }
 });
 
-it("fills persisted templates at start, preserves overrides and rejects oversized output before calling the plugin", async () => {
+it("fills persisted templates at start, preserves overrides and bounds titles before calling the plugin", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-templates-"));
   try {
     const statePath = path.join(root, "state.json");
@@ -542,8 +542,9 @@ it("fills persisted templates at start, preserves overrides and rejects oversize
       title: "x".repeat(501),
       branch: "B",
     });
-    await expect(service.start(input)).rejects.toThrow();
-    expect(calls).toBe(2);
+    await service.start(input);
+    expect(received).toMatchObject({ title: "x".repeat(500) });
+    expect(calls).toBe(3);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  handoffTemplateSchema,
+  isValidHandoffBranch,
+} from "./handoff-templates.ts";
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(20_000);
@@ -163,6 +167,14 @@ export const handoffStartRouteSchema = z
           .optional(),
       })
       .strict(),
+    branchOverride: z
+      .string()
+      .max(500)
+      .refine(
+        (value) => value === "" || isValidHandoffBranch(value),
+        "The branch template override must be a valid git branch, or empty for no worktree.",
+      )
+      .optional(),
     promptOverride: z.string().min(1).max(1_048_576).optional(),
     settings: startHandoffRequestSchema.shape.settings,
   })
@@ -185,13 +197,7 @@ export function handoffCapabilitySchema<
 >(fieldSchema: T) {
   return z
     .object({
-      promptTemplate: z
-        .string()
-        .refine(
-          (s) => new TextEncoder().encode(s).length <= 16384,
-          "Prompt template exceeds 16 KB.",
-        )
-        .optional(),
+      promptTemplate: handoffTemplateSchema.optional(),
       tools: z
         .array(
           z

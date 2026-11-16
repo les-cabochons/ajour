@@ -2728,6 +2728,11 @@ export class AppApiStorage {
             ([candidate]) => candidate !== pluginId,
           ),
         ),
+        handoffTemplates: Object.fromEntries(
+          Object.entries(state.handoffTemplates).filter(
+            ([id]) => id !== pluginId,
+          ),
+        ),
         pluginOrigins: Object.fromEntries(
           Object.entries(state.pluginOrigins).filter(
             ([candidate]) => candidate !== pluginId,

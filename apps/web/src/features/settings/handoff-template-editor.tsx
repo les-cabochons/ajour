@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HANDOFF_SLOTS,
+  isValidHandoffBranch,
+  handoffTitle,
   fillHandoffTemplates,
   handoffTemplatesSchema,
   type HandoffTemplates,
@@ -8,6 +10,7 @@ import {
 } from "@ajour/shared/handoff-templates";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { useLocalState } from "@/lib/local-hooks";
 import {
@@ -20,31 +23,73 @@ interface PreviewItem {
   label: string;
   context: HandoffTemplateContext;
 }
+const PreviewItemPicker = memo(function PreviewItemPicker({
+  items,
+  selected,
+  onChange,
+}: {
+  items: PreviewItem[];
+  selected: string;
+  onChange: (id: string) => void;
+}) {
+  const options = useMemo(
+    () => items.map((item) => ({ value: item.id, label: item.label })),
+    [items],
+  );
+  return (
+    <SearchableSelect
+      ariaLabel="Preview item"
+      value={selected}
+      options={options}
+      onChange={onChange}
+      placeholder="Choose a preview item…"
+      emptyMessage="No matching items."
+    />
+  );
+});
 export function HandoffTemplateEditor({
   initial,
   items,
   onSave,
+  onPreviewItemChange,
+  repoName,
 }: {
   initial: HandoffTemplates;
   items: PreviewItem[];
+  onPreviewItemChange?: (id: string) => void;
+  repoName?: string;
   onSave: (templates: HandoffTemplates) => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState(initial);
   const [selected, setSelected] = useState("");
-  const [search, setSearch] = useState("");
+  const selectItem = useCallback(
+    (id: string) => {
+      setSelected(id);
+      onPreviewItemChange?.(id);
+    },
+    [onPreviewItemChange],
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const active = useRef<keyof HandoffTemplates>("prompt");
   const fields = useRef<
-    Partial<Record<keyof HandoffTemplates, HTMLTextAreaElement>>
+    Partial<
+      Record<keyof HandoffTemplates, HTMLTextAreaElement | HTMLInputElement>
+    >
   >({});
   const parsed = handoffTemplatesSchema.safeParse(draft);
   const item = items.find((item) => item.id === selected);
   const preview =
     parsed.success && item
-      ? fillHandoffTemplates(parsed.data, item.context)
+      ? fillHandoffTemplates(parsed.data, {
+          ...item.context,
+          repoName: repoName ?? item.context.repoName,
+        })
       : undefined;
+  const invalidBranch =
+    preview?.branch &&
+    (preview.branch.length > 500 || !isValidHandoffBranch(preview.branch));
   const labels = { prompt: "Prompt", title: "Title", branch: "Branch" };
   return (
     <section className="settings-section">
@@ -75,28 +120,31 @@ export function HandoffTemplateEditor({
           }
         }}
       >
-        {(["prompt", "title", "branch"] as const).map((key) => (
-          <label key={key} className="flex flex-col gap-1 text-sm">
-            {labels[key]} template
-            <Textarea
-              disabled={saving}
-              aria-label={`${labels[key]} template`}
-              ref={(node) => {
-                if (node) fields.current[key] = node;
-              }}
-              rows={key === "prompt" ? 7 : 2}
-              className="font-mono"
-              value={draft[key]}
-              onFocus={() => {
-                active.current = key;
-              }}
-              onChange={(event) => {
-                setDraft({ ...draft, [key]: event.target.value });
-                setSaved(false);
-              }}
-            />
-          </label>
-        ))}
+        {(["prompt", "title", "branch"] as const).map((key) => {
+          const Field = key === "prompt" ? Textarea : Input;
+          return (
+            <label key={key} className="flex flex-col gap-1 text-sm">
+              {labels[key]} template
+              <Field
+                disabled={saving}
+                aria-label={`${labels[key]} template`}
+                ref={(node: HTMLTextAreaElement | HTMLInputElement | null) => {
+                  if (node) fields.current[key] = node;
+                }}
+                {...(key === "prompt" ? { rows: 7 } : {})}
+                className="font-mono"
+                value={draft[key]}
+                onFocus={() => {
+                  active.current = key;
+                }}
+                onChange={(event) => {
+                  setDraft({ ...draft, [key]: event.target.value });
+                  setSaved(false);
+                }}
+              />
+            </label>
+          );
+        })}
         <div className="flex flex-wrap gap-1" aria-label="Template slots">
           {HANDOFF_SLOTS.map((slot) => (
             <Button
@@ -148,31 +196,20 @@ export function HandoffTemplateEditor({
         ) : null}
         {saved ? <p role="status">Templates saved.</p> : null}
       </form>
-      <label className="mt-4 block text-sm">
-        Preview item
-        <Input
-          aria-label="Find preview item"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
+      <div className="mt-4">
+        <p className="text-sm">Preview item</p>
+        <PreviewItemPicker
+          items={items}
+          selected={selected}
+          onChange={selectItem}
         />
-      </label>
-      <div className="max-h-40 overflow-auto">
-        {items
-          .filter((item) =>
-            item.label.toLowerCase().includes(search.toLowerCase()),
-          )
-          .map((item) => (
-            <Button
-              variant="ghost"
-              key={item.id}
-              aria-pressed={selected === item.id}
-              aria-label={`Preview ${item.label}`}
-              onClick={() => setSelected(item.id)}
-            >
-              {item.label}
-            </Button>
-          ))}
       </div>
+      {invalidBranch ? (
+        <p role="alert" className="text-destructive">
+          The branch template produces an invalid git branch. Leave it empty for
+          no worktree.
+        </p>
+      ) : null}
       {!items.length ? (
         <p className="text-muted-foreground">
           Add a backlog item to preview these templates.
@@ -187,7 +224,7 @@ export function HandoffTemplateEditor({
                 aria-label={`${labels[key]} preview`}
                 className="text-sm break-words whitespace-pre-wrap"
               >
-                {preview[key]}
+                {key === "title" ? handoffTitle(preview.title) : preview[key]}
               </pre>
             </div>
           ))}
@@ -199,7 +236,11 @@ export function HandoffTemplateEditor({
 export function PluginHandoffTemplates({ pluginId }: { pluginId: string }) {
   const state = useLocalState();
   const [initial, setInitial] = useState<HandoffTemplates>();
-  const [folders, setFolders] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState("");
+  const projectId = state.workItems.find(
+    (item) => item._id === selected,
+  )?.projectId;
+  const [folder, setFolder] = useState<{ projectId: string; name: string }>();
   const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
@@ -218,25 +259,21 @@ export function PluginHandoffTemplates({ pluginId }: { pluginId: string }) {
   }, [pluginId]);
   useEffect(() => {
     let live = true;
-    void Promise.all(
-      state.projects.map(
-        async (project) =>
-          [
-            project._id,
-            (await listRepositoryFolders(project._id)).sort(
-              (a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0),
-            )[0]?.name ?? "",
-          ] as const,
-      ),
-    )
-      .then((entries) => {
-        if (live) setFolders(Object.fromEntries(entries));
-      })
-      .catch(() => undefined);
+    if (projectId)
+      void listRepositoryFolders(projectId)
+        .then((folders) => {
+          const name =
+            folders.sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))[0]
+              ?.name ?? "";
+          if (live) setFolder({ projectId, name });
+        })
+        .catch(() => {
+          if (live) setFolder({ projectId, name: "" });
+        });
     return () => {
       live = false;
     };
-  }, [state.projects]);
+  }, [projectId]);
   const items = useMemo(() => {
     const parents = new Map(state.workItems.map((item) => [item._id, item]));
     const projects = new Map(
@@ -259,20 +296,20 @@ export function PluginHandoffTemplates({ pluginId }: { pluginId: string }) {
               : undefined,
           },
           projectName: projects.get(item.projectId ?? "")?.name ?? "",
-          repoName: folders[item.projectId ?? ""] ?? "",
+          repoName: "",
         },
       };
     });
-  }, [state.workItems, state.projects, folders]);
+  }, [state.workItems, state.projects]);
   if (error) return <p role="alert">{error}</p>;
   return initial ? (
     <HandoffTemplateEditor
       key={pluginId}
       initial={initial}
       items={items}
+      onPreviewItemChange={setSelected}
+      repoName={folder?.projectId === projectId ? folder?.name : ""}
       onSave={(value) => saveHandoffTemplates(pluginId, value)}
     />
-  ) : (
-    <p role="status">Loading handoff templates...</p>
-  );
+  ) : null;
 }

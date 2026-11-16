@@ -134,6 +134,68 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
         })
       ).status,
     ).toBe(400);
+    for (const branch of [
+      "bad name",
+      "@",
+      "a..b",
+      "-option",
+      "a.lock",
+      "a/.hidden",
+      "a/",
+      "a\\b",
+    ]) {
+      await call("POST", templatesPath, { ...templates, branch });
+      const refused = await call("POST", "/api/handoffs", input);
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain("branch template");
+    }
+    await call("POST", templatesPath, { ...templates, branch: "" });
+    const noBranch = await call("POST", "/api/handoffs", input);
+    expect(noBranch.status).toBe(200);
+    expect(noBranch.body).not.toHaveProperty("branch");
+    await call(
+      "DELETE",
+      `/api/handoffs/${(noBranch.body as { id: string }).id}`,
+    );
+    await call("POST", templatesPath, {
+      ...templates,
+      title: "{{item.title}}😀suffix",
+      branch: "valid",
+    });
+    const bounded = await call("POST", "/api/handoffs", {
+      ...input,
+      branchOverride: "",
+      item: { ...input.item, title: "a".repeat(499) },
+    });
+    expect(bounded.status, JSON.stringify(bounded.body)).toBe(200);
+    expect(bounded.body).toMatchObject({ title: "a".repeat(499) });
+    expect(bounded.body).not.toHaveProperty("branch");
+    await call(
+      "DELETE",
+      `/api/handoffs/${(bounded.body as { id: string }).id}`,
+    );
+    await call("POST", templatesPath, templates);
+    const multiline = await call("POST", "/api/handoffs", {
+      ...input,
+      branchOverride: "feature/override",
+      item: { ...input.item, title: "first\r\nsecond\nthird" },
+    });
+    expect(multiline.body).toMatchObject({
+      title: "first second third",
+      branch: "feature/override",
+    });
+    await call(
+      "DELETE",
+      `/api/handoffs/${(multiline.body as { id: string }).id}`,
+    );
+    expect(
+      (
+        await call("POST", "/api/handoffs", {
+          ...input,
+          branchOverride: "bad branch",
+        })
+      ).status,
+    ).toBe(400);
     const started = await call("POST", "/api/handoffs", input);
     expect(started.status, JSON.stringify(started.body)).toBe(200);
     expect(started.body).toMatchObject({

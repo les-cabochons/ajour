@@ -17,8 +17,8 @@ export type PluginManifest = {
                 id: string;
                 displayName: string;
                 columns: {
-                  type: "string" | "number" | "boolean";
                   key: string;
+                  type: "string" | "number" | "boolean";
                   header: string;
                   required?: boolean | undefined;
                   width?: number | undefined;
@@ -99,8 +99,8 @@ export type PluginManifest = {
     agentTask?:
       | {
           tasks: {
-            id: string;
             prompt: string;
+            id: string;
             tools: (
               | "find_entries"
               | "get_last_saved_entry"
@@ -599,8 +599,6 @@ export type BacklogSyncResult = {
     { id: string; displayName: string; email?: string | undefined } | undefined;
   workItemUpdates?:
     | {
-        localWorkItemId: string;
-        sourceId: string;
         fields: {
           originalEstimateHours?:
             | {
@@ -633,6 +631,8 @@ export type BacklogSyncResult = {
               }
             | undefined;
         };
+        localWorkItemId: string;
+        sourceId: string;
       }[]
     | undefined;
   commentFacts?:
@@ -716,8 +716,8 @@ export type CodeHostOperations = {
     result: {
       pullRequests: {
         number: number;
-        id: string;
         title: string;
+        id: string;
         url: string;
         state: "closed" | "merged" | "open";
         author: {
@@ -908,8 +908,8 @@ export type CodeHostOperations = {
     result: {
       items: {
         number: number;
-        id: string;
         title: string;
+        id: string;
         url: string;
         state: "closed" | "merged" | "open";
         author: {
@@ -1016,8 +1016,8 @@ export type CalendarOperations = {
     request: { timeZone: string; from: string; to: string };
     result: {
       events: {
-        status: "cancelled" | "confirmed" | "tentative";
         title: string;
+        status: "cancelled" | "confirmed" | "tentative";
         eventId: string;
         startsAt: number;
         endsAt: number;
@@ -1547,11 +1547,11 @@ export type TimeSyncRemoteEntry = {
 };
 
 export type StartHandoffRequest = {
-  tool: string;
-  folder: { id: string; name: string };
+  item: { key: string; url: string };
   prompt: string;
   title: string;
-  item: { key: string; url: string };
+  tool: string;
+  folder: { id: string; name: string };
   settings: Record<string, string | number | boolean>;
   branch?: string | undefined;
 };

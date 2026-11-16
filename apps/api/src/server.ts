@@ -2,7 +2,11 @@ import {
   handoffTemplateDefaults,
   handoffTemplatesSchema,
 } from "../../../packages/shared/handoff-templates.ts";
-import { Handoffs, HandoffRefused } from "./handoffs.ts";
+import {
+  Handoffs,
+  HandoffRefused,
+  HandoffTemplateRefused,
+} from "./handoffs.ts";
 import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
 import { z } from "zod";
 import { ProcessBroker } from "./process-broker.ts";
@@ -1766,12 +1770,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       } catch (error) {
         if (!(error instanceof HandoffRefused)) throw error;
         unit.refuse("handoff_refused");
-        writeJson(response, 409, {
-          error:
-            error instanceof Error
-              ? error.message
-              : "The tool refused the handoff.",
-        });
+        writeJson(
+          response,
+          error instanceof HandoffTemplateRefused ? 400 : 409,
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "The tool refused the handoff.",
+          },
+        );
       }
     },
     handoffRefreshAll: async ({ response }) => {

@@ -37,7 +37,6 @@ it("refuses unknown slots and filters by name on save", () => {
     "settings.token",
     "item.key|upper",
     "item.key|bogus-filter",
-    "item.bad/name",
     "toString",
   ])
     expect(
@@ -96,4 +95,23 @@ it("accepts a plugin prompt default and enforces byte limits", async () => {
       prompt: "\u00e9".repeat(8193),
     }).success,
   ).toBe(false);
+});
+
+it("does not recursively fill item text", () => {
+  expect(
+    fillHandoffTemplates(
+      { prompt: "{{item.description}}", title: "{{item.title}}", branch: "" },
+      {
+        item: {
+          key: "K",
+          title: "{{repo.name}}",
+          description: "{{item.title}}",
+          url: "",
+          type: "",
+        },
+        projectName: "P",
+        repoName: "R",
+      },
+    ),
+  ).toEqual({ prompt: "{{item.title}}", title: "{{repo.name}}", branch: "" });
 });

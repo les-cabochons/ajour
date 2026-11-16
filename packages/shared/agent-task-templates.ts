@@ -4,7 +4,8 @@
  * an error, never a blank.
  */
 
-const SLOT_PATTERN = /\{\{\s*([^{}]*?)\s*\}\}/g;
+const SLOT_PATTERN =
+  /\{\{\s*([A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*(?:\s*\|\s*[A-Za-z_][A-Za-z0-9_-]*)?)\s*\}\}/g;
 
 /** The slots every task may use. Settings slots depend on the task. */
 export const AGENT_TASK_SLOTS = ["weekOf", "sessionId"] as const;

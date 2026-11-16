@@ -33,7 +33,7 @@ export function handoffTemplateDefaults(prompt?: string) {
     branch: "{{item.key|slug}}-{{item.title|slug}}",
   };
 }
-const template = z
+export const handoffTemplateSchema = z
   .string()
   .refine(
     (s) => new TextEncoder().encode(s).length <= 16384,
@@ -53,7 +53,11 @@ const template = z
     }
   });
 export const handoffTemplatesSchema = z
-  .object({ prompt: template, title: template, branch: template })
+  .object({
+    prompt: handoffTemplateSchema,
+    title: handoffTemplateSchema,
+    branch: handoffTemplateSchema,
+  })
   .strict();
 export type HandoffTemplates = z.infer<typeof handoffTemplatesSchema>;
 /** Retains at most 32 KiB of UTF-8 description, including the ellipsis line. */
@@ -91,4 +95,25 @@ export function fillHandoffTemplates(
     title: fillTemplate(templates.title, values),
     branch: fillTemplate(templates.branch, values),
   };
+}
+
+/** Same git ref rules for previews, handoff starts and process arguments. */
+export function isValidHandoffBranch(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.startsWith("-") &&
+    value !== "@" &&
+    !value.endsWith(".") &&
+    !/[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|\/\/|^\/|\/$/.test(value) &&
+    !value.split("/").some((p) => p.startsWith(".") || p.endsWith(".lock"))
+  );
+}
+export function handoffTitle(value: string): string {
+  const line = value.replace(/(?:\r\n|[\r\n\u2028\u2029])+/g, " ");
+  let result = "";
+  for (const char of line) {
+    if (result.length + char.length > 500) break;
+    result += char;
+  }
+  return result;
 }

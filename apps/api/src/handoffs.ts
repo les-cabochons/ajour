@@ -1,6 +1,8 @@
 import {
   fillHandoffTemplates,
   handoffTemplateDefaults,
+  handoffTitle,
+  isValidHandoffBranch,
 } from "../../../packages/shared/handoff-templates.ts";
 import { startHandoffRequestSchema } from "../../../packages/shared/handoffs.ts";
 import { randomUUID } from "node:crypto";
@@ -57,6 +59,7 @@ interface Options {
 export const REFRESH_BATCH_SIZE = 100;
 
 export class HandoffRefused extends Error {}
+export class HandoffTemplateRefused extends HandoffRefused {}
 
 /** Local handoffs and refresh scheduling. The host owns project scope. */
 export class Handoffs {
@@ -103,10 +106,16 @@ export class Handoffs {
       ...input,
       repoName: folder.name,
     });
+    const branch = input.branchOverride ?? filled.branch;
+    if (branch && (branch.length > 500 || !isValidHandoffBranch(branch)))
+      throw new HandoffTemplateRefused(
+        "The branch template produces an invalid git branch. Edit the branch template or leave it empty for no worktree.",
+      );
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
-      ...filled,
+      title: handoffTitle(filled.title),
+      ...(branch ? { branch } : {}),
       prompt: input.promptOverride ?? filled.prompt,
       item: { key: input.item.key, url: input.item.url },
       settings: input.settings,
