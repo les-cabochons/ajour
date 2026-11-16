@@ -117,6 +117,10 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
   startedAt: z.number().finite(),
   state: handoffStateSchema,
   checkedAt: z.number().finite(),
+  paused: z
+    .object({ reason: text, since: z.number().finite() })
+    .strict()
+    .optional(),
   changedAt: z.number().finite(),
   history: z
     .array(

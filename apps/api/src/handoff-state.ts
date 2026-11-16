@@ -29,15 +29,19 @@ export function startHandoff(
     history: [],
   };
 }
+// Availability belongs to the host, never to a plugin's update contract.
+export type HostHandoffUpdate = HandoffUpdate & Pick<Handoff, "paused">;
+
 export function updateHandoff(
   record: Handoff,
-  update: HandoffUpdate,
+  update: HostHandoffUpdate,
   now: number,
 ): Handoff {
   const changed = record.state !== update.state;
   return {
     ...record,
     ...update,
+    paused: update.paused,
     checkedAt: now,
     changedAt: changed ? now : record.changedAt,
     history: changed

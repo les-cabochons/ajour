@@ -2,12 +2,12 @@ import { z } from "zod";
 import {
   handoffRecordSchema,
   type Handoff,
-  type HandoffUpdate,
 } from "../../../packages/shared/handoffs.ts";
 import {
   updateHandoff,
   removeHandoff,
   handoffSummary,
+  type HostHandoffUpdate,
 } from "./handoff-state.ts";
 import {
   repositoryFolderSchema,
@@ -1028,6 +1028,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       (value) => {
         const legacy = z
           .object({
+            native: z.record(z.unknown()),
             history: z.array(
               z.object({
                 state: z.unknown(),
@@ -1043,6 +1044,11 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         const normalized = legacy.success
           ? {
               ...legacy.data,
+              native:
+                Buffer.byteLength(JSON.stringify(legacy.data.native), "utf8") >
+                4096
+                  ? { ...handoffSummary(legacy.data.native), truncated: true }
+                  : legacy.data.native,
               history: legacy.data.history.map(({ native, ...entry }) => ({
                 ...entry,
                 ...(native ? handoffSummary(native) : {}),
@@ -1379,7 +1385,10 @@ export class AppApiStorage {
       result: undefined,
     }));
   }
-  async updateHandoffs(updates: HandoffUpdate[], now: number): Promise<void> {
+  async updateHandoffs(
+    updates: HostHandoffUpdate[],
+    now: number,
+  ): Promise<void> {
     const byId = new Map(updates.map((value) => [value.id, value]));
     await this.mutate((state) => ({
       nextState: {

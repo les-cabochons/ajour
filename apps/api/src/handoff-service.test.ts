@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { Handoffs } from "./handoffs.ts";
 import { AppApiStorage } from "./storage.ts";
+import type { Handoff } from "../../../packages/shared/handoffs.ts";
 
 it("batches refresh by tool and project, respects visibility, and preserves a refused start", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoffs-"));
@@ -114,10 +115,12 @@ it("continues failed batches, pauses unavailable tools once and resumes them whe
       mode = "fail",
       writes = 0;
     const calls: string[] = [];
+    let snapshot: Handoff[] = [];
     const service = new Handoffs({
       storage,
       now: () => now,
-      onChange: () => {
+      onChange: (records) => {
+        snapshot = records;
         writes++;
       },
       unavailableReason: async () =>
@@ -139,17 +142,20 @@ it("continues failed batches, pauses unavailable tools once and resumes them whe
               ];
         },
         async startHandoff() {
-          return { threadId: "t", native: {} };
+          return { threadId: "t", native: { sessionKey: "opaque" } };
         },
         async readHandoffStates(_plugin, request) {
           calls.push(request.tool);
+          expect(
+            request.handoffs.every((h) => h.native.sessionKey === "opaque"),
+          ).toBe(true);
           now += 100;
           if (mode === "fail" && request.tool === "a")
             throw new Error("Tool A unavailable");
           return request.handoffs.map((h) => ({
             id: h.id,
             state: "ready" as const,
-            native: {},
+            native: h.native,
           }));
         },
       },
@@ -184,22 +190,41 @@ it("continues failed batches, pauses unavailable tools once and resumes them whe
       1000, 1100,
     ]);
     for (const unavailable of ["missing", "disabled", "removed"]) {
+      const previousCalls = [...calls];
       mode = unavailable;
       now += 120000;
       await service.tick();
       const records = await storage.listHandoffs();
       expect(records.every((h) => h.state === "unknown")).toBe(true);
+      expect(records.every((h) => h.native.sessionKey === "opaque")).toBe(true);
+      const reason =
+        unavailable === "missing"
+          ? "The handoff plugin is unavailable."
+          : unavailable === "disabled"
+            ? "Plugin is disabled."
+            : "The handoff tool was removed.";
+      expect(records.every((h) => h.paused?.reason === reason)).toBe(true);
+      expect(records.every((h) => h.paused?.since === now)).toBe(true);
+      expect(snapshot).toEqual(records);
+      expect(
+        await new AppApiStorage(path.join(root, "state.json")).listHandoffs(),
+      ).toEqual(records);
       const published = writes;
       now += 120000;
       await service.tick();
       expect(writes).toBe(published);
       expect(await storage.listHandoffs()).toEqual(records);
-      expect(calls).toEqual(["a", "b"]);
+      expect(calls).toEqual(previousCalls);
+      mode = "ok";
+      now += 120000;
+      await service.tick();
+      expect(calls).toEqual([...previousCalls, "a", "b"]);
+      expect(
+        (await storage.listHandoffs()).every(
+          (h) => h.state === "ready" && h.paused === undefined,
+        ),
+      ).toBe(true);
     }
-    mode = "ok";
-    now += 120000;
-    await service.tick();
-    expect(calls).toEqual(["a", "b", "a", "b"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -240,6 +265,76 @@ it("retains pre-review records while compacting their native history", async () 
         history: [{ state: "ready", at: 2, status: "ready", label: "Ready" }],
       },
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("retains a legacy handoff with a 5 KB native and replaces it on refresh", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-legacy-"));
+  try {
+    const file = path.join(root, "state.json");
+    const storage = new AppApiStorage(file);
+    const { startHandoff } = await import("./handoff-state.ts");
+    const record = startHandoff(
+      {
+        id: "h",
+        pluginId: "p",
+        toolId: "t",
+        workItemId: "i",
+        projectId: "p",
+        folderId: "f",
+        title: "Title",
+      },
+      { threadId: "t", native: {} },
+      1,
+    );
+    await storage.addHandoff(record);
+    const state = JSON.parse(await readFile(file, "utf8"));
+    state.handoffs[0].native = {
+      status: "s".repeat(80),
+      label: "l".repeat(240),
+      payload: "x".repeat(5120),
+    };
+    await writeFile(file, JSON.stringify(state));
+    const reloaded = new AppApiStorage(file);
+    expect(await reloaded.listHandoffs()).toEqual([
+      {
+        ...record,
+        native: {
+          status: "s".repeat(64),
+          label: "l".repeat(200),
+          truncated: true,
+        },
+      },
+    ]);
+    const service = new Handoffs({
+      storage: reloaded,
+      now: () => 3,
+      onChange() {},
+      plugins: {
+        async listPlugins() {
+          return [
+            { id: "p", capabilities: { handoff: { tools: [{ id: "t" }] } } },
+          ];
+        },
+        async startHandoff() {
+          throw new Error("Unused");
+        },
+        async readHandoffStates(_plugin, request) {
+          expect(request.handoffs[0]?.native).toEqual({
+            status: "s".repeat(64),
+            label: "l".repeat(200),
+            truncated: true,
+          });
+          return [{ id: "h", state: "ready", native: { session: "fresh" } }];
+        },
+      },
+    });
+    expect(await service.refresh("h")).toEqual({ succeeded: 1, failures: [] });
+    expect((await new AppApiStorage(file).listHandoffs())[0]?.native).toEqual({
+      session: "fresh",
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -228,19 +228,18 @@ export class Handoffs {
           if (
             automatic &&
             reason &&
-            batch.every(
-              (h) => h.state === "unknown" && h.native.label === reason,
-            )
+            batch.every((h) => h.paused?.reason === reason)
           )
             return;
           unit = openUnit();
           if (reason) {
             const updates = batch
-              .filter((h) => h.state !== "unknown" || h.native.label !== reason)
+              .filter((h) => h.paused?.reason !== reason)
               .map((h) => ({
                 id: h.id,
                 state: "unknown" as const,
-                native: { label: reason },
+                native: h.native,
+                paused: { reason, since: h.paused?.since ?? now },
               }));
             if (updates.length) {
               await this.options.storage.updateHandoffs(updates, now);
@@ -274,7 +273,12 @@ export class Handoffs {
         } catch (error) {
           // A transport failure is not a native state change. Retry at the normal cadence.
           await this.options.storage.updateHandoffs(
-            batch.map((h) => ({ id: h.id, state: h.state, native: h.native })),
+            batch.map((h) => ({
+              id: h.id,
+              state: h.state,
+              native: h.native,
+              paused: h.paused,
+            })),
             now,
           );
           await this.publish();

@@ -1357,3 +1357,8 @@ links require HTTPS. Missing or disabled plugins and removed tools show Unknown
 with a reason until they return. Refresh all continues after a tool fails and
 returns each failed group's reason. Removing a handoff leaves the external
 thread in place.
+
+Pausing a handoff preserves the tool's native data. The record carries a separate
+pause reason and time, cleared by a successful refresh. Reloading an older record
+whose native data exceeds 4 KB keeps the handoff with capped status and label and
+`native.truncated: true`. Its next successful refresh replaces that compact data.
