@@ -195,7 +195,17 @@ The SDK's `ajour.process.run` follows the
 worker, host page, preload invoke, main and API path used by `ajour.http`. The
 page replaces the worker's run id and main accepts only its sender's own runs.
 
-`ProcessBroker` validates typed argument slots and conditional groups. Folder
+`ProcessBroker` validates typed argument slots and conditional groups. A
+`connection-url` slot is filled by the host, never the plugin: during a handoff
+operation (`detectTools`, `startHandoff`, `readHandoffStates`, and opening a
+thread) whose caller carries `connectionId`, the server's `connectionAddress`
+reads the connection through `brokerConnection` and `connectionBaseAddress`
+(`broker-policy.ts`), so the address obeys the broker's https and on-premises
+rules. A value the plugin passes for that slot is `invalid_request`; an
+operation without a connection, or an address that can't be read, is
+`connection_refused`. The manifest refuses the slot without
+`network.baseAddress` or a tool that uses a connection, and as the slot a
+conditional group tests. Folder
 slots resolve repository ids through `FolderResolver.resolve`, which returns an
 absolute path or refuses. The server and process broker share the repository-folder
 resolver and its `protectedRepositoryFolders` roots. It rechecks canonical paths,
@@ -206,7 +216,7 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable. Declared capture commands start at the filesystem root. Declared launch modes use their resolved repository folder. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
+inherit no `AJOUR_` variable. Declared commands start in the repository folder their first `folder` argument resolves to, or at the filesystem root when they have none; launch modes require one. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
@@ -603,7 +613,32 @@ API 3 runtime or fallback to Node workers.
   malicious plugin's ways out and its attacks on the broker, and
   `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget, an
   infinite loop, a fork bomb, the quit drain and the sweep across a forced
-  kill of main, and a second Ajour started beside the first. It is seam 3
+  kill of main, and a second Ajour started beside the first.
+  `sandbox-check/process-attacks.cjs` (#725) turns the malicious plugin
+  (`fixtures/fixture-escape`, a development plugin, so unsigned) on the
+  process broker, through hand offs of a project, so the broker runs with a
+  project as a real hand off does. It checks that each attack is refused or
+  harmless: declared commands, undeclared commands and declared links
+  before the unsigned process switch and the plugin's acceptance; an
+  undeclared command without `processes.undeclaredCommands`, and a package
+  that adds it without new consent, which the host refuses before any call;
+  shell metacharacters in a `text` slot, which reach the fixture's echo tool
+  unchanged (on Windows through an npm `.cmd` shim written by
+  `sandbox-check/fake-tool.cjs`) and write none of their markers, the values
+  a `text` slot refuses, and a `.cmd` launcher the broker doesn't know; a
+  `folder` id of another project, a folder that became a junction to
+  Ajour's data folder, a path and an unknown id; undeclared, `file:`,
+  `javascript:` and https-with-credentials links, with only the declared
+  scheme reaching main's `openPluginLink`; `AJOUR_` variables, which the
+  echo tool's output shows the child has none of, and no event holding an
+  argument or an `AJOUR_` value, every string in the events compared to the
+  value itself (`sandbox-check/event-values.cjs`), since JSON escapes the
+  `\` and `"` of `C:\repo` or `a"b c"d`; Unicode format, control and separator
+  characters in an undeclared argv or name; and the command modes: Always
+  ask asks even for an allowlisted command, and in Auto an allowlisted
+  command runs, inline code asks and the window's Deny refuses it, and a
+  command off the allowlist asks and is denied when the window goes away
+  without answering. It is seam 3
   (#392): `.github/workflows/plugin-sandbox.yml` runs it on Windows and
   macOS, and on Linux, where it checks only that plugins stay off, as
   informational. The `Tests` workflow runs it for pull requests that touch
@@ -613,13 +648,15 @@ API 3 runtime or fallback to Node workers.
   skipped. A push to main runs it in the nightly release workflow, and the
   stable release workflow runs it on the promoted commit; neither publishes
   unless it passes on Windows and macOS.
-- The **official-plugin release check** (#403, seam 3) runs the six official
-  plugins in a packaged build. `just plugin-release-package` builds a
+- The **official-plugin release check** (#403, seam 3) runs the official
+  plugins in a packaged build: the six that came over from API 3, and
+  `agent-handoff` (#725). `just plugin-release-package` builds a
   test-only package of the desktop app
   (`apps/desktop/plugin-release.config.cjs`, entry
   `sandbox-check/official-plugins.cjs`, never part of a release), and `just
 plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
-  `ajour-plugins`), `AJOUR_PLUGINS_COMMIT` (default `HEAD`) and
+  `ajour-plugins`), `AJOUR_PLUGINS_COMMIT` (default `releaseCommit` of
+  `sandbox-check/release-baseline.json`) and
   `AJOUR_PLUGIN_RELEASE_EXECUTABLE` (the packaged executable). The check packs
   each plugin folder at that commit, installs it as a user would, and drives
   it through the real app API, broker and renderer runtime against fixture
@@ -630,8 +667,28 @@ plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
   address nor a redirect address reaching the plugin, logs or UI; an Azure
   DevOps connection saved with a project URL; each legacy GitHub address
   form rewritten once and still syncing; and connections made on API 3 staying
-  installed and inactive with their settings. It runs on Windows today. The
-  macOS package and a CI job for the check are not wired yet.
+  installed and inactive with their settings. `agent-handoff` is installed
+  as the signed catalog installs it (the check doesn't verify a signature),
+  so it runs signed, in Auto, and drives a fake `t3`
+  (`sandbox-check/official-plugins/fake-t3.cjs`, the plugin's recorded
+  outputs of t3 v0.1.10) that `official-plugins/handoff-cases.cjs` puts
+  first on PATH, as an npm `.cmd` shim on Windows, before the API reads any
+  PATH. Outside Windows it also points `SHELL`, which the broker's
+  login-shell PATH read honours (`apps/api/src/agent-runner/cli-path.ts`),
+  at a stand-in that runs the command without a profile, so no profile can
+  reorder or drop the tool's folder. Through the real API,
+  broker and renderer it detects the tool and its version, starts a hand
+  off whose argv, title, branch and stdin prompt reach `t3` intact, records
+  the thread's link, and maps T3's statuses to Working, Needs you, Ready,
+  Failed, Done (settled or archived), Unknown (no server) and Gone, and `t3`
+  runs only declared commands, with no `AJOUR_` variable, and no wide event
+  holds the prompt, title, folder or link, compared value by value
+  (`sandbox-check/event-values.cjs`), since JSON escapes a Windows path. CI
+  runs it on Windows (`.github/workflows/plugin-release.yml`, called by
+  `Tests` for pull requests that touch `apps/desktop`, `apps/api`,
+  `packages` or the workflows, and for every push to main, held by the
+  Plugin sandbox gate), against `ajour-plugins` at the pinned
+  `releaseCommit`. The macOS package and its CI job stay with #614.
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,
@@ -1209,9 +1266,28 @@ at 64 and 200 characters. Native results are limited to 4 KB of serialized UTF-8
 ordinary checks add no history. Existing native history is compacted on load.
 Removing a record does not stop or delete its external thread.
 
-Refreshes batch by plugin, tool and project. The project comes from the saved
-record and binds the operation's process broker, so folder slots cannot resolve
-another project's folders. The API's 15 second tick checks which records are due:
+Refreshes batch by plugin, tool, project and connection. The project comes from
+the saved record and binds the operation's process broker, so folder slots
+cannot resolve another project's folders.
+
+A tool may declare `connection: "required"` (default `"none"`, ticket #745); the
+manifest then needs `connectionFields` and `network`. Such a tool's operations
+follow the connection-first pattern of every networked capability:
+`detectTools(connection)`, `startHandoff(connection, request)` and
+`readHandoffStates(connection, request)`, in `plugin-methods.ts`; a tool without
+one keeps its old arguments. The host refuses a tool's operation without the
+connection it needs, with one it doesn't use, or with another plugin's. The
+start route takes an optional `connectionId`; otherwise `Handoffs` uses the pick
+saved in `handoffToolConnections` state (GET and POST
+`/api/plugins/:pluginId/handoffs/connections`), else the plugin's only
+connection. The record keeps `connectionId`, since a session id is only
+meaningful on its server. Detection runs once without a connection for the
+other tools and once per picked connection for its tools. Deleting a connection
+removes it from the picks and refreshes its handoffs, which pause as unknown
+with a reason through the same path as a removed tool; an older record whose
+tool now needs a connection pauses too. The connection reaches the plugin
+without secrets, and its requests go through the credential broker, so an
+on-premises loopback server such as OpenCode's stays inside G1. The API's 15 second tick checks which records are due:
 30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
 refresh after 24 hours since their last common-state change. Manual refresh still
 checks them. A failed read preserves state and retries at the normal cadence.

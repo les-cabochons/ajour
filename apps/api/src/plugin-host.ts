@@ -1027,26 +1027,51 @@ export class PluginManager {
     );
   }
 
-  async detectTools(pluginId: string, projectId: string) {
+  /**
+   * Which tools this computer has. With `connection`, for the tools that
+   * hand off through it; without, for the others.
+   */
+  async detectTools(
+    pluginId: string,
+    projectId: string,
+    connection?: PluginInvocationConnection,
+  ) {
     return this.invokePlugin(
       pluginId,
       "detectTools",
-      { projectId },
+      { projectId, ...handoffConnectionParams(pluginId, connection) },
       detectToolsResultSchema,
       undefined,
-      requireCapability("handoff"),
+      (manifest) => {
+        requireCapability("handoff")(manifest);
+        if (
+          connection &&
+          !manifest.capabilities.handoff?.tools.some(
+            (tool) => tool.connection === "required",
+          )
+        )
+          throw new PluginOperationRefused(
+            `Plugin "${manifest.id}" has no handoff tool that uses a connection.`,
+            "not_supported",
+          );
+      },
     );
   }
   async startHandoff(
     pluginId: string,
     request: StartHandoffRequest,
     projectId: string,
+    connection?: PluginInvocationConnection,
   ) {
     let manifestForResult: PluginManifest;
     return this.invokePlugin(
       pluginId,
       "startHandoff",
-      { request: startHandoffRequestSchema.parse(request), projectId },
+      {
+        request: startHandoffRequestSchema.parse(request),
+        projectId,
+        ...handoffConnectionParams(pluginId, connection),
+      },
       {
         parse(value: unknown) {
           const result = startHandoffResultSchema.parse(value);
@@ -1071,13 +1096,7 @@ export class PluginManager {
       undefined,
       (manifest) => {
         manifestForResult = manifest;
-        requireCapability("handoff")(manifest);
-        if (
-          !manifest.capabilities.handoff?.tools.some(
-            (t) => t.id === request.tool,
-          )
-        )
-          throw new Error("This handoff tool is not available.");
+        requireHandoffTool(manifest, request.tool, connection);
       },
     );
   }
@@ -1085,13 +1104,18 @@ export class PluginManager {
     pluginId: string,
     request: ReadHandoffStatesRequest,
     projectId: string,
+    connection?: PluginInvocationConnection,
   ) {
     let manifestForResult: PluginManifest;
     const parsed = readHandoffStatesRequestSchema.parse(request);
     return this.invokePlugin(
       pluginId,
       "readHandoffStates",
-      { request: parsed, projectId },
+      {
+        request: parsed,
+        projectId,
+        ...handoffConnectionParams(pluginId, connection),
+      },
       {
         parse(value: unknown) {
           const result = readHandoffStatesResultSchema.parse(value);
@@ -1123,13 +1147,7 @@ export class PluginManager {
       undefined,
       (manifest) => {
         manifestForResult = manifest;
-        requireCapability("handoff")(manifest);
-        if (
-          !manifest.capabilities.handoff?.tools.some(
-            (t) => t.id === request.tool,
-          )
-        )
-          throw new Error("This handoff tool is not available.");
+        requireHandoffTool(manifest, request.tool, connection);
       },
     );
   }
@@ -1322,6 +1340,11 @@ export class PluginManager {
               method,
               ...(typeof params.projectId === "string"
                 ? { projectId: params.projectId }
+                : {}),
+              // Only a handoff operation's commands may receive its
+              // connection's address (`connection-url`).
+              ...(connectionId && capabilityOfMethod(method) === "handoff"
+                ? { connectionId }
                 : {}),
             });
             args = prepared.args;
@@ -1698,6 +1721,50 @@ function validHttps(link: string): boolean {
     return false;
   }
 }
+/**
+ * A handoff operation's connection, checked to be the plugin's own: the
+ * plugin would otherwise read another plugin's settings.
+ */
+function handoffConnectionParams(
+  pluginId: string,
+  connection: PluginInvocationConnection | undefined,
+) {
+  if (!connection) return {};
+  const parsed = pluginInvocationConnectionSchema.parse(connection);
+  if (parsed.pluginId !== pluginId)
+    throw new PluginOperationRefused(
+      "This connection belongs to another plugin.",
+      "not_supported",
+    );
+  return { connection: parsed };
+}
+
+/**
+ * The handoff tool exists, and the operation has a connection exactly when
+ * the tool uses one.
+ */
+function requireHandoffTool(
+  manifest: PluginManifest,
+  toolId: string,
+  connection: PluginInvocationConnection | undefined,
+) {
+  requireCapability("handoff")(manifest);
+  const tool = manifest.capabilities.handoff?.tools.find(
+    (t) => t.id === toolId,
+  );
+  if (!tool) throw new Error("This handoff tool is not available.");
+  if (tool.connection === "required" && !connection)
+    throw new PluginOperationRefused(
+      `${tool.label} needs a connection. Pick one in its settings on the plugin's page.`,
+      "not_supported",
+    );
+  if (tool.connection !== "required" && connection)
+    throw new PluginOperationRefused(
+      `${tool.label} uses no connection.`,
+      "not_supported",
+    );
+}
+
 function validHandoffLink(link: string, manifest: PluginManifest): boolean {
   try {
     const scheme = new URL(link).protocol.slice(0, -1).toLowerCase();

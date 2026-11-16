@@ -1420,6 +1420,23 @@ pause reason and time, cleared by a successful refresh. Reloading an older recor
 whose native data exceeds 4 KB keeps the handoff with capped status and label and
 `native.truncated: true`. Its next successful refresh replaces that compact data.
 
+### Handoff connections
+
+A handoff tool may hand off through one of its plugin's connections, such as
+OpenCode's loopback server. The plugin's settings page then has a Handoff
+connections section with one picker per such tool, listing the plugin's
+connections; the pick is saved on this computer and takes effect at once.
+Without a pick, the plugin's only connection is used and the row says so; with
+none, the row asks to add one. Detection runs for the picked connection: a tool
+without one is missing with "Pick a connection for <tool> in its settings on the
+plugin's page.", and a connection that fails marks only its own tools missing,
+with the reason. A start uses the pick unless the request names a connection,
+and refuses a tool that uses none when one is named. Each handoff keeps its
+connection. Deleting the connection forgets it as a pick and pauses its handoffs
+as Unknown with "The connection this handoff ran through was deleted."; they stay
+paused until removed. Access review lists each tool that hands off through a
+connection, and an update that makes a tool use one needs approval again.
+
 ### Handoff templates
 
 A handoff plugin's settings page has editable prompt, title and branch templates, saved together on this computer. The prompt starts with the plugin's default when present. The title starts as `[{{item.key}}] {{item.title}}`; the branch starts as `{{item.key|slug}}-{{item.title|slug}}`. Unknown slots and filters prevent saving and name the error.

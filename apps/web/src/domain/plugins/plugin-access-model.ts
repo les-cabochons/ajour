@@ -43,6 +43,8 @@ export interface AccessLabels {
   fields: readonly { id: string; label: string }[];
   /** The plugin's agent tasks. */
   tasks: readonly { id: string; label: string }[];
+  /** The plugin's handoff tools. */
+  tools?: readonly { id: string; label: string }[];
 }
 
 /** The capabilities in GLOSSARY.md's words. */
@@ -243,6 +245,20 @@ export function describeAccess(
       title: "Addresses on your own network",
       detail: "Only for a connection you mark on-premises.",
       isNew: difference?.onPremises === true,
+    });
+  }
+
+  for (const toolId of summary.handoffConnections ?? []) {
+    const tool =
+      labels.tools?.find((candidate) => candidate.id === toolId)?.label ??
+      toolId;
+    add({
+      id: `handoff-connection:${toolId}`,
+      kind: "network",
+      title: `${tool} hands off through a connection`,
+      detail:
+        "Ajour detects the tool and reads its handoffs on the connection its settings pick. Its commands may receive that connection's address.",
+      isNew: (difference?.handoffConnections ?? []).includes(toolId),
     });
   }
 

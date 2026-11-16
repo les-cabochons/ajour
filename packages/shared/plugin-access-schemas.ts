@@ -74,6 +74,8 @@ export interface PluginAccessSummary {
   commands?: PluginAccessCommand[];
   undeclaredCommands?: boolean;
   openSchemes?: string[];
+  /** The handoff tools that hand off through one of the plugin's connections. */
+  handoffConnections?: string[];
   mcpTools: PluginAccessMcpTool[];
   agentPrompts: PluginAccessPrompt[];
   /**
@@ -100,6 +102,8 @@ export interface PluginAccessDifference {
   commands?: PluginAccessCommand[];
   undeclaredCommands?: boolean;
   openSchemes?: string[];
+  /** Handoff tools that now hand off through a connection. */
+  handoffConnections?: string[];
   mcpTools: PluginAccessMcpTool[];
   /** Agent tasks whose prompt is new or changed. */
   agentPrompts: string[];
@@ -184,6 +188,7 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
       .default([]),
     undeclaredCommands: z.boolean().default(false),
     openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
+    handoffConnections: z.array(shortText).max(50).optional(),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z
       .array(z.object({ task: shortText, prompt: shortText }))
@@ -218,6 +223,7 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
       .default([]),
     undeclaredCommands: z.boolean().default(false),
     openSchemes: z.array(z.string().min(1).max(64)).max(30).default([]),
+    handoffConnections: z.array(shortText).max(50).optional(),
     mcpTools: z.array(mcpToolSchema).max(500),
     agentPrompts: z.array(shortText).max(10),
     alwaysOnAccess: z.array(shortText).max(10),

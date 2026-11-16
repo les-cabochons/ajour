@@ -284,7 +284,7 @@ of case or .exe/.cmd/.bat/.com suffix. Interpreters such as node and python are
 allowed, but Access marks them "runs code it is given: as wide as Accept everything". Commands reference a declared key and have
 unique IDs. Each argument is one argv element. Strings are literals unless the
 whole string is a slot such as `{title:text}`. Slot kinds are `text`, `id`, `ref`,
-`number`, `https-url` and `folder`. An enum is an object such as
+`number`, `https-url`, `folder` and `connection-url`. An enum is an object such as
 `{"kind":"enum","name":"format","values":["json","text"]}`. Values use `[A-Za-z0-9_./:=+@-]`, cannot start with `-` and cannot repeat.
 For a literal containing braces, use `{"kind":"literal","value":"{literal}"}`.
 
@@ -302,6 +302,10 @@ UTF-8 JSON, 256 executables and 256 commands. Access argv and policy strings
 are each limited to 16,384 characters. Runtime argument
 checks and default timeouts belong to the broker, not manifest parsing.
 The host resolves a `folder` slot from a repository folder ID, never a plugin path.
+The host fills a `connection-url` slot itself, from the base address of the
+connection a handoff operation runs through; the plugin never passes it. It
+needs `network.baseAddress` and a handoff tool with `connection: "required"`,
+and it can't be the slot a conditional group tests.
 `DeclaredCommand` exports the parsed host contract with typed slots and groups.
 
 Schemes must be lowercase RFC 3986 names without a colon. Ajour refuses `http`,
@@ -348,7 +352,11 @@ operation cancels its capture children. Refusals reject with `AjourProcessError`
 `processRun` responder and otherwise refuses process requests. Given the
 manifest, it refuses with `undeclared` a command id the manifest doesn't
 declare and an `{ executable, argv }` request from a manifest without
-`processes.undeclaredCommands: true`.
+`processes.undeclaredCommands: true`. Its `connectionUrl` option stands for the
+operation's connection address: the fake fills each `connection-url` slot with
+it before `processRun` sees the request, refuses a value the plugin passes for
+one with `invalid_request`, and refuses the command with `connection_refused`
+when no address is supplied.
 
 The user must turn the plugin on and approve its declared commands. Undeclared
 commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
@@ -421,11 +429,30 @@ end idle sessions.
 ## Handoff tools
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
-`iconSvg` and `settings`. The host treats handoff like the other switchable
+`iconSvg`, `settings` and an optional `connection`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
-`readHandoffStates(request)`, typed by `PluginModule`. Detection returns
+`readHandoffStates(request)`, typed by `PluginModule`.
+
+A tool that talks to its server over HTTP, such as OpenCode's loopback
+server, sets `connection: "required"` (the default is `"none"`). The plugin
+then declares `connectionFields` and `network`, as every networked capability
+does, and reaches the server through `ajour.http` with the connection's id. A
+local server on `127.0.0.1` needs `baseAddress.allowOnPremises: true` and a
+connection the user marks on-premises. The tool's settings on the plugin's
+page pick the connection; with one connection, that one is used. For such a
+tool Ajour calls `detectTools(connection)`, `startHandoff(connection, request)`
+and `readHandoffStates(connection, request)`, connection first as in every
+other networked operation; tools without one are called as before. A plugin
+with both kinds reads `args.length`, as `HandoffArguments` types it. Each
+handoff keeps its connection, since a session id is only meaningful on its
+own server: refreshes batch by tool, project and connection, and deleting the
+connection pauses its handoffs as `unknown` with the reason. A resume command
+like `opencode attach <url> -s <id>` declares the address as a
+`{server:connection-url}` slot, which Ajour fills; the plugin returns only the
+session id in `resume.args`. Access review lists each tool that uses a
+connection, and an update that makes a tool use one needs approval again. Detection returns
 `{ tools: [{ id, available, version?, reason? }] }`. A start receives the tool,
 folder id and name, prompt, title, optional branch, item key and URL, and
 settings. It returns `{ threadId, link?, resume?, native }`. Throw an error to

@@ -112,6 +112,12 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
   id,
   pluginId: id,
   toolId: id,
+  /**
+   * The connection the handoff runs through, for a tool that uses one. A
+   * session id is only meaningful on its own server, so every later read
+   * goes through the same connection.
+   */
+  connectionId: id.optional(),
   workItemId: id,
   projectId: id,
   folderId: id,
@@ -143,13 +149,24 @@ export const handoffsSnapshotSchema = z.array(handoffRecordSchema);
 export const handoffRefreshResultSchema = z.object({
   handoffs: handoffsSnapshotSchema,
   failures: z.array(
-    z.object({ pluginId: id, toolId: id, projectId: id, reason: z.string() }),
+    z.object({
+      pluginId: id,
+      toolId: id,
+      projectId: id,
+      connectionId: id.optional(),
+      reason: z.string(),
+    }),
   ),
 });
 export const handoffStartRouteSchema = z
   .object({
     pluginId: id,
     toolId: id,
+    /**
+     * The connection to hand off through, for a tool that uses one. Absent,
+     * the connection the tool's settings picked.
+     */
+    connectionId: id.optional(),
     folderId: id,
     projectId: id,
     workItemId: id,
@@ -179,6 +196,20 @@ export const handoffStartRouteSchema = z
     settings: startHandoffRequestSchema.shape.settings,
   })
   .strict();
+/**
+ * The connection each tool of one plugin hands off through, by tool id: the
+ * tool's settings pick it, and detection runs for it.
+ */
+export const handoffToolConnectionsSchema = z
+  .record(z.string().regex(/^[a-z][a-z0-9-]{0,79}$/), id)
+  .refine((value) => Object.keys(value).length <= 50, "At most 50 tools.");
+export type HandoffToolConnections = z.infer<
+  typeof handoffToolConnectionsSchema
+>;
+/** Whether a tool hands off through one of its plugin's connections. */
+export const handoffToolConnectionSchema = z
+  .enum(["required", "none"])
+  .default("none");
 export type Handoff = z.infer<typeof handoffRecordSchema>;
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
 export type StartHandoffResult = z.infer<typeof startHandoffResultSchema>;
@@ -212,6 +243,11 @@ export function handoffCapabilitySchema<
                   (fields) => fields.every((f) => !f.secret),
                   "Handoff settings cannot contain secrets.",
                 ),
+              /**
+               * `required`: every operation for this tool runs through one
+               * of the plugin's connections, which the tool's settings pick.
+               */
+              connection: handoffToolConnectionSchema,
             })
             .strict(),
         )

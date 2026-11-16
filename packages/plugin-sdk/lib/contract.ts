@@ -34,6 +34,7 @@ export type PluginManifest = {
             | undefined;
           comments?:
             | {
+                maxLength?: number | undefined;
                 edit?: boolean | undefined;
                 delete?: boolean | undefined;
                 reactions?:
@@ -49,7 +50,6 @@ export type PluginManifest = {
                     )[]
                   | undefined;
                 mentions?: boolean | undefined;
-                maxLength?: number | undefined;
               }
             | undefined;
           settle?: boolean | undefined;
@@ -71,13 +71,13 @@ export type PluginManifest = {
               id: string;
               label: string;
               options?: { value: string; label: string }[] | undefined;
+              min?: number | undefined;
+              max?: number | undefined;
               required?: boolean | undefined;
               placeholder?: string | undefined;
               helpText?: string | undefined;
               secret?: boolean | undefined;
               defaultValue?: string | number | boolean | undefined;
-              min?: number | undefined;
-              max?: number | undefined;
               step?: number | undefined;
               capability?:
                 | "connector"
@@ -92,6 +92,7 @@ export type PluginManifest = {
             }[];
             label: string;
             iconSvg: string;
+            connection?: "required" | "none" | undefined;
           }[];
           promptTemplate?: string | undefined;
         }
@@ -152,13 +153,13 @@ export type PluginManifest = {
                   id: string;
                   label: string;
                   options?: { value: string; label: string }[] | undefined;
+                  min?: number | undefined;
+                  max?: number | undefined;
                   required?: boolean | undefined;
                   placeholder?: string | undefined;
                   helpText?: string | undefined;
                   secret?: boolean | undefined;
                   defaultValue?: string | number | boolean | undefined;
-                  min?: number | undefined;
-                  max?: number | undefined;
                   step?: number | undefined;
                   capability?:
                     | "connector"
@@ -206,13 +207,13 @@ export type PluginManifest = {
         id: string;
         label: string;
         options?: { value: string; label: string }[] | undefined;
+        min?: number | undefined;
+        max?: number | undefined;
         required?: boolean | undefined;
         placeholder?: string | undefined;
         helpText?: string | undefined;
         secret?: boolean | undefined;
         defaultValue?: string | number | boolean | undefined;
-        min?: number | undefined;
-        max?: number | undefined;
         step?: number | undefined;
         capability?:
           | "connector"
@@ -328,13 +329,13 @@ export type PluginField = {
   id: string;
   label: string;
   options?: { value: string; label: string }[] | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
   required?: boolean | undefined;
   placeholder?: string | undefined;
   helpText?: string | undefined;
   secret?: boolean | undefined;
   defaultValue?: string | number | boolean | undefined;
-  min?: number | undefined;
-  max?: number | undefined;
   step?: number | undefined;
   capability?:
     | "connector"
@@ -444,7 +445,14 @@ export type DeclaredCommand = {
     | { values: string[]; name: string; kind: "enum" }
     | { kind: "literal"; value: string; name?: undefined }
     | {
-        kind: "number" | "id" | "folder" | "text" | "ref" | "https-url";
+        kind:
+          | "number"
+          | "id"
+          | "folder"
+          | "text"
+          | "ref"
+          | "https-url"
+          | "connection-url";
         name: string;
         value?: undefined;
       }
@@ -454,7 +462,14 @@ export type DeclaredCommand = {
           | { values: string[]; name: string; kind: "enum" }
           | { kind: "literal"; value: string; name?: undefined }
           | {
-              kind: "number" | "id" | "folder" | "text" | "ref" | "https-url";
+              kind:
+                | "number"
+                | "id"
+                | "folder"
+                | "text"
+                | "ref"
+                | "https-url"
+                | "connection-url";
               name: string;
               value?: undefined;
             }
@@ -567,10 +582,10 @@ export type BacklogSyncWorkItem = {
 export type BacklogSyncResult = {
   items: {
     title: string;
+    connectionId: string;
     sourceId: string;
     source: string;
     tenantLabel: string;
-    connectionId: string;
     connectionLabel: string;
     externalId: string;
     workItemType: string;

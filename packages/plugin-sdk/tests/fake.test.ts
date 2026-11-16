@@ -616,3 +616,63 @@ describe("process sessions", () => {
     });
   });
 });
+
+describe("a connection-url slot", () => {
+  const attach = {
+    ...manifest,
+    processes: {
+      executables: { opencode: { names: ["opencode"] } },
+      commands: [
+        {
+          id: "attach",
+          executable: "opencode",
+          args: ["attach", "{server:connection-url}", "-s", "{session:id}"],
+          mode: "terminal" as const,
+        },
+      ],
+    },
+  };
+  const echo = async (request: unknown) => ({
+    exitCode: 0,
+    stdout: JSON.stringify(request),
+    stderr: "",
+  });
+
+  it("is filled with the operation's connection address before processRun sees it", async () => {
+    const fake = createFakeAjour({
+      manifest: attach,
+      connectionUrl: "http://127.0.0.1:4096",
+      processRun: echo,
+    });
+    const result = await fake.process.run({
+      command: "attach",
+      args: { session: "ses_1" },
+    });
+    if (result.started) throw new Error("Expected captured output");
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: "attach",
+      args: { session: "ses_1", server: "http://127.0.0.1:4096" },
+    });
+  });
+
+  it("refuses a value the plugin passes for it", async () => {
+    const fake = createFakeAjour({
+      manifest: attach,
+      connectionUrl: "http://127.0.0.1:4096",
+      processRun: echo,
+    });
+    await expect(
+      fake.process.run({
+        command: "attach",
+        args: { session: "s", server: "http://elsewhere.test" },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("refuses the command in an operation without a connection", async () => {
+    const fake = createFakeAjour({ manifest: attach, processRun: echo });
+    await expect(
+      fake.process.run({ command: "attach", args: { session: "s" } }),
+    ).rejects.toMatchObject({ code: "connection_refused" });
+  });
+});

@@ -484,3 +484,62 @@ it("names each scheme as opening another app on this computer", () => {
     ["t3:", "Opens another app on this computer."],
   ]);
 });
+
+describe("the Access section's handoff connection lines", () => {
+  const withTools = {
+    ...labels,
+    tools: [{ id: "opencode", label: "OpenCode" }],
+  };
+
+  it("lists each tool that hands off through a connection", () => {
+    const items = describeAccess(
+      {
+        ...view,
+        summary: { ...view.summary, handoffConnections: ["opencode"] },
+      },
+      withTools,
+    );
+    expect(
+      items
+        .filter((item) => item.id.startsWith("handoff-connection:"))
+        .map((item) => [item.title, item.detail, item.isNew]),
+    ).toEqual([
+      [
+        "OpenCode hands off through a connection",
+        "Ajour detects the tool and reads its handoffs on the connection its settings pick. Its commands may receive that connection's address.",
+        false,
+      ],
+    ]);
+  });
+
+  it("marks a tool that now uses a connection as New on the consent panel", () => {
+    const items = describeAccess(
+      {
+        ...view,
+        summary: { ...view.summary, handoffConnections: ["opencode"] },
+      },
+      withTools,
+      {
+        onlyNew: true,
+        difference: { ...NOTHING, handoffConnections: ["opencode"] },
+      },
+    );
+    expect(items.map((item) => [item.id, item.isNew])).toEqual([
+      ["handoff-connection:opencode", true],
+    ]);
+  });
+
+  it("names a tool by its id when its label is unknown, and says nothing without one", () => {
+    expect(
+      describeAccess(
+        { ...view, summary: { ...view.summary, handoffConnections: ["x"] } },
+        labels,
+      ).find((item) => item.id === "handoff-connection:x")?.title,
+    ).toBe("x hands off through a connection");
+    expect(
+      describeAccess(view, labels).some((item) =>
+        item.id.startsWith("handoff-connection:"),
+      ),
+    ).toBe(false);
+  });
+});

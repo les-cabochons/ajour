@@ -97,6 +97,41 @@ export interface FakeAjourOptions {
    * that is off is refused, as the broker refuses it.
    */
   access?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The base address of the connection the operation under test runs
+   * through, for a declared command's `connection-url` slots. With a
+   * manifest, the fake fills each such slot with it before `processRun`
+   * sees the request, refuses a value the plugin passes for one, and
+   * refuses the command when no address is supplied, as Ajour does in an
+   * operation without a connection.
+   */
+  connectionUrl?: string;
+}
+
+/**
+ * The names of a declared command's `{name:connection-url}` slots that
+ * apply to a request: those outside conditional groups, and those in a
+ * group whose slot the request passes.
+ */
+function connectionUrlSlots(
+  args: readonly unknown[],
+  given: Readonly<Record<string, unknown>>,
+): string[] {
+  return args.flatMap((arg) => {
+    if (typeof arg === "string") {
+      const match = /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):connection-url\}$/.exec(
+        arg,
+      );
+      return match ? [match[1]!] : [];
+    }
+    if (arg && typeof arg === "object" && "args" in arg) {
+      const group = arg as { if?: string; args: readonly unknown[] };
+      return group.if !== undefined && Object.hasOwn(given, group.if)
+        ? connectionUrlSlots(group.args, given)
+        : [];
+    }
+    return [];
+  });
 }
 
 export interface FakeLogLine {
@@ -374,6 +409,32 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
             name: "AjourProcessError",
             code: "undeclared",
           });
+        if ("command" in request && manifest) {
+          const command = manifest.processes?.commands?.find(
+            (candidate) => candidate.id === request.command,
+          );
+          const slots = connectionUrlSlots(command?.args ?? [], request.args);
+          if (slots.some((slot) => Object.hasOwn(request.args, slot)))
+            throw Object.assign(
+              new Error("Ajour fills a connection-url argument itself."),
+              { name: "AjourProcessError", code: "invalid_request" },
+            );
+          if (slots.length && options.connectionUrl === undefined)
+            throw Object.assign(
+              new Error("No connection address fixture supplied."),
+              { name: "AjourProcessError", code: "connection_refused" },
+            );
+          if (slots.length)
+            return options.processRun({
+              ...request,
+              args: {
+                ...request.args,
+                ...Object.fromEntries(
+                  slots.map((slot) => [slot, options.connectionUrl!]),
+                ),
+              },
+            });
+        }
         return options.processRun(request);
       },
       session: sessions.api,

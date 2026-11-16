@@ -36,7 +36,8 @@ export type {
  * it. The Access section lists the summary, and consent on updates uses the
  * difference: an update widens access when it adds a capability, an auth
  * scheme, a host, a derived host, an endpoint, a public host, a request
- * header, an MCP tool or an agent prompt change, lets a connection be marked
+ * header, an MCP tool, a handoff tool that uses a connection or an agent
+ * prompt change, lets a connection be marked
  * on-premises, marks an access choice always on, adds an operation to an
  * access choice, or switches to "Always ready" (spec #381). It also widens
  * when it removes a gate: an endpoint no longer behind its access choice, or
@@ -54,6 +55,9 @@ export interface PluginAccessManifest {
   capabilities: Record<string, unknown> & {
     agentTask?: {
       tasks: readonly { id: string; tools?: readonly string[] }[];
+    };
+    handoff?: {
+      tools: readonly { id: string; connection?: "required" | "none" }[];
     };
   };
   network?: PluginNetwork;
@@ -101,6 +105,10 @@ export function summarizePluginAccess(
   const network = manifest.network;
   const tasks = manifest.capabilities.agentTask?.tasks ?? [];
   const auth = network?.auth;
+  const handoffConnections = (manifest.capabilities.handoff?.tools ?? [])
+    .filter((tool) => tool.connection === "required")
+    .map((tool) => tool.id)
+    .sort();
   const hosts: PluginAccessHost[] = [];
   if (auth?.scheme === "secretAddress") {
     hosts.push({ kind: "secretAddress", field: auth.secretField });
@@ -169,6 +177,11 @@ export function summarizePluginAccess(
               : command.mode === "session"
                 ? "Keeps a program running and talks to it."
                 : "Opens in your terminal.",
+          command.args
+            .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
+            .some((arg) => arg.kind === "connection-url")
+            ? "Receives the connection's address."
+            : "",
           command.mode === "session"
             ? `Ends after ${idleWords(command.idleTimeoutSeconds ?? 300)} unused, and when Ajour quits.`
             : command.stdin === "text"
@@ -191,6 +204,9 @@ export function summarizePluginAccess(
       .sort(byText((command) => command.id)),
     undeclaredCommands: manifest.processes?.undeclaredCommands === true,
     openSchemes: [...new Set(manifest.processes?.openSchemes ?? [])].sort(),
+    // Only when a tool has one, so every other plugin's summary, and the
+    // consent saved with it, stays as it was.
+    ...(handoffConnections.length ? { handoffConnections } : {}),
     mcpTools: tasks
       .flatMap((task) =>
         (task.tools ?? []).map((tool) => ({ task: task.id, tool })),
@@ -359,6 +375,7 @@ export function pluginAccessDifference(
       next.openSchemes ?? [],
       String,
     ),
+    ...handoffConnectionsAdded(before, next),
     mcpTools: added(before.mcpTools, next.mcpTools, mcpToolKey),
     agentPrompts: next.agentPrompts
       .filter((entry) => prompts.get(entry.task) !== entry.prompt)
@@ -377,6 +394,19 @@ export function pluginAccessDifference(
   };
 }
 
+/** The tools that now use a connection, only when there are some. */
+function handoffConnectionsAdded(
+  before: PluginAccessSummary,
+  next: PluginAccessSummary,
+) {
+  const tools = added(
+    before.handoffConnections ?? [],
+    next.handoffConnections ?? [],
+    String,
+  );
+  return tools.length ? { handoffConnections: tools } : {};
+}
+
 /** Whether an update needs the user's consent before it runs. */
 export function widensAccess(difference: PluginAccessDifference) {
   return (
@@ -392,6 +422,7 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.publicHosts,
       difference.commands ?? [],
       difference.openSchemes ?? [],
+      difference.handoffConnections ?? [],
       difference.mcpTools,
       difference.agentPrompts,
       difference.alwaysOnAccess,

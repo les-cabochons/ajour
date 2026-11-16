@@ -102,12 +102,30 @@ const PLUGIN_API_4_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   validateConnection: ["connection", "context"],
 };
 
+/**
+ * A handoff tool that uses a connection receives it first, as every other
+ * networked operation does. A tool without one keeps its arguments.
+ */
+const HANDOFF_CONNECTION_ARGUMENTS: Partial<
+  Record<PluginMethod, ArgumentNames>
+> = {
+  detectTools: ["connection"],
+  startHandoff: CONNECTION_AND_REQUEST,
+  readHandoffStates: CONNECTION_AND_REQUEST,
+};
+
 /** The arguments a plugin export receives from the host's named parameters. */
 export function pluginMethodArguments(
   method: PluginMethod,
   params: Record<string, unknown>,
   apiVersion = 3,
 ): unknown[] {
+  if (
+    apiVersion === 4 &&
+    params.connection !== undefined &&
+    Object.hasOwn(HANDOFF_CONNECTION_ARGUMENTS, method)
+  )
+    return HANDOFF_CONNECTION_ARGUMENTS[method]!.map((name) => params[name]);
   return argumentsOf(
     apiVersion === 4 ? PLUGIN_API_4_METHOD_ARGUMENTS : PLUGIN_METHOD_ARGUMENTS,
     "plugin",

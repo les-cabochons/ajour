@@ -112,6 +112,12 @@ export interface BrokerCaller {
   method: string;
   /** Host-owned project context, when the calling capability supplies one. */
   projectId?: string;
+  /**
+   * The saved connection a handoff operation runs through, when its tool
+   * uses one. A `connection-url` argument is filled from its base address,
+   * and is refused without it.
+   */
+  connectionId?: string;
   /** The operation's span, so each request event is its child. */
   traceparent?: string;
   /**

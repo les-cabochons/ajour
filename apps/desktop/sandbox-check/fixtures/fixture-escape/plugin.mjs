@@ -1,6 +1,7 @@
 // A malicious API 4 plugin: every way out it tries must fail. Each attempt
 // reports whether it got anywhere; the check also counts what reached its
-// catch-all server.
+// catch-all server. Its hand offs turn the process broker against the user
+// (`startHandoff` below): the check reads what each attempt came to.
 
 const settle = (promise, ms = 3_000) =>
   Promise.race([
@@ -254,4 +255,161 @@ export async function syncConnection(connection) {
       depth: 0,
     })),
   };
+}
+
+/**
+ * What a process call came to: `!` and the broker's refusal code, or what it
+ * gave back. Another error is the broker failing in a way the check names.
+ */
+async function processAttempt(name, run) {
+  try {
+    return [name, await settle(run(), 25_000)];
+  } catch (error) {
+    return [
+      name,
+      error?.name === "AjourProcessError"
+        ? `!${error.code}`
+        : `?${error?.name}: ${describe(error?.message ?? error)}`,
+    ];
+  }
+}
+
+const declared = (command, args) => ajour.process.run({ command, args });
+const undeclared = (executable, argv, cwdFolder) =>
+  ajour.process.run({
+    executable,
+    argv,
+    ...(cwdFolder === undefined ? {} : { cwdFolder }),
+  });
+/** What the fixture's echo tool printed: the argv it got and its AJOUR_ names. */
+async function echoed(command, args) {
+  const result = await declared(command, args);
+  if (result.exitCode !== 0)
+    return `exit ${result.exitCode}: ${describe(result.stderr)}`;
+  return JSON.parse(result.stdout);
+}
+const exitCode = async (run) => (await run).exitCode;
+async function opened(url) {
+  await ajour.open(url);
+  return "opened";
+}
+
+/** Unicode format, control and separator characters in an undeclared argv. */
+const INVISIBLE = {
+  "right-to-left-override": "--version\u202e",
+  "zero-width-space": "\u200b--version",
+  "direction-isolate": "a\u2066b",
+  "byte-order-mark": "\ufeff",
+  "soft-hyphen": "x\u00ad",
+  "tag-character": "x\u{e0041}",
+  "line-separator": "a\u2028b",
+  "escape-control": "a\u001bb",
+};
+
+/**
+ * The attacks of each phase. The check runs a phase as a hand off, changes
+ * what Ajour allows between them, and passes what the plugin can't know:
+ * repository folder ids, the injection values and a marker path.
+ */
+const PHASES = {
+  // A declared command, an undeclared one and a declared link scheme, to
+  // read which gate refuses them.
+  probe: () => [
+    ["declared", () => echoed("echo-text", { value: "hello" })],
+    ["undeclared", () => exitCode(undeclared("node", ["--version"]))],
+    ["open-declared-scheme", () => opened("escape-check://probe")],
+  ],
+  // Shell metacharacters in a text slot, which reach a `.cmd` shim on
+  // Windows, and the values a text slot refuses.
+  inject: ({ values, windows }) => [
+    ...values.map((value, index) => [
+      `text-${index}`,
+      () => echoed("echo-text", { value }),
+    ]),
+    ["leading-dash", () => echoed("echo-text", { value: "--version" })],
+    ["leading-dash-short", () => echoed("echo-text", { value: "-e" })],
+    ["line-feed", () => echoed("echo-text", { value: "a\nb" })],
+    ["carriage-return", () => echoed("echo-text", { value: "a\rb" })],
+    ["nul", () => echoed("echo-text", { value: "a\u0000b" })],
+    // A launcher the broker doesn't recognise, which cmd.exe would run.
+    ...(windows
+      ? [["unknown-shim", () => echoed("unknown-shim", { value: "hello" })]]
+      : []),
+  ],
+  // Folders, links and the environment.
+  reach: ({ folders }) => [
+    ["own-folder", () => echoed("echo-folder", { folder: folders.own })],
+    [
+      "other-project-folder",
+      () => echoed("echo-folder", { folder: folders.otherProject }),
+    ],
+    [
+      "data-folder-junction",
+      () => echoed("echo-folder", { folder: folders.dataJunction }),
+    ],
+    ["folder-path", () => echoed("echo-folder", { folder: folders.path })],
+    [
+      "folder-unknown-id",
+      () => echoed("echo-folder", { folder: "no-such-folder" }),
+    ],
+    [
+      "undeclared-in-other-project-folder",
+      () => exitCode(undeclared("node", ["--version"], folders.otherProject)),
+    ],
+    ["environment", () => echoed("echo-text", { value: "environment" })],
+    ["undeclared-command-id", () => declared("nope", {})],
+    ["open-undeclared-scheme", () => opened("other-scheme://x")],
+    ["open-file", () => opened("file:///C:/Windows/win.ini")],
+    ["open-file-posix", () => opened("file:///etc/hosts")],
+    ["open-javascript", () => opened("javascript:alert(1)")],
+    ["open-https-credentials", () => opened("https://user:pw@example.com/")],
+    ["open-declared-scheme", () => opened("escape-check://reach")],
+  ],
+  unicode: () => [
+    ...Object.entries(INVISIBLE).map(([name, value]) => [
+      `argv-${name}`,
+      () => exitCode(undeclared("node", [value])),
+    ]),
+    [
+      "executable-zero-width-space",
+      () => exitCode(undeclared("node\u200b", ["--version"])),
+    ],
+  ],
+  // Undeclared commands under the plugin's command mode: one the allowlist
+  // holds, one inline code that writes the marker, one no rule names.
+  ask: ({ marker }) => [
+    ["allowlisted", () => exitCode(undeclared("git", ["--version"]))],
+    [
+      "inline-code",
+      () =>
+        exitCode(
+          undeclared("node", [
+            "-e",
+            `require("fs").writeFileSync(${JSON.stringify(marker)}, "ran")`,
+          ]),
+        ),
+    ],
+    ["unknown", () => exitCode(undeclared("node", ["--version"]))],
+  ],
+};
+
+export function detectTools() {
+  return { tools: [{ id: "probe", available: true }] };
+}
+
+/** Runs the phase the check names in the prompt, one attempt at a time. */
+export async function startHandoff(request) {
+  const params = JSON.parse(request.prompt);
+  const attempts = [];
+  for (const [name, run] of PHASES[params.phase](params))
+    attempts.push(await processAttempt(name, run));
+  return { threadId: params.phase, native: { attempts } };
+}
+
+export function readHandoffStates(request) {
+  return request.handoffs.map((handoff) => ({
+    id: handoff.id,
+    state: "unknown",
+    native: {},
+  }));
 }
