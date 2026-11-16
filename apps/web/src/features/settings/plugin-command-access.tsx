@@ -67,8 +67,16 @@ export function CommandAccessControls({
               className="flex items-start justify-between gap-3 border-b py-2"
             >
               <div className="min-w-0">
-                <pre className="text-xs break-all whitespace-pre-wrap">
-                  {displayCommandLine([a.executable, ...a.argv])}
+                <pre
+                  dir="ltr"
+                  className="text-xs break-all whitespace-pre-wrap"
+                >
+                  {[a.executable, ...a.argv].map((argument, index) => (
+                    <span key={index}>
+                      {index > 0 ? " " : null}
+                      <bdi>{displayCommandLine([argument])}</bdi>
+                    </span>
+                  ))}
                 </pre>
                 <p className="text-xs text-muted-foreground">
                   Folder:{" "}

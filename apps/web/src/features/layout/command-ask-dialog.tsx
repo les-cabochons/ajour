@@ -42,17 +42,27 @@ export function CommandAskDialog({
     >
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{ask.pluginName} wants to run a command</DialogTitle>
+          <DialogTitle>
+            {displayCommandText(ask.pluginName)} wants to run a command
+          </DialogTitle>
           <DialogDescription>
             Commands run as you, outside the sandbox. This request is denied
             after two minutes.
           </DialogDescription>
         </DialogHeader>
+        {/* Left to right, each argument isolated, so right-to-left text can't
+            visually reorder arguments. */}
         <pre
           aria-label="Exact command arguments"
+          dir="ltr"
           className="overflow-auto text-xs break-all whitespace-pre-wrap"
         >
-          {displayCommandLine([ask.executable, ...ask.argv])}
+          {[ask.executable, ...ask.argv].map((argument, index) => (
+            <span key={index}>
+              {index > 0 ? " " : null}
+              <bdi>{displayCommandLine([argument])}</bdi>
+            </span>
+          ))}
         </pre>
         <p>
           Plugin: {ask.pluginId}, {ask.signed ? "Signed" : "Unsigned"}

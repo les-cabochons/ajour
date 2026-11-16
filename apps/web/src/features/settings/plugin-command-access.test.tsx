@@ -98,10 +98,14 @@ it("Given a remembered folder, shows its name and path and visible non-ASCII whi
     "Folder: Repo C:\\repo",
   );
   expect(document.body.textContent).not.toContain("opaque-id");
-  expect(screen.getByText("git a\\u{A0}b")).toBeTruthy();
-  expect(
-    screen.getByText(
-      '"C:\\Program Files\\Git\\cmd\\git.exe" -C C:\\repo status',
-    ),
-  ).toBeTruthy();
+  // Each argument is isolated left to right, so read each line's whole text.
+  const lines = [...document.querySelectorAll("pre")].map((pre) => {
+    expect(pre.getAttribute("dir")).toBe("ltr");
+    expect(pre.querySelectorAll("bdi").length).toBeGreaterThan(0);
+    return pre.textContent;
+  });
+  expect(lines).toContain("git a\\u{A0}b");
+  expect(lines).toContain(
+    '"C:\\Program Files\\Git\\cmd\\git.exe" -C C:\\repo status',
+  );
 });
