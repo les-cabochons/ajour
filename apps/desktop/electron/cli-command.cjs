@@ -28,6 +28,20 @@ const PLATFORM_NAMES = {
   linux: { os: "linux", label: "Linux", extension: "tar.gz" },
 };
 
+/** Shared by the CLI installer and repository-folder protection. */
+function cliInstallDirectory({ platform, packaged, home, env }) {
+  return (
+    (!packaged && env.AJOUR_CLI_INSTALL_DIR) ||
+    (platform === "darwin"
+      ? path.join(home, "Library", "Application Support", "Ajour", "bin")
+      : path.join(
+          env.LOCALAPPDATA || path.join(home, "AppData", "Local"),
+          "Ajour",
+          "bin",
+        ))
+  );
+}
+
 /** The release asset of `platform` and `arch`, or null where none ships. */
 function cliAssetName(platform, arch, version) {
   const names = PLATFORM_NAMES[platform];
@@ -1678,6 +1692,7 @@ function createCliCommandController({
 
 module.exports = {
   MAX_DOWNLOAD_BYTES,
+  cliInstallDirectory,
   cliAssetName,
   createCliCommandController,
 };

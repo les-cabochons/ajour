@@ -27,6 +27,7 @@
  * @satisfies {Record<string, IpcChannel>}
  */
 const IPC_CHANNELS = {
+  "ajour:choose-folder": { event: "repository_folder.choose", mode: "invoke" },
   "ajour:get-bootstrap-local-state": {
     event: "local_state.recover",
     mode: "sync",

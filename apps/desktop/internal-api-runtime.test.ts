@@ -12,6 +12,10 @@ const {
   createIpcListeners,
   refusedSender,
 } = require("./electron/ipc-listeners.cjs");
+const {
+  protectedRepositoryFolders,
+  createFolderChooser,
+} = require("./electron/repository-folders.cjs");
 const { pluginInstallResultOf } = require("./electron/plugin-install.cjs");
 
 const servers: Server[] = [];
@@ -98,6 +102,8 @@ async function runtime(
   const mainSink = { emit: vi.fn() };
   const showMessageBox = vi.fn(async () => ({ response: answer }));
   const context = vm.createContext({
+    protectedRepositoryFolders,
+    createFolderChooser,
     mainEventSink: Promise.resolve(mainSink),
     http,
     path,
@@ -119,6 +125,8 @@ async function runtime(
       uninstallPluginForServer: uninstall,
     }),
     internalAppApiEntryPath: "fixture/server.ts",
+    internalAppApiRuntimeRoot: "/fixture",
+    os: { homedir: () => "/fixture-home" },
     internalAppApiVault: () => undefined,
     internalAppApiBrokerNetwork: () => ({
       transport: "broker-transport",
@@ -126,7 +134,11 @@ async function runtime(
     }),
     internalAppApiPluginRuntime: () => "plugin-renderer-runtime",
     existsSync: () => true,
-    app: { isPackaged: true, getPath: () => "/fixture" },
+    app: {
+      isPackaged: true,
+      getPath: () => "/fixture",
+      getAppPath: () => "/fixture",
+    },
     mainWindow: { webContents: "active-window" },
     dialog: { showMessageBox },
     pluginCatalogSettings: { allowUnsignedInstalls },

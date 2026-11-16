@@ -28,6 +28,9 @@ export type ClientEventName = {
  * name here.
  */
 export const APP_API_CLIENT = {
+  listRepositoryFolders: "repository_folder.list",
+  removeRepositoryFolder: "repository_folder.remove",
+  useRepositoryFolder: "repository_folder.use",
   syncCodeHostConnection: "pull_request.sync",
   getProjectDataShapePlugins: "schema.list",
   exportProjectsWithDataShape: "project.export",
