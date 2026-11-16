@@ -979,6 +979,8 @@ channel to read the event each emits.
 | `handoff.refresh`                    | request, plugin_operation, job, command | route, plugin method, client call, local API     |
 | `handoff.remove`                     | request, plugin_operation, job, command | route, client call                               |
 | `handoff.start`                      | request, plugin_operation, job, command | route, plugin method, client call                |
+| `handoff.templates_read`             | request, job                            | route, client call                               |
+| `handoff.templates_update`           | request, command                        | route, client call                               |
 | `handoff.visibility`                 | request, job                            | route, client call                               |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
