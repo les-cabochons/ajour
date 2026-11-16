@@ -1134,6 +1134,7 @@ describe("state files from earlier versions", () => {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginProcesses: {},
     pluginRuntimeSettings: {},
     pluginConsent: {},
   };

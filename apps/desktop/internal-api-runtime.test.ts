@@ -112,7 +112,11 @@ async function runtime(
     launch: { launch_id: "launch-1" },
     apiLaunchOf: () => ({ id: "launch-1" }),
     refusedSender,
-    process: { env: {} },
+    process: {
+      env: {},
+      platform: "win32",
+      execPath: "C:/fixture/install/Ajour.exe",
+    },
     INTERNAL_APP_API_HOST: "127.0.0.1",
     INTERNAL_APP_API_PORT: port,
     windowApiToken: "launch-token",

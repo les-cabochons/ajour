@@ -126,6 +126,49 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 Plugins use the API 4 sandbox and credential broker defined by ADR 0007 and ADR 0010.
 
+### Process broker
+
+`ProcessBrokerPort.forOperation(caller)` in `apps/api/src/broker-port.ts` gives
+one runtime operation access to declared `capture` commands. The runtime supplies
+the plugin id and manifest. The host closes this access when the operation ends,
+including cancellation and timeout. `ajour.open` reports that opening links is not yet supported.
+The SDK's `ajour.process.run` follows the
+worker, host page, preload invoke, main and API path used by `ajour.http`. The
+page replaces the worker's run id and main accepts only its sender's own runs.
+
+`ProcessBroker` validates typed argument slots and conditional groups. Folder
+slots resolve repository ids through `FolderResolver.resolve`, which returns an
+absolute path or refuses. The server and process broker share the repository-folder
+resolver and its `protectedRepositoryFolders` roots. It rechecks canonical paths,
+filesystem identities and ancestors, and refuses local UNC and device paths.
+The broker resolves only saved folder ids. It checks project ownership when the
+caller supplies `projectId`; current operations have no project context until
+handoff #719 supplies one. Canonical paths inside or containing protected roots
+are refused. Executables come from the user's PATH, including
+the macOS login PATH, or a user override persisted in API state. Every spawn
+passes through `resolveSpawn` with an argv list and `shell: false`. Children
+inherit no `AJOUR_` variable and start at the filesystem root, never Ajour's
+working directory.
+
+Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
+The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
+calls may run concurrently per plugin across operations. Timeout, excess output
+and operation completion stop the owned process tree with Windows taskkill or a
+POSIX process group. The broker checks activation and consent before starting;
+#714 supplies the additional unsigned process gates, and #716 supplies command
+modes. Undeclared commands are refused. Detached and terminal commands report
+that they are not yet supported, pending #718.
+
+`GET /api/plugins/:pluginId/processes` returns user overrides, the last started process time
+and refused count. `POST` accepts `{ executable, path }`, with an absolute path
+or null to remove the override. These routes use the API's window authentication;
+plugins cannot call them. The settings UI is a follow-up. Each call emits one
+`plugin.process` event with declared identifiers and outcomes, never arguments,
+stdin, output or paths. Process activity gathers in memory and flushes with broker
+activity, including at shutdown. Only a started process updates the last run time.
+Data shape plugins cannot declare processes and receive no process broker.
+Process access has the credential limitations of ADR 0019.
+
 Backlog, code host, calendar, team and project source are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
 serve all of them. A project source (`projectSource`, plugin API 4) is read-only:

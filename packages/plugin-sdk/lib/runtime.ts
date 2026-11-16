@@ -92,12 +92,28 @@ export interface AjourRequestError extends Error {
   code: AjourRequestErrorCode;
 }
 
+export interface AjourProcessError extends Error {
+  name: "AjourProcessError";
+  code: string;
+}
+export interface AjourProcessRequest {
+  command: string;
+  args: Readonly<Record<string, string | number>>;
+  stdin?: string;
+}
+export interface AjourProcessResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
 /**
  * The `ajour` global a plugin's code receives in its sandboxed worker. It
  * is the plugin's one way out: there is no `fetch` to the network, no Node
  * and no `Buffer`.
  */
 export interface Ajour {
+  open(url: string): Promise<void>;
+  process: { run(request: AjourProcessRequest): Promise<AjourProcessResult> };
   /** Sends a request through one of the plugin's connections. */
   http(request: AjourHttpRequest): Promise<AjourResponse>;
   /**

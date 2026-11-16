@@ -1,3 +1,6 @@
+import type { BrokerCaller } from "./broker-port.ts";
+import type { AppApiStorage } from "./storage.ts";
+import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import {
   NO_PLUGIN_ACCESS,
   pluginAccessDifference,
@@ -59,4 +62,38 @@ export function decideUpdateConsent(input: {
       ? { record: { version: next.version, access: next.access, at } }
       : {}),
   };
+}
+
+/** Rechecked immediately before spawn, against current activation and consent. */
+export async function processConsentGate(
+  storage: Pick<AppApiStorage, "isPluginEnabled" | "getPluginConsent">,
+  caller: BrokerCaller,
+): Promise<"plugin_off" | "needs_consent" | undefined> {
+  if (
+    !(await storage.isPluginEnabled(
+      caller.pluginId,
+      new Map([[caller.pluginId, undefined]]),
+    ))
+  )
+    return "plugin_off";
+  const consent = await storage.getPluginConsent(caller.pluginId);
+  const commands = summarizePluginAccess(caller.manifest, {
+    agentPrompts: Object.fromEntries(
+      (caller.manifest.capabilities.agentTask?.tasks ?? []).map((t) => [
+        t.id,
+        "",
+      ]),
+    ),
+  }).commands;
+  if (
+    !consent ||
+    (commands ?? []).some(
+      (c) =>
+        !(consent.access.commands ?? []).some(
+          (a) => a.id === c.id && a.policy === c.policy,
+        ),
+    )
+  )
+    return "needs_consent";
+  return undefined;
 }

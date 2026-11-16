@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { ProcessBroker } from "./process-broker.ts";
+import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import {
   createServer,
@@ -181,7 +184,7 @@ import {
   type PluginAdmitted,
   type PluginMethod,
 } from "./plugin-host.ts";
-import { decideUpdateConsent } from "./plugin-consent.ts";
+import { decideUpdateConsent, processConsentGate } from "./plugin-consent.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -351,6 +354,7 @@ interface AppApiRuntime {
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
+  processBroker: ProcessBroker;
   stopping: boolean;
   pluginDrainMs: number;
   /**
@@ -1349,8 +1353,29 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const developmentPluginDirectories =
     options.developmentPluginDirectories ??
     (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
+  const folderResolver = new FolderResolver(
+    storage,
+    options.protectedRepositoryFolders ?? {
+      userData: path.dirname(statePath),
+      install: path.resolve(import.meta.dirname, "../.."),
+    },
+  );
+  const processBroker = new ProcessBroker({
+    folders: folderResolver,
+    gate: (caller) => processConsentGate(storage, caller),
+    executableOverride: async (pluginId, executable) => {
+      const { overrides } = await storage.getPluginProcessSettings(pluginId);
+      return Object.hasOwn(overrides, executable)
+        ? overrides[executable]
+        : undefined;
+    },
+    record: (pluginId, at, refused, started) =>
+      storage.recordPluginProcess(pluginId, at, refused, started),
+    events,
+  });
   const pluginManager: PluginManager = new PluginManager({
     broker,
+    processBroker,
     installedPluginDirectory:
       options.installedPluginDirectory ??
       defaultInstalledPluginDirectory(options.statePath),
@@ -1506,12 +1531,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
   });
   const runtime: AppApiRuntime = {
-    folderResolver: new FolderResolver(
-      storage,
-      options.protectedRepositoryFolders ?? {
-        userData: path.dirname(statePath),
-      },
-    ),
+    folderResolver,
     events,
     openSockets: new Set(),
     cutOffSockets: new WeakSet(),
@@ -1520,6 +1540,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     pluginManager,
     projectDataShapePluginManager,
     agentRunner,
+    processBroker,
     stopping: false,
     pluginDrainMs: options.pluginDrainMs ?? 5_000,
     inFlight: new Set(),
@@ -2168,6 +2189,45 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    pluginProcessRead: async ({ response, params, unit }) => {
+      unit.set({
+        plugin: { id: readInput(() => pluginIdSchema.parse(params.pluginId)) },
+      });
+      writeJson(
+        response,
+        200,
+        await storage.getPluginProcessSettings(
+          readInput(() => pluginIdSchema.parse(params.pluginId)),
+        ),
+      );
+    },
+    pluginProcessUpdate: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const payload = await readRequest(
+        request,
+        z
+          .object({
+            executable: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,79}$/),
+            path: z
+              .string()
+              .max(32767)
+              .refine((v) => path.isAbsolute(v) && !/[\0\r\n]/.test(v))
+              .nullable(),
+          })
+          .strict(),
+      );
+      await storage.setPluginProcessOverride(
+        pluginId,
+        payload.executable,
+        payload.path,
+      );
+      writeJson(
+        response,
+        200,
+        await storage.getPluginProcessSettings(pluginId),
+      );
+    },
     pluginRuntimeUpdate: async ({ request, response, params, unit }) => {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });
@@ -4298,11 +4358,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     void agentRunner.shutdown();
     // A stop closes the server first, and drains the plugins itself.
     if (!runtime.stopping) {
-      void pluginManager.shutdown();
-      void projectDataShapePluginManager.shutdown();
+      void (async () => {
+        await Promise.all([
+          pluginManager.shutdown(),
+          projectDataShapePluginManager.shutdown(),
+        ]);
+        await processBroker.shutdown();
+        await storage.flushBrokerActivity();
+      })().catch(() => undefined);
     }
-    // What the broker gathered for Access review since its last write.
-    storage.flushBrokerActivity().catch(() => undefined);
   });
   return server;
 }
@@ -4591,6 +4655,7 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     await runtime?.agentRunner.shutdown();
     unit?.set({ api: { agent_runner_ms: Date.now() - phaseStartedAt } });
     await pluginsStopped;
+    await runtime?.processBroker.shutdown();
     // No plugin sends a request now: write what the broker gathered for
     // Access review since its last write, so a quit loses none.
     await runtime?.storage.flushBrokerActivity().catch(() => undefined);

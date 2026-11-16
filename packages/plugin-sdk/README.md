@@ -319,6 +319,37 @@ These commands and links run as you, outside the sandbox. A plugin that starts p
 is outside G1. A process can read your files and access every plugin's credentials, not only its own.
 Ajour's sandbox network policy does not restrict external processes or apps.
 
+## Declared processes
+
+Declare commands in the manifest's `processes` block, then call:
+
+```ts
+const result = await ajour.process.run({
+  command: "thread-start",
+  args: { folder: repositoryFolderId, title: "Fix login" },
+  stdin: prompt,
+});
+```
+
+`command` is a declared command id. `args` maps slot names to values, with numbers
+accepted for number slots. Each filled slot stays one argument. A folder value is
+a repository folder id the host resolves, never a path. Put multiline text on
+stdin, which requires `stdin: "text"` in the declaration. Conditional groups run
+when their controlling slot is present, and then require all their slots.
+
+Only `capture` is available. It returns `{ exitCode, stdout, stderr }`, including
+nonzero exit codes. Output is limited to 1 MB per stream. The declared timeout
+defaults to 60 seconds. Four calls may run at once per plugin. Ending the plugin
+operation cancels its children. Refusals reject with `AjourProcessError` and a
+`code` such as `invalid_request`, `undeclared`, `not_yet`, `concurrency`,
+`output_limit`, `timeout` or `operation_ended`. The test fake accepts a
+`processRun` responder and otherwise refuses process requests.
+
+The user must turn the plugin on and approve its declared commands. Undeclared
+commands, detached and terminal commands are refused for now. A process runs as
+the user outside the plugin sandbox and can reach the user's files and
+credentials. See ADR 0019 in Ajour's repository.
+
 ## License
 
 MIT

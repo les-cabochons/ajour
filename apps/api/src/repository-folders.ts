@@ -129,8 +129,9 @@ export class FolderResolver {
     );
   }
 
-  async resolve(id: string, projectId: string): Promise<string> {
-    if (!projectId?.trim()) throw new Error("Choose a project.");
+  async resolve(id: string, projectId?: string): Promise<string> {
+    if (projectId !== undefined && !projectId.trim())
+      throw new Error("Choose a project.");
     const folder = (await this.storage.listRepositoryFolders(projectId)).find(
       (folder) => folder.id === id,
     );

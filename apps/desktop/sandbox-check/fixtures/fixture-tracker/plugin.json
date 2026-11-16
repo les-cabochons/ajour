@@ -6,7 +6,12 @@
   "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
   "entrypoint": "lib/plugin.mjs",
   "connectionFields": [
-    { "id": "baseUrl", "label": "Address", "type": "url", "required": true },
+    {
+      "id": "baseUrl",
+      "label": "Address",
+      "type": "url",
+      "required": true
+    },
     {
       "id": "token",
       "label": "Token",
@@ -15,14 +20,44 @@
       "secret": true
     }
   ],
-  "capabilities": { "connector": {} },
+  "capabilities": {
+    "connector": {}
+  },
   "network": {
-    "auth": { "scheme": "bearer", "secretField": "token" },
-    "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
+    "auth": {
+      "scheme": "bearer",
+      "secretField": "token"
+    },
+    "baseAddress": {
+      "field": "baseUrl",
+      "allowOnPremises": true
+    },
     "endpoints": [
-      { "method": "GET", "path": "/api/me" },
-      { "method": "GET", "path": "/api/items" }
+      {
+        "method": "GET",
+        "path": "/api/me"
+      },
+      {
+        "method": "GET",
+        "path": "/api/items"
+      }
     ],
     "requestHeaders": ["Accept"]
+  },
+  "processes": {
+    "executables": {
+      "node": {
+        "names": ["node"]
+      }
+    },
+    "commands": [
+      {
+        "id": "version",
+        "executable": "node",
+        "args": ["--version"],
+        "mode": "capture",
+        "timeoutSeconds": 10
+      }
+    ]
   }
 }

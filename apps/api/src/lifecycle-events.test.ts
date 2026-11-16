@@ -1,9 +1,11 @@
+import { ProcessBroker } from "./process-broker.ts";
+import { AppApiStorage } from "./storage.ts";
 import { STATE_VERSION } from "./state-migrations.ts";
 import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
@@ -326,4 +328,34 @@ describe("local API crash events", () => {
     expect(named(quiet.events, "app.error")).toEqual([]);
     expect(named(watching.events, "app.error")).toEqual([]);
   });
+});
+
+it("Given broker shutdown still settling, API waits before flushing and waits for the flush", async () => {
+  const { stop } = await start(await tempRoot());
+  let releaseBroker!: () => void, releaseWrite!: () => void;
+  const brokerGate = new Promise<void>((r) => (releaseBroker = r));
+  const writeGate = new Promise<void>((r) => (releaseWrite = r));
+  const shutdown = vi
+    .spyOn(ProcessBroker.prototype, "shutdown")
+    .mockImplementation(() => brokerGate);
+  const flush = vi
+    .spyOn(AppApiStorage.prototype, "flushBrokerActivity")
+    .mockImplementation(() => writeGate);
+  let done = false;
+  const stopping = stop().then(() => {
+    done = true;
+  });
+  try {
+    await vi.waitFor(() => expect(shutdown).toHaveBeenCalled());
+    expect(flush).not.toHaveBeenCalled();
+    releaseBroker();
+    await vi.waitFor(() => expect(flush).toHaveBeenCalled());
+    expect(done).toBe(false);
+  } finally {
+    releaseBroker();
+    releaseWrite();
+    await stopping;
+    shutdown.mockRestore();
+    flush.mockRestore();
+  }
 });

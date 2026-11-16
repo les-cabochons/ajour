@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   repositoryFolderSchema,
   type RepositoryFolder,
@@ -474,6 +475,14 @@ interface AppApiStateV8 {
    * requests, those that named no saved connection of the plugin included.
    */
   pluginBrokerActivity: Record<string, BrokerActivityRecord>;
+  pluginProcesses: Record<
+    string,
+    {
+      overrides: Record<string, string>;
+      lastRunAt?: number;
+      refusedCount: number;
+    }
+  >;
   /**
    * Per plugin API 4 plugin, its Advanced section: Start and Memory
    * ceiling. A plugin left at its own choices has no entry.
@@ -623,6 +632,7 @@ function createDefaultState(): AppApiState {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginProcesses: {},
     pluginRuntimeSettings: {},
     pluginConsent: {},
   };
@@ -1152,6 +1162,20 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         return normalized ? [[pluginId, normalized] as const] : [];
       }),
     ),
+    pluginProcesses: Object.fromEntries(
+      Object.entries(
+        z.record(z.unknown()).catch({}).parse(raw.pluginProcesses),
+      ).flatMap(([id, value]) => {
+        const parsed = z
+          .object({
+            overrides: z.record(z.string()).default({}),
+            lastRunAt: z.number().finite().optional(),
+            refusedCount: z.number().nonnegative().default(0),
+          })
+          .safeParse(value);
+        return parsed.success ? [[id, parsed.data]] : [];
+      }),
+    ),
     pluginRuntimeSettings: normalizePluginRuntimeSettings(
       raw.pluginRuntimeSettings,
     ),
@@ -1253,10 +1277,15 @@ export class AppApiStorage {
     string,
     BrokerActivityDelta
   >();
+  private readonly processActivityPending = new Map<
+    string,
+    { refusedCount: number; lastRunAt?: number }
+  >();
   private readonly brokerActivityWindowMs: number;
   /** How many times each plugin's data was removed, for a flush in flight. */
   private readonly brokerActivityRemovals = new Map<string, number>();
   private brokerActivityWrittenAt = -Infinity;
+  private brokerActivityFlush?: Promise<void>;
   private brokerActivityTimer?: ReturnType<typeof setTimeout>;
   /**
    * How many times each connection was saved this launch, so a project
@@ -2274,6 +2303,75 @@ export class AppApiStorage {
     });
   }
 
+  /** User executable overrides and process activity for Access review. */
+  private processSettingsIn(state: AppApiState, pluginId: string) {
+    return Object.hasOwn(state.pluginProcesses, pluginId)
+      ? state.pluginProcesses[pluginId]
+      : undefined;
+  }
+  async getPluginProcessSettings(pluginId: string) {
+    const saved = this.processSettingsIn(await this.readState(), pluginId) ?? {
+      overrides: {},
+      refusedCount: 0,
+    };
+    const delta = this.processActivityPending.get(pluginId);
+    return delta
+      ? {
+          ...saved,
+          refusedCount: saved.refusedCount + delta.refusedCount,
+          ...(delta.lastRunAt !== undefined
+            ? { lastRunAt: Math.max(saved.lastRunAt ?? 0, delta.lastRunAt) }
+            : {}),
+        }
+      : saved;
+  }
+  async setPluginProcessOverride(
+    pluginId: string,
+    executable: string,
+    override: string | null,
+  ) {
+    await this.mutate(async (state) => {
+      const previous = this.processSettingsIn(state, pluginId) ?? {
+        overrides: {},
+        refusedCount: 0,
+      };
+      const overrides = { ...previous.overrides };
+      if (override === null) delete overrides[executable];
+      else overrides[executable] = override;
+      return {
+        nextState: {
+          ...state,
+          pluginProcesses: {
+            ...state.pluginProcesses,
+            [pluginId]: { ...previous, overrides },
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
+  recordPluginProcess(
+    pluginId: string,
+    at: number,
+    refused: boolean,
+    started = !refused,
+  ): void {
+    const previous = this.processActivityPending.get(pluginId) ?? {
+      refusedCount: 0,
+    };
+    this.processActivityPending.set(pluginId, {
+      refusedCount: previous.refusedCount + Number(refused),
+      ...(started || previous.lastRunAt !== undefined
+        ? { lastRunAt: Math.max(started ? at : 0, previous.lastRunAt ?? 0) }
+        : {}),
+    });
+    if (this.brokerActivityTimer) return;
+    this.brokerActivityTimer = setTimeout(() => {
+      this.brokerActivityTimer = undefined;
+      this.flushBrokerActivity().catch(() => undefined);
+    }, this.brokerActivityWindowMs);
+    this.brokerActivityTimer.unref?.();
+  }
   /** The plugin's Advanced section: Start and Memory ceiling. */
   async getPluginRuntimeSettings(
     pluginId: string,
@@ -2391,6 +2489,7 @@ export class AppApiStorage {
         pluginId,
         (this.brokerActivityRemovals.get(pluginId) ?? 0) + 1,
       );
+      this.processActivityPending.delete(pluginId);
       for (const [key, delta] of this.brokerActivityPending) {
         if (delta.pluginId === pluginId) this.brokerActivityPending.delete(key);
       }
@@ -2430,6 +2529,11 @@ export class AppApiStorage {
         pluginOrigins: Object.fromEntries(
           Object.entries(state.pluginOrigins).filter(
             ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginProcesses: Object.fromEntries(
+          Object.entries(state.pluginProcesses).filter(
+            ([id]) => id !== pluginId,
           ),
         ),
         pluginBrokerActivity: Object.fromEntries(
@@ -2924,10 +3028,33 @@ export class AppApiStorage {
    * Writes the broker's records gathered so far, if any. The API calls it as
    * it stops, so a quit loses none.
    */
-  async flushBrokerActivity(): Promise<void> {
+  flushBrokerActivity(): Promise<void> {
+    if (this.brokerActivityFlush) return this.brokerActivityFlush;
+    this.brokerActivityFlush = (async () => {
+      try {
+        do {
+          await this.flushBrokerActivityBatch();
+        } while (
+          this.brokerActivityPending.size ||
+          this.processActivityPending.size
+        );
+      } finally {
+        this.brokerActivityFlush = undefined;
+      }
+    })();
+    return this.brokerActivityFlush;
+  }
+
+  private async flushBrokerActivityBatch(): Promise<void> {
     clearTimeout(this.brokerActivityTimer);
     this.brokerActivityTimer = undefined;
-    if (this.brokerActivityPending.size === 0) return;
+    if (
+      this.brokerActivityPending.size === 0 &&
+      this.processActivityPending.size === 0
+    )
+      return;
+    const processDeltas = [...this.processActivityPending.entries()];
+    this.processActivityPending.clear();
     const removals = new Map(this.brokerActivityRemovals);
     const removedSince = (pluginId: string) =>
       (this.brokerActivityRemovals.get(pluginId) ?? 0) !==
@@ -2937,6 +3064,23 @@ export class AppApiStorage {
     this.brokerActivityWrittenAt = Date.now();
     try {
       await this.mutate(async (current) => {
+        const pluginProcesses = { ...current.pluginProcesses };
+        for (const [id, delta] of processDeltas) {
+          if (removedSince(id)) continue;
+          const saved = (Object.hasOwn(pluginProcesses, id)
+            ? pluginProcesses[id]
+            : undefined) ?? {
+            overrides: {},
+            refusedCount: 0,
+          };
+          pluginProcesses[id] = {
+            ...saved,
+            refusedCount: saved.refusedCount + delta.refusedCount,
+            ...(delta.lastRunAt !== undefined
+              ? { lastRunAt: Math.max(saved.lastRunAt ?? 0, delta.lastRunAt) }
+              : {}),
+          };
+        }
         const pluginBrokerActivity = { ...current.pluginBrokerActivity };
         const connections = [...current.connections];
         for (const [, delta] of deltas) {
@@ -2967,11 +3111,31 @@ export class AppApiStorage {
           };
         }
         return {
-          nextState: { ...current, connections, pluginBrokerActivity },
+          nextState: {
+            ...current,
+            connections,
+            pluginBrokerActivity,
+            pluginProcesses,
+          },
           result: undefined,
         };
       });
     } catch (error) {
+      for (const [id, delta] of processDeltas) {
+        if (removedSince(id)) continue;
+        const since = this.processActivityPending.get(id);
+        this.processActivityPending.set(id, {
+          refusedCount: delta.refusedCount + (since?.refusedCount ?? 0),
+          ...(delta.lastRunAt !== undefined || since?.lastRunAt !== undefined
+            ? {
+                lastRunAt: Math.max(
+                  delta.lastRunAt ?? 0,
+                  since?.lastRunAt ?? 0,
+                ),
+              }
+            : {}),
+        });
+      }
       // Kept for the next write, merged with what came since.
       for (const [key, delta] of deltas) {
         if (removedSince(delta.pluginId)) continue;

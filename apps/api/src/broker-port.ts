@@ -106,6 +106,8 @@ export interface BrokerCaller {
   manifest: PluginApi4Manifest;
   /** The plugin method the operation runs, such as `syncConnection`. */
   method: string;
+  /** Host-owned project context, when the calling capability supplies one. */
+  projectId?: string;
   /** The operation's span, so each request event is its child. */
   traceparent?: string;
   /**
@@ -292,4 +294,26 @@ export interface CredentialBrokerOptions {
   events?: ApiEvents;
   limits?: Partial<BrokerLimits>;
   now?: () => number;
+}
+
+/** A repository folder id, resolved on this computer. Unknown ids are refused. */
+export interface FolderResolver {
+  resolve(id: string, projectId?: string): Promise<string | undefined>;
+}
+export interface ProcessRunRequest {
+  command: string;
+  args: Readonly<Record<string, string | number>>;
+  stdin?: string;
+}
+export interface ProcessRunResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+export interface OperationProcessBroker {
+  run(request: ProcessRunRequest): Promise<ProcessRunResult>;
+  close(): void;
+}
+export interface ProcessBrokerPort {
+  forOperation(caller: BrokerCaller): OperationProcessBroker;
 }

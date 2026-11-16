@@ -80,6 +80,7 @@ const MESSAGE_TYPES = new Set([
   "ready",
   "next",
   "settled",
+  "process",
   "http",
   "publicFetch",
   "abort",
@@ -163,10 +164,14 @@ function outcomeFromPage(outcome) {
  */
 function brokerErrorOf(error) {
   if (error?.name === "AbortError") return { name: "AbortError" };
-  if (error?.name === "AjourRequestError" && typeof error.code === "string") {
+  if (
+    (error?.name === "AjourRequestError" ||
+      error?.name === "AjourProcessError") &&
+    typeof (error.code ?? error.reason) === "string"
+  ) {
     return {
-      name: "AjourRequestError",
-      code: error.code,
+      name: error.name,
+      code: error.code ?? error.reason,
       message: String(error.message),
     };
   }
@@ -854,7 +859,7 @@ function createPluginRendererRuntime({
         : undefined;
     if (!run) {
       unit?.refuse("unknown_run");
-      return type === "http" || type === "publicFetch"
+      return type === "http" || type === "publicFetch" || type === "process"
         ? endedAnswer
         : undefined;
     }
@@ -870,6 +875,13 @@ function createPluginRendererRuntime({
     if (type === "abort") {
       run.aborts.get(message.callId)?.abort();
       return undefined;
+    }
+    if (type === "process") {
+      if (!run.processBroker) return endedAnswer;
+      return run.processBroker.run(message.request).then(
+        (response) => ({ ok: true, response }),
+        (error) => ({ ok: false, error: brokerErrorOf(error) }),
+      );
     }
     const broker = run.broker;
     if (!broker) return endedAnswer;
@@ -964,6 +976,7 @@ function createPluginRendererRuntime({
       const run = {
         runId,
         broker: invocation.broker,
+        processBroker: invocation.processBroker,
         aborts: new Map(),
         done: false,
         reportedSettled: false,

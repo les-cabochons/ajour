@@ -1,0 +1,657 @@
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
+import { createApiEvents } from "./events.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { ProcessBroker } from "./process-broker.ts";
+import { FolderResolver } from "./repository-folders.ts";
+import { AppApiStorage } from "./storage.ts";
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
+  );
+});
+async function fixture(
+  args: unknown[] = ["{title:text}"],
+  source = "process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write(JSON.stringify(process.argv.slice(2))))",
+) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-process-"));
+  roots.push(root);
+  const script = path.join(root, "tool.cjs");
+  await writeFile(script, source);
+  const manifest = pluginApi4ManifestSchema.parse({
+    id: "process-test",
+    version: "1.0.0",
+    apiVersion: 4,
+    displayName: "Process test",
+    iconSvg: "<svg/>",
+    entrypoint: "index.js",
+    connectionFields: [{ id: "site", label: "Site", type: "text" }],
+    capabilities: { connector: {} },
+    processes: {
+      executables: { node: { names: ["node"] } },
+      commands: [
+        {
+          id: "run",
+          executable: "node",
+          args: [{ kind: "literal", value: script }, ...args],
+          stdin: "text",
+          mode: "capture",
+          timeoutSeconds: 1,
+        },
+      ],
+    },
+  });
+  const storage = new AppApiStorage(path.join(root, "state.json"));
+  const folder = await storage.addRepositoryFolder("project", root, "repo");
+  const folders = new FolderResolver(storage, {});
+  const broker = new ProcessBroker({
+    folders,
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+  });
+  return {
+    root,
+    manifest,
+    broker,
+    folder,
+    op: broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    }),
+  };
+}
+it("Given text with shell metacharacters, capture preserves one argument", async () => {
+  const { op } = await fixture();
+  expect(
+    JSON.parse(
+      (await op.run({ command: "run", args: { title: "hello & echo $(x)" } }))
+        .stdout,
+    ),
+  ).toEqual(["hello & echo $(x)"]);
+});
+it.each(["-option", "a\0b", "a\rb", "a\nb"])(
+  "Given invalid text %j, refuses before spawn",
+  async (title) => {
+    const { op } = await fixture();
+    await expect(
+      op.run({ command: "run", args: { title } }),
+    ).rejects.toMatchObject({ reason: "invalid_request" });
+  },
+);
+it("Given every slot kind and a conditional group, fills exactly one argument each", async () => {
+  const { op, root, folder } = await fixture([
+    "{id:id}",
+    "{ref:ref}",
+    "{count:number}",
+    { kind: "enum", name: "format", values: ["json", "text"] },
+    "{url:https-url}",
+    "{folder:folder}",
+    { if: "branch", args: ["--branch", "{branch:ref}"] },
+  ]);
+  const request = {
+    command: "run",
+    args: {
+      id: "PAY:12",
+      ref: "feature/login",
+      count: 42,
+      format: "json",
+      url: "https://example.test/a",
+      folder: folder.id,
+      branch: "fix/login",
+    },
+  };
+  expect(JSON.parse((await op.run(request)).stdout)).toEqual([
+    "PAY:12",
+    "feature/login",
+    "42",
+    "json",
+    "https://example.test/a",
+    await import("node:fs/promises").then((fs) => fs.realpath(root)),
+    "--branch",
+    "fix/login",
+  ]);
+});
+it.each([
+  ["id", "a b"],
+  ["ref", "x..y"],
+  ["ref", "a/.hidden"],
+  ["number", "NaN"],
+  ["https-url", "http://example.test"],
+  ["folder", "C:/unknown"],
+])("Given invalid %s slot, refuses", async (kind, value) => {
+  const { op } = await fixture([`{value:${kind}}`]);
+  await expect(
+    op.run({ command: "run", args: { value } }),
+  ).rejects.toMatchObject({
+    reason: kind == "folder" ? "folder_refused" : "invalid_request",
+  });
+});
+it("Given a command waiting for input, sends stdin and removes AJOUR environment", async () => {
+  process.env.AJOUR_PROCESS_CANARY = "secret";
+  try {
+    const { op } = await fixture(
+      [],
+      "let data='';process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>process.stdout.write(JSON.stringify({data,keys:Object.keys(process.env).filter(k=>/^AJOUR_/i.test(k))})))",
+    );
+    expect(
+      JSON.parse(
+        (await op.run({ command: "run", args: {}, stdin: "hello\nworld" }))
+          .stdout,
+      ),
+    ).toEqual({ data: "hello\nworld", keys: [] });
+  } finally {
+    delete process.env.AJOUR_PROCESS_CANARY;
+  }
+});
+it("Given a hanging child, the declared timeout ends it", async () => {
+  const { op } = await fixture([], "setInterval(()=>{},1000)");
+  await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+    reason: "timeout",
+  });
+});
+it.each(["stdout", "stderr"])(
+  "Given more than 1 MB on %s, ends the child",
+  async (stream) => {
+    const { op } = await fixture(
+      [],
+      `process.${stream}.write('x'.repeat(1048577));setInterval(()=>{},1000)`,
+    );
+    await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+      reason: "output_limit",
+    });
+  },
+);
+it("Given four active calls across operations, a fifth is refused and close cancels only its operation", async () => {
+  const { op, broker, manifest } = await fixture(
+    [],
+    "setInterval(()=>{},1000)",
+  );
+  const pending = Array.from({ length: 4 }, () =>
+    op.run({ command: "run", args: {} }).catch((e) => e),
+  );
+  // Reservations happen before executable lookup, across every operation of this plugin.
+  await new Promise((r) => setTimeout(r, 100));
+  const other = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  await expect(other.run({ command: "run", args: {} })).rejects.toMatchObject({
+    reason: "concurrency",
+  });
+  op.close();
+  expect(await Promise.all(pending)).toEqual(
+    Array.from({ length: 4 }, () =>
+      expect.objectContaining({ reason: "operation_ended" }),
+    ),
+  );
+  await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+    reason: "operation_ended",
+  });
+});
+
+it.each(["plugin_off", "needs_consent"] as const)(
+  "Given gate %s, refuses before checking commands",
+  async (reason) => {
+    const { manifest, root } = await fixture();
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => reason,
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ command: "unknown", args: {} }),
+    ).rejects.toMatchObject({ reason });
+  },
+);
+it("Given undeclared commands and modes not yet supported, refuses", async () => {
+  const { op, manifest, broker } = await fixture();
+  await expect(op.run({ command: "unknown", args: {} })).rejects.toMatchObject({
+    reason: "undeclared",
+  });
+  for (const mode of ["detached", "terminal"] as const) {
+    const altered = structuredClone(manifest);
+    altered.processes!.commands[0]!.mode = mode;
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest: altered,
+          method: "syncConnection",
+        })
+        .run({ command: "run", args: { title: "x" } }),
+    ).rejects.toMatchObject({ reason: "not_yet" });
+  }
+});
+it("Given a repository folder in Ajour data, refuses it", async () => {
+  const { manifest, root } = await fixture(["{folder:folder}"]);
+  const storage = new AppApiStorage(path.join(root, "state.json"));
+  // Simulate a saved folder that now points into a protected root.
+  const folder = await storage.addRepositoryFolder("project", root, "repo");
+  const broker = new ProcessBroker({
+    folders: new FolderResolver(storage, { userData: root }),
+    gate: async () => undefined,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ command: "run", args: { folder: folder.id } }),
+  ).rejects.toMatchObject({ reason: "folder_refused" });
+});
+it("Given marked argv, stdin, output and paths, emits one content-free event per call and records activity", async () => {
+  const marker = "CANARY-LEAK-7Q4X";
+  const { manifest, root } = await fixture(
+    ["{title:text}"],
+    `process.stdout.write('${marker}');process.stdin.resume()`,
+  );
+  const sink = createRecordingSink<AjourEvent>();
+  const records: unknown[] = [];
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => root },
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+    events: createApiEvents({ sink, userDataPath: root }),
+    record: async (...args) => {
+      records.push(args);
+    },
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  expect(
+    (await op.run({ command: "run", args: { title: marker }, stdin: marker }))
+      .stdout,
+  ).toBe(marker);
+  await expect(op.run({ command: marker, args: {} })).rejects.toMatchObject({
+    reason: "undeclared",
+  });
+  expect(sink.events).toMatchObject([
+    {
+      name: "plugin.process",
+      kind: "job",
+      outcome: "ok",
+      process: { command_id: "run", exit_code: 0, decided_by: "ok" },
+    },
+    {
+      name: "plugin.process",
+      outcome: "refused",
+      outcome_reason: "undeclared",
+      process: { command_id: "undeclared" },
+    },
+  ]);
+  expect(JSON.stringify(sink.events)).not.toContain(marker);
+  expect(JSON.stringify(sink.events)).not.toContain(root);
+  expect(records).toEqual([
+    [manifest.id, expect.any(Number), false, true],
+    [manifest.id, expect.any(Number), true, false],
+  ]);
+});
+
+it("Given saved process settings, reload preserves overrides and activity and removing an override clears it", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const file = path.join(root, "state.json");
+  const storage = new AppApiStorage(file);
+  expect(await storage.getPluginProcessSettings("test")).toEqual({
+    overrides: {},
+    refusedCount: 0,
+  });
+  await storage.setPluginProcessOverride("test", "node", process.execPath);
+  await Promise.all([
+    storage.recordPluginProcess("test", 100, true),
+    storage.recordPluginProcess("test", 200, false),
+  ]);
+  await storage.flushBrokerActivity();
+  const reloaded = new AppApiStorage(file);
+  expect(await reloaded.getPluginProcessSettings("test")).toEqual({
+    overrides: { node: process.execPath },
+    lastRunAt: 200,
+    refusedCount: 1,
+  });
+  await reloaded.setPluginProcessOverride("test", "node", null);
+  expect((await reloaded.getPluginProcessSettings("test")).overrides).toEqual(
+    {},
+  );
+});
+
+it("Given a child that starts a descendant, cancellation ends both", async () => {
+  const { root } = await fixture();
+  const pidFile = path.join(root, "descendant.pid");
+  const { op } = await fixture(
+    [],
+    `const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(pidFile)},JSON.stringify([process.pid,child.pid]));setInterval(()=>{},1000)`,
+  );
+  const running = op.run({ command: "run", args: {} }).catch((error) => error);
+  const fs = await import("node:fs/promises");
+  let pids: number[] = [];
+  try {
+    for (let n = 0; n < 100; n++) {
+      try {
+        pids = JSON.parse(await fs.readFile(pidFile, "utf8"));
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+    expect(pids).toHaveLength(2);
+  } finally {
+    op.close();
+    await running;
+  }
+  try {
+    // taskkill can close the parent's pipes before it finishes the tree.
+    await vi.waitFor(
+      () => {
+        for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+      },
+      { timeout: 2000 },
+    );
+  } finally {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* Already exited. */
+      }
+    }
+  }
+});
+it("Given no override, finds an executable by name on the user's PATH", async () => {
+  const { manifest, root } = await fixture([]);
+  const previous = process.env.PATH;
+  process.env.PATH = path.dirname(process.execPath);
+  try {
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => root },
+      gate: async () => undefined,
+    });
+    const op = broker.forOperation({
+      pluginId: manifest.id,
+      manifest,
+      method: "syncConnection",
+    });
+    expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
+  } finally {
+    process.env.PATH = previous;
+  }
+});
+it.each(["id", "text"])(
+  "Given a number in a %s slot, refuses it",
+  async (kind) => {
+    const { op } = await fixture([`{value:${kind}}`]);
+    await expect(
+      op.run({ command: "run", args: { value: 12 } }),
+    ).rejects.toMatchObject({ reason: "invalid_request" });
+  },
+);
+it("Given an empty optional group, omits it, and refuses unknown or partial slots", async () => {
+  const { op } = await fixture([
+    { if: "branch", args: ["--branch", "{branch:ref}", "{base:ref}"] },
+  ]);
+  expect(
+    JSON.parse((await op.run({ command: "run", args: {} })).stdout),
+  ).toEqual([]);
+  const invalidArgs: Record<string, string>[] = [
+    { base: "main" },
+    { branch: "feature" },
+    { extra: "value" },
+  ];
+  for (const args of invalidArgs)
+    await expect(op.run({ command: "run", args })).rejects.toMatchObject({
+      reason: "invalid_request",
+    });
+});
+it.each([
+  ["relative.exe", "spawn_refused"],
+  [path.join(os.tmpdir(), "ajour-no-such-executable.exe"), "spawn_failed"],
+])(
+  "Given unusable executable override %s, reports %s",
+  async (executable, reason) => {
+    const { manifest } = await fixture([]);
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: async () => undefined,
+      executableOverride: async () => executable,
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ command: "run", args: {} }),
+    ).rejects.toMatchObject({ reason });
+  },
+);
+it("Given a declared executable absent from PATH, refuses without starting", async () => {
+  const { manifest } = await fixture([]);
+  manifest.processes!.executables.node!.names = [
+    "ajour-missing-executable-713",
+  ];
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+  });
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+      })
+      .run({ command: "run", args: {} }),
+  ).rejects.toMatchObject({ reason: "executable_missing" });
+});
+it("Given an enum outside its declared set, refuses", async () => {
+  const { op } = await fixture([
+    { kind: "enum", name: "format", values: ["json"] },
+  ]);
+  await expect(
+    op.run({ command: "run", args: { format: "xml" } }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+
+it.each([" https://example.test/a ", "https://exa\tmple.test/a"])(
+  "Given URL whitespace %j, passes the normalized URL",
+  async (value) => {
+    const { op } = await fixture(["{url:https-url}"]);
+    expect(
+      JSON.parse(
+        (await op.run({ command: "run", args: { url: value } })).stdout,
+      ),
+    ).toEqual(["https://example.test/a"]);
+  },
+);
+it("Given stdin without text permission, refuses", async () => {
+  const { op, manifest } = await fixture([]);
+  delete manifest.processes!.commands[0]!.stdin;
+  await expect(
+    op.run({ command: "run", args: {}, stdin: "input" }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+it("Given text beyond 32767 UTF-16 units, refuses", async () => {
+  const { op } = await fixture();
+  await expect(
+    op.run({ command: "run", args: { title: "x".repeat(32768) } }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+});
+
+it("Given a refusal before spawn, activity has no lastRunAt", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const storage = new AppApiStorage(path.join(root, "activity.json"));
+  storage.recordPluginProcess("test", 100, true, false);
+  await storage.flushBrokerActivity();
+  expect(await storage.getPluginProcessSettings("test")).toEqual({
+    overrides: {},
+    refusedCount: 1,
+  });
+});
+it("Given an activity recorder still writing, run settles without waiting", async () => {
+  const { manifest } = await fixture([]);
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => undefined },
+    gate: async () => undefined,
+    executableOverride: async () => process.execPath,
+    record: () => new Promise(() => {}),
+  });
+  const op = broker.forOperation({
+    pluginId: manifest.id,
+    manifest,
+    method: "syncConnection",
+  });
+  expect((await op.run({ command: "run", args: {} })).exitCode).toBe(0);
+});
+// Windows Node closes inherited pipe handles when this fixture parent exits.
+it.skipIf(process.platform === "win32").each(["stdout", "stderr"] as const)(
+  "Given a descendant writing later to %s, captures through EOF",
+  async (stream) => {
+    const { op, manifest } = await fixture(
+      [],
+      `process.${stream}.write('HEAD');require('node:child_process').spawn(process.execPath,['-e',"setTimeout(()=>process.${stream}.write('TAIL'),400)"],{stdio:['ignore',1,2]}).unref()`,
+    );
+    manifest.processes!.commands[0]!.timeoutSeconds = 10;
+    expect((await op.run({ command: "run", args: {} }))[stream]).toBe(
+      "HEADTAIL",
+    );
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "Given a descendant holding a pipe beyond the drain bound, refuses incomplete capture",
+  async () => {
+    const { op, manifest } = await fixture(
+      [],
+      `require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},2600)'],{stdio:['ignore',1,'ignore']}).unref()`,
+    );
+    manifest.processes!.commands[0]!.timeoutSeconds = 10;
+    await expect(op.run({ command: "run", args: {} })).rejects.toMatchObject({
+      reason: "capture_incomplete",
+    });
+  },
+);
+
+it.each(["missing", "changed", "off", "during-operation"])(
+  "Given %s consent, the broker port refuses with real storage",
+  async (scenario) => {
+    const { manifest, root } = await fixture([]);
+    const { AppApiStorage } = await import("./storage.ts");
+    const { processConsentGate } = await import("./plugin-consent.ts");
+    const { summarizePluginAccess } =
+      await import("../../../packages/shared/plugin-access.ts");
+    const storage = new AppApiStorage(path.join(root, "consent.json"));
+    const access = summarizePluginAccess(manifest, { agentPrompts: {} });
+    if (scenario === "missing") access.commands = [];
+    await storage.recordPluginConsent(manifest.id, {
+      version: "1.0.0",
+      access,
+      at: 1,
+    });
+    if (scenario === "changed")
+      manifest.processes!.commands[0]!.args.push({
+        kind: "literal",
+        value: "changed",
+      });
+    if (scenario === "off") await storage.setPluginEnabled(manifest.id, false);
+    const broker = new ProcessBroker({
+      folders: { resolve: async () => undefined },
+      gate: (c) => processConsentGate(storage, c),
+      executableOverride: async () => {
+        if (scenario === "during-operation") {
+          const updated = structuredClone(manifest);
+          updated.processes!.commands[0]!.args.push({
+            kind: "literal",
+            value: "updated",
+          });
+          await storage.recordPluginConsent(manifest.id, {
+            version: "2.0.0",
+            access: summarizePluginAccess(updated, { agentPrompts: {} }),
+            at: 2,
+          });
+        }
+        return process.execPath;
+      },
+    });
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "syncConnection",
+        })
+        .run({ command: "run", args: {} }),
+    ).rejects.toMatchObject({
+      reason: scenario === "off" ? "plugin_off" : "needs_consent",
+    });
+  },
+);
+
+it("Given one malformed process settings entry, preserves the other plugin's settings", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const fs = await import("node:fs/promises");
+  const file = path.join(root, "normalize.json");
+  const storage = new AppApiStorage(file);
+  await storage.setPluginProcessOverride("valid", "node", process.execPath);
+  const state = JSON.parse(await fs.readFile(file, "utf8"));
+  state.pluginProcesses.broken = { overrides: 7 };
+  await fs.writeFile(file, JSON.stringify(state));
+  const reloaded = new AppApiStorage(file);
+  expect((await reloaded.getPluginProcessSettings("valid")).overrides).toEqual({
+    node: process.execPath,
+  });
+  expect(await reloaded.getPluginProcessSettings("broken")).toEqual({
+    overrides: {},
+    refusedCount: 0,
+  });
+});
+it("Given a burst of process activity, gathers it without writing until flush", async () => {
+  const { root } = await fixture();
+  const { AppApiStorage } = await import("./storage.ts");
+  const fs = await import("node:fs/promises");
+  const file = path.join(root, "buffered.json");
+  const storage = new AppApiStorage(file);
+  await storage.setPluginProcessOverride("test", "node", process.execPath);
+  const before = await fs.readFile(file, "utf8");
+  for (let i = 0; i < 20; i++)
+    storage.recordPluginProcess("test", i, true, false);
+  expect(await fs.readFile(file, "utf8")).toBe(before);
+  expect(await storage.getPluginProcessSettings("test")).toMatchObject({
+    refusedCount: 20,
+  });
+  await storage.flushBrokerActivity();
+  expect(
+    await new AppApiStorage(file).getPluginProcessSettings("test"),
+  ).toMatchObject({ refusedCount: 20 });
+});
+
+it("Given caller project context, refuses a folder from another project", async () => {
+  const { broker, manifest, folder } = await fixture(["{folder:folder}"]);
+  await expect(
+    broker
+      .forOperation({
+        pluginId: manifest.id,
+        manifest,
+        method: "syncConnection",
+        projectId: "other",
+      })
+      .run({ command: "run", args: { folder: folder.id } }),
+  ).rejects.toMatchObject({ reason: "folder_refused" });
+});

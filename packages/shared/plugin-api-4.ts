@@ -1012,6 +1012,12 @@ export const pluginApi4ManifestSchema = strictObject(
     }
     choiceIds.add(choice.id);
   });
+  if (manifest.capabilities.projectDataShape && manifest.processes)
+    issue(
+      context,
+      ["processes"],
+      "A project data shape may not declare processes.",
+    );
   checkNetwork(manifest, context);
 });
 export type PluginApi4Manifest = z.infer<typeof pluginApi4ManifestSchema>;

@@ -51,6 +51,41 @@ describe("AppApiStorage writes", () => {
     return { tempDir, statePath: path.join(tempDir, "app-api-state.json") };
   }
 
+  it("Given a slow activity write, every flush waits and includes entries arriving during it", async () => {
+    const { statePath } = await tempStatePath();
+    const storage = new AppApiStorage(statePath);
+    await storage.setPluginProcessOverride("test", "node", process.execPath);
+    const actual =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+    let release!: () => void;
+    let entered!: () => void;
+    const writing = new Promise<void>((r) => (entered = r));
+    const gate = new Promise<void>((r) => (release = r));
+    vi.mocked(rename).mockImplementationOnce(async (...args) => {
+      entered();
+      await gate;
+      return actual.rename(...args);
+    });
+    storage.recordPluginProcess("test", 100, true, true);
+    const first = storage.flushBrokerActivity();
+    await writing;
+    let settled = false;
+    const second = storage.flushBrokerActivity().then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const prematurelySettled = settled;
+    storage.recordPluginProcess("test", 200, true, true);
+    release();
+    await Promise.all([first, second]);
+    expect(prematurelySettled).toBe(false);
+    expect(
+      await new AppApiStorage(statePath).getPluginProcessSettings("test"),
+    ).toMatchObject({ lastRunAt: 200, refusedCount: 2 });
+  });
+
   it("leaves the last complete state file when a write stops before its rename", async () => {
     const { tempDir, statePath } = await tempStatePath();
     const storage = new AppApiStorage(statePath);

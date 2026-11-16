@@ -229,3 +229,19 @@ it.each(["EACCES", "ENOTDIR"])(
     }
   },
 );
+
+it("Given a saved folder id without project context, resolves it but still checks a supplied project", async () => {
+  const root = await fs.realpath(
+    await mkdtemp(path.join(os.tmpdir(), "ajour-folder-context-")),
+  );
+  roots.push(root);
+  const resolver = new FolderResolver(
+    new AppApiStorage(path.join(root, "data", "state.json")),
+    {},
+  );
+  const folder = await resolver.addFromChooser("project", root);
+  expect(await resolver.resolve(folder.id)).toBe(root);
+  await expect(resolver.resolve(folder.id, "other")).rejects.toThrow();
+  await expect(resolver.resolve(folder.id, "")).rejects.toThrow();
+  await expect(resolver.resolve("unknown")).rejects.toThrow();
+});

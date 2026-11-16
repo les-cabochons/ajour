@@ -613,6 +613,17 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** Read process overrides and activity for Access review. */
+    "plugin.process_read": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, plugin: { id: operational() } },
+    },
+    "plugin.process_update": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, plugin: { id: operational() } },
+    },
     /** An API 4 plugin's Advanced section saved: Start and Memory ceiling. */
     "plugin.runtime_update": {
       kinds: ["command", "request"],
@@ -652,6 +663,48 @@ export const catalog = defineCatalog({
             "crashed" | "oom" | "killed" | "memory" | "timeout"
           >(),
           stops: operational<number>(),
+        },
+      },
+    },
+    "plugin.process": {
+      kinds: ["job"],
+      reasons: [
+        "invalid_request",
+        "plugin_off",
+        "needs_consent",
+        "undeclared",
+        "not_yet",
+        "folder_refused",
+        "executable_missing",
+        "spawn_refused",
+        "concurrency",
+        "capture_incomplete",
+        "output_limit",
+        "timeout",
+        "operation_ended",
+        "spawn_failed",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        process: {
+          command_id: operational(),
+          exit_code: operational<number>(),
+          decided_by: operational<
+            | "gate"
+            | "policy"
+            | "ok"
+            | "timeout"
+            | "missing_executable"
+            | "cancelled"
+            | "spawn"
+            | "rule"
+            | "reviewer"
+            | "user"
+            | "mode"
+          >(),
+          rule_id: operational(),
+          reviewer_label: operational(),
+          reviewer_score: operational<number>(),
         },
       },
     },
@@ -1257,6 +1310,7 @@ export const catalog = defineCatalog({
             | "settled"
             | "http"
             | "publicFetch"
+            | "process"
             | "abort"
             | "blocked"
             | "other"

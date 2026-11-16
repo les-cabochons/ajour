@@ -51,6 +51,23 @@ const SITE = `https://${MARKER.toLowerCase()}.example.test/${MARKER}`;
  * contract.
  */
 const canaryPlugin: TestPlugin = {
+  processes: {
+    executables: { node: { names: ["node"] } },
+    commands: [
+      {
+        id: "echo",
+        executable: "node",
+        args: [
+          "-e",
+          `process.stdout.write('${MARKER}');process.stdin.resume()`,
+          "{title:text}",
+        ],
+        stdin: "text",
+        mode: "capture",
+        timeoutSeconds: 10,
+      },
+    ],
+  },
   id: "canary",
   displayName: "Canary tracker",
   capabilities: {
@@ -100,6 +117,8 @@ async function check(connection) {
   }
 }
 export async function validateConnection({ config }) {
+  const result = await ajour.process.run({command:"echo",args:{title:MARKER},stdin:MARKER});
+  if (result.stdout !== MARKER) throw new Error("Process capture failed");
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
@@ -603,6 +622,20 @@ beforeAll(async () => {
     plugin: canaryPlugin,
     morePlugins: [canaryProjectSource],
   });
+  for (const [route, body] of [
+    ["activation", { enabled: true }],
+    ["processes", { executable: "node", path: process.execPath }],
+  ] as const) {
+    const response = await fetchAsTheApp(
+      `${api.baseUrl}/api/plugins/canary/${route}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    expect(response.status).toBe(200);
+  }
   vi.resetModules();
   vi.stubEnv("VITE_APP_API_BASE_URL", api.baseUrl);
   vi.stubGlobal("fetch", fetchAsTheApp);
@@ -723,6 +756,18 @@ describe("the privacy canary", () => {
         "renderer command connection.save",
         "api request connection.save",
         "api plugin_operation connection.save",
+      ]),
+    );
+    expect(api.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "plugin.process",
+          outcome: "ok",
+          process: expect.objectContaining({
+            command_id: "echo",
+            decided_by: "ok",
+          }),
+        }),
       ]),
     );
     expectNoLeak();

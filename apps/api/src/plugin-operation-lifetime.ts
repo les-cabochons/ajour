@@ -491,6 +491,7 @@ export class PluginOperationLifetime<TMethod extends string> {
       ) => {
         finalizationPromise ??= (async () => {
           if (timeout) clearTimeout(timeout);
+          prepared.invocation.processBroker?.close();
           await run.terminate(reason);
           unit.set({ worker: { worker_ms: Date.now() - startedAt } });
           if (error) {
