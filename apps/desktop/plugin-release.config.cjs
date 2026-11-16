@@ -14,5 +14,7 @@ module.exports = {
     ...base.files,
     "sandbox-check/official-plugins.cjs",
     "sandbox-check/official-plugins/*.cjs",
+    "sandbox-check/fake-tool.cjs",
+    "sandbox-check/event-values.cjs",
   ],
 };

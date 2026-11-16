@@ -144,7 +144,7 @@ plugin-release-package:
     node apps/desktop/scripts/prepare-internal-api.cjs
     {{PNPM}} --filter @ajour/desktop exec electron-builder --config=plugin-release.config.cjs --dir --publish=never
 
-[doc("Runs the packaged six-plugin check with AJOUR_PLUGINS_CHECKOUT, AJOUR_PLUGINS_COMMIT and AJOUR_PLUGIN_RELEASE_EXECUTABLE")]
+[doc("Runs the packaged official-plugin check with AJOUR_PLUGINS_CHECKOUT, AJOUR_PLUGINS_COMMIT and AJOUR_PLUGIN_RELEASE_EXECUTABLE")]
 [group("qa")]
 plugin-release-check:
     node apps/desktop/scripts/check-plugin-release.mjs
