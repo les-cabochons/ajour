@@ -3,6 +3,7 @@ import {
   link,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -30,7 +31,17 @@ afterEach(async () => {
     }
   }
   await Promise.all(
-    roots.splice(0).map((p) => rm(p, { recursive: true, force: true })),
+    // A program can still hold its folder open while it exits on Windows.
+    roots
+      .splice(0)
+      .map((p) =>
+        rm(p, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 100,
+        }),
+      ),
   );
 });
 
@@ -421,12 +432,14 @@ describe("Given a declared session command", () => {
         params: { bytes: SESSION_LIMITS.stderrBytes * 2 },
       }),
     );
-    let stderr = "";
+    // Each read gets at most the bound; the tail may arrive over two reads.
+    let last = "";
     await vi.waitFor(async () => {
-      stderr += (await read(op, id, { waitMs: 500 })).stderr;
-      expect(stderr.endsWith("TAIL")).toBe(true);
+      const { stderr } = await read(op, id, { waitMs: 500 });
+      expect(stderr.length).toBeLessThanOrEqual(SESSION_LIMITS.stderrBytes);
+      if (stderr) last = stderr;
+      expect(last.endsWith("TAIL")).toBe(true);
     });
-    expect(stderr.length).toBeLessThanOrEqual(SESSION_LIMITS.stderrBytes);
     expect((await read(op, id)).stderr).toBe("");
   });
 
@@ -796,7 +809,8 @@ describe("Given an open's checks", () => {
       args: { repo: "folder-1" },
     })) as string;
     const { lines } = await read(op, id, { waitMs: 2000 });
-    expect(path.resolve(lines[0]!)).toBe(path.resolve(context.root));
+    // macOS reports /private/var for /var: compare the real paths.
+    expect(await realpath(lines[0]!)).toBe(await realpath(context.root));
     expect(await readFile(cwdScript, "utf8")).toContain("cwd");
   });
 });
