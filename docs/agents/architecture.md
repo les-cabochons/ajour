@@ -1154,3 +1154,15 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+## Handoff templates
+
+Per-plugin prompt, title and branch templates live in the local API state as `handoffTemplates`, defaulting to an empty map for older state files. They are separate from agent-task values and never team-synced. GET and POST `/api/plugins/:pluginId/handoffs/templates` read and save them. Save validates slot names and the 16 KiB UTF-8 limit per template. The manifest may supply `capabilities.handoff.promptTemplate`. Without one, the host uses the item's key, title, description and URL.
+
+The window's start request carries `item` fields, `projectName`, a repository folder id and optional `promptOverride`. The API resolves the folder name and fills all templates before validating the plugin request. It no longer accepts finished title or branch fields. `packages/shared/handoff-templates.ts` owns filling and preview. The frontmatter parser now lives in `packages/shared/description-frontmatter.ts`; the web domain entry point preserves existing imports. Description text excludes parsed frontmatter and keeps at most 32 KiB of UTF-8, including a newline and ellipsis when cut.
+
+## Handoff templates
+
+Per-plugin prompt, title and branch templates live in local API state as `handoffTemplates`, defaulting to an empty map for older state. They are separate from agent-task values and never team-synced. GET and POST `/api/plugins/:pluginId/handoffs/templates` read and save them. Save validates slot names and the 16 KiB UTF-8 limit per template. The manifest may supply `capabilities.handoff.promptTemplate`. Without one, the host uses the item's key, title, description and URL.
+
+The window's start request carries `item` fields, `projectName`, a repository folder id and optional `promptOverride`. The API resolves the folder name and fills templates before validating the plugin request. It no longer accepts finished title or branch fields. `packages/shared/handoff-templates.ts` owns filling and preview. The frontmatter parser now lives in `packages/shared/description-frontmatter.ts`; the web domain entry point preserves existing imports. Descriptions exclude parsed frontmatter and keep at most 32 KiB of UTF-8, including a newline and ellipsis when cut.

@@ -674,9 +674,9 @@ describe("the privacy canary", () => {
         workItemId: "item",
         projectId: "handoff-project",
         folderId: folder.id,
-        title: MARKER,
-        prompt: MARKER,
-        item: { key: MARKER, url: SITE },
+        projectName: MARKER,
+        promptOverride: MARKER,
+        item: { key: MARKER, title: MARKER, type: MARKER, url: SITE },
         settings: {},
       });
       await vi.waitFor(() =>

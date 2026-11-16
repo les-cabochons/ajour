@@ -1,3 +1,7 @@
+import {
+  handoffTemplateDefaults,
+  handoffTemplatesSchema,
+} from "../../../packages/shared/handoff-templates.ts";
 import { Handoffs, HandoffRefused } from "./handoffs.ts";
 import { handoffStartRouteSchema } from "../../../packages/shared/handoffs.ts";
 import { z } from "zod";
@@ -1709,6 +1713,37 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           unit.set({ mcp_bridge: { call_count: calls } });
         },
       });
+    },
+    handoffTemplatesGet: async ({ response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      writeJson(
+        response,
+        200,
+        (await storage.getHandoffTemplates(params.pluginId)) ??
+          handoffTemplateDefaults(plugin.capabilities.handoff.promptTemplate),
+      );
+    },
+    handoffTemplatesSave: async ({ request, response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      const templates = await readRequest(request, handoffTemplatesSchema);
+      await storage.setHandoffTemplates(params.pluginId, templates);
+      writeJson(response, 200, templates);
     },
     handoffList: async ({ response }) => {
       writeJson(response, 200, await storage.listHandoffs());

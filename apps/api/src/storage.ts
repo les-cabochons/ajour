@@ -1,3 +1,7 @@
+import {
+  handoffTemplatesSchema,
+  type HandoffTemplates,
+} from "../../../packages/shared/handoff-templates.ts";
 import { z } from "zod";
 import {
   handoffRecordSchema,
@@ -456,6 +460,7 @@ function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
 }
 
 interface AppApiStateV8 {
+  handoffTemplates: Record<string, HandoffTemplates>;
   handoffs: Handoff[];
   repositoryFolders: RepositoryFolder[];
   version: number;
@@ -627,6 +632,7 @@ function withCapabilityChoice(
 
 function createDefaultState(): AppApiState {
   return {
+    handoffTemplates: {},
     handoffs: [],
     repositoryFolders: [],
     version: STATE_VERSION,
@@ -1028,6 +1034,20 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
+    handoffTemplates: Object.fromEntries(
+      Object.entries(
+        raw.handoffTemplates &&
+          typeof raw.handoffTemplates === "object" &&
+          !Array.isArray(raw.handoffTemplates)
+          ? raw.handoffTemplates
+          : {},
+      ).flatMap(([key, value]) => {
+        const parsed = handoffTemplatesSchema.safeParse(value);
+        return parsed.success && !UNSAFE_KEYS.has(key)
+          ? [[key, parsed.data]]
+          : [];
+      }),
+    ),
     handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
       (value) => {
         const legacy = z
@@ -2266,6 +2286,26 @@ export class AppApiStorage {
     });
   }
 
+  async getHandoffTemplates(
+    pluginId: string,
+  ): Promise<HandoffTemplates | undefined> {
+    if (UNSAFE_KEYS.has(pluginId)) return undefined;
+    return structuredClone((await this.readState()).handoffTemplates[pluginId]);
+  }
+  async setHandoffTemplates(
+    pluginId: string,
+    templates: HandoffTemplates,
+  ): Promise<void> {
+    if (UNSAFE_KEYS.has(pluginId)) throw new Error("Invalid plugin id.");
+    const parsed = handoffTemplatesSchema.parse(templates);
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        handoffTemplates: { ...state.handoffTemplates, [pluginId]: parsed },
+      },
+      result: undefined,
+    }));
+  }
   /**
    * The agent task settings the user filled in for a plugin, or none, with
    * the secrets the vault holds as far as they can be read. With the

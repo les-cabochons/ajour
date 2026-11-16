@@ -29,6 +29,9 @@ export type PluginManifest = {
       | undefined;
     connector?:
       | {
+          description?:
+            | { maxLength?: number | undefined; write?: boolean | undefined }
+            | undefined;
           comments?:
             | {
                 edit?: boolean | undefined;
@@ -48,9 +51,6 @@ export type PluginManifest = {
                 mentions?: boolean | undefined;
                 maxLength?: number | undefined;
               }
-            | undefined;
-          description?:
-            | { maxLength?: number | undefined; write?: boolean | undefined }
             | undefined;
           settle?: boolean | undefined;
           assign?: boolean | undefined;
@@ -93,6 +93,7 @@ export type PluginManifest = {
             label: string;
             iconSvg: string;
           }[];
+          promptTemplate?: string | undefined;
         }
       | undefined;
     agentTask?:
@@ -570,6 +571,7 @@ export type BacklogSyncResult = {
     workItemType: string;
     depth: 0 | 1;
     state?: string | undefined;
+    projectName?: string | undefined;
     description?:
       | { text: string; lost?: string[] | undefined; cut?: boolean | undefined }
       | undefined;
@@ -578,7 +580,6 @@ export type BacklogSyncResult = {
     remainingEstimateHours?: number | undefined;
     completedEstimateHours?: number | undefined;
     note?: string | undefined;
-    projectName?: string | undefined;
     stateCategory?: string | undefined;
     stateDone?: boolean | undefined;
     assignedTo?: string | undefined;

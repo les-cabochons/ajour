@@ -378,3 +378,9 @@ Prompts and settings are not stored in handoff records or events.
 ## License
 
 MIT
+
+### Handoff prompt defaults
+
+A handoff manifest may set `capabilities.handoff.promptTemplate`, at most 16 KiB of UTF-8. Users edit prompt, title and branch templates on the plugin page. Ajour fills them before calling `startHandoff`; plugins still receive finished `prompt`, `title` and `branch` strings.
+
+Slots are `{{item.key}}`, `{{item.title}}`, `{{item.description}}`, `{{item.url}}`, `{{item.type}}`, `{{item.parent.key}}`, `{{item.parent.title}}`, `{{project.name}}` and `{{repo.name}}`. Add `|slug`, for example `{{item.title|slug}}`, for a lowercase ASCII branch segment of at most 60 characters. Unknown slots or filters fail saving. Descriptions omit frontmatter and have a 32 KiB UTF-8 limit. Missing optional values become empty text.

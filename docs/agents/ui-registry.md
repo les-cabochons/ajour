@@ -500,3 +500,7 @@ The tray panel reuses the sidebar's item selector and matcher, the dock's timer 
 ## Repository folders
 
 `features/projects/repository-folders-section.tsx` owns the cardless Repositories section, using SectionHeading and Button. Name and full path wrap beside Remove. `components/repository-picker.tsx` is the reusable centered Dialog, with projectId, open, onOpenChange and onSelect props. It lists native radio controls, preselects the last used folder and offers Add folder… even when empty. Both use `lib/repository-folders.ts` to read local API records and display errors without writing renderer project state.
+
+## Handoff template editor
+
+`features/settings/handoff-template-editor.tsx` owns the handoff plugin's template section. It uses `Textarea` for plain template source, slot insertion buttons, an `Input` to search preview items, and preformatted output from the shared filler. Markdown styling would obscure source syntax, so it does not load the Markdown editor. Save errors have `role="alert"`; successful saves have `role="status"`. Drafts remain after a failed save.

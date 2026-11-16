@@ -32,7 +32,8 @@ it("batches refresh by tool and project, respects visibility, and preserves a re
           ];
         },
         async startHandoff(_plugin, request) {
-          if (request.title === "refuse") throw new Error("Tool unavailable");
+          if (request.title.endsWith("refuse"))
+            throw new Error("Tool unavailable");
           return { threadId: request.title, native: {} };
         },
         async readHandoffStates(_plugin, request, projectId) {
@@ -54,16 +55,15 @@ it("batches refresh by tool and project, respects visibility, and preserves a re
       projectId: "p",
       folderId: folder.id,
       workItemId: "item",
-      title: "one",
-      prompt: "private prompt",
-      item: { key: "PAY-12", url: "" },
+      projectName: "Project",
+      item: { key: "PAY-12", title: "one", type: "Bug", url: "" },
       settings: {},
     };
     await service.start(input);
-    await service.start({ ...input, title: "two" });
-    await expect(service.start({ ...input, title: "refuse" })).rejects.toThrow(
-      "Tool unavailable",
-    );
+    await service.start({ ...input, item: { ...input.item, title: "two" } });
+    await expect(
+      service.start({ ...input, item: { ...input.item, title: "refuse" } }),
+    ).rejects.toThrow("Tool unavailable");
     expect(await storage.listHandoffs()).toHaveLength(2);
     await service.tick();
     expect(calls).toHaveLength(0);
@@ -167,9 +167,8 @@ it("continues failed batches, pauses unavailable tools once and resumes them whe
       projectId: "p",
       folderId: folder.id,
       workItemId: "i",
-      title: "Title",
-      prompt: "P",
-      item: { key: "", url: "" },
+      projectName: "Project",
+      item: { key: "", title: "Title", type: "", url: "" },
       settings: {},
     };
     await service.start(input);
@@ -390,9 +389,8 @@ it("lets a manual refresh run after the active batch before the remaining tick b
       projectId: "p",
       folderId: folder.id,
       workItemId: "i",
-      title: "Title",
-      prompt: "P",
-      item: { key: "", url: "" },
+      projectName: "Project",
+      item: { key: "", title: "Title", type: "", url: "" },
       settings: {},
     };
     const a = await service.start(input);
@@ -456,13 +454,96 @@ it("splits a large tool group into refresh batches below the runtime's result li
         projectId: "p",
         folderId: folder.id,
         workItemId: title,
-        title,
-        prompt: "",
-        item: { key: title, url: "" },
+        projectName: "Project",
+        item: { key: title, title, type: "", url: "" },
         settings: {},
       });
     await service.refresh();
     expect(calls).toEqual([2, 2, 1]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("fills persisted templates at start, preserves overrides and rejects oversized output before calling the plugin", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-templates-"));
+  try {
+    const statePath = path.join(root, "state.json");
+    const storage = new AppApiStorage(statePath);
+    const folder = await storage.addRepositoryFolder("p", root, "Repo");
+    await storage.setHandoffTemplates("agent", {
+      prompt: "{{item.description}} {{project.name}} {{repo.name}}",
+      title: "{{item.title}}",
+      branch: "{{item.key|slug}}",
+    });
+    const reopened = new AppApiStorage(statePath);
+    expect(await reopened.getHandoffTemplates("agent")).toMatchObject({
+      branch: "{{item.key|slug}}",
+    });
+    let received: unknown;
+    let calls = 0;
+    const service = new Handoffs({
+      storage: reopened,
+      onChange: () => {},
+      plugins: {
+        listPlugins: async () => [
+          {
+            id: "agent",
+            capabilities: {
+              handoff: {
+                promptTemplate: "Plugin {{item.title}}",
+                tools: [{ id: "t3" }],
+              },
+            },
+          },
+        ],
+        startHandoff: async (_id, request) => {
+          received = request;
+          calls++;
+          return { threadId: "thread", native: {} };
+        },
+        readHandoffStates: async () => [],
+      },
+    });
+    const input = {
+      pluginId: "agent",
+      toolId: "t3",
+      projectId: "p",
+      projectName: "Project",
+      folderId: folder.id,
+      workItemId: "item",
+      item: {
+        key: "PAY-12",
+        title: "Fix",
+        type: "Bug",
+        url: "",
+        description: "---\ntimelog: private\n---\nBody",
+      },
+      settings: {},
+    };
+    await service.start(input);
+    expect(received).toMatchObject({
+      prompt: "Body Project Repo",
+      title: "Fix",
+      branch: "pay-12",
+      item: { key: "PAY-12", url: "" },
+    });
+    await service.start({ ...input, promptOverride: "One-off prompt" });
+    expect(received).toMatchObject({
+      prompt: "One-off prompt",
+      title: "Fix",
+      branch: "pay-12",
+    });
+    expect(await reopened.getHandoffTemplates("agent")).toMatchObject({
+      prompt: "{{item.description}} {{project.name}} {{repo.name}}",
+    });
+    await reopened.setHandoffTemplates("agent", {
+      prompt: "P",
+      title: "x".repeat(501),
+      branch: "B",
+    });
+    await expect(service.start(input)).rejects.toThrow();
+    expect(calls).toBe(2);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

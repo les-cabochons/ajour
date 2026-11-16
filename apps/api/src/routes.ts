@@ -39,6 +39,16 @@ interface RouteSpec {
  * served on its own, before the origin check, and named `mcp.request`.
  */
 export const ROUTES = {
+  handoffTemplatesGet: {
+    method: "GET",
+    path: "/api/plugins/:pluginId/handoffs/templates",
+    name: "handoff.templates_read",
+  },
+  handoffTemplatesSave: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/handoffs/templates",
+    name: "handoff.templates_update",
+  },
   handoffBridge: {
     method: "GET",
     path: "/api/handoffs/bridge",

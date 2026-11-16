@@ -1,3 +1,8 @@
+import {
+  fillHandoffTemplates,
+  handoffTemplateDefaults,
+} from "../../../packages/shared/handoff-templates.ts";
+import { startHandoffRequestSchema } from "../../../packages/shared/handoffs.ts";
 import { randomUUID } from "node:crypto";
 import type {
   Handoff,
@@ -17,7 +22,9 @@ interface Options {
     listPlugins(): Promise<
       Array<{
         id: string;
-        capabilities: { handoff?: { tools: Array<{ id: string }> } };
+        capabilities: {
+          handoff?: { promptTemplate?: string; tools: Array<{ id: string }> };
+        };
       }>
     >;
     startHandoff(
@@ -89,19 +96,26 @@ export class Handoffs {
     );
     if (!plugin?.capabilities.handoff?.tools.some((t) => t.id === input.toolId))
       throw new HandoffRefused("This handoff tool is not available.");
+    const templates =
+      (await this.options.storage.getHandoffTemplates(input.pluginId)) ??
+      handoffTemplateDefaults(plugin.capabilities.handoff.promptTemplate);
+    const filled = fillHandoffTemplates(templates, {
+      ...input,
+      repoName: folder.name,
+    });
+    const request = startHandoffRequestSchema.parse({
+      tool: input.toolId,
+      folder: { id: folder.id, name: folder.name },
+      ...filled,
+      prompt: input.promptOverride ?? filled.prompt,
+      item: { key: input.item.key, url: input.item.url },
+      settings: input.settings,
+    });
     let result: StartHandoffResult;
     try {
       result = await this.options.plugins.startHandoff(
         input.pluginId,
-        {
-          tool: input.toolId,
-          folder: { id: folder.id, name: folder.name },
-          prompt: input.prompt,
-          title: input.title,
-          branch: input.branch,
-          item: input.item,
-          settings: input.settings,
-        },
+        request,
         input.projectId,
       );
     } catch (error) {
@@ -111,8 +125,7 @@ export class Handoffs {
           : "The tool refused the handoff.",
       );
     }
-    const { pluginId, toolId, workItemId, projectId, folderId, title, branch } =
-      input;
+    const { pluginId, toolId, workItemId, projectId, folderId } = input;
     const record = startHandoff(
       {
         id: randomUUID(),
@@ -121,8 +134,8 @@ export class Handoffs {
         workItemId,
         projectId,
         folderId,
-        title,
-        branch,
+        title: request.title,
+        branch: request.branch,
       },
       result,
       this.now(),

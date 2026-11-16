@@ -1200,3 +1200,5 @@ The broker port's marked privacy fixture in `process-broker.test.ts` covers all
 four forms of process content and asserts one event per call.
 
 Process access uses `unsigned_plugins.process_toggle` with `process_access.enabled`. Per-package acceptance and revocation use `plugin.process_update` with `process_access.accepted`. Package keys are never logged.
+
+Handoff template reads emit `handoff.templates_read` as request or job; saves emit `handoff.templates_update` as request or command. They record request metadata only, never template source or preview item fields.

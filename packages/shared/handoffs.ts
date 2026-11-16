@@ -142,15 +142,31 @@ export const handoffRefreshResultSchema = z.object({
     z.object({ pluginId: id, toolId: id, projectId: id, reason: z.string() }),
   ),
 });
-export const handoffStartRouteSchema = startHandoffRequestSchema
-  .omit({ folder: true, tool: true })
-  .extend({
+export const handoffStartRouteSchema = z
+  .object({
     pluginId: id,
     toolId: id,
     folderId: id,
     projectId: id,
     workItemId: id,
-  });
+    projectName: z.string().max(500),
+    item: z
+      .object({
+        key: z.string().max(500),
+        title: z.string().min(1).max(500),
+        description: z.string().max(1_048_576).optional(),
+        url: z.string().max(2000),
+        type: z.string().max(500),
+        parent: z
+          .object({ key: z.string().max(500), title: z.string().max(500) })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+    promptOverride: z.string().min(1).max(1_048_576).optional(),
+    settings: startHandoffRequestSchema.shape.settings,
+  })
+  .strict();
 export type Handoff = z.infer<typeof handoffRecordSchema>;
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
 export type StartHandoffResult = z.infer<typeof startHandoffResultSchema>;
@@ -169,6 +185,13 @@ export function handoffCapabilitySchema<
 >(fieldSchema: T) {
   return z
     .object({
+      promptTemplate: z
+        .string()
+        .refine(
+          (s) => new TextEncoder().encode(s).length <= 16384,
+          "Prompt template exceeds 16 KB.",
+        )
+        .optional(),
       tools: z
         .array(
           z

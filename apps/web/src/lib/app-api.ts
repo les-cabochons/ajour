@@ -1,3 +1,7 @@
+import {
+  handoffTemplatesSchema,
+  type HandoffTemplates,
+} from "@ajour/shared/handoff-templates";
 import { z } from "zod";
 import {
   handoffRecordSchema,
@@ -1963,5 +1967,25 @@ export function setHandoffVisibility(visible: boolean) {
     "/api/handoffs/visibility",
     { method: "POST", body: JSON.stringify({ visible }) },
     z.object({ ok: z.boolean() }),
+  );
+}
+
+export function getHandoffTemplates(pluginId: string) {
+  return appApiRequest(
+    "getHandoffTemplates",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/templates`,
+    undefined,
+    handoffTemplatesSchema,
+  );
+}
+export function saveHandoffTemplates(
+  pluginId: string,
+  templates: HandoffTemplates,
+) {
+  return appApiRequest(
+    "saveHandoffTemplates",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/templates`,
+    { method: "POST", body: JSON.stringify(templates) },
+    handoffTemplatesSchema,
   );
 }

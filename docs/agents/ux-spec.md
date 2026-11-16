@@ -1392,3 +1392,9 @@ Pausing a handoff preserves the tool's native data. The record carries a separat
 pause reason and time, cleared by a successful refresh. Reloading an older record
 whose native data exceeds 4 KB keeps the handoff with capped status and label and
 `native.truncated: true`. Its next successful refresh replaces that compact data.
+
+### Handoff templates
+
+A handoff plugin's settings page has editable prompt, title and branch templates, saved together on this computer. The prompt starts with the plugin's default when present. The title starts as `[{{item.key}}] {{item.title}}`; the branch starts as `{{item.key|slug}}-{{item.title|slug}}`. Unknown slots and filters prevent saving and name the error.
+
+Slot buttons insert at the caret in the last focused field. A searchable backlog item list selects the live preview. Missing descriptions and parents produce empty text. Descriptions exclude frontmatter and have a 32 KiB limit with an ellipsis line. `|slug` folds accents, lowercases, replaces punctuation with single hyphens and limits each segment to 60 characters. An empty segment becomes `item`.

@@ -4,7 +4,7 @@
  * an error, never a blank.
  */
 
-const SLOT_PATTERN = /\{\{\s*([A-Za-z][A-Za-z0-9_.-]*)\s*\}\}/g;
+const SLOT_PATTERN = /\{\{\s*([^{}]*?)\s*\}\}/g;
 
 /** The slots every task may use. Settings slots depend on the task. */
 export const AGENT_TASK_SLOTS = ["weekOf", "sessionId"] as const;
@@ -21,7 +21,13 @@ export class UnknownSlotError extends Error {
 
 /** Each slot name once, in the order it first appears. */
 export function listTemplateSlots(template: string): string[] {
-  return [...new Set([...template.matchAll(SLOT_PATTERN)].map((m) => m[1]!))];
+  return [
+    ...new Set(
+      [...template.matchAll(SLOT_PATTERN)].map((m) =>
+        m[1]!.split("|")[0]!.trim(),
+      ),
+    ),
+  ];
 }
 
 /** Replaces every slot. Throws UnknownSlotError for a slot without a value. */
@@ -29,10 +35,16 @@ export function fillTemplate(
   template: string,
   values: Record<string, string>,
 ): string {
-  return template.replace(SLOT_PATTERN, (_match, slot: string) => {
-    const value = values[slot];
+  return template.replace(SLOT_PATTERN, (_match, expression: string) => {
+    const [slot = "", filter, ...extra] = expression
+      .split("|")
+      .map((part) => part.trim());
+    if (extra.length || filter === "") throw new UnknownSlotError(expression);
+    const value = Object.hasOwn(values, slot) ? values[slot] : undefined;
     if (value === undefined) throw new UnknownSlotError(slot);
-    return value;
+    if (filter && filter !== "slug")
+      throw new UnknownSlotError(`${slot}|${filter}`);
+    return filter === "slug" ? slug(value) : value;
   });
 }
 
@@ -42,4 +54,18 @@ export function allowedTaskSlots(settingIds: readonly string[]): Set<string> {
     ...AGENT_TASK_SLOTS,
     ...settingIds.map((id) => `settings.${id}`),
   ]);
+}
+
+/** A bounded ASCII branch segment. */
+export function slug(value: string): string {
+  return (
+    value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60)
+      .replace(/-+$/g, "") || "item"
+  );
 }
