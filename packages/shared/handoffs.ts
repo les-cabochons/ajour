@@ -50,6 +50,16 @@ export const startHandoffRequestSchema = z
     settings: z.record(
       z.union([z.string().max(32_768), z.number().finite(), z.boolean()]),
     ),
+    /**
+     * Where the tool's hooks post when its thread changes (#726): Ajour's
+     * loopback address with this handoff's own token. A post only makes
+     * Ajour refresh the handoff. A declared command receives it only
+     * through a `hook-url` argument, which the host fills.
+     */
+    hook: z
+      .object({ url: z.string().min(1).max(500) })
+      .strict()
+      .optional(),
   })
   .strict();
 export const startHandoffResultSchema = z

@@ -172,6 +172,13 @@ import {
 } from "./connection-credentials.ts";
 import { secretAddressHoldsUserinfo } from "./broker-policy.ts";
 import { handoffConnectionAddress } from "./handoff-connection-address.ts";
+import {
+  HandoffHooks,
+  handoffHookUrl,
+  hookPathId,
+  MAX_HOOK_BODY_BYTES,
+  type HandoffHookOptions,
+} from "./handoff-hooks.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import {
   BrokerRequestError,
@@ -312,6 +319,11 @@ interface AppApiServerOptions {
   windowToken?: string;
   /** How long a data tool waits for the renderer. Tests shorten it. */
   mcpBridgeTimeoutMs?: number;
+  /** Handoff hook limits and clock (#726). Tests shorten and move them. */
+  handoffHooks?: Pick<
+    HandoffHookOptions,
+    "debounceMs" | "perHandoffLimit" | "globalLimit" | "windowMs" | "now"
+  >;
   /**
    * Receives the API's wide events. Defaults to where AJOUR_WIDE_EVENTS sends
    * them: nowhere, or one JSON line each on stdout with `console`.
@@ -603,6 +615,30 @@ function isAllowedRequestHost(hostHeader: string) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Reads a hook post's body and drops it, never parsing it. Reading stops
+ * past `MAX_HOOK_BODY_BYTES`, and at a client that hung up.
+ */
+async function drainHookBody(
+  request: IncomingMessage,
+): Promise<"read" | "too_large" | "closed"> {
+  const declared = Number(request.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > MAX_HOOK_BODY_BYTES)
+    return "too_large";
+  let totalBytes = 0;
+  try {
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+      totalBytes += Buffer.isBuffer(chunk)
+        ? chunk.byteLength
+        : Buffer.byteLength(chunk as string);
+      if (totalBytes > MAX_HOOK_BODY_BYTES) return "too_large";
+    }
+  } catch {
+    return "closed";
+  }
+  return "read";
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -1701,6 +1737,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
     events,
     onChange: (records) => mcpBridge.publish("handoffs", records),
+    // Built from the port the API listens on, read when each start runs.
+    hookUrl: (id, token) => handoffHookUrl(host, runtime.port, id, token),
+    onRemove: (id) => handoffHooks.forget(id),
+  });
+  const handoffHooks = new HandoffHooks({
+    find: (id) => storage.findHandoffHook(id),
+    revoke: (id) => storage.revokeHandoffHook(id),
+    refresh: (id) => handoffs.refreshFromHook(id),
+    ...options.handoffHooks,
   });
   const agentRunner = new AgentRunner({
     storage: {
@@ -4780,6 +4825,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   ) {
     const url = requestUrlOf(request);
     const isMcp = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/");
+    const hookId = hookPathId(url.pathname);
     const fromAgent = isMcp || url.searchParams.get("agent") === "1";
     const requestOrigin = request.headers.origin;
     const origin = !requestOrigin
@@ -4808,6 +4854,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         ) {
           unit.refuse("host_refused");
           writeJson(response, 403, { error: "Request host is not allowed." });
+          return;
+        }
+        // A tool's hook (#726), like MCP, is no browser and holds no
+        // window token: its own token, in the URL, is its credential.
+        if (hookId !== undefined) {
+          await serveHandoffHook(request, response, url, hookId, unit);
           return;
         }
         if (isMcp) {
@@ -4945,8 +4997,71 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     );
   }
 
+  /**
+   * `POST /hooks/handoff/:id?token=…`: a tool's hook says its thread
+   * changed. Served after the host check and before the window's origin
+   * and token checks, as MCP is. It refuses any Origin, so no web page
+   * reaches it, and answers with no CORS headers. A wrong, revoked or
+   * missing token gets the 404 an unknown id gets. A valid post schedules
+   * one refresh of that handoff and reads its body only to discard it,
+   * up to `MAX_HOOK_BODY_BYTES`. The event never holds the id, the token,
+   * the URL or the body.
+   */
+  async function serveHandoffHook(
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+    id: string,
+    requestUnit: Unit<AjourCatalog, "api.request">,
+  ) {
+    const unit = requestUnit.rename("handoff.hook");
+    unit.set({ http: { route: "/hooks/handoff/:id" } });
+    const answer = (status: number) => {
+      response.writeHead(status, { "Cache-Control": "no-store" });
+      response.end();
+    };
+    if (request.headers.origin) {
+      unit.refuse("browser_origin");
+      answer(403);
+      return;
+    }
+    if (request.method !== "POST") {
+      unit.set({ handoff: { hook: "unknown" } }).refuse("unknown_hook");
+      answer(404);
+      return;
+    }
+    let body: Awaited<ReturnType<typeof drainHookBody>> = "read";
+    const { result, tool } = await handoffHooks.receive(
+      id,
+      url.searchParams.get("token"),
+      async () => (body = await drainHookBody(request)) === "read",
+    );
+    // A client that left gets no answer; the seam records it.
+    if (body === "closed") return;
+    if (result === "dropped") {
+      if (tool) unit.set({ handoff: { tool } });
+      unit.refuse("body_too_large");
+      answer(413);
+      return;
+    }
+    unit.set({ handoff: { hook: result, ...(tool ? { tool } : {}) } });
+    if (result === "unknown") {
+      unit.refuse("unknown_hook");
+      answer(404);
+      return;
+    }
+    if (result === "rate_limited") {
+      unit.refuse("rate_limited");
+      response.writeHead(429, { "Cache-Control": "no-store", "Retry-After": "60" });
+      response.end();
+      return;
+    }
+    answer(204);
+  }
+
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    handoffHooks.close();
     commandBridge.close();
     mcpBridge.close();
     clearInterval(stallTimer);

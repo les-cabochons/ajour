@@ -1865,6 +1865,30 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * A tool's hook posted that its thread changed (#726). Never the
+     * handoff's id, the token, the URL or the body.
+     */
+    "handoff.hook": {
+      kinds: ["request"],
+      reasons: [
+        ...requestReasons,
+        /** The post carried an Origin: a web page, not a tool. */
+        "browser_origin",
+        /** An unknown id, or a wrong, missing or revoked token. */
+        "unknown_hook",
+        /** Too many posts for this handoff, or for all of them. */
+        "rate_limited",
+        "body_too_large",
+      ],
+      fields: {
+        ...requestFields,
+        handoff: {
+          hook: operational<"accepted" | "rate_limited" | "unknown">(),
+          tool: operational(),
+        },
+      },
+    },
     "handoff.detect": {
       kinds: ["request", "plugin_operation", "job", "command"],
       reasons: [
