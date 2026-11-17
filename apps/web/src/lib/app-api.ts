@@ -12,6 +12,11 @@ import {
   type HandoffStartRoute,
   type HandoffToolConnections,
 } from "@ajour/shared/handoffs";
+import {
+  handoffThreadsResultSchema,
+  type HandoffAdoptRoute,
+  type HandoffThreadDismissal,
+} from "@ajour/shared/handoff-threads";
 
 import {
   commandAccessSchema,
@@ -1985,6 +1990,45 @@ export function detectHandoffTools(pluginId: string, projectId: string) {
     `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/detect`,
     { method: "POST", body: JSON.stringify({ projectId }) },
     detectToolsResultSchema,
+  );
+}
+/**
+ * The threads the project's repository folders hold whose title names one
+ * of the item's keys, from each tool that lists its threads, less those
+ * dismissed for the item. The API lists a folder at most once every few
+ * minutes per tool.
+ */
+export function findHandoffThreads(
+  projectId: string,
+  workItemId: string,
+  keys: readonly string[],
+) {
+  return appApiRequest(
+    "findHandoffThreads",
+    "/api/handoffs/threads",
+    {
+      method: "POST",
+      body: JSON.stringify({ projectId, workItemId, keys }),
+    },
+    handoffThreadsResultSchema,
+  );
+}
+/** Links a listed thread to the item, as a handoff refreshed right away. */
+export function adoptHandoffThread(input: HandoffAdoptRoute) {
+  return appApiRequest(
+    "adoptHandoffThread",
+    "/api/handoffs/adopt",
+    { method: "POST", body: JSON.stringify(input) },
+    handoffRecordSchema,
+  );
+}
+/** "Not this one": the thread is offered to that item no more. */
+export function dismissHandoffThread(input: HandoffThreadDismissal) {
+  return appApiRequest(
+    "dismissHandoffThread",
+    "/api/handoffs/threads/dismiss",
+    { method: "POST", body: JSON.stringify(input) },
+    z.object({ ok: z.boolean() }),
   );
 }
 export function setHandoffVisibility(visible: boolean) {

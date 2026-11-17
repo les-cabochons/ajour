@@ -93,6 +93,7 @@ export type PluginManifest = {
             label: string;
             iconSvg: string;
             connection?: "required" | "none" | undefined;
+            listsThreads?: boolean | undefined;
           }[];
           promptTemplate?: string | undefined;
         }
@@ -694,8 +695,8 @@ export type SettleWriteResult = {
 
 /** Needs `connector.assign`. Ids are your own: the ones `writeSettle` takes. */
 export type SearchAssigneesRequest = {
-  sourceId: string;
   limit: number;
+  sourceId: string;
   query: string;
 };
 
@@ -739,6 +740,7 @@ export type CodeHostOperations = {
         title: string;
         url: string;
         id: string;
+        updatedAt: number;
         state: "closed" | "merged" | "open";
         author: {
           login: string;
@@ -747,7 +749,6 @@ export type CodeHostOperations = {
           avatarUrl?: string | undefined;
         };
         createdAt: number;
-        updatedAt: number;
         comments: {
           id: string;
           author: {
@@ -842,6 +843,27 @@ export type CodeHostOperations = {
   readonly getPullRequestConversation: {
     request: { number: number; repository: string };
     result: {
+      threads: {
+        path: string;
+        id: string;
+        comments: {
+          id: string;
+          author: {
+            login: string;
+            isBot: boolean;
+            displayName?: string | undefined;
+            avatarUrl?: string | undefined;
+          };
+          body: string;
+          createdAt: number;
+          updatedAt?: number | undefined;
+        }[];
+        side: "base" | "head";
+        resolved: boolean;
+        outdated: boolean;
+        line?: number | undefined;
+        startLine?: number | undefined;
+      }[];
       description: string;
       timeline: (
         | {
@@ -892,27 +914,6 @@ export type CodeHostOperations = {
               | undefined;
           }
       )[];
-      threads: {
-        path: string;
-        id: string;
-        comments: {
-          id: string;
-          author: {
-            login: string;
-            isBot: boolean;
-            displayName?: string | undefined;
-            avatarUrl?: string | undefined;
-          };
-          body: string;
-          createdAt: number;
-          updatedAt?: number | undefined;
-        }[];
-        side: "base" | "head";
-        resolved: boolean;
-        outdated: boolean;
-        line?: number | undefined;
-        startLine?: number | undefined;
-      }[];
       viewedPaths: string[];
       mergeMethods: ("merge" | "squash" | "rebase")[];
     };
@@ -931,6 +932,7 @@ export type CodeHostOperations = {
         title: string;
         url: string;
         id: string;
+        updatedAt: number;
         state: "closed" | "merged" | "open";
         author: {
           login: string;
@@ -939,7 +941,6 @@ export type CodeHostOperations = {
           avatarUrl?: string | undefined;
         };
         createdAt: number;
-        updatedAt: number;
         repository: string;
         draft: boolean;
         closedAt?: number | undefined;
@@ -1055,13 +1056,14 @@ export type CalendarOperations = {
 /** Each backlog comment operation's request and result, by the function name it exports. */
 export type BacklogCommentOperations = {
   readonly listItemComments: {
-    request: { sourceId: string; limit: number; cursor?: string | undefined };
+    request: { limit: number; sourceId: string; cursor?: string | undefined };
     result: {
       comments: {
         id: string;
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
+        updatedAt?: string | undefined;
         reactions?:
           | {
               reaction:
@@ -1077,7 +1079,6 @@ export type BacklogCommentOperations = {
               viewerReacted: boolean;
             }[]
           | undefined;
-        updatedAt?: string | undefined;
         restrictedTo?: string | undefined;
       }[];
       viewer: { id: string; displayName: string; email?: string | undefined };
@@ -1093,6 +1094,7 @@ export type BacklogCommentOperations = {
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
+        updatedAt?: string | undefined;
         reactions?:
           | {
               reaction:
@@ -1108,7 +1110,6 @@ export type BacklogCommentOperations = {
               viewerReacted: boolean;
             }[]
           | undefined;
-        updatedAt?: string | undefined;
         restrictedTo?: string | undefined;
       };
     };
@@ -1121,6 +1122,7 @@ export type BacklogCommentOperations = {
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
         createdAt: string;
+        updatedAt?: string | undefined;
         reactions?:
           | {
               reaction:
@@ -1136,7 +1138,6 @@ export type BacklogCommentOperations = {
               viewerReacted: boolean;
             }[]
           | undefined;
-        updatedAt?: string | undefined;
         restrictedTo?: string | undefined;
       };
     };
@@ -1177,7 +1178,7 @@ export type BacklogCommentOperations = {
     };
   };
   readonly searchItemPeople: {
-    request: { sourceId: string; limit: number; query: string };
+    request: { limit: number; sourceId: string; query: string };
     result: {
       people: { id: string; displayName: string; email?: string | undefined }[];
     };
@@ -1492,8 +1493,8 @@ export type TimeSyncEntryValues = {
 /** What `syncTimeEntries` answers: one result per change, and the remote entries in the window. */
 export type TimeSyncResult = {
   entries: {
-    remoteId: string;
     updatedAt: string;
+    remoteId: string;
     localDate: string;
     minutes: number;
     running: boolean;
@@ -1509,8 +1510,8 @@ export type TimeSyncResult = {
         syncKey: string;
         entry?:
           | {
-              remoteId: string;
               updatedAt: string;
+              remoteId: string;
               localDate: string;
               minutes: number;
               running: boolean;
@@ -1536,8 +1537,8 @@ export type TimeSyncChangeResult =
       syncKey: string;
       entry?:
         | {
-            remoteId: string;
             updatedAt: string;
+            remoteId: string;
             localDate: string;
             minutes: number;
             running: boolean;
@@ -1554,8 +1555,8 @@ export type TimeSyncChangeResult =
 
 /** An entry as your system stores it, with `clientRef` when Ajour created it. */
 export type TimeSyncRemoteEntry = {
-  remoteId: string;
   updatedAt: string;
+  remoteId: string;
   localDate: string;
   minutes: number;
   running: boolean;
@@ -1611,5 +1612,24 @@ export type DetectToolsResult = {
     available: boolean;
     version?: string | undefined;
     reason?: string | undefined;
+  }[];
+};
+
+export type ListThreadsRequest = {
+  tool: string;
+  folder: { id: string };
+  limit: number;
+  since?: number | undefined;
+};
+
+export type ListThreadsResult = {
+  threads: {
+    title: string;
+    threadId: string;
+    native: Record<string, unknown>;
+    link?: string | undefined;
+    resume?:
+      { command: string; args: Record<string, string | number> } | undefined;
+    updatedAt?: number | undefined;
   }[];
 };

@@ -14,6 +14,14 @@ import {
   type HandoffToolConnections,
 } from "../../../packages/shared/handoffs.ts";
 import {
+  handoffThreadDismissalSchema,
+  sameDismissal,
+  type HandoffThreadDismissal,
+} from "../../../packages/shared/handoff-threads.ts";
+
+/** The "Not this one" answers kept, newest last. */
+const MAX_HANDOFF_THREAD_DISMISSALS = 2000;
+import {
   updateHandoff,
   removeHandoff,
   handoffSummary,
@@ -470,6 +478,8 @@ interface AppApiStateV8 {
   /** The connection each handoff tool hands off through, by plugin id. */
   handoffToolConnections: Record<string, HandoffToolConnections>;
   handoffs: Handoff[];
+  /** Listed threads the user said aren't an item's: "Not this one", per item. */
+  handoffThreadDismissals: HandoffThreadDismissal[];
   repositoryFolders: RepositoryFolder[];
   version: number;
   connections: StoredConnection[];
@@ -644,6 +654,7 @@ function createDefaultState(): AppApiState {
     handoffTemplates: {},
     handoffToolConnections: {},
     handoffs: [],
+    handoffThreadDismissals: [],
     repositoryFolders: [],
     version: STATE_VERSION,
     connections: [],
@@ -1107,6 +1118,13 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         return parsed.success ? [parsed.data] : [];
       },
     ),
+    handoffThreadDismissals: (Array.isArray(raw.handoffThreadDismissals)
+      ? raw.handoffThreadDismissals
+      : []
+    ).flatMap((value) => {
+      const parsed = handoffThreadDismissalSchema.safeParse(value);
+      return parsed.success ? [parsed.data] : [];
+    }),
     repositoryFolders: (Array.isArray(raw.repositoryFolders)
       ? raw.repositoryFolders
       : []
@@ -1455,6 +1473,28 @@ export class AppApiStorage {
   async removeHandoff(id: string): Promise<void> {
     await this.mutate((state) => ({
       nextState: { ...state, handoffs: removeHandoff(state.handoffs, id) },
+      result: undefined,
+    }));
+  }
+  async listHandoffThreadDismissals(): Promise<HandoffThreadDismissal[]> {
+    return structuredClone((await this.readState()).handoffThreadDismissals);
+  }
+  /**
+   * Remembers "Not this one" for a listed thread on one item. The newest
+   * `MAX_HANDOFF_THREAD_DISMISSALS` are kept, far more than a tool lists.
+   */
+  async dismissHandoffThread(dismissal: HandoffThreadDismissal): Promise<void> {
+    const parsed = handoffThreadDismissalSchema.parse(dismissal);
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        handoffThreadDismissals: [
+          ...state.handoffThreadDismissals.filter(
+            (old) => !sameDismissal(old, parsed),
+          ),
+          parsed,
+        ].slice(-MAX_HANDOFF_THREAD_DISMISSALS),
+      },
       result: undefined,
     }));
   }
@@ -2925,6 +2965,9 @@ export class AppApiStorage {
           Object.entries(state.handoffToolConnections).filter(
             ([id]) => id !== pluginId,
           ),
+        ),
+        handoffThreadDismissals: state.handoffThreadDismissals.filter(
+          (dismissal) => dismissal.pluginId !== pluginId,
         ),
         pluginOrigins: Object.fromEntries(
           Object.entries(state.pluginOrigins).filter(

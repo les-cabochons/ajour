@@ -143,3 +143,69 @@ it("stores pull request links only when they are https", () => {
     ).toBe(true);
   }
 });
+
+import {
+  listThreadsRequestSchema,
+  listThreadsResultSchema,
+} from "../handoffs.ts";
+it("lets a tool declare that it lists threads, off by default", () => {
+  const manifest = (tool: Record<string, unknown>) => ({
+    ...jiraManifest(),
+    capabilities: {
+      handoff: {
+        tools: [
+          { id: "t3", label: "T3", iconSvg: "<svg/>", settings: [], ...tool },
+        ],
+      },
+    },
+  });
+  const plain = pluginApi4ManifestSchema.parse(manifest({}));
+  expect(plain.capabilities.handoff?.tools[0]?.listsThreads).toBeUndefined();
+  const listing = pluginApi4ManifestSchema.parse(
+    manifest({ listsThreads: true }),
+  );
+  expect(listing.capabilities.handoff?.tools[0]?.listsThreads).toBe(true);
+  expect(
+    pluginApi4ManifestSchema.safeParse(manifest({ listsThreads: "yes" }))
+      .success,
+  ).toBe(false);
+});
+
+it("bounds a thread listing's request and answer as a state read's", () => {
+  const request = { tool: "t3", folder: { id: "f1" }, limit: 50 };
+  expect(listThreadsRequestSchema.safeParse(request).success).toBe(true);
+  expect(
+    listThreadsRequestSchema.safeParse({ ...request, since: 1000 }).success,
+  ).toBe(true);
+  for (const bad of [
+    { ...request, limit: 0 },
+    { ...request, limit: 201 },
+    { ...request, folder: { id: "f1", path: "C:\repo" } },
+    { ...request, extra: true },
+  ])
+    expect(listThreadsRequestSchema.safeParse(bad).success).toBe(false);
+
+  const thread = {
+    threadId: "thread-1",
+    title: "[PAY-12] Fix login redirect",
+    link: "https://example.test/thread-1",
+    resume: { command: "resume", args: { thread: "thread-1" } },
+    native: { status: "idle" },
+    updatedAt: 1000,
+  };
+  expect(listThreadsResultSchema.safeParse({ threads: [thread] }).success).toBe(
+    true,
+  );
+  for (const bad of [
+    { threads: Array.from({ length: 201 }, () => thread) },
+    { threads: [{ ...thread, title: "" }] },
+    { threads: [{ ...thread, title: "x".repeat(501) }] },
+    { threads: [{ ...thread, threadId: "" }] },
+    { threads: [{ ...thread, link: "x".repeat(2001) }] },
+    { threads: [{ ...thread, native: { x: "a".repeat(4089) } }] },
+    { threads: [{ ...thread, updatedAt: Number.NaN }] },
+    { threads: [{ ...thread, extra: true }] },
+    [thread],
+  ])
+    expect(listThreadsResultSchema.safeParse(bad).success).toBe(false);
+});

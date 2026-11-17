@@ -170,6 +170,7 @@ const CONNECTION_URL_METHODS = new Set([
   "detectTools",
   "startHandoff",
   "readHandoffStates",
+  "listThreads",
   "openHandoff",
 ]);
 const refuse = (reason: ProcessReason): never => {

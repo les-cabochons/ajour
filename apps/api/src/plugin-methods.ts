@@ -13,6 +13,7 @@ export type PluginMethod =
   | "detectTools"
   | "startHandoff"
   | "readHandoffStates"
+  | "listThreads"
   | "validateConnection"
   | "syncConnection"
   | "listSettleStates"
@@ -56,6 +57,7 @@ const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   detectTools: [],
   startHandoff: ["request"],
   readHandoffStates: ["request"],
+  listThreads: ["request"],
   validateConnection: ["config", "context"],
   syncConnection: ["connection", "workItems", "syncOptions"],
   listSettleStates: CONNECTION_AND_REQUEST,
@@ -112,6 +114,7 @@ const HANDOFF_CONNECTION_ARGUMENTS: Partial<
   detectTools: ["connection"],
   startHandoff: CONNECTION_AND_REQUEST,
   readHandoffStates: CONNECTION_AND_REQUEST,
+  listThreads: CONNECTION_AND_REQUEST,
 };
 
 /** The arguments a plugin export receives from the host's named parameters. */
