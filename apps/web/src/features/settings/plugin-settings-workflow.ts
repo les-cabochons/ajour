@@ -12,6 +12,8 @@ import {
   ESTIMATE_PUSH_OPERATION,
 } from "@ajour/shared/connection-access";
 import {
+  catalogCapabilityOfManifestKey,
+  pluginCatalogCapabilitySchema,
   pluginCatalogRefreshMinutesSchema,
   switchableCapabilityLabels,
 } from "@ajour/shared";
@@ -25,6 +27,7 @@ import type {
   PluginCatalogEntry,
   PluginCatalogResponse,
   PluginCatalogSettings,
+  PluginManifestCapability,
   ProjectDataShapePluginManifest,
   SwitchableCapability,
   PluginRuntimeSettingsUpdate,
@@ -212,36 +215,39 @@ interface PluginSettingsSnapshot {
   isMutatingPlugin: boolean;
 }
 
+/** The feature and tag a local plugin lists for each catalog capability. */
+const localCapabilityListing: Record<
+  PluginCatalogCapability,
+  { feature: string; tag: string }
+> = {
+  connector: { feature: "work-item-sync", tag: "backlog" },
+  codeHost: { feature: "pull-requests", tag: "code-host" },
+  calendar: { feature: "calendar-events", tag: "calendar" },
+  team: { feature: "project-sync", tag: "team" },
+  projectSource: { feature: "project-source", tag: "project-source" },
+  timeSync: { feature: "time-sync", tag: "time-sync" },
+  agentTask: { feature: "agent-task", tag: "agent-task" },
+  handoff: { feature: "agent-handoff", tag: "handoff" },
+  schema: { feature: "project-data-shape", tag: "data-shape" },
+};
+
 function localCatalogEntry(
   plugin: PluginManifest | ProjectDataShapePluginManifest,
 ): PluginCatalogEntry {
-  const capabilities: PluginCatalogCapability[] =
-    "projectDataShape" in plugin.capabilities
-      ? ["schema"]
-      : [
-          ...(plugin.capabilities.connector ? (["connector"] as const) : []),
-          ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
-          ...(plugin.capabilities.calendar ? (["calendar"] as const) : []),
-          ...(plugin.capabilities.team ? (["team"] as const) : []),
-          ...(plugin.capabilities.projectSource
-            ? (["projectSource"] as const)
-            : []),
-          ...(plugin.capabilities.agentTask ? (["agentTask"] as const) : []),
-        ];
-  const features = capabilities.map((capability) =>
-    capability === "connector"
-      ? "work-item-sync"
-      : capability === "codeHost"
-        ? "pull-requests"
-        : capability === "calendar"
-          ? "calendar-events"
-          : capability === "team"
-            ? "project-sync"
-            : capability === "projectSource"
-              ? "project-source"
-              : capability === "agentTask"
-                ? "agent-task"
-                : "project-data-shape",
+  const declared = new Set<PluginCatalogCapability | null>(
+    Object.entries(plugin.capabilities)
+      .filter(([, value]) => value !== undefined)
+      .map(
+        ([key]) =>
+          catalogCapabilityOfManifestKey[key as PluginManifestCapability] ??
+          null,
+      ),
+  );
+  const capabilities = pluginCatalogCapabilitySchema.options.filter(
+    (capability) => declared.has(capability),
+  );
+  const features = capabilities.map(
+    (capability) => localCapabilityListing[capability].feature,
   );
   return {
     id: plugin.id,
@@ -261,20 +267,8 @@ function localCatalogEntry(
     compatibility: { pluginApiVersion: plugin.apiVersion },
     capabilities,
     features,
-    tags: capabilities.map((capability) =>
-      capability === "connector"
-        ? "backlog"
-        : capability === "codeHost"
-          ? "code-host"
-          : capability === "calendar"
-            ? "calendar"
-            : capability === "team"
-              ? "team"
-              : capability === "projectSource"
-                ? "project-source"
-                : capability === "agentTask"
-                  ? "agent-task"
-                  : "data-shape",
+    tags: capabilities.map(
+      (capability) => localCapabilityListing[capability].tag,
     ),
   };
 }

@@ -3,6 +3,7 @@ import {
   pluginInstallResponseSchema,
   pluginKeyFingerprintSchema,
 } from "./plugins";
+import type { PluginApi4Capabilities } from "./plugin-api-4";
 
 const httpsUrlSchema = z
   .string()
@@ -23,11 +24,38 @@ export const pluginCatalogCapabilitySchema = z.enum([
   "projectSource",
   "timeSync",
   "agentTask",
+  "handoff",
   "schema",
 ]);
 export type PluginCatalogCapability = z.infer<
   typeof pluginCatalogCapabilitySchema
 >;
+
+/** A capability key of `plugin.json`, as plugin API 4 accepts it. */
+export type PluginManifestCapability = keyof PluginApi4Capabilities;
+
+/**
+ * The catalog capability each `plugin.json` capability lists under, or null
+ * for one the catalog doesn't name: project and task properties come with
+ * an agent task plugin. A capability the manifest gains must be placed here,
+ * or its plugins are left out of the catalog.
+ */
+export const catalogCapabilityOfManifestKey: Record<
+  PluginManifestCapability,
+  PluginCatalogCapability | null
+> = {
+  connector: "connector",
+  codeHost: "codeHost",
+  calendar: "calendar",
+  team: "team",
+  projectSource: "projectSource",
+  timeSync: "timeSync",
+  agentTask: "agentTask",
+  handoff: "handoff",
+  projectProperties: null,
+  taskProperties: null,
+  projectDataShape: "schema",
+};
 
 /** The family of git host a plugin source lives on. */
 export const pluginSourceHostKindSchema = z.enum(["github", "gitlab", "gitea"]);

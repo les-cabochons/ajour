@@ -53,24 +53,24 @@ Unknown keys are refused, and every link must use HTTPS.
 
 Each plugin:
 
-| Field              | Rules                                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`               | Lowercase letters, digits, `_` and `-`, 2 to 64 characters. The same as `plugin.json`'s `id`.                                              |
-| `name`             | 1 to 80 characters.                                                                                                                        |
-| `description`      | 1 to 500 characters.                                                                                                                       |
-| `version`          | The same as `plugin.json`'s `version`, such as `1.2.0` or `1.2.0-beta.1`. Ajour offers **Update** when it is newer than the installed one. |
-| `pluginApiVersion` | The same as `plugin.json`'s `apiVersion`.                                                                                                  |
-| `capabilities`     | 1 to 6 of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `schema`. The backlog capability is `connector`.                    |
-| `features`         | 1 to 12 slugs, such as `work-item-sync`. See below.                                                                                        |
-| `tags`             | 1 to 12 slugs.                                                                                                                             |
-| `author`           | `name` and `url`.                                                                                                                          |
-| `license`          | `name` and `spdxId`.                                                                                                                       |
-| `website`          | Optional. A URL.                                                                                                                           |
-| `status`           | `available`, `coming-soon` or `deprecated`.                                                                                                |
-| `commit`           | The full commit ID the files come from, 40 or 64 lowercase hex characters.                                                                 |
-| `path`             | The plugin's folder in the repository, such as `plugins/jira`, or `.` for the root.                                                        |
-| `files`            | Required when `available`, refused when `coming-soon`. 1 to 500 files, `plugin.json` among them, 25 MiB at most together.                  |
-| `images`           | Optional `thumbnail` and `hero`, each a file entry.                                                                                        |
+| Field              | Rules                                                                                                                                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | Lowercase letters, digits, `_` and `-`, 2 to 64 characters. The same as `plugin.json`'s `id`.                                                                                                                                     |
+| `name`             | 1 to 80 characters.                                                                                                                                                                                                               |
+| `description`      | 1 to 500 characters.                                                                                                                                                                                                              |
+| `version`          | The same as `plugin.json`'s `version`, such as `1.2.0` or `1.2.0-beta.1`. Ajour offers **Update** when it is newer than the installed one.                                                                                        |
+| `pluginApiVersion` | The same as `plugin.json`'s `apiVersion`.                                                                                                                                                                                         |
+| `capabilities`     | 1 to 9 of `connector`, `codeHost`, `calendar`, `team`, `projectSource`, `timeSync`, `agentTask`, `handoff` and `schema`. The backlog capability is `connector`. An entry with another capability is left out, and Ajour names it. |
+| `features`         | 1 to 12 slugs, such as `work-item-sync`. See below.                                                                                                                                                                               |
+| `tags`             | 1 to 12 slugs.                                                                                                                                                                                                                    |
+| `author`           | `name` and `url`.                                                                                                                                                                                                                 |
+| `license`          | `name` and `spdxId`.                                                                                                                                                                                                              |
+| `website`          | Optional. A URL.                                                                                                                                                                                                                  |
+| `status`           | `available`, `coming-soon` or `deprecated`.                                                                                                                                                                                       |
+| `commit`           | The full commit ID the files come from, 40 or 64 lowercase hex characters.                                                                                                                                                        |
+| `path`             | The plugin's folder in the repository, such as `plugins/jira`, or `.` for the root.                                                                                                                                               |
+| `files`            | Required when `available`, refused when `coming-soon`. 1 to 500 files, `plugin.json` among them, 25 MiB at most together.                                                                                                         |
+| `images`           | Optional `thumbnail` and `hero`, each a file entry.                                                                                                                                                                               |
 
 A file entry has a `path` inside the plugin's folder, its `sha256` in lowercase hex, and its `size` in bytes. A path is relative, with `/` between plain segments of letters, digits, `.`, `_` and `-`: no `..`. Images are PNG, JPEG, WebP or AVIF, under 1 MB. Use a square thumbnail of at least 512 pixels and a 16:9 hero of at least 1600 by 900.
 

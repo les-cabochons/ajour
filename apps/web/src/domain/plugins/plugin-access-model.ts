@@ -4,6 +4,7 @@ import type {
   PluginAccessDifference,
   PluginAccessEndpoint,
   PluginAccessView,
+  PluginManifestCapability,
   PluginOverviewGroup,
 } from "@ajour/shared";
 
@@ -47,17 +48,20 @@ export interface AccessLabels {
   tools?: readonly { id: string; label: string }[];
 }
 
-/** The capabilities in GLOSSARY.md's words. */
+/** The capabilities in GLOSSARY.md's words, for every manifest key. */
 const CAPABILITY_LABELS: Record<string, string> = {
   connector: "Backlog",
   codeHost: "Code host",
   calendar: "Calendar",
   team: "Team",
+  projectSource: "Project source",
+  timeSync: "Time sync",
   agentTask: "Agent tasks",
+  handoff: "Handoff tools",
   projectProperties: "Project properties",
   taskProperties: "Task properties",
   projectDataShape: "Schema",
-};
+} satisfies Record<PluginManifestCapability, string>;
 
 /**
  * What each plugin operation an access choice can unlock does, to follow

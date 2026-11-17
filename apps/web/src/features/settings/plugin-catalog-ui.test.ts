@@ -8,6 +8,8 @@ import {
   canInstallCatalogPlugin,
   catalogOffersUpdate,
   isEntrySigned,
+  pluginCapabilitiesLabel,
+  pluginCatalogFilters,
 } from "./plugin-catalog-ui";
 
 const OFFICIAL = "https://github.com/les-cabochons/ajour-plugins";
@@ -51,6 +53,31 @@ function origin(overrides: Partial<PluginOrigin> = {}): PluginOrigin {
     ...overrides,
   };
 }
+
+describe("catalog capability names", () => {
+  it("names a handoff plugin's capability on its card", () => {
+    expect(pluginCapabilitiesLabel(entry(["handoff"]))).toBe("Handoff tools");
+    expect(pluginCapabilitiesLabel(entry(["connector", "handoff"]))).toBe(
+      "Backlog · Handoff tools",
+    );
+  });
+
+  it("gives handoff plugins their own filter, between agent tasks and schemas", () => {
+    expect(pluginCatalogFilters.map((filter) => filter.label)).toEqual([
+      "All",
+      "Backlog",
+      "Code hosts",
+      "Calendars",
+      "Agent tasks",
+      "Handoff tools",
+      "Schemas",
+    ]);
+    expect(
+      pluginCatalogFilters.find((filter) => filter.label === "Handoff tools")
+        ?.value,
+    ).toBe("handoff");
+  });
+});
 
 describe("canInstallCatalogPlugin", () => {
   // Every capability of the shared list but `schema`, so a capability added

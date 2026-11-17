@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  catalogCapabilityOfManifestKey,
   comparePluginVersions,
+  pluginCatalogCapabilitySchema,
   pluginCatalogEntrySchema,
   pluginCatalogResponseSchema,
 } from "../plugin-catalog";
+import { pluginApi4CapabilitiesSchema } from "../plugin-api-4";
 
 const azureDevOps = {
   id: "azure_devops",
@@ -79,5 +82,32 @@ describe("plugin versions", () => {
     ["not a version", "1.0.0", 0],
   ])("compares %s with %s as %d", (left, right, expected) => {
     expect(comparePluginVersions(left, right)).toBe(expected);
+  });
+});
+
+describe("catalog capabilities", () => {
+  // The manifest schema is the list of capabilities. A capability added
+  // there must be placed in the catalog, or its plugins are skipped (#710).
+  it("places every capability the manifest accepts", () => {
+    expect(Object.keys(catalogCapabilityOfManifestKey).sort()).toEqual(
+      Object.keys(pluginApi4CapabilitiesSchema.innerType().shape).sort(),
+    );
+  });
+
+  it("lists every catalog capability under a manifest capability", () => {
+    expect(
+      new Set(Object.values(catalogCapabilityOfManifestKey).filter(Boolean)),
+    ).toEqual(new Set(pluginCatalogCapabilitySchema.options));
+  });
+
+  it("accepts a handoff plugin", () => {
+    expect(
+      pluginCatalogEntrySchema.parse({
+        ...azureDevOps,
+        id: "agent-handoff",
+        capabilities: ["handoff"],
+        features: ["agent-handoff"],
+      }).capabilities,
+    ).toEqual(["handoff"]);
   });
 });
