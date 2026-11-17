@@ -122,6 +122,7 @@ export class HandoffHooks {
     );
     if (!found || !token || !matches) return { result: "unknown" };
     if (!shouldRefresh(found.record, now)) {
+      this.perHandoff.delete(id);
       await this.options.revoke(id);
       return { result: "unknown" };
     }

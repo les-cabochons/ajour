@@ -478,7 +478,7 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
                 hook.name,
                 hook.template === undefined
                   ? options.hookUrl!
-                  : hook.template.replaceAll("{url}", options.hookUrl!),
+                  : hook.template.replaceAll("{url}", () => options.hookUrl!),
               ]),
             ),
           };
