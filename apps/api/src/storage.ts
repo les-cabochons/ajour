@@ -1511,13 +1511,17 @@ export class AppApiStorage {
   async updateHandoffs(
     updates: HostHandoffUpdate[],
     now: number,
+    /** When the refresh is saved, after its plugin answered: judges expiry. */
+    savedAt = now,
   ): Promise<void> {
     const byId = new Map(updates.map((value) => [value.id, value]));
     await this.mutate((state) => {
       const expired = new Set(
         state.handoffs
           .filter(
-            (record) => byId.has(record.id) && !shouldRefresh(record, now),
+            (record) =>
+              byId.has(record.id) &&
+              !shouldRefresh(record, Math.max(now, savedAt)),
           )
           .map((record) => record.id),
       );

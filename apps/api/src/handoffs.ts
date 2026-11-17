@@ -759,7 +759,11 @@ export class Handoffs {
                 paused: { reason, since: h.paused?.since ?? now },
               }));
             if (updates.length) {
-              await this.options.storage.updateHandoffs(updates, now);
+              await this.options.storage.updateHandoffs(
+                updates,
+                now,
+                this.now(),
+              );
               await this.publish();
             }
             failures.push(failure(reason));
@@ -780,7 +784,7 @@ export class Handoffs {
             first.projectId,
             ...(connection ? [connection] : []),
           );
-          await this.options.storage.updateHandoffs(updates, now);
+          await this.options.storage.updateHandoffs(updates, now, this.now());
           succeeded++;
           await this.publish();
         } catch (error) {
@@ -793,6 +797,7 @@ export class Handoffs {
               paused: h.paused,
             })),
             now,
+            this.now(),
           );
           await this.publish();
           unit?.refuse("refresh_failed");
