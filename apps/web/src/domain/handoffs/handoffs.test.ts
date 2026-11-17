@@ -162,6 +162,15 @@ describe("handoff items", () => {
       ["1234"],
     ],
     ["a local item, by nothing", { source: "manual" }, []],
+    [
+      "an item whose source id no title's brackets could hold, by its shown key only",
+      {
+        source: "jira",
+        sourceExternalId: "[PAY-12] ",
+        sourceUrl: "https://acme.atlassian.net/browse/PAY-12",
+      },
+      ["PAY-12"],
+    ],
   ])("names %s", (_, fields, keys) => {
     expect(getHandoffItemKeys(fields as LocalWorkItem)).toEqual(keys);
   });

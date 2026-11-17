@@ -1362,6 +1362,22 @@ this one" in `handoffThreadDismissals`, keyed by plugin, tool, connection,
 thread id and work item, newest 2,000 kept; uninstalling the plugin removes
 them.
 
+Backlog items live only in the window (Product Boundary), so the API can't
+look an item up, derive its keys or check its project; it takes the item id,
+project and keys from the window. Its caller is the user's own window behind
+the window token, so the checks below catch a window bug that pairs one item
+with another's project or keys, not a hostile caller, which could read the
+same threads through the project's folders anyway. The route takes up to
+4 distinct keys, each one `itemKeySchema` accepts: up to 500 characters a
+title's bracketed token could hold, so no brackets, no surrounding space, no control, format or line separator
+characters; `getHandoffItemKeys` leaves out a key that fails it rather than
+send it. `Handoffs.checkItemProject` binds an item to the projects of its
+handoffs: once it has any, finding and linking its threads in a project none
+of them is in is refused (409). An item moved to another project finds threads
+there after a hand off from there. Adopt also takes the folder from
+`projectId`'s own folders, so a linked record's project and folder always
+agree.
+
 Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
 data, VBScript, blob and about links are always refused. Resume commands must be
 declared. Refresh drops unsafe links and non-HTTPS pull request URLs.

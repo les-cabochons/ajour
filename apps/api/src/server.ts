@@ -2094,11 +2094,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
     handoffThreads: async ({ request, response, unit }) => {
       const payload = await readRequest(request, handoffThreadsRouteSchema);
-      const found = await handoffs.findThreads(
-        payload.projectId,
-        payload.workItemId,
-        payload.keys,
-      );
+      let found: Awaited<ReturnType<typeof handoffs.findThreads>>;
+      try {
+        found = await handoffs.findThreads(
+          payload.projectId,
+          payload.workItemId,
+          payload.keys,
+        );
+      } catch (error) {
+        if (!(error instanceof HandoffRefused)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: error.message });
+        return;
+      }
       unit.set({
         handoff: {
           listed: found.listed,

@@ -233,6 +233,38 @@ it("links a listed thread as a handoff, unknown until refreshed right away, and 
   ).rejects.toThrow(/already linked/);
 });
 
+it("finds an item's threads only in a project one of its handoffs is in, once it has some", async () => {
+  const t = await setup(() => threads);
+  await t.storage.addRepositoryFolder("p2", path.join(t.root, "two"), "Two");
+  // No handoff yet: the item is taken at the window's word, in any project.
+  await t.service.findThreads("p2", "item-12", ["PAY-12"]);
+  await t.service.findThreads("p", "item-12", ["PAY-12"]);
+  const first = await t.service.adopt({
+    pluginId: "agent",
+    toolId: "t3",
+    folderId: t.folder.id,
+    threadId: "t-12",
+    projectId: "p",
+    workItemId: "item-12",
+  });
+  await expect(
+    t.service.findThreads("p2", "item-12", ["PAY-12"]),
+  ).rejects.toThrow(/another project/);
+  // Moved to p2 and handed off there, the item finds threads in both.
+  await t.storage.addHandoff({
+    ...first,
+    id: "moved",
+    threadId: "t-moved",
+    projectId: "p2",
+  });
+  await expect(
+    t.service.findThreads("p2", "item-12", ["PAY-12"]),
+  ).resolves.toMatchObject({ failed: 0 });
+  await expect(
+    t.service.findThreads("p", "item-12", ["PAY-12"]),
+  ).resolves.toMatchObject({ failed: 0 });
+});
+
 it("keeps a linked thread unknown when its first refresh fails", async () => {
   const t = await setup(() => threads);
   await t.service.findThreads("p", "item-12", ["PAY-12"]);

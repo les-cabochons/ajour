@@ -387,13 +387,15 @@ export class Handoffs {
    * of the item's keys, from each tool that lists its threads. A tool lists
    * a folder at most once every `THREAD_LISTING_INTERVAL_MS`, so opening
    * items reads the last listing. Threads linked to any handoff, and those
-   * dismissed for this item, aren't offered.
+   * dismissed for this item, aren't offered. Refuses an item whose handoffs
+   * are all in another project (`checkItemProject`).
    */
   async findThreads(
     projectId: string,
     workItemId: string,
     keys: readonly string[],
   ): Promise<{ offers: HandoffThreadOffer[]; listed: number; failed: number }> {
+    await this.checkItemProject(workItemId, projectId);
     if (!keys.some(Boolean) || !this.options.plugins.listThreads)
       return { offers: [], listed: 0, failed: 0 };
     const folders = await this.options.storage.listRepositoryFolders(projectId);
@@ -493,9 +495,11 @@ export class Handoffs {
    * until it is refreshed, right away. The thread comes from the tool's
    * last listing of that folder, so the window names only a thread a tool
    * listed, and only while the tool can still list threads and the listing
-   * is at most `THREAD_LINK_MAX_AGE_MS` old.
+   * is at most `THREAD_LINK_MAX_AGE_MS` old, and never into a project other
+   * than the item's handoffs' (`checkItemProject`).
    */
   async adopt(input: HandoffAdoptRoute): Promise<Handoff> {
+    await this.checkItemProject(input.workItemId, input.projectId);
     const folder = (
       await this.options.storage.listRepositoryFolders(input.projectId)
     ).find((f) => f.id === input.folderId);
@@ -554,6 +558,23 @@ export class Handoffs {
         (h) => h.id === record.id,
       ) ?? record
     );
+  }
+  /**
+   * Items live only in the window, so the API takes an item's project from
+   * the window. What it can check is the item's own handoffs: when the
+   * item has some and none is in `projectId`, the window named the item
+   * with another project's, and its keys would be matched against that
+   * project's threads. An item moved to another project after its handoffs
+   * started finds threads there once one handoff is there.
+   */
+  private async checkItemProject(workItemId: string, projectId: string) {
+    const projects = new Set(
+      (await this.options.storage.listHandoffs())
+        .filter((handoff) => handoff.workItemId === workItemId)
+        .map((handoff) => handoff.projectId),
+    );
+    if (projects.size && !projects.has(projectId))
+      throw new HandoffRefused("This item's threads are in another project.");
   }
   /** "Not this one": the thread is offered to that item no more. */
   async dismissThread(dismissal: HandoffThreadDismissal) {

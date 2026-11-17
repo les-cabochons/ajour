@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
 import { Toaster } from "@/components/ui/toast";
@@ -84,6 +85,7 @@ function Page() {
   return (
     <TooltipProvider>
       <HandoffsCard
+        itemId="item-12"
         handoffs={handoffs.records}
         tools={handoffs.tools}
         offers={handoffs.offers}
@@ -286,4 +288,91 @@ it("offers no threads for an item without a key, or in the web build", async () 
   await act(async () => {});
   expect(api.findHandoffThreads).not.toHaveBeenCalled();
   expect(screen.queryByRole("list", { name: "Threads found" })).toBeNull();
+});
+
+/**
+ * The card as the item page keeps it across items: the item changes under
+ * it while a Link is under way, and the Link resolves when the test says.
+ */
+function renderAcrossItems() {
+  const gate: { open?: (done: boolean) => void } = {};
+  const control: { showItem?: (itemId: string) => void } = {};
+  function Harness() {
+    const [itemId, setItemId] = useState("item-a");
+    const [offers, setOffers] = useState<
+      Record<string, readonly HandoffThreadOffer[]>
+    >({
+      "item-a": [offer("a-1", "[A-1] First"), offer("a-2", "[A-1] Second")],
+      "item-b": [offer("b-1", "[B-1] Other")],
+    });
+    control.showItem = setItemId;
+    return (
+      <TooltipProvider>
+        <input aria-label="Elsewhere" />
+        <HandoffsCard
+          itemId={itemId}
+          handoffs={[]}
+          tools={[]}
+          offers={offers[itemId]}
+          onLink={async (linked) => {
+            const done = await new Promise<boolean>((resolve) => {
+              gate.open = resolve;
+            });
+            if (done)
+              setOffers((current) => ({
+                ...current,
+                [itemId]: current[itemId]!.filter((o) => o !== linked),
+              }));
+            return done;
+          }}
+          now={10 * 60_000}
+          open
+          onOpenChange={() => {}}
+        />
+      </TooltipProvider>
+    );
+  }
+  return {
+    gate,
+    control,
+    rendered: renderRoutes({ routes: { "/": Harness } }),
+  };
+}
+
+it("doesn't move focus into the next item when a Link started on the last one completes", async () => {
+  const { gate, control, rendered } = renderAcrossItems();
+  await rendered;
+  const link = screen.getByRole("button", {
+    name: 'Link "[A-1] First" to this item',
+  });
+  link.focus();
+  fireEvent.click(link);
+  await act(async () => control.showItem!("item-b"));
+  const other = screen.getByRole("button", {
+    name: 'Link "[B-1] Other" to this item',
+  });
+  await act(async () => gate.open!(true));
+  await act(async () => {});
+  expect(document.activeElement).not.toBe(other);
+  expect(document.activeElement).not.toBe(
+    screen.getByRole("button", { name: /^Handoffs/ }),
+  );
+});
+
+it("leaves focus where the user moved it while a Link was under way", async () => {
+  const { gate, rendered } = renderAcrossItems();
+  await rendered;
+  const link = screen.getByRole("button", {
+    name: 'Link "[A-1] First" to this item',
+  });
+  link.focus();
+  fireEvent.click(link);
+  const elsewhere = screen.getByRole("textbox", { name: "Elsewhere" });
+  elsewhere.focus();
+  await act(async () => gate.open!(true));
+  await act(async () => {});
+  expect(
+    screen.queryByRole("button", { name: 'Link "[A-1] First" to this item' }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(elsewhere);
 });

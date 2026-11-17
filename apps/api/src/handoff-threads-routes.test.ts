@@ -14,7 +14,7 @@ import { windowServerOptions } from "./test-support/window-token.ts";
 
 const KEY = "CANARY-THREAD-12";
 
-it("offers, links and dismisses a tool's listed threads without logging titles, keys or paths", async () => {
+async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-threads-routes-"));
   const plugin = path.join(root, "plugin");
   await mkdir(plugin);
@@ -80,6 +80,11 @@ export function readHandoffStates(request) {
       path: route,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  return { root, repo, sink, server, call };
+}
+
+it("offers, links and dismisses a tool's listed threads without logging titles, keys or paths", async () => {
+  const { root, repo, sink, server, call } = await setup();
   try {
     const folder = await addRepositoryFolderForServer(server, "p", repo);
     const found = await call("POST", "/api/handoffs/threads", {
@@ -189,6 +194,95 @@ export function readHandoffStates(request) {
     );
     expect(refused).toHaveLength(1);
     expect(JSON.stringify(sink.events)).not.toContain("CANARY-THREAD");
+  } finally {
+    await stopAppApiServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("refuses an item named with a project other than its handoffs', for finding and linking", async () => {
+  const { root, repo, server, call } = await setup();
+  try {
+    const folder = await addRepositoryFolderForServer(server, "p", repo);
+    const other = path.join(root, "other-repo");
+    await mkdir(other);
+    const otherFolder = await addRepositoryFolderForServer(server, "q", other);
+    const find = (projectId: string, workItemId: string) =>
+      call("POST", "/api/handoffs/threads", {
+        projectId,
+        workItemId,
+        keys: [KEY],
+      });
+    expect((await find("p", "item")).status).toBe(200);
+    const linked = await call("POST", "/api/handoffs/adopt", {
+      pluginId: "handoff",
+      toolId: "t3",
+      folderId: folder.id,
+      threadId: "linked",
+      projectId: "p",
+      workItemId: "item",
+    });
+    expect(linked.status, JSON.stringify(linked.body)).toBe(200);
+
+    // The item's handoff is in p: its keys never match q's threads.
+    expect(await find("q", "item")).toMatchObject({
+      status: 409,
+      body: { error: "This item's threads are in another project." },
+    });
+    expect(
+      await call("POST", "/api/handoffs/adopt", {
+        pluginId: "handoff",
+        toolId: "t3",
+        folderId: otherFolder.id,
+        threadId: "dismissed",
+        projectId: "q",
+        workItemId: "item",
+      }),
+    ).toMatchObject({
+      status: 409,
+      body: { error: "This item's threads are in another project." },
+    });
+    // An item without handoffs is taken at the window's word.
+    expect((await find("q", "fresh")).status).toBe(200);
+    expect((await call("GET", "/api/handoffs")).body).toHaveLength(1);
+  } finally {
+    await stopAppApiServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("refuses keys no title's bracketed token could hold", async () => {
+  const { root, repo, server, call } = await setup();
+  try {
+    await addRepositoryFolderForServer(server, "p", repo);
+    for (const keys of [
+      [""],
+      [`[${KEY}]`],
+      [`${KEY}]`],
+      [`${KEY}\n`],
+      [` ${KEY}`],
+      [`${KEY}\u0000`],
+      [`${KEY}\u202e`],
+      [KEY, KEY],
+      ["a".repeat(501)],
+      ["a", "b", "c", "d", "e"],
+    ]) {
+      const found = await call("POST", "/api/handoffs/threads", {
+        projectId: "p",
+        workItemId: "item",
+        keys,
+      });
+      expect(found.status, JSON.stringify(keys)).toBe(400);
+    }
+    expect(
+      (
+        await call("POST", "/api/handoffs/threads", {
+          projectId: "p",
+          workItemId: "item",
+          keys: ["acme/api#12", "#12", "PAY-12"],
+        })
+      ).status,
+    ).toBe(200);
   } finally {
     await stopAppApiServer(server);
     await rm(root, { recursive: true, force: true });

@@ -126,6 +126,7 @@ function Page() {
     <TooltipProvider>
       {item ? <HandoffButton item={item} /> : null}
       <HandoffsCard
+        itemId={itemId}
         handoffs={handoffs}
         tools={tools}
         now={10 * 60_000}

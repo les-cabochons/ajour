@@ -43,6 +43,22 @@ export const handoffThreadOfferSchema = z
 export type HandoffThreadOffer = z.infer<typeof handoffThreadOfferSchema>;
 
 /**
+ * A key as a title's bracketed token can hold it (`threadTitleKeys`): not
+ * empty, no brackets, no surrounding space, and no control, format or line
+ * separator characters, which no key an item shows has. The API can't see
+ * items, so it checks the shape of the keys the window sends, never that
+ * they are the item's.
+ */
+export const itemKeySchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine(
+    (key) => key.trim() === key && !/[[\]\p{Cc}\p{Cf}\u2028\u2029]/u.test(key),
+    "A key holds no brackets, surrounding space or control characters.",
+  );
+
+/**
  * The item page asks for the threads its project's folders hold that name
  * one of the item's keys, leaving out those dismissed for the item.
  */
@@ -50,7 +66,13 @@ export const handoffThreadsRouteSchema = z
   .object({
     projectId: id,
     workItemId: id,
-    keys: z.array(z.string().max(500)).max(MAX_ITEM_KEYS),
+    keys: z
+      .array(itemKeySchema)
+      .max(MAX_ITEM_KEYS)
+      .refine(
+        (keys) => new Set(keys).size === keys.length,
+        "Each key comes once.",
+      ),
   })
   .strict();
 export const handoffThreadsResultSchema = z

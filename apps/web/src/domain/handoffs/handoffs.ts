@@ -7,6 +7,7 @@ import {
   isCapabilityActive,
   type PluginsOverview,
 } from "@ajour/shared/plugins";
+import { itemKeySchema } from "@ajour/shared/handoff-threads";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
 import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
 import {
@@ -120,7 +121,8 @@ export function getHandoffItemKey(
  * hand off sends and the key the item shows (`getWorkItemKey`). A GitHub
  * issue answers to `acme/api#12` and to `12`, which `[#12]` names too; a
  * Jira issue or an Azure DevOps work item shows its own id. A local item
- * has none.
+ * has none, and a key no title's brackets could hold (`itemKeySchema`),
+ * such as a source id with a bracket, is left out.
  */
 export function getHandoffItemKeys(
   item: Pick<
@@ -131,7 +133,9 @@ export function getHandoffItemKeys(
   if (item.source === "manual") return [];
   return [
     ...new Set(
-      [getHandoffItemKey(item), getWorkItemKey(item) ?? ""].filter(Boolean),
+      [getHandoffItemKey(item), getWorkItemKey(item) ?? ""].filter(
+        (key) => itemKeySchema.safeParse(key).success,
+      ),
     ),
   ];
 }

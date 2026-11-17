@@ -420,9 +420,11 @@ function pullRequestLabel(pullRequest: { url: string; title?: string }) {
  * Under them, the threads a tool listed whose title names the item's key,
  * each with Link and Not this one. Once one leaves the list, focus moves to
  * the Link of the offer that took its place, else the last one, else the
- * card's heading.
+ * card's heading, unless the user moved focus meanwhile or another item
+ * replaced this one: the item page keeps its cards across items.
  */
 export function HandoffsCard({
+  itemId,
   handoffs,
   tools,
   offers = NO_OFFERS,
@@ -433,6 +435,8 @@ export function HandoffsCard({
   open,
   onOpenChange,
 }: {
+  /** The item the card shows; an action started on another moves no focus. */
+  itemId: string;
   handoffs: readonly Handoff[];
   /** For each thread's tool name and icon. */
   tools: readonly HandoffTool[];
@@ -462,13 +466,23 @@ export function HandoffsCard({
   const toolOf = (pluginId: string, toolId: string) =>
     tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
   // Where focus goes once a settled offer has left the list, after the
-  // render that removes it.
-  const refocus = useRef<{ card: HTMLElement; index: number } | null>(null);
+  // render that removes it, and from which button.
+  const refocus = useRef<{
+    card: HTMLElement;
+    index: number;
+    from: HTMLElement;
+  } | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
+  // The item an action starts on; a request for another item is dropped.
+  const shownItem = useRef(itemId);
+  useEffect(() => {
+    shownItem.current = itemId;
+    refocus.current = null;
+  }, [itemId]);
   useEffect(() => {
     const request = refocus.current;
     refocus.current = null;
-    if (!request?.card.isConnected) return;
+    if (!request?.card.isConnected || !focusStayed(request.from)) return;
     const links =
       request.card.querySelectorAll<HTMLElement>("[data-offer-link]");
     const target =
@@ -483,8 +497,10 @@ export function HandoffsCard({
   ) => {
     const card = from.closest("section");
     const index = offers.indexOf(offer);
+    const startedOn = shownItem.current;
     if (!run || !(await run(offer)) || !card) return;
-    refocus.current = { card, index };
+    if (shownItem.current !== startedOn || !focusStayed(from)) return;
+    refocus.current = { card, index, from };
     setFocusRequest((count) => count + 1);
   };
   return (
@@ -549,6 +565,15 @@ export function HandoffsCard({
 }
 
 const NO_OFFERS: readonly HandoffThreadOffer[] = [];
+
+/**
+ * Whether focus is still where an action left it: on the button that
+ * started it, or on nothing once that button left the page.
+ */
+function focusStayed(from: HTMLElement) {
+  const active = document.activeElement;
+  return !active || active === from || active === document.body;
+}
 
 const offerKey = (offer: HandoffThreadOffer) =>
   JSON.stringify([

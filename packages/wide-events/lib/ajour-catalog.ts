@@ -1875,7 +1875,12 @@ export const catalog = defineCatalog({
      */
     "handoff.threads": {
       kinds: ["request", "plugin_operation", "job"],
-      reasons: [...requestReasons, ...pluginOperationReasons],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        // An item named with a project none of its handoffs is in.
+        "handoff_refused",
+      ],
       fields: {
         ...requestFields,
         ...pluginOperationFields,

@@ -631,6 +631,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               ) : null}
               {handoffs.shown ? (
                 <HandoffsCard
+                  itemId={itemId}
                   handoffs={handoffs.records}
                   tools={handoffs.tools}
                   offers={handoffs.offers}
