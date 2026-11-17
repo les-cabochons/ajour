@@ -39,13 +39,16 @@ function updateState(available: boolean): DesktopUpdateState {
   };
 }
 
-function desktop(available: boolean) {
+function desktop(
+  available: boolean,
+  status: DesktopUpdateState["status"] = available ? "available" : "up-to-date",
+) {
   const updateAndRestart = vi.fn(async (..._args: unknown[]) =>
     updateState(available),
   );
   window.ajourDesktop = {
     runtime: { version: INSTALLED },
-    getUpdateState: async () => updateState(available),
+    getUpdateState: async () => ({ ...updateState(available), status }),
     onUpdateStateChanged: () => () => {},
     checkForUpdates: async () => updateState(available),
     updateAndRestart,
@@ -110,6 +113,23 @@ describe("the sidebar header's gear", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "What's new" })),
     );
     expect(settingsSearch(router)).toBe("whats-new");
+  });
+
+  it("keeps the menu while Ajour checks again, with the update disabled", async () => {
+    desktop(true, "checking");
+    await mount(SidebarHeaderActions);
+
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Settings, Nightly 377 is ready" }),
+      ),
+    );
+
+    expect(
+      screen
+        .getByRole("menuitem", { name: /Restart/ })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 });
 

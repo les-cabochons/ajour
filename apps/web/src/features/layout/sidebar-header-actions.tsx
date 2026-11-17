@@ -18,7 +18,11 @@ import {
 import { releaseLabel } from "@/domain/release-notes";
 import { SettingsLink } from "@/features/settings/settings-link";
 import type { DesktopUpdateState } from "@/lib/desktop-bridge";
-import { applyDesktopUpdate, useDesktopUpdates } from "@/lib/desktop-updates";
+import {
+  applyDesktopUpdate,
+  isDesktopUpdateBusy,
+  useDesktopUpdates,
+} from "@/lib/desktop-updates";
 import { isDesktopShell } from "@/lib/runtime";
 import {
   formatShortcutKeys,
@@ -38,8 +42,9 @@ const platform = getShortcutPlatform();
  */
 export const SidebarHeaderActions = memo(function SidebarHeaderActions() {
   const update = useDesktopUpdates();
+  // The last check's result stays while Ajour checks again or downloads.
   const waiting =
-    update.status === "available" && update.result?.updateAvailable
+    update.result?.updateAvailable && update.result.track === update.track
       ? update.result.latestVersion
       : null;
   return (
@@ -105,7 +110,10 @@ function UpdateMenu({
         />
       </TooltipButton>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem onClick={() => void applyDesktopUpdate(update)}>
+        <DropdownMenuItem
+          disabled={isDesktopUpdateBusy(update)}
+          onClick={() => void applyDesktopUpdate(update)}
+        >
           <UpdateReady className="text-primary" />
           <span className="whitespace-nowrap">
             {update.canInstall ? "Restart to update" : "View release"}

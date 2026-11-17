@@ -520,6 +520,42 @@ describe("release notes", () => {
     expect(notes[0]?.body).toBe("");
   });
 
+  it("reads further pages until it has the track's releases", async () => {
+    const nightlies = (day: number) =>
+      Array.from({ length: 100 }, (_, index) =>
+        githubRelease(
+          `v1.2.0-nightly.202611${String(day).padStart(2, "0")}.${index + 1}`,
+          "2026-11-02T00:00:00Z",
+        ),
+      );
+    const pages = [
+      [
+        ...nightlies(10).slice(0, 99),
+        githubRelease("v1.1.0", "2026-11-01T00:00:00Z", false),
+      ],
+      nightlies(9),
+      [githubRelease("v1.0.0", "2026-10-01T00:00:00Z", false)],
+    ];
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+      const page = Number(new URL(url).searchParams.get("page") ?? 1);
+      return { ok: true, status: 200, json: async () => pages[page - 1] };
+    });
+
+    const notes = await fetchReleaseNotes({ track: "stable", fetchImpl });
+
+    expect(notes.map((note) => note.tagName)).toEqual(["v1.1.0", "v1.0.0"]);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      GITHUB_RELEASES_API_URL,
+      `${GITHUB_RELEASES_API_URL}&page=2`,
+      `${GITHUB_RELEASES_API_URL}&page=3`,
+    ]);
+
+    fetchImpl.mockClear();
+    await fetchReleaseNotes({ track: "nightly", fetchImpl });
+    // Ten nightlies are on the first page.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("lists ten releases unless asked for another number", async () => {
     const fetchImpl = respondWith(
       Array.from({ length: 12 }, (_, index) =>
