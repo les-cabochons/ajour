@@ -80,6 +80,21 @@ export const ROUTES = {
     path: "/api/handoffs/visibility",
     name: "handoff.visibility",
   },
+  handoffThreads: {
+    method: "POST",
+    path: "/api/handoffs/threads",
+    name: "handoff.threads",
+  },
+  handoffThreadDismiss: {
+    method: "POST",
+    path: "/api/handoffs/threads/dismiss",
+    name: "handoff.dismiss_thread",
+  },
+  handoffAdopt: {
+    method: "POST",
+    path: "/api/handoffs/adopt",
+    name: "handoff.adopt",
+  },
   handoffDetect: {
     method: "POST",
     path: "/api/plugins/:pluginId/handoffs/detect",

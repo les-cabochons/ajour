@@ -5,6 +5,7 @@ import {
   isValidHandoffBranch,
   type HandoffTemplates,
 } from "@ajour/shared/handoff-templates";
+import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
 import type { RepositoryFolder } from "@ajour/shared/repository-folders";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RepositoryPicker } from "@/components/repository-picker";
@@ -36,6 +37,8 @@ import {
 import { repositoryFolderSelection } from "@/domain/projects/repository-folders";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
+  adoptHandoffThread,
+  dismissHandoffThread,
   getHandoffTemplates,
   listRepositoryFolders,
   openHandoff,
@@ -608,5 +611,62 @@ export async function removeHandoffFromItem(
       title: "Couldn't remove the thread",
       description: errorMessage(error, "The local API didn't answer."),
     });
+  }
+}
+
+/**
+ * Links a thread the tool listed to the item, as a handoff. Its state is
+ * unknown until the API refreshes it, which it does before answering. A
+ * refusal shows in the API's words. Resolves whether it was linked.
+ */
+export async function linkHandoffThread(
+  offer: HandoffThreadOffer,
+  item: { workItemId: string; projectId: string },
+) {
+  try {
+    upsertHandoff(
+      await adoptHandoffThread({
+        pluginId: offer.pluginId,
+        toolId: offer.toolId,
+        ...(offer.connectionId ? { connectionId: offer.connectionId } : {}),
+        folderId: offer.folderId,
+        threadId: offer.threadId,
+        projectId: item.projectId,
+        workItemId: item.workItemId,
+      }),
+    );
+    return true;
+  } catch (error) {
+    showErrorToast({
+      title: "Couldn't link the thread",
+      description: errorMessage(error, "The local API didn't answer."),
+    });
+    return false;
+  }
+}
+
+/**
+ * "Not this one": the thread is offered to this item no more. Other items
+ * its title names still offer it.
+ */
+export async function dismissHandoffThreadOffer(
+  offer: HandoffThreadOffer,
+  workItemId: string,
+) {
+  try {
+    await dismissHandoffThread({
+      pluginId: offer.pluginId,
+      toolId: offer.toolId,
+      ...(offer.connectionId ? { connectionId: offer.connectionId } : {}),
+      threadId: offer.threadId,
+      workItemId,
+    });
+    return true;
+  } catch (error) {
+    showErrorToast({
+      title: "Couldn't hide the thread",
+      description: errorMessage(error, "The local API didn't answer."),
+    });
+    return false;
   }
 }

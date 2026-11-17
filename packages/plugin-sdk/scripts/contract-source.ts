@@ -203,3 +203,7 @@ export type ReadHandoffStatesResult =
   import("../../shared/handoffs.ts").ReadHandoffStatesResult;
 export type DetectToolsResult =
   import("../../shared/handoffs.ts").DetectToolsResult;
+export type ListThreadsRequest =
+  import("../../shared/handoffs.ts").ListThreadsRequest;
+export type ListThreadsResult =
+  import("../../shared/handoffs.ts").ListThreadsResult;

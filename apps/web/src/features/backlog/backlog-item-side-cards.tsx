@@ -1,4 +1,4 @@
-import { useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
@@ -8,6 +8,7 @@ import {
   RiMoreLine as MoreIcon,
 } from "@remixicon/react";
 import { isHttpsUrl, type Handoff } from "@ajour/shared/handoffs";
+import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -416,17 +417,36 @@ function pullRequestLabel(pullRequest: { url: string; title?: string }) {
  * its tool, title and state chip (the tool's own words in its tooltip), its
  * branch, pull requests and last change, Open, and a menu with Refresh and
  * Remove from item. Closed, it counts the threads and says which wait.
+ * Under them, the threads a tool listed whose title names the item's key,
+ * each with Link and Not this one. Once one leaves the list, focus moves to
+ * the Link of the offer that took its place, else the last one, else the
+ * card's heading, unless the user moved focus meanwhile or another item
+ * replaced this one: the item page keeps its cards across items.
  */
 export function HandoffsCard({
+  itemId,
   handoffs,
   tools,
+  offers = NO_OFFERS,
+  onLink,
+  onDismiss,
+  pending = NO_OFFERS,
   now,
   open,
   onOpenChange,
 }: {
+  /** The item the card shows; an action started on another moves no focus. */
+  itemId: string;
   handoffs: readonly Handoff[];
   /** For each thread's tool name and icon. */
   tools: readonly HandoffTool[];
+  /** Threads found in the tools that name the item's key. */
+  offers?: readonly HandoffThreadOffer[];
+  /** Resolve true once the offer has left the list. */
+  onLink?: (offer: HandoffThreadOffer) => Promise<boolean>;
+  onDismiss?: (offer: HandoffThreadOffer) => Promise<boolean>;
+  /** Offers whose Link or Not this one is under way. */
+  pending?: readonly HandoffThreadOffer[];
   now: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -435,9 +455,54 @@ export function HandoffsCard({
   const waiting = handoffs.filter(
     (handoff) => !handoff.paused && handoff.state === "needs-you",
   ).length;
+  const found = offers.length
+    ? `${offers.length} ${offers.length === 1 ? "thread" : "threads"} found`
+    : "";
   const empty = (
-    <p className="text-xs text-muted-foreground">Not handed off yet.</p>
+    <p className="text-xs text-muted-foreground">
+      Not handed off yet.{found ? ` ${found}.` : ""}
+    </p>
   );
+  const toolOf = (pluginId: string, toolId: string) =>
+    tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
+  // Where focus goes once a settled offer has left the list, after the
+  // render that removes it, and from which button.
+  const refocus = useRef<{
+    card: HTMLElement;
+    index: number;
+    from: HTMLElement;
+  } | null>(null);
+  const [focusRequest, setFocusRequest] = useState(0);
+  // The item an action starts on; a request for another item is dropped.
+  const shownItem = useRef(itemId);
+  useEffect(() => {
+    shownItem.current = itemId;
+    refocus.current = null;
+  }, [itemId]);
+  useEffect(() => {
+    const request = refocus.current;
+    refocus.current = null;
+    if (!request?.card.isConnected || !focusStayed(request.from)) return;
+    const links =
+      request.card.querySelectorAll<HTMLElement>("[data-offer-link]");
+    const target =
+      links[Math.min(request.index, links.length - 1)] ??
+      request.card.querySelector<HTMLElement>(".backlog-item-card-toggle");
+    target?.focus();
+  }, [focusRequest]);
+  const settle = async (
+    offer: HandoffThreadOffer,
+    run: ((offer: HandoffThreadOffer) => Promise<boolean>) | undefined,
+    from: HTMLElement,
+  ) => {
+    const card = from.closest("section");
+    const index = offers.indexOf(offer);
+    const startedOn = shownItem.current;
+    if (!run || !(await run(offer)) || !card) return;
+    if (shownItem.current !== startedOn || !focusStayed(from)) return;
+    refocus.current = { card, index, from };
+    setFocusRequest((count) => count + 1);
+  };
   return (
     <FoldingCard
       label="Handoffs"
@@ -452,31 +517,143 @@ export function HandoffsCard({
             {handoffs.length === 1 ? "thread" : "threads"}
             {waiting ? ` · ${waiting} needs you` : ""} · changed{" "}
             {syncAge(sorted[0].changedAt, now)}
+            {found ? ` · ${found}` : ""}
           </span>
         ) : (
           empty
         )
       }
     >
-      {sorted.length === 0 ? (
-        empty
-      ) : (
+      {sorted.length ? (
         <ul className="handoff-rows" aria-label="Handoffs">
           {sorted.map((handoff) => (
             <HandoffRow
               key={handoff.id}
               handoff={handoff}
-              tool={tools.find(
-                (tool) =>
-                  tool.pluginId === handoff.pluginId &&
-                  tool.toolId === handoff.toolId,
-              )}
+              tool={toolOf(handoff.pluginId, handoff.toolId)}
               now={now}
             />
           ))}
         </ul>
+      ) : offers.length ? null : (
+        empty
       )}
+      {offers.length ? (
+        <ul className="handoff-rows" aria-label="Threads found">
+          {offers.map((offer) => (
+            <ThreadOfferRow
+              key={offerKey(offer)}
+              offer={offer}
+              tool={toolOf(offer.pluginId, offer.toolId)}
+              busy={pending.some(
+                (candidate) => offerKey(candidate) === offerKey(offer),
+              )}
+              now={now}
+              onLink={
+                onLink && ((offer, from) => void settle(offer, onLink, from))
+              }
+              onDismiss={
+                onDismiss &&
+                ((offer, from) => void settle(offer, onDismiss, from))
+              }
+            />
+          ))}
+        </ul>
+      ) : null}
     </FoldingCard>
+  );
+}
+
+const NO_OFFERS: readonly HandoffThreadOffer[] = [];
+
+/**
+ * Whether focus is still where an action left it: on the button that
+ * started it, or on nothing once that button left the page.
+ */
+function focusStayed(from: HTMLElement) {
+  const active = document.activeElement;
+  return !active || active === from || active === document.body;
+}
+
+const offerKey = (offer: HandoffThreadOffer) =>
+  JSON.stringify([
+    offer.pluginId,
+    offer.toolId,
+    offer.connectionId ?? null,
+    offer.folderId,
+    offer.threadId,
+  ]);
+
+/**
+ * A thread a tool listed whose title names the item's key, laid out as a
+ * thread: its title with Link in the head where a thread has Open, and
+ * "Found in <tool>" and Not this one under it. The title's hover text adds
+ * its last change, which the narrow card has no room for. Its name reads
+ * "Found in <tool>: "<title>", changed <age>".
+ */
+function ThreadOfferRow({
+  offer,
+  tool,
+  busy,
+  now,
+  onLink,
+  onDismiss,
+}: {
+  offer: HandoffThreadOffer;
+  tool: HandoffTool | undefined;
+  busy: boolean;
+  now: number;
+  onLink?: (offer: HandoffThreadOffer, from: HTMLElement) => void;
+  onDismiss?: (offer: HandoffThreadOffer, from: HTMLElement) => void;
+}) {
+  const found = `Found in ${tool?.label ?? offer.toolId}`;
+  const changed =
+    offer.updatedAt === undefined ? undefined : syncAge(offer.updatedAt, now);
+  const label = `${found}: "${offer.title}"${changed ? `, changed ${changed}` : ""}`;
+  return (
+    <li className="handoff-row" aria-label={label}>
+      <div className="handoff-row-head">
+        {tool ? (
+          <HandoffToolIcon tool={tool} className="size-4 shrink-0" />
+        ) : (
+          <span className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        <span
+          className="handoff-row-title"
+          title={
+            changed === undefined
+              ? offer.title
+              : `${offer.title}\nChanged ${changed}`
+          }
+        >
+          {offer.title}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || !onLink}
+          aria-label={`Link "${offer.title}" to this item`}
+          data-offer-link=""
+          onClick={(event) => onLink?.(offer, event.currentTarget)}
+        >
+          Link
+        </Button>
+      </div>
+      <div className="handoff-row-meta">
+        <span className="truncate">{found}</span>
+        <span aria-hidden="true">·</span>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="-ml-1.5 shrink-0 text-muted-foreground"
+          disabled={busy || !onDismiss}
+          aria-label={`Not this one: "${offer.title}"`}
+          onClick={(event) => onDismiss?.(offer, event.currentTarget)}
+        >
+          Not this one
+        </Button>
+      </div>
+    </li>
   );
 }
 

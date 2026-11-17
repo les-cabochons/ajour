@@ -1909,6 +1909,53 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * The item page asks for the threads its project's folders hold that
+     * name its key; each tool's listing in a folder is a plugin operation.
+     * Counts only: never a title, key or folder path.
+     */
+    "handoff.threads": {
+      kinds: ["request", "plugin_operation", "job"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        // An item named with a project none of its handoffs is in.
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          tool: operational(),
+          /** Listings run now, not answered from the last few minutes. */
+          listed: operational<number>(),
+          /** Listings that failed, for the plugin operation's own reason. */
+          failed: operational<number>(),
+          /** Threads listed, or offered to the item. */
+          count: operational<number>(),
+        },
+      },
+    },
+    /** Link a listed thread to an item, as a new handoff. */
+    "handoff.adopt": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons, "handoff_refused"],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        handoff: { id: operational(), tool: operational() },
+      },
+    },
+    /** "Not this one": a listed thread is never offered again. */
+    "handoff.dismiss_thread": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        handoff: { tool: operational() },
+      },
+    },
     "repository_folder.list": {
       kinds: ["request", "command"],
       reasons: [...requestReasons],

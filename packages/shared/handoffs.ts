@@ -109,6 +109,29 @@ export const readHandoffStatesRequestSchema = z
       .max(1000),
   })
   .strict();
+/**
+ * A listing of a tool's recent threads in one repository folder, for
+ * offering to link the ones whose title names an item's key. `since` is a
+ * time in milliseconds; a tool may list threads changed after it only.
+ */
+export const listThreadsRequestSchema = z
+  .object({
+    tool: id,
+    folder: z.object({ id }).strict(),
+    since: z.number().finite().optional(),
+    limit: z.number().int().min(1).max(200),
+  })
+  .strict();
+/** One listed thread: what a start would have answered, with its title. */
+export const listedThreadSchema = startHandoffResultSchema
+  .extend({
+    title: z.string().min(1).max(500),
+    updatedAt: z.number().finite().optional(),
+  })
+  .strict();
+export const listThreadsResultSchema = z
+  .object({ threads: z.array(listedThreadSchema).max(200) })
+  .strict();
 export const handoffUpdateSchema = z
   .object({
     id,
@@ -248,6 +271,8 @@ export type ReadHandoffStatesResult = z.infer<
   typeof readHandoffStatesResultSchema
 >;
 export type HandoffUpdate = z.infer<typeof handoffUpdateSchema>;
+export type ListThreadsRequest = z.infer<typeof listThreadsRequestSchema>;
+export type ListThreadsResult = z.infer<typeof listThreadsResultSchema>;
 export type HandoffStartRoute = z.infer<typeof handoffStartRouteSchema>;
 
 export function handoffCapabilitySchema<
@@ -275,6 +300,11 @@ export function handoffCapabilitySchema<
                * of the plugin's connections, which the tool's settings pick.
                */
               connection: handoffToolConnectionSchema,
+              /**
+               * The plugin answers `listThreads` for this tool, so Ajour can
+               * offer to link threads whose title names an item's key.
+               */
+              listsThreads: z.boolean().optional(),
             })
             .strict(),
         )

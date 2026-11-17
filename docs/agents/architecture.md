@@ -197,8 +197,8 @@ page replaces the worker's run id and main accepts only its sender's own runs.
 
 `ProcessBroker` validates typed argument slots and conditional groups. A
 `connection-url` slot is filled by the host, never the plugin: during a handoff
-operation (`detectTools`, `startHandoff`, `readHandoffStates`, and opening a
-thread) whose caller carries `connectionId`, the server's `connectionAddress`
+operation (`detectTools`, `startHandoff`, `readHandoffStates`, `listThreads`,
+and opening a thread) whose caller carries `connectionId`, the server's `connectionAddress`
 reads the connection through `brokerConnection` and `connectionBaseAddress`
 (`broker-policy.ts`), so the address obeys the broker's https and on-premises
 rules. A value the plugin passes for that slot is `invalid_request`; an
@@ -1327,6 +1327,57 @@ The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
+
+### Found threads
+
+A tool that declares `listsThreads: true` (ticket #724) answers the optional
+`listThreads({ tool, folder: { id }, since?, limit })` with
+`{ threads: [{ threadId, title, link?, resume?, native, updatedAt? }] }`, one
+repository folder at a time, connection first for a tool that uses one. The
+host bounds the answer as a state read's: at most `limit` (1 to 200) threads,
+each once, titles up to 500 characters and native state up to 4 KB; it drops a
+link that isn't HTTPS or a declared scheme, and a resume that names no declared
+command. POST `/api/handoffs/threads` takes `{ projectId, workItemId, keys }`
+when the item page opens. `Handoffs.findThreads` lists each folder of the project per tool
+and connection at most once every five minutes, failed or not, shares a listing
+under way, and keeps the last listing in memory only, never on the tick.
+`selectThreadOffers` in `packages/shared/handoff-threads.ts` keeps the threads
+whose title holds one of the item's keys in brackets, exactly and
+case-sensitively (`threadTitleNamesKey`), where `[#12]` counts as `[12]`. It
+skips those linked to any handoff and those dismissed for this item, offers a
+thread listed in several folders once, sorts the newest first and keeps at most
+1,000. The keys come from `getHandoffItemKeys` in
+`apps/web/src/domain/handoffs/handoffs.ts`: the item's `sourceExternalId` (the
+key a hand off sends as `item.key`) and the key the item shows
+(`getWorkItemKey`), so a GitHub issue answers to `acme/api#12`, `12` and
+`#12`, and a local item to nothing. Two items of a project that show the same
+key, such as issue 12 of two repositories, are both offered a thread titled
+`[12]` until it is linked to one. POST `/api/handoffs/adopt` names the plugin,
+tool, connection, folder and thread; the API takes the thread from its last
+listing, never from the window, and refuses while the plugin can't run, once
+the tool no longer declares `listsThreads`, when that listing is over 30
+minutes old, and for a thread it didn't list or that is already linked. It
+saves a record with state `unknown` (`adoptHandoff` in `handoff-state.ts`),
+then refreshes it at once. POST `/api/handoffs/threads/dismiss` stores "Not
+this one" in `handoffThreadDismissals`, keyed by plugin, tool, connection,
+thread id and work item, newest 2,000 kept; uninstalling the plugin removes
+them.
+
+Backlog items live only in the window (Product Boundary), so the API can't
+look an item up, derive its keys or check its project; it takes the item id,
+project and keys from the window. Its caller is the user's own window behind
+the window token, so the checks below catch a window bug that pairs one item
+with another's project or keys, not a hostile caller, which could read the
+same threads through the project's folders anyway. The route takes up to
+4 distinct keys, each one `itemKeySchema` accepts: up to 500 characters a
+title's bracketed token could hold, so no brackets, no surrounding space, no control, format or line separator
+characters; `getHandoffItemKeys` leaves out a key that fails it rather than
+send it. `Handoffs.checkItemProject` binds an item to the projects of its
+handoffs: once it has any, finding and linking its threads in a project none
+of them is in is refused (409). An item moved to another project finds threads
+there after a hand off from there. Adopt also takes the folder from
+`projectId`'s own folders, so a linked record's project and folder always
+agree.
 
 Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
 data, VBScript, blob and about links are always refused. Resume commands must be

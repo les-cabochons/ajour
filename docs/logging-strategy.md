@@ -975,9 +975,11 @@ channel to read the event each emits.
 | `edit.run`                           | ipc                                     | IPC channel                                      |
 | `event_rule.forget`                  | command                                 | store command                                    |
 | `event_rule.hide`                    | command                                 | store command                                    |
+| `handoff.adopt`                      | request, command                        | route, client call                               |
 | `handoff.connections_read`           | request, job                            | route, client call                               |
 | `handoff.connections_update`         | request, command                        | route, client call                               |
 | `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
+| `handoff.dismiss_thread`             | request, command                        | route, client call                               |
 | `handoff.hook`                       | request                                 | local API                                        |
 | `handoff.list`                       | request, job                            | route, client call                               |
 | `handoff.open`                       | request, plugin_operation, job, command | route, client call                               |
@@ -986,6 +988,7 @@ channel to read the event each emits.
 | `handoff.start`                      | request, plugin_operation, job, command | route, plugin method, client call                |
 | `handoff.templates_read`             | request, job                            | route, client call                               |
 | `handoff.templates_update`           | request, command                        | route, client call                               |
+| `handoff.threads`                    | request, plugin_operation, job          | route, plugin method, client call                |
 | `handoff.visibility`                 | request, job                            | route, client call                               |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
@@ -1147,6 +1150,18 @@ The handoff privacy canary marks prompts, titles, item keys and URLs, native
 state, branches and links, then starts, refreshes and removes through the real
 local API. None of that content belongs to an event. Visibility and list are
 small request units; each scheduled refresh batch is one job.
+
+Opening an item asks for found threads with one `handoff.threads` request,
+which records how many listings ran (`handoff.listed`), how many failed
+(`handoff.failed`) and how many threads it offers (`handoff.count`). Each
+listing a tool runs is its own `handoff.threads` plugin operation, which holds
+why it failed; a listing answered from the last few minutes runs none. The
+request refuses with `handoff_refused` an item named with a project none of its
+handoffs is in.
+`handoff.adopt` records the plugin, tool and new handoff id, and refuses with
+`handoff_refused`; `handoff.dismiss_thread` records the plugin and tool. None
+records a thread's title or id, the item's keys, or a folder. The privacy canary
+lists, links and dismisses marked threads through the real local API.
 
 ## Performance
 

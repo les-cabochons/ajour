@@ -5,6 +5,9 @@ import {
   detectToolsResultSchema,
   readHandoffStatesRequestSchema,
   readHandoffStatesResultSchema,
+  listThreadsRequestSchema,
+  listThreadsResultSchema,
+  type ListThreadsRequest,
   type StartHandoffRequest,
   type ReadHandoffStatesRequest,
 } from "../../../packages/shared/handoffs.ts";
@@ -299,6 +302,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   detectTools: "handoff.detect",
   startHandoff: "handoff.start",
   readHandoffStates: "handoff.refresh",
+  listThreads: "handoff.threads",
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
@@ -346,7 +350,14 @@ export function capabilityOfMethod(
     return "team";
   }
   if (method === "syncProjects") return "projectSource";
-  if (["detectTools", "startHandoff", "readHandoffStates"].includes(method))
+  if (
+    [
+      "detectTools",
+      "startHandoff",
+      "readHandoffStates",
+      "listThreads",
+    ].includes(method)
+  )
     return "handoff";
   if (method === "syncTimeEntries") return "timeSync";
   if (method === "validateConnection") return undefined;
@@ -1243,6 +1254,69 @@ export class PluginManager {
       (manifest) => {
         manifestForResult = manifest;
         requireHandoffTool(manifest, request.tool, connection);
+      },
+    );
+  }
+  /**
+   * A tool's recent threads in one repository folder, for a tool that
+   * declares `listsThreads`. The answer is bounded as a state read's: at
+   * most `limit` threads, each once, links kept only when https or a
+   * declared scheme, and a resume kept only when it names a declared
+   * command.
+   */
+  async listThreads(
+    pluginId: string,
+    request: ListThreadsRequest,
+    projectId: string,
+    connection?: PluginInvocationConnection,
+  ) {
+    let manifestForResult: PluginManifest;
+    const parsed = listThreadsRequestSchema.parse(request);
+    return this.invokePlugin(
+      pluginId,
+      "listThreads",
+      {
+        request: parsed,
+        projectId,
+        ...handoffConnectionParams(pluginId, connection),
+      },
+      {
+        parse(value: unknown) {
+          const { threads } = listThreadsResultSchema.parse(value);
+          if (threads.length > parsed.limit)
+            throw new Error(
+              `The tool must list at most ${parsed.limit} threads.`,
+            );
+          if (new Set(threads.map((t) => t.threadId)).size !== threads.length)
+            throw new Error("The tool must list each thread once.");
+          const commands = isPluginApi4Manifest(manifestForResult)
+            ? (manifestForResult.processes?.commands ?? [])
+            : [];
+          return {
+            threads: threads.map(({ link, resume, ...thread }) => ({
+              ...thread,
+              ...(link && validHandoffLink(link, manifestForResult)
+                ? { link }
+                : {}),
+              ...(resume && commands.some((c) => c.id === resume.command)
+                ? { resume }
+                : {}),
+            })),
+          };
+        },
+      },
+      undefined,
+      (manifest) => {
+        manifestForResult = manifest;
+        requireHandoffTool(manifest, request.tool, connection);
+        const tool = manifest.capabilities.handoff?.tools.find(
+          (t) => t.id === request.tool,
+        );
+        if (!tool?.listsThreads)
+          throw new PluginOperationRefused(
+            `${tool?.label ?? request.tool} doesn't list its threads.`,
+            "not_supported",
+          );
       },
     );
   }

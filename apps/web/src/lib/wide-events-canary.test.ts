@@ -83,7 +83,15 @@ const canaryPlugin: TestPlugin = {
       description: { write: true },
     },
     handoff: {
-      tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+      tools: [
+        {
+          id: "t3",
+          label: "T3",
+          iconSvg: "<svg/>",
+          settings: [],
+          listsThreads: true,
+        },
+      ],
     },
     calendar: {},
     codeHost: {},
@@ -108,6 +116,7 @@ const canaryPlugin: TestPlugin = {
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
 export function startHandoff(request) { globalThis.__canaryHookUrl = request.hook?.url; return { threadId: "thread", native: { label: MARKER }, link: "https://example.test/" + MARKER }; }
+export function listThreads() { return { threads: ["listed", "other"].map(threadId => ({ threadId, title: "[" + MARKER + "] " + MARKER, native: { label: MARKER }, link: "https://example.test/" + MARKER })) }; }
 export function readHandoffStates(request) { return request.handoffs.map(h => ({ id: h.id, state: "ready", native: { label: MARKER }, title: MARKER, branch: MARKER })); }
 const person = { id: "person-" + MARKER, displayName: "Ana " + MARKER, email: MARKER + "@example.test" };
 async function check(connection) {
@@ -714,6 +723,31 @@ describe("the privacy canary", () => {
       expect(JSON.stringify(api.events)).not.toContain(token);
       expect(JSON.stringify(api.events)).not.toContain(started.id + "?");
       await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));
+      const { offers } = await app.appApi.findHandoffThreads(
+        "handoff-project",
+        "item",
+        [MARKER],
+      );
+      expect(offers.map((offer) => offer.threadId)).toEqual([
+        "listed",
+        "other",
+      ]);
+      const adopted = await app.appApi.adoptHandoffThread({
+        pluginId: "canary",
+        toolId: "t3",
+        folderId: folder.id,
+        threadId: "listed",
+        projectId: "handoff-project",
+        workItemId: "item",
+      });
+      await app.appApi.dismissHandoffThread({
+        pluginId: "canary",
+        toolId: "t3",
+        threadId: "other",
+        workItemId: "item",
+      });
+      await app.appApi.removeHandoff(adopted.id);
+      await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));
     } finally {
       stream.close();
       await rm(folderPath, { recursive: true, force: true });
@@ -724,6 +758,10 @@ describe("the privacy canary", () => {
         "api request handoff.refresh",
         "api request handoff.hook",
         "api request handoff.remove",
+        "api request handoff.threads",
+        "api plugin_operation handoff.threads",
+        "api request handoff.adopt",
+        "api request handoff.dismiss_thread",
       ]),
     );
     expectNoLeak();

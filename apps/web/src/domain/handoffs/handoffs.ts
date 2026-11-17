@@ -7,7 +7,9 @@ import {
   isCapabilityActive,
   type PluginsOverview,
 } from "@ajour/shared/plugins";
+import { itemKeySchema } from "@ajour/shared/handoff-threads";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
+import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
 import {
   getWorkItemLookupKeys,
   getWorkItemParentKey,
@@ -104,6 +106,40 @@ export function getHandoffItemRefusal(item: {
   return undefined;
 }
 
+/**
+ * The item's key as a hand off sends it: the source's own id, such as
+ * `PAY-12` or `acme/api#12`. A local item has none.
+ */
+export function getHandoffItemKey(
+  item: Pick<LocalWorkItem, "sourceExternalId">,
+) {
+  return item.sourceExternalId ?? "";
+}
+
+/**
+ * The keys a thread's title may name the item by, in brackets: the key a
+ * hand off sends and the key the item shows (`getWorkItemKey`). A GitHub
+ * issue answers to `acme/api#12` and to `12`, which `[#12]` names too; a
+ * Jira issue or an Azure DevOps work item shows its own id. A local item
+ * has none, and a key no title's brackets could hold (`itemKeySchema`),
+ * such as a source id with a bracket, is left out.
+ */
+export function getHandoffItemKeys(
+  item: Pick<
+    LocalWorkItem,
+    "source" | "sourceExternalId" | "sourceUrl" | "sourceId"
+  >,
+): string[] {
+  if (item.source === "manual") return [];
+  return [
+    ...new Set(
+      [getHandoffItemKey(item), getWorkItemKey(item) ?? ""].filter(
+        (key) => itemKeySchema.safeParse(key).success,
+      ),
+    ),
+  ];
+}
+
 /** The item fields a hand off sends; the API fills the templates from them. */
 export function getHandoffItem(
   item: LocalWorkItem,
@@ -116,7 +152,7 @@ export function getHandoffItem(
       )
     : undefined;
   return {
-    key: item.sourceExternalId ?? "",
+    key: getHandoffItemKey(item),
     title: item.title,
     ...(item.description ? { description: item.description } : {}),
     url: item.sourceUrl ?? "",
