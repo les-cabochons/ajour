@@ -1183,9 +1183,12 @@ Decided in [Access review and credential management for existing plugins](https:
 
 API 4's `processes` declarations appear in Access as argv shapes, for example
 `t3 thread start <folder> - --title <text> --json`, with conditional groups in
-brackets, and schemes such as `codex:`. The existing New marker and update
+brackets, and schemes such as `codex:`. A command that declares a working
+folder (`cwd`) adds "Runs in the repository folder." to its description; the
+folder never shows in its argv shape. The existing New marker and update
 approval panel cover added or changed commands and added schemes. Changed
-command policies ask again even when they restrict access. Removed commands
+command policies ask again even when they restrict access, and adding or
+changing a command's working folder changes its policy. Removed commands
 and schemes do not ask again. Declared capture commands run through the
 process broker (#713). Capture waits for stdout and stderr EOF for up to two
 seconds after the parent exits. If either pipe stays open, the plugin receives

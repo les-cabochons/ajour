@@ -217,7 +217,7 @@ handoff #719 supplies one. Canonical paths inside or containing protected roots
 are refused. Executables come from the user's PATH, including
 the macOS login PATH, or a user override persisted in API state. Every spawn
 passes through `resolveSpawn` with an argv list and `shell: false`. Children
-inherit no `AJOUR_` variable. Declared commands start in the repository folder their first `folder` argument resolves to, or at the filesystem root when they have none; launch modes require one. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
+inherit no `AJOUR_` variable. Declared commands start in the repository folder their `cwd` slot resolves to (#761), else in the one their first `folder` argument resolves to, or at the filesystem root when they have neither; launch modes require one. A `cwd` slot resolves through `FolderResolver` like a `folder` argument and never joins argv. Undeclared commands use the resolved `cwdFolder` when supplied, otherwise the filesystem root. They never inherit Ajour's working directory.
 
 Capture returns an exit code, stdout and stderr. Each stream is bounded at 1 MB.
 The declared timeout defaults to 60 seconds and cannot exceed 600 seconds. Four
@@ -1227,8 +1227,8 @@ type. `open` goes through `ProcessBroker.run` with the session flag, so the
 gates, argument kinds, executable resolution, git environment and `AJOUR_`
 scrub are the ones capture uses; only `session.open` opens a session command,
 and `run` refuses one. The child starts with piped stdio, detached on POSIX so
-it leads a process group, in the first folder slot's folder or at the
-filesystem root. `ProcessSessions` in `apps/api/src/process-sessions.ts` then
+it leads a process group, in its `cwd` slot's folder, else the first folder
+slot's folder, or at the filesystem root. `ProcessSessions` in `apps/api/src/process-sessions.ts` then
 owns it under a 192-bit random id.
 
 A session belongs to the plugin and package that opened it, not to the

@@ -322,6 +322,7 @@ export type PluginManifest = {
               )[];
               mode: "capture" | "detached" | "terminal" | "session";
               executable: string;
+              cwd?: string | undefined;
               stdin?: "text" | undefined;
               timeoutSeconds?: number | undefined;
               idleTimeoutSeconds?: number | undefined;
@@ -445,6 +446,7 @@ export type PluginProcesses = {
         )[];
         mode: "capture" | "detached" | "terminal" | "session";
         executable: string;
+        cwd?: string | undefined;
         stdin?: "text" | undefined;
         timeoutSeconds?: number | undefined;
         idleTimeoutSeconds?: number | undefined;
@@ -501,6 +503,7 @@ export type DeclaredCommand = {
   )[];
   mode: "capture" | "detached" | "terminal" | "session";
   executable: string;
+  cwd?: { kind: "folder"; name: string } | undefined;
   stdin?: "text" | undefined;
   timeoutSeconds?: number | undefined;
   idleTimeoutSeconds?: number | undefined;

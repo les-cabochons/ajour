@@ -8,6 +8,7 @@ import {
   summarizePluginAccess,
   NO_PLUGIN_ACCESS,
   pluginAccessDifference,
+  widensAccess,
 } from "../plugin-access";
 import {
   pluginAccessSummarySchema,
@@ -636,5 +637,111 @@ describe("session commands (#743)", () => {
       agentPrompts: {},
     }).commands!;
     expect(command!.description).toContain(`Ends after ${words} unused,`);
+  });
+});
+
+describe("a command's working folder (#761)", () => {
+  const threadShow = (change: Record<string, unknown> = {}) => ({
+    ...processes,
+    commands: [
+      {
+        id: "thread-show",
+        executable: "t3",
+        args: ["thread", "show", "{thread:id}", "--json"],
+        cwd: "{repo:folder}",
+        mode: "capture",
+        ...change,
+      },
+    ],
+  });
+  const parse = (value: unknown) =>
+    pluginApi4ManifestSchema.safeParse({ ...jiraManifest(), processes: value });
+  const summaryOf = (value: unknown) =>
+    summarizePluginAccess(
+      pluginApi4ManifestSchema.parse({ ...jiraManifest(), processes: value }),
+      { agentPrompts: {} },
+    );
+
+  it("names a folder slot that sets the working folder and stays out of argv", () => {
+    const parsed = parse(threadShow());
+    expect(parsed.success).toBe(true);
+    const command = parsed.data!.processes!.commands[0]!;
+    expect(command.cwd).toEqual({ kind: "folder", name: "repo" });
+    expect(command.args).toEqual([
+      { kind: "literal", value: "thread" },
+      { kind: "literal", value: "show" },
+      { kind: "id", name: "thread" },
+      { kind: "literal", value: "--json" },
+    ]);
+  });
+
+  it("may reuse a folder argument's slot", () => {
+    expect(
+      parse(threadShow({ args: ["thread", "show", "{repo:folder}"] })).success,
+    ).toBe(true);
+  });
+
+  it.each(["detached", "terminal"])("works for a %s command", (mode) => {
+    expect(parse(threadShow({ mode })).success).toBe(true);
+  });
+
+  it("works for a session command", () => {
+    expect(
+      parse(threadShow({ mode: "session", idleTimeoutSeconds: 60 })).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["a text slot", "{repo:text}"],
+    ["a host-filled slot", "{repo:connection-url}"],
+    ["a bare name", "repo"],
+    ["a path", "C:\repo"],
+    ["an object", { kind: "folder", name: "repo" }],
+  ])("refuses %s", (_, cwd) => {
+    expect(parse(threadShow({ cwd })).success).toBe(false);
+  });
+
+  it("refuses a slot the arguments use as another kind", () => {
+    const result = parse(
+      threadShow({ args: ["thread", "show", "{repo:text}"] }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error!.issues[0]!.message).toMatch(/folder slot/);
+  });
+
+  it("refuses a slot inside a conditional group, which the working folder always needs", () => {
+    const result = parse(
+      threadShow({
+        args: ["thread", "show", { if: "repo", args: ["{repo:folder}"] }],
+      }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error!.issues[0]!.message).toMatch(/conditional group/);
+  });
+
+  it("reads in Access review as running in the repository folder", () => {
+    const [command] = summaryOf(threadShow()).commands!;
+    expect(command!.argv).toBe("t3 thread show <id> --json");
+    expect(command!.description).toContain("Runs in the repository folder.");
+    const [plain] = summaryOf(processes).commands!;
+    expect(plain!.description).not.toContain("repository folder");
+  });
+
+  it.each([
+    ["adding a working folder", threadShow({ cwd: undefined }), threadShow()],
+    [
+      "changing its slot",
+      threadShow({ args: ["{other:folder}"] }),
+      threadShow({ args: ["{other:folder}"], cwd: "{other:folder}" }),
+    ],
+  ])("asks for consent again after %s", (_, before, after) => {
+    const difference = pluginAccessDifference(
+      summaryOf(before),
+      summaryOf(after),
+    );
+    expect(difference.commands).toEqual([
+      expect.objectContaining({ id: "thread-show" }),
+    ]);
+    expect(widensAccess(difference)).toBe(true);
   });
 });

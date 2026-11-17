@@ -576,8 +576,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         const value = await this.argument(arg, values, caller);
         if (arg.kind === "literal") literals.push(argv.length);
         argv.push(value);
-        // Every mode works in its first repository folder: tools such as
-        // Claude Code refuse to start in an untrusted folder like the root.
+        // Every mode works in its first repository folder, unless the
+        // command declares its own: tools such as Claude Code refuse to start
+        // in an untrusted folder like the root.
         if (arg.kind === "folder") cwd ??= value;
       };
       let cwd: string | undefined;
@@ -725,6 +726,7 @@ export class ProcessBroker implements ProcessBrokerPort {
               a.kind !== "hook-url",
           )
           .map((a) => (a as { name: string }).name);
+        if (command.cwd) slots.push(command.cwd.name);
         if (Object.keys(request.args).some((k) => !slots.includes(k)))
           return refuse("invalid_request");
 
@@ -743,6 +745,10 @@ export class ProcessBroker implements ProcessBrokerPort {
             for (const arg of group.args) await addArgument(arg, request.args);
           } else await addArgument(group, request.args);
         }
+        // A declared working folder (#761) resolves like a folder argument,
+        // never joins argv, and wins over the first folder argument.
+        if (command.cwd)
+          cwd = await this.argument(command.cwd, request.args, caller);
         stdin = request.stdin ?? "";
         names =
           caller.manifest.processes!.executables[command.executable]!.names;

@@ -320,7 +320,17 @@ needs approval again. Never pass such settings through a `text` slot: Claude
 Code's settings can declare hooks that run commands. A `hook-url` slot needs the
 handoff capability, can't be the slot a conditional group tests, and fails with
 `hook_refused` outside a start that has a hook.
-`DeclaredCommand` exports the parsed host contract with typed slots and groups.
+A command may name its working folder with `cwd`, a whole folder slot such as
+`"cwd": "{repo:folder}"`, for a tool that needs a folder but takes none as an
+argument (`t3 thread show <id>`). The plugin fills it in `args` like any
+folder slot, with a repository folder id; the host resolves it and starts the
+command there, but never adds it to argv. A folder argument of the same name
+takes the same value. The name can't be a slot of another kind or sit in a
+conditional group, since the command always needs it. An explicit `cwd` wins
+over the first folder argument, in every mode. Access review says "Runs in the
+repository folder", and adding or changing `cwd` needs approval again.
+`DeclaredCommand` exports the parsed host contract with typed slots and groups,
+with `cwd` parsed to `{ kind: "folder", name }`.
 
 Schemes must be lowercase RFC 3986 names without a colon. Ajour refuses `http`,
 `https`, `file`, `javascript`, `data`, `vbscript`, `about`, `blob`, `ajour`,
@@ -332,7 +342,7 @@ HTTPS opening is separate from these declarations.
 Access review lists each command as its argv shape and each scheme. Turning the
 plugin on approves that access. Added schemes and added or changed commands need
 approval again. Removals do not. Command comparison includes executable names,
-slot kinds, enum choices, conditional groups, stdin, mode, timeout and idle timeout. It treats
+slot kinds, enum choices, conditional groups, working folder, stdin, mode, timeout and idle timeout. It treats
 all command policy changes conservatively as needing review, even a restriction.
 
 These commands and links run as you, outside the sandbox. A plugin that starts processes
@@ -410,8 +420,8 @@ await ajour.process.session.close(id);
 ```
 
 - `open` checks the same consent, unsigned plugin gates and argument kinds as
-  `run`, and returns an unguessable id. The program starts in the first
-  folder slot's folder, or at the filesystem root. A plugin keeps at most 2
+  `run`, and returns an unguessable id. The program starts in its `cwd`
+  folder, else the first folder slot's folder, or at the filesystem root. A plugin keeps at most 2
   sessions; a third open is refused with `session_limit`.
 - A session belongs to the plugin, not to the operation that opened it. Keep
   its id, such as in a handoff's `native` state, and a later operation can use
@@ -533,7 +543,8 @@ Capture returns `{ exitCode, stdout, stderr }`. Detached and terminal modes retu
 stdin, once the process has read its input. Narrow the result with
 `result.started === true` before reading capture output. Ajour does not own or
 stop launched processes, except while it delivers stdin. Launch modes need a
-repository folder slot and use the first resolved folder as cwd. A detached
+repository folder slot and run in the `cwd` folder, else the first resolved
+folder. A detached
 command that declares `stdin: "text"` takes up to 1 MB of input, such as a
 prompt with line breaks that would not fit on a command line. Ajour writes all
 of it and closes stdin before it returns `{ started: true }`, so the call
