@@ -3,6 +3,8 @@ import type {
   StartHandoffResult,
   ReadHandoffStatesRequest,
   ReadHandoffStatesResult,
+  ListThreadsRequest,
+  ListThreadsResult,
   DetectToolsResult,
   BacklogCommentOperations,
   BacklogSyncResult,
@@ -268,6 +270,14 @@ export type PluginModule = {
   readHandoffStates?(
     ...args: HandoffArguments<ReadHandoffStatesRequest>
   ): Awaitable<ReadHandoffStatesResult>;
+  /**
+   * A tool's recent threads in one repository folder, with their titles,
+   * for a tool that declares `listsThreads`. Ajour offers to link a thread
+   * whose title names an item's key in brackets, as `[PAY-12] …`.
+   */
+  listThreads?(
+    ...args: HandoffArguments<ListThreadsRequest>
+  ): Awaitable<ListThreadsResult>;
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,

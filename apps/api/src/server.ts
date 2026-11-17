@@ -11,6 +11,11 @@ import {
   handoffStartRouteSchema,
   handoffToolConnectionsSchema,
 } from "../../../packages/shared/handoffs.ts";
+import {
+  handoffAdoptRouteSchema,
+  handoffThreadDismissalSchema,
+  handoffThreadsRouteSchema,
+} from "../../../packages/shared/handoff-threads.ts";
 
 import { randomUUID as commandId } from "node:crypto";
 import {
@@ -2086,6 +2091,43 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.refuse("handoff_refused");
         writeJson(response, 409, { error: handoffOpenRefusal(error.reason) });
       }
+    },
+    handoffThreads: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, handoffThreadsRouteSchema);
+      const found = await handoffs.findThreads(payload.projectId, payload.key);
+      unit.set({
+        handoff: {
+          listed: found.listed,
+          failed: found.failed,
+          count: found.offers.length,
+        },
+      });
+      writeJson(response, 200, { offers: found.offers });
+    },
+    handoffAdopt: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, handoffAdoptRouteSchema);
+      unit.set({
+        plugin: { id: payload.pluginId },
+        handoff: { tool: payload.toolId },
+      });
+      try {
+        const record = await handoffs.adopt(payload);
+        unit.set({ handoff: { id: record.id } });
+        writeJson(response, 200, record);
+      } catch (error) {
+        if (!(error instanceof HandoffRefused)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: error.message });
+      }
+    },
+    handoffThreadDismiss: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, handoffThreadDismissalSchema);
+      unit.set({
+        plugin: { id: payload.pluginId },
+        handoff: { tool: payload.toolId },
+      });
+      await handoffs.dismissThread(payload);
+      writeJson(response, 200, { ok: true });
     },
     handoffDetect: async ({ request, response, params }) => {
       const payload = await readRequest(

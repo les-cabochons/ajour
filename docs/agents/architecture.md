@@ -197,8 +197,8 @@ page replaces the worker's run id and main accepts only its sender's own runs.
 
 `ProcessBroker` validates typed argument slots and conditional groups. A
 `connection-url` slot is filled by the host, never the plugin: during a handoff
-operation (`detectTools`, `startHandoff`, `readHandoffStates`, and opening a
-thread) whose caller carries `connectionId`, the server's `connectionAddress`
+operation (`detectTools`, `startHandoff`, `readHandoffStates`, `listThreads`,
+and opening a thread) whose caller carries `connectionId`, the server's `connectionAddress`
 reads the connection through `brokerConnection` and `connectionBaseAddress`
 (`broker-policy.ts`), so the address obeys the broker's https and on-premises
 rules. A value the plugin passes for that slot is `invalid_request`; an
@@ -1326,6 +1326,32 @@ The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
+
+### Found threads
+
+A tool that declares `listsThreads: true` (ticket #724) answers the optional
+`listThreads({ tool, folder: { id }, since?, limit })` with
+`{ threads: [{ threadId, title, link?, resume?, native, updatedAt? }] }`, one
+repository folder at a time, connection first for a tool that uses one. The
+host bounds the answer as a state read's: at most `limit` (1 to 200) threads,
+each once, titles up to 500 characters and native state up to 4 KB; it drops a
+link that isn't HTTPS or a declared scheme, and a resume that names no declared
+command. POST `/api/handoffs/threads` takes `{ projectId, key }` when the item
+page opens. `Handoffs.findThreads` lists each folder of the project per tool
+and connection at most once every five minutes, failed or not, shares a listing
+under way, and keeps the last listing in memory only, never on the tick.
+`selectThreadOffers` in `packages/shared/handoff-threads.ts` keeps the threads
+whose title holds the item's key in brackets, exactly and case-sensitively
+(`threadTitleKeys`), skips those linked to any handoff and those dismissed, and
+sorts the newest first. The key is the item's `sourceExternalId`, the one a
+hand off sends as `item.key`, so a local item without one is offered nothing.
+POST `/api/handoffs/adopt` names the plugin, tool, connection, folder and
+thread; the API takes the thread from its last listing, never from the window,
+refuses one it didn't list or that is already linked, and saves a record with
+state `unknown` (`adoptHandoff` in `handoff-state.ts`), then refreshes it at
+once. POST `/api/handoffs/threads/dismiss` stores "Not this one" in
+`handoffThreadDismissals`, keyed by plugin, tool and thread id, newest 2,000
+kept; uninstalling the plugin removes them.
 
 Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
 data, VBScript, blob and about links are always refused. Resume commands must be

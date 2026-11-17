@@ -471,6 +471,19 @@ Return exactly one answer for each id with `state` and `native`, plus optional
 project, and process folder slots can resolve only that project's saved folders.
 Prompts and settings are not stored in handoff records or events.
 
+A tool that sets `listsThreads: true` also answers `listThreads(request)`
+(connection first for a tool with one), so Ajour can offer to link a thread
+the user started on their own. The request is
+`{ tool, folder: { id }, since?, limit }`: one repository folder, threads
+changed after `since` (milliseconds) when the tool can tell, and at most
+`limit`. Return `{ threads: [{ threadId, title, link?, resume?, native, updatedAt? }] }`,
+newest first, each thread once. The item page lists a folder at most once
+every five minutes per tool, and offers a thread whose title names an item's
+key in brackets, exactly, as `[PAY-12] Fix login redirect`. Link turns it
+into a handoff whose state is `unknown` until its first `readHandoffStates`,
+which runs at once. Links and resumes follow a start's rules, except that an
+unsafe link or an undeclared resume is dropped instead of refusing the list.
+
 ## License
 
 MIT

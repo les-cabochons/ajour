@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type {
+  ListThreadsRequest,
   PluginConnection,
   PluginModule,
   ReadHandoffStatesRequest,
@@ -23,6 +24,16 @@ const withoutConnection = {
       state: "working" as const,
       native: {},
     })),
+  listThreads: (request: ListThreadsRequest) => ({
+    threads: [
+      {
+        threadId: `${request.folder.id}:1`,
+        title: "[PAY-12] Fix login redirect",
+        native: {},
+        updatedAt: request.since,
+      },
+    ],
+  }),
 } satisfies PluginModule;
 
 const withConnection = {
@@ -42,6 +53,16 @@ const withConnection = {
       state: "ready" as const,
       native: {},
     })),
+  listThreads: (
+    _connection: PluginConnection,
+    request: ListThreadsRequest,
+  ) => ({
+    threads: Array.from({ length: Math.min(request.limit, 1) }, () => ({
+      threadId: "session",
+      title: "[PAY-12] Fix login redirect",
+      native: {},
+    })),
+  }),
 } satisfies PluginModule;
 
 const both: PluginModule = {
@@ -52,7 +73,7 @@ const both: PluginModule = {
 };
 
 it("types handoff exports with and without a connection", () => {
-  expect(Object.keys(withoutConnection)).toHaveLength(3);
-  expect(Object.keys(withConnection)).toHaveLength(3);
+  expect(Object.keys(withoutConnection)).toHaveLength(4);
+  expect(Object.keys(withConnection)).toHaveLength(4);
   expect(typeof both.startHandoff).toBe("function");
 });
