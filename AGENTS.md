@@ -31,6 +31,15 @@ of rebuilding lifecycle rules in `local-store.ts` or React components.
 Packages are deep modules: see [`packages/README.md`](packages/README.md) before
 adding a package or importing from one.
 
+A new plugin capability, or any new value in a plugin manifest, is not done
+until the published catalog accepts it. The desktop catalog
+(`apps/desktop/electron/plugin-sources.cjs`, `plugin-catalog.cjs`) and the
+web catalog labels and tabs keep their own lists, and a value they don't know
+makes Ajour skip the plugin as "needs a newer Ajour". Before releasing a
+plugin that uses it, parse its real `ajour.json` entry with
+`parseSourceManifest`. Tests that load the plugin from a development folder
+or a fixture never reach the catalog.
+
 Examples:
 
 ```sh
