@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const api = vi.hoisted(() => ({
   getHandoffToolSwitches: vi.fn(),
@@ -13,6 +19,7 @@ vi.mock("@/lib/handoff-tools", () => tools_);
 
 import { PluginHandoffTools } from "./handoff-tool-features";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
+import { requestChooseHandoffTools } from "@/features/backlog/handoff-request";
 
 installDomShims();
 afterEach(cleanup);
@@ -29,10 +36,16 @@ const tools = [
   { id: "copilot", label: "Copilot CLI", followsState: false },
 ];
 
-function render() {
+function render(path = "/") {
   return renderRoutes({
+    path,
     routes: {
-      "/": () => <PluginHandoffTools pluginId="agent-handoff" tools={tools} />,
+      "/": () => (
+        <>
+          <button type="button">Elsewhere</button>
+          <PluginHandoffTools pluginId="agent-handoff" tools={tools} />
+        </>
+      ),
     },
   });
 }
@@ -112,4 +125,40 @@ it("keeps the switch as it was and says why when the save fails", async () => {
     'The plugin has no handoff tool "t3".',
   );
   expect(t3.getAttribute("aria-checked")).toBe("false");
+});
+
+it("takes focus to its heading once the switches load when Choose your tools opens it, and again on the next request", async () => {
+  let load!: (value: { enabled: string[] }) => void;
+  api.getHandoffToolSwitches.mockReturnValue(
+    new Promise((resolve) => (load = resolve)),
+  );
+  const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+  await render("/?section=handoff-tools");
+  const heading = screen.getByRole("heading", { name: "Handoff tools" });
+  // Content above can still grow while the switches load: no scroll yet.
+  expect(document.activeElement).not.toBe(heading);
+  await act(async () => load({ enabled: [] }));
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(scrolled.mock.contexts).toContain(
+    heading.closest("section") as Element,
+  );
+
+  // The page is already open at the section: a second request still moves
+  // the reader there.
+  screen.getByRole("button", { name: "Elsewhere" }).focus();
+  act(() => requestChooseHandoffTools());
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  scrolled.mockRestore();
+});
+
+it("leaves focus alone when the page opens without the section", async () => {
+  await render();
+  const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+  elsewhere.focus();
+  await screen.findByRole("switch", { name: "Use T3 Code" });
+  await waitFor(() =>
+    expect(api.getHandoffToolSwitches).toHaveBeenCalledTimes(1),
+  );
+  act(() => requestChooseHandoffTools());
+  expect(document.activeElement).toBe(elsewhere);
 });

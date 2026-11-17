@@ -154,6 +154,8 @@ interface ThreadListing {
 
 export class HandoffRefused extends Error {}
 export class HandoffTemplateRefused extends HandoffRefused {}
+/** A start or link with a tool switched off (#760): `tool_off`. */
+export class HandoffToolOff extends HandoffRefused {}
 
 /** Why a tool that uses a connection has none to run with. */
 const pickConnection = (tool: HandoffTool) =>
@@ -221,7 +223,7 @@ export class Handoffs {
     if (!plugin?.capabilities.handoff || !tool)
       throw new HandoffRefused("This handoff tool is not available.");
     if (!(await this.enabledTools(input.pluginId)).has(tool.id))
-      throw new HandoffRefused(toolIsOff(tool, "hand off to it"));
+      throw new HandoffToolOff(toolIsOff(tool, "hand off to it"));
     const connection = await this.startConnection(input, tool);
     const templates =
       (await this.options.storage.getHandoffTemplates(input.pluginId)) ??
@@ -564,7 +566,7 @@ export class Handoffs {
     if (!tool?.listsThreads)
       throw new HandoffRefused("This handoff tool is not available.");
     if (!(await this.enabledTools(input.pluginId)).has(tool.id))
-      throw new HandoffRefused(toolIsOff(tool, "link its threads"));
+      throw new HandoffToolOff(toolIsOff(tool, "link its threads"));
     const unavailable = await this.options.unavailableReason?.(
       input.pluginId,
       input.toolId,

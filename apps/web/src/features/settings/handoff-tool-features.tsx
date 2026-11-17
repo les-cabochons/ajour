@@ -13,6 +13,7 @@ import {
 } from "@/lib/app-api";
 import { forgetHandoffToolDetection } from "@/lib/handoff-tools";
 import { useSettingsSearch } from "@/features/settings/settings-link";
+import { useChooseHandoffToolsRequest } from "@/features/backlog/handoff-request";
 
 interface Tool {
   id: string;
@@ -31,7 +32,8 @@ function errorMessage(reason: unknown, fallback: string) {
  * supports (`handoffToolFeatures`) and its switch (#760). Every tool starts
  * off, per device; only a tool that is on takes hand offs, is detected and
  * offers found threads. Turning one off keeps its handoffs. *Choose your
- * tools* opens the page here, with `section=handoff-tools`.
+ * tools* opens the page here, with `section=handoff-tools`: the section
+ * scrolls into view and its heading takes focus, on each request.
  */
 export function PluginHandoffTools({
   pluginId,
@@ -44,6 +46,7 @@ export function PluginHandoffTools({
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState("");
   const section = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const focused = useSettingsSearch().section === HANDOFF_TOOLS_SECTION;
 
   useEffect(() => {
@@ -63,9 +66,19 @@ export function PluginHandoffTools({
     };
   }, [pluginId]);
 
+  const request = useChooseHandoffToolsRequest();
+  // The switches loaded, or failed to: the section has its height.
+  const ready = enabled !== undefined || error !== "";
+  // Once the switches load, and again after the next layout in case
+  // something above grew meanwhile.
   useEffect(() => {
-    if (focused) section.current?.scrollIntoView({ block: "start" });
-  }, [focused]);
+    if (!focused || !ready) return;
+    const show = () => section.current?.scrollIntoView({ block: "start" });
+    show();
+    heading.current?.focus({ preventScroll: true });
+    const frame = requestAnimationFrame(show);
+    return () => cancelAnimationFrame(frame);
+  }, [focused, ready, request]);
 
   const toggle = async (toolId: string, on: boolean) => {
     setSaving(toolId);
@@ -89,7 +102,12 @@ export function PluginHandoffTools({
       aria-labelledby={`${pluginId}-handoff-tools`}
     >
       <div>
-        <h2 id={`${pluginId}-handoff-tools`} className="settings-section-title">
+        <h2
+          ref={heading}
+          id={`${pluginId}-handoff-tools`}
+          tabIndex={-1}
+          className="settings-section-title outline-none"
+        >
           Handoff tools
         </h2>
         <p className="settings-section-desc mt-1">

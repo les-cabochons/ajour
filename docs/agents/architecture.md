@@ -1378,10 +1378,10 @@ detection see only the tools that are on, while the Handoffs card still names
 every tool's threads.
 
 `Handoffs` checks the switches itself: `start` refuses a tool that is off
-(409, `handoff_refused`), `detect` asks the plugin only when a tool is on and
+(409, `tool_off`), `detect` asks the plugin only when a tool is on and
 keeps only the answers for tools that are on, `findThreads` lists only tools
 that are on, and `adopt` refuses a thread of a tool turned off since its
-listing. Refreshes, hooks, Open and Remove ignore the switches: turning a tool
+listing (409, `tool_off`). Refreshes, hooks, Open and Remove ignore the switches: turning a tool
 off keeps its handoffs, which are the user's records. Tools that run each
 other, such as T3 Code running Codex and Claude Code threads, are not
 filtered against each other: each tool that is on shows its own listing.
@@ -1390,7 +1390,9 @@ The version 13 migration adds the switches. It turns on, once, each tool that
 has a handoff record on this device, so an existing user keeps the button
 they hand off from, and nothing else: a device that never handed off starts
 with every tool off. The step never runs again on the file, so a tool turned
-off afterwards stays off.
+off afterwards stays off. An uninstall keeps handoffs, so the step can turn
+on tools of a plugin removed before the upgrade; a fresh install (not an
+update) clears the plugin's switches, so its tools start off.
 
 ### Found threads
 

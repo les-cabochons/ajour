@@ -23,6 +23,8 @@ import {
 } from "@/lib/handoff-tools";
 import { useLocalState } from "@/lib/local-hooks";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
+import { ShortcutProvider } from "@/lib/shortcut-handlers";
+import { CommandPalette } from "@/features/command-palette/command-palette";
 import { HandoffButton } from "./handoff-button";
 import { HandoffHost } from "./handoff-workflow";
 import { isHandoffStarting, requestHandoff } from "./handoff-request";
@@ -703,6 +705,34 @@ it("reads Choose your tools while no tool is on, and leads to the plugin's tool 
   await waitFor(() =>
     expect(settings()).toBe("plugins/agent-handoff?section=handoff-tools"),
   );
+});
+
+it("opens the plugin's tool list from the palette's Choose your tools", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: [] }));
+  const { router } = await renderRoutes({
+    shell: ({ children }) => (
+      <ShortcutProvider>
+        <CommandPalette />
+        {children}
+      </ShortcutProvider>
+    ),
+    routes: { "/": Page },
+  });
+  await screen.findByRole("button", { name: "Choose your tools" });
+  const row = document.createElement("button");
+  row.setAttribute("data-backlog-item-id", itemId);
+  document.body.append(row);
+  row.focus();
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  fireEvent.click(
+    await screen.findByRole("option", { name: /^Choose your tools/ }),
+  );
+  await waitFor(() =>
+    expect(
+      (router.state.location.search as Record<string, unknown>).settings,
+    ).toBe("plugins/agent-handoff?section=handoff-tools"),
+  );
+  row.remove();
 });
 
 it("keeps naming the threads of a tool turned off on the card, and offers only the tools that are on", async () => {

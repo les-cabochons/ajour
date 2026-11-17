@@ -2557,6 +2557,21 @@ export class AppApiStorage {
     return [...((await this.readState()).handoffEnabledTools[pluginId] ?? [])];
   }
   /**
+   * Turns every handoff tool of the plugin off. A fresh install calls it:
+   * the version 13 migration may have turned on tools for a plugin that was
+   * uninstalled before the upgrade, since an uninstall keeps its handoffs.
+   */
+  async clearHandoffToolSwitches(pluginId: string): Promise<void> {
+    if (UNSAFE_KEYS.has(pluginId)) return;
+    await this.mutate((state) => {
+      const { [pluginId]: _, ...rest } = state.handoffEnabledTools;
+      return {
+        nextState: { ...state, handoffEnabledTools: rest },
+        result: undefined,
+      };
+    });
+  }
+  /**
    * Turns one of the plugin's handoff tools on or off, and returns the
    * tools now on. The caller checks the tool is in the plugin's manifest.
    */

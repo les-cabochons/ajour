@@ -1826,6 +1826,7 @@ export const catalog = defineCatalog({
         ...pluginOperationReasons,
         "refresh_failed",
         "handoff_refused",
+        "tool_off",
       ],
       fields: {
         ...requestFields,
@@ -1964,7 +1965,7 @@ export const catalog = defineCatalog({
     /** Link a listed thread to an item, as a new handoff. */
     "handoff.adopt": {
       kinds: ["request", "command"],
-      reasons: [...requestReasons, "handoff_refused"],
+      reasons: [...requestReasons, "handoff_refused", "tool_off"],
       fields: {
         ...requestFields,
         plugin: { id: operational() },

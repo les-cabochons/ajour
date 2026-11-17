@@ -6,6 +6,7 @@ import {
   Handoffs,
   HandoffRefused,
   HandoffTemplateRefused,
+  HandoffToolOff,
 } from "./handoffs.ts";
 import {
   handoffStartRouteSchema,
@@ -2080,7 +2081,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 200, record);
       } catch (error) {
         if (!(error instanceof HandoffRefused)) throw error;
-        unit.refuse("handoff_refused");
+        unit.refuse(
+          error instanceof HandoffToolOff ? "tool_off" : "handoff_refused",
+        );
         writeJson(
           response,
           error instanceof HandoffTemplateRefused ? 400 : 409,
@@ -2232,7 +2235,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 200, record);
       } catch (error) {
         if (!(error instanceof HandoffRefused)) throw error;
-        unit.refuse("handoff_refused");
+        unit.refuse(
+          error instanceof HandoffToolOff ? "tool_off" : "handoff_refused",
+        );
         writeJson(response, 409, { error: error.message });
       }
     },
@@ -5285,6 +5290,10 @@ export async function installPluginForServer(
       if (!installed.replaced && options.enableAfterInstall === false) {
         await runtime.storage.setPluginEnabled(pluginId, false);
       }
+      // A fresh install's handoff tools start off, whatever an earlier
+      // install of the same id left (#760).
+      if (!installed.replaced)
+        await runtime.storage.clearHandoffToolSwitches(pluginId);
       const previous = [
         ...before.plugins,
         ...before.unavailable.map((plugin) => plugin.manifest),

@@ -1165,7 +1165,7 @@ Refresh all and hooks skip it and open no `handoff.refresh` event, and a
 refresh of that one handoff is a `handoff.refresh` request refused with
 `handoff_refused`.
 `handoff.adopt` records the plugin, tool and new handoff id, and refuses with
-`handoff_refused`; `handoff.dismiss_thread` records the plugin and tool. None
+`handoff_refused`, or `tool_off` for a tool turned off; `handoff.dismiss_thread` records the plugin and tool. None
 records a thread's title or id, the item's keys, or a folder. The privacy canary
 lists, links and dismisses marked threads through the real local API.
 
@@ -1251,6 +1251,6 @@ Handoff template reads emit `handoff.templates_read` as request or job; saves em
 
 A tool's hook post (#726) is one `handoff.hook` request event, named before any check but the host's. `handoff.hook` is `accepted`, `rate_limited` or `unknown`, with the handoff's tool once its token matched. Refusals give `browser_origin`, `unknown_hook` (an unknown id, or a wrong, missing or revoked token, alike), `rate_limited` or `body_too_large`. The event never holds the handoff's id, the token, the URL or the body; its route is the pattern `/hooks/handoff/:id`. The refresh a post schedules is its own `handoff.refresh` job. A `hook-url` process argument outside a start with a hook is refused with `hook_refused` on `plugin.process`.
 
-A handoff tool's switch (#760) is read with `handoff.tools_read`, with request metadata only, and changed with `handoff.tools_update`, which adds `plugin.id`, `handoff.tool` and `handoff.enabled`, the switch's new position. A tool the plugin doesn't declare is refused with `unknown_tool`. Neither holds a title, a path or a thread.
+A handoff tool's switch (#760) is read with `handoff.tools_read`, with request metadata only, and changed with `handoff.tools_update`, which adds `plugin.id`, `handoff.tool` and `handoff.enabled`, the switch's new position. A tool the plugin doesn't declare is refused with `unknown_tool`. Neither holds a title, a path or a thread. A `handoff.start` or `handoff.adopt` request for a tool that is off is refused with `tool_off`, not `handoff_refused`.
 
 A handoff tool's connection pick is read with `handoff.connections_read` and saved with `handoff.connections_update`, with request metadata only. A handoff operation through a connection records the connection's id on its `plugin_operation` event, never its address. A `connection-url` process argument the host can't fill is refused with `connection_refused` on `plugin.process`.
