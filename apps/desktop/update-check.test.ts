@@ -7,6 +7,7 @@ const {
   GITHUB_RELEASES_API_URL,
   checkForUpdates,
   createUpdateCheckCoordinator,
+  fetchReleaseNotes,
   isAllowedReleaseUrl,
   isUpdateAvailable,
   normalizeReleases,
@@ -34,6 +35,12 @@ const {
     fetchImpl?: ReturnType<typeof vi.fn>;
     report?: UpdateCheckReport;
   }) => Promise<unknown>;
+  fetchReleaseNotes: (options: {
+    track: "stable" | "nightly";
+    fetchImpl: ReturnType<typeof vi.fn>;
+    limit?: number;
+    report?: UpdateCheckReport;
+  }) => Promise<ReleaseNote[]>;
   isAllowedReleaseUrl: (value: unknown) => boolean;
   isUpdateAvailable: (
     currentVersion: string,
@@ -57,6 +64,15 @@ interface Release {
   releaseUrl: string;
   publishedAt: string;
   publishedTimestamp: number;
+}
+
+interface ReleaseNote {
+  tagName: string;
+  packageVersion: string;
+  name: string;
+  releaseUrl: string;
+  publishedAt: string;
+  body: string;
 }
 
 function githubRelease(
@@ -438,5 +454,148 @@ describe("what an update check reports", () => {
       "joined",
       "hit",
     ]);
+  });
+});
+
+describe("release notes", () => {
+  function respondWith(releases: unknown) {
+    return vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue(releases),
+    });
+  }
+
+  it("lists the track's newest releases first, with their notes", async () => {
+    const withBody = (tag: string, publishedAt: string, body: string) => ({
+      ...githubRelease(tag, publishedAt),
+      body,
+    });
+    const fetchImpl = respondWith([
+      withBody("v0.0.1-nightly.20261116.376", "2026-11-16T15:21:01Z", "376"),
+      withBody("v0.0.1-nightly.20261116.377", "2026-11-16T16:27:41Z", "377"),
+      { ...githubRelease("v0.0.1", "2026-11-06T12:26:39Z", false), body: "1" },
+      withBody("v0.0.1-nightly.20261116.374", "2026-11-16T13:48:30Z", "374"),
+    ]);
+
+    const notes = await fetchReleaseNotes({
+      track: "nightly",
+      fetchImpl,
+      limit: 2,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      GITHUB_RELEASES_API_URL,
+      expect.anything(),
+    );
+    expect(notes).toEqual([
+      {
+        tagName: "v0.0.1-nightly.20261116.377",
+        packageVersion: "0.0.1-nightly.20261116.377",
+        name: "Ajour v0.0.1-nightly.20261116.377",
+        releaseUrl:
+          "https://github.com/les-cabochons/ajour/releases/tag/v0.0.1-nightly.20261116.377",
+        publishedAt: "2026-11-16T16:27:41Z",
+        body: "377",
+      },
+      expect.objectContaining({ tagName: "v0.0.1-nightly.20261116.376" }),
+    ]);
+  });
+
+  it("reads stable notes from the full list, since the latest endpoint has one", async () => {
+    const fetchImpl = respondWith([
+      githubRelease("v1.0.0", "2026-10-01T00:00:00Z", false),
+      githubRelease("v1.1.0", "2026-11-01T00:00:00Z", false),
+      githubRelease("v1.2.0-nightly.20261102.1", "2026-11-02T00:00:00Z"),
+    ]);
+
+    const notes = await fetchReleaseNotes({ track: "stable", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      GITHUB_RELEASES_API_URL,
+      expect.anything(),
+    );
+    expect(notes.map((note) => note.tagName)).toEqual(["v1.1.0", "v1.0.0"]);
+    // A release GitHub sent without a body has empty notes.
+    expect(notes[0]?.body).toBe("");
+  });
+
+  it("reads further pages until it has the track's releases", async () => {
+    const nightlies = (day: number) =>
+      Array.from({ length: 100 }, (_, index) =>
+        githubRelease(
+          `v1.2.0-nightly.202611${String(day).padStart(2, "0")}.${index + 1}`,
+          "2026-11-02T00:00:00Z",
+        ),
+      );
+    const pages = [
+      [
+        ...nightlies(10).slice(0, 99),
+        githubRelease("v1.1.0", "2026-11-01T00:00:00Z", false),
+      ],
+      nightlies(9),
+      [githubRelease("v1.0.0", "2026-10-01T00:00:00Z", false)],
+    ];
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+      const page = Number(new URL(url).searchParams.get("page") ?? 1);
+      return { ok: true, status: 200, json: async () => pages[page - 1] };
+    });
+
+    const notes = await fetchReleaseNotes({ track: "stable", fetchImpl });
+
+    expect(notes.map((note) => note.tagName)).toEqual(["v1.1.0", "v1.0.0"]);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      GITHUB_RELEASES_API_URL,
+      `${GITHUB_RELEASES_API_URL}&page=2`,
+      `${GITHUB_RELEASES_API_URL}&page=3`,
+    ]);
+
+    fetchImpl.mockClear();
+    await fetchReleaseNotes({ track: "nightly", fetchImpl });
+    // Ten nightlies are on the first page.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists ten releases unless asked for another number", async () => {
+    const fetchImpl = respondWith(
+      Array.from({ length: 12 }, (_, index) =>
+        githubRelease(
+          `v0.0.1-nightly.20261116.${index + 1}`,
+          `2026-11-16T${String(index + 1).padStart(2, "0")}:00:00Z`,
+        ),
+      ),
+    );
+
+    const notes = await fetchReleaseNotes({ track: "nightly", fetchImpl });
+
+    expect(notes.map((note) => note.tagName)).toEqual(
+      Array.from(
+        { length: 10 },
+        (_, index) => `v0.0.1-nightly.20261116.${12 - index}`,
+      ),
+    );
+  });
+
+  it("caps a release body, so one huge release cannot flood the window", async () => {
+    const fetchImpl = respondWith([
+      {
+        ...githubRelease("v1.0.0", "2026-10-01T00:00:00Z", false),
+        body: "x".repeat(100_000),
+      },
+    ]);
+
+    const [note] = await fetchReleaseNotes({ track: "stable", fetchImpl });
+
+    expect(note?.body.length).toBe(20_000);
+  });
+
+  it("reports GitHub's statuses and fails clearly", async () => {
+    const report: UpdateCheckReport = {};
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+
+    await expect(
+      fetchReleaseNotes({ track: "nightly", fetchImpl, report }),
+    ).rejects.toThrow("GitHub release check failed (503).");
+    expect(report.github_statuses).toEqual([503]);
   });
 });

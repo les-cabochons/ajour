@@ -1739,6 +1739,21 @@ export const catalog = defineCatalog({
       reasons: ["foreign_sender"],
       fields: { ipc: ipcFields },
     },
+    /** What's new reading the track's latest releases. */
+    "update.release_notes": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        update: {
+          track: operational<"stable" | "nightly">(),
+          release_count: operational<number>(),
+          /** `joined` waited for a read already running. */
+          cache: operational<"hit" | "joined" | "miss">(),
+          github_statuses: operational<number[]>(),
+        },
+      },
+    },
     "update.open_release": {
       kinds: ["command", "ipc"],
       reasons: ["foreign_sender", "url_not_allowed"],

@@ -82,6 +82,12 @@ export const SettingsSyncReviewPage = lazy(
     return { default: module.SettingsImportReviewPage };
   }),
 );
+export const SettingsWhatsNewPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-whats-new-page");
+    return { default: module.SettingsWhatsNewPage };
+  }),
+);
 /** Debug exists only in development builds. */
 export const SettingsDebugPage = import.meta.env.DEV
   ? lazy(
@@ -123,6 +129,8 @@ export function settingsPageElement(location: SettingsLocation) {
       return <SettingsTimeEntriesPage />;
     case "sync-review":
       return <SettingsSyncReviewPage />;
+    case "whats-new":
+      return <SettingsWhatsNewPage />;
     case "debug":
       return SettingsDebugPage ? <SettingsDebugPage /> : null;
   }

@@ -4,6 +4,11 @@ const GITHUB_LATEST_STABLE_API_URL = `https://api.github.com/repos/${GITHUB_REPO
 const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 const UPDATE_CHECK_CACHE_TTL_MS = 5 * 60_000;
 const UPDATE_CHECK_FAILURE_TTL_MS = 30_000;
+const RELEASE_NOTES_LIMIT = 10;
+const RELEASE_NOTES_BODY_LIMIT = 20_000;
+const RELEASES_PAGE_SIZE = 100;
+/** Pages What's new reads at most: stable releases sit among many nightlies. */
+const RELEASE_NOTES_MAX_PAGES = 5;
 const STABLE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const NIGHTLY_TAG_PATTERN =
   /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
@@ -419,6 +424,81 @@ async function checkForUpdates({
   };
 }
 
+/** Newest version first; publication order between equal versions. */
+function compareReleasesNewestFirst(left, right) {
+  const versionComparison = comparePackageVersions(
+    right.packageVersion,
+    left.packageVersion,
+  );
+  return versionComparison !== 0
+    ? versionComparison
+    : right.publishedTimestamp - left.publishedTimestamp;
+}
+
+/**
+ * The newest `limit` releases of `track` with their notes, for What's new.
+ * Both tracks read the full list, page by page until `limit` releases of
+ * the track are found: the stable endpoint returns only the latest release,
+ * and nightlies crowd stable releases off the first page. A body is capped,
+ * so one huge release cannot flood the window. `report`, when given,
+ * collects GitHub's statuses.
+ */
+async function fetchReleaseNotes({
+  track,
+  fetchImpl,
+  limit = RELEASE_NOTES_LIMIT,
+  report,
+}) {
+  assertUpdateTrack(track);
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Release notes are unavailable.");
+  }
+
+  const releases = [];
+  for (let page = 1; page <= RELEASE_NOTES_MAX_PAGES; page += 1) {
+    const url =
+      page === 1
+        ? GITHUB_RELEASES_API_URL
+        : `${GITHUB_RELEASES_API_URL}&page=${page}`;
+    const values = await fetchGithubJson(fetchImpl, url, { report });
+    if (!Array.isArray(values)) {
+      throw new Error("GitHub returned an invalid releases response.");
+    }
+    for (const value of values) {
+      const release = normalizeRelease(value);
+      if (!release || release.track !== track) continue;
+      const body = typeof value.body === "string" ? value.body : "";
+      releases.push({
+        ...release,
+        body: body.slice(0, RELEASE_NOTES_BODY_LIMIT),
+      });
+    }
+    if (releases.length >= limit || values.length < RELEASES_PAGE_SIZE) break;
+  }
+
+  return releases
+    .sort(compareReleasesNewestFirst)
+    .slice(0, limit)
+    .map((release) => ({
+      tagName: release.tagName,
+      packageVersion: release.packageVersion,
+      name: release.name,
+      releaseUrl: release.releaseUrl,
+      publishedAt: release.publishedAt,
+      body: release.body,
+    }));
+}
+
+/**
+ * Caches and joins calls to `checkForUpdatesImpl` per track and version:
+ * update checks, and What's new's release notes.
+ * @param {{
+ *   checkForUpdatesImpl?: (options: any) => Promise<any>,
+ *   now?: () => number,
+ *   successTtlMs?: number,
+ *   failureTtlMs?: number,
+ * }} [options]
+ */
 function createUpdateCheckCoordinator({
   checkForUpdatesImpl = checkForUpdates,
   now = Date.now,
@@ -487,6 +567,7 @@ module.exports = {
   checkForUpdates,
   comparePackageVersions,
   createUpdateCheckCoordinator,
+  fetchReleaseNotes,
   isAllowedReleaseUrl,
   isUpdateAvailable,
   normalizeReleases,

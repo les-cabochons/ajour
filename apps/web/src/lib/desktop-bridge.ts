@@ -43,6 +43,17 @@ export interface DesktopUpdateCheckResult {
   checkedAt: string;
 }
 
+/** A release What's new lists, newest first, with GitHub's notes. */
+export interface DesktopReleaseNote {
+  tagName: string;
+  packageVersion: string;
+  name: string;
+  releaseUrl: string;
+  publishedAt: string;
+  /** The release's Markdown body, capped by the desktop app. */
+  body: string;
+}
+
 export interface DesktopUpdateState {
   status:
     | "idle"
@@ -339,6 +350,10 @@ declare global {
         trace?: TraceCarrier,
       ) => Promise<DesktopUpdateState>;
       getUpdateState?: (trace?: TraceCarrier) => Promise<DesktopUpdateState>;
+      getReleaseNotes?: (
+        track: UpdateTrack,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopReleaseNote[]>;
       onUpdateStateChanged?: (
         callback: (state: DesktopUpdateState) => void,
       ) => () => void;

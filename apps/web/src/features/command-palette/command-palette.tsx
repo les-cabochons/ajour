@@ -22,7 +22,10 @@ import {
   type SortableObjectRef,
 } from "@/features/command-palette/command-palette-items";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
-import { getSettingsPages } from "@/features/settings/settings-navigation";
+import {
+  getSettingsPages,
+  unlistedSettingsPages,
+} from "@/features/settings/settings-navigation";
 import { useOpenSettings } from "@/features/settings/settings-link";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
@@ -442,11 +445,14 @@ export function CommandPalette({
           shortcutRunner.isAvailable(shortcut.id),
         ),
         // The narrow view's Projects page is the section itself, already listed.
-        settingsPages: getSettingsPages(
-          isNarrowView ? "narrow" : "wide",
-          false,
-          hasCalendar,
-        ).filter((page) => page.to.startsWith("/settings/")),
+        settingsPages: [
+          ...getSettingsPages(
+            isNarrowView ? "narrow" : "wide",
+            false,
+            hasCalendar,
+          ),
+          ...unlistedSettingsPages,
+        ].filter((page) => page.to.startsWith("/settings/")),
         platform,
         settleOpensDialog,
         handoffTools: getHandOffActionTools(),

@@ -71,6 +71,14 @@ When("I open Settings from the header", async ({ page }) => {
     .click();
 });
 
+When("I open Settings from the header's update menu", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("button", { name: "Settings, 1.0.1 is ready", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: /^Settings/ }).click();
+});
+
 Then("the General settings page is open", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/general$/);
 });

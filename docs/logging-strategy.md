@@ -1120,6 +1120,7 @@ channel to read the event each emits.
 | `update.get_state`                   | ipc                                     | IPC channel                                      |
 | `update.install`                     | command, ipc, job                       | IPC channel, main process                        |
 | `update.open_release`                | command, ipc                            | IPC channel                                      |
+| `update.release_notes`               | ipc                                     | IPC channel                                      |
 | `vault.retry`                        | command, request                        | route, client call                               |
 | `week.prompt_commit`                 | command                                 | store command                                    |
 | `week.reopen`                        | command                                 | store command                                    |

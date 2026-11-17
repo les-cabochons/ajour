@@ -533,3 +533,45 @@
 .settings-window .settings-content {
   padding: 1.5rem var(--page-gutter) 2.5rem;
 }
+
+/* What's new: the waiting update, tinted with the accent, then a timeline
+   whose line and dots mark each release, the installed one filled. */
+.whats-new-update {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.whats-new-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-left: 0.25rem;
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border);
+}
+
+.whats-new-release {
+  position: relative;
+}
+
+.whats-new-release::before {
+  content: "";
+  position: absolute;
+  top: 0.625rem;
+  left: calc(-1.25rem - 4.5px);
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: 9999px;
+  background: var(--background);
+}
+
+.whats-new-release[data-installed]::before {
+  border-color: var(--success);
+  background: var(--success);
+}

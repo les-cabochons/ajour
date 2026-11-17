@@ -14,7 +14,10 @@ import {
   useCloseSettings,
 } from "@/features/settings/settings-link";
 import type { SettingsLocation } from "@/features/settings/settings-location";
-import { getSettingsGroups } from "@/features/settings/settings-navigation";
+import {
+  getSettingsGroups,
+  unlistedSettingsPages,
+} from "@/features/settings/settings-navigation";
 import { SettingsWindowPage } from "@/features/settings/settings-pages";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
@@ -48,9 +51,10 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
     codeHosts.length > 0,
     calendars.length > 0,
   );
-  const openEntry = groups
-    .flatMap((group) => group.pages)
-    .find((entry) => isOpen(location.page, pageOf(entry.to)));
+  const openEntry = [
+    ...groups.flatMap((group) => group.pages),
+    ...unlistedSettingsPages,
+  ].find((entry) => isOpen(location.page, pageOf(entry.to)));
 
   return (
     <Dialog

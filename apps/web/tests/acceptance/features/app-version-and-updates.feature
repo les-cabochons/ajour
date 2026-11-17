@@ -1,7 +1,8 @@
 Feature: Ajour's version and manual application updates
-  The sidebar header ends with Settings. The Settings window's left column
-  ends with Ajour's version and the desktop update button. Updates only
-  download after the user chooses to update.
+  The sidebar header ends with Settings. While an update waits, the gear
+  opens a menu with the update, What's new and Settings. The Settings
+  window's left column ends with Ajour's version and the desktop update
+  button. Updates only download after the user chooses to update.
 
   Scenario: Open Settings from the sidebar header
     Given I use the sidebar header in the browser
@@ -39,7 +40,7 @@ Feature: Ajour's version and manual application updates
 
   Scenario: Share availability and download progress with Settings
     Given the desktop has "available" update state
-    When I open Settings from the header
+    When I open Settings from the header's update menu
     And the desktop check returns "available"
     Then the update button offers Ajour 1.0.1
     And Settings offers Update and restart
@@ -55,7 +56,7 @@ Feature: Ajour's version and manual application updates
 
   Scenario: Open the release page on a platform without in-place installation
     Given the desktop has "manual-install" update state
-    When I open Settings from the header
+    When I open Settings from the header's update menu
     And the desktop check returns "available"
     And I click the update button
     Then the desktop opens the release page without an update request
