@@ -26,6 +26,17 @@ Given(
         capabilities: ["connector", "codeHost"],
         features: ["work-item-sync", "pull-requests"],
       },
+      {
+        ...builtInEntries[0]!,
+        id: "agent-handoff",
+        title: "Agent handoff",
+        description:
+          "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
+        version: "0.9.0",
+        capabilities: ["handoff"],
+        features: ["agent-handoff"],
+        tags: ["agents", "t3", "claude-code"],
+      },
     ];
     await page.addInitScript((catalogEntries) => {
       window.ajourDesktop = {
@@ -99,6 +110,7 @@ Then("every plugin filter fits inside the viewport", async ({ page }) => {
     "Code hosts",
     "Calendars",
     "Agent tasks",
+    "Handoff tools",
     "Schemas",
   ]) {
     const tab = page.getByRole("tab", { name, exact: true });
@@ -570,3 +582,19 @@ Then("Jira cannot be switched on or off, and says why", async ({ page }) => {
     ),
   ).toBeVisible();
 });
+
+Then(
+  "Agent handoff is the only catalog entry and offers a download",
+  async ({ page }) => {
+    const entry = page.getByRole("link", { name: /^View / });
+    await expect(entry).toHaveText(/Agent handoff/);
+    await expect(entry).toContainText("Handoff tools");
+    await expect(
+      page.getByRole("button", {
+        name: "Download Agent handoff",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await page.screenshot({ path: "test-results/catalog-handoff-tools.png" });
+  },
+);

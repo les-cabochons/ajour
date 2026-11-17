@@ -9,6 +9,7 @@ const {
 } = require("./plugin-catalog-seed.cjs");
 const {
   BLOCKED_TRUST_STATES,
+  CATALOG_CAPABILITIES,
   OFFICIAL_SOURCE_PUBLIC_KEYS,
   assessSourceTrust,
   createPluginArchive,
@@ -24,16 +25,6 @@ const {
 
 const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 1_000_000;
-const INSTALLABLE_CAPABILITIES = new Set([
-  "connector",
-  "codeHost",
-  "calendar",
-  "team",
-  "projectSource",
-  "timeSync",
-  "agentTask",
-  "schema",
-]);
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|avif)$/iu;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const BLOCKED_MESSAGES = {
@@ -514,7 +505,7 @@ function createPluginCatalogService(options) {
     }
     if (
       !entry.capabilities.some((capability) =>
-        INSTALLABLE_CAPABILITIES.has(capability),
+        CATALOG_CAPABILITIES.has(capability),
       )
     ) {
       throw notAvailable(

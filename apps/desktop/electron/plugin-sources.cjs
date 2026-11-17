@@ -34,7 +34,12 @@ const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const PATH_SEGMENT = /^[A-Za-z0-9._-]+$/u;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/u;
-const CAPABILITIES = new Set([
+/**
+ * The catalog capabilities this Ajour reads: the same list as
+ * `pluginCatalogCapabilitySchema` in packages/shared/plugin-catalog.ts. A
+ * plugin entry with another one is skipped and named.
+ */
+const CATALOG_CAPABILITIES = new Set([
   "connector",
   "codeHost",
   "calendar",
@@ -42,6 +47,7 @@ const CAPABILITIES = new Set([
   "projectSource",
   "timeSync",
   "agentTask",
+  "handoff",
   "schema",
 ]);
 const STATUSES = new Set(["available", "coming-soon", "deprecated"]);
@@ -205,12 +211,14 @@ function parsePluginEntry(value, index) {
   if (
     !Array.isArray(raw.capabilities) ||
     raw.capabilities.length < 1 ||
-    raw.capabilities.length > CAPABILITIES.size ||
-    raw.capabilities.some((capability) => !CAPABILITIES.has(capability)) ||
+    raw.capabilities.length > CATALOG_CAPABILITIES.size ||
+    raw.capabilities.some(
+      (capability) => !CATALOG_CAPABILITIES.has(capability),
+    ) ||
     new Set(raw.capabilities).size !== raw.capabilities.length
   ) {
     fail(
-      `${at} capabilities must list 1 to ${CAPABILITIES.size} known capabilities.`,
+      `${at} capabilities must list 1 to ${CATALOG_CAPABILITIES.size} known capabilities.`,
     );
   }
   const author = assertExactKeys(
@@ -865,6 +873,7 @@ function createPluginArchive(files) {
 
 module.exports = {
   BLOCKED_TRUST_STATES,
+  CATALOG_CAPABILITIES,
   HOST_KINDS,
   MAX_MANIFEST_BYTES,
   OFFICIAL_PLUGIN_SOURCE_URL,

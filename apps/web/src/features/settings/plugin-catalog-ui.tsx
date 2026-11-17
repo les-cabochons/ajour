@@ -9,6 +9,7 @@ import {
   PLUGIN_API_VERSION,
   comparePluginVersions,
   isSignedPlugin,
+  pluginCatalogCapabilitySchema,
   type PluginCatalogCapability,
   type PluginCatalogEntry,
   type PluginOrigin,
@@ -24,6 +25,8 @@ const featureDescriptions: Record<string, string> = {
   "calendar-events":
     "Suggest your calendar's meetings as time entries. Read-only.",
   "work-item-sync": "Bring remote items into Ajour's local backlog.",
+  "agent-handoff":
+    "Hand off backlog items to coding tools and follow their threads.",
 };
 
 const capabilityLabels: Record<PluginCatalogCapability, string> = {
@@ -34,8 +37,39 @@ const capabilityLabels: Record<PluginCatalogCapability, string> = {
   projectSource: "Project source",
   timeSync: "Time sync",
   agentTask: "Agent tasks",
+  handoff: "Handoff tools",
   schema: "Schema",
 };
+
+/**
+ * The catalog's filter tabs, in the order of the shared capability list.
+ * Null leaves a capability's plugins under All only.
+ */
+const capabilityFilterLabels: Record<PluginCatalogCapability, string | null> = {
+  connector: "Backlog",
+  codeHost: "Code hosts",
+  calendar: "Calendars",
+  team: null,
+  projectSource: null,
+  timeSync: null,
+  agentTask: "Agent tasks",
+  handoff: "Handoff tools",
+  schema: "Schemas",
+};
+
+export type PluginCatalogFilter = "all" | PluginCatalogCapability;
+
+/** All, then a tab for each capability that has one. */
+export const pluginCatalogFilters: readonly {
+  value: PluginCatalogFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "All" },
+  ...pluginCatalogCapabilitySchema.options.flatMap((capability) => {
+    const label = capabilityFilterLabels[capability];
+    return label ? [{ value: capability, label }] : [];
+  }),
+];
 
 /** "Backlog", or "Backlog · Code host" for a plugin with both. */
 export function pluginCapabilitiesLabel(entry: PluginCatalogEntry) {
@@ -132,6 +166,7 @@ const capabilityFlows: Record<
   projectSource: { start: "Project source", end: "Ajour projects" },
   timeSync: { start: "Ajour time entries", end: "Time sync" },
   agentTask: { start: "Task prompt", end: "Coding agent" },
+  handoff: { start: "Backlog item", end: "Coding tool" },
   schema: { start: "Ajour projects", end: "Excel files" },
 };
 

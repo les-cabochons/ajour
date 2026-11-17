@@ -25,6 +25,8 @@ Feature: Browse plugin capabilities
     Then the Workday schema is the only catalog entry
     When I select the "Agent tasks" plugin filter
     Then the Workday agent is the only catalog entry and offers a download
+    When I select the "Handoff tools" plugin filter
+    Then Agent handoff is the only catalog entry and offers a download
 
   Scenario: Say which catalog entries need a newer Ajour
     Given the catalog skipped an entry this Ajour cannot read

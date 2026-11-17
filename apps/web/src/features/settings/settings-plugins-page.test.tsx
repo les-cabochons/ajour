@@ -100,3 +100,34 @@ it("a development process gate preserves signed activation and sends the display
     ),
   );
 });
+it("lists a handoff plugin under the Handoff tools filter", async () => {
+  vi.mocked(api.getPluginsOverview).mockResolvedValue(overview());
+  vi.mocked(api.getPluginCatalog).mockResolvedValueOnce({
+    entries: [
+      {
+        id: "agent-handoff",
+        title: "Agent handoff",
+        description: "Hand off backlog items to coding tools.",
+        version: "0.9.0",
+        author: { name: "Ajour", url: "https://github.com/les-cabochons" },
+        license: { name: "MIT License", spdxId: "MIT" },
+        status: "available",
+        compatibility: { pluginApiVersion: 4 },
+        capabilities: ["handoff"],
+        features: ["agent-handoff"],
+        install: { method: "source" },
+        tags: ["agents"],
+      },
+    ],
+    sources: [],
+    source: "cache",
+    checkedAt: "2026-11-17T00:00:00Z",
+  });
+  await renderRoutes({ routes: { "/": () => <SettingsPluginsPage /> } });
+  const tab = await screen.findByRole("tab", { name: "Handoff tools" });
+  fireEvent.click(tab);
+  await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+  const card = await screen.findByRole("link", { name: "View Agent handoff" });
+  expect(card.textContent).toContain("Handoff tools");
+  expect(screen.queryByRole("link", { name: "View Process test" })).toBeNull();
+});

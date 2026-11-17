@@ -137,6 +137,30 @@ describe("plugin settings workflow", () => {
       expected: ["projectSource"],
       features: ["project-source"],
     },
+    {
+      capabilities: { projectSource: {}, timeSync: {} },
+      expected: ["projectSource", "timeSync"],
+      features: ["project-source", "time-sync"],
+    },
+    {
+      capabilities: {
+        handoff: {
+          tools: [
+            {
+              id: "t3",
+              label: "T3 Code",
+              iconSvg: "<svg />",
+              settings: [],
+              connection: "none" as const,
+              followsState: true,
+              hooks: false,
+            },
+          ],
+        },
+      },
+      expected: ["handoff"],
+      features: ["agent-handoff"],
+    },
   ])(
     "keeps every installed capability when the catalog is unavailable: $expected",
     async ({ capabilities, expected, features }) => {

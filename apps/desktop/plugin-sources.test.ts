@@ -6,10 +6,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPluginArchive } from "../api/src/plugin-package.ts";
 import { pluginCatalogCapabilitySchema } from "../../packages/shared/plugin-catalog.ts";
+// The agent-handoff entry the official source published at commit 024e51c.
+import agentHandoffEntry from "./fixtures/ajour-plugins-agent-handoff-entry.json";
 
 const require = createRequire(import.meta.url);
 const sources = require("./electron/plugin-sources.cjs") as {
   BLOCKED_TRUST_STATES: Set<string>;
+  CATALOG_CAPABILITIES: Set<string>;
   OFFICIAL_PLUGIN_SOURCE_URL: string;
   assessSourceTrust(input: {
     manifestBytes: Uint8Array;
@@ -39,8 +42,12 @@ const sources = require("./electron/plugin-sources.cjs") as {
   };
   keyFingerprint(publicKey: Uint8Array): string;
   normalizeSourceUrl(input: string): string;
-  parseSourceManifest(bytes: Uint8Array): {
+  parseSourceManifest(
+    bytes: Uint8Array,
+    options?: { skipInvalidPlugins?: boolean },
+  ): {
     name: string;
+    skippedPluginIds: string[];
     plugins: Array<{
       id: string;
       name: string;
@@ -169,6 +176,31 @@ describe("ajour.json", () => {
       expect(parsed.plugins[0]).toMatchObject({ capabilities: [capability] });
     },
   );
+
+  it("knows exactly the capabilities of the shared catalog contract", () => {
+    expect([...sources.CATALOG_CAPABILITIES].sort()).toEqual(
+      [...pluginCatalogCapabilitySchema.options].sort(),
+    );
+  });
+
+  it("keeps the agent-handoff entry the official source publishes", () => {
+    const parsed = sources.parseSourceManifest(
+      bytesOf({
+        schemaVersion: 1,
+        name: "Ajour official plugins",
+        plugins: [agentHandoffEntry],
+      }),
+      { skipInvalidPlugins: true },
+    );
+    expect(parsed.skippedPluginIds).toEqual([]);
+    expect(parsed.plugins).toEqual([
+      expect.objectContaining({
+        id: "agent-handoff",
+        version: "0.9.0",
+        capabilities: ["handoff"],
+      }),
+    ]);
+  });
 
   it.each([
     ["an unknown key", { homepage: "https://example.com" }, "unknown key"],

@@ -258,6 +258,19 @@ describe("the consent panel's lines", () => {
     ]);
   });
 
+  it.each([
+    ["handoff", "Handoff tools"],
+    ["projectSource", "Project source"],
+    ["timeSync", "Time sync"],
+  ])("names a new %s capability in plain words", (capability, title) => {
+    const items = describeAccess(view, labels, {
+      onlyNew: true,
+      difference: { ...NOTHING, capabilities: [capability] },
+    });
+
+    expect(items.map((item) => item.title)).toEqual([title]);
+  });
+
   it("lists a new capability, an always-on choice and a removed gate", () => {
     const items = describeAccess(view, labels, {
       onlyNew: true,
