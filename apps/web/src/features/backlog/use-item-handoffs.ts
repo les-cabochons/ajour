@@ -5,7 +5,7 @@ import {
 } from "@ajour/shared/handoff-threads";
 import { findHandoffThreads, refreshHandoffs } from "@/lib/app-api";
 import { setHandoffs, useHandoffs } from "@/lib/handoffs";
-import { useHandoffTools } from "@/lib/handoff-tools";
+import { useAllHandoffTools, useHandoffTools } from "@/lib/handoff-tools";
 import { isHandoffFollowed } from "@/domain/handoffs/handoffs";
 import {
   dismissHandoffThreadOffer,
@@ -21,9 +21,10 @@ const NO_KEYS: readonly string[] = [];
  * whose tool follows state (`isHandoffFollowed`) for its state once, so the card is current without waiting for the API's
  * next tick, and asks once for the threads its project's folders hold whose
  * title names one of the item's keys (`getHandoffItemKeys`), to offer
- * linking them. The card shows while
- * the item has threads or a tool could take one, so the web build and
- * items without a tool keep their cards as they were.
+ * linking them, from the tools that are on. A tool turned off still names
+ * and follows the threads it started (`tools`). The card shows while the
+ * item has threads or a tool that is on could take one, so the web build
+ * and items without a tool keep their cards as they were.
  */
 export function useItemHandoffs(
   itemId: string,
@@ -31,7 +32,8 @@ export function useItemHandoffs(
   keys: readonly string[] = NO_KEYS,
 ) {
   const records = useHandoffs(itemId);
-  const tools = useHandoffTools(projectId);
+  const enabled = useHandoffTools(projectId);
+  const tools = useAllHandoffTools();
   // Followed by its tool now, so a Started thread whose tool follows state
   // again is asked too.
   const live = records
@@ -65,7 +67,7 @@ export function useItemHandoffs(
     offers: readonly HandoffThreadOffer[];
   }>();
   const [pending, setPending] = useState<readonly HandoffThreadOffer[]>([]);
-  const canList = tools.length > 0;
+  const canList = enabled.length > 0;
   // Keys come as a new array on every render; their text is what changes.
   const named = JSON.stringify(keys.filter(Boolean));
   useEffect(() => {
@@ -122,6 +124,6 @@ export function useItemHandoffs(
         : Promise.resolve(false),
     dismiss: (offer: HandoffThreadOffer) =>
       settle(offer, () => dismissHandoffThreadOffer(offer, itemId)),
-    shown: records.length > 0 || tools.length > 0,
+    shown: records.length > 0 || enabled.length > 0,
   };
 }

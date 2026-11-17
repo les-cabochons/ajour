@@ -36,6 +36,12 @@ export interface HandoffTool {
   reason?: string;
   /** False for a tool that only starts threads: its handoffs stay Started. */
   followsState: boolean;
+  /**
+   * The tool's switch on the plugin's page (#760). Only a tool that is on
+   * takes new hand offs and offers found threads; one that is off still
+   * names and draws the handoffs it started.
+   */
+  enabled: boolean;
 }
 
 export type DetectedTools = DetectToolsResult["tools"];
@@ -53,7 +59,8 @@ export function parseHandoffToolKey(key: string) {
 
 /**
  * Every tool of the plugins whose handoff capability is on, in manifest
- * order. A tool detection didn't list counts as missing.
+ * order, each marked on or off by its switch. A tool detection didn't list
+ * counts as missing.
  */
 export function listHandoffTools(
   overview: PluginsOverview | null | undefined,
@@ -65,6 +72,7 @@ export function listHandoffTools(
     if (!capability || group.missing || !isCapabilityActive(group, "handoff"))
       return [];
     const detected = detections.get(group.plugin.id);
+    const enabled = new Set(group.enabledHandoffTools ?? []);
     return capability.tools.map((tool) => {
       const found = detected?.find((candidate) => candidate.id === tool.id);
       return {
@@ -74,6 +82,7 @@ export function listHandoffTools(
         label: tool.label,
         iconSvg: tool.iconSvg,
         followsState: tool.followsState !== false,
+        enabled: enabled.has(tool.id),
         available: detected ? (found?.available ?? false) : undefined,
         ...(detected && !found?.available
           ? { reason: found?.reason ?? `${tool.label} isn't on this computer.` }
@@ -82,6 +91,35 @@ export function listHandoffTools(
     });
   });
 }
+
+/**
+ * Where *Choose your tools* leads while handoff plugins are active and none
+ * of their tools is on: that plugin's tool list, or, with several such
+ * plugins, the plugins list, since the tools are chosen per plugin.
+ * Undefined while a tool is on, or no handoff plugin is active.
+ */
+export function getHandoffToolsChoice(
+  overview: PluginsOverview | null | undefined,
+): { page: string; search?: Record<string, string> } | undefined {
+  if (!overview?.pluginsEnabled) return undefined;
+  const plugins = overview.connectionGroups.filter(
+    (group) =>
+      group.plugin.capabilities.handoff &&
+      !group.missing &&
+      isCapabilityActive(group, "handoff"),
+  );
+  if (!plugins.length || plugins.some((g) => g.enabledHandoffTools?.length))
+    return undefined;
+  return plugins.length === 1
+    ? {
+        page: `plugins/${plugins[0]!.plugin.id}`,
+        search: { section: HANDOFF_TOOLS_SECTION },
+      }
+    : { page: "plugins" };
+}
+
+/** The plugin page's search value that scrolls to its Handoff tools. */
+export const HANDOFF_TOOLS_SECTION = "handoff-tools";
 
 /** Why a tool can't take a hand off now, or undefined when it can. */
 export function getHandoffToolRefusal(tool: HandoffTool) {

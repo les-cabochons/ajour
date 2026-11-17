@@ -160,6 +160,12 @@ const pickConnection = (tool: HandoffTool) =>
   `Pick a connection for ${tool.label ?? tool.id} in its settings on the plugin's page.`;
 const DELETED_CONNECTION =
   "The connection this handoff ran through was deleted.";
+/**
+ * Why a tool that is off can't do something new: only the plugin's page
+ * turns it on (#760). Its handoffs keep refreshing and opening.
+ */
+const toolIsOff = (tool: HandoffTool, action: string) =>
+  `${tool.label ?? tool.id} is off. Turn it on in the plugin's Handoff tools to ${action}.`;
 /** A handoff started before its tool used a connection can't go on. */
 export const HANDOFF_NEEDS_CONNECTION =
   "This tool now hands off through a connection. Start a new handoff.";
@@ -214,6 +220,8 @@ export class Handoffs {
     );
     if (!plugin?.capabilities.handoff || !tool)
       throw new HandoffRefused("This handoff tool is not available.");
+    if (!(await this.enabledTools(input.pluginId)).has(tool.id))
+      throw new HandoffRefused(toolIsOff(tool, "hand off to it"));
     const connection = await this.startConnection(input, tool);
     const templates =
       (await this.options.storage.getHandoffTemplates(input.pluginId)) ??
@@ -331,6 +339,10 @@ export class Handoffs {
       throw new HandoffRefused("This connection no longer exists.");
     return connection;
   }
+  /** The ids of the plugin's tools the user turned on on this device. */
+  private async enabledTools(pluginId: string): Promise<ReadonlySet<string>> {
+    return new Set(await this.options.storage.getEnabledHandoffTools(pluginId));
+  }
   /** The connection the tool's settings picked, else the plugin's only one. */
   private async pickedConnection(pluginId: string, toolId: string) {
     const picked = (
@@ -341,10 +353,11 @@ export class Handoffs {
     return connections.length === 1 ? connections[0]!.id : undefined;
   }
   /**
-   * Which of the plugin's tools this computer has. Tools without a
-   * connection are detected together, as before; each connection the tools'
-   * settings picked is detected for its own tools. A connection that fails
-   * marks only its tools missing, with why.
+   * Which of the plugin's tools that are on this computer has. A tool that
+   * is off isn't detected or listed, and with none on the plugin isn't
+   * asked. Tools without a connection are detected together, as before;
+   * each connection the tools' settings picked is detected for its own
+   * tools. A connection that fails marks only its tools missing, with why.
    */
   async detect(
     pluginId: string,
@@ -357,9 +370,18 @@ export class Handoffs {
     const plugin = (await this.options.plugins.listPlugins()).find(
       (p) => p.id === pluginId,
     );
-    const tools = plugin?.capabilities.handoff?.tools ?? [];
+    const enabled = await this.enabledTools(pluginId);
+    const tools = (plugin?.capabilities.handoff?.tools ?? []).filter((tool) =>
+      enabled.has(tool.id),
+    );
+    if (!tools.length) return { tools: [] };
     const connected = tools.filter((tool) => tool.connection === "required");
-    if (!connected.length) return detectTools(pluginId, projectId);
+    if (!connected.length) {
+      const answer = await detectTools(pluginId, projectId);
+      return {
+        tools: answer.tools.filter((tool) => enabled.has(tool.id)),
+      };
+    }
     const plain = new Set(
       tools.filter((tool) => tool.connection !== "required").map((t) => t.id),
     );
@@ -407,7 +429,9 @@ export class Handoffs {
   }
   /**
    * The threads of the project's repository folders whose title names one
-   * of the item's keys, from each tool that lists its threads. A tool lists
+   * of the item's keys, from each tool that is on and lists its threads.
+   * Tools that run each other, such as T3 Code running Codex threads, may
+   * each offer the same work: no tool's threads are filtered out. A tool lists
    * a folder at most once every `THREAD_LISTING_INTERVAL_MS`, so opening
    * items reads the last listing. Threads linked to any handoff, and those
    * dismissed for this item, aren't offered. Refuses an item whose handoffs
@@ -427,8 +451,12 @@ export class Handoffs {
     let listed = 0;
     let failed = 0;
     for (const plugin of await this.options.plugins.listPlugins()) {
-      for (const tool of plugin.capabilities.handoff?.tools ?? []) {
-        if (!tool.listsThreads) continue;
+      const tools = plugin.capabilities.handoff?.tools ?? [];
+      const enabled = tools.length
+        ? await this.enabledTools(plugin.id)
+        : new Set<string>();
+      for (const tool of tools) {
+        if (!tool.listsThreads || !enabled.has(tool.id)) continue;
         if (await this.options.unavailableReason?.(plugin.id, tool.id))
           continue;
         let connection: HandoffConnection | undefined;
@@ -535,6 +563,8 @@ export class Handoffs {
       ?.capabilities.handoff?.tools.find((t) => t.id === input.toolId);
     if (!tool?.listsThreads)
       throw new HandoffRefused("This handoff tool is not available.");
+    if (!(await this.enabledTools(input.pluginId)).has(tool.id))
+      throw new HandoffRefused(toolIsOff(tool, "link its threads"));
     const unavailable = await this.options.unavailableReason?.(
       input.pluginId,
       input.toolId,

@@ -10,7 +10,10 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { getHandOffActionTools } from "@/lib/handoff-tools";
+import {
+  getHandOffActionTools,
+  getHandoffToolsChoiceNow,
+} from "@/lib/handoff-tools";
 import { isHandoffStarting } from "@/features/backlog/handoff-request";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
@@ -318,6 +321,7 @@ function useBacklogItemRow(
         settleOpensDialog: settleOpensDialog(workItem),
         otherSourceStateCount: getOtherSourceStates(workItem).length,
         handoffTools: getHandOffActionTools(),
+        chooseHandoffTools: Boolean(getHandoffToolsChoiceNow()),
         handoffStarting: isHandoffStarting(workItem._id),
       });
     }

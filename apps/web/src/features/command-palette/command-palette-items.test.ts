@@ -360,6 +360,21 @@ describe("buildPaletteSections", () => {
     );
   });
 
+  it("offers Choose your tools on a backlog item while no handoff tool is on", () => {
+    const item = workItem("item", "Checkout", { projectId: "p" });
+    const labels = (chooseHandoffTools: boolean) =>
+      buildPaletteSections(
+        input({
+          focused: { kind: "backlog-item", workItemId: "item" },
+          workItems: [item],
+          handoffTools: [],
+          chooseHandoffTools,
+        }),
+      )[0]!.items.map((entry) => entry.label);
+    expect(labels(true)).toContain("Choose your tools");
+    expect(labels(false)).not.toContain("Choose your tools");
+  });
+
   it("lists active projects for Create task in…", () => {
     const archived = project("old", "Old", [], { status: "archived" });
     const [section] = buildPaletteSections(

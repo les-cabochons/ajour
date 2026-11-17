@@ -12,6 +12,7 @@ import {
   stopAppApiServer,
 } from "./server.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { turnOnServerHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { nodeBrokerTransport } from "./test-support/node-broker-transport.ts";
@@ -190,6 +191,10 @@ async function setup() {
     "p",
     path.join(root, "repo"),
   );
+  await turnOnServerHandoffTools(server, {
+    opencode: ["opencode", "plain"],
+    other: ["opencode", "plain"],
+  });
   const input = {
     pluginId: "opencode",
     toolId: "opencode",

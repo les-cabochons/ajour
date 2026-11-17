@@ -10,6 +10,7 @@ import {
 } from "./server.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { turnOnServerHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
 
 it("starts, reads, refreshes and removes a fake tool's thread without logging content, and preserves refused starts", async () => {
@@ -77,6 +78,7 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
       "p",
       path.join(root, "repo"),
     );
+    await turnOnServerHandoffTools(server, { handoff: ["t3", "other"] });
     expect(
       (
         await call("POST", "/api/plugins/handoff/handoffs/detect", {
@@ -360,6 +362,7 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
       "p",
       path.join(root, "repo"),
     );
+    await turnOnServerHandoffTools(server, { handoff: ["t3"] });
     const input = {
       pluginId: "handoff",
       toolId: "t3",
@@ -487,6 +490,7 @@ it("starts a tool that doesn't follow state as started, with a plugin that has n
       "p",
       path.join(root, "repo"),
     );
+    await turnOnServerHandoffTools(server, { handoff: ["copilot"] });
     const overview = (await call("GET", "/api/plugins")).body as {
       connectionGroups: Array<Record<string, unknown>>;
     };

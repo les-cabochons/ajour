@@ -10,6 +10,8 @@ import {
 import {
   handoffStartRouteSchema,
   handoffToolConnectionsSchema,
+  handoffToolSwitchSchema,
+  enabledHandoffToolsOf,
 } from "../../../packages/shared/handoffs.ts";
 import {
   handoffAdoptRouteSchema,
@@ -2011,6 +2013,57 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         200,
         await storage.getHandoffToolConnections(params.pluginId),
       );
+    },
+    handoffToolsGet: async ({ response, params }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      writeJson(response, 200, {
+        enabled: enabledHandoffToolsOf(
+          plugin.capabilities.handoff.tools,
+          await storage.getEnabledHandoffTools(params.pluginId),
+        ),
+      });
+    },
+    // One tool per call, so two switches flipped at once can't undo each
+    // other. Handoffs the tool started stay and keep refreshing.
+    handoffToolsSave: async ({ request, response, params, unit }) => {
+      const plugin = (await pluginManager.listPlugins()).find(
+        (p) => p.id === params.pluginId,
+      );
+      if (!plugin?.capabilities.handoff) {
+        writeJson(response, 404, {
+          error: "This plugin has no handoff capability.",
+        });
+        return;
+      }
+      const change = await readRequest(request, handoffToolSwitchSchema);
+      unit.set({
+        plugin: { id: plugin.id },
+        handoff: { tool: change.toolId, enabled: change.enabled },
+      });
+      const tools = plugin.capabilities.handoff.tools;
+      if (!tools.some((tool) => tool.id === change.toolId)) {
+        unit.refuse("unknown_tool");
+        writeJson(response, 400, {
+          error: `The plugin has no handoff tool "${change.toolId}".`,
+        });
+        return;
+      }
+      const enabled = await storage.setHandoffToolEnabled(
+        plugin.id,
+        change.toolId,
+        change.enabled,
+      );
+      writeJson(response, 200, {
+        enabled: enabledHandoffToolsOf(tools, enabled),
+      });
     },
     handoffList: async ({ response }) => {
       writeJson(response, 200, await storage.listHandoffs());

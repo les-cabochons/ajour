@@ -10,6 +10,7 @@ import {
 } from "./server.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { turnOnServerHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
 
 // How many state reads the fake tool answered, by thread.
@@ -112,6 +113,7 @@ async function startHandoff() {
     "p",
     path.join(root, "repo"),
   );
+  await turnOnServerHandoffTools(server, { handoff: ["t3"] });
   const started = await call("POST", "/api/handoffs", {
     pluginId: "handoff",
     toolId: "t3",

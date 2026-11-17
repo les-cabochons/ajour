@@ -312,6 +312,42 @@ export type ListThreadsRequest = z.infer<typeof listThreadsRequestSchema>;
 export type ListThreadsResult = z.infer<typeof listThreadsResultSchema>;
 export type HandoffStartRoute = z.infer<typeof handoffStartRouteSchema>;
 
+/** A handoff tool's id, as its plugin's manifest declares it. */
+export const handoffToolIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,79}$/);
+/** Turns one of a plugin's handoff tools on or off on this device (#760). */
+export const handoffToolSwitchSchema = z
+  .object({ toolId: handoffToolIdSchema, enabled: z.boolean() })
+  .strict();
+/** The ids of a plugin's handoff tools that are on, on this device. */
+export const handoffEnabledToolsSchema = z
+  .object({ enabled: z.array(handoffToolIdSchema).max(50) })
+  .strict();
+export type HandoffToolSwitch = z.infer<typeof handoffToolSwitchSchema>;
+export type HandoffEnabledTools = z.infer<typeof handoffEnabledToolsSchema>;
+
+/** Saved tool ids as a list of distinct valid ids, in their saved order. */
+export function normalizeEnabledHandoffTools(values: unknown[]): string[] {
+  return [
+    ...new Set(
+      values.filter(
+        (value): value is string =>
+          handoffToolIdSchema.safeParse(value).success,
+      ),
+    ),
+  ].slice(0, 50);
+}
+
+/**
+ * The tools on, of those the manifest declares, in manifest order. A saved
+ * id the plugin no longer declares counts for nothing until it does again.
+ */
+export function enabledHandoffToolsOf(
+  tools: readonly { id: string }[],
+  enabled: readonly string[],
+): string[] {
+  return tools.filter((tool) => enabled.includes(tool.id)).map((t) => t.id);
+}
+
 export function handoffCapabilitySchema<
   T extends z.ZodType<{ secret?: boolean }>,
 >(fieldSchema: T) {
@@ -322,7 +358,7 @@ export function handoffCapabilitySchema<
         .array(
           z
             .object({
-              id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
+              id: handoffToolIdSchema,
               label: z.string().min(1).max(120),
               iconSvg: z.string().min(1).max(20000),
               settings: z

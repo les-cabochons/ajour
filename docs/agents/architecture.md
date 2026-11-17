@@ -1279,7 +1279,8 @@ requests, answers and local records. API 4 manifests declare tools under
 `capabilities.handoff.tools`; handoff participates in activation and access consent.
 
 `apps/api/src/handoff-state.ts` owns state transitions. `handoffs.ts` coordinates
-starts and refreshes. The storage's version 12 migration adds local handoffs.
+starts and refreshes. The storage's version 12 migration adds local handoffs, and
+version 13 their tool switches (see Tool switches).
 Prompt and settings content reaches the plugin for a start and is never kept in
 the handoff record. Only successful starts create records. History keeps the last
 50 common-state changes with their time and optional native status and label, capped
@@ -1359,6 +1360,37 @@ The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
+
+### Tool switches
+
+Each handoff tool has an on/off switch (ticket #760), kept per device in
+`handoffEnabledTools` state: the ids of each plugin's tools that are on,
+behind GET and POST `/api/plugins/:pluginId/handoffs/tools` (`{ enabled }`,
+and `{ toolId, enabled }` to change one tool, so two switches flipped at once
+can't undo each other). A tool not listed is off, so every tool starts off and
+one a plugin update adds is added off; an id the manifest no longer declares
+counts for nothing. The POST refuses a tool the manifest doesn't declare
+(400), and a plugin without the capability is 404, as for the connection
+picks. Uninstalling the plugin removes its switches; team sync never sends
+them. The overview gives each handoff plugin's `enabledHandoffTools`, which
+the web's `listHandoffTools` reads, so the menus, the split button and
+detection see only the tools that are on, while the Handoffs card still names
+every tool's threads.
+
+`Handoffs` checks the switches itself: `start` refuses a tool that is off
+(409, `handoff_refused`), `detect` asks the plugin only when a tool is on and
+keeps only the answers for tools that are on, `findThreads` lists only tools
+that are on, and `adopt` refuses a thread of a tool turned off since its
+listing. Refreshes, hooks, Open and Remove ignore the switches: turning a tool
+off keeps its handoffs, which are the user's records. Tools that run each
+other, such as T3 Code running Codex and Claude Code threads, are not
+filtered against each other: each tool that is on shows its own listing.
+
+The version 13 migration adds the switches. It turns on, once, each tool that
+has a handoff record on this device, so an existing user keeps the button
+they hand off from, and nothing else: a device that never handed off starts
+with every tool off. The step never runs again on the file, so a tool turned
+off afterwards stays off.
 
 ### Found threads
 

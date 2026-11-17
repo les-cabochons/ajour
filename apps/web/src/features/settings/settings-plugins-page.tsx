@@ -1475,6 +1475,7 @@ export function SettingsPluginsPage({
         {group.plugin.capabilities.handoff ? (
           <>
             <PluginHandoffTools
+              pluginId={group.plugin.id}
               tools={group.plugin.capabilities.handoff.tools}
             />
             <PluginHandoffConnections

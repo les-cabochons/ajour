@@ -516,6 +516,44 @@ describe("backlog item actions", () => {
     ).not.toContain("hand-off:agent-handoff:t3");
   });
 
+  it("lists Choose your tools in the hand-off slot while no tool is on", () => {
+    const options = {
+      subitemCount: 0,
+      isSubitem: false,
+      isRunning: false,
+      handoffTools: [],
+      chooseHandoffTools: true,
+    };
+    const actions = getBacklogItemActions(
+      { ...syncedItem, projectId: "p" },
+      options,
+    );
+    expect(ids(actions).slice(6, 8)).toEqual([
+      "settle",
+      "choose-handoff-tools",
+    ]);
+    expect(actions[7]).toMatchObject({
+      label: "Choose your tools",
+      group: "hand-off",
+      hint: "Pick the coding tools Ajour hands off to",
+    });
+    // Choosing tools needs neither a project nor an active item.
+    expect(
+      disabledReasons(
+        getBacklogItemActions({ ...syncedItem, status: "archived" }, options),
+      )["choose-handoff-tools"],
+    ).toBeUndefined();
+    // A tool that is on takes its place.
+    expect(
+      ids(
+        getBacklogItemActions(syncedItem, {
+          ...options,
+          handoffTools: [{ key: "agent-handoff:t3", label: "T3 Code" }],
+        }),
+      ),
+    ).not.toContain("choose-handoff-tools");
+  });
+
   it("lists Archive before Delete for a synced item, both destructive", () => {
     const actions = getBacklogItemActions(syncedItem, {
       subitemCount: 0,

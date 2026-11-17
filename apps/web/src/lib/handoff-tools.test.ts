@@ -6,6 +6,7 @@ import {
   detectHandoffToolsFor,
   forgetHandoffToolDetection,
   getHandoffTools,
+  getHandoffToolsChoiceNow,
   resetHandoffToolDetections,
 } from "@/lib/handoff-tools";
 import { handoffOverview } from "../../tests/fixtures/handoffs";
@@ -62,4 +63,34 @@ it("does not keep a detection that was running when the plugin's was forgotten",
   ).toBe(true);
   await detectHandoffToolsFor("p");
   expect(api.detectHandoffTools).toHaveBeenCalledTimes(2);
+});
+
+it("lists and detects only the tools that are on, and leads to the switches while none is", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: [] }));
+  expect(getHandoffTools()).toEqual([]);
+  await detectHandoffToolsFor("p");
+  expect(api.detectHandoffTools).not.toHaveBeenCalled();
+  expect(getHandoffToolsChoiceNow()).toEqual({
+    page: "plugins/agent-handoff",
+    search: { section: "handoff-tools" },
+  });
+
+  cachePluginsOverview(handoffOverview({ enabled: ["claude"] }));
+  expect(getHandoffTools().map((tool) => tool.toolId)).toEqual(["claude"]);
+  expect(getHandoffToolsChoiceNow()).toBeUndefined();
+  await detectHandoffToolsFor("p");
+  expect(api.detectHandoffTools).toHaveBeenCalledTimes(1);
+});
+
+it("forgets the plugin's last answer with its detection, so a tool just turned on isn't read as missing", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: ["t3"] }));
+  await detectHandoffToolsFor("p");
+  cachePluginsOverview(handoffOverview({ enabled: ["t3", "claude"] }));
+  forgetHandoffToolDetection("agent-handoff");
+  expect(
+    getHandoffTools().map((tool) => [tool.toolId, tool.available]),
+  ).toEqual([
+    ["t3", undefined],
+    ["claude", undefined],
+  ]);
 });

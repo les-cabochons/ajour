@@ -10,6 +10,9 @@ import { z } from "zod";
 import {
   handoffRecordSchema,
   handoffToolConnectionsSchema,
+  enabledHandoffToolsOf,
+  handoffToolIdSchema,
+  normalizeEnabledHandoffTools,
   type Handoff,
   type HandoffToolConnections,
 } from "../../../packages/shared/handoffs.ts";
@@ -478,6 +481,12 @@ interface AppApiStateV8 {
   handoffTemplates: Record<string, HandoffTemplates>;
   /** The connection each handoff tool hands off through, by plugin id. */
   handoffToolConnections: Record<string, HandoffToolConnections>;
+  /**
+   * The handoff tools the user turned on on this device, by plugin id
+   * (#760). A tool not listed is off, so every tool starts off and one a
+   * plugin update adds is added off. Never synced.
+   */
+  handoffEnabledTools: Record<string, string[]>;
   handoffs: Handoff[];
   /**
    * The SHA-256 hash of each handoff's hook token, by handoff id (#726).
@@ -659,6 +668,7 @@ function createDefaultState(): AppApiState {
   return {
     handoffTemplates: {},
     handoffToolConnections: {},
+    handoffEnabledTools: {},
     handoffs: [],
     handoffHooks: {},
     handoffThreadDismissals: [],
@@ -1089,6 +1099,19 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           ? [[key, parsed.data]]
           : [];
       }),
+    ),
+    handoffEnabledTools: Object.fromEntries(
+      Object.entries(
+        raw.handoffEnabledTools &&
+          typeof raw.handoffEnabledTools === "object" &&
+          !Array.isArray(raw.handoffEnabledTools)
+          ? raw.handoffEnabledTools
+          : {},
+      ).flatMap(([key, value]) =>
+        Array.isArray(value) && !UNSAFE_KEYS.has(key)
+          ? [[key, normalizeEnabledHandoffTools(value)]]
+          : [],
+      ),
     ),
     handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
       (value) => {
@@ -2084,6 +2107,14 @@ export class AppApiStorage {
             pluginHasCapability(plugin, capability) &&
             !capabilitySwitchedOn(state, plugin.id, capability),
         ),
+        ...(plugin.capabilities.handoff
+          ? {
+              enabledHandoffTools: enabledHandoffToolsOf(
+                plugin.capabilities.handoff.tools,
+                state.handoffEnabledTools[plugin.id] ?? [],
+              ),
+            }
+          : {}),
         ...(missingPluginIds.has(plugin.id) ? { missing: true } : {}),
         ...(isPluginApi4Manifest(plugin) && !missingPluginIds.has(plugin.id)
           ? {
@@ -2514,6 +2545,45 @@ export class AppApiStorage {
           },
         },
         result: undefined,
+      };
+    });
+  }
+  /**
+   * The ids of the plugin's handoff tools the user turned on on this
+   * device, in the order they were turned on. Every other tool is off.
+   */
+  async getEnabledHandoffTools(pluginId: string): Promise<string[]> {
+    if (UNSAFE_KEYS.has(pluginId)) return [];
+    return [...((await this.readState()).handoffEnabledTools[pluginId] ?? [])];
+  }
+  /**
+   * Turns one of the plugin's handoff tools on or off, and returns the
+   * tools now on. The caller checks the tool is in the plugin's manifest.
+   */
+  async setHandoffToolEnabled(
+    pluginId: string,
+    toolId: string,
+    enabled: boolean,
+  ): Promise<string[]> {
+    if (UNSAFE_KEYS.has(pluginId)) throw new Error("Invalid plugin id.");
+    if (!handoffToolIdSchema.safeParse(toolId).success)
+      throw new Error("Invalid tool id.");
+    return this.mutate((state) => {
+      const current = state.handoffEnabledTools[pluginId] ?? [];
+      const next = enabled
+        ? current.includes(toolId)
+          ? current
+          : [...current, toolId]
+        : current.filter((id) => id !== toolId);
+      return {
+        nextState: {
+          ...state,
+          handoffEnabledTools: {
+            ...state.handoffEnabledTools,
+            [pluginId]: next,
+          },
+        },
+        result: [...next],
       };
     });
   }
@@ -3047,6 +3117,11 @@ export class AppApiStorage {
         ),
         handoffToolConnections: Object.fromEntries(
           Object.entries(state.handoffToolConnections).filter(
+            ([id]) => id !== pluginId,
+          ),
+        ),
+        handoffEnabledTools: Object.fromEntries(
+          Object.entries(state.handoffEnabledTools).filter(
             ([id]) => id !== pluginId,
           ),
         ),

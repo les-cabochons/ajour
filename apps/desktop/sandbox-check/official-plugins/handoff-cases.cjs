@@ -102,6 +102,11 @@ async function run({
     repository,
   );
   const realRepository = await fs.realpath(repository);
+  // Every tool starts off (#760): the user turns T3 Code on first.
+  await ok("POST", "/api/plugins/agent-handoff/handoffs/tools", {
+    toolId: "t3",
+    enabled: true,
+  });
 
   // ------------------------------------------------------------ detectTools
   {

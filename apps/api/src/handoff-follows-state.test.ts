@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, it, onTestFinished } from "vitest";
 import { Handoffs } from "./handoffs.ts";
 import { AppApiStorage } from "./storage.ts";
+import { turnOnHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import type { StartHandoffRequest } from "../../../packages/shared/handoffs.ts";
 
 /**
@@ -14,6 +15,9 @@ async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-follows-"));
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   const storage = new AppApiStorage(path.join(root, "state.json"));
+  await turnOnHandoffTools(storage, {
+    agent: ["agent", "copilot", "claude", "t3"],
+  });
   const folder = await storage.addRepositoryFolder("p", root, "Repo");
   const clock = { now: 1_000_000 };
   const starts: StartHandoffRequest[] = [];

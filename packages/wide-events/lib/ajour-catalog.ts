@@ -1784,6 +1784,31 @@ export const catalog = defineCatalog({
       reasons: [...requestReasons],
       fields: { ...requestFields },
     },
+    "handoff.tools_read": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    /**
+     * A handoff tool's switch on the plugin's page (#760): which tool, and
+     * whether it is now on. Never a title, a path or a thread.
+     */
+    "handoff.tools_update": {
+      kinds: ["request", "command"],
+      reasons: [
+        ...requestReasons,
+        /** The plugin's manifest declares no tool of that id. */
+        "unknown_tool",
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        handoff: {
+          tool: operational(),
+          enabled: operational<boolean>(),
+        },
+      },
+    },
     "handoff.list": {
       kinds: ["request", "job"],
       reasons: [...requestReasons],

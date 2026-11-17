@@ -838,6 +838,12 @@ export const pluginOverviewGroupSchema = z.object({
   connectionAccess: z.array(connectionAccessChoiceSummarySchema).optional(),
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
+  /**
+   * The handoff tools the user turned on on this device, in manifest order
+   * (#760). Set for a plugin with handoff tools; absent, as from an older
+   * API, every tool reads as off.
+   */
+  enabledHandoffTools: z.array(z.string().min(1).max(80)).max(50).optional(),
   connections: z.array(pluginConnectionSummarySchema),
   /**
    * What the installed plugin reaches, for the Access section. Absent for a

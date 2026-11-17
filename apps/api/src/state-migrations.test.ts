@@ -17,9 +17,39 @@ describe("state migrations", () => {
     };
     expect(await runStateMigrations(state, 11)).toEqual({
       ...state,
-      version: 12,
+      version: 13,
       handoffs: [],
+      handoffEnabledTools: {},
     });
+  });
+
+  it("turns on at version 13 only the tools this device already handed off to", async () => {
+    const state = {
+      version: 12,
+      handoffs: [
+        { id: "a", pluginId: "agent-handoff", toolId: "t3" },
+        { id: "b", pluginId: "agent-handoff", toolId: "t3" },
+        { id: "c", pluginId: "agent-handoff", toolId: "codex" },
+        { id: "d", pluginId: "other", toolId: "cli" },
+        { id: "e", pluginId: "__proto__", toolId: "t3" },
+        { id: "f", pluginId: "agent-handoff" },
+        null,
+      ],
+    };
+    expect(await runStateMigrations(state, 12)).toEqual({
+      ...state,
+      version: 13,
+      handoffEnabledTools: {
+        "agent-handoff": ["t3", "codex"],
+        other: ["cli"],
+      },
+    });
+  });
+
+  it("starts every tool off at version 13 on a device that never handed off", async () => {
+    expect(await runStateMigrations({ version: 12, handoffs: [] }, 12)).toEqual(
+      { version: 13, handoffs: [], handoffEnabledTools: {} },
+    );
   });
   const trail = (version: number): StateMigration => ({
     version,
@@ -86,7 +116,7 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(12);
+    expect(STATE_VERSION).toBe(13);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));
