@@ -423,6 +423,7 @@ The local API emits these (#305, #306):
 | one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                  |
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                         |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                      |
+| `handoff.hook`                        | `serveHandoffHook` in `apps/api/src/server.ts`, on the request's event                                             |
 | one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                 |
 | `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call; `ProcessSessions` once per session end |
 | `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                     |
@@ -977,6 +978,7 @@ channel to read the event each emits.
 | `handoff.connections_read`           | request, job                            | route, client call                               |
 | `handoff.connections_update`         | request, command                        | route, client call                               |
 | `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
+| `handoff.hook`                       | request                                 | local API                                        |
 | `handoff.list`                       | request, job                            | route, client call                               |
 | `handoff.open`                       | request, plugin_operation, job, command | route, client call                               |
 | `handoff.refresh`                    | request, plugin_operation, job, command | route, plugin method, client call, local API     |
@@ -1225,5 +1227,7 @@ four forms of process content and asserts one event per call.
 Process access uses `unsigned_plugins.process_toggle` with `process_access.enabled`. Per-package acceptance and revocation use `plugin.process_update` with `process_access.accepted`. Package keys are never logged.
 
 Handoff template reads emit `handoff.templates_read` as request or job; saves emit `handoff.templates_update` as request or command. They record request metadata only, never template source or preview item fields.
+
+A tool's hook post (#726) is one `handoff.hook` request event, named before any check but the host's. `handoff.hook` is `accepted`, `rate_limited` or `unknown`, with the handoff's tool once its token matched. Refusals give `browser_origin`, `unknown_hook` (an unknown id, or a wrong, missing or revoked token, alike), `rate_limited` or `body_too_large`. The event never holds the handoff's id, the token, the URL or the body; its route is the pattern `/hooks/handoff/:id`. The refresh a post schedules is its own `handoff.refresh` job. A `hook-url` process argument outside a start with a hook is refused with `hook_refused` on `plugin.process`.
 
 A handoff tool's connection pick is read with `handoff.connections_read` and saved with `handoff.connections_update`, with request metadata only. A handoff operation through a connection records the connection's id on its `plugin_operation` event, never its address. A `connection-url` process argument the host can't fill is refused with `connection_refused` on `plugin.process`.

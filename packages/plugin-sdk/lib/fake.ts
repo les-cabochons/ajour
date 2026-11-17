@@ -106,6 +106,46 @@ export interface FakeAjourOptions {
    * operation without a connection.
    */
   connectionUrl?: string;
+  /**
+   * The hook URL of the start under test (#726), for a declared command's
+   * `hook-url` arguments. With a manifest, the fake fills each one with it,
+   * or with its template holding it at each `{url}`, before `processRun`
+   * sees the request, refuses a value the plugin passes for one, and refuses
+   * the command with `hook_refused` when no hook URL is supplied, as Ajour
+   * does outside a start.
+   */
+  hookUrl?: string;
+}
+
+/**
+ * A declared command's `hook-url` arguments that apply to a request, by
+ * name, with their template when they have one.
+ */
+function hookUrlSlots(
+  args: readonly unknown[],
+  given: Readonly<Record<string, unknown>>,
+): Array<{ name: string; template?: string }> {
+  return args.flatMap((arg): Array<{ name: string; template?: string }> => {
+    if (typeof arg === "string") {
+      const match = /^{([a-zA-Z][a-zA-Z0-9_-]{0,79}):hook-url}$/.exec(arg);
+      return match ? [{ name: match[1]! }] : [];
+    }
+    if (arg && typeof arg === "object" && "args" in arg) {
+      const group = arg as { if?: string; args: readonly unknown[] };
+      return group.if !== undefined && Object.hasOwn(given, group.if)
+        ? hookUrlSlots(group.args, given)
+        : [];
+    }
+    if (
+      arg &&
+      typeof arg === "object" &&
+      (arg as { kind?: unknown }).kind === "hook-url"
+    ) {
+      const { name, template } = arg as { name: string; template?: string };
+      return [{ name, ...(template !== undefined ? { template } : {}) }];
+    }
+    return [];
+  });
 }
 
 /**
@@ -414,21 +454,44 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
             (candidate) => candidate.id === request.command,
           );
           const slots = connectionUrlSlots(command?.args ?? [], request.args);
-          if (slots.some((slot) => Object.hasOwn(request.args, slot)))
+          const hooks = hookUrlSlots(command?.args ?? [], request.args);
+          if (
+            [...slots, ...hooks.map((hook) => hook.name)].some((slot) =>
+              Object.hasOwn(request.args, slot),
+            )
+          )
             throw Object.assign(
-              new Error("Ajour fills a connection-url argument itself."),
+              new Error(
+                "Ajour fills connection-url and hook-url arguments itself.",
+              ),
               { name: "AjourProcessError", code: "invalid_request" },
             );
+          if (hooks.length && options.hookUrl === undefined)
+            throw Object.assign(new Error("No hook URL fixture supplied."), {
+              name: "AjourProcessError",
+              code: "hook_refused",
+            });
+          const args = {
+            ...request.args,
+            ...Object.fromEntries(
+              hooks.map((hook) => [
+                hook.name,
+                hook.template === undefined
+                  ? options.hookUrl!
+                  : hook.template.replaceAll("{url}", options.hookUrl!),
+              ]),
+            ),
+          };
           if (slots.length && options.connectionUrl === undefined)
             throw Object.assign(
               new Error("No connection address fixture supplied."),
               { name: "AjourProcessError", code: "connection_refused" },
             );
-          if (slots.length)
+          if (slots.length || hooks.length)
             return options.processRun({
               ...request,
               args: {
-                ...request.args,
+                ...args,
                 ...Object.fromEntries(
                   slots.map((slot) => [slot, options.connectionUrl!]),
                 ),
