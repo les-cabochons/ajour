@@ -445,8 +445,8 @@ end idle sessions.
 ## Handoff tools
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
-`iconSvg`, `settings` and optional `connection`, `listsThreads` and
-`followsState`. The host treats handoff like the other switchable
+`iconSvg`, `settings` and optional `connection`, `listsThreads`,
+`followsState` and `hooks`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
@@ -455,16 +455,18 @@ The plugin exports `detectTools()`, `startHandoff(request)` and
 Each tool declares the features it supports, and Ajour uses only those. The
 plugin's page lists them for each tool:
 
-| Feature                | What Ajour does                                      | Declared by                                                                     |
-| ---------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Starts threads         | Calls `startHandoff`.                                | every tool                                                                      |
-| Follows state          | Calls `readHandoffStates` for the thread's state.    | `followsState`, `true` by default                                               |
-| Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`                                                            |
-| Updates within seconds | A hook tells Ajour the thread changed.               | a declared command with a `hook-url` argument, for each tool that follows state |
+| Feature                | What Ajour does                                      | Declared by                       |
+| ---------------------- | ---------------------------------------------------- | --------------------------------- |
+| Starts threads         | Calls `startHandoff`.                                | every tool                        |
+| Follows state          | Calls `readHandoffStates` for the thread's state.    | `followsState`, `true` by default |
+| Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`              |
+| Updates within seconds | A hook tells Ajour the thread changed.               | `hooks: true`, `false` by default |
 
-Commands aren't tied to tools in the manifest, so a plugin that declares a
-`hook-url` command counts as updating within seconds for each of its tools
-that follows state.
+A tool sets `hooks: true` when its threads post the start's hook URL, as
+Claude Code's per-start settings do. Commands aren't tied to tools in the
+manifest, so the tool says it: the plugin must declare a command with a
+`hook-url` argument, and the tool must follow state, since a hook only makes
+Ajour read the state again. The manifest is refused otherwise.
 
 A tool that can only start a thread, such as a CLI with no way to read its
 session's state, sets `followsState: false`. Its handoffs get the common state
@@ -474,6 +476,14 @@ gives their starts no `hook`, and offers no Refresh. A thread linked from
 resume. A plugin whose tools all set `followsState: false` may leave
 `readHandoffStates` out. Since the start carries no hook, such a tool's start
 command can't take a `hook-url` argument.
+
+Ajour asks the tool at each check, not the handoff. A tool that stops
+following state turns its handoffs into `started` at the next check. One that
+follows state again, after an update, has its `started` handoffs read again
+at the regular cadence: `unknown` until it answers for them, then whatever it
+reports. They get no hook back, since their starts had none. A `started`
+handoff still pauses as `unknown`, with the reason, when its plugin is off or
+missing, its tool was removed or its connection was deleted.
 
 A tool that talks to its server over HTTP, such as OpenCode's loopback
 server, sets `connection: "required"` (the default is `"none"`). The plugin

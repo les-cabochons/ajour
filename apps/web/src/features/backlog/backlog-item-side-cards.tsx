@@ -26,6 +26,7 @@ import {
 import { Value } from "@/components/ui/value";
 import {
   getHandoffChip,
+  isHandoffFollowed,
   sortHandoffs,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
@@ -667,9 +668,14 @@ function HandoffRow({
   now: number;
 }) {
   const toolLabel = tool?.label ?? handoff.toolId;
-  const chip = getHandoffChip(handoff, { toolLabel, now });
+  const followed = isHandoffFollowed(handoff, tool);
+  const chip = getHandoffChip(handoff, {
+    toolLabel,
+    now,
+    followsState: tool?.followsState,
+  });
   // A started thread's tool reports nothing, so its time is when it started.
-  const started = handoff.state === "started";
+  const started = handoff.state === "started" && !followed;
   return (
     <li className="handoff-row" aria-label={handoff.title}>
       <div className="handoff-row-head">
@@ -707,7 +713,7 @@ function HandoffRow({
             <MoreIcon className="size-4" />
           </TooltipButton>
           <DropdownMenuContent align="end">
-            {started ? null : (
+            {!followed ? null : (
               <DropdownMenuItem
                 onClick={() => void refreshHandoffThread(handoff.id)}
               >
@@ -746,9 +752,7 @@ function HandoffRow({
         <span className="truncate">{toolLabel}</span>
         <span aria-hidden="true">·</span>
         <span className="shrink-0">
-          {started
-            ? `started ${syncAge(handoff.startedAt, now)}`
-            : syncAge(handoff.changedAt, now)}
+          {syncAge(started ? handoff.startedAt : handoff.changedAt, now)}
         </span>
       </div>
       {handoff.branch ? (

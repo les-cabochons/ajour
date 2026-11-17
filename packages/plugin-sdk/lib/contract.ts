@@ -95,6 +95,7 @@ export type PluginManifest = {
             connection?: "required" | "none" | undefined;
             listsThreads?: boolean | undefined;
             followsState?: boolean | undefined;
+            hooks?: boolean | undefined;
           }[];
           promptTemplate?: string | undefined;
         }

@@ -1028,7 +1028,8 @@ function checkNetwork(
  * the plugin declares connection fields and a network, as every networked
  * capability does. A `connection-url` slot is filled from the connection's
  * base address, so it needs one, and a tool whose operations have a
- * connection.
+ * connection. A tool that posts hooks needs a command that receives the
+ * hook URL, and must follow state, since a hook only makes Ajour read it.
  */
 function checkHandoffConnections(
   manifest: {
@@ -1055,6 +1056,23 @@ function checkHandoffConnections(
         context,
         path,
         `The handoff tool "${tool.id}" uses a connection, so the plugin needs a network declaration.`,
+      );
+  });
+  const hookUrl = declaresHookUrl(manifest);
+  tools.forEach((tool, index) => {
+    if (!tool.hooks) return;
+    const path = ["capabilities", "handoff", "tools", index, "hooks"];
+    if (!hookUrl)
+      issue(
+        context,
+        path,
+        `The handoff tool "${tool.id}" posts hooks, so the plugin needs a command with a hook-url slot.`,
+      );
+    if (tool.followsState === false)
+      issue(
+        context,
+        path,
+        `The handoff tool "${tool.id}" doesn't follow state, so its hooks would never be read.`,
       );
   });
   manifest.processes?.commands.forEach((command, index) => {

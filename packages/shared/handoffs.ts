@@ -276,10 +276,7 @@ export type HandoffState = z.infer<typeof handoffStateSchema>;
 /**
  * What a handoff tool can do, in the order the plugin's page lists them:
  * every tool starts threads; `followsState` reads their state; `listsThreads`
- * finds the user's own; a `hook-url` command makes state change within
- * seconds. Commands aren't tied to tools in the manifest, so a plugin that
- * declares one counts for each of its tools that follows state: a hook only
- * makes Ajour read the state again.
+ * finds the user's own; `hooks` makes state change within seconds.
  */
 export const handoffToolFeatureLabels = {
   "starts-threads": "Starts threads",
@@ -289,16 +286,16 @@ export const handoffToolFeatureLabels = {
 } as const;
 export type HandoffToolFeature = keyof typeof handoffToolFeatureLabels;
 
-export function handoffToolFeatures(
-  tool: { followsState?: boolean; listsThreads?: boolean },
-  pluginHooks: boolean,
-): HandoffToolFeature[] {
-  const follows = tool.followsState !== false;
+export function handoffToolFeatures(tool: {
+  followsState?: boolean;
+  listsThreads?: boolean;
+  hooks?: boolean;
+}): HandoffToolFeature[] {
   return [
     "starts-threads" as const,
-    ...(follows ? ["follows-state" as const] : []),
+    ...(tool.followsState !== false ? ["follows-state" as const] : []),
     ...(tool.listsThreads ? ["finds-threads" as const] : []),
-    ...(follows && pluginHooks ? ["updates-within-seconds" as const] : []),
+    ...(tool.hooks ? ["updates-within-seconds" as const] : []),
   ];
 }
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
@@ -351,6 +348,13 @@ export function handoffCapabilitySchema<
                * `started`, and Ajour never reads or polls them.
                */
               followsState: z.boolean().default(true),
+              /**
+               * The tool's threads post the start's hook URL when their
+               * state changes, so they update within seconds. Valid only
+               * when the plugin declares a command with a `hook-url` slot
+               * and the tool follows state.
+               */
+              hooks: z.boolean().default(false),
             })
             .strict(),
         )

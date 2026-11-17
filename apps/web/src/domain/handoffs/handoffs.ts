@@ -233,15 +233,29 @@ const CHIPS: Record<
 };
 
 /**
+ * Whether Ajour reads the handoff's state: its tool's `followsState` now,
+ * whatever the record's state, else, while the tool isn't known, not when
+ * the record is Started.
+ */
+export function isHandoffFollowed(
+  record: Pick<Handoff, "state">,
+  tool: Pick<HandoffTool, "followsState"> | undefined,
+) {
+  return tool ? tool.followsState : record.state !== "started";
+}
+
+/**
  * A handoff's state chip: green Working, amber Needs you, neutral Ready and
  * Done, red Failed, muted Unknown, Gone and Started. A paused handoff is
  * muted and says why. `detail` is the tooltip: the tool's own label for the
  * state, or, for a started one, when it started and that the tool doesn't
- * report progress. `context` names the tool and the time for that.
+ * report progress. `context` names the tool and the time for that, and
+ * whether the tool follows state now: a started handoff whose tool does is
+ * Unknown until the tool answers.
  */
 export function getHandoffChip(
   record: Handoff,
-  context: { toolLabel?: string; now?: number } = {},
+  context: { toolLabel?: string; now?: number; followsState?: boolean } = {},
 ): {
   label: string;
   tone: HandoffChipTone;
@@ -249,6 +263,8 @@ export function getHandoffChip(
 } {
   if (record.paused)
     return { label: "Paused", tone: "muted", detail: record.paused.reason };
+  if (record.state === "started" && context.followsState === true)
+    return { ...CHIPS.unknown };
   if (record.state === "started") {
     const tool = context.toolLabel ?? record.toolId;
     const age = syncAge(record.startedAt, context.now ?? record.startedAt);

@@ -6,6 +6,7 @@ import {
 import { findHandoffThreads, refreshHandoffs } from "@/lib/app-api";
 import { setHandoffs, useHandoffs } from "@/lib/handoffs";
 import { useHandoffTools } from "@/lib/handoff-tools";
+import { isHandoffFollowed } from "@/domain/handoffs/handoffs";
 import {
   dismissHandoffThreadOffer,
   linkHandoffThread,
@@ -17,7 +18,7 @@ const NO_KEYS: readonly string[] = [];
 
 /**
  * The item page's handoffs and tools. Opening the item asks each live thread
- * for its state once, so the card is current without waiting for the API's
+ * whose tool follows state (`isHandoffFollowed`) for its state once, so the card is current without waiting for the API's
  * next tick, and asks once for the threads its project's folders hold whose
  * title names one of the item's keys (`getHandoffItemKeys`), to offer
  * linking them. The card shows while
@@ -31,10 +32,21 @@ export function useItemHandoffs(
 ) {
   const records = useHandoffs(itemId);
   const tools = useHandoffTools(projectId);
+  // Followed by its tool now, so a Started thread whose tool follows state
+  // again is asked too.
   const live = records
     .filter(
       (record) =>
-        !record.paused && !["done", "gone", "started"].includes(record.state),
+        !record.paused &&
+        !["done", "gone"].includes(record.state) &&
+        isHandoffFollowed(
+          record,
+          tools.find(
+            (tool) =>
+              tool.pluginId === record.pluginId &&
+              tool.toolId === record.toolId,
+          ),
+        ),
     )
     .map((record) => record.id)
     .join(" ");

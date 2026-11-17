@@ -311,7 +311,7 @@ The state of a handoff whose tool can start a thread but doesn't report its stat
 _Avoid_: Running, launched, sent
 
 **Tool feature**:
-What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state, Finds threads and Updates within seconds. Ajour uses only a tool's features.
+What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`) and Updates within seconds (`hooks`, only for a tool that follows state). Ajour uses only a tool's features, as the tool declares them now.
 _Avoid_: Capability (that is the plugin's), ability
 
 **Hand off**:

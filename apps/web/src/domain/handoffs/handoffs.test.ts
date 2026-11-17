@@ -7,6 +7,7 @@ import {
   getHandoffItemRefusal,
   getHandoffMarks,
   getHandoffToolNote,
+  isHandoffFollowed,
   listHandoffTools,
   parseHandoffToolKey,
   pickHandoffTool,
@@ -244,6 +245,20 @@ describe("handoff states", () => {
         "Started in Copilot CLI 5 min ago. Copilot CLI doesn't report progress here; open it there to follow it.",
     });
     expect(getHandoffMarks([record]).size).toBe(0);
+    // Its tool follows state again: Unknown until the tool answers.
+    expect(getHandoffChip(record, { followsState: true })).toEqual({
+      label: "Unknown",
+      tone: "muted",
+    });
+  });
+
+  it("follows a handoff by its tool's say now, else by the record", () => {
+    const started = handoffRecord({ state: "started" });
+    const working = handoffRecord({ state: "working" });
+    expect(isHandoffFollowed(started, { followsState: true })).toBe(true);
+    expect(isHandoffFollowed(working, { followsState: false })).toBe(false);
+    expect(isHandoffFollowed(started, undefined)).toBe(false);
+    expect(isHandoffFollowed(working, undefined)).toBe(true);
   });
 
   it("shows a paused handoff muted, with the reason in the tooltip", () => {

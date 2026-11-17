@@ -1476,7 +1476,6 @@ export function SettingsPluginsPage({
           <>
             <PluginHandoffTools
               tools={group.plugin.capabilities.handoff.tools}
-              hooks={group.handoffHooks === true}
             />
             <PluginHandoffConnections
               pluginId={group.plugin.id}

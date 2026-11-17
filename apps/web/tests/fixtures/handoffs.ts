@@ -27,6 +27,8 @@ export function handoffOverview({
             iconSvg: ICON,
             settings: [],
             connection: "none" as const,
+            followsState: true,
+            hooks: false,
           },
           {
             id: "claude",
@@ -34,6 +36,8 @@ export function handoffOverview({
             iconSvg: ICON,
             settings: [],
             connection: "none" as const,
+            followsState: true,
+            hooks: true,
           },
           ...(copilot
             ? [
@@ -44,6 +48,7 @@ export function handoffOverview({
                   settings: [],
                   connection: "none" as const,
                   followsState: false,
+                  hooks: false,
                 },
               ]
             : []),

@@ -881,10 +881,49 @@ it("shows a started thread muted, with its tool and start time, and offers no Re
     ),
   ).toBeTruthy();
   expect(row.textContent).toContain("Copilot CLI");
-  expect(row.textContent).toContain("started 6 min ago");
+  // The chip and its tooltip already say Started.
+  expect(row.textContent).toContain("6 min ago");
+  expect(row.textContent).not.toContain("started 6 min ago");
   fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
   expect(
     await screen.findByRole("menuitem", { name: "Remove from item" }),
   ).toBeTruthy();
   expect(screen.queryByRole("menuitem", { name: "Refresh" })).toBeNull();
+  // Opening the item asks nothing of a tool that doesn't report state.
+  expect(api.refreshHandoffs).not.toHaveBeenCalled();
+});
+
+it("reads a started thread again once its tool follows state", async () => {
+  const record = handoffRecord({
+    workItemId: itemId,
+    toolId: "t3",
+    state: "started",
+    native: {},
+  });
+  vi.mocked(api.refreshHandoffs).mockResolvedValue({
+    handoffs: [{ ...record, state: "needs-you", changedAt: 9 * 60_000 }],
+    failures: [],
+  });
+  await renderPage();
+  act(() => setHandoffs([record]));
+  const row = await cardRow(record.title);
+  // T3 Code follows state now, so the card offers Refresh again.
+  fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Refresh" }));
+  await waitFor(() => expect(api.refreshHandoffs).toHaveBeenCalledWith("h1"));
+  expect(await within(row).findByText("Needs you")).toBeTruthy();
+});
+
+it("shows a started thread unknown while its tool follows state but hasn't answered", async () => {
+  const record = handoffRecord({
+    workItemId: itemId,
+    toolId: "t3",
+    state: "started",
+    native: {},
+  });
+  await renderPage();
+  act(() => setHandoffs([record]));
+  const row = await cardRow(record.title);
+  expect(within(row).getByText("Unknown")).toBeTruthy();
+  expect(within(row).queryByText("Started")).toBeNull();
 });

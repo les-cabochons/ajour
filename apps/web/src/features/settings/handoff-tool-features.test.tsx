@@ -8,14 +8,14 @@ installDomShims();
 afterEach(cleanup);
 
 const tools = [
-  { id: "claude", label: "Claude Code", followsState: true },
+  { id: "claude", label: "Claude Code", followsState: true, hooks: true },
   { id: "t3", label: "T3 Code", followsState: true, listsThreads: true },
   { id: "copilot", label: "Copilot CLI", followsState: false },
 ];
 
 it("lists each handoff tool with the features it supports", async () => {
   await renderRoutes({
-    routes: { "/": () => <PluginHandoffTools tools={tools} hooks /> },
+    routes: { "/": () => <PluginHandoffTools tools={tools} /> },
   });
   expect(
     await screen.findByRole("heading", { name: "Handoff tools" }),
@@ -25,21 +25,12 @@ it("lists each handoff tool with the features it supports", async () => {
   expect(row("Claude Code")).toContain(
     "Starts threads · Follows state · Updates within seconds",
   );
+  // Only a tool that says it posts hooks updates within seconds.
   expect(row("T3 Code")).toContain(
-    "Starts threads · Follows state · Finds threads · Updates within seconds",
+    "Starts threads · Follows state · Finds threads",
   );
-  // A hook only makes Ajour read state, which Copilot CLI doesn't give.
+  expect(row("T3 Code")).not.toContain("Updates within seconds");
   expect(row("Copilot CLI")).toContain("Starts threads");
   expect(row("Copilot CLI")).not.toContain("Follows state");
   expect(row("Copilot CLI")).not.toContain("Updates within seconds");
-});
-
-it("leaves updates within seconds out when the plugin passes no hook", async () => {
-  await renderRoutes({
-    routes: { "/": () => <PluginHandoffTools tools={tools} hooks={false} /> },
-  });
-  expect(
-    (await screen.findByText("Claude Code")).closest(".settings-row")!
-      .textContent,
-  ).not.toContain("Updates within seconds");
 });

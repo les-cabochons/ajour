@@ -199,3 +199,149 @@ it("still pauses a started handoff whose connection was deleted, without reading
     paused: { reason: "The connection this handoff ran through was deleted." },
   });
 });
+
+it("reads a started handoff again once its tool follows state, with no hook", async () => {
+  const t = await setup();
+  const record = await t.service.start(t.input("copilot"));
+  expect(record.state).toBe("started");
+  // The plugin updates: Copilot CLI now reports state.
+  t.tools[0]!.followsState = true;
+  expect(await t.service.refreshRefusal(record.id)).toBeUndefined();
+  t.clock.now += 30_000;
+  await t.service.tick();
+  expect(t.reads).toEqual([["thread-1"]]);
+  expect((await t.storage.listHandoffs())[0]).toMatchObject({
+    id: record.id,
+    state: "done",
+  });
+  // Regular checks only: the start gave it no hook, and none comes back.
+  expect(await t.storage.findHandoffHook(record.id)).toBeUndefined();
+});
+
+it("shows a started handoff unknown when its tool follows state but gives no answer for it", async () => {
+  const t = await setup();
+  const silent = await t.service.start(t.input("copilot"));
+  const failing = await t.service.start({
+    ...t.input("copilot"),
+    workItemId: "other",
+  });
+  t.tools[0]!.followsState = true;
+  const service = new Handoffs({
+    storage: t.storage,
+    now: () => t.clock.now,
+    onChange: () => {},
+    plugins: {
+      async listPlugins() {
+        return [{ id: "agent", capabilities: { handoff: { tools: t.tools } } }];
+      },
+      async startHandoff() {
+        return { threadId: "thread", native: {} };
+      },
+      async readHandoffStates() {
+        // It answers for neither thread.
+        return [];
+      },
+    },
+  });
+  await service.refresh(silent.id);
+  expect(
+    (await t.storage.listHandoffs()).find((h) => h.id === silent.id),
+  ).toMatchObject({ state: "unknown" });
+  const throwing = new Handoffs({
+    storage: t.storage,
+    now: () => t.clock.now,
+    onChange: () => {},
+    plugins: {
+      async listPlugins() {
+        return [{ id: "agent", capabilities: { handoff: { tools: t.tools } } }];
+      },
+      async startHandoff() {
+        return { threadId: "thread", native: {} };
+      },
+      async readHandoffStates() {
+        throw new Error("The tool didn't answer.");
+      },
+    },
+  });
+  await throwing.refresh(failing.id);
+  expect(
+    (await t.storage.listHandoffs()).find((h) => h.id === failing.id),
+  ).toMatchObject({ state: "unknown" });
+});
+
+it("refuses a single refresh by the tool, not by the record's state", async () => {
+  const t = await setup();
+  const record = await t.service.start(t.input("claude"));
+  t.tools[1]!.followsState = false;
+  // Still `working` until the next check, but its tool reports nothing.
+  expect(await t.service.refreshRefusal(record.id)).toBe(
+    "Claude Code doesn't report progress here; open it there to follow it.",
+  );
+});
+
+it("pauses a started handoff whose plugin is missing, off or whose tool was removed, without reading it", async () => {
+  const t = await setup();
+  const record = await t.service.start(t.input("copilot"));
+  let plugins: Array<{
+    id: string;
+    capabilities: { handoff: { tools: typeof t.tools } };
+  }> = [{ id: "agent", capabilities: { handoff: { tools: t.tools } } }];
+  let off: string | undefined;
+  const service = new Handoffs({
+    storage: t.storage,
+    now: () => t.clock.now,
+    onChange: () => {},
+    unavailableReason: async () => off,
+    plugins: {
+      async listPlugins() {
+        return plugins;
+      },
+      async startHandoff() {
+        return { threadId: "thread", native: {} };
+      },
+      async readHandoffStates() {
+        throw new Error("never read");
+      },
+    },
+  });
+  service.setVisible(true);
+  const saved = async () =>
+    (await t.storage.listHandoffs()).find((h) => h.id === record.id);
+
+  plugins = [];
+  t.clock.now += 30_000;
+  await service.tick();
+  expect(await saved()).toMatchObject({
+    state: "unknown",
+    paused: { reason: "The handoff plugin is unavailable." },
+  });
+
+  // Back, and still not following state: Started again.
+  plugins = [{ id: "agent", capabilities: { handoff: { tools: t.tools } } }];
+  t.clock.now += 30_000;
+  await service.tick();
+  expect(await saved()).toMatchObject({ state: "started" });
+  expect((await saved())?.paused).toBeUndefined();
+
+  off = "Handoff is turned off for this plugin.";
+  t.clock.now += 30_000;
+  await service.tick();
+  expect(await saved()).toMatchObject({
+    state: "unknown",
+    paused: { reason: off },
+  });
+
+  off = undefined;
+  plugins = [
+    {
+      id: "agent",
+      capabilities: { handoff: { tools: [t.tools[1]!] } },
+    },
+  ];
+  t.clock.now += 30_000;
+  await service.tick();
+  expect(await saved()).toMatchObject({
+    state: "unknown",
+    paused: { reason: "The handoff tool was removed." },
+  });
+});

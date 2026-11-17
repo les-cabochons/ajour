@@ -1324,21 +1324,34 @@ is 200, and an unknown single-record refresh is 404.
 ### Tools that don't follow state
 
 A tool declares `followsState` (default `true`, ticket #759). With `false`,
-`Handoffs.start` saves the record as `started` and gives the start no hook;
-`shouldRefresh` is false for `started`, so neither the tick nor a hook reads
-it, and every refresh skips it except `refreshConnection`, whose deleted
-connection still pauses it, as for any handoff, without a read. POST
-`/api/handoffs/:handoffId/refresh` refuses a started handoff with 409. A
-handoff whose tool stops following state becomes `started` at its next
-check instead of being read, and loses its hook token. `started` is a common
-state only the host gives: `handoffUpdateSchema` takes a tool's states,
+`Handoffs.start` saves the record as `started` and gives the start no hook.
+Whether a handoff is read is its tool's current `followsState`, never the
+record's state: every refresh, the tick included, takes `started` records
+too, and `refreshRecords` resolves the tool per batch. A missing plugin, a
+removed tool, an inactive capability or a deleted connection pauses a batch
+as `unknown` with the reason, `started` records included, without a read.
+Otherwise a tool that doesn't follow state turns the batch's records that
+aren't `started`, or are paused, into `started` and loses their hook tokens,
+with no read and no `handoff.refresh` unit when nothing changes; a tool that
+follows state reads them all, and a `started` record the plugin didn't
+answer for, or whose read failed, becomes `unknown`. A record that was
+`started` gets no hook token back: regular checks only. POST
+`/api/handoffs/:handoffId/refresh` refuses with 409 while the record's tool
+doesn't follow state (`refreshRefusal`). `started` is a common state only
+the host gives: `handoffUpdateSchema` takes a tool's states,
 `handoffReportedStateSchema`, without it. Since `readHandoffStates` is called
 only for tools that follow state, a plugin whose tools all set `false` may
-leave the export out; the host checks exports only when it calls them.
-`handoffToolFeatures` in `packages/shared/handoffs.ts` derives each tool's
-features for the plugin's page; the overview's `handoffHooks` says the
-plugin declares a `hook-url` command (`declaresHookUrl`), and counts for each
-of its tools that follows state, since commands aren't tied to tools.
+leave the export out; the host checks exports only when it calls them. On
+the web, `isHandoffFollowed` applies the same rule to Refresh, the
+item-open refresh and the chip, which shows a `started` record whose tool
+follows state as Unknown.
+
+A tool declares `hooks: true` (default `false`) when its threads post the
+start's hook URL. `checkHandoffConnections` refuses it unless the plugin
+declares a command with a `hook-url` slot (`declaresHookUrl`) and the tool
+follows state. `handoffToolFeatures` in `packages/shared/handoffs.ts`
+derives each tool's features for the plugin's page from `followsState`,
+`listsThreads` and `hooks` alone.
 
 The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE

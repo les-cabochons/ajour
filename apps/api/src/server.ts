@@ -193,7 +193,6 @@ import {
   type BrokerTransport,
 } from "./credential-broker.ts";
 import {
-  declaresHookUrl,
   isPluginApi4Manifest,
   pluginNetworkFieldIds,
   type PluginApi4Manifest,
@@ -1286,16 +1285,6 @@ async function getOverview(
         }),
     ),
   );
-  const hooked = new Set(
-    plugins
-      .filter(
-        (plugin) =>
-          isPluginApi4Manifest(plugin) &&
-          plugin.capabilities.handoff &&
-          declaresHookUrl(plugin),
-      )
-      .map((plugin) => plugin.id),
-  );
   const overview = {
     ...listed,
     connectionGroups: listed.connectionGroups.map((group) => {
@@ -1305,7 +1294,6 @@ async function getOverview(
         ...group,
         ...(suspended ? { suspended } : {}),
         ...(processGate ? { processGate } : {}),
-        ...(hooked.has(group.plugin.id) ? { handoffHooks: true } : {}),
       };
     }),
   };

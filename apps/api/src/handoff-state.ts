@@ -91,18 +91,15 @@ export function removeHandoff(records: Handoff[], id: string): Handoff[] {
 }
 /**
  * Whether Ajour may still read the handoff's state on its own, on the tick
- * or for a hook. A `started` handoff's tool doesn't report state, so never.
+ * or for a hook: not once it has been done or gone for a day. Whether its
+ * tool reports state at all is the tool's to say, at each check
+ * (`followsState` on the tool), not the record's.
  */
 export function shouldRefresh(record: Handoff, now: number): boolean {
-  if (!followsState(record)) return false;
   return !(
     ["done", "gone"].includes(record.state) &&
     now - record.changedAt >= 86_400_000
   );
-}
-/** Whether the handoff's tool reports its thread's state: not when `started`. */
-export function followsState(record: Pick<Handoff, "state">): boolean {
-  return record.state !== "started";
 }
 
 export function handoffSummary(native: Record<string, unknown>) {

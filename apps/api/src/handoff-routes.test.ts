@@ -443,7 +443,7 @@ it("starts a tool that doesn't follow state as started, with a plugin that has n
           ],
         },
       },
-      // Another tool's start could receive a hook; the overview says so.
+      // A hook-url command alone doesn't make a tool update within seconds.
       processes: {
         executables: { claude: { names: ["claude"] } },
         commands: [
@@ -487,23 +487,24 @@ it("starts a tool that doesn't follow state as started, with a plugin that has n
       "p",
       path.join(root, "repo"),
     );
-    expect(
-      (await call("GET", "/api/plugins")).body as {
-        connectionGroups: Array<{ plugin: { id: string } }>;
-      },
-    ).toMatchObject({
+    const overview = (await call("GET", "/api/plugins")).body as {
+      connectionGroups: Array<Record<string, unknown>>;
+    };
+    expect(overview).toMatchObject({
       connectionGroups: [
         {
           plugin: {
             id: "handoff",
             capabilities: {
-              handoff: { tools: [{ id: "copilot", followsState: false }] },
+              handoff: {
+                tools: [{ id: "copilot", followsState: false, hooks: false }],
+              },
             },
           },
-          handoffHooks: true,
         },
       ],
     });
+    expect(overview.connectionGroups[0]).not.toHaveProperty("handoffHooks");
     const started = await call("POST", "/api/handoffs", {
       pluginId: "handoff",
       toolId: "copilot",
