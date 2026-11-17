@@ -104,6 +104,16 @@ export function getHandoffItemRefusal(item: {
   return undefined;
 }
 
+/**
+ * The item's key as a hand off sends it, and as a thread's title names it
+ * in brackets: the source's own id, such as `PAY-12`. A local item has none.
+ */
+export function getHandoffItemKey(
+  item: Pick<LocalWorkItem, "sourceExternalId">,
+) {
+  return item.sourceExternalId ?? "";
+}
+
 /** The item fields a hand off sends; the API fills the templates from them. */
 export function getHandoffItem(
   item: LocalWorkItem,
@@ -116,7 +126,7 @@ export function getHandoffItem(
       )
     : undefined;
   return {
-    key: item.sourceExternalId ?? "",
+    key: getHandoffItemKey(item),
     title: item.title,
     ...(item.description ? { description: item.description } : {}),
     url: item.sourceUrl ?? "",

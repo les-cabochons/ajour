@@ -85,6 +85,7 @@ import {
 } from "@/features/backlog/backlog-item-side-cards";
 import { HandoffButton } from "@/features/backlog/handoff-button";
 import { useItemHandoffs } from "@/features/backlog/use-item-handoffs";
+import { getHandoffItemKey } from "@/domain/handoffs/handoffs";
 import {
   updateBacklogItemCards,
   useBacklogItemCards,
@@ -128,7 +129,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const workItem = state.workItems.find((item) => item._id === itemId);
   const commentSource = useCommentSource(workItem);
   const cards = useBacklogItemCards();
-  const handoffs = useItemHandoffs(itemId, workItem?.projectId);
+  const handoffs = useItemHandoffs(
+    itemId,
+    workItem?.projectId,
+    workItem && getHandoffItemKey(workItem),
+  );
 
   /**
    * Edit and Add subitem have no panel here: they open the inline fields. Add
@@ -628,6 +633,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <HandoffsCard
                   handoffs={handoffs.records}
                   tools={handoffs.tools}
+                  offers={handoffs.offers}
+                  pending={handoffs.pending}
+                  onLink={handoffs.link}
+                  onDismiss={handoffs.dismiss}
                   now={now}
                   open={cards.handoffsOpen}
                   onOpenChange={(handoffsOpen) =>

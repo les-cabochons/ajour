@@ -8,6 +8,7 @@ import {
   RiMoreLine as MoreIcon,
 } from "@remixicon/react";
 import { isHttpsUrl, type Handoff } from "@ajour/shared/handoffs";
+import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -416,10 +417,16 @@ function pullRequestLabel(pullRequest: { url: string; title?: string }) {
  * its tool, title and state chip (the tool's own words in its tooltip), its
  * branch, pull requests and last change, Open, and a menu with Refresh and
  * Remove from item. Closed, it counts the threads and says which wait.
+ * Under them, the threads a tool listed whose title names the item's key,
+ * each with Link and Not this one.
  */
 export function HandoffsCard({
   handoffs,
   tools,
+  offers = NO_OFFERS,
+  onLink,
+  onDismiss,
+  pending = NO_OFFERS,
   now,
   open,
   onOpenChange,
@@ -427,6 +434,12 @@ export function HandoffsCard({
   handoffs: readonly Handoff[];
   /** For each thread's tool name and icon. */
   tools: readonly HandoffTool[];
+  /** Threads found in the tools that name the item's key. */
+  offers?: readonly HandoffThreadOffer[];
+  onLink?: (offer: HandoffThreadOffer) => void;
+  onDismiss?: (offer: HandoffThreadOffer) => void;
+  /** Offers whose Link or Not this one is under way. */
+  pending?: readonly HandoffThreadOffer[];
   now: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -435,9 +448,16 @@ export function HandoffsCard({
   const waiting = handoffs.filter(
     (handoff) => !handoff.paused && handoff.state === "needs-you",
   ).length;
+  const found = offers.length
+    ? `${offers.length} ${offers.length === 1 ? "thread" : "threads"} found`
+    : "";
   const empty = (
-    <p className="text-xs text-muted-foreground">Not handed off yet.</p>
+    <p className="text-xs text-muted-foreground">
+      Not handed off yet.{found ? ` ${found}.` : ""}
+    </p>
   );
+  const toolOf = (pluginId: string, toolId: string) =>
+    tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
   return (
     <FoldingCard
       label="Handoffs"
@@ -452,31 +472,125 @@ export function HandoffsCard({
             {handoffs.length === 1 ? "thread" : "threads"}
             {waiting ? ` · ${waiting} needs you` : ""} · changed{" "}
             {syncAge(sorted[0].changedAt, now)}
+            {found ? ` · ${found}` : ""}
           </span>
         ) : (
           empty
         )
       }
     >
-      {sorted.length === 0 ? (
-        empty
-      ) : (
+      {sorted.length ? (
         <ul className="handoff-rows" aria-label="Handoffs">
           {sorted.map((handoff) => (
             <HandoffRow
               key={handoff.id}
               handoff={handoff}
-              tool={tools.find(
-                (tool) =>
-                  tool.pluginId === handoff.pluginId &&
-                  tool.toolId === handoff.toolId,
-              )}
+              tool={toolOf(handoff.pluginId, handoff.toolId)}
               now={now}
             />
           ))}
         </ul>
+      ) : offers.length ? null : (
+        empty
       )}
+      {offers.length ? (
+        <ul className="handoff-rows" aria-label="Threads found">
+          {offers.map((offer) => (
+            <ThreadOfferRow
+              key={offerKey(offer)}
+              offer={offer}
+              tool={toolOf(offer.pluginId, offer.toolId)}
+              busy={pending.some(
+                (candidate) => offerKey(candidate) === offerKey(offer),
+              )}
+              now={now}
+              onLink={onLink}
+              onDismiss={onDismiss}
+            />
+          ))}
+        </ul>
+      ) : null}
     </FoldingCard>
+  );
+}
+
+const NO_OFFERS: readonly HandoffThreadOffer[] = [];
+
+const offerKey = (offer: HandoffThreadOffer) =>
+  JSON.stringify([
+    offer.pluginId,
+    offer.toolId,
+    offer.connectionId ?? null,
+    offer.threadId,
+  ]);
+
+/**
+ * A thread a tool listed whose title names the item's key, laid out as a
+ * thread: its title with Link in the head where a thread has Open, and
+ * "Found in <tool>" and Not this one under it. The title's hover text adds
+ * its last change, which the narrow card has no room for. Its name reads
+ * "Found in <tool>: "<title>"".
+ */
+function ThreadOfferRow({
+  offer,
+  tool,
+  busy,
+  now,
+  onLink,
+  onDismiss,
+}: {
+  offer: HandoffThreadOffer;
+  tool: HandoffTool | undefined;
+  busy: boolean;
+  now: number;
+  onLink?: (offer: HandoffThreadOffer) => void;
+  onDismiss?: (offer: HandoffThreadOffer) => void;
+}) {
+  const found = `Found in ${tool?.label ?? offer.toolId}`;
+  const label = `${found}: "${offer.title}"`;
+  return (
+    <li className="handoff-row" aria-label={label}>
+      <div className="handoff-row-head">
+        {tool ? (
+          <HandoffToolIcon tool={tool} className="size-4 shrink-0" />
+        ) : (
+          <span className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        <span
+          className="handoff-row-title"
+          title={
+            offer.updatedAt === undefined
+              ? offer.title
+              : `${offer.title}\nChanged ${syncAge(offer.updatedAt, now)}`
+          }
+        >
+          {offer.title}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || !onLink}
+          aria-label={`Link "${offer.title}" to this item`}
+          onClick={() => onLink?.(offer)}
+        >
+          Link
+        </Button>
+      </div>
+      <div className="handoff-row-meta">
+        <span className="truncate">{found}</span>
+        <span aria-hidden="true">·</span>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="-ml-1.5 shrink-0 text-muted-foreground"
+          disabled={busy || !onDismiss}
+          aria-label={`Not this one: "${offer.title}"`}
+          onClick={() => onDismiss?.(offer)}
+        >
+          Not this one
+        </Button>
+      </div>
+    </li>
   );
 }
 
