@@ -1361,9 +1361,13 @@ stores only the hash. `handoffHookUrl` builds the URL from the API's host
 token's SHA-256 in the state's `handoffHooks` map, apart from the records the
 window receives; older state files default it to empty. Removing the handoff
 removes the hash. Once the handoff has been done or gone for 24 hours
-(`shouldRefresh` false), its token is revoked in effect: no post is accepted,
-and the hash, with the handoff's rate counts, is removed on the next post or on
-Remove. A revoked token never comes back.
+(`shouldRefresh` false), its token is revoked in effect: no post is accepted.
+The hash is removed on the next post, on Remove, or when a refresh saves the
+handoff's state (`updateHandoffs` removes it before the update applies), so a
+manual or item-open refresh that brings the handoff back to working can't bring
+its token back. The next post also drops the handoff's rate counts. A revoked
+token never comes back. A failed start's event scrubs the hook URL and its token
+as it scrubs connection secrets.
 
 `serveRequest` in `server.ts` serves the route after the Host check and before
 the origin, CORS and window token checks, as it serves MCP. It refuses any
