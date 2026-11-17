@@ -23,6 +23,8 @@ import type {
   BacklogImportCandidate,
   PluginFieldValues,
 } from "../../../packages/shared/plugins.ts";
+import { normalizeEnabledHandoffTools } from "../../../packages/shared/handoffs.ts";
+import { UNSAFE_KEYS } from "./agent-runner-state.ts";
 import { toVersion8, type VaultStepContext } from "./vault-migration.ts";
 
 /** A state file's JSON root, whatever its version. */
@@ -333,6 +335,39 @@ function toVersion10(state: StoredStateRecord): StoredStateRecord {
   };
 }
 
+/**
+ * Version 13 adds a switch per handoff tool, off until the user turns it
+ * on (#760). A device that already handed off would lose its Hand off
+ * button on upgrade, so this step, once, turns on each tool that has a
+ * handoff record here, and nothing else. A tool turned off afterwards stays
+ * off: the step never runs again on this file.
+ */
+function toVersion13(state: StoredStateRecord): StoredStateRecord {
+  const used = new Map<string, unknown[]>();
+  for (const record of Array.isArray(state.handoffs) ? state.handoffs : []) {
+    const handoff = record as { pluginId?: unknown; toolId?: unknown } | null;
+    if (
+      typeof handoff?.pluginId !== "string" ||
+      typeof handoff.toolId !== "string" ||
+      UNSAFE_KEYS.has(handoff.pluginId)
+    )
+      continue;
+    used.set(handoff.pluginId, [
+      ...(used.get(handoff.pluginId) ?? []),
+      handoff.toolId,
+    ]);
+  }
+  return {
+    ...state,
+    handoffEnabledTools: Object.fromEntries(
+      [...used].map(([pluginId, tools]) => [
+        pluginId,
+        normalizeEnabledHandoffTools(tools),
+      ]),
+    ),
+  };
+}
+
 /** Every step, in order. The last one's version is the current one. */
 export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 2, migrate: toVersion2 },
@@ -362,6 +397,8 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
     version: 12,
     migrate: (state) => ({ ...state, handoffs: state.handoffs ?? [] }),
   },
+  // Handoff tools start off (#760), but not for a user already handing off.
+  { version: 13, migrate: toVersion13 },
 ];
 
 /** The version this build writes. */

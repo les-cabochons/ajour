@@ -314,6 +314,10 @@ _Avoid_: Running, launched, sent
 What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`) and Updates within seconds (`hooks`, only for a tool that follows state). Ajour uses only a tool's features, as the tool declares them now.
 _Avoid_: Capability (that is the plugin's), ability
 
+**Tool switch**:
+Whether Ajour uses one handoff tool on this computer, turned on or off on its plugin's page. Every tool starts off. Only a tool that is on takes new hand offs, is detected and offers found threads; a tool turned off keeps its handoffs, which still refresh and open. With no tool on, the Hand off button reads Choose your tools.
+_Avoid_: Enabled tool, tool activation (activation is the plugin's), preference
+
 **Hand off**:
 To start a thread for a backlog item in a coding tool, from the item's page, its row menu or the command palette. The verb is two words ("Hand off to T3 Code"); the thing it makes is a handoff.
 _Avoid_: Send to agent, delegate, dispatch

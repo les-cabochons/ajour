@@ -1,4 +1,5 @@
 import { SplitButton } from "@/components/split-button";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -14,9 +15,11 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   detectHandoffToolsFor,
   useHandoffTools,
+  useHandoffToolsChoice,
   useLastHandoffTool,
 } from "@/lib/handoff-tools";
 import {
+  requestChooseHandoffTools,
   requestHandoff,
   useHandoffStarting,
 } from "@/features/backlog/handoff-request";
@@ -43,14 +46,23 @@ export function HandoffToolIcon({
  * The item page's Hand off to <tool> split button. The main half hands off
  * to the tool last used on this device; the arrow lists the other tools,
  * those this computer lacks disabled with why, one that doesn't follow
- * state saying it only starts the thread, then Review prompt…. Without
- * a handoff tool, as in the web build, it renders nothing.
+ * state saying it only starts the thread, then Review prompt…. Only tools
+ * turned on on their plugin's page are listed. While handoff plugins are
+ * active and none of their tools is on, it reads Choose your tools and
+ * leads to the switches. Without a handoff plugin, as in the web build, it
+ * renders nothing.
  */
 export function HandoffButton({ item }: { item: LocalWorkItem }) {
   const tools = useHandoffTools(item.projectId);
+  const choice = useHandoffToolsChoice();
   const lastKey = useLastHandoffTool();
   const busy = useHandoffStarting(item._id);
-  if (!tools.length) return null;
+  if (!tools.length)
+    return choice ? (
+      <Button variant="outline" onClick={requestChooseHandoffTools}>
+        Choose your tools
+      </Button>
+    ) : null;
   const tool = pickHandoffTool(tools, lastKey) ?? tools[0]!;
   const itemRefusal = getHandoffItemRefusal(item);
   const refusal = itemRefusal ?? getHandoffToolRefusal(tool);

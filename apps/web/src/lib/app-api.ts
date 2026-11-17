@@ -8,7 +8,9 @@ import {
   handoffRecordSchema,
   handoffRefreshResultSchema,
   handoffsSnapshotSchema,
+  handoffEnabledToolsSchema,
   handoffToolConnectionsSchema,
+  handoffToolSwitchSchema,
   type HandoffStartRoute,
   type HandoffToolConnections,
 } from "@ajour/shared/handoffs";
@@ -2077,6 +2079,29 @@ export function saveHandoffToolConnections(
     `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/connections`,
     { method: "POST", body: JSON.stringify(picks) },
     handoffToolConnectionsSchema,
+  );
+}
+/** The plugin's handoff tools that are on, on this device (#760). */
+export function getHandoffToolSwitches(pluginId: string) {
+  return appApiRequest(
+    "getHandoffToolSwitches",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/tools`,
+    undefined,
+    handoffEnabledToolsSchema,
+  );
+}
+/** Turns one handoff tool on or off, and answers the tools now on. */
+export function setHandoffToolEnabled(
+  pluginId: string,
+  toolId: string,
+  enabled: boolean,
+) {
+  const payload = handoffToolSwitchSchema.parse({ toolId, enabled });
+  return appApiRequest(
+    "setHandoffToolEnabled",
+    `/api/plugins/${encodeURIComponent(pluginId)}/handoffs/tools`,
+    { method: "POST", body: JSON.stringify(payload) },
+    handoffEnabledToolsSchema,
   );
 }
 export function getCommandAccess(pluginId: string) {

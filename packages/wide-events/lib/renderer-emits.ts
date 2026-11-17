@@ -32,6 +32,8 @@ export const APP_API_CLIENT = {
   saveHandoffTemplates: "handoff.templates_update",
   getHandoffToolConnections: "handoff.connections_read",
   saveHandoffToolConnections: "handoff.connections_update",
+  getHandoffToolSwitches: "handoff.tools_read",
+  setHandoffToolEnabled: "handoff.tools_update",
   listHandoffs: "handoff.list",
   startHandoff: "handoff.start",
   refreshHandoffs: "handoff.refresh",

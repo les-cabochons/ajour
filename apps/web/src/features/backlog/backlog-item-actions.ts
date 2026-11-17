@@ -3,7 +3,10 @@ import {
   isHandOffAction,
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
-import { requestHandoff } from "@/features/backlog/handoff-request";
+import {
+  requestChooseHandoffTools,
+  requestHandoff,
+} from "@/features/backlog/handoff-request";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { settleBacklogItem } from "@/features/backlog/settle-dialog";
@@ -100,6 +103,9 @@ export function runBacklogItemAction(
         return;
       case "restore":
         localStore.restoreWorkItem(workItem._id);
+        return;
+      case "choose-handoff-tools":
+        requestChooseHandoffTools();
         return;
       case "change-source-state":
         void changeSourceStateWithUndo(workItem);

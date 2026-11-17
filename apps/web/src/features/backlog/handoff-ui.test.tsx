@@ -18,10 +18,13 @@ import { setHandoffs, useHandoffs } from "@/lib/handoffs";
 import {
   resetHandoffToolDetections,
   resetLastHandoffTool,
+  useAllHandoffTools,
   useHandoffTools,
 } from "@/lib/handoff-tools";
 import { useLocalState } from "@/lib/local-hooks";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
+import { ShortcutProvider } from "@/lib/shortcut-handlers";
+import { CommandPalette } from "@/features/command-palette/command-palette";
 import { HandoffButton } from "./handoff-button";
 import { HandoffHost } from "./handoff-workflow";
 import { isHandoffStarting, requestHandoff } from "./handoff-request";
@@ -135,6 +138,28 @@ function Page() {
       />
       <HandoffHost />
       <Toaster />
+    </TooltipProvider>
+  );
+}
+
+/** The item page's card, which names threads by every tool, on or off. */
+function AllToolsPage() {
+  const state = useLocalState();
+  const item = state.workItems.find((candidate) => candidate._id === itemId);
+  const handoffs = useHandoffs(itemId);
+  const tools = useAllHandoffTools();
+  return (
+    <TooltipProvider>
+      {item ? <HandoffButton item={item} /> : null}
+      <HandoffsCard
+        itemId={itemId}
+        handoffs={handoffs}
+        tools={tools}
+        now={10 * 60_000}
+        open
+        onOpenChange={() => {}}
+      />
+      <HandoffHost />
     </TooltipProvider>
   );
 }
@@ -650,6 +675,83 @@ it("leaves another item's dialog open when an earlier Review prompt start comple
     screen.getByRole("dialog", { name: "Hand off to T3 Code" }),
   ).toBeTruthy();
   expect(isHandoffStarting(other)).toBe(true);
+});
+
+it("reads Choose your tools while no tool is on, and leads to the plugin's tool list from the button and the row menu", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: [] }));
+  const { router } = await renderRoutes({ routes: { "/": Page } });
+  const settings = () =>
+    (router.state.location.search as Record<string, unknown>).settings;
+  const choose = await screen.findByRole("button", {
+    name: "Choose your tools",
+  });
+  expect(screen.queryByRole("button", { name: /Hand off to/ })).toBeNull();
+  // A tool that is off is never detected.
+  expect(api.detectHandoffTools).not.toHaveBeenCalled();
+
+  fireEvent.click(choose);
+  await waitFor(() =>
+    expect(settings()).toBe("plugins/agent-handoff?section=handoff-tools"),
+  );
+
+  await act(() => router.navigate({ to: "/" }));
+  expect(settings()).toBeUndefined();
+  const item = localStore
+    .snapshot()
+    .workItems.find((candidate) => candidate._id === itemId)!;
+  act(() => {
+    runBacklogItemAction(item, "choose-handoff-tools", () => {});
+  });
+  await waitFor(() =>
+    expect(settings()).toBe("plugins/agent-handoff?section=handoff-tools"),
+  );
+});
+
+it("opens the plugin's tool list from the palette's Choose your tools", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: [] }));
+  const { router } = await renderRoutes({
+    shell: ({ children }) => (
+      <ShortcutProvider>
+        <CommandPalette />
+        {children}
+      </ShortcutProvider>
+    ),
+    routes: { "/": Page },
+  });
+  await screen.findByRole("button", { name: "Choose your tools" });
+  const row = document.createElement("button");
+  row.setAttribute("data-backlog-item-id", itemId);
+  document.body.append(row);
+  row.focus();
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  fireEvent.click(
+    await screen.findByRole("option", { name: /^Choose your tools/ }),
+  );
+  await waitFor(() =>
+    expect(
+      (router.state.location.search as Record<string, unknown>).settings,
+    ).toBe("plugins/agent-handoff?section=handoff-tools"),
+  );
+  row.remove();
+});
+
+it("keeps naming the threads of a tool turned off on the card, and offers only the tools that are on", async () => {
+  cachePluginsOverview(handoffOverview({ enabled: ["claude"] }));
+  vi.mocked(api.detectHandoffTools).mockResolvedValue({
+    tools: [{ id: "claude", available: true }],
+  });
+  await renderRoutes({ routes: { "/": AllToolsPage } });
+  expect(
+    await screen.findByRole("button", { name: /Hand off to Claude Code/ }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: /Hand off to T3 Code/ }),
+  ).toBeNull();
+  act(() => setHandoffs([handoffRecord({ workItemId: itemId })]));
+  const row = await cardRow("[PAY-12] Fix login redirect");
+  // The tool's name and icon still come from its plugin while it is off.
+  expect(row.textContent).toContain("T3 Code");
+  expect(within(row).getByRole("button", { name: /Open/ })).toBeTruthy();
 });
 
 it("renders nothing in the web build, where no tool can run", async () => {

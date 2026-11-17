@@ -4,10 +4,14 @@
  */
 export type PluginReplaceTarget = { connectionId?: string; fieldId: string };
 
-/** The search of a plugin's page: the secret to replace, if the Vault sent one. */
+/**
+ * The search of a plugin's page: the secret to replace, if the Vault sent
+ * one, or the section to show, as `handoff-tools` from Choose your tools.
+ */
 export interface PluginDetailSearch {
   connection?: string;
   field?: string;
+  section?: string;
 }
 
 export function parsePluginDetailSearch(
@@ -19,6 +23,9 @@ export function parsePluginDetailSearch(
       : {}),
     ...(typeof search.field === "string" && search.field
       ? { field: search.field }
+      : {}),
+    ...(typeof search.section === "string" && search.section
+      ? { section: search.section }
       : {}),
   };
 }

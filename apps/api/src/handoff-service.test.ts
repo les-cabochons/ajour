@@ -4,12 +4,17 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { Handoffs } from "./handoffs.ts";
 import { AppApiStorage } from "./storage.ts";
+import { turnOnHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import type { Handoff } from "../../../packages/shared/handoffs.ts";
 
 it("batches refresh by tool and project, respects visibility, and preserves a refused start", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoffs-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const folder = await storage.addRepositoryFolder("p", root, "Repo");
     let now = 1000;
     const calls: string[][] = [];
@@ -111,6 +116,10 @@ it("continues failed batches, pauses unavailable tools once and resumes them whe
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-recovery-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     let now = 1000,
       mode = "fail",
       writes = 0;
@@ -234,6 +243,10 @@ it("retains pre-review records while compacting their native history", async () 
   try {
     const file = path.join(root, "state.json");
     const storage = new AppApiStorage(file);
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const { startHandoff } = await import("./handoff-state.ts");
     const record = startHandoff(
       {
@@ -274,6 +287,10 @@ it("retains a legacy handoff with a 5 KB native and replaces it on refresh", asy
   try {
     const file = path.join(root, "state.json");
     const storage = new AppApiStorage(file);
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const { startHandoff } = await import("./handoff-state.ts");
     const record = startHandoff(
       {
@@ -343,6 +360,10 @@ it("lets a manual refresh run after the active batch before the remaining tick b
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-queue-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     let now = 1;
     const calls: string[] = [];
     let release!: () => void, started!: () => void;
@@ -419,6 +440,10 @@ it("splits a large tool group into refresh batches below the runtime's result li
   const root = await mkdtemp(path.join(os.tmpdir(), "handoffs-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const folder = await storage.addRepositoryFolder("p", root, "Repo");
     const calls: number[] = [];
     const service = new Handoffs({
@@ -470,6 +495,10 @@ it("fills persisted templates at start, preserves overrides and bounds titles be
   try {
     const statePath = path.join(root, "state.json");
     const storage = new AppApiStorage(statePath);
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const folder = await storage.addRepositoryFolder("p", root, "Repo");
     await storage.setHandoffTemplates("agent", {
       prompt: "{{item.description}} {{project.name}} {{repo.name}}",
@@ -571,6 +600,10 @@ it("judges a hook token's expiry when the refresh is saved, not when it began", 
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-hook-boundary-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const day = 24 * 3_600_000;
     let now = 10;
     const service = new Handoffs({
@@ -634,6 +667,10 @@ it("revokes a hook token when a refresh updates a handoff done or gone for 24 ho
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-hook-expiry-"));
   try {
     const storage = new AppApiStorage(path.join(root, "state.json"));
+    await turnOnHandoffTools(storage, {
+      agent: ["t3", "other", "a", "b", "t", "x"],
+      p: ["t3", "other", "a", "b", "t", "x"],
+    });
     const { startHandoff } = await import("./handoff-state.ts");
     const base = {
       pluginId: "p",

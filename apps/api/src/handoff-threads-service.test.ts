@@ -8,6 +8,7 @@ import {
   THREAD_LISTING_INTERVAL_MS,
 } from "./handoffs.ts";
 import { AppApiStorage } from "./storage.ts";
+import { turnOnHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import type {
   ListThreadsRequest,
   ListThreadsResult,
@@ -22,6 +23,7 @@ async function setup(
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   const statePath = path.join(root, "state.json");
   const storage = new AppApiStorage(statePath);
+  await turnOnHandoffTools(storage, { agent: ["t3", "claude"] });
   const folder = await storage.addRepositoryFolder("p", root, "Repo");
   const clock = { now: 1_000_000 };
   const listings: Array<ListThreadsRequest & { pluginId: string }> = [];

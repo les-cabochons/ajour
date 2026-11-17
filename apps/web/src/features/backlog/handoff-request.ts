@@ -28,6 +28,42 @@ export function listenForHandoffRequests(
   };
 }
 
+let chooseListener: (() => void) | null = null;
+let chooseRequests = 0;
+const chooseRequestListeners = new Set<() => void>();
+
+/**
+ * *Choose your tools*: no handoff tool is on, so the button and the row
+ * menus lead to the tools' switches. The host opens the page.
+ */
+export function requestChooseHandoffTools() {
+  chooseRequests += 1;
+  for (const listener of chooseRequestListeners) listener();
+  chooseListener?.();
+}
+
+/**
+ * Counts the requests for Choose your tools, so the tools' section moves
+ * focus again when the page already shows it and its search stays the same.
+ */
+export function useChooseHandoffToolsRequest() {
+  return useSyncExternalStore(
+    (listener) => {
+      chooseRequestListeners.add(listener);
+      return () => chooseRequestListeners.delete(listener);
+    },
+    () => chooseRequests,
+  );
+}
+
+/** The host's listener for Choose your tools; returns how to stop. */
+export function listenForChooseHandoffTools(listener: () => void) {
+  chooseListener = listener;
+  return () => {
+    if (chooseListener === listener) chooseListener = null;
+  };
+}
+
 /**
  * The items whose hand off is on its way: from the moment the host accepts a
  * request until the thread starts, fails or the user cancels. A start still

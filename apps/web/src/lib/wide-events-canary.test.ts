@@ -670,6 +670,8 @@ describe("the privacy canary", () => {
   it("keeps handoff prompts, titles, native state, links, folders and hook posts out of events", async () => {
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "handoff-canary-"));
     const folder = await api.addRepositoryFolder("handoff-project", folderPath);
+    // Every tool starts off (#760).
+    await app.appApi.setHandoffToolEnabled("canary", "t3", true);
     const from = mark();
     const snapshots: Handoff[][] = [];
     const stream = new FetchEventSource(`${api.baseUrl}/api/handoffs/bridge`);

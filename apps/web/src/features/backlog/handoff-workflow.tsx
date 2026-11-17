@@ -49,6 +49,7 @@ import {
 import { setHandoffs, upsertHandoff } from "@/lib/handoffs";
 import {
   getHandoffTools,
+  getHandoffToolsChoiceNow,
   hasSeenHandoffNotice,
   markHandoffNoticeSeen,
   setLastHandoffTool,
@@ -56,9 +57,12 @@ import {
 import { localStore } from "@/lib/local-store";
 import {
   isHandoffStarting,
+  listenForChooseHandoffTools,
   listenForHandoffRequests,
   setHandoffStarting,
 } from "@/features/backlog/handoff-request";
+import { useOpenSettings } from "@/features/settings/settings-link";
+import { settingsLocationOf } from "@/features/settings/settings-location";
 
 /**
  * Hand off to a coding tool, from "Hand off to a coding tool" in
@@ -264,6 +268,20 @@ export function HandoffHost() {
     }
     if (isShown(job)) show(IDLE);
   }
+
+  const openSettings = useOpenSettings();
+  // No tool is on: the plugin's tool list, or the plugins list when several
+  // plugins hand off (`getHandoffToolsChoice`).
+  useEffect(
+    () =>
+      listenForChooseHandoffTools(() => {
+        const choice = getHandoffToolsChoiceNow();
+        void openSettings(
+          settingsLocationOf(choice?.page ?? "plugins", choice?.search),
+        );
+      }),
+    [openSettings],
+  );
 
   useEffect(() => {
     return listenForHandoffRequests((request) => {

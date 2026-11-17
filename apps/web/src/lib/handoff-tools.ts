@@ -4,6 +4,7 @@ import type { HandOffActionTool } from "@/domain/actions/object-actions";
 import {
   getHandoffToolNote,
   getHandoffToolRefusal,
+  getHandoffToolsChoice,
   listHandoffTools,
   type DetectedTools,
   type HandoffTool,
@@ -17,9 +18,11 @@ import {
 
 /**
  * The coding tools a hand off can go to, on this computer: the tools of the
- * active handoff plugins, with what each plugin's `detectTools` found. Only
- * the desktop app runs plugins, so the web build lists none and shows no
- * hand off anywhere.
+ * active handoff plugins that the user turned on on the plugin's page, with
+ * what each plugin's `detectTools` found. Tools that are off are neither
+ * listed nor detected; `useAllHandoffTools` still names them for the
+ * handoffs they started. Only the desktop app runs plugins, so the web
+ * build lists none and shows no hand off anywhere.
  */
 
 const EMPTY: readonly HandoffTool[] = [];
@@ -33,22 +36,55 @@ const listeners = new Set<() => void>();
 let snapshot: {
   overview: PluginsOverview | null;
   detections: Map<string, DetectedTools>;
+  all: readonly HandoffTool[];
   tools: readonly HandoffTool[];
-} = { overview: null, detections, tools: EMPTY };
+} = { overview: null, detections, all: EMPTY, tools: EMPTY };
 
 function isDesktop() {
   return typeof window !== "undefined" && Boolean(window.ajourDesktop);
 }
 
-/** The tools now, for row menus that build their actions on demand. */
-export function getHandoffTools(): readonly HandoffTool[] {
-  if (!isDesktop()) return EMPTY;
+function current() {
+  if (!isDesktop()) return snapshot;
   const overview = getCachedPluginsOverview();
   if (snapshot.overview !== overview || snapshot.detections !== detections) {
-    const tools = listHandoffTools(overview, detections);
-    snapshot = { overview, detections, tools: tools.length ? tools : EMPTY };
+    const all = listHandoffTools(overview, detections);
+    const tools = all.filter((tool) => tool.enabled);
+    snapshot = {
+      overview,
+      detections,
+      all: all.length ? all : EMPTY,
+      tools: tools.length ? tools : EMPTY,
+    };
   }
-  return snapshot.tools;
+  return snapshot;
+}
+
+/** The tools that are on now, for row menus that build their actions on demand. */
+export function getHandoffTools(): readonly HandoffTool[] {
+  return isDesktop() ? current().tools : EMPTY;
+}
+
+/** Every tool of the active plugins, on or off, to name a handoff's tool. */
+function getAllHandoffTools(): readonly HandoffTool[] {
+  return isDesktop() ? current().all : EMPTY;
+}
+
+let choice: {
+  overview: PluginsOverview | null;
+  value: ReturnType<typeof getHandoffToolsChoice>;
+} = { overview: null, value: undefined };
+
+/**
+ * Where *Choose your tools* leads, while handoff plugins are active and no
+ * tool is on (`getHandoffToolsChoice`); undefined otherwise.
+ */
+export function getHandoffToolsChoiceNow() {
+  if (!isDesktop()) return undefined;
+  const overview = getCachedPluginsOverview();
+  if (choice.overview !== overview)
+    choice = { overview, value: getHandoffToolsChoice(overview) };
+  return choice.value;
 }
 
 let actionTools: {
@@ -135,30 +171,48 @@ export function detectHandoffToolsFor(projectId: string, force = false) {
 
 /**
  * Forgets the plugin's detection, so the next ask runs it again: its answer
- * depends on the connection each tool picked, which the plugin's page just
- * changed. A detection still running is not kept.
+ * depends on the connection each tool picked and on which tools are on,
+ * which the plugin's page just changed. Its tools read as not yet detected
+ * until then, and a detection still running is not kept.
  */
 export function forgetHandoffToolDetection(pluginId: string) {
   detectedAt.delete(pluginId);
   inFlight.delete(pluginId);
+  if (!detections.has(pluginId)) return;
+  detections = new Map(detections);
+  detections.delete(pluginId);
+  listeners.forEach((listener) => listener());
 }
 
 /**
- * The tools, kept current. With `projectId`, detects them for that project
- * when the caller mounts.
+ * The tools that are on, kept current. With `projectId`, detects them for
+ * that project when the caller mounts.
  */
 export function useHandoffTools(projectId?: string): readonly HandoffTool[] {
   const tools = useSyncExternalStore(subscribe, getHandoffTools, () => EMPTY);
-  const pluginCount = new Set(tools.map((tool) => tool.pluginId)).size;
+  // Which tools are on: turning one on detects it.
+  const enabled = tools.map((tool) => tool.key).join(" ");
   useEffect(() => {
     if (!isDesktop()) return;
     if (!getCachedPluginsOverview())
       void getPluginsOverview().catch(() => undefined);
   }, []);
   useEffect(() => {
-    if (projectId && pluginCount) void detectHandoffToolsFor(projectId);
-  }, [projectId, pluginCount]);
+    if (projectId && enabled) void detectHandoffToolsFor(projectId);
+  }, [projectId, enabled]);
   return tools;
+}
+
+/** Every tool of the active plugins, on or off, kept current. */
+export function useAllHandoffTools(): readonly HandoffTool[] {
+  return useSyncExternalStore(subscribe, getAllHandoffTools, () => EMPTY);
+}
+
+const noChoice = () => undefined;
+
+/** Where *Choose your tools* leads now, kept current. */
+export function useHandoffToolsChoice() {
+  return useSyncExternalStore(subscribe, getHandoffToolsChoiceNow, noChoice);
 }
 
 /** Test seam: forgets every detection. */

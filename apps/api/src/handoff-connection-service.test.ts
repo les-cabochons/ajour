@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { Handoffs, HandoffRefused } from "./handoffs.ts";
 import { AppApiStorage } from "./storage.ts";
+import { turnOnHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import type {
   ReadHandoffStatesRequest,
   StartHandoffRequest,
@@ -31,6 +32,10 @@ async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-connections-"));
   roots.push(root);
   const storage = new AppApiStorage(path.join(root, "state.json"));
+  await turnOnHandoffTools(storage, {
+    tools: ["t3", "opencode"],
+    opencode: ["t3", "opencode"],
+  });
   const folder = await storage.addRepositoryFolder("p", root, "Repo");
   const connectionInput = (label: string) => ({
     label,

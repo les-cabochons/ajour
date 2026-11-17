@@ -10,6 +10,7 @@ import {
 } from "./server.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { turnOnServerHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
 
 const KEY = "CANARY-THREAD-12";
@@ -87,6 +88,7 @@ it("offers, links and dismisses a tool's listed threads without logging titles, 
   const { root, repo, sink, server, call } = await setup();
   try {
     const folder = await addRepositoryFolderForServer(server, "p", repo);
+    await turnOnServerHandoffTools(server, { handoff: ["t3"] });
     const found = await call("POST", "/api/handoffs/threads", {
       projectId: "p",
       workItemId: "item",
@@ -204,9 +206,11 @@ it("refuses an item named with a project other than its handoffs', for finding a
   const { root, repo, server, call } = await setup();
   try {
     const folder = await addRepositoryFolderForServer(server, "p", repo);
+    await turnOnServerHandoffTools(server, { handoff: ["t3"] });
     const other = path.join(root, "other-repo");
     await mkdir(other);
     const otherFolder = await addRepositoryFolderForServer(server, "q", other);
+    await turnOnServerHandoffTools(server, { handoff: ["t3"] });
     const find = (projectId: string, workItemId: string) =>
       call("POST", "/api/handoffs/threads", {
         projectId,
@@ -255,6 +259,7 @@ it("refuses keys no title's bracketed token could hold", async () => {
   const { root, repo, server, call } = await setup();
   try {
     await addRepositoryFolderForServer(server, "p", repo);
+    await turnOnServerHandoffTools(server, { handoff: ["t3"] });
     for (const keys of [
       [""],
       [`[${KEY}]`],
@@ -283,6 +288,54 @@ it("refuses keys no title's bracketed token could hold", async () => {
         })
       ).status,
     ).toBe(200);
+  } finally {
+    await stopAppApiServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("refuses to start or link with a tool that is off, saying tool_off", async () => {
+  const { root, repo, sink, server, call } = await setup();
+  try {
+    const folder = await addRepositoryFolderForServer(server, "p", repo);
+    const started = await call("POST", "/api/handoffs", {
+      pluginId: "handoff",
+      toolId: "t3",
+      workItemId: "item",
+      projectId: "p",
+      folderId: folder.id,
+      projectName: "Project",
+      item: { key: KEY, title: "Fix", type: "Bug", url: "" },
+      settings: {},
+    });
+    expect(started).toMatchObject({
+      status: 409,
+      body: {
+        error:
+          "T3 is off. Turn it on in the plugin's Handoff tools to hand off to it.",
+      },
+    });
+    const linked = await call("POST", "/api/handoffs/adopt", {
+      pluginId: "handoff",
+      toolId: "t3",
+      folderId: folder.id,
+      threadId: "linked",
+      projectId: "p",
+      workItemId: "item",
+    });
+    expect(linked).toMatchObject({
+      status: 409,
+      body: {
+        error:
+          "T3 is off. Turn it on in the plugin's Handoff tools to link its threads.",
+      },
+    });
+    const reasons = (name: string) =>
+      sink.events
+        .filter((event) => event.name === name && event.kind === "request")
+        .map((event) => [event.outcome, event.outcome_reason]);
+    expect(reasons("handoff.start")).toEqual([["refused", "tool_off"]]);
+    expect(reasons("handoff.adopt")).toEqual([["refused", "tool_off"]]);
   } finally {
     await stopAppApiServer(server);
     await rm(root, { recursive: true, force: true });

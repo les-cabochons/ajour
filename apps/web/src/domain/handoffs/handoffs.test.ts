@@ -7,6 +7,7 @@ import {
   getHandoffItemRefusal,
   getHandoffMarks,
   getHandoffToolNote,
+  getHandoffToolsChoice,
   isHandoffFollowed,
   listHandoffTools,
   parseHandoffToolKey,
@@ -27,6 +28,46 @@ describe("handoff tools", () => {
         ["agent-handoff:claude", "Claude Code", undefined],
       ],
     );
+  });
+
+  it("marks each tool on or off as its switch on the plugin's page says", () => {
+    const tools = listHandoffTools(
+      handoffOverview({ enabled: ["claude"] }),
+      new Map(),
+    );
+    expect(tools.map((tool) => [tool.toolId, tool.enabled])).toEqual([
+      ["t3", false],
+      ["claude", true],
+    ]);
+    // An overview from an API without switches reads every tool as off.
+    const older = handoffOverview();
+    delete older.connectionGroups[0]!.enabledHandoffTools;
+    expect(
+      listHandoffTools(older, new Map()).map((tool) => tool.enabled),
+    ).toEqual([false, false]);
+  });
+
+  it("leads to the tool list while no tool is on: the plugin's page, or the plugins list when several plugins hand off", () => {
+    expect(getHandoffToolsChoice(handoffOverview())).toBeUndefined();
+    expect(getHandoffToolsChoice(handoffOverview({ enabled: [] }))).toEqual({
+      page: "plugins/agent-handoff",
+      search: { section: "handoff-tools" },
+    });
+
+    const two = handoffOverview({ enabled: [] });
+    const other = structuredClone(two.connectionGroups[0]!);
+    other.plugin = { ...other.plugin, id: "other-handoff" };
+    two.connectionGroups.push(other);
+    expect(getHandoffToolsChoice(two)).toEqual({ page: "plugins" });
+    // One tool on anywhere: the menus list it, and nothing asks to choose.
+    two.connectionGroups[1]!.enabledHandoffTools = ["t3"];
+    expect(getHandoffToolsChoice(two)).toBeUndefined();
+
+    // A plugin that is off, or no handoff plugin, asks nothing.
+    const off = handoffOverview({ enabled: [] });
+    off.connectionGroups[0]!.enabled = false;
+    expect(getHandoffToolsChoice(off)).toBeUndefined();
+    expect(getHandoffToolsChoice(null)).toBeUndefined();
   });
 
   it("marks tools detection didn't find as missing, with the plugin's reason", () => {

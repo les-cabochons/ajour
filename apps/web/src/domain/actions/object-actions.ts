@@ -569,6 +569,7 @@ export type BacklogItemActionId =
   | "open-in-source"
   | "archive"
   | "delete"
+  | "choose-handoff-tools"
   | HandOffActionId;
 
 /** Hand off to one tool, by its `pluginId:toolId` key. */
@@ -615,6 +616,11 @@ export interface BacklogItemActionOptions {
    * each. Absent or empty, as in the web build, lists none.
    */
   handoffTools?: readonly HandOffActionTool[];
+  /**
+   * Handoff plugins are active but no tool is on: Choose your tools takes
+   * the hand-off slot and leads to the tools' switches.
+   */
+  chooseHandoffTools?: boolean;
   /** A hand off of this item is on its way, so Hand off waits. */
   handoffStarting?: boolean;
 }
@@ -630,7 +636,8 @@ function formatDeleteLabel(subitemCount: number) {
 /**
  * Lists a backlog item's actions:
  * Start entry/Stop · New entry… | Edit · Add subitem | Snooze…/Unsnooze ·
- * Pin/Unpin · Settle/Unsettle/Restore | Hand off to <tool>, per tool |
+ * Pin/Unpin · Settle/Unsettle/Restore | Hand off to <tool>, per tool that
+ * is on, else Choose your tools |
  * Change source state… · Open in source | Archive · Delete.
  *
  * Open in source is listed only when a plugin provided the item's URL.
@@ -728,6 +735,14 @@ export function getBacklogItemActions(
       ...(tool.hint ? { hint: tool.hint } : {}),
     });
   }
+
+  if (!options.handoffTools?.length && options.chooseHandoffTools)
+    actions.push({
+      id: "choose-handoff-tools",
+      label: "Choose your tools",
+      group: "hand-off",
+      hint: "Pick the coding tools Ajour hands off to",
+    });
 
   if ((options.otherSourceStateCount ?? 0) > 0) {
     actions.push({

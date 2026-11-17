@@ -6,11 +6,13 @@ const ICON =
 
 /**
  * One active `agent-handoff` plugin with T3 Code and Claude Code, and with
- * `copilot`, Copilot CLI, which doesn't follow its threads' state.
+ * `copilot`, Copilot CLI, which doesn't follow its threads' state. Every
+ * tool is on unless `enabled` names the ones that are.
  */
 export function handoffOverview({
   copilot = false,
-}: { copilot?: boolean } = {}): PluginsOverview {
+  enabled,
+}: { copilot?: boolean; enabled?: string[] } = {}): PluginsOverview {
   const plugin = {
     id: "agent-handoff",
     version: "1.0.0",
@@ -61,7 +63,15 @@ export function handoffOverview({
     pluginsEnabled: true,
     unsignedPluginsEnabled: true,
     plugins: [plugin],
-    connectionGroups: [{ plugin, enabled: true, connections: [] }],
+    connectionGroups: [
+      {
+        plugin,
+        enabled: true,
+        enabledHandoffTools:
+          enabled ?? plugin.capabilities.handoff.tools.map((tool) => tool.id),
+        connections: [],
+      },
+    ],
     totalPendingImportCount: 0,
     totalSelectedImportCount: 0,
   } as PluginsOverview;

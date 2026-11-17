@@ -166,7 +166,7 @@ it("rewrites a legacy GitHub.com address once at the upgrade and keeps the conne
   await storage.setPluginSystemEnabled(true);
 
   const saved = JSON.parse(await readFile(statePath, "utf8"));
-  expect(saved.version).toBe(12);
+  expect(saved.version).toBe(13);
   const addresses = Object.fromEntries(
     saved.connections.map(
       (entry: { id: string; config: { hostUrl: string } }) => [

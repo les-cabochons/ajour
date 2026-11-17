@@ -275,6 +275,12 @@ async function main() {
       path: unknownShim,
     });
 
+  // Every tool starts off (#760).
+  await ok("POST", `/api/plugins/${PLUGIN}/handoffs/tools`, {
+    toolId: "probe",
+    enabled: true,
+  });
+
   let item = 0;
   /** One phase of the plugin's attacks, run as a hand off of project alpha. */
   const phase = async (name, params = {}) => {

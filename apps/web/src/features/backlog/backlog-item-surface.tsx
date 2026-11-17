@@ -14,7 +14,10 @@ import { formatHours } from "@/features/backlog/backlog-estimates";
 import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
 import type { HandoffMark } from "@/domain/handoffs/handoffs";
-import { getHandOffActionTools } from "@/lib/handoff-tools";
+import {
+  getHandOffActionTools,
+  getHandoffToolsChoiceNow,
+} from "@/lib/handoff-tools";
 import { isHandoffStarting } from "@/features/backlog/handoff-request";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
@@ -365,6 +368,7 @@ export function getBacklogSurfaceActions(
     otherSourceStateCount: getOtherSourceStates(item).length,
     settleOpensDialog: settleOpensDialog(item),
     handoffTools: getHandOffActionTools(),
+    chooseHandoffTools: Boolean(getHandoffToolsChoiceNow()),
     handoffStarting: isHandoffStarting(item._id),
   });
 }
