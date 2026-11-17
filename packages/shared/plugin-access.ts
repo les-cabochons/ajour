@@ -182,6 +182,11 @@ export function summarizePluginAccess(
             .some((arg) => arg.kind === "connection-url")
             ? "Receives the connection's address."
             : "",
+          command.args
+            .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
+            .some((arg) => arg.kind === "hook-url")
+            ? "Receives the address where the handoff's hooks tell Ajour its thread changed."
+            : "",
           command.mode === "session"
             ? `Ends after ${idleWords(command.idleTimeoutSeconds ?? 300)} unused, and when Ajour quits.`
             : command.stdin === "text"
@@ -466,7 +471,10 @@ export function commandArgvShape(
       ? quote(arg.value)
       : arg.kind === "enum"
         ? `<${named ? `${arg.name}:` : ""}${arg.values.map(quote).join("|")}>`
-        : `<${named ? `${arg.name}:` : ""}${arg.kind}>`;
+        : arg.kind === "hook-url" && "template" in arg && arg.template
+          ? // The template is what runs, so Access review shows it whole.
+            quote(arg.template.replaceAll("{url}", "<hook-url>"))
+          : `<${named ? `${arg.name}:` : ""}${arg.kind}>`;
   return [
     names.map(quote).join("|"),
     ...command.args.map((arg) =>

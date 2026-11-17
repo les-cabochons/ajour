@@ -1434,10 +1434,14 @@ export class PluginManager {
           ];
           const connectionId =
             typeof connection?.id === "string" ? connection.id : undefined;
+          // A start's hook URL and its token are as secret as a connection's.
+          const hookSecrets =
+            method === "startHandoff" ? hookSecretsOf(params.request) : [];
           // What the operation was given, and, read when the event is
           // scrubbed, what the vault holds for the saved connection.
           const scrubWith = (fields: SecretConnectionFields) => {
             record.secrets(async () => [
+              ...hookSecrets,
               ...connectionSecretValues(fields, configs),
               ...(connectionId
                 ? ((await this.secretValues?.(
@@ -1515,6 +1519,9 @@ export class PluginManager {
               ...(connectionId && capabilityOfMethod(method) === "handoff"
                 ? { connectionId }
                 : {}),
+              // Only a start's commands may receive its hook URL
+              // (`hook-url`), which the host put in the request.
+              ...(method === "startHandoff" ? hookUrlOf(params.request) : {}),
             });
             args = prepared.args;
           } else {
@@ -1887,6 +1894,25 @@ function lifecycleOf(
  * A handoff operation's connection, checked to be the plugin's own: the
  * plugin would otherwise read another plugin's settings.
  */
+/** The hook URL of a start's request, which the host built (#726). */
+function hookUrlOf(request: unknown): { hookUrl?: string } {
+  const url = (request as { hook?: { url?: unknown } } | undefined)?.hook?.url;
+  return typeof url === "string" ? { hookUrl: url } : {};
+}
+
+/** A start's hook URL and the token in it, to scrub from its event. */
+function hookSecretsOf(request: unknown): string[] {
+  const { hookUrl } = hookUrlOf(request);
+  if (!hookUrl) return [];
+  let token: string | null = null;
+  try {
+    token = new URL(hookUrl).searchParams.get("token");
+  } catch {
+    // Not a URL: the whole value is still scrubbed.
+  }
+  return token ? [hookUrl, token] : [hookUrl];
+}
+
 function handoffConnectionParams(
   pluginId: string,
   connection: PluginInvocationConnection | undefined,

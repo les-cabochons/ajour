@@ -28,6 +28,7 @@ import {
 import type { AppApiStorage } from "./storage.ts";
 import type { ApiEvents } from "./events.ts";
 import { adoptHandoff, shouldRefresh, startHandoff } from "./handoff-state.ts";
+import { createHookToken } from "./handoff-hooks.ts";
 
 /** A saved connection as a handoff operation receives it: no secrets. */
 export interface HandoffConnection {
@@ -105,6 +106,13 @@ interface Options {
     action?: string,
   ): Promise<string | undefined>;
   onChange(records: Handoff[]): void;
+  /**
+   * The loopback URL a handoff's hooks post to, with its token (#726).
+   * Without it, starts carry no hook.
+   */
+  hookUrl?(id: string, token: string): string;
+  /** Runs when a handoff is removed, so its hook state goes with it. */
+  onRemove?(id: string): void;
   events?: ApiEvents;
   now?: () => number;
   /** Handoffs per `readHandoffStates` call. Tests make it small. */
@@ -169,7 +177,7 @@ export class Handoffs {
   >();
   constructor(options: Options) {
     this.options = options;
-    this.now = options.now ?? Date.now;
+    this.now = options.now ?? (() => Date.now());
   }
   setVisible(visible: boolean) {
     this.visible = visible;
@@ -224,6 +232,10 @@ export class Handoffs {
       throw new HandoffTemplateRefused(
         "The prompt template produces an empty prompt for this item. Edit the prompt template.",
       );
+    // The id and hook token exist before the start, so the tool can be
+    // given the URL; only a start that succeeds keeps them.
+    const id = randomUUID();
+    const hook = this.options.hookUrl ? createHookToken() : undefined;
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
@@ -232,6 +244,7 @@ export class Handoffs {
       prompt,
       item: { key: input.item.key, url: input.item.url },
       settings: input.settings,
+      ...(hook ? { hook: { url: this.options.hookUrl!(id, hook.token) } } : {}),
     });
     let result: StartHandoffResult;
     try {
@@ -251,7 +264,7 @@ export class Handoffs {
     const { pluginId, toolId, workItemId, projectId, folderId } = input;
     const record = startHandoff(
       {
-        id: randomUUID(),
+        id,
         pluginId,
         toolId,
         workItemId,
@@ -264,7 +277,7 @@ export class Handoffs {
       result,
       this.now(),
     );
-    await this.options.storage.addHandoff(record);
+    await this.options.storage.addHandoff(record, hook?.tokenHash);
     await this.options.storage
       .useRepositoryFolder(input.projectId, input.folderId)
       .catch(() => undefined);
@@ -582,6 +595,7 @@ export class Handoffs {
   }
   async remove(id: string) {
     await this.options.storage.removeHandoff(id);
+    this.options.onRemove?.(id);
     await this.publish();
   }
   async tick() {
@@ -598,6 +612,13 @@ export class Handoffs {
       (h) => id === undefined || h.id === id,
       automatic,
     );
+  }
+  /**
+   * Refreshes one handoff because its tool's hook posted (#726): at once,
+   * whatever the cadence, as a system job.
+   */
+  async refreshFromHook(id: string) {
+    return this.refreshRecords((h) => h.id === id, false, "system");
   }
   /**
    * Refreshes the handoffs that ran through one connection, as when it was
@@ -629,6 +650,7 @@ export class Handoffs {
   private async refreshRecords(
     selected: (record: Handoff) => boolean,
     automatic: boolean,
+    trigger: "system" | "user" = automatic ? "system" : "user",
   ) {
     const now = this.now();
     const records = (await this.options.storage.listHandoffs()).filter(
@@ -679,7 +701,7 @@ export class Handoffs {
         const openUnit = () => {
           const unit = this.options.events?.start("handoff.refresh", {
             kind: "job",
-            trigger: automatic ? "system" : "user",
+            trigger,
           });
           unit?.set({
             plugin: { id: first.pluginId },
@@ -737,7 +759,11 @@ export class Handoffs {
                 paused: { reason, since: h.paused?.since ?? now },
               }));
             if (updates.length) {
-              await this.options.storage.updateHandoffs(updates, now);
+              await this.options.storage.updateHandoffs(
+                updates,
+                now,
+                this.now(),
+              );
               await this.publish();
             }
             failures.push(failure(reason));
@@ -758,7 +784,7 @@ export class Handoffs {
             first.projectId,
             ...(connection ? [connection] : []),
           );
-          await this.options.storage.updateHandoffs(updates, now);
+          await this.options.storage.updateHandoffs(updates, now, this.now());
           succeeded++;
           await this.publish();
         } catch (error) {
@@ -771,6 +797,7 @@ export class Handoffs {
               paused: h.paused,
             })),
             now,
+            this.now(),
           );
           await this.publish();
           unit?.refuse("refresh_failed");

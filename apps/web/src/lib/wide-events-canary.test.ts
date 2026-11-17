@@ -115,7 +115,7 @@ const canaryPlugin: TestPlugin = {
   },
   source: `
 const MARKER = ${JSON.stringify(MARKER)};
-export function startHandoff() { return { threadId: "thread", native: { label: MARKER }, link: "https://example.test/" + MARKER }; }
+export function startHandoff(request) { globalThis.__canaryHookUrl = request.hook?.url; return { threadId: "thread", native: { label: MARKER }, link: "https://example.test/" + MARKER }; }
 export function listThreads() { return { threads: ["listed", "other"].map(threadId => ({ threadId, title: "[" + MARKER + "] " + MARKER, native: { label: MARKER }, link: "https://example.test/" + MARKER })) }; }
 export function readHandoffStates(request) { return request.handoffs.map(h => ({ id: h.id, state: "ready", native: { label: MARKER }, title: MARKER, branch: MARKER })); }
 const person = { id: "person-" + MARKER, displayName: "Ana " + MARKER, email: MARKER + "@example.test" };
@@ -667,7 +667,7 @@ afterAll(async () => {
 });
 
 describe("the privacy canary", () => {
-  it("keeps handoff prompts, titles, native state, links and folders out of events", async () => {
+  it("keeps handoff prompts, titles, native state, links, folders and hook posts out of events", async () => {
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "handoff-canary-"));
     const folder = await api.addRepositoryFolder("handoff-project", folderPath);
     const from = mark();
@@ -700,7 +700,28 @@ describe("the privacy canary", () => {
           { id: started.id, state: "ready" },
         ]),
       );
+      // A tool's hook posts its own content, which Ajour never reads. A
+      // tool is no window, so it posts with the unstubbed fetch.
+      const hookUrl = (globalThis as { __canaryHookUrl?: string })
+        .__canaryHookUrl!;
+      const hook = await agentFetch(hookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hook_event_name: "Stop",
+          session_id: MARKER,
+          cwd: folderPath,
+          last_assistant_message: MARKER,
+        }),
+      });
+      expect(hook.status).toBe(204);
       await app.appApi.removeHandoff(started.id);
+      expect(
+        (await agentFetch(hookUrl, { method: "POST", body: MARKER })).status,
+      ).toBe(404);
+      const token = new URL(hookUrl).searchParams.get("token")!;
+      expect(JSON.stringify(api.events)).not.toContain(token);
+      expect(JSON.stringify(api.events)).not.toContain(started.id + "?");
       await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));
       const { offers } = await app.appApi.findHandoffThreads(
         "handoff-project",
@@ -735,6 +756,7 @@ describe("the privacy canary", () => {
       expect.arrayContaining([
         "api request handoff.start",
         "api request handoff.refresh",
+        "api request handoff.hook",
         "api request handoff.remove",
         "api request handoff.threads",
         "api plugin_operation handoff.threads",

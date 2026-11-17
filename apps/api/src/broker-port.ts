@@ -118,6 +118,11 @@ export interface BrokerCaller {
    * and is refused without it.
    */
   connectionId?: string;
+  /**
+   * A handoff start's hook URL (#726), which the host built. A `hook-url`
+   * argument is filled from it, and is refused without it.
+   */
+  hookUrl?: string;
   /** The operation's span, so each request event is its child. */
   traceparent?: string;
   /**

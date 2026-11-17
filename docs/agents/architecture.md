@@ -205,7 +205,8 @@ rules. A value the plugin passes for that slot is `invalid_request`; an
 operation without a connection, or an address that can't be read, is
 `connection_refused`. The manifest refuses the slot without
 `network.baseAddress` or a tool that uses a connection, and as the slot a
-conditional group tests. Folder
+conditional group tests. A `hook-url` slot is filled the same way from a
+start's hook URL (see Handoff hooks). Folder
 slots resolve repository ids through `FolderResolver.resolve`, which returns an
 absolute path or refuses. The server and process broker share the repository-folder
 resolver and its `protectedRepositoryFolders` roots. It rechecks canonical paths,
@@ -1390,6 +1391,87 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+## Handoff hooks
+
+A tool that supports hooks posts back when its thread changes, so the item's
+state moves within seconds instead of at the next check (#726, ADR 0020). The
+route, `POST /hooks/handoff/:id?token=…`, is the local API's third kind of
+caller, after the window (`/api`, window token) and agent clients
+(`/mcp/ajour`, bearer tokens).
+
+`apps/api/src/handoff-hooks.ts` owns the token, the URL, the limits and the
+scheduling. `Handoffs.start` makes the handoff's id and a token (32 random
+bytes, base64url) before it calls the plugin, and puts `hook: { url }` in
+`startHandoff`'s request. The plugin's code therefore receives the token in
+plaintext and could keep it, in the handoff's `native` for example; that falls
+under ADR 0010's exception for plugins that start processes. Ajour itself
+stores only the hash. `handoffHookUrl` builds the URL from the API's host
+(`127.0.0.1`, `localhost` or `[::1]`) and the port it listens on
+(`runtime.port`). Only a start the plugin accepts saves the record, with the
+token's SHA-256 in the state's `handoffHooks` map, apart from the records the
+window receives; older state files default it to empty. Removing the handoff
+removes the hash. Once the handoff has been done or gone for 24 hours
+(`shouldRefresh` false), its token is revoked in effect: no post is accepted.
+The hash is removed on the next post, on Remove, or when a refresh saves the
+handoff's state (`updateHandoffs` removes it before the update applies), so a
+manual or item-open refresh that brings the handoff back to working can't bring
+its token back. The next post also drops the handoff's rate counts. A revoked
+token never comes back. A failed start's event scrubs the hook URL and its token
+as it scrubs connection secrets.
+
+`serveRequest` in `server.ts` serves the route after the Host check and before
+the origin, CORS and window token checks, as it serves MCP. It refuses any
+Origin with 403 and sets no CORS header. Any method but POST, an unknown id,
+and a wrong, missing or revoked token all get the same empty 404. The token is
+compared as hashes with `timingSafeEqual`, against a stand-in hash when the id
+is unknown. Every post counts toward a global limit (120 a minute) before its
+token is checked; a valid one counts toward its handoff's (30 a minute). Over
+either it gets 429 with `Retry-After`, and nothing is scheduled. Counting
+before the check is a deliberate trade-off: a flood without a valid token never
+causes refresh work, but 120 bad posts a minute from any local process put
+every genuine hook on 429 too, and handoffs fall back to polling. A valid post
+reads its body only to discard it, never parsing it: over 1 MB
+(`MAX_HOOK_BODY_BYTES`, by `Content-Length` or while reading) it gets 413 and
+schedules nothing. Otherwise it gets 204 and schedules
+`Handoffs.refreshFromHook`: posts within one second make one refresh, and a
+post during a refresh makes one more after it. That refresh runs the plugin's
+`readHandoffStates` for that handoff alone, whatever the cadence, as a `system`
+`handoff.refresh` job. The body is never the state.
+
+A plugin hands the URL to a tool only through a declared command's `hook-url`
+argument, which the host fills, never the plugin. The process broker fills it
+only during `startHandoff`, from the caller's `hookUrl`, which the plugin host
+takes from the start's request; any other operation, or a start without a
+hook, is `hook_refused`, and a value the plugin passes is `invalid_request`.
+The broker checks the URL's shape again before filling it. The compact
+`{name:hook-url}` slot is the bare URL. The object form
+`{ "kind": "hook-url", "name": …, "template": … }` writes it at each `{url}` of
+a manifest literal, such as Claude Code's per-start
+`--settings {"hooks":{"Stop":[{"hooks":[{"type":"http","url":"{url}"}]}]}}`
+(`Stop`, `Notification` and `SessionEnd` accept `type: "http"` hooks;
+`SessionStart` doesn't). Access review shows the template with `<hook-url>` in
+place of the URL and says the command "Receives the address where the
+handoff's hooks tell Ajour its thread changed."; the template is part of the
+command's consent policy. A manifest refuses a `hook-url` slot without the
+handoff capability, and as the slot a conditional group tests. Windows
+Terminal's argument allowlist refuses a JSON template, so a terminal-mode start
+can't carry one there.
+
+A resumed thread (Open) gets no hook, since Ajour keeps only the hash. Each
+post is one `handoff.hook` request event (see `docs/logging-strategy.md`).
+
+Exposure (ADR 0020's Consequences). The token sits in the tool's command line,
+so other programs can read it: on Windows and macOS, programs running as the
+user; on Linux, every local user through `/proc/<pid>/cmdline` unless `/proc`
+has `hidepid`. Plugins are off on Linux today, so no token exists there until
+#626 turns them on. With the token, anyone can only trigger that handoff's
+refreshes, within the limits. The API port is fixed (8787 by default,
+`apps/desktop/electron/main.cjs`), and a detached thread outlives Ajour: while
+Ajour is closed, a local process that binds `127.0.0.1:8787` receives the
+hook's posts, the token and the tool's payload, which for Claude Code includes
+`session_id`, `transcript_path`, `cwd` and `last_assistant_message`. MCP
+bearer tokens share the port risk.
 
 ## Handoff templates
 

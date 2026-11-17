@@ -676,3 +676,68 @@ describe("a connection-url slot", () => {
     ).rejects.toMatchObject({ code: "connection_refused" });
   });
 });
+
+describe("a hook-url argument", () => {
+  const template =
+    '{"hooks":{"Stop":[{"hooks":[{"type":"http","url":"{url}"}]}]}}';
+  const start = {
+    ...manifest,
+    processes: {
+      executables: { claude: { names: ["claude"] } },
+      commands: [
+        {
+          id: "start",
+          executable: "claude",
+          args: [
+            "--settings",
+            { kind: "hook-url" as const, name: "hook", template },
+            "--session-id",
+            "{session:id}",
+          ],
+          mode: "detached" as const,
+        },
+      ],
+    },
+  };
+  const echo = async (request: unknown) => ({
+    exitCode: 0,
+    stdout: JSON.stringify(request),
+    stderr: "",
+  });
+  const hookUrl = "http://127.0.0.1:8787/hooks/handoff/h?token=t";
+
+  it("is filled with the start's hook URL at each {url} before processRun sees it", async () => {
+    const fake = createFakeAjour({
+      manifest: start,
+      hookUrl,
+      processRun: echo,
+    });
+    const result = await fake.process.run({
+      command: "start",
+      args: { session: "s" },
+    });
+    if (result.started) throw new Error("Expected captured output");
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: "start",
+      args: { session: "s", hook: template.replace("{url}", hookUrl) },
+    });
+  });
+
+  it("refuses a value the plugin passes for it, and a command outside a start", async () => {
+    const fake = createFakeAjour({
+      manifest: start,
+      hookUrl,
+      processRun: echo,
+    });
+    await expect(
+      fake.process.run({
+        command: "start",
+        args: { session: "s", hook: "http://elsewhere.test" },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    const outside = createFakeAjour({ manifest: start, processRun: echo });
+    await expect(
+      outside.process.run({ command: "start", args: { session: "s" } }),
+    ).rejects.toMatchObject({ code: "hook_refused" });
+  });
+});

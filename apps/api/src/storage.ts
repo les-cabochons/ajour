@@ -25,6 +25,7 @@ import {
   updateHandoff,
   removeHandoff,
   handoffSummary,
+  shouldRefresh,
   type HostHandoffUpdate,
 } from "./handoff-state.ts";
 import {
@@ -478,6 +479,11 @@ interface AppApiStateV8 {
   /** The connection each handoff tool hands off through, by plugin id. */
   handoffToolConnections: Record<string, HandoffToolConnections>;
   handoffs: Handoff[];
+  /**
+   * The SHA-256 hash of each handoff's hook token, by handoff id (#726).
+   * Kept apart from the records, which the window receives.
+   */
+  handoffHooks: Record<string, { tokenHash: string }>;
   /** Listed threads the user said aren't an item's: "Not this one", per item. */
   handoffThreadDismissals: HandoffThreadDismissal[];
   repositoryFolders: RepositoryFolder[];
@@ -654,6 +660,7 @@ function createDefaultState(): AppApiState {
     handoffTemplates: {},
     handoffToolConnections: {},
     handoffs: [],
+    handoffHooks: {},
     handoffThreadDismissals: [],
     repositoryFolders: [],
     version: STATE_VERSION,
@@ -1118,6 +1125,21 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         return parsed.success ? [parsed.data] : [];
       },
     ),
+    handoffHooks: Object.fromEntries(
+      Object.entries(
+        raw.handoffHooks &&
+          typeof raw.handoffHooks === "object" &&
+          !Array.isArray(raw.handoffHooks)
+          ? raw.handoffHooks
+          : {},
+      ).flatMap(([id, value]) =>
+        !UNSAFE_KEYS.has(id) &&
+        typeof value?.tokenHash === "string" &&
+        /^[0-9a-f]{64}$/.test(value.tokenHash)
+          ? [[id, { tokenHash: value.tokenHash }]]
+          : [],
+      ),
+    ),
     handoffThreadDismissals: (Array.isArray(raw.handoffThreadDismissals)
       ? raw.handoffThreadDismissals
       : []
@@ -1447,32 +1469,91 @@ export class AppApiStorage {
   async listHandoffs(): Promise<Handoff[]> {
     return structuredClone((await this.readState()).handoffs);
   }
-  async addHandoff(record: Handoff): Promise<void> {
+  /** Saves a started handoff, with its hook token's hash when it has one. */
+  async addHandoff(record: Handoff, hookTokenHash?: string): Promise<void> {
     const parsed = handoffRecordSchema.parse(record);
-    await this.mutate((state) => ({
-      nextState: { ...state, handoffs: [...state.handoffs, parsed] },
-      result: undefined,
-    }));
-  }
-  async updateHandoffs(
-    updates: HostHandoffUpdate[],
-    now: number,
-  ): Promise<void> {
-    const byId = new Map(updates.map((value) => [value.id, value]));
     await this.mutate((state) => ({
       nextState: {
         ...state,
-        handoffs: state.handoffs.map((record) => {
-          const update = byId.get(record.id);
-          return update ? updateHandoff(record, update, now) : record;
-        }),
+        handoffs: [...state.handoffs, parsed],
+        handoffHooks: hookTokenHash
+          ? { ...state.handoffHooks, [parsed.id]: { tokenHash: hookTokenHash } }
+          : state.handoffHooks,
       },
       result: undefined,
     }));
   }
+  /** A handoff and its hook token's hash, while both exist. */
+  async findHandoffHook(
+    id: string,
+  ): Promise<{ record: Handoff; tokenHash: string } | undefined> {
+    const state = await this.readState();
+    const hook = Object.hasOwn(state.handoffHooks, id)
+      ? state.handoffHooks[id]
+      : undefined;
+    const record = state.handoffs.find((h) => h.id === id);
+    return hook && record
+      ? { record: structuredClone(record), tokenHash: hook.tokenHash }
+      : undefined;
+  }
+  /** Forgets a handoff's hook token for good. */
+  async revokeHandoffHook(id: string): Promise<void> {
+    if (!Object.hasOwn((await this.readState()).handoffHooks, id)) return;
+    await this.mutate((state) => {
+      const { [id]: _revoked, ...handoffHooks } = state.handoffHooks;
+      return { nextState: { ...state, handoffHooks }, result: undefined };
+    });
+  }
+  /**
+   * Saves refreshed states. A handoff done or gone for 24 hours has its hook
+   * token revoked first, so no refresh can bring the token back with it.
+   */
+  async updateHandoffs(
+    updates: HostHandoffUpdate[],
+    now: number,
+    /** When the refresh is saved, after its plugin answered: judges expiry. */
+    savedAt = now,
+  ): Promise<void> {
+    const byId = new Map(updates.map((value) => [value.id, value]));
+    await this.mutate((state) => {
+      const expired = new Set(
+        state.handoffs
+          .filter(
+            (record) =>
+              byId.has(record.id) &&
+              !shouldRefresh(record, Math.max(now, savedAt)),
+          )
+          .map((record) => record.id),
+      );
+      return {
+        nextState: {
+          ...state,
+          handoffs: state.handoffs.map((record) => {
+            const update = byId.get(record.id);
+            return update ? updateHandoff(record, update, now) : record;
+          }),
+          handoffHooks: expired.size
+            ? Object.fromEntries(
+                Object.entries(state.handoffHooks).filter(
+                  ([id]) => !expired.has(id),
+                ),
+              )
+            : state.handoffHooks,
+        },
+        result: undefined,
+      };
+    });
+  }
   async removeHandoff(id: string): Promise<void> {
     await this.mutate((state) => ({
-      nextState: { ...state, handoffs: removeHandoff(state.handoffs, id) },
+      nextState: {
+        ...state,
+        handoffs: removeHandoff(state.handoffs, id),
+        // Removing a handoff revokes its hook token.
+        handoffHooks: Object.fromEntries(
+          Object.entries(state.handoffHooks).filter(([key]) => key !== id),
+        ),
+      },
       result: undefined,
     }));
   }

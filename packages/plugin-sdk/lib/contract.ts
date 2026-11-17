@@ -299,11 +299,21 @@ export type PluginManifest = {
               id: string;
               args: (
                 | string
+                | {
+                    name: string;
+                    kind: "hook-url";
+                    template?: string | undefined;
+                  }
                 | { values: string[]; name: string; kind: "enum" }
                 | { value: string; kind: "literal" }
                 | {
                     args: (
                       | string
+                      | {
+                          name: string;
+                          kind: "hook-url";
+                          template?: string | undefined;
+                        }
                       | { values: string[]; name: string; kind: "enum" }
                       | { value: string; kind: "literal" }
                     )[];
@@ -416,11 +426,17 @@ export type PluginProcesses = {
         id: string;
         args: (
           | string
+          | { name: string; kind: "hook-url"; template?: string | undefined }
           | { values: string[]; name: string; kind: "enum" }
           | { value: string; kind: "literal" }
           | {
               args: (
                 | string
+                | {
+                    name: string;
+                    kind: "hook-url";
+                    template?: string | undefined;
+                  }
                 | { values: string[]; name: string; kind: "enum" }
                 | { value: string; kind: "literal" }
               )[];
@@ -443,6 +459,7 @@ export type PluginProcesses = {
 export type DeclaredCommand = {
   id: string;
   args: (
+    | { name: string; kind: "hook-url"; template?: string | undefined }
     | { values: string[]; name: string; kind: "enum" }
     | { kind: "literal"; value: string; name?: undefined }
     | {
@@ -453,13 +470,15 @@ export type DeclaredCommand = {
           | "text"
           | "ref"
           | "https-url"
-          | "connection-url";
+          | "connection-url"
+          | "hook-url";
         name: string;
         value?: undefined;
       }
     | { value: string; kind: "literal" }
     | {
         args: (
+          | { name: string; kind: "hook-url"; template?: string | undefined }
           | { values: string[]; name: string; kind: "enum" }
           | { kind: "literal"; value: string; name?: undefined }
           | {
@@ -470,7 +489,8 @@ export type DeclaredCommand = {
                 | "text"
                 | "ref"
                 | "https-url"
-                | "connection-url";
+                | "connection-url"
+                | "hook-url";
               name: string;
               value?: undefined;
             }
@@ -1575,6 +1595,7 @@ export type StartHandoffRequest = {
   folder: { id: string; name: string };
   settings: Record<string, string | number | boolean>;
   branch?: string | undefined;
+  hook?: { url: string } | undefined;
 };
 
 export type StartHandoffResult = {

@@ -77,6 +77,7 @@ export type ProcessReason =
   | "undeclared"
   | "folder_refused"
   | "connection_refused"
+  | "hook_refused"
   | "executable_missing"
   | "spawn_refused"
   | "concurrency"
@@ -176,6 +177,32 @@ const CONNECTION_URL_METHODS = new Set([
 const refuse = (reason: ProcessReason): never => {
   throw new ProcessBrokerError(reason);
 };
+/**
+ * The shape of a hook URL the host builds (`handoffHookUrl`): loopback,
+ * the API's port, a handoff id and a base64url token. Checked again here,
+ * since a template puts it inside the plugin author's JSON or TOML.
+ */
+const HOOK_URL =
+  /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d{1,5}\/hooks\/handoff\/[A-Za-z0-9_-]{1,200}\?token=[A-Za-z0-9_-]{43}$/;
+/**
+ * What a `hook-url` argument gets: the start's hook URL, alone or at each
+ * of the template's `{url}`. Only `startHandoff` has one, from the host; the
+ * plugin never passes it.
+ */
+function hookArgument(
+  template: string | undefined,
+  caller: BrokerCaller,
+): string {
+  if (
+    caller.method !== "startHandoff" ||
+    !caller.hookUrl ||
+    !HOOK_URL.test(caller.hookUrl)
+  )
+    return refuse("hook_refused");
+  return template
+    ? template.replaceAll("{url}", () => caller.hookUrl!)
+    : caller.hookUrl;
+}
 export class ProcessBroker implements ProcessBrokerPort {
   private stopping = false;
   private readonly opens = new Map<string, number[]>();
@@ -421,6 +448,8 @@ export class ProcessBroker implements ProcessBrokerPort {
   ) {
     if (arg.kind === "literal") return arg.value;
     if (arg.kind === "connection-url") return this.connectionUrl(caller);
+    if (arg.kind === "hook-url")
+      return hookArgument("template" in arg ? arg.template : undefined, caller);
     const projectId = caller.projectId;
     const raw = values[arg.name];
     if (typeof raw !== "string" && typeof raw !== "number")
@@ -689,7 +718,12 @@ export class ProcessBroker implements ProcessBrokerPort {
         // The host fills a connection-url slot; the plugin never names it.
         const slots = command.args
           .flatMap((a) => ("if" in a ? a.args : [a]))
-          .filter((a) => a.kind !== "literal" && a.kind !== "connection-url")
+          .filter(
+            (a) =>
+              a.kind !== "literal" &&
+              a.kind !== "connection-url" &&
+              a.kind !== "hook-url",
+          )
           .map((a) => (a as { name: string }).name);
         if (Object.keys(request.args).some((k) => !slots.includes(k)))
           return refuse("invalid_request");

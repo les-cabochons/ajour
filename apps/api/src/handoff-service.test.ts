@@ -566,3 +566,113 @@ it("fills persisted templates at start, preserves overrides and bounds titles be
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("judges a hook token's expiry when the refresh is saved, not when it began", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-hook-boundary-"));
+  try {
+    const storage = new AppApiStorage(path.join(root, "state.json"));
+    const day = 24 * 3_600_000;
+    let now = 10;
+    const service = new Handoffs({
+      storage,
+      now: () => now,
+      onChange: () => undefined,
+      plugins: {
+        async listPlugins() {
+          return [
+            { id: "p", capabilities: { handoff: { tools: [{ id: "t" }] } } },
+          ];
+        },
+        async startHandoff() {
+          return { threadId: "x", native: {} };
+        },
+        async readHandoffStates(_plugin, request) {
+          // The plugin answers two seconds later, past the day.
+          now += 2000;
+          return request.handoffs.map((h) => ({
+            id: h.id,
+            state: "working" as const,
+            native: {},
+          }));
+        },
+      },
+    });
+    const { startHandoff } = await import("./handoff-state.ts");
+    await storage.addHandoff(
+      startHandoff(
+        {
+          id: "x",
+          pluginId: "p",
+          toolId: "t",
+          workItemId: "i",
+          projectId: "p",
+          folderId: "f",
+          title: "Title",
+        },
+        { threadId: "x", native: {} },
+        1,
+      ),
+      "a".repeat(64),
+    );
+    await storage.updateHandoffs(
+      [{ id: "x", state: "done", native: {}, paused: undefined }],
+      10,
+    );
+    // The refresh begins a second inside the day.
+    now = 10 + day - 1000;
+    await service.refresh("x");
+    expect(
+      (await storage.listHandoffs()).find((h) => h.id === "x")?.state,
+    ).toBe("working");
+    expect(await storage.findHandoffHook("x")).toBeUndefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("revokes a hook token when a refresh updates a handoff done or gone for 24 hours", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-hook-expiry-"));
+  try {
+    const storage = new AppApiStorage(path.join(root, "state.json"));
+    const { startHandoff } = await import("./handoff-state.ts");
+    const base = {
+      pluginId: "p",
+      toolId: "t",
+      workItemId: "i",
+      projectId: "p",
+      folderId: "f",
+      title: "Title",
+    };
+    const hash = "a".repeat(64);
+    for (const id of ["recent", "old"])
+      await storage.addHandoff(
+        startHandoff({ ...base, id }, { threadId: id, native: {} }, 1),
+        hash,
+      );
+    const update = (id: string, state: "done" | "gone" | "working") => ({
+      id,
+      state,
+      native: {},
+      paused: undefined,
+    });
+    const hour = 3_600_000;
+    await storage.updateHandoffs(
+      [update("recent", "done"), update("old", "gone")],
+      10,
+    );
+
+    // Within the day a done thread may start again, and keeps its token.
+    await storage.updateHandoffs([update("recent", "working")], 10 + 23 * hour);
+    expect(await storage.findHandoffHook("recent")).toBeDefined();
+
+    // After it, the update that would bring it back revokes the token first.
+    await storage.updateHandoffs([update("old", "working")], 10 + 25 * hour);
+    expect(await storage.findHandoffHook("old")).toBeUndefined();
+    expect(
+      (await storage.listHandoffs()).find((h) => h.id === "old")?.state,
+    ).toBe("working");
+    expect(await storage.findHandoffHook("recent")).toBeDefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
