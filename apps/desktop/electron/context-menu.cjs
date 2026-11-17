@@ -272,6 +272,7 @@ const OBJECT_ACTION_IDS = new Set([
   "archive",
   "assign-shortcut",
   "change-source-state",
+  "choose-handoff-tools",
   "choose-project",
   "continue",
   "copy",
