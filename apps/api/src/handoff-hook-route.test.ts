@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   createAppApiServer,
@@ -186,9 +186,10 @@ it("refreshes that one handoff through the plugin after a valid post, without tr
 
   const answer = await post(url);
   expect(answer.status).toBe(204);
-  await settle();
-
-  expect(await stateOf(id)).toBe("needs-you");
+  // The refresh runs after the debounce, however slow the runner.
+  await vi.waitFor(async () => expect(await stateOf(id)).toBe("needs-you"), {
+    timeout: 5_000,
+  });
   expect(reads.__hookReads).toBe(1);
   expect(hookEvents()).toEqual([
     expect.objectContaining({
@@ -253,8 +254,7 @@ it("revokes the token 24 hours after the handoff is done or gone", async () => {
   // Within the day, a done thread can still say it started again.
   clock += 23 * 3_600_000;
   expect((await post(url)).status).toBe(204);
-  await settle();
-  expect(reads.__hookReads).toBe(1);
+  await vi.waitFor(() => expect(reads.__hookReads).toBe(1), { timeout: 5_000 });
 
   clock += 2 * 3_600_000;
   expect((await post(url)).status).toBe(404);
@@ -269,11 +269,12 @@ it("answers a flood with 429 and does no extra refresh work for it", async () =>
   const statuses: number[] = [];
   for (let i = 0; i < 10; i++) statuses.push((await post(url)).status);
   expect(statuses).toEqual([204, 204, 204, 429, 429, 429, 429, 429, 429, 429]);
-  await settle(120);
-
   // Accepted posts within the debounce make one refresh.
+  await vi.waitFor(async () => expect(await stateOf(id)).toBe("needs-you"), {
+    timeout: 5_000,
+  });
+  await settle(120);
   expect(reads.__hookReads).toBe(1);
-  expect(await stateOf(id)).toBe("needs-you");
   expect(
     hookEvents().filter((e) => e.handoff?.hook === "rate_limited"),
   ).toHaveLength(7);
