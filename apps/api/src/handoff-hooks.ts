@@ -134,7 +134,8 @@ export class HandoffHooks {
       return { result: "rate_limited", tool: found.record.toolId };
     }
     this.perHandoff.set(id, [...recent, now]);
-    if (!(await admit())) return { result: "dropped", tool: found.record.toolId };
+    if (!(await admit()))
+      return { result: "dropped", tool: found.record.toolId };
     this.schedule(id);
     return { result: "accepted", tool: found.record.toolId };
   }

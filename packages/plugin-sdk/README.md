@@ -284,7 +284,7 @@ of case or .exe/.cmd/.bat/.com suffix. Interpreters such as node and python are
 allowed, but Access marks them "runs code it is given: as wide as Accept everything". Commands reference a declared key and have
 unique IDs. Each argument is one argv element. Strings are literals unless the
 whole string is a slot such as `{title:text}`. Slot kinds are `text`, `id`, `ref`,
-`number`, `https-url`, `folder` and `connection-url`. An enum is an object such as
+`number`, `https-url`, `folder`, `connection-url` and `hook-url`. An enum is an object such as
 `{"kind":"enum","name":"format","values":["json","text"]}`. Values use `[A-Za-z0-9_./:=+@-]`, cannot start with `-` and cannot repeat.
 For a literal containing braces, use `{"kind":"literal","value":"{literal}"}`.
 
@@ -307,6 +307,19 @@ The host fills a `connection-url` slot itself, from the base address of the
 connection a handoff operation runs through; the plugin never passes it. It
 needs `network.baseAddress` and a handoff tool with `connection: "required"`,
 and it can't be the slot a conditional group tests.
+The host fills a `hook-url` slot itself too, with the hook URL of the
+handoff being started (`request.hook.url`), only during `startHandoff`: a tool's
+hook posts there when its thread changes, and Ajour then refreshes that
+handoff through `readHandoffStates`. Ajour never reads the post's body. The
+compact `{hook:hook-url}` is the bare URL. To pass it inside a fixed text, such
+as Claude Code's per-start settings, use the object form with a `template`
+holding `{url}` where the URL goes, once or more:
+`{"kind":"hook-url","name":"hook","template":"{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"http\",\"url\":\"{url}\"}]}]}}"}`
+after a `--settings` literal. Access review shows the template, so changing it
+needs approval again. Never pass such settings through a `text` slot: Claude
+Code's settings can declare hooks that run commands. A `hook-url` slot needs the
+handoff capability, can't be the slot a conditional group tests, and fails with
+`hook_refused` outside a start that has a hook.
 `DeclaredCommand` exports the parsed host contract with typed slots and groups.
 
 Schemes must be lowercase RFC 3986 names without a colon. Ajour refuses `http`,
@@ -357,7 +370,9 @@ declare and an `{ executable, argv }` request from a manifest without
 operation's connection address: the fake fills each `connection-url` slot with
 it before `processRun` sees the request, refuses a value the plugin passes for
 one with `invalid_request`, and refuses the command with `connection_refused`
-when no address is supplied.
+when no address is supplied. Its `hookUrl` option does the same for
+`hook-url` arguments, filling each template's `{url}`, and refuses the command
+with `hook_refused` when no hook URL is supplied.
 
 The user must turn the plugin on and approve its declared commands. Undeclared
 commands are refused. Detached and terminal commands follow the launch contract below. A process runs as
@@ -456,7 +471,7 @@ session id in `resume.args`. Access review lists each tool that uses a
 connection, and an update that makes a tool use one needs approval again. Detection returns
 `{ tools: [{ id, available, version?, reason? }] }`. A start receives the tool,
 folder id and name, prompt, title, optional branch, item key and URL, and
-settings. It returns `{ threadId, link?, resume?, native }`. Throw an error to
+settings, plus `hook: { url }` for a `hook-url` slot. It returns `{ threadId, link?, resume?, native }`. Throw an error to
 refuse a start; Ajour returns the reason and records no handoff.
 
 `native` is an opaque JSON object, up to 4 KB serialized as UTF-8, for the tool's own status and

@@ -8,7 +8,8 @@ import {
 } from "../plugin-access.ts";
 import { startHandoffRequestSchema } from "../handoffs.ts";
 
-const TEMPLATE = '{"hooks":{"Stop":[{"hooks":[{"type":"http","url":"{url}"}]}]}}';
+const TEMPLATE =
+  '{"hooks":{"Stop":[{"hooks":[{"type":"http","url":"{url}"}]}]}}';
 
 /** A Claude Code-like plugin that passes its hook in a per-start settings flag. */
 function claudeManifest(template = TEMPLATE) {
@@ -23,7 +24,12 @@ function claudeManifest(template = TEMPLATE) {
     capabilities: {
       handoff: {
         tools: [
-          { id: "claude", label: "Claude Code", iconSvg: "<svg/>", settings: [] },
+          {
+            id: "claude",
+            label: "Claude Code",
+            iconSvg: "<svg/>",
+            settings: [],
+          },
         ],
       },
     },

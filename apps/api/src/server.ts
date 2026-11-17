@@ -5054,7 +5054,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     }
     if (result === "rate_limited") {
       unit.refuse("rate_limited");
-      response.writeHead(429, { "Cache-Control": "no-store", "Retry-After": "60" });
+      response.writeHead(429, {
+        "Cache-Control": "no-store",
+        "Retry-After": "60",
+      });
       response.end();
       return;
     }

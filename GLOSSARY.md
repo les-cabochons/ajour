@@ -310,6 +310,10 @@ _Avoid_: Agent run, agent session, job
 To start a thread for a backlog item in a coding tool, from the item's page, its row menu or the command palette. The verb is two words ("Hand off to T3 Code"); the thing it makes is a handoff.
 _Avoid_: Send to agent, delegate, dispatch
 
+**Handoff hook**:
+The address a coding tool posts to when its thread stops, needs the user or ends, so Ajour refreshes that handoff at once instead of at its next check. Each handoff has its own, on this computer only; a post says only "look again", never what the state is (ADR 0020).
+_Avoid_: Webhook, callback, push
+
 **Process broker**:
 The part of Ajour that starts a process for a plugin, such as `t3 thread start`, after checking the plugin's access, its gates and its command mode. A plugin never starts a process itself (ADR 0019).
 _Avoid_: Shell, launcher, runner (the agent runner is something else)
