@@ -209,3 +209,172 @@ it("bounds a thread listing's request and answer as a state read's", () => {
   ])
     expect(listThreadsResultSchema.safeParse(bad).success).toBe(false);
 });
+
+import {
+  handoffStateSchema,
+  handoffToolFeatures,
+  readHandoffStatesResultSchema,
+} from "../handoffs.ts";
+import { declaresHookUrl } from "../plugin-api-4.ts";
+it("lets a tool say it doesn't follow its threads' state, following by default", () => {
+  const manifest = (tool: Record<string, unknown>) => ({
+    ...jiraManifest(),
+    capabilities: {
+      handoff: {
+        tools: [
+          { id: "t3", label: "T3", iconSvg: "<svg/>", settings: [], ...tool },
+        ],
+      },
+    },
+  });
+  const plain = pluginApi4ManifestSchema.parse(manifest({}));
+  expect(plain.capabilities.handoff?.tools[0]?.followsState).toBe(true);
+  const blind = pluginApi4ManifestSchema.parse(
+    manifest({ followsState: false }),
+  );
+  expect(blind.capabilities.handoff?.tools[0]?.followsState).toBe(false);
+  expect(
+    pluginApi4ManifestSchema.safeParse(manifest({ followsState: "no" }))
+      .success,
+  ).toBe(false);
+});
+
+it("keeps started a state only Ajour gives, never one a tool reports", () => {
+  expect(handoffStateSchema.safeParse("started").success).toBe(true);
+  expect(
+    readHandoffStatesResultSchema.safeParse([
+      { id: "h1", state: "started", native: {} },
+    ]).success,
+  ).toBe(false);
+  expect(
+    readHandoffStatesResultSchema.safeParse([
+      { id: "h1", state: "working", native: {} },
+    ]).success,
+  ).toBe(true);
+});
+
+it("derives each tool's features from what it declares", () => {
+  expect(handoffToolFeatures({ followsState: true })).toEqual([
+    "starts-threads",
+    "follows-state",
+  ]);
+  expect(
+    handoffToolFeatures({
+      followsState: true,
+      listsThreads: true,
+      hooks: true,
+    }),
+  ).toEqual([
+    "starts-threads",
+    "follows-state",
+    "finds-threads",
+    "updates-within-seconds",
+  ]);
+  // Only a tool that says it posts hooks updates within seconds.
+  expect(
+    handoffToolFeatures({ followsState: true, listsThreads: true }),
+  ).toEqual(["starts-threads", "follows-state", "finds-threads"]);
+  expect(
+    handoffToolFeatures({ followsState: false, listsThreads: true }),
+  ).toEqual(["starts-threads", "finds-threads"]);
+  expect(handoffToolFeatures({})).toEqual(["starts-threads", "follows-state"]);
+});
+
+it("lets a tool say it posts hooks only with a hook-url command and while it follows state", () => {
+  const hookCommand = {
+    id: "start",
+    executable: "claude",
+    args: ["--hook", "{hook:hook-url}"],
+    mode: "detached" as const,
+  };
+  const plainCommand = { ...hookCommand, args: ["-p", "{prompt:text}"] };
+  const manifest = (
+    tools: Record<string, unknown>[],
+    commands: unknown[] = [hookCommand],
+  ) => ({
+    ...jiraManifest(),
+    capabilities: {
+      handoff: {
+        tools: tools.map((tool, index) => ({
+          id: `tool-${index}`,
+          label: "Tool",
+          iconSvg: "<svg/>",
+          settings: [],
+          ...tool,
+        })),
+      },
+    },
+    processes: {
+      executables: { claude: { names: ["claude"] } },
+      commands,
+    },
+  });
+  const parsed = pluginApi4ManifestSchema.parse(
+    manifest([{ hooks: true }, {}]),
+  );
+  expect(parsed.capabilities.handoff?.tools.map((t) => t.hooks)).toEqual([
+    true,
+    false,
+  ]);
+  const plainHooks = pluginApi4ManifestSchema.safeParse(
+    manifest([{ hooks: true }], [plainCommand]),
+  );
+  expect(plainHooks.success).toBe(false);
+  expect(plainHooks.error?.issues[0]).toMatchObject({
+    path: ["capabilities", "handoff", "tools", 0, "hooks"],
+    message:
+      'The handoff tool "tool-0" posts hooks, so the plugin needs a command with a hook-url slot.',
+  });
+  const noProcesses = pluginApi4ManifestSchema.safeParse({
+    ...manifest([{ hooks: true }]),
+    processes: undefined,
+  });
+  expect(noProcesses.success).toBe(false);
+  const blind = pluginApi4ManifestSchema.safeParse(
+    manifest([{ hooks: true, followsState: false }]),
+  );
+  expect(blind.success).toBe(false);
+  expect(blind.error?.issues[0]).toMatchObject({
+    path: ["capabilities", "handoff", "tools", 0, "hooks"],
+    message:
+      'The handoff tool "tool-0" doesn\'t follow state, so its hooks would never be read.',
+  });
+  expect(
+    pluginApi4ManifestSchema.safeParse(manifest([{ hooks: "yes" }])).success,
+  ).toBe(false);
+});
+
+it("tells whether a plugin declares a command that receives a hook URL", () => {
+  const command = (args: unknown[]) => ({
+    id: "start",
+    executable: "claude",
+    args,
+    mode: "detached" as const,
+  });
+  const processes = (args: unknown[]) =>
+    pluginApi4ManifestSchema.parse({
+      ...jiraManifest(),
+      capabilities: {
+        handoff: {
+          tools: [{ id: "t3", label: "T3", iconSvg: "<svg/>", settings: [] }],
+        },
+      },
+      processes: {
+        executables: { claude: { names: ["claude"] } },
+        commands: [command(args)],
+      },
+    });
+  expect(declaresHookUrl(processes(["-p", "{prompt:text}"]))).toBe(false);
+  expect(declaresHookUrl(processes(["--hook", "{hook:hook-url}"]))).toBe(true);
+  expect(
+    declaresHookUrl(
+      processes([
+        "--settings",
+        { kind: "hook-url", name: "hook", template: '{"url":"{url}"}' },
+      ]),
+    ),
+  ).toBe(true);
+  expect(declaresHookUrl(pluginApi4ManifestSchema.parse(jiraManifest()))).toBe(
+    false,
+  );
+});

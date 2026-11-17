@@ -19,6 +19,8 @@ export function startHandoff(
   >,
   result: StartHandoffResult,
   now: number,
+  /** False for a tool that can't report its thread's state: `started`. */
+  followsState = true,
 ): Handoff {
   return {
     ...input,
@@ -26,18 +28,20 @@ export function startHandoff(
     startedAt: now,
     checkedAt: now,
     changedAt: now,
-    state: "working",
+    state: followsState ? "working" : "started",
     history: [],
   };
 }
 /**
  * A handoff for a thread the tool listed and the user linked to an item.
- * Ajour didn't start it, so its state is unknown until its first refresh.
+ * Ajour didn't start it, so its state is unknown until its first refresh,
+ * or `started` for good when its tool doesn't report state.
  */
 export function adoptHandoff(
   input: Pick<Handoff, "id" | "workItemId" | "projectId">,
   thread: ListedHandoffThread,
   now: number,
+  followsState = true,
 ): Handoff {
   return {
     ...input,
@@ -53,12 +57,14 @@ export function adoptHandoff(
     startedAt: now,
     checkedAt: now,
     changedAt: now,
-    state: "unknown",
+    state: followsState ? "unknown" : "started",
     history: [],
   };
 }
-// Availability belongs to the host, never to a plugin's update contract.
-export type HostHandoffUpdate = HandoffUpdate & Pick<Handoff, "paused">;
+// Availability and `started` belong to the host, never to a plugin's update
+// contract.
+export type HostHandoffUpdate = Omit<HandoffUpdate, "state"> &
+  Pick<Handoff, "paused" | "state">;
 
 export function updateHandoff(
   record: Handoff,
@@ -83,6 +89,12 @@ export function updateHandoff(
 export function removeHandoff(records: Handoff[], id: string): Handoff[] {
   return records.filter((record) => record.id !== id);
 }
+/**
+ * Whether Ajour may still read the handoff's state on its own, on the tick
+ * or for a hook: not once it has been done or gone for a day. Whether its
+ * tool reports state at all is the tool's to say, at each check
+ * (`followsState` on the tool), not the record's.
+ */
 export function shouldRefresh(record: Handoff, now: number): boolean {
   return !(
     ["done", "gone"].includes(record.state) &&

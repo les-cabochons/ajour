@@ -267,6 +267,10 @@ export type PluginModule = {
   startHandoff?(
     ...args: HandoffArguments<StartHandoffRequest>
   ): Awaitable<StartHandoffResult>;
+  /**
+   * Ajour never calls it for a tool with `followsState: false`, so a plugin
+   * whose tools all set it may leave it out.
+   */
   readHandoffStates?(
     ...args: HandoffArguments<ReadHandoffStatesRequest>
   ): Awaitable<ReadHandoffStatesResult>;

@@ -50,6 +50,8 @@ interface HandoffTool {
   label?: string;
   connection?: "required" | "none";
   listsThreads?: boolean;
+  /** False for a tool that can only start a thread; true when absent. */
+  followsState?: boolean;
 }
 
 interface Options {
@@ -74,6 +76,10 @@ interface Options {
       projectId: string,
       connection?: HandoffConnection,
     ): Promise<StartHandoffResult>;
+    /**
+     * Never called for a tool with `followsState: false`, so a plugin whose
+     * tools all have it may leave the export out.
+     */
     readHandoffStates(
       pluginId: string,
       request: ReadHandoffStatesRequest,
@@ -233,9 +239,12 @@ export class Handoffs {
         "The prompt template produces an empty prompt for this item. Edit the prompt template.",
       );
     // The id and hook token exist before the start, so the tool can be
-    // given the URL; only a start that succeeds keeps them.
+    // given the URL; only a start that succeeds keeps them. A tool that
+    // doesn't follow state gets none: a hook only makes Ajour read state.
     const id = randomUUID();
-    const hook = this.options.hookUrl ? createHookToken() : undefined;
+    const follows = tool.followsState !== false;
+    const hook =
+      this.options.hookUrl && follows ? createHookToken() : undefined;
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
@@ -276,6 +285,7 @@ export class Handoffs {
       },
       result,
       this.now(),
+      follows,
     );
     await this.options.storage.addHandoff(record, hook?.tokenHash);
     await this.options.storage
@@ -554,6 +564,7 @@ export class Handoffs {
     );
     if (linked)
       throw new HandoffRefused("This thread is already linked to an item.");
+    const follows = tool.followsState !== false;
     const record = adoptHandoff(
       {
         id: randomUUID(),
@@ -562,10 +573,11 @@ export class Handoffs {
       },
       thread,
       this.now(),
+      follows,
     );
     await this.options.storage.addHandoff(record);
     await this.publish();
-    await this.refresh(record.id);
+    if (follows) await this.refresh(record.id);
     return (
       (await this.options.storage.listHandoffs()).find(
         (h) => h.id === record.id,
@@ -606,6 +618,21 @@ export class Handoffs {
     } finally {
       this.ticking = false;
     }
+  }
+  /**
+   * Why the user can't refresh this handoff, if so: its tool doesn't report
+   * state now, whatever the record's state, so the card offers no Refresh.
+   */
+  async refreshRefusal(id: string): Promise<string | undefined> {
+    const record = (await this.options.storage.listHandoffs()).find(
+      (h) => h.id === id,
+    );
+    if (!record) return undefined;
+    const tool = (await this.options.plugins.listPlugins())
+      .find((p) => p.id === record.pluginId)
+      ?.capabilities.handoff?.tools.find((t) => t.id === record.toolId);
+    if (tool?.followsState !== false) return undefined;
+    return `${tool.label ?? record.toolId} doesn't report progress here; open it there to follow it.`;
   }
   async refresh(id?: string, automatic = false) {
     return this.refreshRecords(
@@ -653,6 +680,8 @@ export class Handoffs {
     trigger: "system" | "user" = automatic ? "system" : "user",
   ) {
     const now = this.now();
+    // Started handoffs are checked too: their tool may follow state again,
+    // and they pause like any other when the plugin or tool goes.
     const records = (await this.options.storage.listHandoffs()).filter(
       (h) =>
         selected(h) &&
@@ -748,6 +777,24 @@ export class Handoffs {
             batch.every((h) => h.paused?.reason === reason)
           )
             return;
+          if (!reason && tool?.followsState === false) {
+            // The tool doesn't follow state now, whatever it did when these
+            // started: nothing is read, and they show Started from now on.
+            // One already Started has nothing to do.
+            const updates = batch
+              .filter((h) => h.state !== "started" || h.paused)
+              .map((h) => ({
+                id: h.id,
+                state: "started" as const,
+                native: h.native,
+                paused: undefined,
+              }));
+            if (!updates.length) return;
+            unit = openUnit();
+            await this.options.storage.updateHandoffs(updates, now, this.now());
+            await this.publish();
+            return;
+          }
           unit = openUnit();
           if (reason) {
             const updates = batch
@@ -784,7 +831,24 @@ export class Handoffs {
             first.projectId,
             ...(connection ? [connection] : []),
           );
-          await this.options.storage.updateHandoffs(updates, now, this.now());
+          // A started handoff whose tool follows state again shows Unknown
+          // until the tool answers for it.
+          const answered = new Set(updates.map((update) => update.id));
+          await this.options.storage.updateHandoffs(
+            [
+              ...updates,
+              ...batch
+                .filter((h) => h.state === "started" && !answered.has(h.id))
+                .map((h) => ({
+                  id: h.id,
+                  state: "unknown" as const,
+                  native: h.native,
+                  paused: h.paused,
+                })),
+            ],
+            now,
+            this.now(),
+          );
           succeeded++;
           await this.publish();
         } catch (error) {
@@ -792,7 +856,9 @@ export class Handoffs {
           await this.options.storage.updateHandoffs(
             batch.map((h) => ({
               id: h.id,
-              state: h.state,
+              // A started handoff was asked because its tool follows state
+              // again: Unknown until the tool answers.
+              state: h.state === "started" ? ("unknown" as const) : h.state,
               native: h.native,
               paused: h.paused,
             })),

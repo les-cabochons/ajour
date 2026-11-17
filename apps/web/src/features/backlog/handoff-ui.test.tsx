@@ -791,3 +791,139 @@ it("says why a thread didn't open, in the setting's words", async () => {
     screen.getAllByText("The tool isn't installed on this computer.").length,
   ).toBeGreaterThan(0);
 });
+
+it("hands an item off again while it has a live and a finished thread", async () => {
+  seeNoticeFor("t3");
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  const button = await renderPage();
+  act(() =>
+    setHandoffs([
+      handoffRecord({ id: "live", workItemId: itemId, state: "working" }),
+      handoffRecord({
+        id: "finished",
+        workItemId: itemId,
+        state: "done",
+        title: "[PAY-12] Earlier attempt",
+      }),
+    ]),
+  );
+  await cardRow("[PAY-12] Earlier attempt");
+  // Nothing about the existing threads holds the button back.
+  expect(button.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(api.startHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({ toolId: "t3", workItemId: itemId }),
+    ),
+  );
+});
+
+it("says in both hand-off menus that a tool doesn't report progress", async () => {
+  cachePluginsOverview(handoffOverview({ copilot: true }));
+  vi.mocked(api.detectHandoffTools).mockResolvedValue({
+    tools: [
+      { id: "t3", available: true },
+      { id: "claude", available: true },
+      { id: "copilot", available: true },
+    ],
+  });
+  await renderPage();
+  await waitFor(() => expect(api.detectHandoffTools).toHaveBeenCalled());
+  fireEvent.click(
+    screen.getByRole("button", { name: "Other ways to hand off" }),
+  );
+  const copilot = await screen.findByRole("menuitem", {
+    name: /Hand off to Copilot CLI/,
+  });
+  expect(copilot.textContent).toContain(
+    "Starts a thread; doesn't report progress",
+  );
+  expect(
+    screen.getByRole("menuitem", { name: /Hand off to Claude Code/ })
+      .textContent,
+  ).not.toContain("report progress");
+  const item = localStore
+    .snapshot()
+    .workItems.find((candidate) => candidate._id === itemId)!;
+  const actions = getBacklogSurfaceActions(item, localStore.snapshot(), 0);
+  expect(
+    actions.find((action) => action.id === "hand-off:agent-handoff:copilot")
+      ?.hint,
+  ).toBe("Starts a thread; doesn't report progress");
+  expect(
+    actions.find((action) => action.id === "hand-off:agent-handoff:claude")
+      ?.hint,
+  ).toBeUndefined();
+});
+
+it("shows a started thread muted, with its tool and start time, and offers no Refresh", async () => {
+  cachePluginsOverview(handoffOverview({ copilot: true }));
+  await renderPage();
+  act(() =>
+    setHandoffs([
+      handoffRecord({
+        workItemId: itemId,
+        toolId: "copilot",
+        state: "started",
+        native: {},
+        startedAt: 4 * 60_000,
+        changedAt: 4 * 60_000,
+      }),
+    ]),
+  );
+  const row = await cardRow("[PAY-12] Fix login redirect");
+  expect(within(row).getByText("Started")).toBeTruthy();
+  expect(
+    within(row).getByLabelText(
+      "Started: Started in Copilot CLI 6 min ago. Copilot CLI doesn't report progress here; open it there to follow it.",
+    ),
+  ).toBeTruthy();
+  expect(row.textContent).toContain("Copilot CLI");
+  // The chip and its tooltip already say Started.
+  expect(row.textContent).toContain("6 min ago");
+  expect(row.textContent).not.toContain("started 6 min ago");
+  fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "Remove from item" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Refresh" })).toBeNull();
+  // Opening the item asks nothing of a tool that doesn't report state.
+  expect(api.refreshHandoffs).not.toHaveBeenCalled();
+});
+
+it("reads a started thread again once its tool follows state", async () => {
+  const record = handoffRecord({
+    workItemId: itemId,
+    toolId: "t3",
+    state: "started",
+    native: {},
+  });
+  vi.mocked(api.refreshHandoffs).mockResolvedValue({
+    handoffs: [{ ...record, state: "needs-you", changedAt: 9 * 60_000 }],
+    failures: [],
+  });
+  await renderPage();
+  act(() => setHandoffs([record]));
+  const row = await cardRow(record.title);
+  // T3 Code follows state now, so the card offers Refresh again.
+  fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Refresh" }));
+  await waitFor(() => expect(api.refreshHandoffs).toHaveBeenCalledWith("h1"));
+  expect(await within(row).findByText("Needs you")).toBeTruthy();
+});
+
+it("shows a started thread unknown while its tool follows state but hasn't answered", async () => {
+  const record = handoffRecord({
+    workItemId: itemId,
+    toolId: "t3",
+    state: "started",
+    native: {},
+  });
+  await renderPage();
+  act(() => setHandoffs([record]));
+  const row = await cardRow(record.title);
+  expect(within(row).getByText("Unknown")).toBeTruthy();
+  expect(within(row).queryByText("Started")).toBeNull();
+});

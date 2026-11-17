@@ -306,6 +306,14 @@ _Avoid_: Permission, scope, toggle, feature flag
 A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool. A thread the user started on their own becomes a handoff when its title names the item's key in brackets and the user links it from the item's Handoffs card; until then it is a found thread.
 _Avoid_: Agent run, agent session, job
 
+**Started** (handoff state):
+The state of a handoff whose tool can start a thread but doesn't report its state, such as Copilot CLI. Ajour never checks it again; the user opens the thread in the tool to follow it. The other common states are Working, Needs you, Ready, Done, Failed, Gone and Unknown, which the tool reports.
+_Avoid_: Running, launched, sent
+
+**Tool feature**:
+What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`) and Updates within seconds (`hooks`, only for a tool that follows state). Ajour uses only a tool's features, as the tool declares them now.
+_Avoid_: Capability (that is the plugin's), ability
+
 **Hand off**:
 To start a thread for a backlog item in a coding tool, from the item's page, its row menu or the command palette. The verb is two words ("Hand off to T3 Code"); the thing it makes is a handoff.
 _Avoid_: Send to agent, delegate, dispatch

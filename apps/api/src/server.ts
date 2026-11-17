@@ -2058,11 +2058,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       );
     },
-    handoffRefresh: async ({ response, params }) => {
+    handoffRefresh: async ({ response, params, unit }) => {
       if (
         !(await storage.listHandoffs()).some((h) => h.id === params.handoffId)
       ) {
         writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      const refusal = await handoffs.refreshRefusal(params.handoffId);
+      if (refusal) {
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: refusal });
         return;
       }
       const result = await handoffs.refresh(params.handoffId);

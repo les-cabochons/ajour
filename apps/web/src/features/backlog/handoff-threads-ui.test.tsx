@@ -376,3 +376,31 @@ it("leaves focus where the user moved it while a Link was under way", async () =
   ).toBeNull();
   expect(document.activeElement).toBe(elsewhere);
 });
+
+it("asks on open for the state of a started thread only while its tool follows state", async () => {
+  cachePluginsOverview(handoffOverview({ copilot: true }));
+  const followed = handoffRecord({
+    id: "followed",
+    workItemId: "item-12",
+    toolId: "t3",
+    state: "started",
+    native: {},
+  });
+  const blind = handoffRecord({
+    id: "blind",
+    workItemId: "item-12",
+    toolId: "copilot",
+    state: "started",
+    native: {},
+  });
+  vi.mocked(api.refreshHandoffs).mockResolvedValue({
+    handoffs: [followed, blind],
+    failures: [],
+  });
+  act(() => setHandoffs([followed, blind]));
+  await renderPage();
+  await waitFor(() =>
+    expect(api.refreshHandoffs).toHaveBeenCalledWith("followed"),
+  );
+  expect(api.refreshHandoffs).not.toHaveBeenCalledWith("blind");
+});

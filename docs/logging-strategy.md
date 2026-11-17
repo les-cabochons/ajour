@@ -1158,6 +1158,10 @@ listing a tool runs is its own `handoff.threads` plugin operation, which holds
 why it failed; a listing answered from the last few minutes runs none. The
 request refuses with `handoff_refused` an item named with a project none of its
 handoffs is in.
+A handoff whose tool doesn't follow state (`started`) is never read: the tick,
+Refresh all and hooks skip it and open no `handoff.refresh` event, and a
+refresh of that one handoff is a `handoff.refresh` request refused with
+`handoff_refused`.
 `handoff.adopt` records the plugin, tool and new handoff id, and refuses with
 `handoff_refused`; `handoff.dismiss_thread` records the plugin and tool. None
 records a thread's title or id, the item's keys, or a folder. The privacy canary

@@ -588,6 +588,8 @@ export interface HandOffActionTool {
   key: string;
   label: string;
   disabledReason?: string;
+  /** Secondary text, such as a tool that doesn't report progress. */
+  hint?: string;
 }
 
 export interface BacklogItemActionOptions {
@@ -723,6 +725,7 @@ export function getBacklogItemActions(
           ? "A hand off of this item is starting"
           : undefined) ??
         tool.disabledReason,
+      ...(tool.hint ? { hint: tool.hint } : {}),
     });
   }
 

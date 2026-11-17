@@ -1,5 +1,6 @@
 import { PluginHandoffTemplates } from "./handoff-template-editor";
 import { PluginHandoffConnections } from "./handoff-tool-connections";
+import { PluginHandoffTools } from "./handoff-tool-features";
 import { UnsignedProcessSwitch } from "./plugin-process-gates";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -1473,6 +1474,9 @@ export function SettingsPluginsPage({
 
         {group.plugin.capabilities.handoff ? (
           <>
+            <PluginHandoffTools
+              tools={group.plugin.capabilities.handoff.tools}
+            />
             <PluginHandoffConnections
               pluginId={group.plugin.id}
               tools={group.plugin.capabilities.handoff.tools}

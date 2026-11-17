@@ -4,8 +4,13 @@ import type { PluginsOverview } from "@ajour/shared";
 const ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>';
 
-/** One active `agent-handoff` plugin with T3 Code and Claude Code. */
-export function handoffOverview(): PluginsOverview {
+/**
+ * One active `agent-handoff` plugin with T3 Code and Claude Code, and with
+ * `copilot`, Copilot CLI, which doesn't follow its threads' state.
+ */
+export function handoffOverview({
+  copilot = false,
+}: { copilot?: boolean } = {}): PluginsOverview {
   const plugin = {
     id: "agent-handoff",
     version: "1.0.0",
@@ -22,6 +27,8 @@ export function handoffOverview(): PluginsOverview {
             iconSvg: ICON,
             settings: [],
             connection: "none" as const,
+            followsState: true,
+            hooks: false,
           },
           {
             id: "claude",
@@ -29,7 +36,22 @@ export function handoffOverview(): PluginsOverview {
             iconSvg: ICON,
             settings: [],
             connection: "none" as const,
+            followsState: true,
+            hooks: true,
           },
+          ...(copilot
+            ? [
+                {
+                  id: "copilot",
+                  label: "Copilot CLI",
+                  iconSvg: ICON,
+                  settings: [],
+                  connection: "none" as const,
+                  followsState: false,
+                  hooks: false,
+                },
+              ]
+            : []),
         ],
       },
     },

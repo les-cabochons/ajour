@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { PluginsOverview } from "@ajour/shared/plugins";
 import type { HandOffActionTool } from "@/domain/actions/object-actions";
 import {
+  getHandoffToolNote,
   getHandoffToolRefusal,
   listHandoffTools,
   type DetectedTools,
@@ -55,19 +56,25 @@ let actionTools: {
   value: readonly HandOffActionTool[];
 } = { tools: EMPTY, value: [] };
 
-/** The tools as row menus list them: Hand off to <tool>, each with why not. */
+/**
+ * The tools as row menus list them: Hand off to <tool>, each with why not,
+ * or, for a tool that doesn't follow state, that it only starts the thread.
+ */
 export function getHandOffActionTools(): readonly HandOffActionTool[] {
   const tools = getHandoffTools();
   if (actionTools.tools !== tools)
     actionTools = {
       tools,
-      value: tools.map((tool) => ({
-        key: tool.key,
-        label: tool.label,
-        ...(getHandoffToolRefusal(tool)
-          ? { disabledReason: getHandoffToolRefusal(tool) }
-          : {}),
-      })),
+      value: tools.map((tool) => {
+        const refusal = getHandoffToolRefusal(tool);
+        const note = getHandoffToolNote(tool);
+        return {
+          key: tool.key,
+          label: tool.label,
+          ...(refusal ? { disabledReason: refusal } : {}),
+          ...(!refusal && note ? { hint: note } : {}),
+        };
+      }),
     };
   return actionTools.value;
 }

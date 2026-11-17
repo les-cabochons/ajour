@@ -6,6 +6,8 @@ import {
   getHandoffItemKeys,
   getHandoffItemRefusal,
   getHandoffMarks,
+  getHandoffToolNote,
+  isHandoffFollowed,
   listHandoffTools,
   parseHandoffToolKey,
   pickHandoffTool,
@@ -84,6 +86,30 @@ describe("handoff tools", () => {
         undefined,
       ),
     ).toBeUndefined();
+  });
+
+  it("says a tool that doesn't follow state only starts threads, unless it can't run", () => {
+    const tools = listHandoffTools(
+      handoffOverview({ copilot: true }),
+      new Map(),
+    );
+    expect(tools.map((tool) => [tool.toolId, tool.followsState])).toEqual([
+      ["t3", true],
+      ["claude", true],
+      ["copilot", false],
+    ]);
+    expect(tools.map(getHandoffToolNote)).toEqual([
+      undefined,
+      undefined,
+      "Starts a thread; doesn't report progress",
+    ]);
+    expect(
+      getHandoffToolNote({
+        ...tools[2]!,
+        available: false,
+        reason: "copilot isn't on PATH.",
+      }),
+    ).toBe("copilot isn't on PATH.");
   });
 
   it("splits a key at its last colon", () => {
@@ -201,6 +227,38 @@ describe("handoff states", () => {
       tone,
       detail: "Running in T3",
     });
+  });
+
+  it("shows a started handoff muted, with when it started and why it stays so", () => {
+    const record = handoffRecord({
+      toolId: "copilot",
+      state: "started",
+      startedAt: 60_000,
+      native: { label: "ignored" },
+    });
+    expect(
+      getHandoffChip(record, { toolLabel: "Copilot CLI", now: 6 * 60_000 }),
+    ).toEqual({
+      label: "Started",
+      tone: "muted",
+      detail:
+        "Started in Copilot CLI 5 min ago. Copilot CLI doesn't report progress here; open it there to follow it.",
+    });
+    expect(getHandoffMarks([record]).size).toBe(0);
+    // Its tool follows state again: Unknown until the tool answers.
+    expect(getHandoffChip(record, { followsState: true })).toEqual({
+      label: "Unknown",
+      tone: "muted",
+    });
+  });
+
+  it("follows a handoff by its tool's say now, else by the record", () => {
+    const started = handoffRecord({ state: "started" });
+    const working = handoffRecord({ state: "working" });
+    expect(isHandoffFollowed(started, { followsState: true })).toBe(true);
+    expect(isHandoffFollowed(working, { followsState: false })).toBe(false);
+    expect(isHandoffFollowed(started, undefined)).toBe(false);
+    expect(isHandoffFollowed(working, undefined)).toBe(true);
   });
 
   it("shows a paused handoff muted, with the reason in the tooltip", () => {

@@ -413,3 +413,138 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("starts a tool that doesn't follow state as started, with a plugin that has no state read, and refuses to refresh it", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-started-"));
+  const plugin = path.join(root, "plugin");
+  await mkdir(plugin);
+  await mkdir(path.join(root, "repo"));
+  await writeFile(
+    path.join(plugin, "plugin.json"),
+    JSON.stringify({
+      id: "handoff",
+      version: "1.0.0",
+      apiVersion: 4,
+      displayName: "Tools",
+      description: "Test tools",
+      iconSvg: "<svg/>",
+      entrypoint: "plugin.mjs",
+      connectionFields: [],
+      capabilities: {
+        handoff: {
+          tools: [
+            {
+              id: "copilot",
+              label: "Copilot CLI",
+              iconSvg: "<svg/>",
+              settings: [],
+              followsState: false,
+            },
+          ],
+        },
+      },
+      // A hook-url command alone doesn't make a tool update within seconds.
+      processes: {
+        executables: { claude: { names: ["claude"] } },
+        commands: [
+          {
+            id: "start",
+            executable: "claude",
+            args: ["--hook", "{hook:hook-url}"],
+            mode: "detached",
+          },
+        ],
+      },
+    }),
+  );
+  // No readHandoffStates: no tool of the plugin follows state.
+  await writeFile(
+    path.join(plugin, "plugin.mjs"),
+    `export function startHandoff(request) { return { threadId: 'thread', native: {} }; }`,
+  );
+  const sink = createRecordingSink();
+  const server = createAppApiServer({
+    ...windowServerOptions,
+    statePath: path.join(root, "data", "state.json"),
+    protectedRepositoryFolders: {
+      userData: path.join(root, "data"),
+      install: path.join(root, "install"),
+    },
+    developmentPluginDirectories: [plugin],
+    allowDevelopmentPlugins: true,
+    pluginRuntime: new InProcessPluginRuntime(),
+    eventSink: sink,
+  });
+  const call = (method: string, route: string, body?: unknown) =>
+    dispatchJsonRequest(server, {
+      method,
+      path: route,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  try {
+    const folder = await addRepositoryFolderForServer(
+      server,
+      "p",
+      path.join(root, "repo"),
+    );
+    const overview = (await call("GET", "/api/plugins")).body as {
+      connectionGroups: Array<Record<string, unknown>>;
+    };
+    expect(overview).toMatchObject({
+      connectionGroups: [
+        {
+          plugin: {
+            id: "handoff",
+            capabilities: {
+              handoff: {
+                tools: [{ id: "copilot", followsState: false, hooks: false }],
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect(overview.connectionGroups[0]).not.toHaveProperty("handoffHooks");
+    const started = await call("POST", "/api/handoffs", {
+      pluginId: "handoff",
+      toolId: "copilot",
+      workItemId: "i",
+      projectId: "p",
+      folderId: folder.id,
+      projectName: "Project",
+      item: { key: "PAY-12", title: "Fix login", type: "Bug", url: "" },
+      settings: {},
+    });
+    expect(started).toMatchObject({ status: 200, body: { state: "started" } });
+    const id = (started.body as { id: string }).id;
+    expect(await call("POST", "/api/handoffs/refresh")).toMatchObject({
+      status: 200,
+      body: { failures: [], handoffs: [{ id, state: "started" }] },
+    });
+    const single = await call("POST", `/api/handoffs/${id}/refresh`);
+    expect(single).toMatchObject({
+      status: 409,
+      body: {
+        error:
+          "Copilot CLI doesn't report progress here; open it there to follow it.",
+      },
+    });
+    expect(
+      sink.events.filter(
+        (event) =>
+          event.name === "handoff.refresh" &&
+          event.outcome_reason === "handoff_refused",
+      ),
+    ).toHaveLength(1);
+    // Nothing asked the plugin for a state it doesn't export.
+    expect(
+      sink.events.filter(
+        (event) =>
+          event.name === "handoff.refresh" && event.kind === "plugin_operation",
+      ),
+    ).toEqual([]);
+  } finally {
+    await stopAppApiServer(server);
+    await rm(root, { recursive: true, force: true });
+  }
+});
