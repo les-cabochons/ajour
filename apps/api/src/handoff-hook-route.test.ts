@@ -13,7 +13,7 @@ import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
 
 // How many state reads the fake tool answered, by thread.
-const reads = globalThis as { __hookReads?: number };
+const reads = globalThis as { __hookReads?: number; __hookState?: string };
 
 let root: string;
 let server: ReturnType<typeof createAppApiServer>;
@@ -27,7 +27,7 @@ export function startHandoff(request) {
 }
 export function readHandoffStates(request) {
   globalThis.__hookReads = (globalThis.__hookReads ?? 0) + 1;
-  return request.handoffs.map((h) => ({ id: h.id, state: 'needs-you', native: { hook: h.native.hook } }));
+  return request.handoffs.map((h) => ({ id: h.id, state: globalThis.__hookState ?? 'needs-you', native: { hook: h.native.hook } }));
 }
 `;
 
@@ -151,9 +151,11 @@ const hookEvents = () =>
 
 beforeEach(() => {
   reads.__hookReads = 0;
+  delete reads.__hookState;
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await stopAppApiServer(server);
   await rm(root, { recursive: true, force: true });
 });
@@ -260,6 +262,27 @@ it("revokes the token 24 hours after the handoff is done or gone", async () => {
   expect((await post(url)).status).toBe(404);
   await settle();
   expect(reads.__hookReads).toBe(1);
+});
+
+it("revokes the token of a handoff done for over a day before a manual refresh brings it back", async () => {
+  await startServer();
+  const { id, url } = await startHandoff();
+  reads.__hookState = "done";
+  await call("POST", `/api/handoffs/${id}/refresh`);
+  expect(await stateOf(id)).toBe("done");
+
+  // No post comes for 25 hours; then the user refreshes and the thread is
+  // working again. The old token stays revoked.
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 25 * 3_600_000 });
+  clock = Date.now();
+  reads.__hookState = "working";
+  await call("POST", `/api/handoffs/${id}/refresh`);
+  expect(await stateOf(id)).toBe("working");
+  reads.__hookReads = 0;
+
+  expect((await post(url)).status).toBe(404);
+  await settle();
+  expect(reads.__hookReads).toBe(0);
 });
 
 it("answers a flood with 429 and does no extra refresh work for it", async () => {

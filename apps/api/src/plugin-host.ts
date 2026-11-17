@@ -1360,10 +1360,14 @@ export class PluginManager {
           ];
           const connectionId =
             typeof connection?.id === "string" ? connection.id : undefined;
+          // A start's hook URL and its token are as secret as a connection's.
+          const hookSecrets =
+            method === "startHandoff" ? hookSecretsOf(params.request) : [];
           // What the operation was given, and, read when the event is
           // scrubbed, what the vault holds for the saved connection.
           const scrubWith = (fields: SecretConnectionFields) => {
             record.secrets(async () => [
+              ...hookSecrets,
               ...connectionSecretValues(fields, configs),
               ...(connectionId
                 ? ((await this.secretValues?.(
@@ -1820,6 +1824,19 @@ function lifecycleOf(
 function hookUrlOf(request: unknown): { hookUrl?: string } {
   const url = (request as { hook?: { url?: unknown } } | undefined)?.hook?.url;
   return typeof url === "string" ? { hookUrl: url } : {};
+}
+
+/** A start's hook URL and the token in it, to scrub from its event. */
+function hookSecretsOf(request: unknown): string[] {
+  const { hookUrl } = hookUrlOf(request);
+  if (!hookUrl) return [];
+  let token: string | null = null;
+  try {
+    token = new URL(hookUrl).searchParams.get("token");
+  } catch {
+    // Not a URL: the whole value is still scrubbed.
+  }
+  return token ? [hookUrl, token] : [hookUrl];
 }
 
 function handoffConnectionParams(

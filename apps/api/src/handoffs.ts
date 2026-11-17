@@ -126,7 +126,7 @@ export class Handoffs {
   private lastPublished?: string;
   constructor(options: Options) {
     this.options = options;
-    this.now = options.now ?? Date.now;
+    this.now = options.now ?? (() => Date.now());
   }
   setVisible(visible: boolean) {
     this.visible = visible;

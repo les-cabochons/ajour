@@ -17,6 +17,7 @@ import {
   updateHandoff,
   removeHandoff,
   handoffSummary,
+  shouldRefresh,
   type HostHandoffUpdate,
 } from "./handoff-state.ts";
 import {
@@ -1485,21 +1486,41 @@ export class AppApiStorage {
       return { nextState: { ...state, handoffHooks }, result: undefined };
     });
   }
+  /**
+   * Saves refreshed states. A handoff done or gone for 24 hours has its hook
+   * token revoked first, so no refresh can bring the token back with it.
+   */
   async updateHandoffs(
     updates: HostHandoffUpdate[],
     now: number,
   ): Promise<void> {
     const byId = new Map(updates.map((value) => [value.id, value]));
-    await this.mutate((state) => ({
-      nextState: {
-        ...state,
-        handoffs: state.handoffs.map((record) => {
-          const update = byId.get(record.id);
-          return update ? updateHandoff(record, update, now) : record;
-        }),
-      },
-      result: undefined,
-    }));
+    await this.mutate((state) => {
+      const expired = new Set(
+        state.handoffs
+          .filter(
+            (record) => byId.has(record.id) && !shouldRefresh(record, now),
+          )
+          .map((record) => record.id),
+      );
+      return {
+        nextState: {
+          ...state,
+          handoffs: state.handoffs.map((record) => {
+            const update = byId.get(record.id);
+            return update ? updateHandoff(record, update, now) : record;
+          }),
+          handoffHooks: expired.size
+            ? Object.fromEntries(
+                Object.entries(state.handoffHooks).filter(
+                  ([id]) => !expired.has(id),
+                ),
+              )
+            : state.handoffHooks,
+        },
+        result: undefined,
+      };
+    });
   }
   async removeHandoff(id: string): Promise<void> {
     await this.mutate((state) => ({
