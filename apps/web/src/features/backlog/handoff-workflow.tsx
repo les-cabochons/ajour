@@ -645,18 +645,26 @@ export async function linkHandoffThread(
   }
 }
 
-/** "Not this one": the thread is offered to no item again. */
-export async function dismissHandoffThreadOffer(offer: HandoffThreadOffer) {
+/**
+ * "Not this one": the thread is offered to this item no more. Other items
+ * its title names still offer it.
+ */
+export async function dismissHandoffThreadOffer(
+  offer: HandoffThreadOffer,
+  workItemId: string,
+) {
   try {
     await dismissHandoffThread({
       pluginId: offer.pluginId,
       toolId: offer.toolId,
+      ...(offer.connectionId ? { connectionId: offer.connectionId } : {}),
       threadId: offer.threadId,
+      workItemId,
     });
     return true;
   } catch (error) {
     showErrorToast({
-      title: "Couldn't forget the thread",
+      title: "Couldn't hide the thread",
       description: errorMessage(error, "The local API didn't answer."),
     });
     return false;

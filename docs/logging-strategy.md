@@ -1155,7 +1155,7 @@ listing a tool runs is its own `handoff.threads` plugin operation, which holds
 why it failed; a listing answered from the last few minutes runs none.
 `handoff.adopt` records the plugin, tool and new handoff id, and refuses with
 `handoff_refused`; `handoff.dismiss_thread` records the plugin and tool. None
-records a thread's title or id, the item's key, or a folder. The privacy canary
+records a thread's title or id, the item's keys, or a folder. The privacy canary
 lists, links and dismisses marked threads through the real local API.
 
 ## Performance

@@ -8,6 +8,7 @@ import {
   type PluginsOverview,
 } from "@ajour/shared/plugins";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
+import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
 import {
   getWorkItemLookupKeys,
   getWorkItemParentKey,
@@ -105,13 +106,34 @@ export function getHandoffItemRefusal(item: {
 }
 
 /**
- * The item's key as a hand off sends it, and as a thread's title names it
- * in brackets: the source's own id, such as `PAY-12`. A local item has none.
+ * The item's key as a hand off sends it: the source's own id, such as
+ * `PAY-12` or `acme/api#12`. A local item has none.
  */
 export function getHandoffItemKey(
   item: Pick<LocalWorkItem, "sourceExternalId">,
 ) {
   return item.sourceExternalId ?? "";
+}
+
+/**
+ * The keys a thread's title may name the item by, in brackets: the key a
+ * hand off sends and the key the item shows (`getWorkItemKey`). A GitHub
+ * issue answers to `acme/api#12` and to `12`, which `[#12]` names too; a
+ * Jira issue or an Azure DevOps work item shows its own id. A local item
+ * has none.
+ */
+export function getHandoffItemKeys(
+  item: Pick<
+    LocalWorkItem,
+    "source" | "sourceExternalId" | "sourceUrl" | "sourceId"
+  >,
+): string[] {
+  if (item.source === "manual") return [];
+  return [
+    ...new Set(
+      [getHandoffItemKey(item), getWorkItemKey(item) ?? ""].filter(Boolean),
+    ),
+  ];
 }
 
 /** The item fields a hand off sends; the API fills the templates from them. */

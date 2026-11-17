@@ -1993,15 +1993,23 @@ export function detectHandoffTools(pluginId: string, projectId: string) {
   );
 }
 /**
- * The threads the project's repository folders hold whose title names the
- * item's key, from each tool that lists its threads. The API lists a folder
- * at most once every few minutes per tool.
+ * The threads the project's repository folders hold whose title names one
+ * of the item's keys, from each tool that lists its threads, less those
+ * dismissed for the item. The API lists a folder at most once every few
+ * minutes per tool.
  */
-export function findHandoffThreads(projectId: string, key: string) {
+export function findHandoffThreads(
+  projectId: string,
+  workItemId: string,
+  keys: readonly string[],
+) {
   return appApiRequest(
     "findHandoffThreads",
     "/api/handoffs/threads",
-    { method: "POST", body: JSON.stringify({ projectId, key }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ projectId, workItemId, keys }),
+    },
     handoffThreadsResultSchema,
   );
 }
@@ -2014,7 +2022,7 @@ export function adoptHandoffThread(input: HandoffAdoptRoute) {
     handoffRecordSchema,
   );
 }
-/** "Not this one": the thread is offered to no item again. */
+/** "Not this one": the thread is offered to that item no more. */
 export function dismissHandoffThread(input: HandoffThreadDismissal) {
   return appApiRequest(
     "dismissHandoffThread",

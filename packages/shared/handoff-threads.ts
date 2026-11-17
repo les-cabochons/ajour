@@ -11,6 +11,14 @@ import { listedThreadSchema } from "./handoffs.ts";
 
 const id = z.string().min(1).max(200);
 
+/** The most offers one item page receives, newest first. */
+export const MAX_THREAD_OFFERS = 1000;
+/**
+ * The keys an item answers to: its source's own id and the key it shows,
+ * such as `acme/api#12` and `12` for a GitHub issue.
+ */
+export const MAX_ITEM_KEYS = 4;
+
 /** A thread one of a plugin's tools listed in one repository folder. */
 export type ListedHandoffThread = z.infer<typeof listedThreadSchema> & {
   pluginId: string;
@@ -34,12 +42,19 @@ export const handoffThreadOfferSchema = z
   .strict();
 export type HandoffThreadOffer = z.infer<typeof handoffThreadOfferSchema>;
 
-/** The item page asks for the threads its project's folders hold that name its key. */
+/**
+ * The item page asks for the threads its project's folders hold that name
+ * one of the item's keys, leaving out those dismissed for the item.
+ */
 export const handoffThreadsRouteSchema = z
-  .object({ projectId: id, key: z.string().max(500) })
+  .object({
+    projectId: id,
+    workItemId: id,
+    keys: z.array(z.string().max(500)).max(MAX_ITEM_KEYS),
+  })
   .strict();
 export const handoffThreadsResultSchema = z
-  .object({ offers: z.array(handoffThreadOfferSchema).max(1000) })
+  .object({ offers: z.array(handoffThreadOfferSchema).max(MAX_THREAD_OFFERS) })
   .strict();
 
 /** Link a listed thread to an item, as a new handoff. */
@@ -56,9 +71,18 @@ export const handoffAdoptRouteSchema = z
   .strict();
 export type HandoffAdoptRoute = z.infer<typeof handoffAdoptRouteSchema>;
 
-/** "Not this one": the thread is never offered again, for any item. */
+/**
+ * "Not this one": the thread, on its tool and connection, is never offered
+ * to that item again. Other items its title names still offer it.
+ */
 export const handoffThreadDismissalSchema = z
-  .object({ pluginId: id, toolId: id, threadId: id })
+  .object({
+    pluginId: id,
+    toolId: id,
+    connectionId: id.optional(),
+    threadId: id,
+    workItemId: id,
+  })
   .strict();
 export type HandoffThreadDismissal = z.infer<
   typeof handoffThreadDismissalSchema
@@ -72,47 +96,76 @@ export function threadTitleKeys(title: string): string[] {
 }
 
 /**
- * Whether a thread's title names an item's key in brackets. Only the exact
- * key counts, case and all, as the item shows it: `[pay-12]`, `[PAY-123]`
- * and `[ PAY-12 ]` don't name `PAY-12`. An item without a key has none to
- * name.
+ * Whether a thread's title names one of an item's keys in brackets. Only an
+ * exact key counts, case and all: `[pay-12]`, `[PAY-123]` and `[ PAY-12 ]`
+ * don't name `PAY-12`. A `#` before a number is how people write an issue
+ * number, so `[#12]` names `12` as `[12]` does. An empty key names nothing.
  */
-export function threadTitleNamesKey(title: string, key: string): boolean {
-  return key !== "" && threadTitleKeys(title).includes(key);
+export function threadTitleNamesKey(
+  title: string,
+  keys: readonly string[],
+): boolean {
+  const named = keys.filter((key) => key !== "");
+  if (!named.length) return false;
+  return threadTitleKeys(title).some((token) => {
+    const number = /^#(\d+)$/.exec(token)?.[1];
+    return named.includes(number ?? token);
+  });
 }
 
-const sameThread = (
-  left: { pluginId: string; toolId: string; threadId: string },
-  right: { pluginId: string; toolId: string; threadId: string },
-) =>
+type ThreadIdentity = {
+  pluginId: string;
+  toolId: string;
+  threadId: string;
+  connectionId?: string;
+};
+
+/** A thread id means something only on its own tool and connection. */
+export const sameThread = (left: ThreadIdentity, right: ThreadIdentity) =>
   left.pluginId === right.pluginId &&
   left.toolId === right.toolId &&
-  left.threadId === right.threadId;
+  left.threadId === right.threadId &&
+  (left.connectionId ?? null) === (right.connectionId ?? null);
+
+/** Two dismissals of the same thread for the same item. */
+export const sameDismissal = (
+  left: HandoffThreadDismissal,
+  right: HandoffThreadDismissal,
+) => sameThread(left, right) && left.workItemId === right.workItemId;
 
 /**
- * The listed threads to offer an item: those whose title names its key,
- * not linked to any handoff (a thread id means something only on its own
- * tool and connection) and not dismissed, newest first. An undated thread
- * comes after the dated ones.
+ * The listed threads to offer an item: those whose title names one of its
+ * keys, not linked to any handoff and not dismissed for this item, once
+ * each (a tool may list a thread in several folders), newest first and at
+ * most `MAX_THREAD_OFFERS`. An undated thread comes after the dated ones.
+ *
+ * Two items of a project can show the same key, such as `12` for an issue
+ * of each of two GitHub repositories: a thread titled `[12]` is offered on
+ * both, and linking it to one stops offering it on the other.
  */
 export function selectThreadOffers(input: {
-  key: string;
+  keys: readonly string[];
+  workItemId: string;
   threads: readonly ListedHandoffThread[];
   handoffs: ReadonlyArray<
     Pick<Handoff, "pluginId" | "toolId" | "threadId" | "connectionId">
   >;
   dismissals: readonly HandoffThreadDismissal[];
 }): HandoffThreadOffer[] {
-  const offers = input.threads.filter(
-    (thread) =>
-      threadTitleNamesKey(thread.title, input.key) &&
-      !input.handoffs.some(
-        (handoff) =>
-          sameThread(handoff, thread) &&
-          (handoff.connectionId ?? null) === (thread.connectionId ?? null),
-      ) &&
-      !input.dismissals.some((dismissal) => sameThread(dismissal, thread)),
-  );
+  const offers: ListedHandoffThread[] = [];
+  for (const thread of input.threads) {
+    if (
+      threadTitleNamesKey(thread.title, input.keys) &&
+      !offers.some((offer) => sameThread(offer, thread)) &&
+      !input.handoffs.some((handoff) => sameThread(handoff, thread)) &&
+      !input.dismissals.some(
+        (dismissal) =>
+          dismissal.workItemId === input.workItemId &&
+          sameThread(dismissal, thread),
+      )
+    )
+      offers.push(thread);
+  }
   return offers
     .map((thread, index) => ({ thread, index }))
     .sort(
@@ -120,6 +173,7 @@ export function selectThreadOffers(input: {
         (right.thread.updatedAt ?? -Infinity) -
           (left.thread.updatedAt ?? -Infinity) || left.index - right.index,
     )
+    .slice(0, MAX_THREAD_OFFERS)
     .map(({ thread }) => ({
       pluginId: thread.pluginId,
       toolId: thread.toolId,

@@ -84,7 +84,8 @@ export function readHandoffStates(request) {
     const folder = await addRepositoryFolderForServer(server, "p", repo);
     const found = await call("POST", "/api/handoffs/threads", {
       projectId: "p",
-      key: KEY,
+      workItemId: "item",
+      keys: [KEY],
     });
     expect(found.status, JSON.stringify(found.body)).toBe(200);
     expect(found.body).toEqual({
@@ -139,6 +140,7 @@ export function readHandoffStates(request) {
           pluginId: "handoff",
           toolId: "t3",
           threadId: "dismissed",
+          workItemId: "item",
         })
       ).status,
     ).toBe(200);
@@ -146,7 +148,8 @@ export function readHandoffStates(request) {
       (
         await call("POST", "/api/handoffs/threads", {
           projectId: "p",
-          key: KEY,
+          workItemId: "item",
+          keys: [KEY],
         })
       ).body,
     ).toEqual({ offers: [] });

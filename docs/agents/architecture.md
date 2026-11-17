@@ -1336,22 +1336,31 @@ repository folder at a time, connection first for a tool that uses one. The
 host bounds the answer as a state read's: at most `limit` (1 to 200) threads,
 each once, titles up to 500 characters and native state up to 4 KB; it drops a
 link that isn't HTTPS or a declared scheme, and a resume that names no declared
-command. POST `/api/handoffs/threads` takes `{ projectId, key }` when the item
-page opens. `Handoffs.findThreads` lists each folder of the project per tool
+command. POST `/api/handoffs/threads` takes `{ projectId, workItemId, keys }`
+when the item page opens. `Handoffs.findThreads` lists each folder of the project per tool
 and connection at most once every five minutes, failed or not, shares a listing
 under way, and keeps the last listing in memory only, never on the tick.
 `selectThreadOffers` in `packages/shared/handoff-threads.ts` keeps the threads
-whose title holds the item's key in brackets, exactly and case-sensitively
-(`threadTitleKeys`), skips those linked to any handoff and those dismissed, and
-sorts the newest first. The key is the item's `sourceExternalId`, the one a
-hand off sends as `item.key`, so a local item without one is offered nothing.
-POST `/api/handoffs/adopt` names the plugin, tool, connection, folder and
-thread; the API takes the thread from its last listing, never from the window,
-refuses one it didn't list or that is already linked, and saves a record with
-state `unknown` (`adoptHandoff` in `handoff-state.ts`), then refreshes it at
-once. POST `/api/handoffs/threads/dismiss` stores "Not this one" in
-`handoffThreadDismissals`, keyed by plugin, tool and thread id, newest 2,000
-kept; uninstalling the plugin removes them.
+whose title holds one of the item's keys in brackets, exactly and
+case-sensitively (`threadTitleNamesKey`), where `[#12]` counts as `[12]`. It
+skips those linked to any handoff and those dismissed for this item, offers a
+thread listed in several folders once, sorts the newest first and keeps at most
+1,000. The keys come from `getHandoffItemKeys` in
+`apps/web/src/domain/handoffs/handoffs.ts`: the item's `sourceExternalId` (the
+key a hand off sends as `item.key`) and the key the item shows
+(`getWorkItemKey`), so a GitHub issue answers to `acme/api#12`, `12` and
+`#12`, and a local item to nothing. Two items of a project that show the same
+key, such as issue 12 of two repositories, are both offered a thread titled
+`[12]` until it is linked to one. POST `/api/handoffs/adopt` names the plugin,
+tool, connection, folder and thread; the API takes the thread from its last
+listing, never from the window, and refuses while the plugin can't run, once
+the tool no longer declares `listsThreads`, when that listing is over 30
+minutes old, and for a thread it didn't list or that is already linked. It
+saves a record with state `unknown` (`adoptHandoff` in `handoff-state.ts`),
+then refreshes it at once. POST `/api/handoffs/threads/dismiss` stores "Not
+this one" in `handoffThreadDismissals`, keyed by plugin, tool, connection,
+thread id and work item, newest 2,000 kept; uninstalling the plugin removes
+them.
 
 Start links must use HTTPS or a manifest-declared open scheme. JavaScript, file,
 data, VBScript, blob and about links are always refused. Resume commands must be

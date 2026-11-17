@@ -15,6 +15,7 @@ import {
 } from "../../../packages/shared/handoffs.ts";
 import {
   handoffThreadDismissalSchema,
+  sameDismissal,
   type HandoffThreadDismissal,
 } from "../../../packages/shared/handoff-threads.ts";
 
@@ -477,7 +478,7 @@ interface AppApiStateV8 {
   /** The connection each handoff tool hands off through, by plugin id. */
   handoffToolConnections: Record<string, HandoffToolConnections>;
   handoffs: Handoff[];
-  /** Listed threads the user said aren't an item's: "Not this one". */
+  /** Listed threads the user said aren't an item's: "Not this one", per item. */
   handoffThreadDismissals: HandoffThreadDismissal[];
   repositoryFolders: RepositoryFolder[];
   version: number;
@@ -1479,7 +1480,7 @@ export class AppApiStorage {
     return structuredClone((await this.readState()).handoffThreadDismissals);
   }
   /**
-   * Remembers "Not this one" for a listed thread. The newest
+   * Remembers "Not this one" for a listed thread on one item. The newest
    * `MAX_HANDOFF_THREAD_DISMISSALS` are kept, far more than a tool lists.
    */
   async dismissHandoffThread(dismissal: HandoffThreadDismissal): Promise<void> {
@@ -1489,10 +1490,7 @@ export class AppApiStorage {
         ...state,
         handoffThreadDismissals: [
           ...state.handoffThreadDismissals.filter(
-            (old) =>
-              old.pluginId !== parsed.pluginId ||
-              old.toolId !== parsed.toolId ||
-              old.threadId !== parsed.threadId,
+            (old) => !sameDismissal(old, parsed),
           ),
           parsed,
         ].slice(-MAX_HANDOFF_THREAD_DISMISSALS),

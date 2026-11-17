@@ -85,7 +85,7 @@ import {
 } from "@/features/backlog/backlog-item-side-cards";
 import { HandoffButton } from "@/features/backlog/handoff-button";
 import { useItemHandoffs } from "@/features/backlog/use-item-handoffs";
-import { getHandoffItemKey } from "@/domain/handoffs/handoffs";
+import { getHandoffItemKeys } from "@/domain/handoffs/handoffs";
 import {
   updateBacklogItemCards,
   useBacklogItemCards,
@@ -132,7 +132,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const handoffs = useItemHandoffs(
     itemId,
     workItem?.projectId,
-    workItem && getHandoffItemKey(workItem),
+    workItem && getHandoffItemKeys(workItem),
   );
 
   /**

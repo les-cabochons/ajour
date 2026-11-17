@@ -3,6 +3,7 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   getHandoffChip,
   getHandoffItem,
+  getHandoffItemKeys,
   getHandoffItemRefusal,
   getHandoffMarks,
   listHandoffTools,
@@ -122,6 +123,47 @@ describe("handoff items", () => {
       type: "Bug",
       parent: { key: "PAY-1", title: "Login" },
     });
+  });
+
+  it.each([
+    [
+      "a GitHub issue, by its full name and its number",
+      {
+        source: "github",
+        sourceExternalId: "acme/api#12",
+        sourceUrl: "https://github.com/acme/api/issues/12",
+      },
+      ["acme/api#12", "12"],
+    ],
+    [
+      "a Jira issue, by its key",
+      {
+        source: "jira",
+        sourceExternalId: "PAY-12",
+        sourceUrl: "https://acme.atlassian.net/browse/PAY-12",
+      },
+      ["PAY-12"],
+    ],
+    [
+      "an Azure DevOps work item, by its number",
+      {
+        source: "azure-devops",
+        sourceExternalId: "1234",
+        sourceUrl: "https://dev.azure.com/acme/pay/_workitems/edit/1234",
+      },
+      ["1234"],
+    ],
+    [
+      "an item synced before its source kept an id, by the end of its link",
+      {
+        source: "azure-devops",
+        sourceUrl: "https://dev.azure.com/acme/pay/_workitems/edit/1234",
+      },
+      ["1234"],
+    ],
+    ["a local item, by nothing", { source: "manual" }, []],
+  ])("names %s", (_, fields, keys) => {
+    expect(getHandoffItemKeys(fields as LocalWorkItem)).toEqual(keys);
   });
 
   it("refuses an item without a project, and an archived one", () => {

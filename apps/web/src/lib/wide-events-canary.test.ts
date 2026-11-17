@@ -704,7 +704,8 @@ describe("the privacy canary", () => {
       await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));
       const { offers } = await app.appApi.findHandoffThreads(
         "handoff-project",
-        MARKER,
+        "item",
+        [MARKER],
       );
       expect(offers.map((offer) => offer.threadId)).toEqual([
         "listed",
@@ -722,6 +723,7 @@ describe("the privacy canary", () => {
         pluginId: "canary",
         toolId: "t3",
         threadId: "other",
+        workItemId: "item",
       });
       await app.appApi.removeHandoff(adopted.id);
       await vi.waitFor(() => expect(snapshots.at(-1)).toEqual([]));

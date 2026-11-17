@@ -48,10 +48,10 @@ const offer = (
   ...extra,
 });
 
-let itemKey = "PAY-12";
+let itemKeys = ["PAY-12"];
 
 beforeEach(() => {
-  itemKey = "PAY-12";
+  itemKeys = ["PAY-12"];
   resetHandoffToolDetections();
   window.ajourDesktop = { chooseFolder: vi.fn() };
   cachePluginsOverview(handoffOverview());
@@ -80,7 +80,7 @@ afterEach(() => {
 });
 
 function Page() {
-  const handoffs = useItemHandoffs("item-12", "project-1", itemKey);
+  const handoffs = useItemHandoffs("item-12", "project-1", [...itemKeys]);
   return (
     <TooltipProvider>
       <HandoffsCard
@@ -106,9 +106,11 @@ async function renderPage() {
 it("asks once on open for the threads that name the item's key, and offers each with its tool", async () => {
   const list = await renderPage();
   expect(api.findHandoffThreads).toHaveBeenCalledTimes(1);
-  expect(api.findHandoffThreads).toHaveBeenCalledWith("project-1", "PAY-12");
+  expect(api.findHandoffThreads).toHaveBeenCalledWith("project-1", "item-12", [
+    "PAY-12",
+  ]);
   const first = within(list).getByRole("listitem", {
-    name: 'Found in T3 Code: "[PAY-12] Fix login redirect"',
+    name: 'Found in T3 Code: "[PAY-12] Fix login redirect", changed 1 min ago',
   });
   expect(first.textContent).toContain("[PAY-12] Fix login redirect");
   expect(first.textContent).toContain("Found in T3 Code");
@@ -200,6 +202,7 @@ it("forgets a dismissed thread", async () => {
       pluginId: "agent-handoff",
       toolId: "t3",
       threadId: "t-12",
+      workItemId: "item-12",
     }),
   );
   await waitFor(() =>
@@ -209,13 +212,74 @@ it("forgets a dismissed thread", async () => {
   );
 });
 
+it("asks with each key the item answers to, and again only when they change", async () => {
+  itemKeys = ["acme/api#12", "12"];
+  await renderPage();
+  expect(api.findHandoffThreads).toHaveBeenCalledWith("project-1", "item-12", [
+    "acme/api#12",
+    "12",
+  ]);
+  // Re-rendering with equal keys in a new array asks nothing more.
+  await act(async () => {
+    setHandoffs([]);
+  });
+  expect(api.findHandoffThreads).toHaveBeenCalledTimes(1);
+});
+
+it("moves focus to the next found thread's Link once one is linked or hidden, then to the card's heading", async () => {
+  vi.mocked(api.dismissHandoffThread).mockResolvedValue({ ok: true });
+  const record = handoffRecord({
+    id: "adopted",
+    workItemId: "item-12",
+    toolId: "claude",
+    threadId: "t-both",
+    state: "ready",
+  });
+  vi.mocked(api.adoptHandoffThread).mockResolvedValue(record);
+  vi.mocked(api.refreshHandoffs).mockResolvedValue({
+    handoffs: [record],
+    failures: [],
+  });
+  const list = await renderPage();
+  const first = within(list).getByRole("listitem", { name: /^Found in T3/ });
+  fireEvent.click(within(first).getByRole("button", { name: /^Not this one/ }));
+  const next = screen.getByRole("button", {
+    name: 'Link "[PAY-11] [PAY-12] Split the job" to this item',
+  });
+  await waitFor(() => expect(document.activeElement).toBe(next));
+  fireEvent.click(next);
+  await waitFor(() =>
+    expect(screen.queryByRole("list", { name: "Threads found" })).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Handoffs/ }),
+    ),
+  );
+});
+
+it("says when a thread couldn't be hidden, and keeps the offer", async () => {
+  vi.mocked(api.dismissHandoffThread).mockRejectedValue(
+    new Error("The local API didn't answer."),
+  );
+  const list = await renderPage();
+  const row = within(list).getByRole("listitem", { name: /^Found in T3/ });
+  fireEvent.click(within(row).getByRole("button", { name: /^Not this one/ }));
+  expect(
+    (await screen.findAllByText("Couldn't hide the thread")).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getByRole("listitem", { name: /^Found in T3 Code/ }),
+  ).toBeTruthy();
+});
+
 it("offers no threads for an item without a key, or in the web build", async () => {
-  itemKey = "";
+  itemKeys = [];
   await renderRoutes({ routes: { "/": Page } });
   await act(async () => {});
   expect(api.findHandoffThreads).not.toHaveBeenCalled();
   cleanup();
-  itemKey = "PAY-12";
+  itemKeys = ["PAY-12"];
   delete window.ajourDesktop;
   resetHandoffToolDetections();
   await renderRoutes({ routes: { "/": Page } });

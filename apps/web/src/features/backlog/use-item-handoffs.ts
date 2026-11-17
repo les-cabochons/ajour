@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
+import {
+  sameThread,
+  type HandoffThreadOffer,
+} from "@ajour/shared/handoff-threads";
 import { findHandoffThreads, refreshHandoffs } from "@/lib/app-api";
 import { setHandoffs, useHandoffs } from "@/lib/handoffs";
 import { useHandoffTools } from "@/lib/handoff-tools";
@@ -10,24 +13,21 @@ import {
 
 const NO_OFFERS: readonly HandoffThreadOffer[] = [];
 
-const sameOffer = (left: HandoffThreadOffer, right: HandoffThreadOffer) =>
-  left.pluginId === right.pluginId &&
-  left.toolId === right.toolId &&
-  left.threadId === right.threadId &&
-  left.connectionId === right.connectionId;
+const NO_KEYS: readonly string[] = [];
 
 /**
  * The item page's handoffs and tools. Opening the item asks each live thread
  * for its state once, so the card is current without waiting for the API's
  * next tick, and asks once for the threads its project's folders hold whose
- * title names the item's key, to offer linking them. The card shows while
+ * title names one of the item's keys (`getHandoffItemKeys`), to offer
+ * linking them. The card shows while
  * the item has threads or a tool could take one, so the web build and
  * items without a tool keep their cards as they were.
  */
 export function useItemHandoffs(
   itemId: string,
   projectId?: string,
-  key?: string,
+  keys: readonly string[] = NO_KEYS,
 ) {
   const records = useHandoffs(itemId);
   const tools = useHandoffTools(projectId);
@@ -54,10 +54,12 @@ export function useItemHandoffs(
   }>();
   const [pending, setPending] = useState<readonly HandoffThreadOffer[]>([]);
   const canList = tools.length > 0;
+  // Keys come as a new array on every render; their text is what changes.
+  const named = JSON.stringify(keys.filter(Boolean));
   useEffect(() => {
-    if (!canList || !projectId || !key) return;
+    if (!canList || !projectId || named === "[]") return;
     let current = true;
-    void findHandoffThreads(projectId, key)
+    void findHandoffThreads(projectId, itemId, JSON.parse(named) as string[])
       .then(({ offers }) => {
         if (current) setFound({ itemId, offers });
       })
@@ -65,29 +67,23 @@ export function useItemHandoffs(
     return () => {
       current = false;
     };
-  }, [itemId, projectId, key, canList]);
+  }, [itemId, projectId, named, canList]);
   const offers =
     found?.itemId === itemId && found.offers.length
       ? found.offers.filter(
-          (offer) =>
-            !records.some(
-              (record) =>
-                record.pluginId === offer.pluginId &&
-                record.toolId === offer.toolId &&
-                record.threadId === offer.threadId &&
-                record.connectionId === offer.connectionId,
-            ),
+          (offer) => !records.some((record) => sameThread(record, offer)),
         )
       : NO_OFFERS;
+  /** Resolves whether the offer is settled and left the list. */
   const settle = async (
     offer: HandoffThreadOffer,
     run: () => Promise<boolean>,
   ) => {
-    if (pending.some((candidate) => sameOffer(candidate, offer))) return;
+    if (pending.some((candidate) => sameThread(candidate, offer))) return false;
     setPending((current) => [...current, offer]);
     const done = await run();
     setPending((current) =>
-      current.filter((candidate) => !sameOffer(candidate, offer)),
+      current.filter((candidate) => !sameThread(candidate, offer)),
     );
     if (done)
       setFound(
@@ -95,10 +91,11 @@ export function useItemHandoffs(
           current && {
             ...current,
             offers: current.offers.filter(
-              (candidate) => !sameOffer(candidate, offer),
+              (candidate) => !sameThread(candidate, offer),
             ),
           },
       );
+    return done;
   };
   return {
     records,
@@ -107,12 +104,12 @@ export function useItemHandoffs(
     pending,
     link: (offer: HandoffThreadOffer) =>
       projectId
-        ? void settle(offer, () =>
+        ? settle(offer, () =>
             linkHandoffThread(offer, { workItemId: itemId, projectId }),
           )
-        : undefined,
+        : Promise.resolve(false),
     dismiss: (offer: HandoffThreadOffer) =>
-      void settle(offer, () => dismissHandoffThreadOffer(offer)),
+      settle(offer, () => dismissHandoffThreadOffer(offer, itemId)),
     shown: records.length > 0 || tools.length > 0,
   };
 }

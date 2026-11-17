@@ -1693,14 +1693,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       return connection ? pluginConnection(connection) : undefined;
     },
-    unavailableReason: async (pluginId) => {
+    unavailableReason: async (pluginId, _toolId, action = "refreshing it") => {
       const { plugins, access } = await pluginManager.inspectPlugins();
       const inactive = await inactiveCapability(
         storage,
         pluginId,
         "handoff",
         runnablePlugins(plugins, access),
-        "refreshing it",
+        action,
       );
       return inactive?.message;
     },
@@ -2094,7 +2094,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
     handoffThreads: async ({ request, response, unit }) => {
       const payload = await readRequest(request, handoffThreadsRouteSchema);
-      const found = await handoffs.findThreads(payload.projectId, payload.key);
+      const found = await handoffs.findThreads(
+        payload.projectId,
+        payload.workItemId,
+        payload.keys,
+      );
       unit.set({
         handoff: {
           listed: found.listed,

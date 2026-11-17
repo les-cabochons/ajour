@@ -18,6 +18,7 @@ import type {
   ListThreadsResult,
 } from "../../../packages/shared/handoffs.ts";
 import {
+  sameThread,
   selectThreadOffers,
   type HandoffAdoptRoute,
   type HandoffThreadDismissal,
@@ -94,9 +95,14 @@ interface Options {
     pluginId: string,
     connectionId: string,
   ): Promise<HandoffConnection | undefined>;
+  /**
+   * Why the plugin's handoffs can't run now, such as the plugin being off,
+   * in words that end "before <action>", by default "refreshing it".
+   */
   unavailableReason?(
     pluginId: string,
     toolId: string,
+    action?: string,
   ): Promise<string | undefined>;
   onChange(records: Handoff[]): void;
   events?: ApiEvents;
@@ -120,6 +126,11 @@ export const THREAD_LISTING_INTERVAL_MS = 5 * 60_000;
 /** Threads asked of a tool per folder, changed within the last 30 days. */
 const THREAD_LISTING_LIMIT = 50;
 const THREAD_LISTING_WINDOW_MS = 30 * 86_400_000;
+/**
+ * Link takes a thread from a listing at most this old. An item page left
+ * open longer reopens the item, which lists again.
+ */
+export const THREAD_LINK_MAX_AGE_MS = 30 * 60_000;
 
 interface ThreadListing {
   at: number;
@@ -372,17 +383,18 @@ export class Handoffs {
     return { tools: found };
   }
   /**
-   * The threads of the project's repository folders whose title names the
-   * item's key, from each tool that lists its threads. A tool lists a
-   * folder at most once every `THREAD_LISTING_INTERVAL_MS`, so opening
+   * The threads of the project's repository folders whose title names one
+   * of the item's keys, from each tool that lists its threads. A tool lists
+   * a folder at most once every `THREAD_LISTING_INTERVAL_MS`, so opening
    * items reads the last listing. Threads linked to any handoff, and those
-   * dismissed, aren't offered.
+   * dismissed for this item, aren't offered.
    */
   async findThreads(
     projectId: string,
-    key: string,
+    workItemId: string,
+    keys: readonly string[],
   ): Promise<{ offers: HandoffThreadOffer[]; listed: number; failed: number }> {
-    if (!key || !this.options.plugins.listThreads)
+    if (!keys.some(Boolean) || !this.options.plugins.listThreads)
       return { offers: [], listed: 0, failed: 0 };
     const folders = await this.options.storage.listRepositoryFolders(projectId);
     if (!folders.length) return { offers: [], listed: 0, failed: 0 };
@@ -422,7 +434,8 @@ export class Handoffs {
     }
     return {
       offers: selectThreadOffers({
-        key,
+        keys,
+        workItemId,
         threads,
         handoffs: await this.options.storage.listHandoffs(),
         dismissals: await this.options.storage.listHandoffThreadDismissals(),
@@ -479,7 +492,8 @@ export class Handoffs {
    * Links a listed thread to an item, as a handoff whose state is unknown
    * until it is refreshed, right away. The thread comes from the tool's
    * last listing of that folder, so the window names only a thread a tool
-   * listed.
+   * listed, and only while the tool can still list threads and the listing
+   * is at most `THREAD_LINK_MAX_AGE_MS` old.
    */
   async adopt(input: HandoffAdoptRoute): Promise<Handoff> {
     const folder = (
@@ -489,6 +503,17 @@ export class Handoffs {
       throw new HandoffRefused(
         "This repository folder is no longer available.",
       );
+    const tool = (await this.options.plugins.listPlugins())
+      .find((p) => p.id === input.pluginId)
+      ?.capabilities.handoff?.tools.find((t) => t.id === input.toolId);
+    if (!tool?.listsThreads)
+      throw new HandoffRefused("This handoff tool is not available.");
+    const unavailable = await this.options.unavailableReason?.(
+      input.pluginId,
+      input.toolId,
+      "linking its threads",
+    );
+    if (unavailable) throw new HandoffRefused(unavailable);
     const cached = this.listings.get(
       listingKey(
         input.pluginId,
@@ -497,20 +522,18 @@ export class Handoffs {
         input.connectionId,
       ),
     );
-    const thread =
-      cached && !(cached instanceof Promise)
-        ? cached.threads.find((t) => t.threadId === input.threadId)
-        : undefined;
-    if (!thread)
+    const listing = cached instanceof Promise ? undefined : cached;
+    const thread = listing?.threads.find((t) => t.threadId === input.threadId);
+    if (!listing || !thread)
       throw new HandoffRefused(
         "This thread is no longer listed. Open the item again to look for it.",
       );
-    const linked = (await this.options.storage.listHandoffs()).some(
-      (h) =>
-        h.pluginId === thread.pluginId &&
-        h.toolId === thread.toolId &&
-        h.threadId === thread.threadId &&
-        (h.connectionId ?? null) === (thread.connectionId ?? null),
+    if (this.now() - listing.at > THREAD_LINK_MAX_AGE_MS)
+      throw new HandoffRefused(
+        "The threads were found too long ago. Open the item again to look for them.",
+      );
+    const linked = (await this.options.storage.listHandoffs()).some((h) =>
+      sameThread(h, thread),
     );
     if (linked)
       throw new HandoffRefused("This thread is already linked to an item.");
@@ -532,7 +555,7 @@ export class Handoffs {
       ) ?? record
     );
   }
-  /** "Not this one": the thread is offered to no item again. */
+  /** "Not this one": the thread is offered to that item no more. */
   async dismissThread(dismissal: HandoffThreadDismissal) {
     await this.options.storage.dismissHandoffThread(dismissal);
   }
