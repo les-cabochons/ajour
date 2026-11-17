@@ -80,6 +80,8 @@ it.each([
   { timeoutSeconds: 600 },
   { args: [{ kind: "enum", name: "format", values: ["json", "text"] }] },
   { args: [{ if: "title", args: ["--title", "{title:text}"] }] },
+  // A working folder (#761) runs the command somewhere else.
+  { cwd: "{repo:folder}" },
 ])("holds a changed command policy until approved: %j", (change) => {
   expect(
     decision(
@@ -90,6 +92,27 @@ it.each([
       }),
     ).turnOff,
   ).toBe(true);
+});
+
+it("holds a changed working folder slot until approved (#761)", () => {
+  const withFolder = (cwd: string) => ({
+    ...declaration,
+    commands: [
+      {
+        ...declaration.commands[0],
+        args: ["thread", "start", "{a:folder}", "{b:folder}"],
+        cwd,
+      },
+    ],
+  });
+  expect(
+    decision(access(withFolder("{a:folder}")), access(withFolder("{b:folder}")))
+      .turnOff,
+  ).toBe(true);
+  expect(
+    decision(access(withFolder("{a:folder}")), access(withFolder("{a:folder}")))
+      .turnOff,
+  ).toBe(false);
 });
 
 it("holds a session command's widened idle timeout until approved", () => {

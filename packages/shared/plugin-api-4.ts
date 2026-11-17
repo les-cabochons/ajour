@@ -566,12 +566,30 @@ export const declaredConditionalGroupSchema = strictObject({
 export type DeclaredConditionalGroup = z.infer<
   typeof declaredConditionalGroupSchema
 >;
+/**
+ * A command's working folder (#761): a whole `{name:folder}` slot, filled and
+ * resolved like a folder argument but never added to argv. It may share its
+ * name with a folder argument, which then takes the same value.
+ */
+const declaredWorkingFolderSchema = z.string().transform((value, context) => {
+  const name = /^\{([a-zA-Z][a-zA-Z0-9_-]{0,79}):folder\}$/.exec(value)?.[1];
+  if (!name) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A working folder is a whole folder slot such as {repo:folder}.",
+    });
+    return z.NEVER;
+  }
+  return { kind: "folder" as const, name };
+});
 export const declaredCommandSchema = strictObject({
   id: processIdSchema,
   executable: processIdSchema,
   args: z
     .array(z.union([declaredArgumentSchema, declaredConditionalGroupSchema]))
     .max(100),
+  /** The folder slot the command runs in, instead of its first folder argument. */
+  cwd: declaredWorkingFolderSchema.optional(),
   stdin: z.literal("text").optional(),
   mode: z.enum(["capture", "detached", "terminal", "session"]),
   timeoutSeconds: z.number().int().min(1).max(600).optional(),
@@ -621,6 +639,37 @@ export const declaredCommandSchema = strictObject({
         message: `Duplicate slot "${arg.name}".`,
       });
     slots.add(arg.name);
+  }
+  const cwd = command.cwd;
+  if (cwd) {
+    // The working folder is always needed, so its slot can't be optional.
+    if (
+      command.args.some(
+        (arg) =>
+          "if" in arg &&
+          (arg.if === cwd.name ||
+            arg.args.some((a) => a.kind !== "literal" && a.name === cwd.name)),
+      )
+    )
+      issue(
+        context,
+        ["cwd"],
+        "A working folder's slot can't sit in a conditional group: the command always needs it.",
+      );
+    if (
+      command.args.some(
+        (arg) =>
+          !("if" in arg) &&
+          arg.kind !== "literal" &&
+          arg.name === cwd.name &&
+          arg.kind !== "folder",
+      )
+    )
+      issue(
+        context,
+        ["cwd"],
+        `The working folder names "${cwd.name}", which the arguments use as another kind: it must be a folder slot.`,
+      );
   }
 });
 /** Parsed declaration for the process broker, with typed slots and groups. */

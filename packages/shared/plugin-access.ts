@@ -177,6 +177,7 @@ export function summarizePluginAccess(
               : command.mode === "session"
                 ? "Keeps a program running and talks to it."
                 : "Opens in your terminal.",
+          command.cwd ? "Runs in the repository folder." : "",
           command.args
             .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
             .some((arg) => arg.kind === "connection-url")
