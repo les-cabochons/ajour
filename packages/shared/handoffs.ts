@@ -21,7 +21,8 @@ const pullRequestSchema = z
     title: z.string().max(500).optional(),
   })
   .strict();
-export const handoffStateSchema = z.enum([
+/** The states a tool reports for its thread. */
+export const handoffReportedStateSchema = z.enum([
   "working",
   "needs-you",
   "ready",
@@ -29,6 +30,15 @@ export const handoffStateSchema = z.enum([
   "failed",
   "gone",
   "unknown",
+]);
+/**
+ * A handoff's common state. `started` is Ajour's own, never a tool's: the
+ * thread started in a tool that doesn't report its state (`followsState:
+ * false`), so Ajour never reads it again.
+ */
+export const handoffStateSchema = z.enum([
+  ...handoffReportedStateSchema.options,
+  "started",
 ]);
 // Opaque, bounded JSON supplied by the tool, including its own status and label.
 export const handoffNativeSchema = z
@@ -135,7 +145,7 @@ export const listThreadsResultSchema = z
 export const handoffUpdateSchema = z
   .object({
     id,
-    state: handoffStateSchema,
+    state: handoffReportedStateSchema,
     link: z.string().max(2000).optional(),
     native: handoffNativeSchema,
     title: z.string().min(1).max(500).optional(),
@@ -261,6 +271,36 @@ export const handoffToolConnectionSchema = z
   .enum(["required", "none"])
   .default("none");
 export type Handoff = z.infer<typeof handoffRecordSchema>;
+export type HandoffState = z.infer<typeof handoffStateSchema>;
+
+/**
+ * What a handoff tool can do, in the order the plugin's page lists them:
+ * every tool starts threads; `followsState` reads their state; `listsThreads`
+ * finds the user's own; a `hook-url` command makes state change within
+ * seconds. Commands aren't tied to tools in the manifest, so a plugin that
+ * declares one counts for each of its tools that follows state: a hook only
+ * makes Ajour read the state again.
+ */
+export const handoffToolFeatureLabels = {
+  "starts-threads": "Starts threads",
+  "follows-state": "Follows state",
+  "finds-threads": "Finds threads",
+  "updates-within-seconds": "Updates within seconds",
+} as const;
+export type HandoffToolFeature = keyof typeof handoffToolFeatureLabels;
+
+export function handoffToolFeatures(
+  tool: { followsState?: boolean; listsThreads?: boolean },
+  pluginHooks: boolean,
+): HandoffToolFeature[] {
+  const follows = tool.followsState !== false;
+  return [
+    "starts-threads" as const,
+    ...(follows ? ["follows-state" as const] : []),
+    ...(tool.listsThreads ? ["finds-threads" as const] : []),
+    ...(follows && pluginHooks ? ["updates-within-seconds" as const] : []),
+  ];
+}
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
 export type StartHandoffResult = z.infer<typeof startHandoffResultSchema>;
 export type DetectToolsResult = z.infer<typeof detectToolsResultSchema>;
@@ -305,6 +345,12 @@ export function handoffCapabilitySchema<
                * offer to link threads whose title names an item's key.
                */
               listsThreads: z.boolean().optional(),
+              /**
+               * The plugin answers `readHandoffStates` for this tool. False
+               * for a tool that can only start a thread: its handoffs stay
+               * `started`, and Ajour never reads or polls them.
+               */
+              followsState: z.boolean().default(true),
             })
             .strict(),
         )

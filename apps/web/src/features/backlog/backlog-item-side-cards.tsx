@@ -666,8 +666,10 @@ function HandoffRow({
   tool: HandoffTool | undefined;
   now: number;
 }) {
-  const chip = getHandoffChip(handoff);
   const toolLabel = tool?.label ?? handoff.toolId;
+  const chip = getHandoffChip(handoff, { toolLabel, now });
+  // A started thread's tool reports nothing, so its time is when it started.
+  const started = handoff.state === "started";
   return (
     <li className="handoff-row" aria-label={handoff.title}>
       <div className="handoff-row-head">
@@ -705,11 +707,13 @@ function HandoffRow({
             <MoreIcon className="size-4" />
           </TooltipButton>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => void refreshHandoffThread(handoff.id)}
-            >
-              Refresh
-            </DropdownMenuItem>
+            {started ? null : (
+              <DropdownMenuItem
+                onClick={() => void refreshHandoffThread(handoff.id)}
+              >
+                Refresh
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               variant="destructive"
               onClick={() => void removeHandoffFromItem(handoff.id, toolLabel)}
@@ -741,7 +745,11 @@ function HandoffRow({
         </Tooltip>
         <span className="truncate">{toolLabel}</span>
         <span aria-hidden="true">·</span>
-        <span className="shrink-0">{syncAge(handoff.changedAt, now)}</span>
+        <span className="shrink-0">
+          {started
+            ? `started ${syncAge(handoff.startedAt, now)}`
+            : syncAge(handoff.changedAt, now)}
+        </span>
       </div>
       {handoff.branch ? (
         <div className="handoff-row-meta">

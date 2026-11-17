@@ -1321,6 +1321,25 @@ returns. Refresh runs every batch and returns `{ handoffs, failures }`, with eac
 failure's plugin, tool, project and reason. All failed is HTTP 409, partial success
 is 200, and an unknown single-record refresh is 404.
 
+### Tools that don't follow state
+
+A tool declares `followsState` (default `true`, ticket #759). With `false`,
+`Handoffs.start` saves the record as `started` and gives the start no hook;
+`shouldRefresh` is false for `started`, so neither the tick nor a hook reads
+it, and every refresh skips it except `refreshConnection`, whose deleted
+connection still pauses it, as for any handoff, without a read. POST
+`/api/handoffs/:handoffId/refresh` refuses a started handoff with 409. A
+handoff whose tool stops following state becomes `started` at its next
+check instead of being read, and loses its hook token. `started` is a common
+state only the host gives: `handoffUpdateSchema` takes a tool's states,
+`handoffReportedStateSchema`, without it. Since `readHandoffStates` is called
+only for tools that follow state, a plugin whose tools all set `false` may
+leave the export out; the host checks exports only when it calls them.
+`handoffToolFeatures` in `packages/shared/handoffs.ts` derives each tool's
+features for the plugin's page; the overview's `handoffHooks` says the
+plugin declares a `hook-url` command (`declaresHookUrl`), and counts for each
+of its tools that follows state, since commands aren't tied to tools.
+
 The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE
 `/api/handoffs/:handoffId`, POST `/api/handoffs/visibility`, and POST
@@ -1358,7 +1377,8 @@ listing, never from the window, and refuses while the plugin can't run, once
 the tool no longer declares `listsThreads`, when that listing is over 30
 minutes old, and for a thread it didn't list or that is already linked. It
 saves a record with state `unknown` (`adoptHandoff` in `handoff-state.ts`),
-then refreshes it at once. POST `/api/handoffs/threads/dismiss` stores "Not
+then refreshes it at once, or, for a tool that doesn't follow state, saves it
+`started` and doesn't. POST `/api/handoffs/threads/dismiss` stores "Not
 this one" in `handoffThreadDismissals`, keyed by plugin, tool, connection,
 thread id and work item, newest 2,000 kept; uninstalling the plugin removes
 them.

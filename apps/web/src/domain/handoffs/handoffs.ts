@@ -10,6 +10,7 @@ import {
 import { itemKeySchema } from "@ajour/shared/handoff-threads";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
 import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
+import { syncAge } from "@/domain/backlog/sync-freshness";
 import {
   getWorkItemLookupKeys,
   getWorkItemParentKey,
@@ -33,6 +34,8 @@ export interface HandoffTool {
   available: boolean | undefined;
   /** Why the tool can't run here, in the plugin's words. */
   reason?: string;
+  /** False for a tool that only starts threads: its handoffs stay Started. */
+  followsState: boolean;
 }
 
 export type DetectedTools = DetectToolsResult["tools"];
@@ -70,6 +73,7 @@ export function listHandoffTools(
         toolId: tool.id,
         label: tool.label,
         iconSvg: tool.iconSvg,
+        followsState: tool.followsState !== false,
         available: detected ? (found?.available ?? false) : undefined,
         ...(detected && !found?.available
           ? { reason: found?.reason ?? `${tool.label} isn't on this computer.` }
@@ -82,6 +86,17 @@ export function listHandoffTools(
 /** Why a tool can't take a hand off now, or undefined when it can. */
 export function getHandoffToolRefusal(tool: HandoffTool) {
   return tool.available === false ? tool.reason : undefined;
+}
+
+/**
+ * A tool's secondary line in the hand-off menus: why it can't run, else, for
+ * a tool that doesn't follow state, that it only starts the thread.
+ */
+export function getHandoffToolNote(tool: HandoffTool) {
+  return (
+    getHandoffToolRefusal(tool) ??
+    (tool.followsState ? undefined : "Starts a thread; doesn't report progress")
+  );
 }
 
 /**
@@ -214,20 +229,34 @@ const CHIPS: Record<
   failed: { label: "Failed", tone: "danger" },
   gone: { label: "Gone", tone: "muted" },
   unknown: { label: "Unknown", tone: "muted" },
+  started: { label: "Started", tone: "muted" },
 };
 
 /**
  * A handoff's state chip: green Working, amber Needs you, neutral Ready and
- * Done, red Failed, muted Unknown and Gone. A paused handoff is muted and
- * says why. `detail` is the tooltip: the tool's own label for the state.
+ * Done, red Failed, muted Unknown, Gone and Started. A paused handoff is
+ * muted and says why. `detail` is the tooltip: the tool's own label for the
+ * state, or, for a started one, when it started and that the tool doesn't
+ * report progress. `context` names the tool and the time for that.
  */
-export function getHandoffChip(record: Handoff): {
+export function getHandoffChip(
+  record: Handoff,
+  context: { toolLabel?: string; now?: number } = {},
+): {
   label: string;
   tone: HandoffChipTone;
   detail?: string;
 } {
   if (record.paused)
     return { label: "Paused", tone: "muted", detail: record.paused.reason };
+  if (record.state === "started") {
+    const tool = context.toolLabel ?? record.toolId;
+    const age = syncAge(record.startedAt, context.now ?? record.startedAt);
+    return {
+      ...CHIPS.started,
+      detail: `Started in ${tool} ${age}. ${tool} doesn't report progress here; open it there to follow it.`,
+    };
+  }
   const native = getHandoffNativeLabel(record);
   return { ...CHIPS[record.state], ...(native ? { detail: native } : {}) };
 }

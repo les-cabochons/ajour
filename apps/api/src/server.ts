@@ -193,6 +193,7 @@ import {
   type BrokerTransport,
 } from "./credential-broker.ts";
 import {
+  declaresHookUrl,
   isPluginApi4Manifest,
   pluginNetworkFieldIds,
   type PluginApi4Manifest,
@@ -1285,6 +1286,16 @@ async function getOverview(
         }),
     ),
   );
+  const hooked = new Set(
+    plugins
+      .filter(
+        (plugin) =>
+          isPluginApi4Manifest(plugin) &&
+          plugin.capabilities.handoff &&
+          declaresHookUrl(plugin),
+      )
+      .map((plugin) => plugin.id),
+  );
   const overview = {
     ...listed,
     connectionGroups: listed.connectionGroups.map((group) => {
@@ -1294,6 +1305,7 @@ async function getOverview(
         ...group,
         ...(suspended ? { suspended } : {}),
         ...(processGate ? { processGate } : {}),
+        ...(hooked.has(group.plugin.id) ? { handoffHooks: true } : {}),
       };
     }),
   };
@@ -2058,11 +2070,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       );
     },
-    handoffRefresh: async ({ response, params }) => {
+    handoffRefresh: async ({ response, params, unit }) => {
       if (
         !(await storage.listHandoffs()).some((h) => h.id === params.handoffId)
       ) {
         writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      const refusal = await handoffs.refreshRefusal(params.handoffId);
+      if (refusal) {
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: refusal });
         return;
       }
       const result = await handoffs.refresh(params.handoffId);

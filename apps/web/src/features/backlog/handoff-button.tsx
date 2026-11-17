@@ -5,6 +5,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   getHandoffItemRefusal,
+  getHandoffToolNote,
   getHandoffToolRefusal,
   pickHandoffTool,
   type HandoffTool,
@@ -41,7 +42,8 @@ export function HandoffToolIcon({
 /**
  * The item page's Hand off to <tool> split button. The main half hands off
  * to the tool last used on this device; the arrow lists the other tools,
- * those this computer lacks disabled with why, then Review prompt…. Without
+ * those this computer lacks disabled with why, one that doesn't follow
+ * state saying it only starts the thread, then Review prompt…. Without
  * a handoff tool, as in the web build, it renders nothing.
  */
 export function HandoffButton({ item }: { item: LocalWorkItem }) {
@@ -68,6 +70,7 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
         <>
           {others.map((other) => {
             const reason = itemRefusal ?? getHandoffToolRefusal(other);
+            const note = reason ?? getHandoffToolNote(other);
             return (
               <DropdownMenuItem
                 key={other.key}
@@ -82,9 +85,9 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
                   <HandoffToolIcon tool={other} />
                   Hand off to {other.label}
                 </span>
-                {reason ? (
+                {note ? (
                   <span className="pl-6 text-xs font-normal text-muted-foreground">
-                    {reason}
+                    {note}
                   </span>
                 ) : null}
               </DropdownMenuItem>

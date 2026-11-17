@@ -94,6 +94,7 @@ export type PluginManifest = {
             iconSvg: string;
             connection?: "required" | "none" | undefined;
             listsThreads?: boolean | undefined;
+            followsState?: boolean | undefined;
           }[];
           promptTemplate?: string | undefined;
         }

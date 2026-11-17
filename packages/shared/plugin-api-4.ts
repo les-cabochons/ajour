@@ -625,6 +625,21 @@ export const declaredCommandSchema = strictObject({
 });
 /** Parsed declaration for the process broker, with typed slots and groups. */
 export type DeclaredCommand = z.infer<typeof declaredCommandSchema>;
+/** Whether the command receives a handoff's hook URL, in a group or not. */
+export function commandUsesHookUrl(command: DeclaredCommand) {
+  return command.args
+    .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
+    .some((arg) => arg.kind === "hook-url");
+}
+/**
+ * Whether the plugin declares a command that receives a handoff's hook URL,
+ * so its threads can tell Ajour they changed (#726).
+ */
+export function declaresHookUrl(manifest: {
+  processes?: { commands: DeclaredCommand[] };
+}) {
+  return (manifest.processes?.commands ?? []).some(commandUsesHookUrl);
+}
 const refusedExecutables = new Set(
   "cmd command powershell pwsh sh bash zsh fish dash ksh csh tcsh wsl wscript cscript mshta rundll32 regsvr32 conhost start explorer".split(
     " ",
@@ -1043,10 +1058,7 @@ function checkHandoffConnections(
       );
   });
   manifest.processes?.commands.forEach((command, index) => {
-    const usesHook = command.args
-      .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
-      .some((arg) => arg.kind === "hook-url");
-    if (usesHook && !manifest.capabilities.handoff)
+    if (commandUsesHookUrl(command) && !manifest.capabilities.handoff)
       issue(
         context,
         ["processes", "commands", index, "args"],

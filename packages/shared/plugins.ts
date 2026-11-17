@@ -834,6 +834,12 @@ export type ConnectionAccessChoiceSummary = z.infer<
 export const pluginOverviewGroupSchema = z.object({
   plugin: pluginOverviewItemSchema,
   enabled: z.boolean(),
+  /**
+   * The plugin declares a command that receives a handoff's hook URL, so its
+   * tools that follow state update within seconds (`handoffToolFeatures`).
+   * Absent otherwise.
+   */
+  handoffHooks: z.boolean().optional(),
   /** The access choices of its connections. Absent when it has none. */
   connectionAccess: z.array(connectionAccessChoiceSummarySchema).optional(),
   /** Declared capabilities the user turned off. `enabled` still gates all. */

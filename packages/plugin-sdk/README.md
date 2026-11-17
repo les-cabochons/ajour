@@ -445,11 +445,35 @@ end idle sessions.
 ## Handoff tools
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
-`iconSvg`, `settings` and an optional `connection`. The host treats handoff like the other switchable
+`iconSvg`, `settings` and optional `connection`, `listsThreads` and
+`followsState`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
 `readHandoffStates(request)`, typed by `PluginModule`.
+
+Each tool declares the features it supports, and Ajour uses only those. The
+plugin's page lists them for each tool:
+
+| Feature                | What Ajour does                                      | Declared by                                                                     |
+| ---------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Starts threads         | Calls `startHandoff`.                                | every tool                                                                      |
+| Follows state          | Calls `readHandoffStates` for the thread's state.    | `followsState`, `true` by default                                               |
+| Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`                                                            |
+| Updates within seconds | A hook tells Ajour the thread changed.               | a declared command with a `hook-url` argument, for each tool that follows state |
+
+Commands aren't tied to tools in the manifest, so a plugin that declares a
+`hook-url` command counts as updating within seconds for each of its tools
+that follows state.
+
+A tool that can only start a thread, such as a CLI with no way to read its
+session's state, sets `followsState: false`. Its handoffs get the common state
+`started`: Ajour never calls `readHandoffStates` for them, never polls them,
+gives their starts no `hook`, and offers no Refresh. A thread linked from
+`listThreads` is `started` too. Open still follows the record's link or
+resume. A plugin whose tools all set `followsState: false` may leave
+`readHandoffStates` out. Since the start carries no hook, such a tool's start
+command can't take a `hook-url` argument.
 
 A tool that talks to its server over HTTP, such as OpenCode's loopback
 server, sets `connection: "required"` (the default is `"none"`). The plugin
@@ -481,8 +505,10 @@ The host keeps it for the later Open workflow; this capability does not run it.
 A state read receives `{ tool, handoffs: [{ id, threadId, folderId, native }] }`.
 Return exactly one answer for each id with `state` and `native`, plus optional
 `title`, `branch` and `pullRequests`. Pull requests have `url` and optional
-`title`. Common states are `working`, `needs-you`, `ready`, `done`, `failed`,
-`gone` and `unknown`. A new handoff starts in `working`. Reads batch within one
+`title`. A tool reports `working`, `needs-you`, `ready`, `done`, `failed`,
+`gone` or `unknown`. The common state `started` is Ajour's own, for a tool that
+doesn't follow state; a read can't answer it. A new handoff starts in
+`working`, or `started` for such a tool. Reads batch within one
 project, and process folder slots can resolve only that project's saved folders.
 Prompts and settings are not stored in handoff records or events.
 

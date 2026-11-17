@@ -34,7 +34,7 @@ export function useItemHandoffs(
   const live = records
     .filter(
       (record) =>
-        !record.paused && record.state !== "done" && record.state !== "gone",
+        !record.paused && !["done", "gone", "started"].includes(record.state),
     )
     .map((record) => record.id)
     .join(" ");

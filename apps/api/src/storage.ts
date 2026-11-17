@@ -1506,7 +1506,8 @@ export class AppApiStorage {
   }
   /**
    * Saves refreshed states. A handoff done or gone for 24 hours has its hook
-   * token revoked first, so no refresh can bring the token back with it.
+   * token revoked first, so no refresh can bring the token back with it, and
+   * so does one that becomes `started`, whose state nothing reads.
    */
   async updateHandoffs(
     updates: HostHandoffUpdate[],
@@ -1521,7 +1522,9 @@ export class AppApiStorage {
           .filter(
             (record) =>
               byId.has(record.id) &&
-              !shouldRefresh(record, Math.max(now, savedAt)),
+              (!shouldRefresh(record, Math.max(now, savedAt)) ||
+                // Nothing reads a started handoff's state, so no hook asks to.
+                byId.get(record.id)!.state === "started"),
           )
           .map((record) => record.id),
       );
