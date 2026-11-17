@@ -233,3 +233,28 @@ it("refuses a tool's operation without the connection it needs, or with one it d
     await manager.shutdown();
   }
 });
+
+it("gives only a start's process calls the hook URL the host put in its request", async () => {
+  const { manager, callers, seen } = await setup();
+  const hook = { url: "http://127.0.0.1:8787/hooks/handoff/h?token=t" };
+  try {
+    await manager.detectTools("tools", "p");
+    await manager.startHandoff("tools", { ...startRequest("t3"), hook }, "p");
+    await manager.readHandoffStates(
+      "tools",
+      {
+        tool: "t3",
+        handoffs: [{ id: "h", threadId: "t", folderId: "f", native: {} }],
+      },
+      "p",
+    );
+    expect(seen()[1]?.[1]).toMatchObject({ hook });
+    expect(callers.map((caller) => [caller.method, caller.hookUrl])).toEqual([
+      ["detectTools", undefined],
+      ["startHandoff", hook.url],
+      ["readHandoffStates", undefined],
+    ]);
+  } finally {
+    await manager.shutdown();
+  }
+});

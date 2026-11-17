@@ -5030,14 +5030,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       answer(404);
       return;
     }
-    let body: Awaited<ReturnType<typeof drainHookBody>> = "read";
+    const drained: { body: Awaited<ReturnType<typeof drainHookBody>> } = {
+      body: "read",
+    };
     const { result, tool } = await handoffHooks.receive(
       id,
       url.searchParams.get("token"),
-      async () => (body = await drainHookBody(request)) === "read",
+      async () => (drained.body = await drainHookBody(request)) === "read",
     );
     // A client that left gets no answer; the seam records it.
-    if (body === "closed") return;
+    if (drained.body === "closed") return;
     if (result === "dropped") {
       if (tool) unit.set({ handoff: { tool } });
       unit.refuse("body_too_large");

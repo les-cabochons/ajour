@@ -477,7 +477,26 @@ const processSlotKindSchema = z.enum([
   "folder",
   // Filled by the host from the handoff's connection, never by the plugin.
   "connection-url",
+  // Filled by the host with a start's hook URL (#726), never by the plugin.
+  "hook-url",
 ]);
+/**
+ * A start's hook URL, written into a manifest literal at each `{url}`,
+ * such as Claude Code's per-start `--settings` JSON, which names the URL
+ * once per hook event. The literal is the
+ * plugin author's, under the user's consent like any literal; the host
+ * fills only the URL, whose characters need no escaping in JSON.
+ */
+const processHookUrlSchema = strictObject({
+  kind: z.literal("hook-url"),
+  name: processIdSchema,
+  template: processLiteralSchema
+    .refine(
+      (value) => value.includes("{url}"),
+      "A hook-url template holds {url} where the URL goes.",
+    )
+    .optional(),
+});
 const processEnumSchema = strictObject({
   kind: z.literal("enum"),
   name: processIdSchema,
@@ -514,6 +533,7 @@ export const declaredArgumentSchema = z.union([
     return { kind: kind.data, name };
   }),
   processEnumSchema,
+  processHookUrlSchema,
   strictObject({ kind: z.literal("literal"), value: processLiteralSchema }),
 ]);
 export type DeclaredArgument = z.infer<typeof declaredArgumentSchema>;
@@ -521,16 +541,16 @@ export const declaredConditionalGroupSchema = strictObject({
   if: processIdSchema,
   args: z.array(declaredArgumentSchema).min(1).max(100),
 }).superRefine((group, context) => {
-  if (
-    group.args.some(
-      (arg) => arg.kind === "connection-url" && arg.name === group.if,
-    )
-  ) {
+  const hostFilled = group.args.find(
+    (arg) =>
+      (arg.kind === "connection-url" || arg.kind === "hook-url") &&
+      arg.name === group.if,
+  );
+  if (hostFilled) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["if"],
-      message:
-        "A conditional group can't test a connection-url slot: the host fills it, the plugin never passes it.",
+      message: `A conditional group can't test a ${hostFilled.kind} slot: the host fills it, the plugin never passes it.`,
     });
   }
   if (
@@ -1020,6 +1040,17 @@ function checkHandoffConnections(
         context,
         path,
         `The handoff tool "${tool.id}" uses a connection, so the plugin needs a network declaration.`,
+      );
+  });
+  manifest.processes?.commands.forEach((command, index) => {
+    const usesHook = command.args
+      .flatMap((arg) => ("if" in arg ? arg.args : [arg]))
+      .some((arg) => arg.kind === "hook-url");
+    if (usesHook && !manifest.capabilities.handoff)
+      issue(
+        context,
+        ["processes", "commands", index, "args"],
+        "A hook-url slot is filled only when a handoff starts: only a plugin with the handoff capability has one.",
       );
   });
   manifest.processes?.commands.forEach((command, index) => {

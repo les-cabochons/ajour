@@ -1441,6 +1441,9 @@ export class PluginManager {
               ...(connectionId && capabilityOfMethod(method) === "handoff"
                 ? { connectionId }
                 : {}),
+              // Only a start's commands may receive its hook URL
+              // (`hook-url`), which the host put in the request.
+              ...(method === "startHandoff" ? hookUrlOf(params.request) : {}),
             });
             args = prepared.args;
           } else {
@@ -1813,6 +1816,12 @@ function lifecycleOf(
  * A handoff operation's connection, checked to be the plugin's own: the
  * plugin would otherwise read another plugin's settings.
  */
+/** The hook URL of a start's request, which the host built (#726). */
+function hookUrlOf(request: unknown): { hookUrl?: string } {
+  const url = (request as { hook?: { url?: unknown } } | undefined)?.hook?.url;
+  return typeof url === "string" ? { hookUrl: url } : {};
+}
+
 function handoffConnectionParams(
   pluginId: string,
   connection: PluginInvocationConnection | undefined,

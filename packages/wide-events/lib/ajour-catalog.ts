@@ -709,6 +709,8 @@ export const catalog = defineCatalog({
         "undeclared",
         "folder_refused",
         "connection_refused",
+        /** A hook-url argument outside a start that has a hook (#726). */
+        "hook_refused",
         "executable_missing",
         "spawn_refused",
         "concurrency",
