@@ -379,6 +379,18 @@ A task a plugin declares for an agent, such as "Enter in Workday": a prompt, its
 **Agent run**:
 One agent task Ajour started: a coding agent CLI with Ajour's and the task's prompts, its own agent client and agent session. Ajour ends the session and revokes the client when the CLI exits.
 
+**Core task**:
+An agent task Ajour itself defines, not a plugin, such as Deck's guide, ask and chat. It runs as an agent turn, without the timesheet rules.
+_Avoid_: Built-in task, Deck run
+
+**Agent conversation**:
+The agent's conversation about one pull request at one head, which its core tasks share one turn after another. Ajour holds one at a time, and closes it when a turn comes for another pull request or when it is idle. Coming back resumes it.
+_Avoid_: Agent session (that is the timesheet's), chat, thread
+
+**Agent turn**:
+One message to an agent conversation and the answer it streams back. Only one agent turn or agent run goes at a time across Ajour; a turn that has to wait says what it waits for, and any turn can be stopped.
+_Avoid_: Run, request, ask (an Ask is one kind of turn)
+
 **Agent indicator**:
 The corner control that shows whether agents are idle, active, waiting for the user, failed or in error.
 

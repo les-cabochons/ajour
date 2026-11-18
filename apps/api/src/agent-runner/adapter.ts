@@ -49,4 +49,61 @@ export interface AgentCliAdapter {
   buildInvocation(input: AdapterInput): AdapterInvocation;
   /** Null for lines the runner does not need. */
   parseEvent(line: string): RunnerEvent | null;
+  /** How the CLI holds a conversation. Absent when it can't yet. */
+  conversation?: ConversationAdapter;
+}
+
+/** What an adapter needs to start a conversation's process. */
+export interface ConversationInput {
+  executable: string;
+  /** The folder the CLI runs in. The adapter may write config files here, never the token. */
+  workDirectory: string;
+  /** The conversation's own instructions, filled. Each turn adds its task's. */
+  prompt: string;
+  ajourMcpUrl: string;
+  /** Empty means the CLI's default. */
+  model: string;
+  baseEnv: Record<string, string>;
+  token: string;
+  /** The provider's ID of an earlier conversation to continue. */
+  resume?: string;
+}
+
+/** What the runner learns from one line of a conversation's output. */
+export type ConversationEvent =
+  /** The provider's ID for the conversation, which a later process resumes. */
+  | { kind: "session"; id: string }
+  /** The next piece of the answer. */
+  | { kind: "text"; text: string }
+  | { kind: "tool-call" }
+  | { kind: "turn-done" }
+  | { kind: "turn-interrupted" }
+  | { kind: "turn-failed"; message: string }
+  | { kind: "mcp-failed"; server: string };
+
+/**
+ * One process's side of the CLI's conversation protocol, over stdin and
+ * stdout lines. It keeps the protocol's own state, such as request IDs.
+ */
+export interface ConversationCodec {
+  /** Lines to write as soon as the process starts. */
+  open(): string[];
+  /** Lines that send one turn. A codec may hold them until the CLI is ready. */
+  sendTurn(text: string): string[];
+  /** Lines that ask the CLI to stop the turn in progress. Empty when it can't, and the runner ends the process. */
+  interrupt(): string[];
+  /** What one stdout line says, and the lines to answer it with. */
+  read(line: string): { events: ConversationEvent[]; reply: string[] };
+}
+
+/**
+ * How a CLI holds a conversation. `warm` keeps one process running across
+ * turns, its stdin open, and a new process resumes the conversation after
+ * it ends. `per-turn` runs one process per turn, which gets the turn on
+ * stdin, resumes the conversation by the provider's ID, and exits.
+ */
+export interface ConversationAdapter {
+  mode: "warm" | "per-turn";
+  buildInvocation(input: ConversationInput): AdapterInvocation;
+  createCodec(input: ConversationInput): ConversationCodec;
 }

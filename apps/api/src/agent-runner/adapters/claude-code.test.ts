@@ -189,3 +189,144 @@ describe("Claude Code adapter", () => {
     );
   });
 });
+
+describe("Claude Code conversation", () => {
+  const conversation = claudeCodeAdapter.conversation!;
+  const conversationInput = {
+    executable: "/usr/local/bin/claude",
+    workDirectory: "/tmp/conversation-1",
+    prompt: "Review pull request pr-1.",
+    ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
+    model: "",
+    baseEnv: { PATH: "/usr/bin" },
+    token: TOKEN,
+  };
+  const line = (value: unknown) => JSON.stringify(value);
+  const read = (value: unknown) =>
+    conversation.createCodec(conversationInput).read(line(value));
+
+  it("keeps stdin open for turns, streams partial text and loads only Ajour's server", () => {
+    const { args, env, files } =
+      conversation.buildInvocation(conversationInput);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--strict-mcp-config",
+        "--allowedTools",
+        "mcp__ajour",
+      ]),
+    );
+    expect(args).not.toContain("mcp__playwright");
+    expect(args).not.toContain("--resume");
+    expect(args.join(" ")).not.toContain(TOKEN);
+    expect(JSON.stringify(files)).not.toContain(TOKEN);
+    expect(env.AJOUR_MCP_TOKEN).toBe(TOKEN);
+    expect(Object.keys(JSON.parse(files["mcp.json"]!).mcpServers)).toEqual([
+      "ajour",
+    ]);
+    expect(files["prompt.md"]).toBe("Review pull request pr-1.");
+  });
+
+  it("resumes an earlier conversation by its session ID", () => {
+    expect(
+      conversation.buildInvocation({ ...conversationInput, resume: "s-1" })
+        .args,
+    ).toEqual(expect.arrayContaining(["--resume", "s-1"]));
+  });
+
+  it("sends a turn as one user message and an interrupt as a control request", () => {
+    const codec = conversation.createCodec(conversationInput);
+    expect(codec.open()).toEqual([]);
+    const [turn] = codec.sendTurn("Explain this.");
+    expect(JSON.parse(turn!)).toMatchObject({
+      type: "user",
+      message: { role: "user", content: "Explain this." },
+    });
+    const [interrupt] = codec.interrupt();
+    expect(JSON.parse(interrupt!)).toMatchObject({
+      type: "control_request",
+      request: { subtype: "interrupt" },
+    });
+  });
+
+  it("reads the session, text deltas, tool calls and each turn's end", () => {
+    expect(
+      read({
+        type: "system",
+        subtype: "init",
+        session_id: "s-1",
+        mcp_servers: [{ name: "ajour", status: "connected" }],
+      }).events,
+    ).toEqual([{ kind: "session", id: "s-1" }]);
+    expect(
+      read({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "Hel" },
+        },
+      }).events,
+    ).toEqual([{ kind: "text", text: "Hel" }]);
+    // The complete message repeats the text it streamed.
+    expect(
+      read({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "Hello" }] },
+      }).events,
+    ).toEqual([]);
+    expect(
+      read({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", name: "mcp__ajour__x" }] },
+      }).events,
+    ).toEqual([{ kind: "tool-call" }]);
+    expect(
+      read({ type: "result", subtype: "success", is_error: false }).events,
+    ).toEqual([{ kind: "turn-done" }]);
+    expect(
+      read({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: "Session limit reached",
+      }).events,
+    ).toEqual([{ kind: "turn-failed", message: "Session limit reached" }]);
+    expect(
+      read({
+        type: "system",
+        subtype: "init",
+        session_id: "s-2",
+        mcp_servers: [{ name: "ajour", status: "failed" }],
+      }).events,
+    ).toEqual([
+      { kind: "session", id: "s-2" },
+      { kind: "mcp-failed", server: "ajour" },
+    ]);
+  });
+
+  it("ends an interrupted turn as interrupted", () => {
+    const codec = conversation.createCodec(conversationInput);
+    codec.sendTurn("Explain this.");
+    codec.interrupt();
+    expect(
+      codec.read(
+        line({
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+        }),
+      ).events,
+    ).toEqual([{ kind: "turn-interrupted" }]);
+    // The next turn ends on its own again.
+    codec.sendTurn("And this?");
+    expect(
+      codec.read(line({ type: "result", subtype: "success", is_error: false }))
+        .events,
+    ).toEqual([{ kind: "turn-done" }]);
+  });
+});

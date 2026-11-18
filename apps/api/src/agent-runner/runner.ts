@@ -14,8 +14,11 @@ import type {
   AgentRun,
   AgentRunnerOverview,
   AgentRunnerSettings,
-  AgentRunStartRequest,
   AgentTaskStatus,
+  AgentTurn,
+  AgentTurnEvent,
+  CoreTaskRunRequest,
+  PluginTaskRunRequest,
 } from "../../../../packages/shared/agent-runs.ts";
 import {
   agentTaskSettingFields,
@@ -47,11 +50,19 @@ import { resolveSpawn, spawnRefusalMessage } from "../process-spawn/index.ts";
 import { defaultReadVersion } from "./cli-path.ts";
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
+import { AgentRunError, childEnv, versionOnly } from "./launch.ts";
+import { AgentConversations } from "./conversations.ts";
+import type { McpClientPullRequestBinding } from "../storage.ts";
+import { TurnSlot, TurnSlotAbortedError, type TurnLease } from "./turn-slot.ts";
+
+export { AgentRunError };
 
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
  * runner begins, the CLI in an empty temp folder, and cleanup on every exit.
- * See docs/specs/2026-10-15-ajour-agent-runner-design.md.
+ * See docs/specs/2026-10-15-ajour-agent-runner-design.md. Core tasks run as
+ * turns of a pull request's conversation (conversations.ts). A run and a
+ * turn share one slot, so one of them runs at a time across the app.
  */
 
 const STALL_LIMIT_MS = 10 * 60_000;
@@ -70,26 +81,21 @@ const ALL_CLIS: {
   { id: "opencode", label: "OpenCode", executableName: "opencode" },
 ];
 
-export class AgentRunError extends Error {
-  readonly status: 400 | 404 | 409;
-
-  constructor(message: string, status: 400 | 404 | 409) {
-    super(message);
-    this.name = "AgentRunError";
-    this.status = status;
-  }
-}
-
 interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
   getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
   /** The plugin's secret settings the vault holds, with their states. Never a value. */
   getAgentTaskSecretFields?(pluginId: string): Promise<SecretFieldSummary[]>;
-  /** `tools`, when given, limits the client to those data tools. */
+  /**
+   * `tools`, when given, limits the client to those data tools.
+   * `pullRequest` binds a conversation's client to one pull request.
+   */
   createMcpClient(
     name: string,
-    scope?: { tools: readonly AgentTaskMcpTool[] },
+    scope?:
+      | { tools: readonly AgentTaskMcpTool[] }
+      | { pullRequest: McpClientPullRequestBinding },
   ): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
@@ -137,6 +143,12 @@ export interface AgentRunnerOptions {
   now?: () => number;
   /** Time between SIGTERM and SIGKILL. Tests shorten it. Defaults to 5 seconds. */
   killGraceMs?: number;
+  /** Where each conversation turn's events go: the window's event stream. */
+  publishTurnEvent?: (event: AgentTurnEvent) => void;
+  /** How long a conversation with no turn stays open. Defaults to 5 minutes. */
+  conversationIdleMs?: number;
+  /** How long an interrupted turn has before its process is ended. Defaults to 5 seconds. */
+  interruptGraceMs?: number;
 }
 
 /** The steps of a launch, in order. agent.run names the one that failed. */
@@ -188,6 +200,8 @@ interface ActiveRun {
   endedSince?: number;
   /** Set when the CLI's process exits. Its output can stay open longer. */
   exited?: { code: number | null };
+  /** The app's one agent slot, held for the whole run. */
+  lease: TurnLease;
   /** Resolves when the CLI closes, which may be never. */
   closed: Promise<void>;
   /** Set by the first finalize() call, which later calls return. */
@@ -225,9 +239,47 @@ export class AgentRunner {
    * process.
    */
   private starting: Promise<AgentRun> | null = null;
+  private readonly slot = new TurnSlot();
+  private readonly conversations: AgentConversations;
+  /** Aborted when Ajour quits, so a run waiting for the slot gives up. */
+  private readonly stopping = new AbortController();
 
   constructor(options: AgentRunnerOptions) {
     this.options = options;
+    this.conversations = new AgentConversations({
+      slot: this.slot,
+      storage: options.storage,
+      adapters: options.adapters,
+      findExecutable: options.findExecutable,
+      ...(options.readVersion ? { readVersion: options.readVersion } : {}),
+      loginShellPath: options.loginShellPath,
+      tempRoot: options.tempRoot,
+      ajourMcpUrl: options.ajourMcpUrl,
+      events: options.events,
+      publish: options.publishTurnEvent ?? (() => undefined),
+      ...(options.conversationIdleMs === undefined
+        ? {}
+        : { idleMs: options.conversationIdleMs }),
+      ...(options.killGraceMs === undefined
+        ? {}
+        : { killGraceMs: options.killGraceMs }),
+      ...(options.interruptGraceMs === undefined
+        ? {}
+        : { interruptGraceMs: options.interruptGraceMs }),
+    });
+  }
+
+  /**
+   * Starts a turn of a core task in its pull request's conversation. It
+   * runs, or waits for the slot; its events go to `publishTurnEvent`.
+   */
+  startTurn(request: CoreTaskRunRequest): Promise<AgentTurn> {
+    return this.conversations.startTurn(request);
+  }
+
+  /** Stops a turn that waits or runs. False when it isn't going. */
+  cancelTurn(turnId: string): boolean {
+    return this.conversations.cancelTurn(turnId);
   }
 
   private now() {
@@ -390,7 +442,11 @@ export class AgentRunner {
     return tasks;
   }
 
-  async start(request: AgentRunStartRequest): Promise<AgentRun> {
+  /**
+   * Starts a plugin task's run. A second one is refused, and one that finds
+   * a conversation's turn running waits for it to end.
+   */
+  async start(request: PluginTaskRunRequest): Promise<AgentRun> {
     if (this.active || this.starting) {
       throw new AgentRunError(
         "An agent task is already running. Stop it first.",
@@ -407,7 +463,7 @@ export class AgentRunner {
     }
   }
 
-  private async launch(request: AgentRunStartRequest): Promise<AgentRun> {
+  private async launch(request: PluginTaskRunRequest): Promise<AgentRun> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
     const found = (await this.listTasks(settings, clis, "included")).find(
@@ -446,6 +502,18 @@ export class AgentRunner {
           }),
         )
       : undefined;
+
+    // A conversation's turn may hold the slot. The run waits for it, and
+    // holds the slot until it ends.
+    let lease: TurnLease;
+    try {
+      lease = await this.slot.acquire("timesheet-task", {
+        signal: this.stopping.signal,
+      });
+    } catch (error) {
+      if (!(error instanceof TurnSlotAbortedError)) throw error;
+      throw new AgentRunError("Ajour is quitting.", 409);
+    }
 
     // From here on the start has a run ID, so a launch that fails still logs
     // its agent.run, with the step that failed. The run outlives the request
@@ -610,6 +678,7 @@ export class AgentRunner {
         errorLines: [],
         toolCalls: 0,
         closed: Promise.resolve(),
+        lease,
       };
       active.closed = this.watch(active, adapter);
       this.active = active;
@@ -627,6 +696,7 @@ export class AgentRunner {
             },
           )
         : [];
+      lease.release();
       endRunEvent(event, {
         outcome: "failed",
         toolCalls: 0,
@@ -718,6 +788,7 @@ export class AgentRunner {
       ending && { sessionId: active.run.sessionId, ...ending },
     );
     if (this.active === active) this.active = null;
+    active.lease.release();
     endRunEvent(active.event, {
       outcome,
       exitCode: code,
@@ -866,7 +937,10 @@ export class AgentRunner {
    * that arrives later changes nothing.
    */
   async shutdown() {
+    this.stopping.abort();
+    const conversations = this.conversations.shutdown();
     if (this.starting) await this.starting.catch(() => undefined);
+    await conversations;
     const active = this.active;
     if (!active) return;
     if (!active.finalized && !active.exited) {
@@ -957,18 +1031,6 @@ function endRunEvent(event: RunEvent, ending: RunEnding) {
   event.end(ending.outcome ? SESSION_EVENT_OUTCOMES[ending.outcome] : "error");
 }
 
-/**
- * The version when it looks like one, such as 1.4.2 or 0.30.0-beta.1. When
- * an adapter cannot read `--version`, Settings shows the raw output, which is
- * CLI output and stays out of the log.
- */
-function versionOnly(value: string | undefined): string | undefined {
-  return value !== undefined &&
-    /^v?\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.]+)?$/.test(value)
-    ? value
-    : undefined;
-}
-
 function safeHttpsUrl(value: string): string | undefined {
   try {
     const url = new URL(value);
@@ -976,18 +1038,4 @@ function safeHttpsUrl(value: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/**
- * The environment the CLI starts from: the API's own, minus every AJOUR_
- * variable so no Ajour setting or secret reaches the agent. The adapter adds
- * AJOUR_MCP_TOKEN back, and only that one.
- */
-function childEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter(
-      (entry): entry is [string, string] =>
-        entry[1] !== undefined && !entry[0].startsWith("AJOUR_"),
-    ),
-  );
 }

@@ -12,11 +12,66 @@
 // FAKE_CLI_SECRET_PROBE and of any file in its working folder that holds it
 // to FAKE_CLI_REPORT when set, a { grandchildPid } line per escapee and a
 // { mcp: { status, reply } } line per MCP request.
+//
+// A conversation speaks Claude Code's stream-json, its stdin open:
+// { "readTurn": true } waits for the next line on stdin, the next turn, and
+// exits 0 once stdin ends; { "session": "<id>" } prints the init event with
+// that session ID, or the one `--resume` names; { "stream": ["Hel", "lo"] }
+// prints each piece as a text delta; { "result": true } ends the turn, and
+// { "result": "<message>" } fails it; { "waitForInterrupt": true } waits for
+// an interrupt control request and answers it. Each line read from stdin
+// is reported as { stdin }.
 import { spawn } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 
 const HANG = "setInterval(() => {}, 1000)";
+
+const report = (value) => {
+  if (process.env.FAKE_CLI_REPORT) {
+    appendFileSync(process.env.FAKE_CLI_REPORT, JSON.stringify(value) + "\n");
+  }
+};
+
+// Lines from stdin, read as they come. `nextLine` resolves with the next
+// one, or null once stdin ended.
+const stdinLines = [];
+const stdinWaiters = [];
+let stdinEnded = false;
+const settleStdin = () => {
+  while (stdinWaiters.length > 0 && (stdinLines.length > 0 || stdinEnded)) {
+    stdinWaiters.shift()(stdinLines.length > 0 ? stdinLines.shift() : null);
+  }
+};
+let stdinReader;
+const nextLine = () => {
+  stdinReader ??= createInterface({ input: process.stdin })
+    .on("line", (line) => {
+      let parsed = line;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        // Not JSON: the report keeps the text.
+      }
+      report({ stdin: parsed });
+      stdinLines.push(parsed);
+      settleStdin();
+    })
+    .on("close", () => {
+      stdinEnded = true;
+      settleStdin();
+    });
+  return new Promise((resolve) => {
+    stdinWaiters.push(resolve);
+    settleStdin();
+  });
+};
+const print = (value) => process.stdout.write(JSON.stringify(value) + "\n");
+const argv = process.argv.slice(2);
+const resumed = argv.includes("--resume")
+  ? argv[argv.indexOf("--resume") + 1]
+  : undefined;
 
 const probe = process.env.FAKE_CLI_SECRET_PROBE;
 if (process.env.FAKE_CLI_REPORT) {
@@ -76,6 +131,47 @@ for (const step of steps) {
       process.env.FAKE_CLI_REPORT,
       JSON.stringify({ mcp: { status: response.status, reply } }) + "\n",
     );
+  }
+  if (step.readTurn && (await nextLine()) === null) process.exit(0);
+  if (step.session) {
+    print({
+      type: "system",
+      subtype: "init",
+      session_id: resumed ?? step.session,
+      mcp_servers: [{ name: "ajour", status: "connected" }],
+    });
+  }
+  for (const text of step.stream ?? []) {
+    print({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text },
+      },
+    });
+  }
+  if (step.waitForInterrupt) {
+    for (;;) {
+      const line = await nextLine();
+      if (line === null) process.exit(0);
+      if (line?.type === "control_request") {
+        print({
+          type: "control_response",
+          response: { subtype: "success", request_id: line.request_id },
+        });
+        if (line.request?.subtype === "interrupt") break;
+      }
+    }
+  }
+  if (step.result !== undefined) {
+    const failed = typeof step.result === "string";
+    print({
+      type: "result",
+      subtype: failed ? "error_during_execution" : "success",
+      is_error: failed,
+      ...(failed ? { result: step.result } : {}),
+    });
   }
   if (step.ignoreTerm) process.on("SIGTERM", () => {});
   if (step.stdout) process.stdout.write(step.stdout + "\n");

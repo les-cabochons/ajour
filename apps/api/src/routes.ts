@@ -176,6 +176,11 @@ export const ROUTES = {
     path: "/api/agent-runs/:runId/stop",
     name: "agent_run.stop",
   },
+  agentTurnCancel: {
+    method: "POST",
+    path: "/api/agent-turns/:turnId/cancel",
+    name: "agent_turn.cancel",
+  },
   mcpStatus: { method: "GET", path: "/api/mcp/settings", name: "mcp.status" },
   mcpConfigure: {
     method: "POST",

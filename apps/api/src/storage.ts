@@ -431,6 +431,17 @@ export interface StoredMcpClient {
    * it, the client has every tool, as a client the user creates does.
    */
   tools?: AgentTaskMcpTool[];
+  /**
+   * The pull request and head a conversation's client is bound to (#778).
+   * Such a client has none of Ajour's data or session tools, and it may use
+   * MCP while MCP is off.
+   */
+  pullRequest?: McpClientPullRequestBinding;
+}
+
+export interface McpClientPullRequestBinding {
+  pullRequest: string;
+  head: string;
 }
 
 interface StoredMcpState {
@@ -453,8 +464,22 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
           typeof client.tokenHash === "string" &&
           typeof client.createdAt === "number",
       )
+      .filter(hasValidBinding)
       .map(normalizeMcpClientTools),
   };
+}
+
+/**
+ * A client whose pull request binding can't be read is dropped, never kept
+ * without it: that would give it every tool.
+ */
+function hasValidBinding(client: StoredMcpClient): boolean {
+  if (!Object.hasOwn(client, "pullRequest")) return true;
+  const binding = (client as { pullRequest: unknown }).pullRequest as
+    Partial<McpClientPullRequestBinding> | null | undefined;
+  return (
+    typeof binding?.pullRequest === "string" && typeof binding.head === "string"
+  );
 }
 
 /**

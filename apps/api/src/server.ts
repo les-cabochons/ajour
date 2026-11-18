@@ -364,6 +364,10 @@ interface AppApiServerOptions {
    * OpenCode. Tests replace them with the fake CLI.
    */
   agentCliAdapters?: AgentCliAdapter[];
+  /** How long a pull request's conversation stays open with no turn. Tests shorten it. */
+  agentConversationIdleMs?: number;
+  /** How long an interrupted turn has before its process is ended. Tests shorten it. */
+  agentInterruptGraceMs?: number;
   /**
    * How the broker sends an API 4 plugin's requests. The desktop app passes
    * Electron's `net.request` on a session of the broker's own; tests pass a
@@ -1806,6 +1810,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     tempRoot: os.tmpdir(),
     ajourMcpUrl: `http://${host}:${port}/mcp/ajour`,
     events,
+    // On the window's stream, which the handoffs bridge opens with MCP off.
+    publishTurnEvent: (event) => mcpBridge.publish("agent-turn", event),
+    ...(options.agentConversationIdleMs === undefined
+      ? {}
+      : { conversationIdleMs: options.agentConversationIdleMs }),
+    ...(options.agentInterruptGraceMs === undefined
+      ? {}
+      : { interruptGraceMs: options.agentInterruptGraceMs }),
   });
   const runtime: AppApiRuntime = {
     folderResolver,
@@ -2374,11 +2386,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
     agentRunStart: async ({ request, response, unit }) => {
       const payload = await readRequest(request, agentRunStartRequestSchema);
-      unit.set({
-        agent: { task_id: payload.taskId },
-        plugin: { id: payload.pluginId },
-      });
       try {
+        if ("task" in payload) {
+          // A core task: a turn of its pull request's conversation.
+          unit.set({ agent: { task_id: payload.task } });
+          const turn = await agentRunner.startTurn(payload);
+          unit.set({ agent: { turn_id: turn.id } });
+          writeJson(response, 201, turn);
+          return;
+        }
+        unit.set({
+          agent: { task_id: payload.taskId },
+          plugin: { id: payload.pluginId },
+        });
         const run = await agentRunner.start(payload);
         unit.set({ agent: { run_id: run.id } });
         writeJson(response, 201, run);
@@ -2409,6 +2429,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
       writeJson(response, 200, agentSessions.snapshot());
+    },
+
+    agentTurnCancel: ({ response, params, unit }) => {
+      unit.set({ agent: { turn_id: params.turnId } });
+      if (!agentRunner.cancelTurn(params.turnId)) {
+        unit.refuse("not_running");
+        writeJson(response, 404, { error: "That agent turn is not going." });
+        return;
+      }
+      writeJson(response, 200, { cancelled: true });
     },
 
     mcpStatus: async ({ response }) => {

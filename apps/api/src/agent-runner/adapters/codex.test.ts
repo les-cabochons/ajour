@@ -114,3 +114,117 @@ describe("Codex adapter", () => {
     expect(codexAdapter.parseEvent("not json")).toBeNull();
   });
 });
+
+describe("Codex conversation", () => {
+  const conversation = codexAdapter.conversation!;
+  const conversationInput = {
+    executable: "/usr/local/bin/codex",
+    workDirectory: "/tmp/conversation 1",
+    prompt: "Review pull request pr-1.",
+    ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
+    model: "",
+    baseEnv: { PATH: "/usr/bin" },
+    token: TOKEN,
+  };
+  const config = (args: string[]) =>
+    args.flatMap((arg, index) => (args[index - 1] === "--config" ? [arg] : []));
+
+  it("runs one isolated process per turn, with only Ajour's server and the turn on stdin", () => {
+    expect(conversation.mode).toBe("per-turn");
+    const { args, env, files } =
+      conversation.buildInvocation(conversationInput);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--json",
+      ]),
+    );
+    // Persisted, so a later turn can resume it.
+    expect(args).not.toContain("--ephemeral");
+    expect(args.at(-1)).toBe("-");
+    expect(config(args)).toEqual(
+      expect.arrayContaining([
+        'sandbox_mode="read-only"',
+        'mcp_servers.ajour.bearer_token_env_var="AJOUR_MCP_TOKEN"',
+        "features.shell_tool=false",
+        `model_instructions_file=${JSON.stringify(
+          path.join(conversationInput.workDirectory, "prompt.md"),
+        )}`,
+      ]),
+    );
+    expect(config(args).some((item) => item.includes("playwright"))).toBe(
+      false,
+    );
+    expect(args.join(" ")).not.toContain(TOKEN);
+    expect(env.AJOUR_MCP_TOKEN).toBe(TOKEN);
+    expect(files["prompt.md"]).toBe("Review pull request pr-1.");
+  });
+
+  it("resumes the thread by its ID", () => {
+    const { args } = conversation.buildInvocation({
+      ...conversationInput,
+      resume: "019a-thread",
+    });
+    const resume = args.indexOf("resume");
+    expect(args[resume - 1]).toBe("exec");
+    expect(args.slice(-2)).toEqual(["019a-thread", "-"]);
+  });
+
+  it("sends the turn as stdin text and has no interrupt but ending the process", () => {
+    const codec = conversation.createCodec(conversationInput);
+    expect(codec.open()).toEqual([]);
+    expect(codec.sendTurn("Explain this.")).toEqual(["Explain this."]);
+    expect(codec.interrupt()).toEqual([]);
+  });
+
+  it("reads the thread, its messages, tool calls and the turn's end", () => {
+    const codec = conversation.createCodec(conversationInput);
+    const read = (value: unknown) => codec.read(JSON.stringify(value)).events;
+    expect(read({ type: "thread.started", thread_id: "019a-thread" })).toEqual([
+      { kind: "session", id: "019a-thread" },
+    ]);
+    expect(
+      read({
+        type: "item.started",
+        item: { id: "i0", type: "mcp_tool_call" },
+      }),
+    ).toEqual([{ kind: "tool-call" }]);
+    expect(
+      read({
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "First." },
+      }),
+    ).toEqual([{ kind: "text", text: "First." }]);
+    // A later message in the same turn starts a new paragraph.
+    expect(
+      read({
+        type: "item.completed",
+        item: { id: "i2", type: "agent_message", text: "Second." },
+      }),
+    ).toEqual([{ kind: "text", text: "\n\nSecond." }]);
+    expect(read({ type: "turn.completed" })).toEqual([{ kind: "turn-done" }]);
+    expect(
+      read({ type: "turn.failed", error: { message: "Usage limit" } }),
+    ).toEqual([{ kind: "turn-failed", message: "Usage limit" }]);
+  });
+
+  it("streams a message that grows, sending only what is new", () => {
+    const codec = conversation.createCodec(conversationInput);
+    const read = (value: unknown) => codec.read(JSON.stringify(value)).events;
+    expect(
+      read({
+        type: "item.updated",
+        item: { id: "i1", type: "agent_message", text: "Hel" },
+      }),
+    ).toEqual([{ kind: "text", text: "Hel" }]);
+    expect(
+      read({
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "Hello" },
+      }),
+    ).toEqual([{ kind: "text", text: "lo" }]);
+  });
+});

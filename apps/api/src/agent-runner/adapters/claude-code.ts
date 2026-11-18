@@ -1,5 +1,11 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { AgentCliAdapter, RunnerEvent } from "../adapter.ts";
+import type {
+  AgentCliAdapter,
+  ConversationAdapter,
+  ConversationEvent,
+  RunnerEvent,
+} from "../adapter.ts";
 
 /**
  * Init statuses that mean an MCP server will not work. `pending` (still
@@ -7,6 +13,169 @@ import type { AgentCliAdapter, RunnerEvent } from "../adapter.ts";
  * do not end the run.
  */
 const FAILED_MCP_STATUSES = new Set<unknown>(["failed", "needs-auth"]);
+
+/** Keeps the user's instruction files, memory and claude.ai servers out. */
+const ISOLATED_ENV = {
+  CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+  CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+  ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+};
+
+function parseLine(line: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The first server of an init event that will not work. */
+function failedMcpServer(event: Record<string, unknown>): string | undefined {
+  const servers = Array.isArray(event.mcp_servers)
+    ? (event.mcp_servers as unknown[])
+    : [];
+  return servers.find(
+    (server): server is { name: string; status: string } =>
+      typeof server === "object" &&
+      server !== null &&
+      typeof (server as { name?: unknown }).name === "string" &&
+      FAILED_MCP_STATUSES.has((server as { status?: unknown }).status),
+  )?.name;
+}
+
+function callsTool(event: Record<string, unknown>): boolean {
+  const content = ((event.message as { content?: unknown[] })?.content ??
+    []) as { type?: string }[];
+  return content.some((item) => item.type === "tool_use");
+}
+
+/** A result's failure message: provider failures can use subtype "success". */
+function resultFailure(event: Record<string, unknown>): string | undefined {
+  if (!event.is_error) return undefined;
+  const message = typeof event.result === "string" ? event.result.trim() : "";
+  return message || `Claude Code stopped: ${String(event.subtype)}.`;
+}
+
+/**
+ * A pull request's conversation. Claude Code reads one user message per turn
+ * on its open stdin and streams partial messages, with only Ajour's server
+ * and no built-in tool. A later process continues it with `--resume`. Flags
+ * from docs/research/agent-sessions-for-deck.md (Claude Code 2.1.318).
+ */
+const claudeCodeConversation: ConversationAdapter = {
+  mode: "warm",
+
+  buildInvocation(input) {
+    const mcpConfig = {
+      mcpServers: {
+        ajour: {
+          type: "http",
+          url: input.ajourMcpUrl,
+          headers: { Authorization: "Bearer ${AJOUR_MCP_TOKEN}" },
+        },
+      },
+    };
+    return {
+      command: input.executable,
+      args: [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--append-system-prompt-file",
+        path.join(input.workDirectory, "prompt.md"),
+        "--mcp-config",
+        path.join(input.workDirectory, "mcp.json"),
+        "--strict-mcp-config",
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--tools",
+        "",
+        "--allowedTools",
+        "mcp__ajour",
+        "--permission-mode",
+        "dontAsk",
+        ...(input.resume ? ["--resume", input.resume] : []),
+        ...(input.model ? ["--model", input.model] : []),
+      ],
+      env: { ...input.baseEnv, AJOUR_MCP_TOKEN: input.token, ...ISOLATED_ENV },
+      files: {
+        "prompt.md": input.prompt,
+        "mcp.json": JSON.stringify(mcpConfig, null, 2),
+      },
+    };
+  },
+
+  createCodec() {
+    // Set by an interrupt, so the result that ends the turn reads as one.
+    let interrupting = false;
+    return {
+      open: () => [],
+      sendTurn(text) {
+        interrupting = false;
+        return [
+          JSON.stringify({
+            type: "user",
+            message: { role: "user", content: text },
+            session_id: "",
+            parent_tool_use_id: null,
+          }),
+        ];
+      },
+      interrupt() {
+        interrupting = true;
+        return [
+          JSON.stringify({
+            type: "control_request",
+            request_id: randomUUID(),
+            request: { subtype: "interrupt" },
+          }),
+        ];
+      },
+      read(line) {
+        const event = parseLine(line);
+        const events: ConversationEvent[] = [];
+        if (event?.type === "system" && event.subtype === "init") {
+          if (typeof event.session_id === "string" && event.session_id) {
+            events.push({ kind: "session", id: event.session_id });
+          }
+          const failed = failedMcpServer(event);
+          if (failed) events.push({ kind: "mcp-failed", server: failed });
+        } else if (event?.type === "stream_event") {
+          const inner = event.event as
+            | { type?: unknown; delta?: { type?: unknown; text?: unknown } }
+            | undefined;
+          if (
+            inner?.type === "content_block_delta" &&
+            inner.delta?.type === "text_delta" &&
+            typeof inner.delta.text === "string" &&
+            inner.delta.text
+          ) {
+            events.push({ kind: "text", text: inner.delta.text });
+          }
+        } else if (event?.type === "assistant") {
+          // Its text already came as deltas.
+          if (callsTool(event)) events.push({ kind: "tool-call" });
+        } else if (event?.type === "result") {
+          const failure = resultFailure(event);
+          if (interrupting) events.push({ kind: "turn-interrupted" });
+          else if (failure)
+            events.push({ kind: "turn-failed", message: failure });
+          else events.push({ kind: "turn-done" });
+          interrupting = false;
+        }
+        return { events, reply: [] };
+      },
+    };
+  },
+};
 
 /**
  * Claude Code, run headless with only Ajour's MCP servers. The MCP config
@@ -61,13 +230,7 @@ export const claudeCodeAdapter: AgentCliAdapter = {
     return {
       command: input.executable,
       args,
-      env: {
-        ...input.baseEnv,
-        AJOUR_MCP_TOKEN: input.token,
-        CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-        ENABLE_CLAUDEAI_MCP_SERVERS: "false",
-      },
+      env: { ...input.baseEnv, AJOUR_MCP_TOKEN: input.token, ...ISOLATED_ENV },
       files: {
         "prompt.md": input.prompt,
         "mcp.json": JSON.stringify(mcpConfig, null, 2),
@@ -76,45 +239,24 @@ export const claudeCodeAdapter: AgentCliAdapter = {
   },
 
   parseEvent(line): RunnerEvent | null {
-    let event: Record<string, unknown>;
-    try {
-      event = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      return null;
+    const event = parseLine(line);
+    if (event?.type === "system" && event.subtype === "init") {
+      const failed = failedMcpServer(event);
+      return failed ? { kind: "mcp-failed", server: failed } : null;
     }
-    if (event.type === "system" && event.subtype === "init") {
-      const servers = Array.isArray(event.mcp_servers)
-        ? (event.mcp_servers as unknown[])
-        : [];
-      const failed = servers.find(
-        (server): server is { name: string; status: string } =>
-          typeof server === "object" &&
-          server !== null &&
-          typeof (server as { name?: unknown }).name === "string" &&
-          FAILED_MCP_STATUSES.has((server as { status?: unknown }).status),
-      );
-      return failed ? { kind: "mcp-failed", server: failed.name } : null;
+    if (event?.type === "assistant") {
+      return callsTool(event) ? { kind: "tool-call" } : null;
     }
-    if (event.type === "assistant") {
-      const content = ((event.message as { content?: unknown[] })?.content ??
-        []) as { type?: string }[];
-      return content.some((item) => item.type === "tool_use")
-        ? { kind: "tool-call" }
-        : null;
-    }
-    if (event.type === "result") {
-      // Provider failures can use subtype "success". The result carries
-      // the useful explanation, such as a session limit and its reset time.
-      const message =
-        typeof event.result === "string" ? event.result.trim() : "";
-      return event.is_error
-        ? {
-            kind: "failed",
-            message:
-              message || `Claude Code stopped: ${String(event.subtype)}.`,
-          }
+    if (event?.type === "result") {
+      // The result carries the useful explanation, such as a session limit
+      // and its reset time.
+      const failure = resultFailure(event);
+      return failure
+        ? { kind: "failed", message: failure }
         : { kind: "finished", summary: String(event.result ?? "") };
     }
     return null;
   },
+
+  conversation: claudeCodeConversation,
 };

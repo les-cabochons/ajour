@@ -1,5 +1,7 @@
 # MCP sends local data to the client's model, by opt-in per client
 
+Amended by [ADR 0021](0021-decks-agent-tasks-dont-require-mcp-to-be-on.md): Deck's agent tasks run with MCP off, since their client is bound to one pull request and reaches none of the user's data. Everything else here stands.
+
 Ajour exposes an MCP server so agents such as Claude Code and Codex can read and change timers, time entries and backlog items. An agent's model runs at its provider, so every tool result, including entry notes, project names and backlog titles, leaves the machine. MCP is off by default. Turning it on and creating a named client with its own token are the explicit opt-in the local-first boundary requires. Ajour itself still sends nothing. The user chooses which agent receives the data.
 
 The renderer runs every data tool through the object action sets and domain transitions, so an agent can do exactly what the UI allows, with Undo. The API holds tokens, sessions and questions, never the store.

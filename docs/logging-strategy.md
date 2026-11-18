@@ -420,21 +420,22 @@ traces.
 
 The local API emits these (#305, #306):
 
-| Event                                 | Where                                                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                  |
-| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                         |
-| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                      |
-| `handoff.hook`                        | `serveHandoffHook` in `apps/api/src/server.ts`, on the request's event                                             |
-| one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                 |
-| `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call; `ProcessSessions` once per session end |
-| `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                     |
-| `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it  |
-| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                             |
-| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable`                 |
-| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on                     |
-| `agent.session`                       | `AgentSessions`, from begin to end                                                                                 |
-| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                             |
+| Event                                 | Where                                                                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                                                       |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                                                              |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                                                           |
+| `handoff.hook`                        | `serveHandoffHook` in `apps/api/src/server.ts`, on the request's event                                                                                  |
+| one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                                                      |
+| `plugin.process`                      | `ProcessBroker` in `apps/api/src/process-broker.ts`, once per process call; `ProcessSessions` once per session end                                      |
+| `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                                                          |
+| `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it                                       |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                                                                  |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable`                                                      |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on                                                          |
+| `agent.session`                       | `AgentSessions`, from begin to end                                                                                                                      |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
+| `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
 
 ### Requests
 
@@ -880,8 +881,10 @@ channel to read the event each emits.
 
 | Event                                | Kinds                                   | Emitted by                                       |
 | ------------------------------------ | --------------------------------------- | ------------------------------------------------ |
+| `agent.conversation`                 | job                                     | local API                                        |
 | `agent.run`                          | job                                     | local API                                        |
 | `agent.session`                      | job                                     | local API                                        |
+| `agent.turn`                         | job                                     | local API                                        |
 | `agent_client.create`                | command, request                        | route, client call                               |
 | `agent_client.revoke`                | command, request                        | route, client call                               |
 | `agent_comment.send`                 | job                                     | renderer                                         |
@@ -897,6 +900,7 @@ channel to read the event each emits.
 | `agent_session.mark_seen`            | command, request                        | route, client call                               |
 | `agent_task.configure`               | command, request                        | route, client call                               |
 | `agent_tool.call`                    | request, job                            | local API, renderer                              |
+| `agent_turn.cancel`                  | command, request                        | route                                            |
 | `api.health`                         | request                                 | route                                            |
 | `api.request`                        | request                                 | local API                                        |
 | `api.start`                          | lifecycle                               | local API                                        |

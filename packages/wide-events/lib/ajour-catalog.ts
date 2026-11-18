@@ -376,6 +376,8 @@ export const catalog = defineCatalog({
         "tool_refused",
         /** An agent task run's client called a tool its task doesn't declare. */
         "tool_not_declared",
+        /** A pull request conversation's client called a tool outside its pull request. */
+        "outside_pull_request",
         ...requestReasons,
       ],
       fields: {
@@ -525,6 +527,75 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * One pull request's conversation (#778), from its first turn to its
+     * close: the client, the work folder and every process it started.
+     */
+    "agent.conversation": {
+      kinds: ["job"],
+      fields: {
+        agent: {
+          conversation_id: operational(),
+          /** Absent when the first launch failed before the client was created. */
+          client_id: operational(),
+          cli: operational(),
+          cli_version: operational(),
+          /** `warm` keeps one process across turns; `per-turn` starts one per turn. */
+          conversation_mode: operational<"warm" | "per-turn">(),
+          turn_count: operational<number>(),
+          launch_count: operational<number>(),
+          /** Launches that continued an earlier conversation of the provider. */
+          resume_count: operational<number>(),
+          close_reason: operational<
+            "replaced" | "idle" | "shutdown" | "failed"
+          >(),
+        },
+        cleanup: {
+          outcome: operational<"ok" | "failed">(),
+          failed_steps:
+            operational<("revoke_client" | "remove_work_folder")[]>(),
+          /** The first failed step's error: its type and code, never its message. */
+          error: { type: operational(), code: operational() },
+        },
+      },
+    },
+    /**
+     * One turn of a conversation, from its start to its end, waiting for the
+     * slot included. Never its prompt, the user's words or the answer.
+     */
+    "agent.turn": {
+      kinds: ["job"],
+      reasons: ["cli_failed", "cli_exited", "mcp_failed"],
+      fields: {
+        agent: {
+          turn_id: operational(),
+          conversation_id: operational(),
+          task: operational<"deck.guide" | "deck.ask" | "deck.chat">(),
+          cli: operational(),
+          /** What it waited for, when the slot was busy. */
+          waited_for: operational<"timesheet-task" | "turn">(),
+          wait_ms: operational<number>(),
+          /** Whether the turn started a process that continued the conversation. */
+          resumed: operational<boolean>(),
+          text_piece_count: operational<number>(),
+          tool_call_count: operational<number>(),
+          stop_reason: operational<
+            "user" | "replaced" | "shutdown" | "interrupt_timeout"
+          >(),
+          exit_code: operational<number | null>(),
+        },
+        launch: {
+          failed_step: operational<
+            | "find_executable"
+            | "create_client"
+            | "create_work_folder"
+            | "build_invocation"
+            | "write_files"
+            | "spawn"
+          >(),
+        },
+      },
+    },
     "agent_run.start": {
       kinds: ["command", "request"],
       reasons: [
@@ -535,9 +606,19 @@ export const catalog = defineCatalog({
       ],
       fields: {
         ...requestFields,
-        agent: { run_id: operational(), task_id: operational() },
+        agent: {
+          run_id: operational(),
+          /** A plugin's task ID, or a core task such as `deck.ask`. */
+          task_id: operational(),
+          turn_id: operational(),
+        },
         plugin: { id: operational() },
       },
+    },
+    "agent_turn.cancel": {
+      kinds: ["command", "request"],
+      reasons: ["not_running", ...requestReasons],
+      fields: { ...requestFields, agent: { turn_id: operational() } },
     },
     "agent_run.stop": {
       kinds: ["command", "request"],
