@@ -19,6 +19,8 @@ const launch = {
   launch_id: "launch-now",
   app: { version: "1.2.3", channel: "stable", packaged: true },
   device: { platform: "win32" },
+  // As main writes them: window_ms spans the renderer load, so the window's
+  // own setup is 400 ms and the renderer load, 4700 ms, is the slowest.
   launch: {
     ready_ms: 900,
     api_start_ms: 400,

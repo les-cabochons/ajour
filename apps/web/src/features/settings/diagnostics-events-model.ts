@@ -17,7 +17,8 @@ import type {
  * a link (the Overview's, #445) opens the tab filtered:
  *
  *   problems=1, runtime, kind, launch (this | all | a launch ID), range
- *   or hour, name, outcome, reason, trace, connection, plugin
+ *   or hour (narrowed by from and to), name, outcome, reason, trace,
+ *   connection, plugin, version
  *
  * A value outside its format is dropped here, so main never refuses a query
  * the page built.
@@ -57,15 +58,23 @@ export type EventRange = keyof typeof EVENT_RANGES;
 
 const HOUR_MS = 60 * 60_000;
 
+/** The `reason:` value for the events without an `outcome_reason`. */
+export const NO_REASON = "none";
+
+/** The reasons one filter takes at most, as main does. */
+const MAX_REASONS = 16;
+
 /** The query box's terms. `name` ending in `*` matches the start of a name. */
 export interface EventQueryTerms {
   name?: string;
   outcome?: Outcome[];
-  /** `outcome_reason`: one or several. */
+  /** `outcome_reason`: one or several, or `NO_REASON` alone. */
   reason?: string[];
   trace?: string;
   connection?: string;
   plugin?: string;
+  /** The plugin's `version`. */
+  version?: string;
 }
 
 export type EventQueryTerm = keyof EventQueryTerms;
@@ -77,6 +86,7 @@ const TERM_ORDER: readonly EventQueryTerm[] = [
   "trace",
   "connection",
   "plugin",
+  "version",
 ];
 
 export interface EventsView {
@@ -91,6 +101,12 @@ export interface EventsView {
    * Overview's chart opens it; it takes the place of `range`.
    */
   hour?: string;
+  /**
+   * The part of `hour` a bar counted when its range starts or ends inside
+   * it (the `from` and `to` keys): from inclusive, to exclusive.
+   */
+  hourFrom?: string;
+  hourTo?: string;
   terms: EventQueryTerms;
 }
 
@@ -105,7 +121,9 @@ const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
 const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
+const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
 const HOUR_START = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/;
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 const isProblem = (outcome: Outcome) => outcome !== "ok" && outcome !== "noop";
 
@@ -131,20 +149,52 @@ function readOutcomes(value: string | undefined): Outcome[] | undefined {
   return [...new Set(known as Outcome[])];
 }
 
-function readReasons(value: string | undefined): string[] | undefined {
+/** The distinct reasons in their format, or `NO_REASON` alone; any number. */
+function reasonList(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
-  const reasons = value.split(",").map((part) => part.trim());
+  const reasons = [...new Set(value.split(",").map((part) => part.trim()))];
   if (reasons.some((reason) => !OUTCOME_REASON.test(reason))) return undefined;
-  return [...new Set(reasons)];
+  if (reasons.length > 1 && reasons.includes(NO_REASON)) return undefined;
+  return reasons;
 }
 
-/** An hour's start, as main writes the chart's buckets. */
-function readHour(value: string | undefined): string | undefined {
-  if (!value || !HOUR_START.test(value)) return undefined;
+/** At most `MAX_REASONS` of them, so main never refuses the list. */
+function readReasons(value: string | undefined): string[] | undefined {
+  const reasons = reasonList(value);
+  return reasons && reasons.length <= MAX_REASONS ? reasons : undefined;
+}
+
+/** An instant as `toISOString` writes it, else undefined. */
+function readInstant(value: string | undefined): string | undefined {
+  if (!value || !INSTANT.test(value)) return undefined;
   const time = Date.parse(value);
   return Number.isFinite(time) && new Date(time).toISOString() === value
     ? value
     : undefined;
+}
+
+/** An hour's start, as main writes the chart's buckets. */
+function readHour(value: string | undefined): string | undefined {
+  return value && HOUR_START.test(value) ? readInstant(value) : undefined;
+}
+
+/** `from` and `to` when they narrow `hour` to a part of it; else neither. */
+function readHourPart(
+  hour: string,
+  fromValue: string | undefined,
+  toValue: string | undefined,
+): { hourFrom?: string; hourTo?: string } {
+  const start = Date.parse(hour);
+  const end = start + HOUR_MS;
+  const from = readInstant(fromValue);
+  const to = readInstant(toValue);
+  const fromMs = from ? Date.parse(from) : start;
+  const toMs = to ? Date.parse(to) : end;
+  if (fromMs < start || toMs > end || fromMs >= toMs) return {};
+  return {
+    ...(from && fromMs > start ? { hourFrom: from } : {}),
+    ...(to && toMs < end ? { hourTo: to } : {}),
+  };
 }
 
 const readTrace = (value: string | undefined) =>
@@ -162,6 +212,7 @@ const TERM_READERS: Record<
   trace: readTrace,
   connection: readRecordId,
   plugin: readRecordId,
+  version: (value) => (value && PLUGIN_VERSION.test(value) ? value : undefined),
 };
 
 /** A search value as text: the narrow view's router parses `1` as a number. */
@@ -194,7 +245,7 @@ export function parseEventsView(search: Record<string, unknown>): EventsView {
     launch:
       launch === "all" || (launch && readRecordId(launch)) ? launch : "this",
     ...(range ? { range } : {}),
-    ...(hour ? { hour } : {}),
+    ...(hour ? { hour, ...readHourPart(hour, text("from"), text("to")) } : {}),
     terms,
   };
 }
@@ -206,8 +257,11 @@ export function eventsSearchOf(view: EventsView): Record<string, string> {
   if (view.runtime) search.runtime = view.runtime;
   if (view.kind) search.kind = view.kind;
   if (view.launch !== "this") search.launch = view.launch;
-  if (view.hour) search.hour = view.hour;
-  else if (view.range) search.range = view.range;
+  if (view.hour) {
+    search.hour = view.hour;
+    if (view.hourFrom) search.from = view.hourFrom;
+    if (view.hourTo) search.to = view.hourTo;
+  } else if (view.range) search.range = view.range;
   for (const term of TERM_ORDER) {
     const value = view.terms[term];
     if (value === undefined) continue;
@@ -219,15 +273,17 @@ export function eventsSearchOf(view: EventsView): Record<string, string> {
 export type EventQueryError =
   | { kind: "unknown_term"; term: string }
   | { kind: "invalid_value"; term: EventQueryTerm }
+  | { kind: "too_many_values"; term: "reason"; max: number }
   | { kind: "repeated_term"; term: EventQueryTerm };
 
 export type ParsedQuery =
   { ok: true; terms: EventQueryTerms } | { ok: false; error: EventQueryError };
 
 /**
- * The query box's text as terms: `name:`, `outcome:` (one or several,
- * comma separated), `trace:`, `connection:` and `plugin:`, separated by
- * spaces. A word with no term is the start of a name.
+ * The query box's text as terms: `name:`, `outcome:` and `reason:` (one
+ * or several, comma separated), `trace:`, `connection:`, `plugin:` and
+ * `version:`, separated by spaces. A word with no term is the start of a
+ * name.
  */
 export function parseQuery(text: string): ParsedQuery {
   const terms: EventQueryTerms = {};
@@ -244,6 +300,12 @@ export function parseQuery(text: string): ParsedQuery {
       return { ok: false, error: { kind: "repeated_term", term } };
     }
     const value = TERM_READERS[term](raw);
+    if (term === "reason" && (reasonList(raw)?.length ?? 0) > MAX_REASONS) {
+      return {
+        ok: false,
+        error: { kind: "too_many_values", term, max: MAX_REASONS },
+      };
+    }
     if (value === undefined) {
       return { ok: false, error: { kind: "invalid_value", term } };
     }
@@ -264,21 +326,24 @@ export function formatQuery(terms: EventQueryTerms): string {
 const TERM_FORMATS: Record<EventQueryTerm, string> = {
   name: "an event name such as backlog.sync, or its start followed by *",
   outcome: `${EVENT_OUTCOMES.join(", ")}, or several separated by commas`,
-  reason: "an outcome reason such as timeout, or several separated by commas",
+  reason: `an outcome reason such as timeout, several separated by commas, or ${NO_REASON} for the events without one`,
   trace: "a trace ID of 32 hex characters",
   connection: "a connection ID",
   plugin: "a plugin ID",
+  version: "a plugin version such as 1.2.0",
 };
 
 /** The line under the query box when its text can't be read. */
 export function describeQueryError(error: EventQueryError): string {
   switch (error.kind) {
     case "unknown_term":
-      return `Ajour doesn't know ${error.term}:. Use name:, outcome:, reason:, trace:, connection: or plugin:.`;
+      return `Ajour doesn't know ${error.term}:. Use name:, outcome:, reason:, trace:, connection:, plugin: or version:.`;
     case "repeated_term":
       return `${error.term}: appears twice.`;
     case "invalid_value":
       return `${error.term}: takes ${TERM_FORMATS[error.term]}.`;
+    case "too_many_values":
+      return `${error.term}: takes at most ${error.max} reasons.`;
   }
 }
 
@@ -305,18 +370,23 @@ export function logFilterOf(
   const launch = view.launch === "this" ? launchId : view.launch;
   if (launch && launch !== "all") filter.launch_id = launch;
   if (view.hour) {
-    filter.from = view.hour;
-    filter.to = new Date(Date.parse(view.hour) + HOUR_MS).toISOString();
+    filter.from = view.hourFrom ?? view.hour;
+    filter.to =
+      view.hourTo ?? new Date(Date.parse(view.hour) + HOUR_MS).toISOString();
   } else if (view.range) {
     filter.from = new Date(now - EVENT_RANGES[view.range].ms).toISOString();
   }
-  const { name, reason, trace, connection, plugin } = view.terms;
+  const { name, reason, trace, connection, plugin, version } = view.terms;
   if (name?.endsWith("*")) filter.name_prefix = name.slice(0, -1);
   else if (name) filter.name = name;
   if (trace) filter.trace_id = trace;
   if (connection) filter.connection_id = connection;
   if (plugin) filter.plugin_id = plugin;
-  if (reason) filter.outcome_reason = reason;
+  if (version) filter.plugin_version = version;
+  if (reason) {
+    filter.outcome_reason =
+      reason.length === 1 && reason[0] === NO_REASON ? null : reason;
+  }
   return filter;
 }
 
@@ -381,11 +451,20 @@ export function formatEventTime(startedAt: string, now: number): string {
     : format(started, "MMM d HH:mm:ss");
 }
 
-/** An hour of the Overview's chart, in local time: "Nov 18, 09:00–10:00". */
-export function formatEventHour(hour: string): string {
-  const start = Date.parse(hour);
-  if (!Number.isFinite(start)) return hour;
-  return `${format(start, "MMM d, HH:mm")}–${format(start + HOUR_MS, "HH:mm")}`;
+/**
+ * An hour of the Overview's chart, or the part of it a bar counted, in
+ * local time: "Nov 18, 09:00–10:00", "Nov 18, 09:23–10:00".
+ */
+export function formatEventHour(
+  hour: string,
+  part: { hourFrom?: string; hourTo?: string } = {},
+): string {
+  const start = Date.parse(part.hourFrom ?? hour);
+  const end = part.hourTo
+    ? Date.parse(part.hourTo)
+    : Date.parse(hour) + HOUR_MS;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return hour;
+  return `${format(start, "MMM d, HH:mm")}–${format(end, "HH:mm")}`;
 }
 
 /** A duration: ms below a second, seconds below a minute, then minutes. */

@@ -174,6 +174,14 @@ type OperationUnit = Unit<AjourCatalog, PluginOperationEventName>;
  */
 export class PluginOperationLifetime<TMethod extends string> {
   private readonly operations = new Set<Operation>();
+  /**
+   * Each plugin's package as its last operation recorded it, so a capacity
+   * refusal, which comes before `prepare`, still names its version.
+   */
+  private readonly knownPlugins = new Map<
+    string,
+    Parameters<OperationRecord["plugin"]>[0]
+  >();
   private shutdownPromise?: Promise<void>;
   private shuttingDown = false;
 
@@ -241,6 +249,7 @@ export class PluginOperationLifetime<TMethod extends string> {
     };
     const record: OperationRecord = {
       plugin: (facts) => {
+        this.knownPlugins.set(pluginId, facts);
         unit.set({
           plugin: {
             version: facts.version,
@@ -266,6 +275,8 @@ export class PluginOperationLifetime<TMethod extends string> {
           this.countOperations((other) => other.pluginId === pluginId) >=
           MAX_CONCURRENT_OPERATIONS
         ) {
+          const known = this.knownPlugins.get(pluginId);
+          if (known) record.plugin(known);
           throw new PluginOperationRefused(
             `Too many operations of ${this.options.name.toLowerCase()} "${pluginId}" are already running.`,
             "capacity",

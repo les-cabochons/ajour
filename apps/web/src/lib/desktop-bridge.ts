@@ -281,8 +281,13 @@ export interface DesktopLogFilter {
   trace_id?: string;
   connection_id?: string;
   plugin_id?: string;
-  /** One `outcome_reason`, or several. */
-  outcome_reason?: string | string[];
+  /**
+   * One `outcome_reason`, or several; null for the events without one.
+   * logs.query and logs.tail only, as `plugin_version`.
+   */
+  outcome_reason?: string | string[] | null;
+  /** The plugin's `version`. */
+  plugin_version?: string;
 }
 
 /** A page of results: at most `limit` (1 to 500, 100 by default), after `cursor`. */

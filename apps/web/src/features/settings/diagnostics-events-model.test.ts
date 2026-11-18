@@ -41,6 +41,25 @@ function event(fields: Partial<LoggedEvent> = {}): LoggedEvent {
 }
 
 describe("the query box", () => {
+  it("takes at most 16 reasons, as main does, and says so", () => {
+    const reasons = (count: number) =>
+      Array.from({ length: count }, (_, index) => `reason_${index}`).join(",");
+    expect(parseQuery(`reason:${reasons(16)}`).ok).toBe(true);
+    const parsed = parseQuery(`reason:${reasons(17)}`);
+    expect(parsed).toEqual({
+      ok: false,
+      error: { kind: "too_many_values", term: "reason", max: 16 },
+    });
+    expect(
+      describeQueryError({ kind: "too_many_values", term: "reason", max: 16 }),
+    ).toBe("reason: takes at most 16 reasons.");
+    // Repeats count once.
+    expect(parseQuery(`reason:${reasons(16)},reason_0`).ok).toBe(true);
+    expect(parseEventsView({ reason: reasons(17) }).terms.reason).toBe(
+      undefined,
+    );
+  });
+
   it("reads each term onto its key", () => {
     expect(
       parseQuery(
@@ -94,13 +113,13 @@ describe("the query box", () => {
       error: { kind: "invalid_value", term: "reason" },
     });
     expect(describeQueryError({ kind: "invalid_value", term: "reason" })).toBe(
-      "reason: takes an outcome reason such as timeout, or several separated by commas.",
+      "reason: takes an outcome reason such as timeout, several separated by commas, or none for the events without one.",
     );
   });
 
   it("says what is wrong with a term", () => {
     expect(describeQueryError({ kind: "unknown_term", term: "colour" })).toBe(
-      "Ajour doesn't know colour:. Use name:, outcome:, reason:, trace:, connection: or plugin:.",
+      "Ajour doesn't know colour:. Use name:, outcome:, reason:, trace:, connection:, plugin: or version:.",
     );
     expect(describeQueryError({ kind: "invalid_value", term: "trace" })).toBe(
       "trace: takes a trace ID of 32 hex characters.",
@@ -177,6 +196,79 @@ describe("the Events search keys", () => {
       undefined,
     );
     expect(parseEventsView({ hour: "yesterday" }).hour).toBe(undefined);
+  });
+
+  it("reads from and to that narrow an hour to the part an Overview bar counted", () => {
+    const hour = "2026-11-18T09:00:00.000Z";
+    const view = parseEventsView({
+      hour,
+      from: "2026-11-18T09:23:00.000Z",
+      to: "2026-11-18T09:40:00.001Z",
+    });
+    expect(view).toMatchObject({
+      hour,
+      hourFrom: "2026-11-18T09:23:00.000Z",
+      hourTo: "2026-11-18T09:40:00.001Z",
+    });
+    expect(eventsSearchOf(view)).toEqual({
+      hour,
+      from: "2026-11-18T09:23:00.000Z",
+      to: "2026-11-18T09:40:00.001Z",
+    });
+    expect(
+      logFilterOf({ ...view, launch: "all" }, { now: NOW, launchId: "l" }),
+    ).toEqual({
+      from: "2026-11-18T09:23:00.000Z",
+      to: "2026-11-18T09:40:00.001Z",
+    });
+    // Outside the hour, reversed, or without an hour: left out.
+    for (const search of [
+      { hour, from: "2026-11-18T08:59:00.000Z" },
+      { hour, to: "2026-11-18T10:00:00.001Z" },
+      {
+        hour,
+        from: "2026-11-18T09:40:00.000Z",
+        to: "2026-11-18T09:20:00.000Z",
+      },
+      { from: "2026-11-18T09:23:00.000Z" },
+    ]) {
+      const read = parseEventsView(search);
+      expect([read.hourFrom, read.hourTo]).toEqual([undefined, undefined]);
+    }
+  });
+
+  it("reads reason=none, alone, as the events without a reason", () => {
+    const view = parseEventsView({ reason: "none", launch: "all" });
+    expect(view.terms.reason).toEqual(["none"]);
+    expect(logFilterOf(view, { now: NOW, launchId: "l" })).toEqual({
+      outcome_reason: null,
+    });
+    expect(parseEventsView({ reason: "none,timeout" }).terms.reason).toBe(
+      undefined,
+    );
+  });
+
+  it("reads a plugin's version and asks for it as plugin_version", () => {
+    const view = parseEventsView({
+      plugin: "ajour.jira",
+      version: "2.1.0-beta.1",
+      launch: "all",
+    });
+    expect(view.terms.version).toBe("2.1.0-beta.1");
+    expect(eventsSearchOf(view)).toEqual({
+      launch: "all",
+      plugin: "ajour.jira",
+      version: "2.1.0-beta.1",
+    });
+    expect(logFilterOf(view, { now: NOW, launchId: "l" })).toEqual({
+      plugin_id: "ajour.jira",
+      plugin_version: "2.1.0-beta.1",
+    });
+    expect(parseQuery("plugin:ajour.jira version:2.1.0")).toEqual({
+      ok: true,
+      terms: { plugin: "ajour.jira", version: "2.1.0" },
+    });
+    expect(parseEventsView({ version: "2 1" }).terms.version).toBe(undefined);
   });
 
   it("reads a router's parsed numbers, and keeps a launch ID for Same launch", () => {

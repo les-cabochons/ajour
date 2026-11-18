@@ -290,7 +290,7 @@ export function DiagnosticsEventsTab() {
           })),
           // An hour a bar of the Overview's chart opened.
           ...(view.hour
-            ? [{ value: view.hour, label: formatEventHour(view.hour) }]
+            ? [{ value: view.hour, label: formatEventHour(view.hour, view) }]
             : []),
         ]}
         onChange={(range) => {
@@ -298,6 +298,8 @@ export function DiagnosticsEventsTab() {
           show({
             ...view,
             hour: undefined,
+            hourFrom: undefined,
+            hourTo: undefined,
             range:
               range === ANY ? undefined : (range as EventRange | undefined),
           });

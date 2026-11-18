@@ -94,7 +94,7 @@ describe("the health figures", () => {
     expect(sync.rows[0]).toMatchObject({ recovered: true, reason: "timeout" });
   });
 
-  it("Plugins: timeouts, crashes and capacity refusals by plugin and version", () => {
+  it("Plugins: timeouts, crashes and capacity refusals by plugin and version, a row opening its version alone", () => {
     const plugins = pluginFigureOf(overviewFixture(), "24h");
     expect(plugins.count).toBe(1);
     expect(plugins.rows).toEqual([
@@ -114,6 +114,7 @@ describe("the health figures", () => {
           plugin: "ajour.jira",
           outcome: "timeout",
           reason: "timeout",
+          version: "2.1.0",
         },
       },
     ]);
@@ -126,19 +127,29 @@ describe("the health figures", () => {
     });
   });
 
-  it("App start: the latest launch's duration, the p95, and the slowest phase", () => {
+  it("App start: the latest launch's duration, the p95, and the slowest phase, the window's setup apart from the renderer load it holds", () => {
     expect(launchFigureOf(overviewFixture(), "24h")).toEqual({
       durationMs: 6400,
       outcome: "ok",
       p95Ms: 6400,
       launchCount: 3,
-      slowestPhase: { label: "Window", ms: 5100 },
+      // window_ms 5100 holds renderer_load_ms 4700: the setup is 400.
+      slowestPhase: { label: "Renderer load", ms: 4700 },
       search: {
         tab: "events",
         launch: "all",
         range: "24h",
         name: "app.launch",
       },
+    });
+    const slowWindow = overviewFixture();
+    slowWindow.latest_launch = {
+      ...slowWindow.latest_launch!,
+      launch: { ready_ms: 900, window_ms: 5100, renderer_load_ms: 300 },
+    } as typeof slowWindow.latest_launch;
+    expect(launchFigureOf(slowWindow, "24h").slowestPhase).toEqual({
+      label: "Window setup",
+      ms: 4800,
     });
     expect(
       launchFigureOf(overviewFixture({ latest_launch: null }), "launch"),
@@ -224,6 +235,28 @@ describe("problems per hour", () => {
       hour: "2026-11-18T09:00:00.000Z",
     });
   });
+
+  it("opens the first and last bars on the part of their hour the range counted", () => {
+    const overview = overviewFixture({
+      from: "2026-11-18T09:23:00.000Z",
+      to: "2026-11-18T11:40:00.000Z",
+    });
+    const [first, middle, last] = chartBarsOf(overview, "24h");
+    expect(first!.search).toMatchObject({
+      hour: "2026-11-18T09:00:00.000Z",
+      from: "2026-11-18T09:23:00.000Z",
+    });
+    expect(first!.search.to).toBeUndefined();
+    expect(middle!.search.from).toBeUndefined();
+    expect(middle!.search.to).toBeUndefined();
+    // The aggregate counts its `to`; a filter's `to` excludes it.
+    expect(last!.search).toMatchObject({
+      hour: "2026-11-18T11:00:00.000Z",
+      to: "2026-11-18T11:40:00.001Z",
+    });
+    // This launch counts the launch's events before its start too.
+    expect(chartBarsOf(overview, "launch")[0]!.search.from).toBeUndefined();
+  });
 });
 
 describe("the lists", () => {
@@ -246,14 +279,14 @@ describe("the lists", () => {
         reason: "secret_unavailable",
       },
     });
-    // No reason: the Events filter has no "without a reason", so it opens
-    // the name and outcome.
+    // No reason: it opens the events of its name and outcome without one.
     expect(second!.search).toEqual({
       tab: "events",
       launch: "all",
       range: "24h",
       name: "process.gone",
       outcome: "error",
+      reason: "none",
     });
   });
 

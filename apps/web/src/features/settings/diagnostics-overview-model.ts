@@ -6,6 +6,7 @@ import type {
 } from "@/lib/desktop-bridge";
 import {
   DEFAULT_EVENTS_VIEW,
+  NO_REASON,
   eventsSearchOf,
   type EventQueryTerms,
   type EventsView,
@@ -121,14 +122,14 @@ export function pluginFigureOf(
       reason: problem.outcome_reason,
       count: problem.count,
       lastAt: problem.last_at,
-      // The version has no filter: the row opens the plugin's every version.
       search: overviewEventsSearch(range, {
         kind: "plugin_operation",
         terms: {
           plugin: problem.plugin_id,
           outcome: [problem.outcome],
-          ...(problem.outcome_reason
-            ? { reason: [problem.outcome_reason] }
+          reason: [problem.outcome_reason ?? NO_REASON],
+          ...(problem.plugin_version
+            ? { version: problem.plugin_version }
             : {}),
         },
       }),
@@ -140,13 +141,32 @@ export function pluginFigureOf(
   };
 }
 
-/** An app.launch's phases, in the order they run. */
-const LAUNCH_PHASES = [
-  ["ready_ms", "Electron ready"],
-  ["api_start_ms", "Local API start"],
-  ["window_ms", "Window"],
-  ["renderer_load_ms", "Renderer load"],
-] as const;
+const phaseMs = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+/**
+ * An app.launch's phases, in the order they run. `window_ms` spans the
+ * window's creation and its renderer's load, so the window's own setup is
+ * what it holds beyond `renderer_load_ms`.
+ */
+function launchPhasesOf(
+  fields: Record<string, unknown>,
+): { label: string; ms: number | undefined }[] {
+  const windowMs = phaseMs(fields.window_ms);
+  const rendererMs = phaseMs(fields.renderer_load_ms);
+  return [
+    { label: "Electron ready", ms: phaseMs(fields.ready_ms) },
+    { label: "Local API start", ms: phaseMs(fields.api_start_ms) },
+    {
+      label: "Window setup",
+      ms:
+        windowMs !== undefined && rendererMs !== undefined
+          ? Math.max(0, windowMs - rendererMs)
+          : windowMs,
+    },
+    { label: "Renderer load", ms: rendererMs },
+  ];
+}
 
 /** App start: the latest launch's duration, the p95 of the range, its slowest phase. */
 export function launchFigureOf(
@@ -156,9 +176,8 @@ export function launchFigureOf(
   const latest = overview.latest_launch;
   const phases = (latest?.launch ?? {}) as Record<string, unknown>;
   let slowestPhase: { label: string; ms: number } | null = null;
-  for (const [field, label] of LAUNCH_PHASES) {
-    const ms = phases[field];
-    if (typeof ms !== "number" || !Number.isFinite(ms)) continue;
+  for (const { label, ms } of launchPhasesOf(phases)) {
+    if (ms === undefined) continue;
     if (!slowestPhase || ms > slowestPhase.ms) slowestPhase = { label, ms };
   }
   const durations = overview.durations.find(
@@ -207,6 +226,28 @@ export const PROBLEM_SERIES: ReadonlyArray<{
   { id: "cancelled", label: "Cancelled" },
 ];
 
+/**
+ * The part of `hour` the aggregate counted: from its `from` (24 hours and 7
+ * days; this launch counts the launch's events before it too) to its `to`,
+ * which it counts inclusive and a filter's `to` excludes.
+ */
+function countedPartOf(
+  hour: string,
+  overview: DesktopLogOverview,
+  range: OverviewRange,
+): { hourFrom?: string; hourTo?: string } {
+  const start = Date.parse(hour);
+  const end = start + 60 * 60_000;
+  const from = Date.parse(overview.from);
+  const to = Date.parse(overview.to) + 1;
+  return {
+    ...(range !== "launch" && from > start && from < end
+      ? { hourFrom: new Date(from).toISOString() }
+      : {}),
+    ...(to > start && to < end ? { hourTo: new Date(to).toISOString() } : {}),
+  };
+}
+
 /** One bar per hour of the range, each its problems by outcome. */
 export function chartBarsOf(
   overview: DesktopLogOverview,
@@ -224,6 +265,7 @@ export function chartBarsOf(
         problems: true,
         range: undefined,
         hour,
+        ...countedPartOf(hour, overview, range),
       }),
     };
   });
@@ -234,8 +276,7 @@ const LIST_ROWS = 10;
 
 /**
  * Top problems: by name, outcome and reason. A row opens Events on its
- * name, outcome and reason; one without a reason opens its name and
- * outcome, since the Events filter has no "without a reason".
+ * name, outcome and reason; one without a reason on `reason:none`.
  */
 export function topProblemsOf(
   overview: DesktopLogOverview,
@@ -255,7 +296,7 @@ export function topProblemsOf(
       terms: {
         name: problem.name,
         outcome: [problem.outcome],
-        ...(problem.outcome_reason ? { reason: [problem.outcome_reason] } : {}),
+        reason: [problem.outcome_reason ?? NO_REASON],
       },
     }),
   }));

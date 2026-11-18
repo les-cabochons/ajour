@@ -41,6 +41,8 @@ const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
 const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
 /** An `outcome_reason`, as the catalog names them. */
 const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
+/** A plugin's `version`, as its manifest gives it. */
+const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
 const CURSOR = /^(\d{1,16})~(\d{4}-\d{2}-\d{2})~(\d{1,9})$/;
 
 const RUNTIMES = new Set(["renderer", "api", "main"]);
@@ -118,10 +120,14 @@ const FILTER_KEYS = [
   "trace_id",
   "connection_id",
   "plugin_id",
-  "outcome_reason",
 ];
+/**
+ * What logs.query and logs.tail filter on besides, for the Overview's
+ * links: an `outcome_reason` (null for none) and a plugin's version.
+ */
+const QUERY_FILTER_KEYS = [...FILTER_KEYS, "outcome_reason", "plugin_version"];
 /** A tail follows what is written now, so it takes no range. */
-const TAIL_FILTER_KEYS = FILTER_KEYS.filter(
+const TAIL_FILTER_KEYS = QUERY_FILTER_KEYS.filter(
   (key) => key !== "from" && key !== "to",
 );
 const PAGE_KEYS = ["limit", "cursor"];
@@ -181,14 +187,24 @@ function oneOrMany(value, allowed, what) {
   return new Set(values);
 }
 
-/** One reason in its format, or a list of them, as a set; undefined for none. */
+/**
+ * One reason in its format, or a list of them, as a set; null for the
+ * events without a reason; undefined for no filter.
+ */
 function reasonsOf(value) {
   if (value === undefined) return undefined;
+  if (value === null) return new Set([undefined]);
   const values = Array.isArray(value) ? value : [value];
   if (values.length === 0 || values.length > MAX_REASONS) {
     throw invalidQuery("outcome_reason has no value, or too many.");
   }
-  for (const item of values) formatted(item, OUTCOME_REASON, "outcome_reason");
+  // Every element, holes of a sparse list too, is a reason in its format.
+  for (let index = 0; index < values.length; index += 1) {
+    const item = values[index];
+    if (typeof item !== "string" || !OUTCOME_REASON.test(item)) {
+      throw invalidQuery("outcome_reason is not in its format.");
+    }
+  }
   return new Set(values);
 }
 
@@ -209,6 +225,11 @@ function readFilter(value, keys = FILTER_KEYS, optional = true) {
     connection: formatted(filter.connection_id, RECORD_ID, "connection_id"),
     plugin: formatted(filter.plugin_id, RECORD_ID, "plugin_id"),
     reasons: reasonsOf(filter.outcome_reason),
+    pluginVersion: formatted(
+      filter.plugin_version,
+      PLUGIN_VERSION,
+      "plugin_version",
+    ),
   };
   if (filter.outcome === PROBLEMS) read.problems = true;
   else read.outcomes = oneOrMany(filter.outcome, OUTCOMES, "outcome");
@@ -256,7 +277,9 @@ function matches(entry, filter) {
     (filter.connection === undefined ||
       entry.connection === filter.connection) &&
     (filter.plugin === undefined || entry.plugin === filter.plugin) &&
-    (filter.reasons === undefined || filter.reasons.has(entry.reason))
+    (filter.reasons === undefined || filter.reasons.has(entry.reason)) &&
+    (filter.pluginVersion === undefined ||
+      entry.pluginVersion === filter.pluginVersion)
   );
 }
 
@@ -768,7 +791,7 @@ ${entry.span}`;
 
   /** logs.query: the events that pass the filter, newest first, one page. */
   async function query(filterValue, pageValue) {
-    const filter = readFilter(filterValue);
+    const filter = readFilter(filterValue, QUERY_FILTER_KEYS);
     const page = readPage(pageValue);
     const { indexes: days, stats } = await indexesFor(filter.from, filter.to);
     const matched = [];

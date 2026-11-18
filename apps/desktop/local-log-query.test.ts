@@ -346,6 +346,78 @@ describe("logs.query", () => {
     }
   });
 
+  it("refuses an outcome_reason list with an element outside its format, holes too, in a query and a tail", async () => {
+    const { directory } = await logFolder();
+    await writeEvents(directory, [event({ name: "time_entry.update" })]);
+    const logs = service(directory);
+    // A hole, read as undefined.
+    const sparse = [, "timeout"];
+    for (const outcome_reason of [[undefined], sparse, new Array(2)]) {
+      expect((await rejection(logs.query({ outcome_reason }))).code).toBe(
+        INVALID_LOG_QUERY,
+      );
+      expect(() => logs.subscribe({}, 1, { outcome_reason }, () => {})).toThrow(
+        expect.objectContaining({ code: INVALID_LOG_QUERY }),
+      );
+    }
+  });
+
+  it("filters on the events without a reason when outcome_reason is null", async () => {
+    const { directory } = await logFolder();
+    await writeEvents(directory, [
+      event({
+        name: "backlog.sync",
+        started_at: at(2 * 60 * 1000),
+        outcome: "error",
+        outcome_reason: "secret_unavailable",
+      }),
+      event({
+        name: "backlog.sync",
+        started_at: at(60 * 1000),
+        outcome: "error",
+      }),
+    ]);
+    const logs = service(directory);
+    const { events } = await logs.query({
+      name: "backlog.sync",
+      outcome: ["error"],
+      outcome_reason: null,
+    });
+    expect(
+      events.map((logged: LoggedEvent) => logged.outcome_reason ?? "none"),
+    ).toEqual(["none"]);
+  });
+
+  it("filters on a plugin's version, in its format", async () => {
+    const { directory } = await logFolder();
+    const operation = (version: string, offset: number) =>
+      event({
+        name: "backlog.sync",
+        kind: "plugin_operation",
+        runtime: "api",
+        started_at: at(offset),
+        outcome: "timeout",
+        outcome_reason: "timeout",
+        plugin: { id: "ajour.jira", version },
+      });
+    await writeEvents(directory, [
+      operation("2.0.0", 3 * 60 * 1000),
+      operation("2.1.0-beta.1", 2 * 60 * 1000),
+    ]);
+    const logs = service(directory);
+    const versions = async (plugin_version: string) =>
+      (
+        await logs.query({ plugin_id: "ajour.jira", plugin_version })
+      ).events.map(
+        (logged: LoggedEvent) => (logged.plugin as { version: string }).version,
+      );
+    expect(await versions("2.0.0")).toEqual(["2.0.0"]);
+    expect(await versions("2.1.0-beta.1")).toEqual(["2.1.0-beta.1"]);
+    expect((await rejection(logs.query({ plugin_version: "2 0" }))).code).toBe(
+      INVALID_LOG_QUERY,
+    );
+  });
+
   it("pages the results with a cursor, each event once", async () => {
     const { directory } = await logFolder();
     const events = Array.from({ length: 250 }, (_, index) =>
@@ -980,6 +1052,20 @@ describe("logs.trace", () => {
 });
 
 describe("logs.actions", () => {
+  it("takes no outcome_reason or plugin_version, which only logs.query and logs.tail filter on", async () => {
+    const { directory } = await logFolder();
+    const logs = service(directory);
+    for (const filter of [
+      { outcome_reason: "timeout" },
+      { plugin_version: "1.0.0" },
+    ]) {
+      expect(
+        (await rejection(logs.actions({ show: "all", ...filter }))).code,
+      ).toBe(INVALID_LOG_QUERY);
+      expect(() => logs.subscribe({}, 1, filter, () => {})).not.toThrow();
+    }
+  });
+
   it("lists one row per trace root, with All, Failed and Slow", async () => {
     const { directory } = await logFolder();
     const failing = backlogSync(400, HOUR);

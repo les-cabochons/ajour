@@ -167,8 +167,8 @@ const ROW_LINK =
   "flex min-w-0 rounded-md px-2 text-xs hover:bg-[var(--hover-bg)] -mx-2";
 
 /**
- * One health figure: a link over its label, number and line, then up to
- * three rows, each a link of its own.
+ * One health figure: a link over its label, number, line and `detail`,
+ * then up to three rows, each a link of its own.
  */
 function HealthFigure({
   title,
@@ -176,6 +176,7 @@ function HealthFigure({
   value,
   tone = "default",
   line,
+  detail,
   children,
 }: {
   title: string;
@@ -183,6 +184,7 @@ function HealthFigure({
   value: ReactNode;
   tone?: "default" | "danger";
   line: ReactNode;
+  detail?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -202,6 +204,7 @@ function HealthFigure({
           {value}
         </Value>
         <span className="truncate text-xs text-muted-foreground">{line}</span>
+        {detail}
       </SettingsLink>
       {children ? <ul className="flex flex-col">{children}</ul> : null}
     </section>
@@ -337,23 +340,25 @@ function LaunchFigure({
           ? "No launch in this range"
           : [
               failed ? OUTCOME_LABELS[launch.outcome!] : "Latest launch",
-              launch.p95Ms !== null && launch.launchCount > 1
-                ? `p95 ${formatDurationMs(launch.p95Ms)} of ${launch.launchCount}`
+              // With its sample count, which is one in This launch.
+              launch.p95Ms !== null
+                ? `p95 ${formatDurationMs(launch.p95Ms)} of ${plural(launch.launchCount, "launch", "launches")}`
                 : null,
             ]
               .filter(Boolean)
               .join(" · ")
       }
-    >
-      {launch.slowestPhase ? (
-        <li className="flex min-w-0 items-center gap-2 py-1.5 text-xs">
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            Slowest phase: {launch.slowestPhase.label}
+      detail={
+        launch.slowestPhase ? (
+          <span className="flex min-w-0 items-center gap-2 pt-1.5 text-xs">
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              Slowest phase: {launch.slowestPhase.label}
+            </span>
+            <Value>{formatDurationMs(launch.slowestPhase.ms)}</Value>
           </span>
-          <Value>{formatDurationMs(launch.slowestPhase.ms)}</Value>
-        </li>
-      ) : null}
-    </HealthFigure>
+        ) : null
+      }
+    />
   );
 }
 
@@ -629,6 +634,9 @@ export function DiagnosticsOverviewTab() {
   );
 
   const { overview } = state;
+  // What is shown is the range its read was for: while another range loads,
+  // the figures and their links stay those of the one shown.
+  const shown = overview?.range ?? range;
   let body: ReactNode;
   if (state.status === "error") {
     body = (
@@ -661,7 +669,7 @@ export function DiagnosticsOverviewTab() {
       </OverviewEmpty>
     ) : (
       <OverviewEmpty title="No data yet">
-        Nothing is recorded for {RANGE_PHRASES[range]} yet. Events show here as
+        Nothing is recorded for {RANGE_PHRASES[shown]} yet. Events show here as
         Ajour works.
       </OverviewEmpty>
     );
@@ -680,32 +688,32 @@ export function DiagnosticsOverviewTab() {
             className="flex items-center gap-1.5 text-sm text-foreground"
           >
             <CheckIcon aria-hidden className="size-4" />
-            Everything is OK: no problem or crash in {RANGE_PHRASES[range]}.
+            Everything is OK: no problem or crash in {RANGE_PHRASES[shown]}.
           </p>
         ) : null}
         <div className="grid gap-x-8 gap-y-6 @xl:grid-cols-2 @5xl:grid-cols-4">
-          <SyncFigure overview={overview} range={range} names={names} />
+          <SyncFigure overview={overview} range={shown} names={names} />
           <PluginFigure
             overview={overview}
-            range={range}
+            range={shown}
             names={names}
             now={now}
           />
-          <LaunchFigure overview={overview} range={range} />
-          <CrashFigure overview={overview} range={range} />
+          <LaunchFigure overview={overview} range={shown} />
+          <CrashFigure overview={overview} range={shown} />
         </div>
         {healthy ? null : (
           <>
-            <ProblemsChart overview={overview} range={range} />
+            <ProblemsChart overview={overview} range={shown} />
             <TopProblems
               overview={overview}
-              range={range}
+              range={shown}
               names={names}
               now={now}
             />
           </>
         )}
-        <SlowestOperations overview={overview} range={range} />
+        <SlowestOperations overview={overview} range={shown} />
       </>
     );
   }

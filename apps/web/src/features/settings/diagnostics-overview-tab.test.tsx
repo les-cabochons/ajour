@@ -214,8 +214,8 @@ describe("the Overview tab", () => {
     const launch = figure("App start");
     expect(launch.textContent).toContain("6.40 s");
     expect(launch.textContent).toContain("p95 6.40 s of 3");
-    expect(launch.textContent).toContain("Slowest phase: Window");
-    expect(launch.textContent).toContain("5.10 s");
+    expect(launch.textContent).toContain("Slowest phase: Renderer load");
+    expect(launch.textContent).toContain("4.70 s");
 
     const crashes = figure("Crashes");
     expect(within(crashes).getAllByTestId("crash-row")).toHaveLength(2);
@@ -323,6 +323,47 @@ describe("the Overview tab", () => {
     expect(
       screen.getByRole<HTMLInputElement>("searchbox", { name: "Query" }).value,
     ).toBe("name:backlog.sync outcome:error reason:secret_unavailable");
+  });
+
+  it("shows This launch's p95 with its one sample, and opens app.launch from the slowest phase too", async () => {
+    installMain({
+      answer: overviewFixture({
+        durations: [
+          { name: "app.launch", count: 1, p50_ms: 6400, p95_ms: 6400 },
+        ],
+      }),
+    });
+    const { router } = await openDiagnostics({ tab: "overview" });
+
+    const launch = figure("App start");
+    expect(launch.textContent).toContain("p95 6.40 s of 1 launch");
+    const phase = within(launch).getByText(/^Slowest phase:/);
+    const link = phase.closest("a")!;
+    expect(link).toBe(within(launch).getAllByRole("link")[0]);
+    await click(link);
+    expect(windowSearch(router)).toEqual({
+      page: "diagnostics",
+      tab: "events",
+      name: "app.launch",
+    });
+  });
+
+  it("keeps the shown range's links while another range loads", async () => {
+    const main = installMain();
+    const { router } = await openDiagnostics({ tab: "overview" });
+    main.aggregateLogs.mockImplementationOnce(() => new Promise(() => {}));
+
+    await click(screen.getByRole("button", { name: "24 hours" }));
+    expect(main.aggregateLogs.mock.calls.at(-1)![0]).toEqual({ range: "24h" });
+
+    // This launch's figures still show, so they open this launch.
+    await click(within(figure("Sync")).getAllByRole("link")[0]!);
+    expect(windowSearch(router)).toEqual({
+      page: "diagnostics",
+      tab: "events",
+      problems: "1",
+      name: "backlog.sync",
+    });
   });
 
   it("reads the range it is set to, and keeps it in the search", async () => {
