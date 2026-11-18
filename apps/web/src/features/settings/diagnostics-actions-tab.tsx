@@ -354,8 +354,8 @@ function ActionRow({
             </span>
             {row.slow ? <Chip>Slow</Chip> : null}
           </span>
-          {/* Narrow, the trigger and the connection take a second line. */}
-          <span className="truncate text-xs text-[var(--text-secondary)] sm:hidden">
+          {/* Narrow, the trigger and the connection take a second line, which wraps. */}
+          <span className="text-xs break-words text-[var(--text-secondary)] sm:hidden">
             {[row.detail, connection].filter(Boolean).join(" · ")}
           </span>
         </span>

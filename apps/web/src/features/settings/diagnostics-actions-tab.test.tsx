@@ -438,7 +438,7 @@ describe("the Actions tab", () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.textContent).toContain("update_backlog_item");
     expect(items[0]!.textContent).toContain(
-      "Wrote backlog_item.update, time_entry.create · Undo offered",
+      "2 writes recorded · Ran backlog_item.update, time_entry.create · Undo offered",
     );
   });
 

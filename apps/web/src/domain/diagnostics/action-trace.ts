@@ -255,8 +255,6 @@ export interface ToolCallStep {
   name: string;
   outcome: Outcome;
   reason?: string;
-  /** A store command that ended ok: it wrote the local state. */
-  wrote: boolean;
 }
 
 export interface ToolCall {
@@ -270,6 +268,11 @@ export interface ToolCall {
   durationMs: number;
   /** The units folded into it, in the order they started, each with its outcome. */
   steps: ToolCallStep[];
+  /**
+   * The store writes its trace counted. The log doesn't say which step made
+   * them, so a step that ended ok is only known to have run.
+   */
+  writeCount: number;
   /** Steps past the first 50 each event keeps. */
   droppedStepCount: number;
   undoOffered: boolean;
@@ -302,19 +305,20 @@ function stepsOf(event: TraceEvent, callWrote: boolean): ToolCallStep[] {
         name,
         outcome: failure!.outcome,
         ...(failure!.outcome_reason ? { reason: failure!.outcome_reason } : {}),
-        wrote: false,
       };
     }
-    if (command && !callWrote) return { name, outcome: "noop", wrote: false };
-    return { name, outcome: "ok", wrote: command };
+    if (command && !callWrote) return { name, outcome: "noop" };
+    return { name, outcome: "ok" };
   });
 }
 
 /** A call from its outermost event and the events under it. */
 function toolCallOf(call: TraceEvent, events: TraceEvent[]): ToolCall {
-  const callWrote = events.some(
-    (event) => (event.counts?.store_write_count ?? 0) > 0,
+  const writeCount = events.reduce(
+    (sum, event) => sum + (event.counts?.store_write_count ?? 0),
+    0,
   );
+  const callWrote = writeCount > 0;
   const steps: ToolCallStep[] = [];
   let dropped = 0;
   let undoOffered = false;
@@ -339,25 +343,33 @@ function toolCallOf(call: TraceEvent, events: TraceEvent[]): ToolCall {
     startedAt: call.started_at,
     durationMs: call.duration_ms,
     steps,
+    writeCount,
     droppedStepCount: dropped,
     undoOffered,
   };
 }
 
 /**
- * What a call's trace recorded it did: "Wrote backlog_item.update ·
- * time_entry.create was refused (locked_week)". Work a call only queues,
- * such as a comment sent after its Undo, runs later in a trace of its own,
- * so a call without a write says only that this trace recorded none.
+ * What a call's trace recorded it did: "1 write recorded · Ran
+ * backlog_item.update · time_entry.create was refused (locked_week)". The
+ * writes are counted for the call, not per step, so the store commands that
+ * ended ok are said to have run. Work a call only queues, such as a comment
+ * sent after its Undo, runs later in a trace of its own, so a call without a
+ * write says only that this trace recorded none.
  */
 export function describeToolCallSteps(call: ToolCall): string {
-  const wrote = call.steps.filter((step) => step.wrote);
+  const ran = (step: ToolCallStep) =>
+    step.outcome === "ok" && isStoreCommand(step.name);
+  const commands = call.steps.filter(ran);
   return [
-    wrote.length > 0
-      ? `Wrote ${wrote.map((step) => step.name).join(", ")}`
+    call.writeCount > 0
+      ? `${call.writeCount} ${call.writeCount === 1 ? "write" : "writes"} recorded`
       : "No write recorded in this trace",
+    commands.length > 0
+      ? `Ran ${commands.map((step) => step.name).join(", ")}`
+      : null,
     ...call.steps
-      .filter((step) => !step.wrote)
+      .filter((step) => !ran(step))
       .map(
         (step) =>
           `${step.name} ${OUTCOME_PHRASES[step.outcome]}${step.reason ? ` (${step.reason})` : ""}`,

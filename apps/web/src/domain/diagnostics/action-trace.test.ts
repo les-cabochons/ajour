@@ -238,14 +238,15 @@ describe("an agent's tool calls", () => {
         outcome: "ok",
         durationMs: 120,
         steps: [
-          { name: "backlog_item.update", outcome: "ok", wrote: true },
-          { name: "time_entry.create", outcome: "ok", wrote: true },
+          { name: "backlog_item.update", outcome: "ok" },
+          { name: "time_entry.create", outcome: "ok" },
         ],
+        writeCount: 2,
         undoOffered: true,
       }),
     ]);
     expect(describeToolCallSteps(calls[0]!)).toBe(
-      "Wrote backlog_item.update, time_entry.create · Undo offered",
+      "2 writes recorded · Ran backlog_item.update, time_entry.create · Undo offered",
     );
   });
 
@@ -263,7 +264,15 @@ describe("an agent's tool calls", () => {
         ],
         counts: { store_write_count: 1 },
       },
-      "Wrote backlog_item.update · time_entry.create was refused (locked_week) · Undo offered",
+      "1 write recorded · Ran backlog_item.update · time_entry.create was refused (locked_week) · Undo offered",
+    ],
+    [
+      "the writes counted for the call, not claimed per step, when a step may have written nothing",
+      {
+        steps: ["backlog_item.update", "backlog_item.update"],
+        counts: { store_write_count: 1 },
+      },
+      "1 write recorded · Ran backlog_item.update, backlog_item.update · Undo offered",
     ],
     [
       "the steps of a call that wrote nothing as having nothing to do",
