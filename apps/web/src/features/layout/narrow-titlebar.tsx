@@ -8,7 +8,10 @@ import {
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { buttonVariants } from "@/components/ui/button";
-import { getAppSection } from "@/features/layout/app-section";
+import {
+  getAppSection,
+  isSectionEntryShown,
+} from "@/features/layout/app-section";
 import {
   getNarrowBackLink,
   isNarrowSettingsSection,
@@ -34,6 +37,7 @@ const sections = [
     to: "/deck",
     label: "Deck",
     icon: DeckIcon,
+    requiresCodeHost: true,
     isActive: (pathname: string) => getAppSection(pathname) === "deck",
   },
   {
@@ -49,9 +53,11 @@ const sections = [
  * The narrow view's primary navigation: a segmented toggle for Time, Backlog,
  * Deck and Settings that floats at the bottom left. Deck shows only while a
  * code host plugin is enabled, as its sidebar row does. Every item shows its
- * icon and name; the active one is filled. After a hairline, Commit opens the Commit
- * page for the week on screen. It is an action, not a section, so it is
- * never active.
+ * icon and name; the active one is filled. After a hairline, Commit opens the
+ * Commit page for the week on screen. It is an action, not a section, so it
+ * is never active. `data-items` counts the items with Commit: five no longer
+ * fit side by side below 480px, so styles.css stacks each name under its icon
+ * there.
  */
 export function NarrowSectionSwitcher({
   pathname,
@@ -61,11 +67,17 @@ export function NarrowSectionSwitcher({
   selectedTimeDate: string;
 }) {
   const openCommitPage = useOpenCommitPage(selectedTimeDate);
-  const hasCodeHost = useCodeHostConnections().groups.length > 0;
+  const hasCodeHost = useCodeHostConnections().enabled;
+  const shown = sections.filter((section) =>
+    isSectionEntryShown(section, hasCodeHost),
+  );
   return (
-    <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
-      {sections.map((section) => {
-        if (section.to === "/deck" && !hasCodeHost) return null;
+    <nav
+      className="ajour-narrow-switcher"
+      aria-label="Primary navigation"
+      data-items={shown.length + 1}
+    >
+      {shown.map((section) => {
         const Icon = section.icon;
         const isActive = section.isActive(pathname);
         const linkProps = {

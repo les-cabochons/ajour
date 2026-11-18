@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getAppSection } from "./app-section";
+import { getAppSection, isSectionEntryShown } from "./app-section";
 
 describe("getAppSection", () => {
   it("names the section of a page and of the pages inside it", () => {
@@ -16,5 +16,14 @@ describe("getAppSection", () => {
   it("leaves look-alike and unknown paths without a section", () => {
     expect(getAppSection("/backlogs")).toBeUndefined();
     expect(getAppSection("/")).toBeUndefined();
+  });
+});
+
+describe("isSectionEntryShown", () => {
+  it("shows an entry that needs a code host only while one is enabled", () => {
+    const deck = { requiresCodeHost: true };
+    expect(isSectionEntryShown(deck, true)).toBe(true);
+    expect(isSectionEntryShown(deck, false)).toBe(false);
+    expect(isSectionEntryShown({}, false)).toBe(true);
   });
 });

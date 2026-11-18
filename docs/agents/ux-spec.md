@@ -215,18 +215,19 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width        | Layout                                                        |
-| ------------ | ------------------------------------------------------------- |
-| 768px and up | Desktop, sidebar expanded or hidden by preference             |
-| Below 768px  | Narrow view, no sidebars                                      |
-| Below 480px  | Narrow view, with the bottom toggle's names under their icons |
+| Width        | Layout                                                              |
+| ------------ | ------------------------------------------------------------------- |
+| 768px and up | Desktop, sidebar expanded or hidden by preference                   |
+| Below 768px  | Narrow view, no sidebars                                            |
+| Below 480px  | Narrow view, with Deck: the bottom toggle's names under their icons |
+| Below 400px  | Narrow view, with the bottom toggle's names under their icons       |
 
 Today's splits at 640px and 1023px go away.
 
 ### Navigation
 
 - The narrow titlebar names the page: the day on Time pages, the section elsewhere, such as "Backlog" (council round 6).
-- A segmented toggle for Time, Backlog, Deck and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. The agents control shares the toggle's row, at the right, as its dot alone: the dot's color gives the state, and its name and a tap the rest. Deck shows only while a code host plugin is enabled (see Deck). Below 480px the toggle spans the row up to that dot and puts each name under its icon, so all five names fit down to a 320px window (usability testing, 2026-11-06). See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- A segmented toggle for Time, Backlog, Deck and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. The agents control shares the toggle's row, at the right, as its dot alone: the dot's color gives the state, and its name and a tap the rest. Deck shows only while a code host plugin is enabled (see Deck). Below 400px the toggle spans the row up to that dot and puts each name under its icon, so the four names fit down to a 320px window (usability testing, 2026-11-06). With Deck, the five items need about 462px side by side, so they stack the same way below 480px. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - The titlebar holds the date, New entry (+), Start (▶), then the totals pill. Start turns into Stop while an entry runs.
 - While an entry runs, the totals pill shows its time, with seconds, instead of the day total. The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
 - Start opens the running entry's dialog too. A click outside it saves the draft and closes the dialog, and the entry keeps running. An invalid draft keeps the dialog open with its error. The other entry dialogs ignore outside clicks.
@@ -1066,7 +1067,7 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 ### Pull request rows
 
 - A row shows the title, with a Returned mark when it came back, the repository and number, then its state: Merged or Closed, Snoozed until a time, Settled, or the reason it is on the user's plate. A Draft chip, the checks and how long it has waited follow. Its "…" button and right-click open its actions.
-- In the sidebar, rows are one line: the pull request icon, the title, and its short reason and age, such as "Review · 2h". Like the backlog rows, they have no "…" button; right-click opens their actions.
+- In the sidebar, rows are one line: the pull request icon, the title (bold when returned), and its short reason and age, such as "Review · 2h". Like the backlog rows, they have no "…" button; right-click opens their actions.
 - The actions are Open in the provider, then, for an open pull request, Settle or Unsettle and Snooze… or Unsnooze (see Right-click menus). E settles and B opens the shared snooze picker. Enter or a click opens the summary. Ctrl-click (Cmd-click on macOS) opens the pull request in its source without changing routes.
 
 ### Summary

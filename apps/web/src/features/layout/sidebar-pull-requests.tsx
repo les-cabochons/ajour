@@ -13,11 +13,11 @@ import { useNow } from "@/lib/use-now";
 /** The pull requests that need the user, as their own sidebar list. */
 export function useSidebarPullRequests() {
   const state = useLocalState();
-  const { overview, groups } = useCodeHostConnections();
+  const { overview, groups, enabled } = useCodeHostConnections();
   const now = useNow();
   return {
-    enabled: groups.length > 0,
-    items: groups.length
+    enabled,
+    items: enabled
       ? selectSidebarPullRequests(
           selectVisiblePullRequests(state.pullRequests ?? [], overview, now),
           now,

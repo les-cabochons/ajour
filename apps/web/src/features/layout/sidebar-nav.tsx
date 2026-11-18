@@ -6,7 +6,11 @@ import {
   RiListCheck3 as ListTodo,
   RiTimerLine as Timer,
 } from "@remixicon/react";
-import { getAppSection, type AppView } from "@/features/layout/app-section";
+import {
+  getAppSection,
+  isSectionEntryShown,
+  type AppView,
+} from "@/features/layout/app-section";
 import { cn } from "@/lib/utils";
 
 /** One row of the nav. */
@@ -21,7 +25,7 @@ export interface SidebarViewOption {
 const VIEW_DETAILS = {
   time: { label: "Time", icon: Timer },
   backlog: { label: "Backlog", icon: ListTodo },
-  deck: { label: "Deck", icon: PullRequestIcon },
+  deck: { label: "Deck", icon: PullRequestIcon, requiresCodeHost: true },
   projects: { label: "Projects", icon: FolderKanban },
 } as const;
 
@@ -89,45 +93,52 @@ function ViewCount({
  * The sidebar's nav, like Things' lists: one 28px row per view with its icon,
  * name and live count, always in view, so every view is one click and the
  * counts need no menu. The open view's row carries the active background and
- * `aria-current`. A Settings page selects none.
+ * `aria-current`. A Settings page selects none. Deck's row shows only while
+ * `hasCodeHost`.
  */
 export function SidebarNav({
   pathname,
   selectedTimeDate,
   options,
+  hasCodeHost,
 }: {
   pathname: string;
   selectedTimeDate: string;
   options: SidebarViewOption[];
+  hasCodeHost: boolean;
 }) {
   const section = getAppSection(pathname);
   const current = section === "settings" ? undefined : section;
   return (
     <ul className="flex shrink-0 flex-col gap-px px-2 pb-1">
-      {options.map((option) => {
-        const { label, icon: Icon } = VIEW_DETAILS[option.view];
-        const isCurrent = option.view === current;
-        return (
-          <li key={option.view}>
-            <ViewLink
-              view={option.view}
-              selectedTimeDate={selectedTimeDate}
-              aria-current={isCurrent ? "page" : undefined}
-              className={cn(
-                "flex h-7 items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring",
-                isCurrent && "bg-[var(--app-sidebar-active-bg)] font-medium",
-              )}
-            >
-              <Icon className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{label}</span>
-              <ViewCount
-                value={option.count}
-                highlighted={option.highlighted}
-              />
-            </ViewLink>
-          </li>
-        );
-      })}
+      {options
+        .filter((option) =>
+          isSectionEntryShown(VIEW_DETAILS[option.view], hasCodeHost),
+        )
+        .map((option) => {
+          const { label, icon: Icon } = VIEW_DETAILS[option.view];
+          const isCurrent = option.view === current;
+          return (
+            <li key={option.view}>
+              <ViewLink
+                view={option.view}
+                selectedTimeDate={selectedTimeDate}
+                aria-current={isCurrent ? "page" : undefined}
+                className={cn(
+                  "flex h-7 items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring",
+                  isCurrent && "bg-[var(--app-sidebar-active-bg)] font-medium",
+                )}
+              >
+                <Icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{label}</span>
+                <ViewCount
+                  value={option.count}
+                  highlighted={option.highlighted}
+                />
+              </ViewLink>
+            </li>
+          );
+        })}
     </ul>
   );
 }

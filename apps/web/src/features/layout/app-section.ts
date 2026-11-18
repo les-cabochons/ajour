@@ -22,3 +22,18 @@ export function getAppSection(pathname: string): AppSection | undefined {
   if (within("/settings")) return "settings";
   return undefined;
 }
+
+/**
+ * Whether a section nav entry shows now. An entry with
+ * `requiresCodeHost: true`, as Deck's in the sidebar's nav and in the narrow
+ * switcher, shows only while a code host plugin is enabled.
+ */
+export function isSectionEntryShown(
+  entry: object,
+  hasCodeHost: boolean,
+): boolean {
+  return (
+    hasCodeHost ||
+    !("requiresCodeHost" in entry && entry.requiresCodeHost === true)
+  );
+}

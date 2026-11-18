@@ -12,5 +12,7 @@ export function useCodeHostConnections() {
     getCachedPluginsOverview,
     getCachedPluginsOverview,
   );
-  return { overview, groups: enabledCodeHostGroups(overview) };
+  const groups = enabledCodeHostGroups(overview);
+  // Deck and its navigation show while this holds.
+  return { overview, groups, enabled: groups.length > 0 };
 }

@@ -10,7 +10,7 @@ import {
  * Tailwind plugin loaded by styles.css. It declares the layout breakpoints
  * from `breakpoints.ts` as variants, so styles use `@variant narrow { ... }`
  * and class names use `narrow:` without restating the widths.
- * `phone` is a portrait phone, below 480px. `touch-or-narrow:` hides
+ * `phone` is a portrait phone, below 400px. `touch-or-narrow:` hides
  * keyboard hints on touch screens and in the narrow view.
  */
 export default plugin(({ addVariant }) => {

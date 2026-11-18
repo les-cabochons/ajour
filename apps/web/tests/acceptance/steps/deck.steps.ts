@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
   codeHostOverview,
@@ -498,6 +498,15 @@ Then(
   "Deck navigation disappears and local records remain",
   async ({ page }) => {
     expect(await viewOptions(page)).not.toContain("Deck");
+    // It leaves the narrow bottom switcher too.
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: 420, height: 844 });
+    const switcher = narrowSwitcher(page);
+    await expect(switcher).toHaveAttribute("data-items", "4");
+    await expect(
+      switcher.getByRole("link", { name: "Deck", exact: true }),
+    ).toHaveCount(0);
+    await page.setViewportSize(viewport);
     expect(
       await page.evaluate(
         () =>
@@ -593,17 +602,18 @@ Then("Deck fits the viewport", async ({ page }) => {
 Then(
   "Deck is in the narrow bottom switcher and not in the Settings list",
   async ({ page }) => {
-    const switcher = page.getByRole("navigation", {
-      name: "Primary navigation",
-    });
+    const switcher = narrowSwitcher(page);
     const deck = switcher.getByRole("link", { name: "Deck", exact: true });
     await expect(deck).toHaveAttribute("aria-current", "page");
-    // Every name shows in full inside the window, down to 320px.
-    for (const width of [390, 320]) {
+    await expect(switcher).toHaveAttribute("data-items", "5");
+    // Five items put each name under its icon below 480px, so at 420px too,
+    // and every name shows in full inside the window, down to 320px.
+    for (const width of [420, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
-      for (const item of await switcher
-        .locator(".ajour-narrow-switcher-item")
-        .all()) {
+      const items = await switcher.locator(".ajour-narrow-switcher-item").all();
+      expect(items).toHaveLength(5);
+      for (const item of items) {
+        await expect(item).toHaveCSS("flex-direction", "column");
         const box = (await item.boundingBox())!;
         expect(box.x + box.width).toBeLessThanOrEqual(width);
         expect(
@@ -652,3 +662,7 @@ Then("a code host sync runs automatically", async ({ page }) => {
     )
     .toBeGreaterThan(0);
 });
+
+function narrowSwitcher(page: Page) {
+  return page.getByRole("navigation", { name: "Primary navigation" });
+}
