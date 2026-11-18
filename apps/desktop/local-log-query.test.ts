@@ -886,6 +886,44 @@ describe("logs.trace", () => {
     expect(result.roots[0].event).toEqual(old.job);
     expect(result.deepest_failure_span_id).toBe(old.brokers[2]!.span_id);
   });
+
+  it("keeps the recent days indexed after reading an older day for a trace", async () => {
+    const { directory } = await logFolder();
+    const old = backlogSync(307, 40 * DAY);
+    await writeEvents(directory, [old.job, old.request, old.operation]);
+    for (let day = 0; day < 35; day += 1) {
+      await writeEvents(directory, [
+        event({
+          name: "time_entry.update",
+          trace_id: traceId(3000 + day),
+          started_at: at(day * DAY),
+        }),
+      ]);
+    }
+    let bytes = 0;
+    const counting = {
+      ...fs,
+      open: async (...args: Parameters<typeof fs.open>) => {
+        const handle = await fs.open(...args);
+        const read = handle.read.bind(handle);
+        return Object.assign(handle, {
+          read: async (...readArgs: Parameters<typeof handle.read>) => {
+            const result = await read(...readArgs);
+            bytes += result.bytesRead;
+            return result;
+          },
+        });
+      },
+    };
+    const logs = service(directory, { fs: counting });
+    await logs.query({ from: at(30 * DAY), name: "nothing.matches" });
+    expect((await logs.trace(traceId(307))).event_count).toBe(3);
+
+    bytes = 0;
+    // No row matches, so only indexing would read.
+    await logs.query({ from: at(30 * DAY), name: "nothing.matches" });
+    expect(bytes).toBe(0);
+  });
 });
 
 describe("logs.actions", () => {
@@ -963,6 +1001,32 @@ describe("logs.actions", () => {
     );
     expect(rest.actions).toHaveLength(11);
     expect(rest.next_cursor).toBeNull();
+  });
+
+  it("calls the slowest of a few runs slow, but never a name run once", async () => {
+    const { directory } = await logFolder();
+    const runs = [...Array.from({ length: 9 }, () => 100), 5000].map(
+      (duration_ms, index) =>
+        event({
+          name: "calendar.fetch",
+          trace_id: traceId(800 + index),
+          started_at: at((index + 1) * 60_000),
+          duration_ms,
+        }),
+    );
+    const lone = event({
+      name: "backlog.sync",
+      trace_id: traceId(820),
+      started_at: at(30_000),
+      duration_ms: 9000,
+    });
+    await writeEvents(directory, [...runs, lone]);
+    const slow = await service(directory).actions({ show: "slow" });
+    expect(
+      slow.actions.map(
+        ({ event: root }: { event: LoggedEvent }) => root.trace_id,
+      ),
+    ).toEqual([traceId(809)]);
   });
 
   it("computes Slow's p95 from the roots that started inside the range", async () => {

@@ -71,10 +71,10 @@ const MAX_INDEXED_DAYS = 31;
 /** How much of a day file is read at a time while indexing. */
 const READ_CHUNK_BYTES = 1024 * 1024;
 /**
- * Fewer roots of a name in the range than this have no p95 to call one
- * slow: a name run once or a few times is never slow.
+ * A name run once in the range has no p95 to call it slow; from two runs
+ * on, the p95 picks out the slowest (#442: "p95 or slower for its name").
  */
-const MIN_SLOW_SAMPLES = 20;
+const MIN_SLOW_SAMPLES = 2;
 /** The crashes the Overview lists, newest first. */
 const MAX_CRASHES = 100;
 /** Tails one window may hold at once. */
@@ -446,7 +446,7 @@ ${entry.span}`;
   }
 
   /** The day's index, brought up to date with its file; undefined when it has none. */
-  async function indexOf(day) {
+  async function indexOf(day, { keep = true } = {}) {
     const running = refreshing.get(day);
     if (running) return running;
     const refresh = (async () => {
@@ -475,6 +475,9 @@ ${entry.span}`;
           // read goes on from there.
         }
       }
+      // A day past the kept ones, read for one trace, is not kept: it would
+      // push the newest day out, and each lookup after would read them all.
+      if (!keep && !indexes.has(day)) return index;
       indexes.delete(day);
       indexes.set(day, index);
       while (indexes.size > MAX_INDEXED_DAYS) {
@@ -674,7 +677,8 @@ ${entry.span}`;
     let fileCount = 0;
     for (let position = 0; position < days.length; position += 1) {
       const day = days[position];
-      if (position >= MAX_INDEXED_DAYS && !indexes.has(day)) {
+      const past = position >= MAX_INDEXED_DAYS && !indexes.has(day);
+      if (past) {
         const holds = await fileHolds(day, traceId);
         if (holds === undefined) continue;
         if (!holds) {
@@ -682,7 +686,7 @@ ${entry.span}`;
           continue;
         }
       }
-      const index = await indexOf(day);
+      const index = await indexOf(day, { keep: !past });
       if (!index) continue;
       fileCount += 1;
       skipped += index.skipped;

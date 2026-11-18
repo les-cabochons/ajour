@@ -413,8 +413,8 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     counts and runtimes. `show` is `all`, `failed` (a span of its trace
     didn't end `ok` or `noop`) or `slow` (it took its name's p95 or longer
     among that name's roots that started inside the range, `from` and `to`
-    both; a name needs 20 such roots for a p95, so a run alone or one of a
-    few is never slow).
+    both; a name needs two such roots for a p95, so a run alone is never
+    slow).
   - `ajour:aggregate-logs` (`logs.aggregate`): the Overview, over this
     launch, 24 hours or 7 days: counts by name, outcome and
     `outcome_reason`; problems per hour by outcome, one bucket per hour of
