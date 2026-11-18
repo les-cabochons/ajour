@@ -34,9 +34,14 @@ const diff = (path: string) =>
     "",
   ].join("\n");
 
-test("a grammar that cannot be resolved falls back to path-only grouping", async () => {
-  const onGrammarError = vi.fn();
-  const deps = await createPipelineDeps({ onGrammarError });
+// The parser and its grammar-load results are cached for the process, so one
+// test covers both callers: whichever test ran first would use up Python's load failure.
+test("a grammar that cannot be resolved falls back to path-only grouping and reports to the first caller only", async () => {
+  const first = vi.fn();
+  const later = vi.fn();
+  const firstDeps = await createPipelineDeps({ onGrammarError: first });
+  const deps = await createPipelineDeps({ onGrammarError: later });
+  expect(deps.parsers).toBe(firstDeps.parsers);
 
   const result = await runPipeline(
     {
@@ -51,16 +56,7 @@ test("a grammar that cannot be resolved falls back to path-only grouping", async
 
   expect(result.groups.flatMap((g) => g.hunkIds)).toEqual(["app/a.py#0"]);
   expect(result.hunks.get("app/a.py#0")?.language).toBe("python");
-  expect(onGrammarError).toHaveBeenCalledTimes(1);
-  expect(onGrammarError).toHaveBeenCalledWith("python", expect.anything());
-});
-
-test("only the first caller hears about grammar errors", async () => {
-  const later = vi.fn();
-  const first = await createPipelineDeps();
-  const deps = await createPipelineDeps({ onGrammarError: later });
-
-  expect(deps.parsers).toBe(first.parsers);
-  await deps.parsers.load(["app/a.py"]);
+  expect(first).toHaveBeenCalledTimes(1);
+  expect(first).toHaveBeenCalledWith("python", expect.anything());
   expect(later).not.toHaveBeenCalled();
 });
