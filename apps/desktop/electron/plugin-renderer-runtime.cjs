@@ -145,6 +145,9 @@ function outcomeFromPage(outcome) {
   }
   const message = isRecord(outcome) ? outcome.message : undefined;
   const httpStatus = isRecord(outcome) ? outcome.httpStatus : undefined;
+  const handoffRefusal = handoffRefusalOf(
+    isRecord(outcome) ? outcome.handoffRefusal : undefined,
+  );
   return {
     ok: false,
     failure: "plugin_error",
@@ -154,7 +157,24 @@ function outcomeFromPage(outcome) {
     /** @type {number} */ (httpStatus) <= 599
       ? { httpStatus }
       : {}),
+    ...(handoffRefusal ? { handoffRefusal } : {}),
   };
+}
+
+/**
+ * Why a hand-off tool refused a start, as the page reported it (#819): the
+ * branch exists, or one of the tool's settings, by its id of 1 to 120
+ * characters. Anything else is dropped.
+ *
+ * @param {unknown} value
+ */
+function handoffRefusalOf(value) {
+  if (!isRecord(value)) return undefined;
+  if (value.branchExists === true) return { branchExists: true };
+  const setting = value.setting;
+  return typeof setting === "string" && setting.trim() && setting.length <= 120
+    ? { setting: setting.trim() }
+    : undefined;
 }
 
 /**

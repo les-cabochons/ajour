@@ -257,6 +257,42 @@ export const handoffStartRouteSchema = z
   })
   .strict();
 /**
+ * Why the start route refused a start, beside the tool's reason (#819).
+ * `branchExists`: the branch Ajour asked for already exists, so the window
+ * looks for the item's listed thread to offer for linking. `setting`: the
+ * tool refused the value of one of its own text settings, so the window asks
+ * for it, with what the manifest says of it, and hands off again with the
+ * answer. `value` is the value refused, when the start named one.
+ */
+export const handoffStartRefusalSchema = z.object({
+  error: z.string(),
+  branchExists: z.literal(true).optional(),
+  setting: z
+    .object({
+      id: z.string().min(1).max(120),
+      label: z.string().min(1).max(120),
+      placeholder: z.string().max(240).optional(),
+      helpText: z.string().max(500).optional(),
+      value: z.string().max(500).optional(),
+    })
+    .strict()
+    .optional(),
+});
+export type HandoffStartRefusal = z.infer<typeof handoffStartRefusalSchema>;
+
+/**
+ * The tool settings a repository folder's starts use (#819), by setting id:
+ * the answers a start in that folder sent and the tool accepted. A start's
+ * own settings win over them.
+ */
+export const handoffFolderSettingsSchema =
+  startHandoffRequestSchema.shape.settings.refine(
+    (value) => Object.keys(value).length <= 50,
+    "At most 50 settings.",
+  );
+export type HandoffFolderSettings = z.infer<typeof handoffFolderSettingsSchema>;
+
+/**
  * The connection each tool of one plugin hands off through, by tool id: the
  * tool's settings pick it, and detection runs for it.
  */

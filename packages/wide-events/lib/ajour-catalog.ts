@@ -1922,6 +1922,13 @@ export const catalog = defineCatalog({
           id: operational(),
           tool: operational(),
           count: operational<number>(),
+          /**
+           * What the window offers for a refused start (#819): the item's
+           * thread when the branch exists, or the tool's setting to ask for.
+           */
+          refusal: operational<"branch_exists" | "setting">(),
+          /** The id of the tool's setting it refused, such as `base`. */
+          refused_setting: operational(),
         },
       },
     },

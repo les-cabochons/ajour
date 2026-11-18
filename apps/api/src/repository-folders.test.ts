@@ -245,3 +245,45 @@ it("Given a saved folder id without project context, resolves it but still check
   await expect(resolver.resolve(folder.id, "")).rejects.toThrow();
   await expect(resolver.resolve("unknown")).rejects.toThrow();
 });
+
+it("forgets a folder's remembered hand-off settings with the folder, and a plugin's with its uninstall (#819)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-folder-settings-"));
+  roots.push(root);
+  const statePath = path.join(root, "state.json");
+  const store = new AppApiStorage(statePath);
+  const kept = await store.addRepositoryFolder("p", path.join(root, "a"), "a");
+  const removed = await store.addRepositoryFolder(
+    "p",
+    path.join(root, "b"),
+    "b",
+  );
+  for (const folder of [kept, removed]) {
+    await store.rememberHandoffFolderSettings("handoff", "t3", folder.id, {
+      base: "develop",
+    });
+  }
+  await store.rememberHandoffFolderSettings("handoff", "t3", kept.id, {
+    model: "opus",
+  });
+  // A later answer joins the folder's earlier ones, and survives a reload.
+  expect(
+    await new AppApiStorage(statePath).getHandoffFolderSettings(
+      "handoff",
+      "t3",
+      kept.id,
+    ),
+  ).toEqual({ base: "develop", model: "opus" });
+
+  await store.removeRepositoryFolder("p", removed.id);
+  expect(
+    await store.getHandoffFolderSettings("handoff", "t3", removed.id),
+  ).toEqual({});
+  expect(
+    await store.getHandoffFolderSettings("handoff", "t3", kept.id),
+  ).toEqual({ base: "develop", model: "opus" });
+
+  await store.removePluginData("handoff");
+  expect(
+    await store.getHandoffFolderSettings("handoff", "t3", kept.id),
+  ).toEqual({});
+});

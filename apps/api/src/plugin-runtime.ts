@@ -101,6 +101,8 @@ export type PluginRunOutcome =
        * meaning to the host: the connection's secret was rejected.
        */
       httpStatus?: number;
+      /** Why a hand-off tool refused a start, when the error says (#819). */
+      handoffRefusal?: HandoffRefusalHint;
     }
   | { ok: false; failure: "missing_export" }
   | { ok: false; failure: "result_too_large"; resultBytes: number }
@@ -207,6 +209,27 @@ export class DesktopRequiredPluginRuntime implements PluginRuntime {
       reason: this.unavailableReason(),
     });
   }
+}
+
+/**
+ * Why a hand-off tool refused a start, from the error `startHandoff` threw
+ * (#819): `branchExists: true` when the branch Ajour asked for already
+ * exists, or `setting`, the id of the tool's declared setting whose value it
+ * refused. The host checks the setting against the tool's own.
+ */
+export type HandoffRefusalHint = { branchExists: true } | { setting: string };
+
+/** The hint a thrown value carries, if it gives one (see `HandoffRefusalHint`). */
+export function handoffRefusalOf(
+  error: unknown,
+): HandoffRefusalHint | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const { branchExists, setting } = error as Record<string, unknown>;
+  if (branchExists === true) return { branchExists: true };
+  // A manifest's setting id is 1 to 120 characters (`fieldIdSchema`).
+  if (typeof setting === "string" && setting.trim() && setting.length <= 120)
+    return { setting: setting.trim() };
+  return undefined;
 }
 
 /** The HTTP status a thrown value carries, if it names one (see `PluginRunOutcome`). */
