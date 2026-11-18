@@ -12,8 +12,10 @@ import {
   createProject,
   createProjectTask,
   DEFAULT_PROJECT_COLOR,
+  withBudgetOverrideFolded,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
+import { sameBudgetMs } from "@/domain/projects/task-budget";
 import {
   findWaitingTaskChoices,
   type WaitingTaskAnswer,
@@ -207,18 +209,27 @@ function withTaskMissingArchive(task: LocalProjectTask, now: number) {
   return withTaskArchivedAt(task, withMissingArchive(task), now);
 }
 
-/** A task's source-owned fields, as the snapshot has them. */
+/**
+ * A task's source-owned fields, as the snapshot has them. The user's budget
+ * override stays, until the source's budget reads the same.
+ */
 function withTaskSourceFields(
   task: LocalProjectTask,
   sourceTask: ProjectSourceTask,
   now: number,
 ): LocalProjectTask {
+  const budgetMs = budgetMsOf(sourceTask);
   return withTaskSourceStatus(
     {
       ...task,
       name: sourceTask.name,
       billable: sourceTask.billable ?? true,
-      budgetMs: budgetMsOf(sourceTask),
+      budgetMs,
+      budgetOverrideMs:
+        task.budgetOverrideMs !== undefined &&
+        !sameBudgetMs(task.budgetOverrideMs, budgetMs)
+          ? task.budgetOverrideMs
+          : undefined,
       source: taskSourceOf(sourceTask),
       // The source knows the task: its time commits as its name.
       commitAs: task.commitAs === "waiting" ? undefined : task.commitAs,
@@ -760,7 +771,13 @@ export function disconnectProjectSource(
   return {
     projects: state.projects.map((project) =>
       project.source?.connectionId === connectionId
-        ? { ...withoutSource(project), tasks: project.tasks.map(withoutSource) }
+        ? {
+            ...withoutSource(project),
+            // An overridden budget becomes the task's own.
+            tasks: project.tasks.map((task) =>
+              withoutSource(withBudgetOverrideFolded(task)),
+            ),
+          }
         : project,
     ),
     projectSources,

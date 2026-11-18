@@ -287,7 +287,14 @@ export interface LocalProjectTask {
   createdAt: number;
   archivedAt?: number;
   billable?: boolean;
+  /** The task's budget. On a task its project source knows, the source writes it. */
   budgetMs?: number;
+  /**
+   * The user's own budget for a task its project source knows, which wins
+   * over the source's `budgetMs` (#816). 0 means no budget. Personal, like
+   * the adjustment. Read a task's budget through `getTaskBudgetMs`.
+   */
+  budgetOverrideMs?: number;
   adjustmentMs?: number;
   /** The number key that opens or starts this pinned task. One task holds a slot at most. */
   pinnedSlot?: PinnedTaskSlot;

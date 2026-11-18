@@ -64,7 +64,7 @@ import {
   formatProjectTaskConsumedBadge,
   getProjectTaskConsumedTone,
   getProjectTaskTrackedWithAdjustmentMs,
-  normalizeProjectTaskBudgetMs,
+  getTaskBudgetMs,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
 import { isTaskAssignedToUser } from "@/domain/projects/task-assignment";
@@ -292,13 +292,13 @@ function getProjectBudget(
   let consumedMs = 0;
   for (const task of project.tasks) {
     if (task.status !== "active") continue;
-    const taskBudget = normalizeProjectTaskBudgetMs(task.budgetMs);
+    const taskBudget = getTaskBudgetMs(task);
     if (!taskBudget) continue;
     budgetMs += taskBudget;
     consumedMs += Math.max(
       0,
       getProjectTaskTrackedWithAdjustmentMs({
-        budgetMs: task.budgetMs,
+        budgetMs: taskBudget,
         trackedMs: getTaskUsedMs(task, taskMetrics, sourceUsage),
         adjustmentMs: task.adjustmentMs,
       }),
@@ -1042,12 +1042,12 @@ function ProjectDetail({
   function renderConsumedBadge(task: LocalProjectTask) {
     // A source task reads the hours everyone used on it, any other task the
     // time logged in Ajour; both add the user's adjustment.
+    const budgetMs = getTaskBudgetMs(task);
     const options = {
-      budgetMs: task.budgetMs,
+      budgetMs,
       trackedMs: getTaskUsedMs(task, taskMetrics, sourceUsage),
       adjustmentMs: task.adjustmentMs,
     };
-    const budgetMs = normalizeProjectTaskBudgetMs(task.budgetMs);
     const consumedMs = getProjectTaskTrackedWithAdjustmentMs(options);
     const tone = projectTaskToneClassName[getProjectTaskConsumedTone(options)];
 
@@ -2671,6 +2671,17 @@ export function ProjectsPage() {
                   taskEditorProject,
                   state.projectSources,
                 ),
+              }
+            : undefined
+        }
+        sourceBudget={
+          taskEditorTask && isSourceTask(taskEditorTask)
+            ? {
+                label: getProjectSourceLabel(
+                  taskEditorProject,
+                  state.projectSources,
+                ),
+                budgetMs: taskEditorTask.budgetMs,
               }
             : undefined
         }

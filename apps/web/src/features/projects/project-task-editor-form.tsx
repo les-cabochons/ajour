@@ -34,7 +34,11 @@ import {
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
-import { LockHint } from "@/features/projects/project-source-ui";
+import {
+  LockHint,
+  SourceValueControl,
+} from "@/features/projects/project-source-ui";
+import { isBudgetChangedFromSource } from "@/features/projects/project-task-editor";
 import { sourceNameOf } from "@/domain/projects/source-link";
 import type {
   ProjectTaskEditorFields,
@@ -75,6 +79,7 @@ export function ProjectTaskEditorForm({
   projectLocalOnly = false,
   project,
   sourceLock,
+  sourceBudget,
   sourceHours,
   onFieldsChange,
   onSave,
@@ -105,11 +110,18 @@ export function ProjectTaskEditorForm({
   /** The task's project, where Another task… can create the task it maps to. */
   project?: Pick<LocalProject, "_id" | "tasks" | "team">;
   /**
-   * Present when the task's project source sets its name, budget and
-   * billable: they read as the source's, with a lock naming it by `label`.
-   * Adjustment, the pinned slot and Commits as stay the user's.
+   * Present when the task's project source sets its name and billable: they
+   * read as the source's, with a lock naming it by `label`. The budget can
+   * change (`sourceBudget`); adjustment, the pinned slot and Commits as stay
+   * the user's.
    */
   sourceLock?: { label: string | undefined };
+  /**
+   * Present when the task's project source sets its budget: the source's
+   * budget, which the user may change. A link follows the field, then a
+   * revert once the typed budget differs (#816).
+   */
+  sourceBudget?: { label: string | undefined; budgetMs: number | undefined };
   /**
    * Present when the source gives the task's worked hours: the source's
    * figure for everyone, and the user's time on the task it can't have yet.
@@ -260,17 +272,44 @@ export function ProjectTaskEditorForm({
             format={formatBudgetFigure}
             invalid={Boolean(editor.budgetError)}
             onKeyDown={saveOnEnter}
-            readOnly={Boolean(sourceLock)}
             describedBy={
-              sourceLock
-                ? `${lockId}-budget`
-                : editor.budgetError
+              [
+                sourceBudget ? `${lockId}-budget` : undefined,
+                editor.budgetError
                   ? "project-task-editor-budget-error"
-                  : undefined
+                  : undefined,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
             }
             trailing={
-              sourceLock ? (
-                <LockHint label={sourceLock.label} id={`${lockId}-budget`} />
+              sourceBudget ? (
+                <SourceValueControl
+                  label={sourceBudget.label}
+                  id={`${lockId}-budget`}
+                  sourceValue={
+                    sourceBudget.budgetMs === undefined
+                      ? "no budget"
+                      : formatCompactDuration(sourceBudget.budgetMs)
+                  }
+                  changed={isBudgetChangedFromSource(
+                    fields.budget,
+                    sourceBudget.budgetMs,
+                  )}
+                  onRevert={() => {
+                    onFieldsChange({
+                      budget:
+                        sourceBudget.budgetMs === undefined
+                          ? ""
+                          : formatDurationHoursInput(sourceBudget.budgetMs),
+                    });
+                    // The revert button goes once the value is the
+                    // source's, so the budget keeps the focus.
+                    document
+                      .getElementById("project-task-editor-budget")
+                      ?.focus();
+                  }}
+                />
               ) : undefined
             }
           />

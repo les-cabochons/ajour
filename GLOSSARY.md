@@ -31,7 +31,7 @@ A project that belongs to no team and no project source.
 _Avoid_: Private project, unshared project
 
 **Managed project**:
-A project that a project source brought. Its full name, code, client, dates, tasks and budget follow the source and are locked; its display name, color, icon, favorites, pins and plugin properties stay personal. A project is managed or shared, never both. See ADR 0016.
+A project that a project source brought. Its full name, code, client, dates, tasks and budget follow the source and are locked, except that the user may type their own budget over a task's; its display name, color, icon, favorites, pins and plugin properties stay personal. A project is managed or shared, never both. See ADR 0016.
 _Avoid_: Synced project, imported project, source project (that is a backlog item's project in its source tool)
 
 **Not counted yet**:

@@ -984,6 +984,64 @@ describe("the connection's sync time", () => {
   });
 });
 
+describe("a budget the user overrode", () => {
+  /** Acme after a first sync, its Login task overridden with `overrideMs`. */
+  function overridden(overrideMs: number) {
+    const synced = sync(stateWith([]));
+    const acme = projectNamed(synced, "Acme - Support");
+    const login = acme.tasks.find(
+      (task) => task.name === "Ticket #101 - Login",
+    )!;
+    login.budgetOverrideMs = overrideMs;
+    return { synced, loginId: login._id };
+  }
+
+  function login(state: ProjectSourceSyncState, loginId: string) {
+    return projectNamed(state, "Acme - Support").tasks.find(
+      (task) => task._id === loginId,
+    )!;
+  }
+
+  it("keeps the override through a sync, while the source's budget moves under it", () => {
+    const { synced, loginId } = overridden(12 * 3_600_000);
+
+    const next = sync(
+      synced,
+      snapshot((copy) => {
+        copy.projects[0]!.tasks[0]!.estimateHours = 9;
+      }),
+    );
+
+    expect(login(next, loginId)).toMatchObject({
+      budgetMs: 9 * 3_600_000,
+      budgetOverrideMs: 12 * 3_600_000,
+    });
+  });
+
+  it("drops the override once the source's budget reads the same", () => {
+    const { synced, loginId } = overridden(12 * 3_600_000);
+
+    const next = sync(
+      synced,
+      snapshot((copy) => {
+        copy.projects[0]!.tasks[0]!.estimateHours = 12;
+      }),
+    );
+
+    expect(login(next, loginId).budgetOverrideMs).toBeUndefined();
+    expect(login(next, loginId).budgetMs).toBe(12 * 3_600_000);
+  });
+
+  it("makes the overridden budget the task's own when the source goes", () => {
+    const { synced, loginId } = overridden(12 * 3_600_000);
+
+    const next = disconnectProjectSource(synced, "c1");
+
+    expect(login(next, loginId).budgetMs).toBe(12 * 3_600_000);
+    expect(login(next, loginId)).not.toHaveProperty("budgetOverrideMs");
+  });
+});
+
 describe("disconnectProjectSource", () => {
   it("turns the connection's managed projects into local ones and forgets the connection", () => {
     const local = localProject("other", { name: "Mine" });
