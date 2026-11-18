@@ -58,8 +58,8 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
-    text: "Pull requests",
-    items: [{ text: "Pull requests", link: "/pull-requests/" }],
+    text: "Deck",
+    items: [{ text: "Deck", link: "/deck/" }],
   },
   {
     text: "Working in Ajour",

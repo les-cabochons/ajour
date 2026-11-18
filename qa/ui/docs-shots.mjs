@@ -309,8 +309,8 @@ const shots = [
       await page.waitForTimeout(1200);
     },
   },
-  // Pull requests
-  { name: "pull-requests", run: (page) => go(page, "/pull-requests") },
+  // Deck
+  { name: "deck", run: (page) => go(page, "/deck") },
   // Projects
   { name: "projects-list", run: (page) => go(page, "/projects") },
   { name: "project-page", run: (page) => go(page, "/projects/p-atlas") },

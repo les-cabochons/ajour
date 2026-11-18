@@ -11,7 +11,7 @@ Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 From top to bottom, the sidebar has:
 
 - **Settings**, at the right of the logo.
-- **The views**: Time, Backlog, Pull requests and Projects, each with a count.
+- **The views**: Time, Backlog, Deck and Projects, each with a count.
 - **Search**, **Filter and order**, and **+** for a new backlog item.
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
@@ -22,7 +22,7 @@ From top to bottom, the sidebar has:
 
 ## Switch views
 
-The rows at the top open **Time**, **Backlog**, **Pull requests** and **Projects**. Each shows a count: today's total, the number of backlog items, and the pull requests on your plate. The open view's row is shaded.
+The rows at the top open **Time**, **Backlog**, **Deck** and **Projects**. Each shows a count: today's total, the number of backlog items, and the pull requests on your plate. The open view's row is shaded.
 
 ## Search and filter
 
@@ -50,7 +50,7 @@ Rest the mouse on an item for a moment to see a card beside the sidebar with wha
 - Where the item comes from: its tool's logo, the organization and project, and its ID, such as `48190` or `PAY-12`. A manual item has none.
 - On a subitem, its parent.
 - The subitems, open ones first, with how many are done, such as `1/2`. Eight show, then a count of the rest.
-- The pull requests whose title names the item, open ones first. Five show, then a count of the rest. A key such as `PAY-12` counts from any repository. A number such as `#1234` counts only from the same GitHub repository or Azure DevOps organization. Only pull requests on the [Pull requests](/pull-requests/) page count.
+- The pull requests whose title names the item, open ones first. Five show, then a count of the rest. A key such as `PAY-12` counts from any repository. A number such as `#1234` counts only from the same GitHub repository or Azure DevOps organization. Only pull requests in [Deck](/deck/) count.
 
 <Shot name="sidebar-hover-card" alt="The hover card of a backlog item beside the sidebar, with its source and subitems" />
 

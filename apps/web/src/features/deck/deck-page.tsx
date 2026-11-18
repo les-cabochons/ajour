@@ -22,7 +22,12 @@ import {
   runPullRequestAction,
 } from "./pull-request-row";
 
-export function PullRequestsPage({ itemId }: { itemId?: string }) {
+/**
+ * Deck: the pull requests the user authored or was asked to review, and one
+ * pull request's summary at `/deck/$itemId`. The view is called Deck; what
+ * it lists are pull requests.
+ */
+export function DeckPage({ itemId }: { itemId?: string }) {
   const state = useLocalState();
   const { overview, groups } = useCodeHostConnections();
   const now = useNow();
@@ -69,7 +74,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
     return (
       <div className="p-4 desktop:p-6">
         <MessagePanel>
-          Activate a code host plugin in Settings to see pull requests.
+          Activate a code host plugin in Settings to use Deck.
         </MessagePanel>
       </div>
     );
@@ -77,7 +82,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
     return (
       <div className="backlog-item-page">
         <PageHeader
-          backLink={{ label: "Pull requests", to: "/pull-requests" }}
+          backLink={{ label: "Deck", to: "/deck" }}
           actions={
             item
               ? pullRequestActions(item, now).map((action) => (
@@ -174,7 +179,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
   return (
     <div className="backlog-item-page">
       <PageHeader
-        title="Pull requests"
+        title="Deck"
         meta={items.length}
         actions={
           <Button

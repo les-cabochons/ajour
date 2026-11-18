@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiCalendarCheckLine as CommitIcon,
+  RiGitPullRequestLine as DeckIcon,
   RiListCheck3 as ListTodo,
   RiSettings3Line as Settings,
   RiTimerLine as Timer,
@@ -13,6 +14,7 @@ import {
   isNarrowSettingsSection,
 } from "@/features/layout/narrow-navigation";
 import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
+import { useCodeHostConnections } from "@/lib/code-host-connections";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -29,6 +31,12 @@ const sections = [
     isActive: (pathname: string) => getAppSection(pathname) === "backlog",
   },
   {
+    to: "/deck",
+    label: "Deck",
+    icon: DeckIcon,
+    isActive: (pathname: string) => getAppSection(pathname) === "deck",
+  },
+  {
     to: "/settings",
     label: "Settings",
     icon: Settings,
@@ -38,9 +46,10 @@ const sections = [
 ] as const;
 
 /**
- * The narrow view's primary navigation: a segmented toggle for Time, Backlog
- * and Settings that floats at the bottom left. Every item shows its icon and
- * name; the active one is filled. After a hairline, Commit opens the Commit
+ * The narrow view's primary navigation: a segmented toggle for Time, Backlog,
+ * Deck and Settings that floats at the bottom left. Deck shows only while a
+ * code host plugin is enabled, as its sidebar row does. Every item shows its
+ * icon and name; the active one is filled. After a hairline, Commit opens the Commit
  * page for the week on screen. It is an action, not a section, so it is
  * never active.
  */
@@ -52,9 +61,11 @@ export function NarrowSectionSwitcher({
   selectedTimeDate: string;
 }) {
   const openCommitPage = useOpenCommitPage(selectedTimeDate);
+  const hasCodeHost = useCodeHostConnections().groups.length > 0;
   return (
     <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
       {sections.map((section) => {
+        if (section.to === "/deck" && !hasCodeHost) return null;
         const Icon = section.icon;
         const isActive = section.isActive(pathname);
         const linkProps = {

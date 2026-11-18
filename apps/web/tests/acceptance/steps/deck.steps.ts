@@ -33,18 +33,18 @@ Then(
     ).toBeVisible();
   },
 );
-Then("the pull request page stays open", async ({ page }) => {
-  await expect(page).toHaveURL(/\/pull-requests$/);
+Then("Deck stays open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/deck$/);
   await expect(
-    page.getByRole("heading", { name: "Pull requests", exact: true }),
+    page.getByRole("heading", { name: "Deck", exact: true }),
   ).toBeVisible();
 });
 Then("the sidebar has no Pull requests section", async ({ page }) => {
-  // The nav still lists the Pull requests page.
+  // The nav still lists Deck.
   await expect(
     page.getByRole("region", { name: "Pull requests on your plate" }),
   ).toHaveCount(0);
-  expect(await viewOptions(page)).toContain("Pull requests");
+  expect(await viewOptions(page)).toContain("Deck");
 });
 When("I collapse the sidebar Pull requests section", async ({ page }) => {
   await page
@@ -254,10 +254,10 @@ Given("a code host connection with local pull requests", async ({ page }) => {
   }, initialFacts);
 });
 
-When("I open the pull request list", async ({ page }) => {
-  await page.goto("/pull-requests");
+When("I open Deck", async ({ page }) => {
+  await page.goto("/deck");
   await expect(
-    page.getByRole("heading", { name: "Pull requests", exact: true }),
+    page.getByRole("heading", { name: "Deck", exact: true }),
   ).toBeVisible();
 });
 Then(
@@ -287,7 +287,7 @@ Then(
     await expect(
       sidebar.getByRole("link", { name: "Open Author's change" }),
     ).toHaveCount(0);
-    await page.screenshot({ path: "test-results/pull-requests-desktop.png" });
+    await page.screenshot({ path: "test-results/deck-desktop.png" });
   },
 );
 When(
@@ -495,9 +495,9 @@ When("I reactivate the code host plugin", async ({ page }) => {
     .click();
 });
 Then(
-  "pull request navigation disappears and local records remain",
+  "Deck navigation disappears and local records remain",
   async ({ page }) => {
-    expect(await viewOptions(page)).not.toContain("Pull requests");
+    expect(await viewOptions(page)).not.toContain("Deck");
     expect(
       await page.evaluate(
         () =>
@@ -508,9 +508,9 @@ Then(
   },
 );
 Then(
-  "pull request navigation returns with the same local records",
+  "Deck navigation returns with the same local records",
   async ({ page }) => {
-    expect(await viewOptions(page)).toContain("Pull requests");
+    expect(await viewOptions(page)).toContain("Deck");
     expect(
       await page.evaluate(
         () =>
@@ -569,7 +569,7 @@ When("I Ctrl-click the requested pull request", async ({ page }) => {
     .click({ modifiers: ["ControlOrMeta"] });
 });
 Then("its source opens and the list stays open", async ({ page }) => {
-  await expect(page).toHaveURL(/\/pull-requests$/);
+  await expect(page).toHaveURL(/\/deck$/);
   expect(
     await page.evaluate(
       () =>
@@ -577,27 +577,55 @@ Then("its source opens and the list stays open", async ({ page }) => {
     ),
   ).toBe(pullRequestFacts.url);
 });
-When("I open the pull request list on a narrow screen", async ({ page }) => {
+When("I open Deck on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/pull-requests");
+  await page.goto("/deck");
 });
-Then("the pull request list fits the viewport", async ({ page }) => {
+Then("Deck fits the viewport", async ({ page }) => {
   await expect(
-    page.getByRole("heading", { name: "Pull requests", exact: true }),
+    page.getByRole("heading", { name: "Deck", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: "test-results/pull-requests-mobile.png" });
+  await page.screenshot({ path: "test-results/deck-mobile.png" });
 });
 Then(
-  "Pull requests is available from the narrow Settings list",
+  "Deck is in the narrow bottom switcher and not in the Settings list",
   async ({ page }) => {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
-    await page
-      .getByRole("link", { name: "Pull requests", exact: true })
-      .click();
-    await expect(page).toHaveURL(/\/pull-requests$/);
+    const switcher = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    const deck = switcher.getByRole("link", { name: "Deck", exact: true });
+    await expect(deck).toHaveAttribute("aria-current", "page");
+    // Every name shows in full inside the window, down to 320px.
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const item of await switcher
+        .locator(".ajour-narrow-switcher-item")
+        .all()) {
+        const box = (await item.boundingBox())!;
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        expect(
+          await item.evaluate((element) => {
+            const name = element.querySelector("span")!;
+            return name.scrollWidth <= name.clientWidth;
+          }),
+        ).toBe(true);
+      }
+    }
+    await switcher.getByRole("link", { name: "Settings", exact: true }).click();
+    const settings = page.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect(
+      settings.getByRole("link", { name: "Backlog", exact: true }),
+    ).toBeVisible();
+    await expect(
+      settings.getByRole("link", { name: /Deck|Pull requests/ }),
+    ).toHaveCount(0);
+    await deck.click();
+    await expect(page).toHaveURL(/\/deck$/);
   },
 );
 Given(

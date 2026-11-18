@@ -136,7 +136,7 @@ export function PullRequestRow({
   const actions = pullRequestActions(item, now);
   function open() {
     void navigate({
-      to: "/pull-requests/$itemId",
+      to: "/deck/$itemId",
       params: { itemId: item._id },
     });
   }

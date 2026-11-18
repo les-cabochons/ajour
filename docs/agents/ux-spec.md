@@ -129,7 +129,7 @@ The app is not in production. The rename ships with no migration code, no redire
 
 Each nav label matches its page title. Old routes are removed, not redirected. In wide windows a `/settings/...` route opens the settings window over the last page outside Settings (see App shell); in the narrow view it is a page.
 
-The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pull requests also appears under Work in the narrow view, and Calendar only while a calendar plugin is on.
+The pages sit in three groups, **App**, **Work** and **Data**, in this order. Calendar appears under Work only while a calendar plugin is on. Deck is a view, not a settings page (see Deck).
 
 | Group | Nav label    | Page title                     | Route                    |
 | ----- | ------------ | ------------------------------ | ------------------------ |
@@ -188,7 +188,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 - The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, with Settings at the end of their row, the nav rows, the search row with the project filter and New backlog item (+), the work list, then the timer dock as the sidebar's foot. New backlog item opens a blank backlog item editor in a dialog over the current page, which keeps its open editor and draft. On the Backlog page, it opens the page's own editor instead, as the page's New item does: a job done on its own page has one place (forms council round 4). Time entries start from the timer dock's "+". Commit week lives in the Day and Week headers, and Ajour's version and the desktop update button at the end of the Settings window's left column. Beside the macOS traffic lights a narrow sidebar drops the wordmark, so Settings keeps its place.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
-- The nav is four rows, like Things' lists: Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects, each with its icon, its name and its live count at the end: today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. Every view is one click, and the counts are always in view. The open view's row carries the active background. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected. A Settings page marks no row.
+- The nav is four rows, like Things' lists: Time, Backlog, Deck (only while a code host plugin is enabled, see Deck) and Projects, each with its icon, its name and its live count at the end: today's total next to Time, the number of listed items next to Backlog, and next to Deck the number of pull requests that need the user, as a filled badge when any returned. Every view is one click, and the counts are always in view. The open view's row carries the active background. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Deck showed: that view stays selected. A Settings page marks no row.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. The sidebar stays beside the page at every desktop width, down to the narrow view. It never opens over the page.
 - Settings opens as a window over the page, as in T3 Code: the page stays where it was, blurred and dimmed behind the window, and Esc, Close or the browser's Back returns to it with nothing moved, its search state included, such as the Week view or the entry open in the side panel. The window is 1120 by 760 at most, 40px clear of the window's edges in a smaller one. Its left column, 232px, lists the settings pages under their App, Work and Data groups and ends with Ajour's version, which opens What's new, and, in the desktop app, its update button (see Application updates). The window holds no timer: the sidebar's dock stays behind it, its running entry's editor waits until the window closes, and the dock never floats while the window is open. The open page sits at the right under a "Settings / Page" header with Close, where the page's name is the one heading. Switching pages, and any link to a settings page followed while the window is open, replaces the history entry, so Back closes the window in one step. The browser shows `/settings/...` while the window is open, so links, bookmarks and the acceptance URLs read as before. The app sidebar stays as it was behind the window, and Cmd/Ctrl+B waits. In the narrow view Settings stays a page.
@@ -219,20 +219,20 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 | ------------ | ------------------------------------------------------------- |
 | 768px and up | Desktop, sidebar expanded or hidden by preference             |
 | Below 768px  | Narrow view, no sidebars                                      |
-| Below 400px  | Narrow view, with the bottom toggle's names under their icons |
+| Below 480px  | Narrow view, with the bottom toggle's names under their icons |
 
 Today's splits at 640px and 1023px go away.
 
 ### Navigation
 
 - The narrow titlebar names the page: the day on Time pages, the section elsewhere, such as "Backlog" (council round 6).
-- A segmented toggle for Time, Backlog and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. The agents control shares the toggle's row, at the right, as its dot alone: the dot's color gives the state, and its name and a tap the rest. Below 400px the toggle spans the row up to that dot and puts each name under its icon, so the four names fit down to a 320px window (usability testing, 2026-11-06). See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- A segmented toggle for Time, Backlog, Deck and Settings floats at the bottom left, over the page, its items 44px touch targets in a 54px bar (council round 14). Every section shows its icon and name, and the active one is filled, so no destination has to be known by its icon alone (council round 2). After a hairline, Commit opens the Commit page. A search button may join it later. The agents control shares the toggle's row, at the right, as its dot alone: the dot's color gives the state, and its name and a tap the rest. Deck shows only while a code host plugin is enabled (see Deck). Below 480px the toggle spans the row up to that dot and puts each name under its icon, so all five names fit down to a 320px window (usability testing, 2026-11-06). See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - The titlebar holds the date, New entry (+), Start (▶), then the totals pill. Start turns into Stop while an entry runs.
 - While an entry runs, the totals pill shows its time, with seconds, instead of the day total. The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
 - Start opens the running entry's dialog too. A click outside it saves the draft and closes the dialog, and the entry keeps running. An invalid draft keeps the dialog open with its error. The other entry dialogs ignore outside clicks.
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
 - Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
-- Pull requests also has a Settings-list entry in the narrow view, shown only while a code host plugin is enabled. Its Active, Settled and Recently closed groups use the same local actions as desktop.
+- Deck is reached from the bottom switcher, not the Settings list. Its groups use the same local actions as in wide windows.
 - Wide windows keep Projects in the sidebar and keep the separate import and export settings page.
 
 ### Jobs and views
@@ -892,7 +892,7 @@ The sidebar holds the nav rows, the search row, the work itself in one scroll, t
 - While a row drags, in either ordering, a dashed Settle zone shows below the list, above the timer dock, so it is in reach without scrolling ([#473](https://github.com/les-cabochons/ajour/issues/473)). It takes the accent while the pointer is over it, and the list keeps the row's place meanwhile. Pinned rows and the others both drop on it, and so does a row that can't move in the list, such as a subitem with Custom ordering. A drop runs the item's Settle action as E does: the settle dialog when its Settle rule asks, the subitem prompt, the Undo toast, and a manual item is archived. Shift+drop opens the settle dialog, as Shift+E does, even when a Settle rule applies a fixed change. Cancel in the dialog leaves the item in the list. A pinned item stays pinned. There is no Snooze zone.
 - Other orderings do not allow dragging.
 - A dragged row moves like a T3 Code thread ([#477](https://github.com/les-cabochons/ajour/issues/477)). The row itself follows the pointer up and down, as the list draws it in either density, translucent with an accent border and the drag shadow. It leaves its place, and the rows open a gap of its height where it would land, without animation. The gap stays out of the places a drop can't reach, such as between a parent and its subitems. Dropping puts the row in the gap, and dropping it back in its own place changes nothing. Escape closes the gap and puts the row back. The Backlog page keeps its drop line.
-- The work list is one scroll: the backlog items, pinned ones first, with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
+- The work list is one scroll: the backlog items, pinned ones first, with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user, see Deck), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list, and so do the items of an archived project.
@@ -939,7 +939,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
 - Right-click opens the full action set, as do ".", Shift+F10 and the context menu key. Sidebar backlog rows have no "…" button.
-- Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Like the backlog rows, they have no "…" button; right-click opens their actions.
+- Pull request rows are one line too (see Pull request rows under Deck).
 
 ### Hover card
 
@@ -948,7 +948,7 @@ Like T3 Code's thread card, resting the mouse on a backlog row shows a card besi
 - It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there at once.
 - From top to bottom: the whole title; where the item comes from, as its source tool's logo, the organization and the source project, such as "les-cabochons / ajour", with its id at the end, such as "1234" or "PAY-12"; and on a subitem, its parent's title. A manual item has no source line.
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
-- Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
+- Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests Deck lists count, so none show while no code host is enabled.
 - The card stays while the pointer crosses over to it. A subitem or a pull request in it opens on click, and Ctrl or Cmd-click opens it in its source. Leaving the row and the card, pressing anywhere in the list, scrolling it, Escape and leaving the window close the card. A press closes it until the pointer leaves the row.
 - Only a mouse opens it. It takes no focus, and keyboard focus on a row does not open it: the item page shows the same things. The task menu's card is the exception: it follows the arrow keys (see [Task card](#task-card)).
 - Compact rows have no browser tooltip: the card shows the title and the parent.
@@ -1013,7 +1013,7 @@ Syncs move synced items between states:
 
 - The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
 - The top bar shows where the item sits: its project's icon and name, then the item's title, such as "ajour / Build latest main". The project opens the project page. An item without a project shows "Backlog" instead. The breadcrumb is the same whichever page the item was opened from, so an item opened from Time offers both the way back to Time and the way to its project.
-- Its back link returns to the page it was opened from. Opened from the sidebar while Time, Projects or Pull requests showed, it reads "Back to Time" (or Projects, Pull requests) and returns to that page with its search, such as the Week view. Moving to a parent or subitem keeps that page. Otherwise it reads "Back to Backlog". The page keeps its origin in `?from=`.
+- Its back link returns to the page it was opened from. Opened from the sidebar while Time, Projects or Deck showed, it reads "Back to Time" (or Projects, Deck) and returns to that page with its search, such as the Week view. Moving to a parent or subitem keeps that page. Otherwise it reads "Back to Backlog". The page keeps its origin in `?from=`.
 - V1 shows only what Ajour stores: title, type and external id with Open in source, source state and workflow state, project and task mapping, priority, estimates with their sync state, description, parent and subitems, and the time entries logged on it.
 - Layout, from the prototype: variant C's header over variant A's body.
   - Header: the type icon in a square tile, the title, and a muted line with the external id (linked to the source), the source project and the source state. The actions sit on the right of the title, in the content, not in the top bar, which keeps the breadcrumb (council round 3): Start entry (Stop while its entry runs), Snooze and Settle, or Unsnooze, Unsettle or Restore depending on the state. Start entry is a split button ([#513](https://github.com/les-cabochons/ajour/issues/513)): its arrow, "Other ways to log time", opens a menu of Start entry ("Start the clock on this item now", with S) and New entry… ("Log time without the clock"), which opens the new entry popover anchored to the button. The main half always runs Start entry or Stop; it does not remember the last choice. A snoozed or settled item keeps a separate New entry button beside Unsnooze or Unsettle. There is no "…" menu; the page's keys still run Delete and the other item actions, and a synced item's Archive sits at the bottom of the properties card.
@@ -1042,6 +1042,54 @@ Decided in [#281](https://github.com/les-cabochons/ajour/issues/281).
   - When the task does not exist or is archived, an amber warning, "Add task Deploy to Team site", opens an AlertDialog with Cancel and Add task or Restore task. For a shared project it says the team gets the task too.
   - When both exist but the item is set to others, as after a pick in the properties, a muted back arrow, "Use Acme website › Development from the description", sets them at once.
   - Each sets the project and task on the item and shows the Undo toast.
+
+## Deck
+
+Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochons/ajour/issues/774), renamed in [#776](https://github.com/les-cabochons/ajour/issues/776). Deck is the view of the pull requests the user authored or was asked to review, across every enabled code host plugin. The view is called Deck; what it lists are still pull requests. The plugin's capability switch and the catalog keep the label "Pull requests", since they name the capability that turns Deck on.
+
+### Where Deck lives
+
+- Deck is at `/deck`, and a pull request's summary at `/deck/$itemId`. `/pull-requests` is gone, with no redirect.
+- Deck shows only while a plugin with the code host capability is enabled and its Pull requests switch is on. Turning either off hides the nav row, the narrow switcher's Deck and the sidebar section at once. The local list and every settle, snooze and Returned mark stay, so turning it back on restores them.
+- In wide windows, Deck is the nav's row between Backlog and Projects (see App shell). Its count is the number of pull requests that need the user, as a filled badge when any returned.
+- In the narrow view, Deck sits in the bottom switcher between Backlog and Settings (see Narrow view). The Settings list has no Deck entry.
+- The page title, the narrow titlebar and the back links say Deck: a pull request's summary has "Back to Deck", and so does a backlog item opened from the sidebar while Deck showed.
+
+### List
+
+- Three groups: **Active**, **Settled** and **Recently closed**. Active holds the open pull requests that need the user, longest waiting first by the event that made each active, then the snoozed ones. Settled holds the open settled ones. Recently closed holds the merged and closed ones of the last seven days, newest first; after that they leave the local list.
+- A group with nothing in it says so: "No pull requests need your attention.", "No settled pull requests." or "No pull requests closed in the last seven days."
+- Without an enabled code host, the page says "Activate a code host plugin in Settings to use Deck." Without a connection, it says to add one in Plugins settings, and Sync is disabled.
+- **Sync** syncs every connection now. Each connection also syncs on its interval while its automatic sync is on. A failed sync shows its reason above the groups.
+- With more than one connection, rows name their connection.
+
+### Pull request rows
+
+- A row shows the title, with a Returned mark when it came back, the repository and number, then its state: Merged or Closed, Snoozed until a time, Settled, or the reason it is on the user's plate. A Draft chip, the checks and how long it has waited follow. Its "…" button and right-click open its actions.
+- In the sidebar, rows are one line: the pull request icon, the title, and its short reason and age, such as "Review · 2h". Like the backlog rows, they have no "…" button; right-click opens their actions.
+- The actions are Open in the provider, then, for an open pull request, Settle or Unsettle and Snooze… or Unsnooze (see Right-click menus). E settles and B opens the shared snooze picker. Enter or a click opens the summary. Ctrl-click (Cmd-click on macOS) opens the pull request in its source without changing routes.
+
+### Summary
+
+- The summary shows the title, the repository, number and connection, then State (Open, Draft, Merged or Closed), Author, On your plate (its reason, Settled or Snoozed), Checks and Last updated. Its header holds the row's actions.
+- Opening it clears the Returned mark. A pull request that left the local list says "This pull request is no longer in the local list."
+
+### On your plate
+
+- A pull request is active or settled, and an active one can be snoozed. Returned marks one that came back on its own and was not opened since. These mean the same as for backlog items.
+- A review request starts active. A pull request the user authored starts settled.
+- Settle, Unsettle and Snooze are local: the code host never learns about them, and settling never removes the user as a reviewer.
+- Someone acting on it returns a settled pull request, with the reason as its label: a review request, a reply in the user's thread, new commits after the user requested changes, a mention, or a review or comment on the user's own pull request. The user's own actions never return anything.
+- An event does not end a snooze unless **Changes end a snooze early** is on: the pull request returns at the chosen time, marked returned.
+- A merged or closed pull request leaves the sidebar at once and moves to Recently closed.
+
+### Sidebar section
+
+- The sidebar work list has a collapsible **Pull requests** section after the backlog items, shown only while pull requests need the user: the active, unsnoozed ones, longest waiting first. It starts open, and its state is saved per device. Settled pull requests are not listed there.
+
+### Removing a connection
+
+- Removing a code host connection asks first and states how many saved pull requests go with it. Confirming deletes them from the local list.
 
 ## Projects
 

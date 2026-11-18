@@ -228,7 +228,7 @@ export function AppNavigationSidebar({
     ...(pullRequests.enabled
       ? [
           {
-            view: "pull-requests",
+            view: "deck",
             count: pullRequests.items.length,
             highlighted: returnedPullRequests > 0,
           } as const,

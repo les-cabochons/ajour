@@ -21,7 +21,7 @@ export interface SidebarViewOption {
 const VIEW_DETAILS = {
   time: { label: "Time", icon: Timer },
   backlog: { label: "Backlog", icon: ListTodo },
-  "pull-requests": { label: "Pull requests", icon: PullRequestIcon },
+  deck: { label: "Deck", icon: PullRequestIcon },
   projects: { label: "Projects", icon: FolderKanban },
 } as const;
 
@@ -56,8 +56,8 @@ function ViewLink({
       );
     case "backlog":
       return <Link to="/backlog" {...shared} {...props} />;
-    case "pull-requests":
-      return <Link to="/pull-requests" {...shared} {...props} />;
+    case "deck":
+      return <Link to="/deck" {...shared} {...props} />;
     case "projects":
       return <Link to="/projects" {...shared} {...props} />;
   }

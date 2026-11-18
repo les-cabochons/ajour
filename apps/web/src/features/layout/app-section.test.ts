@@ -7,7 +7,8 @@ describe("getAppSection", () => {
     expect(getAppSection("/time/2026-10-14/commit")).toBe("time");
     expect(getAppSection("/backlog")).toBe("backlog");
     expect(getAppSection("/backlog/w2")).toBe("backlog");
-    expect(getAppSection("/pull-requests/pr-1")).toBe("pull-requests");
+    expect(getAppSection("/deck/pr-1")).toBe("deck");
+    expect(getAppSection("/pull-requests")).toBeUndefined();
     expect(getAppSection("/projects/archive")).toBe("projects");
     expect(getAppSection("/settings/backlog")).toBe("settings");
   });
