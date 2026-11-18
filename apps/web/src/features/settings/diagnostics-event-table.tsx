@@ -194,7 +194,6 @@ export function EventTable({
       role="grid"
       aria-label="Events"
       aria-rowcount={events.length + 1}
-      aria-colcount={5}
       className="@container flex min-w-0 flex-col border-y"
     >
       <div
