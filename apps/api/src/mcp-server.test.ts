@@ -290,14 +290,27 @@ describe("MCP settings routes", () => {
     expect(response.status).toBe(403);
   });
 
-  it("turning MCP off closes the bridge", async () => {
+  it("turning MCP off fails the window's pending tool calls and keeps its stream", async () => {
     const { baseUrl } = await startTestApi();
-    await apiRequest(baseUrl, "/api/mcp/settings", { enabled: true });
+    const { token } = await enableMcpWithClient(baseUrl);
+    // A window that never answers, so the call stays pending.
     const renderer = await openFakeRenderer(baseUrl);
     expect(renderer.status).toBe(200);
+    let ended = false;
+    void renderer.ended.then(() => {
+      ended = true;
+    });
+    const agent = await connectAgent(baseUrl, token);
+    const call = agent.callTool({ name: "list_projects", arguments: {} });
+    await renderer.waitFor("tool-call");
 
     await apiRequest(baseUrl, "/api/mcp/settings", { enabled: false });
-    await renderer.ended;
+
+    expect((await call).isError).toBe(true);
+    // The stream also carries handoffs and agent turns, which need no MCP.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(ended).toBe(false);
+    renderer.close();
   });
 });
 
@@ -314,6 +327,34 @@ describe("MCP endpoint", () => {
       headers: { Origin: TEST_ORIGIN },
     });
     expect(fromPage.status).toBe(404);
+  });
+
+  it("answers 404 to a user's own client while MCP is off, without marking it used", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    await apiRequest(baseUrl, "/api/mcp/settings", { enabled: false });
+
+    const response = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+
+    expect(response.status).toBe(404);
+    const [client] = (await apiRequest(baseUrl, "/api/mcp/settings")).body
+      .clients;
+    expect(client).not.toHaveProperty("lastUsedAt");
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "refused",
+        outcome_reason: "mcp_off",
+      }),
+    ]);
   });
 
   it("refuses browser requests even with a valid token", async () => {

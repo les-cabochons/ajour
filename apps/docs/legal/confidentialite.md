@@ -11,7 +11,7 @@ next: false
 
 # Politique de confidentialité
 
-Dernière mise à jour : 24 octobre 2026
+Dernière mise à jour : 18 novembre 2026
 
 <a href="/legal/privacy" lang="en">English version</a> · [Conditions d'utilisation](/legal/conditions)
 
@@ -59,6 +59,8 @@ Les requêtes propres aux services des plugins sont décrites plus bas. Suivre u
 ### Sessions du navigateur des agents
 
 MCP et l'exécution de tâches d'agent sont facultatifs. Un agent peut transmettre à son fournisseur les renseignements qu'il lit, dont les entrées de temps, les notes, le contenu des éléments de travail et les pages visitées. L'utilisation de ces fonctions d'Ajour ne nous transmet pas ces renseignements.
+
+Quand vous interrogez un agent sur une demande de tirage dans Deck, l'interface en ligne de commande de l'agent enregistre la conversation, transcription comprise, dans son propre dossier de votre profil utilisateur : `~/.claude/projects/` pour Claude Code et `~/.codex/sessions/` pour Codex. Elle la garde pour qu'une question ultérieure sur la même demande de tirage puisse poursuivre la conversation. Ajour ne garde que l'identifiant de la conversation, en mémoire. Les tâches d'agent de feuille de temps n'enregistrent aucune conversation. Le guide [Your data](/app/data#agent-conversations-about-pull-requests), en anglais, explique comment supprimer ces fichiers. Les supprimer n'efface pas ce que l'agent a déjà transmis à son fournisseur.
 
 En mode navigateur séparé, Ajour conserve un profil local entre les tâches. Ce profil peut garder des témoins, aussi appelés cookies, et des sessions ouvertes, dont une session Workday. Si vous reliez un agent à votre propre navigateur, celui-ci conserve ses propres données de session. Terminer une tâche ne ferme pas les sessions. Le guide [Your data](/app/data#back-up-export-or-delete-data), en anglais, explique comment les effacer localement.
 
@@ -199,6 +201,8 @@ Vous pouvez envoyer une plainte à la même adresse. Au Québec, vous pouvez aus
 ## Modifications de cette politique
 
 Nous publierons les modifications ici et mettrons à jour la date ci-dessus. Une modification importante sera accompagnée d'un avis sur cette page qui explique le changement. La mise à jour de la politique n'autorise pas à elle seule un nouvel usage de vos renseignements lorsqu'un consentement est nécessaire. Les versions antérieures restent accessibles dans l'historique du dépôt.
+
+18 novembre 2026 : Ajout de l'enregistrement, par l'interface en ligne de commande de l'agent, des conversations de Deck sur une demande de tirage dans votre profil utilisateur, et de la façon de les supprimer.
 
 21 octobre 2026 : Précisions sur les données du compte et du calendrier Google, leurs usages, leurs destinataires, leur protection, leur durée de conservation et leur suppression. La connexion Google reste en développement.
 

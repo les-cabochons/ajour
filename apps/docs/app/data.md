@@ -36,7 +36,7 @@ Ajour makes these network requests, some of them on a timer:
 - **Your plugin sources**, at launch and every 15 minutes by default: the official one on GitHub, and each repository you add, on its own host. Ajour reads their `ajour.json` and its signature, and plugin images, which it caches locally. Downloading a plugin reads its files from the same host. Adding a source on an unknown host first asks that host which kind of git server it is.
 - **The tools you connect**, such as Azure DevOps, Jira, GitHub or your calendar, when you press **Sync**, on the connection's timer, and when you open a week or an item's comments.
 - **Your team's backend**, through a team plugin, for the project and task fields you share. This does not include time entries or their notes. The operator of that backend controls its storage and retention.
-- **Your AI provider and the sites an agent visits**, when you use [MCP or an agent task](/app/agents). The agent can send the data it reads, including time entries, notes and browser content, to the provider you configured. A task can also enter your timesheet into a service such as Workday.
+- **Your AI provider and the sites an agent visits**, when you use [MCP or an agent task](/app/agents). The agent can send the data it reads, including time entries, notes and browser content, to the provider you configured. A task can also enter your timesheet into a service such as Workday. When you ask an agent about a pull request in Deck, the agent's CLI keeps that conversation in its own folder so a later question can continue it, as described below.
 
 Each contacted service receives ordinary request information, including your IP address. Update and plugin source requests do not include your time entries or connection tokens. Exporting data to a destination you choose or opening an external link can also send information outside your device.
 
@@ -53,5 +53,16 @@ Quit Ajour before copying its data folder. A copy includes browser sessions, so 
 Removing a connection deletes its saved credentials from the vault. It does not revoke a token at the provider or delete records already sent to a source tool, a team backend or an AI provider. Turn a plugin off to stop its sync without deleting its data or credentials. Uninstalling it removes its connections and all its credentials; imported backlog items remain.
 
 An earlier version of Ajour, opened on the same folder after this one, finds no tokens and asks for them again. Copies of `app-api-state.json` made by an earlier version, such as old backups, still hold their tokens in plain text: delete them or keep them private.
+
+### Agent conversations about pull requests
+
+Deck's questions and chat about a pull request run as a conversation with the coding agent you picked, and the agent's CLI saves that conversation, its transcript included, in its own folder in your user profile, as it saves the sessions you start yourself. Ajour keeps only the conversation's ID, in memory, so that coming back to the pull request continues it:
+
+| Agent       | Where the CLI keeps it                                          |
+| ----------- | --------------------------------------------------------------- |
+| Claude Code | `~/.claude/projects/`, in a folder named after a temporary path |
+| Codex       | `~/.codex/sessions/`, by date                                   |
+
+On Windows, `~` is your user folder, such as `C:\Users\you`. To remove these conversations, quit Ajour and delete their files there, or use the CLI's own commands. Deleting them doesn't remove what the agent already sent to its provider. Timesheet agent tasks save no conversation: Ajour runs Claude Code with `--no-session-persistence` and Codex with `--ephemeral`.
 
 To remove all desktop data, quit Ajour and delete the folder listed above and any copies you made. Uninstalling the application may leave that folder behind. To clear only the separate agent browser's sessions, close that browser and Ajour, then delete `agent-browser-profile/`. Clear sessions in your own browser separately if an agent used it. Revoke tokens and sign-ins at the service that issued them when you no longer want them to work.

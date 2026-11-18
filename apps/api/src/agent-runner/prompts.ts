@@ -1,4 +1,5 @@
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
+import type { CoreAgentTask } from "../../../../packages/shared/agent-runs.ts";
 
 /** Ajour's rules for every run. The task prompt follows it. */
 export const RUNNER_PROMPT = `You are running a task for Ajour, the user's time tracker. You have two MCP servers: "ajour" for the user's Ajour data and "playwright" for a Chrome window.
@@ -23,4 +24,62 @@ export function buildPrompt({
   values: Record<string, string>;
 }): string {
   return fillTemplate(`${RUNNER_PROMPT}\n${taskPrompt}`, values);
+}
+
+/**
+ * A pull request conversation's own instructions. Each turn adds its task's.
+ * No timesheet rules: the conversation sees only its pull request's tools.
+ */
+export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only. When the head changes, a message says so, and the tools then answer for the new head only.
+
+Rules:
+- Answer in short Markdown, about the code at this head.
+- Do not run shell commands and do not edit files.
+`;
+
+/** Each core task's own short prompt. Later tickets fill them in. */
+export const CORE_TASK_PROMPTS: Readonly<Record<CoreAgentTask, string>> = {
+  "deck.guide":
+    "Group this pull request's changes into concerns, in the order a reviewer should read them.",
+  "deck.ask": "Answer the user's question about this pull request.",
+  "deck.chat": "Reply to the user's message about this pull request.",
+};
+
+/** The conversation's instructions, filled for its pull request and head. */
+export function buildConversationPrompt(binding: {
+  pullRequest: string;
+  head: string;
+}): string {
+  return fillTemplate(CONVERSATION_PROMPT, binding);
+}
+
+/**
+ * One turn: what changed since the last turn, its task's prompt, then the
+ * user's own words when given. `headChange` says the pull request's head
+ * moved, and `historyLost` that the earlier turns could not be resumed.
+ */
+export function buildTurnPrompt(
+  task: CoreAgentTask,
+  message?: string,
+  context: {
+    headChange?: { from: string; to: string };
+    historyLost?: boolean;
+  } = {},
+): string {
+  const notes = [
+    ...(context.historyLost
+      ? [
+          "Your earlier messages in this conversation could not be restored, so this conversation starts over.",
+        ]
+      : []),
+    ...(context.headChange
+      ? [
+          `The pull request's head changed from ${context.headChange.from} to ${context.headChange.to}. Ajour's tools now answer for ${context.headChange.to} only, and earlier answers may describe ${context.headChange.from}.`,
+        ]
+      : []),
+  ];
+  const prompt = message
+    ? `${CORE_TASK_PROMPTS[task]}\n\nThe user's message:\n${message}`
+    : CORE_TASK_PROMPTS[task];
+  return notes.length > 0 ? `${notes.join("\n")}\n\n${prompt}` : prompt;
 }

@@ -431,6 +431,17 @@ export interface StoredMcpClient {
    * it, the client has every tool, as a client the user creates does.
    */
   tools?: AgentTaskMcpTool[];
+  /**
+   * The pull request and head a conversation's client is bound to (#778).
+   * Such a client has none of Ajour's data or session tools, and it may use
+   * MCP while MCP is off.
+   */
+  pullRequest?: McpClientPullRequestBinding;
+}
+
+export interface McpClientPullRequestBinding {
+  pullRequest: string;
+  head: string;
 }
 
 interface StoredMcpState {
@@ -453,8 +464,41 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
           typeof client.tokenHash === "string" &&
           typeof client.createdAt === "number",
       )
+      .filter(hasValidBinding)
       .map(normalizeMcpClientTools),
   };
+}
+
+/** The state with every conversation client it holds revoked at `at`. */
+function withLeftoverConversationClientsRevoked(
+  state: AppApiState,
+  at: number,
+): AppApiState {
+  const leftover = (client: StoredMcpClient) =>
+    client.pullRequest !== undefined && client.revokedAt === undefined;
+  if (!state.mcp.clients.some(leftover)) return state;
+  return {
+    ...state,
+    mcp: {
+      ...state.mcp,
+      clients: state.mcp.clients.map((client) =>
+        leftover(client) ? { ...client, revokedAt: at } : client,
+      ),
+    },
+  };
+}
+
+/**
+ * A client whose pull request binding can't be read is dropped, never kept
+ * without it: that would give it every tool.
+ */
+function hasValidBinding(client: StoredMcpClient): boolean {
+  if (!Object.hasOwn(client, "pullRequest")) return true;
+  const binding = (client as { pullRequest: unknown }).pullRequest as
+    Partial<McpClientPullRequestBinding> | null | undefined;
+  return (
+    typeof binding?.pullRequest === "string" && typeof binding.head === "string"
+  );
 }
 
 /**
@@ -2427,6 +2471,45 @@ export class AppApiStorage {
     });
   }
 
+  /**
+   * Binds a conversation's client to its pull request's new head (#778).
+   * False when no active client bound to that pull request has the id.
+   */
+  async rebindMcpClient(
+    clientId: string,
+    binding: McpClientPullRequestBinding,
+  ): Promise<boolean> {
+    return this.mutate((state) => {
+      const target = state.mcp.clients.find(
+        (client) =>
+          client.id === clientId &&
+          client.revokedAt === undefined &&
+          client.pullRequest?.pullRequest === binding.pullRequest,
+      );
+      if (!target) return { nextState: state, result: false };
+      return {
+        nextState: {
+          ...state,
+          mcp: {
+            ...state.mcp,
+            clients: state.mcp.clients.map((client) =>
+              client === target
+                ? {
+                    ...client,
+                    pullRequest: {
+                      pullRequest: binding.pullRequest,
+                      head: binding.head,
+                    },
+                  }
+                : client,
+            ),
+          },
+        },
+        result: true,
+      };
+    });
+  }
+
   /** Finds a client by token hash, revoked or not. */
   async findMcpClientByTokenHash(
     tokenHash: string,
@@ -4273,6 +4356,10 @@ export class AppApiStorage {
         });
       }
       if (this.cache) return this.cache;
+      // A conversation's client lives only as long as its conversation, and
+      // no conversation outlives the API that loads this file, so one in it
+      // is a crash's leftover. Saved with the next write.
+      state = withLeftoverConversationClientsRevoked(state, Date.now());
       if (migration && migration.moved > 0) {
         // Only once the vault holds each secret, read back, does the state
         // file lose its plain text. When this save fails, the plain text
