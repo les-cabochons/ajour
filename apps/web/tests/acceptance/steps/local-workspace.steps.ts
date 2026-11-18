@@ -2886,7 +2886,8 @@ function narrowPrimaryNavigation(page: Page) {
 }
 
 When("I open today's time workspace in a narrow window", async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 844 });
+  // Above the 480px phone width, where the toggle's items sit side by side.
+  await page.setViewportSize({ width: 500, height: 844 });
   await page.goto("/time/today");
 });
 
