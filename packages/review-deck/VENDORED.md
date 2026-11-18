@@ -4,6 +4,7 @@ This package is a copy of Review Deck's grouping pipeline, so Ajour builds diffs
 and guides with the same hunk ids Review Deck uses (#595, #775).
 
 - Upstream: [`les-cabochons/review-deck`](https://github.com/les-cabochons/review-deck), MIT.
+  Its licence is copied, unchanged, as [`LICENSE`](LICENSE).
 - Commit: `les-cabochons/review-deck@c4243e9`
   (`c4243e98d0d1c418a4ccafb70c2fb6aa2207eb70`, 2026-11-04).
 
@@ -29,8 +30,9 @@ off.
 
 Ajour's own files are the entry points `saved.ts` and `stack.ts`, the block
 at the end of `pipeline.ts`, `ajour/deps.ts`, and the tests
-`build-diff.test.ts` and `description.test.ts`. The copied files keep
-upstream's formatting, so `.prettierignore` lists them.
+`build-diff.test.ts`, `deps-grammar.test.ts`, `deps-init.test.ts`,
+`description.test.ts` and `languages.test.ts`, which Ajour rewrote. The
+copied files keep upstream's formatting, so `.prettierignore` lists them.
 
 ## Entry points
 
@@ -54,8 +56,8 @@ upstream's formatting, so `.prettierignore` lists them.
      the third argument of `SyntaxParsers.create`, instead of a warning on
      the console, which Ajour's runtime code never writes to.
 3. **`pipeline.ts`** ends with a block of re-exports (the config, the types,
-   `buildDiff`, `createPipelineDeps`), so it is the package's entry point.
-   The upstream part is unchanged.
+   `GRAMMARS`, `buildDiff`, `createPipelineDeps`), so it is the package's
+   entry point. The upstream part is unchanged.
 4. **`review/saved.ts`** imports `../core/types.ts` and `../diff/parse.ts`
    instead of `../../../src/...`. Nothing else changed.
 5. **`review/analysis.ts`** keeps only `buildDiff`, `fileDiff` and
@@ -65,7 +67,11 @@ upstream's formatting, so `.prettierignore` lists them.
 6. **`ajour/deps.ts`** is new. `createPipelineDeps` gives the parsers, with
    each grammar's wasm resolved from its npm package in this package's install
    folder, the heuristic titler and no embedder. The parsers are made once per
-   process, because a second `Parser.init` replaces web-tree-sitter's runtime.
+   process, because a second `Parser.init` replaces web-tree-sitter's runtime,
+   so only the first caller's `onGrammarError` is used. A rejected init is not
+   kept, and the next call tries again. A grammar package that does not
+   resolve gives a path `Language.load` rejects, so the error reaches
+   `onLoadError` and its files fall back to path-only grouping.
    File contents are not a dependency: they come with each pull request, as
    `PrInput.files`, a `FileProvider` the content cache (#596) implements.
 7. **Tests** run on Vitest instead of `node:test`, with `node:assert` kept,
@@ -73,10 +79,10 @@ upstream's formatting, so `.prettierignore` lists them.
    - `stack.test.ts` keeps the trunk pattern and stack tests, without the
      restack and hook tests.
    - `languages.test.ts` gets the parsers from `createPipelineDeps`. Its
-     manifest test becomes a test that every grammar loads from the install
-     folder. Its language and test-file tests read `language` and `isTest` off
-     the hunks `runPipeline` returns, instead of calling `languageForPath`
-     and `isTestPath`.
+     manifest test becomes a test that every grammar in `GRAMMARS` loads
+     from the install folder. Its language and test-file tests read
+     `language` and `isTest` off the hunks `runPipeline` returns, instead of
+     calling `languageForPath` and `isTestPath`.
    - `description.test.ts` tests the same cases through `runPipeline`: the
      steps show as the description signal on hunk pairs, and as group titles.
 8. **`tsconfig.json`** turns `noUncheckedIndexedAccess` off, which the
@@ -85,7 +91,8 @@ upstream's formatting, so `.prettierignore` lists them.
 ## Syncing
 
 1. Clone upstream at the new commit.
-2. Copy the folders and files in the table, then apply local change 1.
+2. Copy the folders and files in the table and `LICENSE`, then apply local
+   change 1.
 3. Diff against this package and carry changes 2 to 7 over.
 4. Run `just test`, `just typecheck` and `just lint-boundaries`.
 5. Update the commit above and this list.

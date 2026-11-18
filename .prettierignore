@@ -25,7 +25,6 @@ packages/review-deck/score/
 packages/review-deck/stack/
 packages/review-deck/title/
 packages/review-deck/pipeline.ts
-packages/review-deck/tests/languages.test.ts
 packages/review-deck/tests/saved.test.ts
 packages/review-deck/tests/stack.test.ts
 

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { createPipelineDeps, type FileSymbols, mergeConfig, runPipeline } from "../pipeline.ts";
+import {
+  createPipelineDeps,
+  type FileSymbols,
+  GRAMMARS,
+  mergeConfig,
+  runPipeline,
+} from "../pipeline.ts";
 
 const deps = await createPipelineDeps();
 const parsers = deps.parsers;
@@ -12,29 +18,75 @@ async function symbols(path: string, source: string): Promise<FileSymbols> {
   return syms;
 }
 
-const decls = (s: FileSymbols) => s.decls.map((d) => `${d.kind} ${d.qualified}`);
+const decls = (s: FileSymbols) =>
+  s.decls.map((d) => `${d.kind} ${d.qualified}`);
 /** Match keys of the identifiers declared on a 0-based row. */
-const defKeys = (s: FileSymbols, row: number) => s.lines.get(row)?.idents.filter((i) => i.isDefName).flatMap((i) => i.keys) ?? [];
-const refKeys = (s: FileSymbols, row: number) => s.lines.get(row)?.idents.filter((i) => !i.isDefName).flatMap((i) => i.keys) ?? [];
-const imports = (s: FileSymbols) => s.imports.map((r) => `${r.match} ${r.path}`);
+const defKeys = (s: FileSymbols, row: number) =>
+  s.lines
+    .get(row)
+    ?.idents.filter((i) => i.isDefName)
+    .flatMap((i) => i.keys) ?? [];
+const refKeys = (s: FileSymbols, row: number) =>
+  s.lines
+    .get(row)
+    ?.idents.filter((i) => !i.isDefName)
+    .flatMap((i) => i.keys) ?? [];
+const imports = (s: FileSymbols) =>
+  s.imports.map((r) => `${r.match} ${r.path}`);
 
 /** The language and test facts the pipeline gives a one-line change to each of `paths`. */
-async function factsOf(paths: string[]): Promise<Map<string, { language: string | null; isTest: boolean }>> {
-  const diff = paths.map((p) => [`diff --git a/${p} b/${p}`, `--- a/${p}`, `+++ b/${p}`, "@@ -1 +1 @@", "-a", "+b"].join("\n")).join("\n") + "\n";
-  const result = await runPipeline({ title: "", description: "", diff, files: { get: async () => null } }, mergeConfig(), deps);
-  return new Map(paths.map((p) => [p, { language: result.hunks.get(`${p}#0`)!.language, isTest: result.hunks.get(`${p}#0`)!.isTest }]));
+async function factsOf(
+  paths: string[],
+): Promise<Map<string, { language: string | null; isTest: boolean }>> {
+  const diff =
+    paths
+      .map((p) =>
+        [
+          `diff --git a/${p} b/${p}`,
+          `--- a/${p}`,
+          `+++ b/${p}`,
+          "@@ -1 +1 @@",
+          "-a",
+          "+b",
+        ].join("\n"),
+      )
+      .join("\n") + "\n";
+  const result = await runPipeline(
+    { title: "", description: "", diff, files: { get: async () => null } },
+    mergeConfig(),
+    deps,
+  );
+  return new Map(
+    paths.map((p) => [
+      p,
+      {
+        language: result.hunks.get(`${p}#0`)!.language,
+        isTest: result.hunks.get(`${p}#0`)!.isTest,
+      },
+    ]),
+  );
 }
 
 // Upstream checked that every grammar ships in the extension's manifest. Ajour finds them in the package's install folder.
 test("every grammar loads from the package's install folder", async () => {
-  for (const path of ["a.ts", "a.tsx", "a.py", "a.go", "a.rs", "a.java", "a.cs", "a.rb", "a.php", "a.cpp"]) {
+  for (const [id, grammar] of Object.entries(GRAMMARS)) {
+    const path = `a.${grammar.extensions[0]}`;
     await parsers.load([path]);
-    assert.ok(parsers.symbols(path, ""), path);
+    assert.ok(parsers.symbols(path, ""), id);
   }
 });
 
 test("files map to grammars by extension", async () => {
-  const facts = await factsOf(["src/a.ts", "src/a.d.ts", "src/a.jsx", "app/models.py", "include/foo.H", "Gemfile", "dir.v2/README", "docs/a.md"]);
+  const facts = await factsOf([
+    "src/a.ts",
+    "src/a.d.ts",
+    "src/a.jsx",
+    "app/models.py",
+    "include/foo.H",
+    "Gemfile",
+    "dir.v2/README",
+    "docs/a.md",
+  ]);
   const language = (p: string) => facts.get(p)!.language;
   assert.equal(language("src/a.ts"), "typescript");
   assert.equal(language("src/a.d.ts"), "typescript");
@@ -47,8 +99,23 @@ test("files map to grammars by extension", async () => {
 });
 
 test("test files are recognized across ecosystems", async () => {
-  const tests = ["src/a.test.ts", "tests/test_models.py", "app/models_test.py", "pkg/util/util_test.go", "spec/user_spec.rb", "src/test/java/a/FooTest.java", "Foo.Tests/BarTests.cs", "src/foo_test.cpp"];
-  const code = ["src/a.ts", "app/models.py", "pkg/util/util.go", "src/main/java/a/Foo.java", "src/latest.py"];
+  const tests = [
+    "src/a.test.ts",
+    "tests/test_models.py",
+    "app/models_test.py",
+    "pkg/util/util_test.go",
+    "spec/user_spec.rb",
+    "src/test/java/a/FooTest.java",
+    "Foo.Tests/BarTests.cs",
+    "src/foo_test.cpp",
+  ];
+  const code = [
+    "src/a.ts",
+    "app/models.py",
+    "pkg/util/util.go",
+    "src/main/java/a/Foo.java",
+    "src/latest.py",
+  ];
   const facts = await factsOf([...tests, ...code]);
   for (const p of tests) assert.ok(facts.get(p)!.isTest, p);
   for (const p of code) assert.ok(!facts.get(p)!.isTest, p);
@@ -72,19 +139,37 @@ test("python: classes, methods, module names and imports", async () => {
     ].join("\n"),
   );
   // test_* outside a test file is ordinary code.
-  assert.deepEqual(decls(s), ["class User", "field User.table", "method User.__init__", "method User.save", "variable LIMIT", "function test_connection"]);
-  assert.deepEqual(s.decls.find((d) => d.name === "__init__")?.constructs, "User");
+  assert.deepEqual(decls(s), [
+    "class User",
+    "field User.table",
+    "method User.__init__",
+    "method User.save",
+    "variable LIMIT",
+    "function test_connection",
+  ]);
+  assert.deepEqual(
+    s.decls.find((d) => d.name === "__init__")?.constructs,
+    "User",
+  );
   assert.deepEqual(defKeys(s, 6), [".save"]);
   // `db.write` may call a method, or module db's function `write`.
   assert.ok(refKeys(s, 7).includes(".write"));
   assert.ok(refKeys(s, 7).includes("write"));
   assert.ok(refKeys(s, 7).includes("db"));
-  assert.deepEqual(imports(s), ["suffix ./util", "suffix ./util/helper", "suffix app/db", "suffix app"]);
+  assert.deepEqual(imports(s), [
+    "suffix ./util",
+    "suffix ./util/helper",
+    "suffix app/db",
+    "suffix app",
+  ]);
   assert.ok(s.lines.get(0)?.isImport);
 });
 
 test("python: test functions in test files are tests", async () => {
-  const s = await symbols("tests/test_models.py", ["def test_save():", "    assert save()"].join("\n"));
+  const s = await symbols(
+    "tests/test_models.py",
+    ["def test_save():", "    assert save()"].join("\n"),
+  );
   assert.deepEqual(decls(s), ["test test_save"]);
 });
 
@@ -102,7 +187,13 @@ test("go: types, methods, tests and package imports", async () => {
       'func TestSave(t *testing.T) { t.Run("x", nil) }',
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Store", "field Store.Path", "method Save", "function New", "test TestSave"]);
+  assert.deepEqual(decls(s), [
+    "class Store",
+    "field Store.Path",
+    "method Save",
+    "function New",
+    "test TestSave",
+  ]);
   assert.deepEqual(defKeys(s, 5), [".Save"]);
   // `util.Write` calls package util's function Write, declared as plain `Write`.
   assert.ok(refKeys(s, 5).includes("Write"));
@@ -125,13 +216,27 @@ test("rust: impl methods, constructors, tests and use paths", async () => {
       "fn saves() { Store::new().save(); }",
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Store", "field Store.path", "class Store", "method Store.new", "method Store.save", "test saves"]);
+  assert.deepEqual(decls(s), [
+    "class Store",
+    "field Store.path",
+    "class Store",
+    "method Store.new",
+    "method Store.save",
+    "test saves",
+  ]);
   assert.equal(s.decls.find((d) => d.name === "new")?.constructs, "Store");
   assert.ok(refKeys(s, 8).includes(".new"));
   assert.ok(refKeys(s, 8).includes(".save"));
   // `mod tests;` in store.rs is store/tests.rs; in lib.rs it is a sibling.
-  assert.deepEqual(imports(s), ["suffix util", "suffix ./store/tests", "suffix ./store/tests/mod"]);
-  assert.deepEqual(imports(await symbols("src/lib.rs", "mod store;")), ["suffix ./store", "suffix ./store/mod"]);
+  assert.deepEqual(imports(s), [
+    "suffix util",
+    "suffix ./store/tests",
+    "suffix ./store/tests/mod",
+  ]);
+  assert.deepEqual(imports(await symbols("src/lib.rs", "mod store;")), [
+    "suffix ./store",
+    "suffix ./store/mod",
+  ]);
 });
 
 test("java: members, constructors, annotated tests and imports", async () => {
@@ -146,15 +251,28 @@ test("java: members, constructors, annotated tests and imports", async () => {
       "  public Store(String path) { this.path = path; }",
       "  public void save() { Files.write(this.path); flush(); }",
       "  @Test",
-      "  void savesFile() { new Store(\"a\").save(); }",
+      '  void savesFile() { new Store("a").save(); }',
       "}",
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Store", "field Store.path", "method Store.Store", "method Store.save", "test savesFile"]);
-  assert.equal(s.decls.find((d) => d.kind === "method" && d.name === "Store")?.constructs, "Store");
+  assert.deepEqual(decls(s), [
+    "class Store",
+    "field Store.path",
+    "method Store.Store",
+    "method Store.save",
+    "test savesFile",
+  ]);
+  assert.equal(
+    s.decls.find((d) => d.kind === "method" && d.name === "Store")?.constructs,
+    "Store",
+  );
   assert.ok(refKeys(s, 6).includes(".write"));
   assert.ok(refKeys(s, 6).includes(".flush"));
-  assert.deepEqual(imports(s), ["suffix com/acme/util/Files", "suffix com/acme/util", "directory com/acme/model"]);
+  assert.deepEqual(imports(s), [
+    "suffix com/acme/util/Files",
+    "suffix com/acme/util",
+    "directory com/acme/model",
+  ]);
 });
 
 test("c#: classes, properties, xunit tests and usings", async () => {
@@ -171,7 +289,12 @@ test("c#: classes, properties, xunit tests and usings", async () => {
       "}",
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Store", "field Store.Path", "method Store.Save", "test SavesFile"]);
+  assert.deepEqual(decls(s), [
+    "class Store",
+    "field Store.Path",
+    "method Store.Save",
+    "test SavesFile",
+  ]);
   assert.ok(refKeys(s, 4).includes(".Write"));
   assert.deepEqual(imports(s), ["directory Acme/Util"]);
 });
@@ -187,14 +310,21 @@ test("ruby: modules, methods, rspec blocks and requires", async () => {
       "    def save; Util.write(@path); end",
       "  end",
       "end",
-      'describe Acme::Store do',
+      "describe Acme::Store do",
       '  it "saves" do',
       "    Acme::Store.new('a').save",
       "  end",
       "end",
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Acme", "class Acme.Store", "method Acme.Store.initialize", "method Acme.Store.save", "test describe(Acme::Store)", 'test it("saves")']);
+  assert.deepEqual(decls(s), [
+    "class Acme",
+    "class Acme.Store",
+    "method Acme.Store.initialize",
+    "method Acme.Store.save",
+    "test describe(Acme::Store)",
+    'test it("saves")',
+  ]);
   assert.ok(refKeys(s, 9).includes(".save"));
   assert.deepEqual(imports(s), ["suffix ./util"]);
 });
@@ -215,7 +345,13 @@ test("php: classes, properties, PHPUnit tests and use clauses", async () => {
       "}",
     ].join("\n"),
   );
-  assert.deepEqual(decls(s), ["class Store", "field Store.path", "method Store.__construct", "method Store.save", "test testSave"]);
+  assert.deepEqual(decls(s), [
+    "class Store",
+    "field Store.path",
+    "method Store.__construct",
+    "method Store.save",
+    "test testSave",
+  ]);
   assert.ok(refKeys(s, 7).includes(".write"));
   assert.ok(refKeys(s, 8).includes(".save"));
   assert.deepEqual(imports(s), [
@@ -264,32 +400,93 @@ test("c/c++: classes, out-of-line methods, prototypes, gtest and includes", asyn
 });
 
 test("a python change and its callers in other files group together", async () => {
-  const file = (path: string, old: string[], next: string[]) => ({ path, old: old.join("\n"), next: next.join("\n") });
+  const file = (path: string, old: string[], next: string[]) => ({
+    path,
+    old: old.join("\n"),
+    next: next.join("\n"),
+  });
   const files = [
-    file("app/billing.py", ["def charge(user, amount):", "    return amount"], ["def charge(user, amount, currency):", "    return amount"]),
-    file("app/checkout.py", ["from .billing import charge", "def pay(user):", "    return charge(user, 3)"], ["from .billing import charge", "def pay(user):", "    return charge(user, 3, 'eur')"]),
-    file("tests/test_billing.py", ["from app.billing import charge", "def test_charge():", "    assert charge(1, 2) == 2"], ["from app.billing import charge", "def test_charge():", "    assert charge(1, 2, 'eur') == 2"]),
-    file("docs/setup.md", ["# Setup", "Run it."], ["# Setup", "Run it with uv."]),
+    file(
+      "app/billing.py",
+      ["def charge(user, amount):", "    return amount"],
+      ["def charge(user, amount, currency):", "    return amount"],
+    ),
+    file(
+      "app/checkout.py",
+      [
+        "from .billing import charge",
+        "def pay(user):",
+        "    return charge(user, 3)",
+      ],
+      [
+        "from .billing import charge",
+        "def pay(user):",
+        "    return charge(user, 3, 'eur')",
+      ],
+    ),
+    file(
+      "tests/test_billing.py",
+      [
+        "from app.billing import charge",
+        "def test_charge():",
+        "    assert charge(1, 2) == 2",
+      ],
+      [
+        "from app.billing import charge",
+        "def test_charge():",
+        "    assert charge(1, 2, 'eur') == 2",
+      ],
+    ),
+    file(
+      "docs/setup.md",
+      ["# Setup", "Run it."],
+      ["# Setup", "Run it with uv."],
+    ),
   ];
-  const diff = files
-    .map((f) => {
-      const old = f.old.split("\n");
-      const next = f.next.split("\n");
-      const body = old.map((l, i) => (l === next[i] ? [` ${l}`] : [`-${l}`, `+${next[i]}`])).flat();
-      return [`diff --git a/${f.path} b/${f.path}`, `--- a/${f.path}`, `+++ b/${f.path}`, `@@ -1,${old.length} +1,${next.length} @@`, ...body].join("\n");
-    })
-    .join("\n") + "\n";
-  const contents = new Map(files.flatMap((f) => [[`old:${f.path}`, f.old], [`new:${f.path}`, f.next]] as const));
+  const diff =
+    files
+      .map((f) => {
+        const old = f.old.split("\n");
+        const next = f.next.split("\n");
+        const body = old
+          .map((l, i) => (l === next[i] ? [` ${l}`] : [`-${l}`, `+${next[i]}`]))
+          .flat();
+        return [
+          `diff --git a/${f.path} b/${f.path}`,
+          `--- a/${f.path}`,
+          `+++ b/${f.path}`,
+          `@@ -1,${old.length} +1,${next.length} @@`,
+          ...body,
+        ].join("\n");
+      })
+      .join("\n") + "\n";
+  const contents = new Map(
+    files.flatMap(
+      (f) =>
+        [
+          [`old:${f.path}`, f.old],
+          [`new:${f.path}`, f.next],
+        ] as const,
+    ),
+  );
   const result = await runPipeline(
-    { title: "Add currency to charge", description: "", diff, files: { get: async (p, side) => contents.get(`${side}:${p}`) ?? null } },
+    {
+      title: "Add currency to charge",
+      description: "",
+      diff,
+      files: { get: async (p, side) => contents.get(`${side}:${p}`) ?? null },
+    },
     mergeConfig({ semantic: { enabled: false } }),
     { parsers },
   );
   const billing = result.hunks.get("app/billing.py#0")!;
   assert.equal(billing.language, "python");
   assert.ok(billing.defines.has("charge"));
-  assert.ok(result.hunks.get("tests/test_billing.py#0")!.fileImports.has("app/billing"));
-  const groupOf = (id: string) => result.groups.find((g) => g.hunkIds.includes(id))!.id;
+  assert.ok(
+    result.hunks.get("tests/test_billing.py#0")!.fileImports.has("app/billing"),
+  );
+  const groupOf = (id: string) =>
+    result.groups.find((g) => g.hunkIds.includes(id))!.id;
   assert.equal(groupOf("app/checkout.py#0"), groupOf("app/billing.py#0"));
   assert.equal(groupOf("tests/test_billing.py#0"), groupOf("app/billing.py#0"));
   assert.notEqual(groupOf("docs/setup.md#0"), groupOf("app/billing.py#0"));

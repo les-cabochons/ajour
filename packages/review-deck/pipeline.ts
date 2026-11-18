@@ -178,6 +178,7 @@ export type {
   SignalScore,
   TitleSource,
 } from "./core/types.ts";
+export { GRAMMARS } from "./parse/grammars.ts";
 export type { GrammarLoadError, SyntaxParsers } from "./parse/treesitter.ts";
 export type { FileSymbols } from "./parse/symbols.ts";
 export { buildDiff, type ChangeType, type FileChange, type FileContents } from "./review/analysis.ts";
