@@ -7,7 +7,13 @@ import type {
   PluginCatalogSettings,
   PluginSourceInspection,
 } from "@ajour/shared";
-import type { LaunchContext } from "@ajour/wide-events";
+import type {
+  Envelope,
+  Kind,
+  LaunchContext,
+  Outcome,
+  Runtime,
+} from "@ajour/wide-events";
 import type {
   InstructionFileId,
   InstructionAction,
@@ -25,6 +31,7 @@ import type {
   UpdateTrack,
 } from "@/domain/local-state";
 import type { RunningEntryTrayState } from "@/domain/time/running-entry";
+import { traceCarrier } from "@/lib/wide-events";
 
 export interface DevelopmentPluginSettings {
   available: boolean;
@@ -250,6 +257,132 @@ export interface DesktopCliCommandState {
 /** The local log file's settings, state and folder, from the main process (ADR 0014). */
 export type DesktopLogsStatus = LocalLogStatus & { settings: LocalLogSettings };
 
+/**
+ * An event the local log file holds: the envelope and the fields its
+ * catalog entry declares, as main's query service read it (#442).
+ */
+export type LoggedEvent = Envelope & Record<string, unknown>;
+
+/**
+ * What the diagnostics viewer asks main for. Every key is optional, and
+ * main refuses one it doesn't know or a value outside its format: times are
+ * ISO 8601 UTC, `from` inclusive and `to` exclusive, on `started_at`.
+ * `outcome: "problems"` is anything that didn't end `ok` or `noop`.
+ */
+export interface DesktopLogFilter {
+  from?: string;
+  to?: string;
+  launch_id?: string;
+  runtime?: Runtime | Runtime[];
+  kind?: Kind | Kind[];
+  outcome?: Outcome | Outcome[] | "problems";
+  name?: string;
+  name_prefix?: string;
+  trace_id?: string;
+  connection_id?: string;
+  plugin_id?: string;
+}
+
+/** A page of results: at most `limit` (1 to 500, 100 by default), after `cursor`. */
+export interface DesktopLogPage {
+  limit?: number;
+  /** The `next_cursor` of the page before. */
+  cursor?: string | null;
+}
+
+/** What a read read: day files, days with none, and lines that weren't events. */
+export interface DesktopLogReadStats {
+  file_count: number;
+  missing_file_count: number;
+  skipped_line_count: number;
+}
+
+/** logs.query: newest first. */
+export interface DesktopLogQueryResult extends DesktopLogReadStats {
+  events: LoggedEvent[];
+  /** Null on the last page. */
+  next_cursor: string | null;
+  /** The events that passed the filter, on every page. */
+  match_count: number;
+}
+
+export interface DesktopLogTraceNode {
+  event: LoggedEvent;
+  /** 0 for a root. */
+  depth: number;
+  /** The spans whose parent it is, in the order they started. */
+  children: DesktopLogTraceNode[];
+  /** The failed span deepest in the tree: at most one per trace. */
+  deepest_failure: boolean;
+  /** A root whose parent span is in no day file. */
+  missing_parent: boolean;
+}
+
+/** logs.trace: every event of one trace, from any runtime, as a tree. */
+export interface DesktopLogTrace extends DesktopLogReadStats {
+  trace_id: string;
+  roots: DesktopLogTraceNode[];
+  event_count: number;
+  /** In the order their first span started. */
+  runtimes: Runtime[];
+  deepest_failure_span_id: string | null;
+}
+
+/**
+ * Which actions logs.actions lists: all of them, those with a span that
+ * didn't end `ok` or `noop`, or those that took their name's p95 or longer.
+ */
+export type DesktopLogActionView = "all" | "failed" | "slow";
+
+/** One action: a trace root, with what its trace holds. */
+export interface DesktopLogAction {
+  event: LoggedEvent;
+  span_count: number;
+  problem_count: number;
+  runtimes: Runtime[];
+  slow: boolean;
+  /** Its name's p95 among the roots in the range; null with too few of them. */
+  p95_ms: number | null;
+}
+
+export interface DesktopLogActions extends DesktopLogReadStats {
+  show: DesktopLogActionView;
+  /** Newest first. */
+  actions: DesktopLogAction[];
+  next_cursor: string | null;
+  match_count: number;
+}
+
+/** The Overview's range: this launch, 24 hours or 7 days. */
+export type DesktopLogRange = "launch" | "24h" | "7d";
+
+/** logs.aggregate: the Overview's figures over a range. */
+export interface DesktopLogOverview extends DesktopLogReadStats {
+  range: DesktopLogRange;
+  from: string;
+  to: string;
+  /** Most first. */
+  counts: {
+    name: string;
+    outcome: Outcome;
+    outcome_reason?: string;
+    count: number;
+  }[];
+  /** One per hour of the range, oldest first, with each problem outcome's count. */
+  problems_per_hour: {
+    hour: string;
+    counts: Partial<Record<Exclude<Outcome, "ok" | "noop">, number>>;
+  }[];
+  durations: { name: string; count: number; p50_ms: number; p95_ms: number }[];
+  latest_launch: LoggedEvent | null;
+  crash_count: number;
+  /** Newest first, the first 100. */
+  crashes: LoggedEvent[];
+}
+
+/** What a tail follows: a filter without a range. */
+export type DesktopLogTailFilter = Omit<DesktopLogFilter, "from" | "to">;
+
 declare global {
   interface Window {
     ajourDesktop?: {
@@ -430,6 +563,35 @@ declare global {
       deleteAllLogs?: (trace?: TraceCarrier) => Promise<DesktopLogsStatus>;
       /** Shows the log folder in the file manager. Main opens it; the path never reaches the page. */
       openLogsFolder?: (trace?: TraceCarrier) => Promise<void>;
+      // The diagnostics viewer's reads of the local log file (#442).
+      queryLogs?: (
+        filter: DesktopLogFilter,
+        page?: DesktopLogPage,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopLogQueryResult>;
+      getLogTrace?: (
+        traceId: string,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopLogTrace>;
+      listLogActions?: (
+        filter: DesktopLogFilter & { show?: DesktopLogActionView },
+        page?: DesktopLogPage,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopLogActions>;
+      aggregateLogs?: (
+        options: { range: DesktopLogRange },
+        trace?: TraceCarrier,
+      ) => Promise<DesktopLogOverview>;
+      /**
+       * Runs `callback` with the events main writes from now on that pass
+       * the filter, as they are written. Resolves with how to stop, once
+       * main follows it. A reload ends every tail.
+       */
+      tailLogs?: (
+        filter: DesktopLogTailFilter | undefined,
+        callback: (events: LoggedEvent[]) => void,
+        trace?: TraceCarrier,
+      ) => Promise<() => void>;
       /**
        * Sends a batch of the renderer's wide events to the local log file,
        * one way: it never waits for main (#440).
@@ -447,4 +609,49 @@ declare global {
   }
 }
 
-export {};
+type DesktopBridge = NonNullable<Window["ajourDesktop"]>;
+
+/** The viewer's bridge method, which only the desktop app has. */
+function logsBridge<Name extends keyof DesktopBridge>(
+  name: Name,
+): NonNullable<DesktopBridge[Name]> {
+  const method = window.ajourDesktop?.[name];
+  if (!method) {
+    throw new Error("Diagnostics are available in the desktop app.");
+  }
+  return method as NonNullable<DesktopBridge[Name]>;
+}
+
+/** The local log file's events that pass `filter`, newest first, one page. */
+export function queryLogs(
+  filter: DesktopLogFilter = {},
+  page?: DesktopLogPage,
+) {
+  return logsBridge("queryLogs")(filter, page, traceCarrier());
+}
+
+/** Every event of a trace, from any runtime, as a tree of spans. */
+export function getLogTrace(traceId: string) {
+  return logsBridge("getLogTrace")(traceId, traceCarrier());
+}
+
+/** The actions, one row per trace root, newest first. */
+export function listLogActions(
+  filter: DesktopLogFilter & { show?: DesktopLogActionView } = {},
+  page?: DesktopLogPage,
+) {
+  return logsBridge("listLogActions")(filter, page, traceCarrier());
+}
+
+/** The Overview's figures over this launch, 24 hours or 7 days. */
+export function aggregateLogs(range: DesktopLogRange) {
+  return logsBridge("aggregateLogs")({ range }, traceCarrier());
+}
+
+/** Follows the events main writes that pass `filter`. Resolves with how to stop. */
+export function tailLogs(
+  filter: DesktopLogTailFilter | undefined,
+  onEvents: (events: LoggedEvent[]) => void,
+) {
+  return logsBridge("tailLogs")(filter, onEvents, traceCarrier());
+}

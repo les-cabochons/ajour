@@ -549,6 +549,46 @@ describe("the local log file", () => {
     });
   });
 
+  describe("what it wrote", () => {
+    it("hands its listeners each append's lines once they are written", async () => {
+      const log = await logFile({ at: "2026-10-26T23:59:59.900Z" });
+      const written: string[][] = [];
+      const stop = log.file.onWrite((lines) => written.push([...lines]));
+      log.file.onWrite(() => {
+        throw new Error("The window is gone.");
+      });
+
+      sync(log.events);
+      log.setTime("2026-10-27T00:00:00.100Z");
+      sync(log.events);
+      await log.file.flush();
+
+      // One append per day file, each line as the file holds it.
+      expect(written).toHaveLength(2);
+      expect(written.flat().map((line) => JSON.parse(line))).toEqual([
+        ...(await log.lines("2026-10-26")),
+        ...(await log.lines("2026-10-27")),
+      ]);
+
+      stop();
+      sync(log.events);
+      await log.file.flush();
+      expect(written).toHaveLength(2);
+    });
+
+    it("tells no listener of a write that failed", async () => {
+      const disk = failingFs("ENOSPC");
+      const log = await logFile({ fileSystem: disk.fileSystem });
+      const written: string[][] = [];
+      log.file.onWrite((lines) => written.push([...lines]));
+
+      sync(log.events);
+      await log.file.flush();
+
+      expect(written).toEqual([]);
+    });
+  });
+
   describe("a batch another process forwarded", () => {
     const FROM = { runtime: "renderer", launch_id: "launch-1" } as const;
 

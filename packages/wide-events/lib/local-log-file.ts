@@ -143,6 +143,13 @@ export interface LocalLogFile {
    */
   onWritingChange(listener: (writing: boolean) => void): () => void;
   /**
+   * Runs `listener` with the lines of each append once it is written, one
+   * call per day file: what the diagnostics viewer's tail delivers (#442).
+   * The quit's synchronous write tells no one. A throw in a listener is
+   * ignored. Returns how to stop.
+   */
+  onWrite(listener: (lines: readonly string[]) => void): () => void;
+  /**
    * Writes a batch another process forwarded, such as the renderer's over
    * IPC (#440). Only the events whose envelope is valid for `from`, and that
    * its runtime emits (`rendererEmits`), go to the sink, which filters them
@@ -250,6 +257,23 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
 
   const writing = () => settings.enabled && warning === undefined;
   const writingListeners = new Set<(writing: boolean) => void>();
+  const writeListeners = new Set<(lines: readonly string[]) => void>();
+  /** Tells each write listener what an append wrote. */
+  function notifyWritten(
+    lines: { line: string }[],
+    start: number,
+    end: number,
+  ) {
+    if (writeListeners.size === 0) return;
+    const written = lines.slice(start, end).map(({ line }) => line);
+    for (const listener of [...writeListeners]) {
+      try {
+        listener(written);
+      } catch {
+        // One listener's failure never reaches the work or the others.
+      }
+    }
+  }
   /** Runs the listeners when `change` moved `writing()`. */
   function notifyIfChanged(change: () => void) {
     const before = writing();
@@ -301,6 +325,7 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
         );
         if (batch.drained) return;
         batch.written = end;
+        notifyWritten(lines, start, end);
       }
     } catch (error) {
       // A drained batch is already written: its late failure says nothing.
@@ -383,6 +408,12 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
       writingListeners.add(listener);
       return () => {
         writingListeners.delete(listener);
+      };
+    },
+    onWrite(listener) {
+      writeListeners.add(listener);
+      return () => {
+        writeListeners.delete(listener);
       };
     },
     forward(batch, from) {

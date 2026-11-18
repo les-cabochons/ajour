@@ -217,6 +217,79 @@ describe("the preload's wide events forwarding", () => {
   });
 });
 
+describe("the preload's diagnostics reads (#442)", () => {
+  it("passes a query's filter, page and traceparent on to main", async () => {
+    const { api, ipc, recorded } = await loadPreload();
+    const received: unknown[][] = [];
+    ipc.handle("ajour:query-logs", (_event, ...args) => {
+      received.push(args);
+      return { events: [] };
+    });
+
+    await api.queryLogs!(
+      { outcome: "problems" },
+      { limit: 10 },
+      { traceparent: TRACEPARENT },
+    );
+
+    expect(received).toEqual([[{ outcome: "problems" }, { limit: 10 }]]);
+    expect(recorded).toEqual([
+      expect.objectContaining({ name: "logs.query", trace_id: TRACE_ID }),
+    ]);
+  });
+
+  it("hands each tail's pushed events to its own callback, until it stops", async () => {
+    const { api, ipc, push } = await loadPreload();
+    const calls: unknown[][] = [];
+    ipc.handle("ajour:set-logs-tail", (_event, ...args) => {
+      calls.push(args);
+      return { id: args[0], subscribed: args[1] !== null };
+    });
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+
+    const stopFirst = (await api.tailLogs!(
+      { outcome: "problems" },
+      (events: unknown[]) => first.push(...events),
+    )) as () => void;
+    await api.tailLogs!(undefined, (events: unknown[]) =>
+      second.push(...events),
+    );
+    push("ajour:logs-tail-events", 1, [{ name: "backlog.sync" }]);
+    push("ajour:logs-tail-events", 2, [{ name: "route.change" }]);
+    push("ajour:logs-tail-events", 3, [{ name: "unknown.tail" }]);
+    stopFirst();
+    stopFirst();
+    push("ajour:logs-tail-events", 1, [{ name: "after.stop" }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(first).toEqual([{ name: "backlog.sync" }]);
+    expect(second).toEqual([{ name: "route.change" }]);
+    // Each tail has its number; no filter follows everything; stopping
+    // twice tells main once.
+    expect(calls).toEqual([
+      [1, { outcome: "problems" }],
+      [2, {}],
+      [1, null],
+    ]);
+  });
+
+  it("rejects a tail main refused, and keeps no callback for it", async () => {
+    const { api, ipc, push } = await loadPreload();
+    ipc.handle("ajour:set-logs-tail", () => {
+      throw new Error("Invalid log query: The filter has no path.");
+    });
+    const seen: unknown[] = [];
+
+    await expect(
+      api.tailLogs!({ path: "x" }, (events: unknown[]) => seen.push(events)),
+    ).rejects.toThrow(/^Invalid log query: The filter has no path\.$/);
+    push("ajour:logs-tail-events", 1, [{ name: "backlog.sync" }]);
+
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("the preload's errors", () => {
   it("rejects with the main process's own message, without Electron's prefix", async () => {
     const { api, ipc } = await loadPreload();

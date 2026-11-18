@@ -48,6 +48,10 @@ const {
   SWEEP_INTERVAL_MS,
 } = require("./electron/local-logs.cjs");
 const {
+  createLocalLogQuery,
+  INVALID_LOG_QUERY,
+} = require("./electron/local-log-query.cjs");
+const {
   applyLocalLogSettings,
   DEFAULT_LOCAL_LOG_SETTINGS,
   loadLocalLogSettings,
@@ -153,6 +157,9 @@ async function mainProcess({
     },
     internalAppApiRuntimeRoot: repoRoot,
     createLocalLogs,
+    createLocalLogQuery,
+    INVALID_LOG_QUERY,
+    performance,
     loadLocalLogFile,
     loadMainEmitter,
     loadMainSink,
@@ -196,7 +203,11 @@ async function mainProcess({
         "// The local log file's settings page",
         'ipc.handle("ajour:get-development-plugin-settings"',
       ) +
-      section('app.on("will-quit"', '  app.on("window-all-closed"'),
+      section('app.on("will-quit"', '  app.on("window-all-closed"') +
+      section(
+        "// The diagnostics viewer's reads of the local log file (#442)",
+        "/** Runs a registry action in the renderer",
+      ),
     context,
   );
   const localLogs = vm.runInContext("localLogs", context);
@@ -1096,5 +1107,214 @@ describe("the retention sweeps", () => {
       logs: { trigger: "interval", deleted_file_count: 1, file_count: 0 },
     });
     await expect(readdir(directory)).resolves.toEqual([]);
+  });
+});
+
+describe("the diagnostics viewer's reads (#442)", () => {
+  const TRACE = "0af7651916cd43dd8448eb211c80319c";
+
+  /** Today's day file, as the log file writes it, with a backlog sync's trace. */
+  async function writeToday(directory: string) {
+    const started = Date.now() - 60_000;
+    const events = [
+      rendererEvent({
+        name: "backlog.sync",
+        kind: "job",
+        outcome: "error",
+        span_id: "1000000000000001",
+        started_at: new Date(started).toISOString(),
+      }),
+      rendererEvent({
+        name: "backlog.sync",
+        kind: "request",
+        runtime: "api",
+        outcome: "error",
+        span_id: "1000000000000002",
+        parent_span_id: "1000000000000001",
+        started_at: new Date(started + 5).toISOString(),
+      }),
+      rendererEvent({
+        name: "plugin.request",
+        kind: "job",
+        runtime: "api",
+        outcome: "timeout",
+        span_id: "1000000000000003",
+        parent_span_id: "1000000000000002",
+        started_at: new Date(started + 10).toISOString(),
+      }),
+    ];
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, `${today()}.ndjson`),
+      [...events.map((logged) => JSON.stringify(logged)), "not json", ""].join(
+        "\n",
+      ),
+    );
+    return events;
+  }
+
+  it("answers logs.query, logs.trace, logs.actions and logs.aggregate from the day files, each an ipc event of what it read", async () => {
+    const main = await mainProcess();
+    const events = await writeToday(main.directory);
+    const trace = { traceparent: `00-${TRACE}-b7ad6b7169203331-01` };
+
+    const queried = await main.invoke(
+      "ajour:query-logs",
+      undefined,
+      { outcome: "problems", runtime: "api" },
+      { limit: 1 },
+      trace,
+    );
+    expect(queried).toMatchObject({
+      events: [events[2]],
+      match_count: 2,
+      skipped_line_count: 1,
+      file_count: 1,
+    });
+    expect(queried.next_cursor).toEqual(expect.any(String));
+    const tree = (await main.invoke(
+      "ajour:get-log-trace",
+      undefined,
+      TRACE,
+    )) as { roots: { event: unknown }[]; deepest_failure_span_id: string };
+    expect(tree.roots.map(({ event }) => event)).toEqual([events[0]]);
+    expect(tree.deepest_failure_span_id).toBe("1000000000000003");
+    const listed = (await main.invoke("ajour:list-log-actions", undefined, {
+      show: "failed",
+    })) as { actions: { event: unknown; span_count: number }[] };
+    expect(listed.actions).toMatchObject([{ event: events[0], span_count: 3 }]);
+    const overview = (await main.invoke("ajour:aggregate-logs", undefined, {
+      range: "24h",
+    })) as { counts: unknown[] };
+    // The two backlog.sync errors, and the broker request that timed out.
+    expect(overview.counts).toHaveLength(2);
+
+    const read = {
+      file_count: 1,
+      missing_file_count: 0,
+      skipped_line_count: 1,
+    };
+    expect(main.recorded).toMatchObject([
+      {
+        name: "logs.query",
+        kind: "ipc",
+        outcome: "ok",
+        trace_id: TRACE,
+        ipc: { channel: "ajour:query-logs" },
+        logs: { ...read, match_count: 2, result_count: 1 },
+      },
+      {
+        name: "logs.trace",
+        logs: { ...read, result_count: 3, runtime_count: 2, has_failure: true },
+      },
+      {
+        name: "logs.actions",
+        logs: { ...read, match_count: 1, result_count: 1, show: "failed" },
+      },
+      {
+        name: "logs.aggregate",
+        logs: {
+          ...read,
+          // Yesterday is in the 24 hours, and has no file.
+          missing_file_count: 1,
+          result_count: 2,
+          range: "24h",
+          crash_count: 0,
+        },
+      },
+    ]);
+    // An event of the viewer's holds what it read, never its filter.
+    expect(JSON.stringify(main.recorded)).not.toContain("problems");
+  });
+
+  it("refuses a filter outside its shape as invalid_query, and a window other than the active one", async () => {
+    const main = await mainProcess();
+
+    await expect(
+      main.invoke("ajour:query-logs", undefined, { path: "../../secrets" }),
+    ).rejects.toMatchObject({ code: INVALID_LOG_QUERY });
+    await expect(
+      main.invoke("ajour:aggregate-logs", undefined, { range: "30d" }),
+    ).rejects.toThrow("Invalid log query");
+    await expect(
+      main.invoke("ajour:get-log-trace", "another-window", TRACE),
+    ).rejects.toThrow("Only the active Ajour window can read the logs.");
+
+    expect(main.recorded).toMatchObject([
+      {
+        name: "logs.query",
+        outcome: "refused",
+        outcome_reason: "invalid_query",
+      },
+      {
+        name: "logs.aggregate",
+        outcome: "refused",
+        outcome_reason: "invalid_query",
+      },
+      {
+        name: "logs.trace",
+        outcome: "refused",
+        outcome_reason: "foreign_sender",
+        ipc: { sender_accepted: false },
+      },
+    ]);
+  });
+
+  it("logs.tail pushes what the log file writes to the window, and following it writes nothing it delivers", async () => {
+    const main = await mainProcess({ record: false });
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+    await main.events.ready;
+    await main.localLogs.flush();
+
+    expect(await main.invoke("ajour:set-logs-tail", undefined, 7, {})).toEqual({
+      id: 7,
+      subscribed: true,
+    });
+    await main.localLogs.flush();
+    // Its own logs.tail event is written, and no tail delivers it.
+    expect(
+      (await linesOf(path.join(main.directory, `${today()}.ndjson`))).map(
+        ({ name }) => name,
+      ),
+    ).toContain("logs.tail");
+    const tailPushes = () =>
+      main.pushed.filter(([channel]) => channel === "ajour:logs-tail-events");
+    expect(tailPushes()).toEqual([]);
+
+    main.send("ajour:forward-wide-events", undefined, {
+      events: [rendererEvent()],
+      unsent_event_count: 0,
+    });
+    await main.localLogs.flush();
+    expect(tailPushes()).toEqual([
+      [
+        "ajour:logs-tail-events",
+        7,
+        [
+          expect.objectContaining({
+            name: "route.change",
+            runtime: "renderer",
+          }),
+        ],
+      ],
+    ]);
+    // Delivering wrote nothing: the file holds what was forwarded and the
+    // two calls, no more.
+    await main.localLogs.flush();
+    const names = (
+      await linesOf(path.join(main.directory, `${today()}.ndjson`))
+    ).map(({ name }) => name);
+    expect(names.filter((name) => name === "route.change")).toHaveLength(1);
+
+    // Stopped: nothing more reaches the window.
+    expect(
+      await main.invoke("ajour:set-logs-tail", undefined, 7, null),
+    ).toEqual({ id: 7, subscribed: false });
+    main.send("ajour:forward-wide-events", undefined, {
+      events: [rendererEvent({ span_id: "b7ad6b7169203332" })],
+      unsent_event_count: 0,
+    });
+    await main.localLogs.flush();
+    expect(tailPushes()).toHaveLength(1);
   });
 });
