@@ -70,6 +70,21 @@ ipcRenderer.on("ajour:wide-events-forwarding", (_event, forwarding) => {
   }
 });
 
+// The diagnostics viewer's tails of the local log file (#442). Each has its
+// own number, and main sends its events on `ajour:logs-tail-events` as they
+// are written. A reload starts over: main ends the page's tails.
+let nextLogsTail = 1;
+const logsTails = new Map();
+ipcRenderer.on("ajour:logs-tail-events", (_event, id, events) => {
+  const callback = logsTails.get(id);
+  if (!callback) return;
+  try {
+    callback(events);
+  } catch {
+    // One tail's failure never stops the others.
+  }
+});
+
 const desktopApi = {
   bootstrapLocalState,
   runtime,
@@ -185,6 +200,29 @@ const desktopApi = {
     invoke("ajour:configure-logs", settings, ...traced(trace)),
   deleteAllLogs: (trace) => invoke("ajour:delete-all-logs", ...traced(trace)),
   openLogsFolder: (trace) => invoke("ajour:open-logs-folder", ...traced(trace)),
+  queryLogs: (filter, page, trace) =>
+    invoke("ajour:query-logs", filter, page, ...traced(trace)),
+  getLogTrace: (traceId, trace) =>
+    invoke("ajour:get-log-trace", traceId, ...traced(trace)),
+  listLogActions: (filter, page, trace) =>
+    invoke("ajour:list-log-actions", filter, page, ...traced(trace)),
+  aggregateLogs: (options, trace) =>
+    invoke("ajour:aggregate-logs", options, ...traced(trace)),
+  // Resolves with how to stop the tail once main follows it.
+  tailLogs: (filter, callback, trace) => {
+    const id = nextLogsTail;
+    nextLogsTail += 1;
+    logsTails.set(id, callback);
+    return invoke("ajour:set-logs-tail", id, filter ?? {}, ...traced(trace))
+      .then(() => () => {
+        if (!logsTails.delete(id)) return;
+        invoke("ajour:set-logs-tail", id, null).catch(() => undefined);
+      })
+      .catch((error) => {
+        logsTails.delete(id);
+        throw error;
+      });
+  },
   forwardWideEvents: (batch) =>
     ipcRenderer.send("ajour:forward-wide-events", batch),
   onWideEventsForwarding: (callback) => {
