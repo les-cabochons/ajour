@@ -144,6 +144,14 @@ const IPC_CHANNELS = {
     mode: "message",
     record: "failures",
   },
+  // The diagnostics viewer's reads of the local log file (#442), answered by
+  // local-log-query.cjs. A tail's events go to the window on
+  // `ajour:logs-tail-events`, which, like every push, needs no entry.
+  "ajour:query-logs": { event: "logs.query", mode: "invoke" },
+  "ajour:get-log-trace": { event: "logs.trace", mode: "invoke" },
+  "ajour:list-log-actions": { event: "logs.actions", mode: "invoke" },
+  "ajour:aggregate-logs": { event: "logs.aggregate", mode: "invoke" },
+  "ajour:set-logs-tail": { event: "logs.tail", mode: "invoke" },
   // The one channel of a plugin's hidden page, not the window's
   // (plugin-renderer-runtime.cjs).
   "ajour:plugin-renderer": {

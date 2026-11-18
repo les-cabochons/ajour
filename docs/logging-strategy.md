@@ -387,6 +387,77 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
 - **One writer.** Only the process that holds the single instance lock opens
   the file. The one that lost the lock has no file sink, so its
   `app.lock_refused` goes to the console sink alone.
+- **The viewer's reads** (#442). The renderer never reads a day file.
+  Main's query service (`apps/desktop/electron/local-log-query.cjs`)
+  answers five IPC channels, each through the IPC wrapper with its own
+  event, whether logging is on now or not:
+  - `ajour:query-logs` (`logs.query`): the events that pass a filter, newest
+    first by `started_at`, a page of at most 500 (100 by default) with a
+    cursor for the next. The filter takes a time range (`from` inclusive,
+    `to` exclusive, ISO 8601 UTC), `launch_id`, `runtime`, `kind`,
+    `outcome` (or `problems`: anything not `ok` or `noop`), `name` or
+    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`. A day file
+    holds what was written that day, and an event is written when it ends,
+    so a range also reads the day after its end, for an event that started
+    in the range and ended after midnight; that day isn't counted missing.
+  - `ajour:get-log-trace` (`logs.trace`): every event with a `trace_id`,
+    across runtimes, as a tree built from `parent_span_id`. A span whose
+    parent is in no file is a root, marked `missing_parent`. The failed span
+    deepest in the tree is marked `deepest_failure`, the first to start of
+    those equally deep. Every day file is searched once, since a long
+    trace's spans can be days apart. The days past the 31 indexes kept are
+    first searched for the trace ID's text and indexed only when they hold
+    it.
+  - `ajour:list-log-actions` (`logs.actions`): one row per trace root, a
+    span with no parent, newest first, with its trace's span and problem
+    counts and runtimes. `show` is `all`, `failed` (a span of its trace
+    didn't end `ok` or `noop`) or `slow` (it took its name's p95 or longer
+    among that name's roots that started inside the range, `from` and `to`
+    both; a name needs two such roots for a p95, so a run alone is never
+    slow).
+  - `ajour:aggregate-logs` (`logs.aggregate`): the Overview, over this
+    launch, 24 hours or 7 days: counts by name, outcome and
+    `outcome_reason`; problems per hour by outcome, one bucket per hour of
+    the range; p50 and p95 `duration_ms` per name; the latest `app.launch`,
+    whose `launch` fields are its phases; and the crash events, the first
+    100 of them, newest first.
+  - `ajour:set-logs-tail` (`logs.tail`): starts tail `id` of the window with
+    a filter (no range), or stops it with `null`. Main hands each append the
+    file writes to the tails (`LocalLogFile.onWrite`) and pushes what passes
+    to the window on `ajour:logs-tail-events`: a push, not a poll, and it
+    emits nothing. No tail delivers the viewer's own reads, so a viewer that
+    refreshes as its tail delivers doesn't feed the tail. A window holds at
+    most 8 tails, and loading another page or closing ends them.
+  - **Nothing it passes is a path.** Each filter, page and range is a closed
+    shape: a key main doesn't know, a non-plain object or a value outside its
+    format or set refuses the call with `invalid_query`. Main builds every
+    file it opens from a UTC day, `<folder>/YYYY-MM-DD.ndjson`, and reads
+    only regular files with that name, so the renderer can't make it read
+    outside the log folder or run an expression.
+  - **An index per day file.** The first read of a day indexes its lines:
+    the fields the filters read and where each line is. Later reads only
+    check the file's size and time: one that grew is read past what the
+    index holds, and one that shrank or was replaced is indexed again. A
+    line still being
+    written waits for its end. The events answered are read from their
+    lines. The 31 days read last keep their index. Over 7 days of 6,000
+    events each, the 7-day query answers from the index in about 20 ms on a
+    dev machine; indexing the days first takes about 220 ms. A range's days
+    come from one listing of the folder, and the days with no file are
+    counted, not looked for one by one.
+  - **An event is read once.** An event is its `runtime`, `trace_id` and
+    `span_id`. A quit can write the same event twice (its drain rewrites a
+    batch whose append may have started), always in the same day file, so
+    each day's index keeps the first line of an event and reads past the
+    rest: no query, row, count or trace shows it twice. The renderer picks
+    its own IDs, so a renderer event that reuses a main or API event's IDs
+    is a second event beside it, never in its place. In a trace, a
+    `parent_span_id` that several runtimes' spans share is the child's own
+    runtime's span, then main's or the API's before the renderer's.
+  - **Nothing fails a read.** A line that isn't an event, and a day the range
+    asks for with no file, are skipped and counted, as
+    `skipped_line_count` and `missing_file_count` in the answer and the
+    event.
 
 Remote exporters, such as Grafana and Application Insights, will be more
 sinks behind the same contract, each with its own sensitive fields setting.
@@ -834,6 +905,7 @@ item's.
 | `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure`                                                 | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, the catalog marks `not_available`, an unsigned install while unsigned installs are off is `unsigned_not_allowed` (`confirmUnsignedInstall` in main.cjs, which also records `plugin.signed`), and the plugin host marks an install it refuses while plugin operations run `busy` (`PLUGIN_HOST_BUSY` in `apps/api/src/plugin-host.ts`). A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
 | `context_menu.show`                                                                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `logs.status`, `logs.configure`, `logs.delete_all`, `logs.open_folder`, `logs.sweep`                                               | `local-logs.cjs`: the local log file's IPC channels, with its state, the settings saved and what a deletion removed; and each retention sweep, at launch, hourly or when a limit changes, with what it deleted and what is left. Never a path. Both `logs.status` and `logs.sweep` count what the renderer forwarded since launch, in `logs.forwarded`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `logs.query`, `logs.trace`, `logs.actions`, `logs.aggregate`, `logs.tail`                                                          | `local-log-query.cjs`: the diagnostics viewer's reads of the local log file (#442), with the day files read, the days the range asked for that had no file, the lines that weren't events, and how many events or actions matched and came back. Never the filter, a path or what was answered. `invalid_query` refuses a filter outside its closed shape. `logs.tail` starts or stops a tail; what a tail delivers emits nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `wide_events.forward`                                                                                                              | a batch of the renderer's events main did not take: from a sender other than the active window, or a call that failed. A batch it takes emits nothing (`record: "failures"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `local_state.recover`                                                                                                              | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
@@ -1000,11 +1072,16 @@ channel to read the event each emits.
 | `handoff.visibility`                 | request, job                            | route, client call                               |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
+| `logs.actions`                       | ipc                                     | IPC channel                                      |
+| `logs.aggregate`                     | ipc                                     | IPC channel                                      |
 | `logs.configure`                     | command, ipc                            | IPC channel                                      |
 | `logs.delete_all`                    | command, ipc                            | IPC channel                                      |
 | `logs.open_folder`                   | ipc                                     | IPC channel                                      |
+| `logs.query`                         | ipc                                     | IPC channel                                      |
 | `logs.status`                        | ipc                                     | IPC channel                                      |
 | `logs.sweep`                         | job                                     | main process                                     |
+| `logs.tail`                          | ipc                                     | IPC channel                                      |
+| `logs.trace`                         | ipc                                     | IPC channel                                      |
 | `mcp.configure`                      | command, request                        | route, client call                               |
 | `mcp.request`                        | request                                 | local API                                        |
 | `mcp.status`                         | command, request                        | route, client call                               |

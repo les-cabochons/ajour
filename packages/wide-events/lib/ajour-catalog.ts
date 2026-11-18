@@ -86,6 +86,23 @@ const forwardedFields = {
   unsent_event_count: operational<number>(),
 } as const;
 
+/**
+ * What a diagnostics viewer's read of the local log file read (#442): never
+ * its filter, which can hold IDs, nor what it answered.
+ */
+const logReadFields = {
+  /** Day files read. */
+  file_count: operational<number>(),
+  /** Days the range asked for that had no day file. */
+  missing_file_count: operational<number>(),
+  /** Lines that weren't events, in the day files read. */
+  skipped_line_count: operational<number>(),
+  /** Events, or actions, that passed the filter, on every page. */
+  match_count: operational<number>(),
+  /** Events, or actions, this page answered. */
+  result_count: operational<number>(),
+} as const;
+
 /** An HTTP method, from a closed set: any other is `other`. */
 export type HttpMethod =
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
@@ -1773,6 +1790,70 @@ export const catalog = defineCatalog({
       kinds: ["ipc"],
       reasons: ["foreign_sender"],
       fields: { ipc: ipcFields },
+    },
+    /**
+     * The diagnostics viewer's reads of the local log file (#442), through
+     * main's query service (local-log-query.cjs). `invalid_query`: the
+     * filter held a key, or a value, outside its closed shape.
+     */
+    "logs.query": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "invalid_query"],
+      fields: { ipc: ipcFields, logs: logReadFields },
+    },
+    /** One trace's events, as a tree of spans. */
+    "logs.trace": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "invalid_query"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          ...logReadFields,
+          runtime_count: operational<number>(),
+          has_failure: operational<boolean>(),
+        },
+      },
+    },
+    /** The trace roots, one row per action: all, failed or slow. */
+    "logs.actions": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "invalid_query"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          ...logReadFields,
+          show: operational<"all" | "failed" | "slow">(),
+        },
+      },
+    },
+    /** The Overview's counts, problems, durations, launch and crashes. */
+    "logs.aggregate": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "invalid_query"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          ...logReadFields,
+          range: operational<"launch" | "24h" | "7d">(),
+          crash_count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * Starting or stopping a tail of the local log file. What a tail
+     * delivers emits nothing, and no tail delivers the viewer's own reads.
+     */
+    "logs.tail": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "invalid_query"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          subscribed: operational<boolean>(),
+          /** The window's tails after the call. */
+          tail_count: operational<number>(),
+        },
+      },
     },
     /** An application update check, asked for or on its schedule. */
     "update.check": {

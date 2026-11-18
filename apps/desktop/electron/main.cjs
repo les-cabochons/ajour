@@ -101,6 +101,10 @@ const {
 } = require("./keep-running.cjs");
 const { createLocalLogs } = require("./local-logs.cjs");
 const {
+  createLocalLogQuery,
+  INVALID_LOG_QUERY,
+} = require("./local-log-query.cjs");
+const {
   loadDesktopBootstrapLocalState,
 } = require("./local-state-bootstrap.cjs");
 const {
@@ -1424,6 +1428,142 @@ async function configureDevelopmentPluginDirectories(unit, directories) {
     });
   }
 }
+
+// The diagnostics viewer's reads of the local log file (#442). The renderer
+// never reads a day file: it asks for events, a trace, the actions, the
+// Overview's figures or a tail, and the query service answers from the day
+// files in userData/logs/events, whether logging is on now or not. Nothing
+// the renderer passes is a path (local-log-query.cjs).
+const localLogQuery = createLocalLogQuery({
+  directory: path.join(app.getPath("userData"), "logs", "events"),
+  launch: {
+    launch_id: launch.launch_id,
+    started_at_ms: Math.round(performance.timeOrigin),
+  },
+});
+// What the log file writes goes to the tails, and emits nothing: a tail
+// doesn't write what it delivers.
+void localLogs.file.then((logFile) =>
+  logFile?.onWrite((lines) => localLogQuery.written(lines)),
+);
+
+/** What one of the viewer's reads read, for its event: never its filter. */
+function logReadFields(result, resultCount) {
+  return {
+    file_count: result.file_count,
+    missing_file_count: result.missing_file_count,
+    skipped_line_count: result.skipped_line_count,
+    ...(typeof result.match_count === "number"
+      ? { match_count: result.match_count }
+      : {}),
+    result_count: resultCount,
+  };
+}
+
+/**
+ * Runs one of the viewer's calls for the active window. A filter outside
+ * its closed shape refuses the call as `invalid_query`.
+ */
+async function readLocalLogs(event, read) {
+  assertActiveDesktopWindow(event, "read the logs");
+  const unit = events.current();
+  try {
+    return await read(unit);
+  } catch (error) {
+    if (error?.code === INVALID_LOG_QUERY) unit?.refuse("invalid_query");
+    throw error;
+  }
+}
+
+ipc.handle("ajour:query-logs", (event, filter, page) =>
+  readLocalLogs(event, async (unit) => {
+    const result = await localLogQuery.query(filter, page);
+    unit?.set({ logs: logReadFields(result, result.events.length) });
+    return result;
+  }),
+);
+
+ipc.handle("ajour:get-log-trace", (event, traceId) =>
+  readLocalLogs(event, async (unit) => {
+    const result = await localLogQuery.trace(traceId);
+    unit?.set({
+      logs: {
+        ...logReadFields(result, result.event_count),
+        runtime_count: result.runtimes.length,
+        has_failure: result.deepest_failure_span_id !== null,
+      },
+    });
+    return result;
+  }),
+);
+
+ipc.handle("ajour:list-log-actions", (event, filter, page) =>
+  readLocalLogs(event, async (unit) => {
+    const result = await localLogQuery.actions(filter, page);
+    unit?.set({
+      logs: {
+        ...logReadFields(result, result.actions.length),
+        show: result.show,
+      },
+    });
+    return result;
+  }),
+);
+
+ipc.handle("ajour:aggregate-logs", (event, options) =>
+  readLocalLogs(event, async (unit) => {
+    const result = await localLogQuery.aggregate(options);
+    unit?.set({
+      logs: {
+        ...logReadFields(result, result.counts.length),
+        range: result.range,
+        crash_count: result.crash_count,
+      },
+    });
+    return result;
+  }),
+);
+
+/** The windows whose tails end when they close or load another page. */
+const logTailOwners = new WeakSet();
+
+function endLogTailsWithPage(owner) {
+  if (logTailOwners.has(owner) || typeof owner?.on !== "function") return;
+  logTailOwners.add(owner);
+  owner.on("destroyed", () => localLogQuery.dropOwner(owner));
+  owner.on("did-start-navigation", (navigation) => {
+    if (navigation?.isMainFrame !== false && !navigation?.isSameDocument) {
+      localLogQuery.dropOwner(owner);
+    }
+  });
+}
+
+// Starts tail `id` of the window with `filter`, or stops it when `filter` is
+// null. Its events reach the window on `ajour:logs-tail-events`, as they are
+// written: a push, so following the tail emits nothing.
+ipc.handle("ajour:set-logs-tail", (event, id, filter) =>
+  readLocalLogs(event, async (unit) => {
+    const owner = event.sender;
+    const subscribed = filter !== null;
+    if (subscribed) {
+      endLogTailsWithPage(owner);
+      localLogQuery.subscribe(owner, id, filter, (delivered) => {
+        if (!owner.isDestroyed?.()) {
+          owner.send("ajour:logs-tail-events", id, delivered);
+        }
+      });
+    } else {
+      localLogQuery.unsubscribe(owner, id);
+    }
+    unit?.set({
+      logs: {
+        subscribed,
+        tail_count: localLogQuery.subscriptionCount(owner),
+      },
+    });
+    return { id, subscribed };
+  }),
+);
 
 /** Runs a registry action in the renderer, such as "time.day-view". */
 function sendMenuAction(action) {
