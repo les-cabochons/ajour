@@ -111,6 +111,18 @@ export function SettingsPageSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageSkeleton />}>{children}</Suspense>;
 }
 
+/**
+ * The location the Settings window opens for `location`: General in place
+ * of Diagnostics when this window has no log file (the web build, #438).
+ */
+export function shownSettingsLocation(
+  location: SettingsLocation,
+): SettingsLocation {
+  return location.page === "diagnostics" && !hasLocalLogsBridge()
+    ? { page: "general", search: {} }
+    : location;
+}
+
 /** The page at a settings location, or null when no page lives there. */
 export function settingsPageElement(location: SettingsLocation) {
   const { page, search } = location;

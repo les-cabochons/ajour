@@ -23,6 +23,7 @@ import {
   SettingsCalendarPage,
   SettingsDebugPage,
   SettingsDiagnosticsPage,
+  shownSettingsLocation,
   SettingsGeneralPage,
   SettingsMcpPage,
   SettingsPluginsPage,
@@ -251,9 +252,11 @@ const settingsRoute = createRoute({
     if (isNarrowView()) return;
     const window = settingsWindowRedirect(
       getLastAppLocation(),
-      settingsLocationOf(
-        location.pathname,
-        location.search as Record<string, unknown>,
+      shownSettingsLocation(
+        settingsLocationOf(
+          location.pathname,
+          location.search as Record<string, unknown>,
+        ),
       ),
     );
     throw redirect({

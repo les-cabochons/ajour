@@ -12,7 +12,7 @@ import type { DesktopLogsStatus } from "@/lib/desktop-bridge";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import { SettingsNavigation } from "./settings-navigation";
 import { SettingsDiagnosticsPage } from "./settings-diagnostics-page";
-import { settingsPageElement } from "./settings-pages";
+import { settingsPageElement, shownSettingsLocation } from "./settings-pages";
 
 /*
  * Settings > Diagnostics against a bridge that behaves as main does (#441):
@@ -405,6 +405,17 @@ describe("the web build", () => {
   it("has no Diagnostics page: the Settings window falls back to General", () => {
     expect(settingsPageElement({ page: "diagnostics", search: {} })).toBeNull();
     expect(settingsPageElement({ page: "general", search: {} })).not.toBeNull();
+  });
+
+  it("opens a Diagnostics link in the Settings window on General", () => {
+    expect(shownSettingsLocation({ page: "diagnostics", search: {} })).toEqual({
+      page: "general",
+      search: {},
+    });
+    installMain();
+    expect(
+      shownSettingsLocation({ page: "diagnostics", search: {} }).page,
+    ).toBe("diagnostics");
   });
 });
 
