@@ -21,6 +21,13 @@ const path = require("node:path");
  * events themselves are read from the file for the page answered. A line
  * that isn't an event is skipped and counted, as is a day the range asks for
  * that has no file; neither fails the call.
+ *
+ * An event is its runtime, trace_id and span_id. A quit can write the same
+ * event twice (its drain rewrites a batch whose append may have started), so
+ * a day's index keeps the first line of each and reads past the others. The
+ * writer picks a line's day file when it queues it, so both copies are in one
+ * file. The renderer picks its own IDs, so its event never hides a main or
+ * API event that shares them.
  */
 
 const INVALID_LOG_QUERY = "invalid_log_query";
@@ -63,7 +70,10 @@ const MAX_PAGE_SIZE = 500;
 const MAX_INDEXED_DAYS = 31;
 /** How much of a day file is read at a time while indexing. */
 const READ_CHUNK_BYTES = 1024 * 1024;
-/** Fewer roots of a name than this have no p95 to call one slow. */
+/**
+ * Fewer roots of a name in the range than this have no p95 to call one
+ * slow: a name run once or a few times is never slow.
+ */
 const MIN_SLOW_SAMPLES = 20;
 /** The crashes the Overview lists, newest first. */
 const MAX_CRASHES = 100;
@@ -250,16 +260,8 @@ function dayOfFile(name) {
   return Number.isFinite(start) && dayOf(start) === day ? day : undefined;
 }
 
-/** Every UTC day from `from`'s to `to`'s, newest first. */
-function daysBetween(from, to) {
-  const days = [];
-  const first = Date.parse(`${dayOf(from)}T00:00:00.000Z`);
-  for (let time = Date.parse(`${dayOf(to)}T00:00:00.000Z`); time >= first;) {
-    days.push(dayOf(time));
-    time -= DAY_MS;
-  }
-  return days;
-}
+/** The epoch time a UTC day starts. */
+const startOfDay = (day) => Date.parse(`${day}T00:00:00.000Z`);
 
 /** The nearest-rank percentile of sorted values. */
 function percentile(sorted, fraction) {
@@ -411,6 +413,12 @@ function createLocalLogQuery({
       index.skipped += 1;
       return;
     }
+    // The same event written twice is read once.
+    const key = `${entry.runtime}
+${entry.trace}
+${entry.span}`;
+    if (index.keys.has(key)) return;
+    index.keys.add(key);
     entry.day = index.day;
     entry.line = index.entries.length;
     entry.offset = offset;
@@ -430,6 +438,8 @@ function createLocalLogQuery({
       mtimeMs: -1,
       entries: [],
       byTrace: new Map(),
+      /** Each event's runtime, trace_id and span_id, to read a copy once. */
+      keys: new Set(),
       skipped: 0,
       intern: createInterner(),
     };
@@ -482,20 +492,36 @@ function createLocalLogQuery({
 
   /**
    * The indexes of the days a range covers, newest first, and what reading
-   * them skipped. Without a start, every day file up to the range's end.
+   * them skipped. Without a start, every day file up to the range's end. A
+   * day file holds what was written that day, and an event is written when
+   * it ends, so one that started before midnight and ended after it is in
+   * the next day's file: the day after the range's end is read too, when it
+   * has a file, and isn't counted missing when it has none. The callers
+   * apply the range to each entry.
    */
   async function indexesFor(from, to) {
     const end = to ?? now();
-    const days =
-      from === undefined
-        ? (await listedDays()).filter((day) => day <= dayOf(end))
-        : daysBetween(from, end);
+    const lastDay = dayOf(end);
+    const dayAfter = dayOf(startOfDay(lastDay) + DAY_MS);
+    const firstDay = from === undefined ? undefined : dayOf(from);
+    const listed = await listedDays();
     const found = [];
     let missing = 0;
-    for (const day of days) {
+    for (const day of listed) {
+      if (day > dayAfter || (firstDay !== undefined && day < firstDay)) {
+        continue;
+      }
       const index = await indexOf(day);
       if (index) found.push(index);
-      else missing += 1;
+      else if (day !== dayAfter) missing += 1;
+    }
+    // The days asked for with no file in the folder, counted, not listed.
+    if (firstDay !== undefined) {
+      const asked = (startOfDay(lastDay) - startOfDay(firstDay)) / DAY_MS + 1;
+      const listedAsked = listed.filter(
+        (day) => day >= firstDay && day <= lastDay,
+      ).length;
+      missing += asked - listedAsked;
     }
     return {
       indexes: found,
@@ -597,9 +623,47 @@ function createLocalLogQuery({
   }
 
   /**
+   * Whether the day file holds `text` anywhere, read in chunks without
+   * parsing a line; undefined when it can't be read.
+   */
+  async function fileHolds(day, text) {
+    let handle;
+    try {
+      handle = await fs.open(fileOf(day), "r");
+    } catch {
+      return undefined;
+    }
+    try {
+      const needle = Buffer.from(text);
+      let carry = Buffer.alloc(0);
+      for (let position = 0; ;) {
+        const chunk = Buffer.alloc(READ_CHUNK_BYTES);
+        const { bytesRead } = await handle.read(
+          chunk,
+          0,
+          chunk.length,
+          position,
+        );
+        if (bytesRead === 0) return false;
+        const buffer = Buffer.concat([carry, chunk.subarray(0, bytesRead)]);
+        if (buffer.includes(needle)) return true;
+        carry = Buffer.from(buffer.subarray(-(needle.length - 1)));
+        position += bytesRead;
+      }
+    } catch {
+      return undefined;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
    * logs.trace: every event of the trace, from any runtime, as a tree built
-   * from `parent_span_id`. The day files are searched newest first; the
-   * trace's days are the first that holds it and the days on either side.
+   * from `parent_span_id`. Each day file is searched once, since a span is
+   * written the day it ends and a long trace's days need not be next to each
+   * other. The days past the indexes kept are searched for the trace's ID
+   * first and indexed only when they hold it, so a long retention doesn't
+   * push the recent days out of memory.
    */
   async function trace(traceValue) {
     const traceId = formatted(traceValue, TRACE_ID, "trace_id");
@@ -608,36 +672,34 @@ function createLocalLogQuery({
     const entries = [];
     let skipped = 0;
     let fileCount = 0;
-    let hit = -1;
     for (let position = 0; position < days.length; position += 1) {
-      const index = await indexOf(days[position]);
+      const day = days[position];
+      if (position >= MAX_INDEXED_DAYS && !indexes.has(day)) {
+        const holds = await fileHolds(day, traceId);
+        if (holds === undefined) continue;
+        if (!holds) {
+          fileCount += 1;
+          continue;
+        }
+      }
+      const index = await indexOf(day);
       if (!index) continue;
       fileCount += 1;
       skipped += index.skipped;
-      const spans = index.byTrace.get(traceId);
-      if (spans) {
-        entries.push(...spans);
-        hit = position;
-        break;
-      }
-    }
-    if (hit !== -1) {
-      for (const position of [hit - 1, hit + 1]) {
-        const day = days[position];
-        const index = day === undefined ? undefined : await indexOf(day);
-        if (!index) continue;
-        fileCount += 1;
-        skipped += index.skipped;
-        entries.push(...(index.byTrace.get(traceId) ?? []));
-      }
+      entries.push(...(index.byTrace.get(traceId) ?? []));
     }
     entries.sort(oldestFirst);
     const read = await eventsOf(entries);
-    const nodes = new Map();
+    const seen = new Set();
+    /** Span ID → the nodes with it: one per runtime that used it. */
+    const bySpan = new Map();
     const ordered = [];
     for (const entry of entries) {
       const event = read.eventOf(entry);
-      if (!event || nodes.has(entry.span)) continue;
+      const key = `${entry.runtime}
+${entry.span}`;
+      if (!event || seen.has(key)) continue;
+      seen.add(key);
       const node = {
         event,
         depth: 0,
@@ -646,17 +708,33 @@ function createLocalLogQuery({
         children: [],
         entry,
       };
-      nodes.set(entry.span, node);
+      const sharing = bySpan.get(entry.span);
+      if (sharing) sharing.push(node);
+      else bySpan.set(entry.span, [node]);
       ordered.push(node);
     }
+    // A parent is found by its span ID. When runtimes share one, the child's
+    // own runtime's span is its parent, then main's or the API's: the
+    // renderer picks its own IDs, so its span never takes another's child.
+    const parentOf = (node) => {
+      const candidates = (bySpan.get(node.entry.parent) ?? []).filter(
+        (candidate) => candidate !== node,
+      );
+      return (
+        candidates.find(({ entry }) => entry.runtime === node.entry.runtime) ??
+        candidates.find(({ entry }) => entry.runtime !== "renderer") ??
+        candidates[0]
+      );
+    };
+    const parents = new Map();
     const roots = [];
     for (const node of ordered) {
       const parent =
-        node.entry.parent === undefined
-          ? undefined
-          : nodes.get(node.entry.parent);
-      if (parent && parent !== node) parent.children.push(node);
-      else {
+        node.entry.parent === undefined ? undefined : parentOf(node);
+      if (parent) {
+        parents.set(node, parent);
+        parent.children.push(node);
+      } else {
         node.missing_parent = node.entry.parent !== undefined;
         roots.push(node);
       }
@@ -678,7 +756,7 @@ function createLocalLogQuery({
     roots.forEach(walk);
     for (const node of ordered) {
       if (visited.has(node)) continue;
-      const parent = nodes.get(node.entry.parent);
+      const parent = parents.get(node);
       parent.children = parent.children.filter((child) => child !== node);
       node.missing_parent = true;
       node.depth = 0;
@@ -735,7 +813,11 @@ function createLocalLogQuery({
         traceStats.spans += 1;
         if (isProblem(entry.outcome)) traceStats.problems += 1;
         if (entry.parent === undefined) {
-          if (filter.from === undefined || entry.started >= filter.from) {
+          // The p95 is over the name's roots that started in the range.
+          if (
+            (filter.from === undefined || entry.started >= filter.from) &&
+            (filter.to === undefined || entry.started < filter.to)
+          ) {
             const list = durations.get(entry.name) ?? [];
             list.push(entry.duration);
             durations.set(entry.name, list);

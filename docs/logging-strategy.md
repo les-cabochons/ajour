@@ -396,18 +396,25 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     cursor for the next. The filter takes a time range (`from` inclusive,
     `to` exclusive, ISO 8601 UTC), `launch_id`, `runtime`, `kind`,
     `outcome` (or `problems`: anything not `ok` or `noop`), `name` or
-    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`.
+    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`. A day file
+    holds what was written that day, and an event is written when it ends,
+    so a range also reads the day after its end, for an event that started
+    in the range and ended after midnight; that day isn't counted missing.
   - `ajour:get-log-trace` (`logs.trace`): every event with a `trace_id`,
     across runtimes, as a tree built from `parent_span_id`. A span whose
     parent is in no file is a root, marked `missing_parent`. The failed span
     deepest in the tree is marked `deepest_failure`, the first to start of
-    those equally deep. The trace's days are the newest that holds it and
-    the days on either side.
+    those equally deep. Every day file is searched once, since a long
+    trace's spans can be days apart. The days past the 31 indexes kept are
+    first searched for the trace ID's text and indexed only when they hold
+    it.
   - `ajour:list-log-actions` (`logs.actions`): one row per trace root, a
     span with no parent, newest first, with its trace's span and problem
     counts and runtimes. `show` is `all`, `failed` (a span of its trace
     didn't end `ok` or `noop`) or `slow` (it took its name's p95 or longer
-    among that name's roots in the range; a name needs 20 roots for a p95).
+    among that name's roots that started inside the range, `from` and `to`
+    both; a name needs 20 such roots for a p95, so a run alone or one of a
+    few is never slow).
   - `ajour:aggregate-logs` (`logs.aggregate`): the Overview, over this
     launch, 24 hours or 7 days: counts by name, outcome and
     `outcome_reason`; problems per hour by outcome, one bucket per hour of
@@ -434,8 +441,19 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     line still being
     written waits for its end. The events answered are read from their
     lines. The 31 days read last keep their index. Over 7 days of 6,000
-    events each, a query that finds its days indexed answers in about 20 ms
-    on a dev machine; indexing them first takes about 200 ms.
+    events each, the 7-day query answers from the index in about 20 ms on a
+    dev machine; indexing the days first takes about 220 ms. A range's days
+    come from one listing of the folder, and the days with no file are
+    counted, not looked for one by one.
+  - **An event is read once.** An event is its `runtime`, `trace_id` and
+    `span_id`. A quit can write the same event twice (its drain rewrites a
+    batch whose append may have started), always in the same day file, so
+    each day's index keeps the first line of an event and reads past the
+    rest: no query, row, count or trace shows it twice. The renderer picks
+    its own IDs, so a renderer event that reuses a main or API event's IDs
+    is a second event beside it, never in its place. In a trace, a
+    `parent_span_id` that several runtimes' spans share is the child's own
+    runtime's span, then main's or the API's before the renderer's.
   - **Nothing fails a read.** A line that isn't an event, and a day the range
     asks for with no file, are skipped and counted, as
     `skipped_line_count` and `missing_file_count` in the answer and the

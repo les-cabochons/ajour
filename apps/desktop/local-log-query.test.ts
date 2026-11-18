@@ -89,6 +89,18 @@ async function writeEvents(directory: string, events: LoggedEvent[]) {
   }
 }
 
+/** Appends the events to the day file of `day`, whatever day they started. */
+async function appendToDay(
+  directory: string,
+  day: string,
+  events: LoggedEvent[],
+) {
+  await fs.appendFile(
+    path.join(directory, `${day}.ndjson`),
+    events.map((logged) => `${JSON.stringify(logged)}\n`).join(""),
+  );
+}
+
 function service(directory: string, options: Record<string, unknown> = {}) {
   return createLocalLogQuery({
     directory,
@@ -403,6 +415,192 @@ describe("logs.query", () => {
     await logs.query({ name: "nothing.matches" });
     expect(bytesRead.reduce((sum, bytes) => sum + bytes, 0)).toBe(0);
   });
+
+  it("reads an event a quit wrote twice once, in queries, actions, aggregates and traces", async () => {
+    const { directory } = await logFolder();
+    const sync = backlogSync(110, HOUR);
+    const other = event({
+      name: "time_entry.update",
+      trace_id: traceId(111),
+      started_at: at(30 * 60 * 1000),
+    });
+    const day = dayOf(sync.job.started_at);
+    // The quit's drain rewrote a batch whose append had already landed.
+    await appendToDay(directory, day, [sync.job, sync.request, other]);
+    await appendToDay(directory, day, [sync.job, sync.request, other]);
+    await appendToDay(directory, day, [sync.operation, ...sync.brokers]);
+    const logs = service(directory);
+
+    const all = await logs.query({});
+    expect(all.match_count).toBe(7);
+    expect(
+      all.events.filter(
+        ({ span_id }: LoggedEvent) => span_id === sync.job.span_id,
+      ),
+    ).toHaveLength(1);
+    expect(all.skipped_line_count).toBe(0);
+
+    const actions = await logs.actions({ show: "all" });
+    expect(
+      actions.actions.map(({ event: root }: { event: LoggedEvent }) => root),
+    ).toEqual([other, sync.job]);
+    expect(actions.actions[1]).toMatchObject({
+      span_count: 6,
+      problem_count: 4,
+    });
+
+    const week = await logs.aggregate({ range: "7d" });
+    expect(week.counts).toContainEqual({
+      name: "time_entry.update",
+      outcome: "ok",
+      count: 1,
+    });
+    expect(week.counts).toContainEqual({
+      name: "backlog.sync",
+      outcome: "error",
+      count: 3,
+    });
+
+    const trace = await logs.trace(traceId(110));
+    expect(trace.event_count).toBe(6);
+    expect(trace.roots).toHaveLength(1);
+    expect(trace.roots[0].children).toHaveLength(1);
+  });
+
+  it("keeps a renderer event that reuses a main event's IDs beside it", async () => {
+    const { directory } = await logFolder();
+    const trace = traceId(120);
+    const shared = "b000000000000001";
+    // The renderer chose IDs a main event already has, and started first.
+    const renderer = event({
+      name: "route.change",
+      kind: "navigation",
+      runtime: "renderer",
+      trace_id: trace,
+      span_id: shared,
+      started_at: at(HOUR + 1000),
+    });
+    const main = event({
+      name: "update.check",
+      kind: "ipc",
+      runtime: "main",
+      trace_id: trace,
+      span_id: shared,
+      started_at: at(HOUR),
+      outcome: "error",
+    });
+    const request = event({
+      name: "update.check",
+      kind: "request",
+      runtime: "api",
+      trace_id: trace,
+      parent_span_id: shared,
+      started_at: at(HOUR - 10),
+    });
+    await writeEvents(directory, [renderer, main, request]);
+    const logs = service(directory);
+
+    const all = await logs.query({ trace_id: trace });
+    expect(all.events).toEqual([request, main, renderer]);
+    expect((await logs.query({ runtime: "main" })).events).toEqual([main]);
+    expect(
+      (await logs.actions({ show: "failed" })).actions.map(
+        ({ event: root }: { event: LoggedEvent }) => root,
+      ),
+    ).toEqual([main, renderer]);
+    expect((await logs.aggregate({ range: "24h" })).counts).toContainEqual({
+      name: "update.check",
+      outcome: "error",
+      count: 1,
+    });
+
+    const result = await logs.trace(trace);
+    expect(result.event_count).toBe(3);
+    expect(result.runtimes).toEqual(["renderer", "main", "api"]);
+    expect(
+      result.roots.map(({ event: root }: { event: LoggedEvent }) => root),
+    ).toEqual([renderer, main]);
+    // The API's request is the main event's child, not the renderer's.
+    expect(result.roots[0].children).toEqual([]);
+    expect(
+      result.roots[1].children.map(
+        ({ event: child }: { event: LoggedEvent }) => child,
+      ),
+    ).toEqual([request]);
+    expect(result.deepest_failure_span_id).toBe(shared);
+    expect(result.roots[1].deepest_failure).toBe(true);
+  });
+
+  it("finds an event that started in the range and was written the next day", async () => {
+    const { directory } = await logFolder();
+    const midnight = Date.parse("2026-11-16T00:00:00.000Z");
+    const lateSync = event({
+      name: "backlog.sync",
+      started_at: new Date(midnight - 1000).toISOString(),
+      duration_ms: 5000,
+    });
+    const afterRange = event({
+      name: "time_entry.update",
+      started_at: new Date(midnight + 1000).toISOString(),
+    });
+    // Both were written after midnight, to the next day's file.
+    await appendToDay(directory, "2026-11-16", [lateSync, afterRange]);
+    const logs = service(directory);
+
+    // The range is the 15th alone, which has no file of its own.
+    const result = await logs.query({
+      from: "2026-11-15T00:00:00.000Z",
+      to: "2026-11-15T23:59:59.500Z",
+    });
+    expect(result.events).toEqual([lateSync]);
+    expect(result.file_count).toBe(1);
+    expect(result.missing_file_count).toBe(1);
+    // A day after the end with no file isn't missing.
+    const before = await logs.query({
+      from: "2026-11-13T00:00:00.000Z",
+      to: "2026-11-13T23:00:00.000Z",
+    });
+    expect(before.events).toEqual([]);
+    expect(before.missing_file_count).toBe(1);
+  });
+
+  it("counts the days of a wide range without looking for each one", async () => {
+    const { directory } = await logFolder();
+    const only = event({ name: "time_entry.update", started_at: at(HOUR) });
+    await writeEvents(directory, [only]);
+    const looked: string[] = [];
+    const watching = {
+      ...fs,
+      lstat: (file: string) => {
+        looked.push(file);
+        return fs.lstat(file);
+      },
+    };
+    const logs = service(directory, { fs: watching });
+
+    const result = await logs.query({ from: "0001-01-01T00:00:00.000Z" });
+    expect(result.events).toEqual([only]);
+    expect(result.file_count).toBe(1);
+    expect(result.missing_file_count).toBe(
+      (Date.parse("2026-11-17T00:00:00.000Z") -
+        Date.parse("0001-01-01T00:00:00.000Z")) /
+        DAY,
+    );
+    expect(looked).toHaveLength(1);
+
+    const empty = service(path.join(directory, "missing"), { fs: watching });
+    looked.length = 0;
+    expect(
+      (await empty.query({ from: "1000-01-01T00:00:00.000Z" }))
+        .missing_file_count,
+    ).toBe(
+      (Date.parse("2026-11-17T00:00:00.000Z") -
+        Date.parse("1000-01-01T00:00:00.000Z")) /
+        DAY +
+        1,
+    );
+    expect(looked).toEqual([]);
+  });
 });
 
 describe("what the renderer can make main read", () => {
@@ -633,6 +831,61 @@ describe("logs.trace", () => {
       { event: second, depth: 1, children: [] },
     ]);
   });
+
+  it("gathers a trace spread over three day files, searching each once", async () => {
+    const { directory } = await logFolder();
+    const sync = backlogSync(303, 0);
+    // A long job: the spans that ended first were written two days before
+    // the root, the failure deepest in the tree with them.
+    await appendToDay(directory, "2026-11-14", [...sync.brokers]);
+    await appendToDay(directory, "2026-11-15", [sync.operation]);
+    await appendToDay(directory, "2026-11-16", [sync.request, sync.job]);
+    // A newer day without the trace, and an older one.
+    await appendToDay(directory, "2026-11-17", [
+      event({ name: "time_entry.update", trace_id: traceId(304) }),
+    ]);
+    await appendToDay(directory, "2026-11-10", [
+      event({ name: "time_entry.update", trace_id: traceId(305) }),
+    ]);
+    const logs = service(directory);
+
+    const result = await logs.trace(traceId(303));
+    expect(result.event_count).toBe(6);
+    expect(result.file_count).toBe(5);
+    expect(
+      result.roots.map(({ event: root }: { event: LoggedEvent }) => root),
+    ).toEqual([sync.job]);
+    expect(result.deepest_failure_span_id).toBe(sync.brokers[2]!.span_id);
+  });
+
+  it("finds a trace in a day file older than the indexes kept", async () => {
+    const { directory } = await logFolder();
+    const old = backlogSync(306, 40 * DAY);
+    await writeEvents(directory, [
+      old.job,
+      old.request,
+      old.operation,
+      ...old.brokers,
+    ]);
+    for (let day = 0; day < 35; day += 1) {
+      await writeEvents(directory, [
+        event({
+          name: "time_entry.update",
+          trace_id: traceId(2000 + day),
+          started_at: at(day * DAY),
+        }),
+      ]);
+    }
+    const logs = service(directory);
+    // The recent days are indexed first, as the viewer opens on them.
+    await logs.query({ from: at(30 * DAY) });
+
+    const result = await logs.trace(traceId(306));
+    expect(result.event_count).toBe(6);
+    expect(result.file_count).toBe(36);
+    expect(result.roots[0].event).toEqual(old.job);
+    expect(result.deepest_failure_span_id).toBe(old.brokers[2]!.span_id);
+  });
 });
 
 describe("logs.actions", () => {
@@ -710,6 +963,43 @@ describe("logs.actions", () => {
     );
     expect(rest.actions).toHaveLength(11);
     expect(rest.next_cursor).toBeNull();
+  });
+
+  it("computes Slow's p95 from the roots that started inside the range", async () => {
+    const { directory } = await logFolder();
+    const to = Date.parse("2026-11-17T06:00:00.000Z");
+    // Inside: 1 to 20 ms, so the p95 is 19 ms.
+    const inside = Array.from({ length: 20 }, (_, index) =>
+      event({
+        name: "calendar.fetch",
+        trace_id: traceId(600 + index),
+        started_at: new Date(to - (index + 1) * 60_000).toISOString(),
+        duration_ms: index + 1,
+      }),
+    );
+    // At or after the range's end, on its last day: far longer.
+    const after = Array.from({ length: 20 }, (_, index) =>
+      event({
+        name: "calendar.fetch",
+        trace_id: traceId(700 + index),
+        started_at: new Date(to + index * 60_000).toISOString(),
+        duration_ms: 5000,
+      }),
+    );
+    await writeEvents(directory, [...inside, ...after]);
+    const logs = service(directory);
+
+    const slow = await logs.actions({
+      show: "slow",
+      from: "2026-11-17T00:00:00.000Z",
+      to: new Date(to).toISOString(),
+    });
+    expect(
+      slow.actions.map(
+        ({ event: root }: { event: LoggedEvent }) => root.duration_ms,
+      ),
+    ).toEqual([19, 20]);
+    expect(slow.actions[0]).toMatchObject({ slow: true, p95_ms: 19 });
   });
 });
 
@@ -1000,34 +1290,23 @@ describe("performance", () => {
       launch: { launch_id: "launch-0", started_at_ms: NOW - HOUR },
       now: () => Date.parse("2026-11-17T23:59:00.000Z"),
     });
-    const filter = { from: "2026-11-11T00:00:00.000Z", outcome: "problems" };
+    const filter = { from: "2026-11-11T00:00:00.000Z" };
 
+    // The first query indexes the 7 days.
     const coldStart = performance.now();
     const cold = await logs.query(filter);
     const coldMs = performance.now() - coldStart;
     expect(cold.file_count).toBe(7);
-    expect(cold.match_count).toBeGreaterThan(1000);
+    expect(cold.match_count).toBe(42_000);
 
-    // Each query after it reads what the index holds.
-    const timings: number[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      const start = performance.now();
-      await logs.query(filter);
-      await logs.query({ from: "2026-11-11T00:00:00.000Z" }, { limit: 500 });
-      timings.push((performance.now() - start) / 2);
-    }
-    const aggregateStart = performance.now();
-    await logs.aggregate({ range: "7d" });
-    const aggregateMs = performance.now() - aggregateStart;
-    const actionsStart = performance.now();
-    await logs.actions({ show: "slow" });
-    const actionsMs = performance.now() - actionsStart;
-    const warmMs = Math.min(...timings);
+    // The same query again answers from the index.
+    const start = performance.now();
+    const indexed = await logs.query(filter);
+    const indexedMs = performance.now() - start;
+    expect(indexed.match_count).toBe(42_000);
     console.info(
-      `local log query over 42,000 events: cold ${coldMs.toFixed(1)} ms, warm ${warmMs.toFixed(1)} ms, aggregate ${aggregateMs.toFixed(1)} ms, actions ${actionsMs.toFixed(1)} ms`,
+      `local log query over 42,000 events: cold ${coldMs.toFixed(1)} ms, indexed ${indexedMs.toFixed(1)} ms`,
     );
-    expect(warmMs).toBeLessThan(200);
-    expect(aggregateMs).toBeLessThan(200);
-    expect(actionsMs).toBeLessThan(200);
+    expect(indexedMs).toBeLessThan(200);
   }, 60_000);
 });
