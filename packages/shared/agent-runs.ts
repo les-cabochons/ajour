@@ -142,8 +142,8 @@ export const agentTurnSchema = z.object({
 });
 export type AgentTurn = z.infer<typeof agentTurnSchema>;
 
-/** What a waiting turn waits for: a timesheet task's run, or another turn. */
-export const agentTurnBlockerSchema = z.enum(["timesheet-task", "turn"]);
+/** What a waiting turn waits for: a plugin task's agent run, or another turn. */
+export const agentTurnBlockerSchema = z.enum(["agent-run", "turn"]);
 export type AgentTurnBlocker = z.infer<typeof agentTurnBlockerSchema>;
 
 /**
@@ -179,6 +179,11 @@ export const agentTurnEventSchema = z.discriminatedUnion("type", [
     outcome: z.enum(["done", "cancelled", "failed"]),
     /** Why a failed turn failed. */
     error: z.string().optional(),
+    /**
+     * The provider couldn't resume the conversation, so the turn started a
+     * new one: the agent no longer knows the earlier turns.
+     */
+    historyLost: z.literal(true).optional(),
   }),
   z.object({
     type: z.literal("conversation-closed"),

@@ -13,7 +13,10 @@ export const TEST_ORIGIN = "http://127.0.0.1:5173";
 export type LocalApiOptions = Omit<
   Parameters<typeof startAppApiServer>[0] & object,
   "port" | "statePath"
->;
+> & {
+  /** A state file to start from, such as one a crash left. Defaults to a new one. */
+  statePath?: string;
+};
 
 /**
  * Starts a real local API on a free port, with a temporary state file and a
@@ -24,7 +27,7 @@ export async function startLocalApi(options: LocalApiOptions = {}) {
   const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
     port: 0,
-    statePath: path.join(root, "state.json"),
+    statePath: options.statePath ?? path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],

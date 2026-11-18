@@ -359,7 +359,7 @@ A program driven by an LLM that uses Ajour through MCP, such as Claude Code or C
 One configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".
 
 **MCP endpoint**:
-The one address on the user's machine through which agents reach Ajour. It is off until the user turns MCP on, and it answers only agent clients.
+The one address on the user's machine through which agents reach Ajour. It answers only agent clients. Until the user turns MCP on, it answers only an agent conversation's own client, which reaches none of the user's data.
 _Avoid_: MCP server (in user-facing text), API
 
 **Agent tool**:
@@ -374,7 +374,7 @@ _Avoid_: Transaction, job
 Something an agent asks the user during an agent session. It waits until the user answers.
 
 **Agent task**:
-A task a plugin declares for an agent, such as "Enter in Workday": a prompt, its settings and where its button shows. No plugin code runs.
+A task for an agent. A plugin task is one a plugin declares, such as "Enter in Workday": a prompt, its settings and where its button shows, and no plugin code runs. A core task is one Ajour defines.
 
 **Agent run**:
 One agent task Ajour started: a coding agent CLI with Ajour's and the task's prompts, its own agent client and agent session. Ajour ends the session and revokes the client when the CLI exits.
@@ -384,11 +384,11 @@ An agent task Ajour itself defines, not a plugin, such as Deck's guide, ask and 
 _Avoid_: Built-in task, Deck run
 
 **Agent conversation**:
-The agent's conversation about one pull request at one head, which its core tasks share one turn after another. Ajour holds one at a time, and closes it when a turn comes for another pull request or when it is idle. Coming back resumes it.
+The agent's conversation about one pull request, which its core tasks share one turn after another. Its tools answer for one head at a time: a turn about a new head keeps the conversation and tells the agent the head changed. Ajour holds one at a time, and closes it when a turn comes for another pull request, when the agent or its model changes, or when it is idle. Coming back resumes it.
 _Avoid_: Agent session (that is the timesheet's), chat, thread
 
 **Agent turn**:
-One message to an agent conversation and the answer it streams back. Only one agent turn or agent run goes at a time across Ajour; a turn that has to wait says what it waits for, and any turn can be stopped.
+One message to an agent conversation and the answer it streams back. Only one agent turn or agent run goes at a time across Ajour; a turn that has to wait says what it waits for, another turn or an agent run, and any turn can be stopped.
 _Avoid_: Run, request, ask (an Ask is one kind of turn)
 
 **Agent indicator**:

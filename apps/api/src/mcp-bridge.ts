@@ -133,9 +133,17 @@ export class McpBridge {
     if (this.connected) this.send(event, data);
   }
 
-  /** Ends the stream and fails pending calls, when MCP turns off or the API stops. */
+  /** Ends the stream and fails pending calls, when the API stops. */
   close() {
     this.detach();
+    this.failPendingCalls();
+  }
+
+  /**
+   * Fails the tool calls the window hasn't answered, when MCP turns off. The
+   * stream stays: it also carries handoffs and agent turns, which need no MCP.
+   */
+  failPendingCalls() {
     for (const [requestId, pending] of this.pending) {
       clearTimeout(pending.timer);
       this.pending.delete(requestId);

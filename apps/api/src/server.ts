@@ -368,6 +368,10 @@ interface AppApiServerOptions {
   agentConversationIdleMs?: number;
   /** How long an interrupted turn has before its process is ended. Tests shorten it. */
   agentInterruptGraceMs?: number;
+  /** How long a running turn's CLI may print nothing before the turn fails. Tests shorten it. */
+  agentTurnStallMs?: number;
+  /** Time between SIGTERM and SIGKILL for an agent's CLI. Tests shorten it. */
+  agentKillGraceMs?: number;
   /**
    * How the broker sends an API 4 plugin's requests. The desktop app passes
    * Electron's `net.request` on a session of the broker's own; tests pass a
@@ -1778,6 +1782,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage.agentTaskSecretFields(pluginId),
       createMcpClient: (name, scope) =>
         createMcpClient(storage, name, scope ?? {}),
+      rebindMcpClient: (clientId, binding) =>
+        storage.rebindMcpClient(clientId, binding),
       revokeMcpClient: (clientId) =>
         storage.revokeMcpClient(clientId, Date.now()),
     },
@@ -1818,6 +1824,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ...(options.agentInterruptGraceMs === undefined
       ? {}
       : { interruptGraceMs: options.agentInterruptGraceMs }),
+    ...(options.agentTurnStallMs === undefined
+      ? {}
+      : { turnStallMs: options.agentTurnStallMs }),
+    ...(options.agentKillGraceMs === undefined
+      ? {}
+      : { killGraceMs: options.agentKillGraceMs }),
   });
   const runtime: AppApiRuntime = {
     folderResolver,
@@ -2399,7 +2411,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           agent: { task_id: payload.taskId },
           plugin: { id: payload.pluginId },
         });
-        const run = await agentRunner.start(payload);
+        // A run can wait for a turn to end. A client that goes away
+        // meanwhile no longer wants it.
+        const gone = new AbortController();
+        const abandoned = () => {
+          if (!response.writableFinished) gone.abort();
+        };
+        response.once("close", abandoned);
+        let run;
+        try {
+          run = await agentRunner.start(payload, { signal: gone.signal });
+        } finally {
+          response.off("close", abandoned);
+        }
         unit.set({ agent: { run_id: run.id } });
         writeJson(response, 201, run);
       } catch (error) {
@@ -2449,7 +2473,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const payload = await readRequest(request, mcpSettingsUpdateSchema);
       unit.set({ mcp: { enabled: payload.enabled } });
       await storage.setMcpEnabled(payload.enabled);
-      if (!payload.enabled) mcpBridge.close();
+      // Turn events keep flowing on the window's stream: only MCP's own
+      // tool calls end.
+      if (!payload.enabled) mcpBridge.failPendingCalls();
       writeJson(response, 200, await storage.getMcpSettings());
     },
 

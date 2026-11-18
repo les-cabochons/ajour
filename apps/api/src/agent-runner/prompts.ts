@@ -30,7 +30,7 @@ export function buildPrompt({
  * A pull request conversation's own instructions. Each turn adds its task's.
  * No timesheet rules: the conversation sees only its pull request's tools.
  */
-export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only.
+export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only. When the head changes, a message says so, and the tools then answer for the new head only.
 
 Rules:
 - Answer in short Markdown, about the code at this head.
@@ -53,9 +53,33 @@ export function buildConversationPrompt(binding: {
   return fillTemplate(CONVERSATION_PROMPT, binding);
 }
 
-/** One turn: its task's prompt, then the user's own words when given. */
-export function buildTurnPrompt(task: CoreAgentTask, message?: string): string {
-  return message
+/**
+ * One turn: what changed since the last turn, its task's prompt, then the
+ * user's own words when given. `headChange` says the pull request's head
+ * moved, and `historyLost` that the earlier turns could not be resumed.
+ */
+export function buildTurnPrompt(
+  task: CoreAgentTask,
+  message?: string,
+  context: {
+    headChange?: { from: string; to: string };
+    historyLost?: boolean;
+  } = {},
+): string {
+  const notes = [
+    ...(context.historyLost
+      ? [
+          "Your earlier messages in this conversation could not be restored, so this conversation starts over.",
+        ]
+      : []),
+    ...(context.headChange
+      ? [
+          `The pull request's head changed from ${context.headChange.from} to ${context.headChange.to}. Ajour's tools now answer for ${context.headChange.to} only, and earlier answers may describe ${context.headChange.from}.`,
+        ]
+      : []),
+  ];
+  const prompt = message
     ? `${CORE_TASK_PROMPTS[task]}\n\nThe user's message:\n${message}`
     : CORE_TASK_PROMPTS[task];
+  return notes.length > 0 ? `${notes.join("\n")}\n\n${prompt}` : prompt;
 }

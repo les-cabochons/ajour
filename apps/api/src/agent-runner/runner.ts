@@ -1,7 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type {
   AgentClientRef,
@@ -46,8 +44,13 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
-import { resolveSpawn, spawnRefusalMessage } from "../process-spawn/index.ts";
+import { spawnRefusalMessage } from "../process-spawn/index.ts";
 import { defaultReadVersion } from "./cli-path.ts";
+import {
+  DEFAULT_KILL_GRACE_MS,
+  startCliProcess,
+  type CliProcess,
+} from "./cli-process.ts";
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
 import { AgentRunError, childEnv, versionOnly } from "./launch.ts";
@@ -55,7 +58,7 @@ import { AgentConversations } from "./conversations.ts";
 import type { McpClientPullRequestBinding } from "../storage.ts";
 import { TurnSlot, TurnSlotAbortedError, type TurnLease } from "./turn-slot.ts";
 
-export { AgentRunError };
+export { AgentRunError, DEFAULT_KILL_GRACE_MS };
 
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
@@ -68,9 +71,6 @@ export { AgentRunError };
 const STALL_LIMIT_MS = 10 * 60_000;
 /** How long a CLI may keep running after its session ended before tick stops it. */
 const ENDED_GRACE_MS = 2 * 60_000;
-/** How long a CLI gets to exit after SIGTERM before it is killed. */
-export const DEFAULT_KILL_GRACE_MS = 5000;
-const ERROR_LINES = 20;
 const ALL_CLIS: {
   id: AgentCliStatus["id"];
   label: string;
@@ -97,6 +97,11 @@ interface RunnerStorage {
       | { tools: readonly AgentTaskMcpTool[] }
       | { pullRequest: McpClientPullRequestBinding },
   ): Promise<McpClientCreateResponse>;
+  /** Binds a conversation's client to its pull request's new head. */
+  rebindMcpClient(
+    clientId: string,
+    binding: McpClientPullRequestBinding,
+  ): Promise<boolean>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
 
@@ -149,6 +154,8 @@ export interface AgentRunnerOptions {
   conversationIdleMs?: number;
   /** How long an interrupted turn has before its process is ended. Defaults to 5 seconds. */
   interruptGraceMs?: number;
+  /** How long a running turn's CLI may print nothing before the turn fails. Defaults to 10 minutes. */
+  turnStallMs?: number;
 }
 
 /** The steps of a launch, in order. agent.run names the one that failed. */
@@ -183,34 +190,21 @@ interface ActiveRun {
   run: AgentRun;
   event: RunEvent;
   client: AgentClientRef;
-  child: ChildProcess;
+  /** Its ending comes when it closes, or after a grace period once it exited or was stopped. */
+  cli: CliProcess;
   workDirectory: string;
   stopReason?: StopReason;
-  /** Sends SIGKILL if the CLI ignores SIGTERM. Cleared when it exits. */
-  killTimer?: NodeJS.Timeout;
   mcpFailure?: string;
   finalSummary?: string;
   failure?: string;
-  /** Why the CLI never started, such as a missing executable. */
-  spawnError?: Error;
-  errorLines: string[];
   toolCalls: number;
   stalledSince?: number;
   /** When tick first saw the session ended while the CLI still ran. */
   endedSince?: number;
-  /** Set when the CLI's process exits. Its output can stay open longer. */
-  exited?: { code: number | null };
   /** The app's one agent slot, held for the whole run. */
   lease: TurnLease;
-  /** Resolves when the CLI closes, which may be never. */
-  closed: Promise<void>;
   /** Set by the first finalize() call, which later calls return. */
   finalized?: Promise<void>;
-  /**
-   * Set by the first ending (the CLI's exit, a kill, Stop or shutdown): ends
-   * the run, closed or not.
-   */
-  finishing?: Promise<void>;
 }
 
 /** How the runner ends a session that is still open when its run ends. */
@@ -266,6 +260,9 @@ export class AgentRunner {
       ...(options.interruptGraceMs === undefined
         ? {}
         : { interruptGraceMs: options.interruptGraceMs }),
+      ...(options.turnStallMs === undefined
+        ? {}
+        : { stallMs: options.turnStallMs }),
     });
   }
 
@@ -444,17 +441,23 @@ export class AgentRunner {
 
   /**
    * Starts a plugin task's run. A second one is refused, and one that finds
-   * a conversation's turn running waits for it to end.
+   * a conversation's turn running waits for it to end. `signal` aborts that
+   * wait, as when the request that asked for the run closes.
    */
-  async start(request: PluginTaskRunRequest): Promise<AgentRun> {
+  async start(
+    request: PluginTaskRunRequest,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<AgentRun> {
     if (this.active || this.starting) {
       throw new AgentRunError(
         "An agent task is already running. Stop it first.",
         409,
       );
     }
-    // No await before this line: the slot is taken in the same tick as the check.
-    const attempt = this.launch(request);
+    // No await between the check and this line: `starting` is set in the
+    // same tick, so a second start is refused while this one waits for the
+    // slot or launches.
+    const attempt = this.launch(request, signal);
     this.starting = attempt;
     try {
       return await attempt;
@@ -463,7 +466,8 @@ export class AgentRunner {
     }
   }
 
-  private async launch(request: PluginTaskRunRequest): Promise<AgentRun> {
+  /** What a run needs, or the reason it can't start now. */
+  private async prepareRun(request: PluginTaskRunRequest) {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
     const found = (await this.listTasks(settings, clis, "included")).find(
@@ -486,6 +490,55 @@ export class AgentRunner {
       (candidate) => candidate.id === settings.cli,
     )!;
     const cliStatus = clis.find((candidate) => candidate.id === settings.cli)!;
+    return { settings, found, status, adapter, cliStatus };
+  }
+
+  /**
+   * Waits for the slot: a conversation's turn may hold it. Aborted by Ajour
+   * quitting or by `signal`. Says whether it had to wait.
+   */
+  private async acquireSlot(
+    signal: AbortSignal | undefined,
+  ): Promise<{ lease: TurnLease; waited: boolean }> {
+    let waited = false;
+    try {
+      const lease = await this.slot.acquire("agent-run", {
+        signal: signal
+          ? AbortSignal.any([this.stopping.signal, signal])
+          : this.stopping.signal,
+        onWait: () => {
+          waited = true;
+        },
+      });
+      return { lease, waited };
+    } catch (error) {
+      if (!(error instanceof TurnSlotAbortedError)) throw error;
+      throw this.stopping.signal.aborted
+        ? new AgentRunError("Ajour is quitting.", 409)
+        : new AgentRunError("The agent task's start was cancelled.", 409);
+    }
+  }
+
+  private async launch(
+    request: PluginTaskRunRequest,
+    signal: AbortSignal | undefined,
+  ): Promise<AgentRun> {
+    // Checked before any wait, so a run that can't start says so at once.
+    let prepared = await this.prepareRun(request);
+    // The run holds the slot until it ends.
+    const { lease, waited } = await this.acquireSlot(signal);
+    try {
+      // A turn can hold the slot for minutes, and the settings, MCP, the CLI
+      // or the browser can change meanwhile: check again with what holds now.
+      if (waited) prepared = await this.prepareRun(request);
+      if (signal?.aborted) {
+        throw new AgentRunError("The agent task's start was cancelled.", 409);
+      }
+    } catch (error) {
+      lease.release();
+      throw error;
+    }
+    const { settings, found, status, adapter, cliStatus } = prepared;
     // Every declared field has a slot: an unset optional one fills as "".
     const settingValues = Object.fromEntries(
       status.settings.map((field) => [
@@ -502,18 +555,6 @@ export class AgentRunner {
           }),
         )
       : undefined;
-
-    // A conversation's turn may hold the slot. The run waits for it, and
-    // holds the slot until it ends.
-    let lease: TurnLease;
-    try {
-      lease = await this.slot.acquire("timesheet-task", {
-        signal: this.stopping.signal,
-      });
-    } catch (error) {
-      if (!(error instanceof TurnSlotAbortedError)) throw error;
-      throw new AgentRunError("Ajour is quitting.", 409);
-    }
 
     // From here on the start has a run ID, so a launch that fails still logs
     // its agent.run, with the step that failed. The run outlives the request
@@ -538,7 +579,6 @@ export class AgentRunner {
     let client: AgentClientRef | undefined;
     let session: AgentSession | undefined;
     let workDirectory: string | undefined;
-    let child: ChildProcess | undefined;
     try {
       const pathValue = await this.options.loginShellPath();
       const executable = await this.options.findExecutable(
@@ -641,25 +681,21 @@ export class AgentRunner {
       }
 
       // A spawn that fails later, such as a missing executable, reaches
-      // finalize() through the child's error and close events.
+      // finalize() through the process's ending.
       step = "spawn";
-      const plan = resolveSpawn(
-        invocation.command,
-        invocation.args,
-        invocation.env,
-      );
-      if ("refused" in plan) {
-        throw new AgentRunError(
-          spawnRefusalMessage(plan.refused, adapter.label, invocation.command),
-          400,
-        );
-      }
-      child = spawn(plan.command, plan.args, {
+      let active: ActiveRun | undefined;
+      const cli = startCliProcess({
+        invocation,
+        label: adapter.label,
         cwd: workDirectory,
-        env: plan.env,
-        shell: false,
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdin: "ignore",
+        ...(this.options.killGraceMs === undefined
+          ? {}
+          : { killGraceMs: this.options.killGraceMs }),
+        onLine: (line) => {
+          const parsed = adapter.parseEvent(line);
+          if (parsed && active) this.onEvent(active, parsed);
+        },
       });
       const run: AgentRun = {
         id: runId,
@@ -669,22 +705,23 @@ export class AgentRunner {
         sessionId: session.id,
         startedAt: this.now(),
       };
-      const active: ActiveRun = {
+      active = {
         run,
         event,
         client,
-        child,
+        cli,
         workDirectory,
-        errorLines: [],
         toolCalls: 0,
-        closed: Promise.resolve(),
         lease,
       };
-      active.closed = this.watch(active, adapter);
+      const started = active;
+      // The ending comes when the CLI closes, or a grace period after it
+      // exited or was stopped: something it started can hold its output
+      // open, and then the close never comes (#341).
+      void cli.finished.then(({ code }) => this.finalize(started, code));
       this.active = active;
       return run;
     } catch (error) {
-      child?.kill("SIGKILL");
       const cleanupFailures = client
         ? await this.cleanUp(
             client,
@@ -705,36 +742,6 @@ export class AgentRunner {
       });
       throw error;
     }
-  }
-
-  /** Reads the CLI's output. Resolves when the CLI closes. */
-  private watch(active: ActiveRun, adapter: AgentCliAdapter): Promise<void> {
-    const { child } = active;
-    createInterface({ input: child.stdout! }).on("line", (line) => {
-      const event = adapter.parseEvent(line);
-      if (event) this.onEvent(active, event);
-    });
-    createInterface({ input: child.stderr! }).on("line", (line) => {
-      active.errorLines.push(line);
-      if (active.errorLines.length > ERROR_LINES) active.errorLines.shift();
-    });
-    return new Promise((resolve) => {
-      child.on("error", (error) => {
-        active.failure = error.message;
-        // Node gives no pid to a process that never started.
-        if (child.pid === undefined) active.spawnError = error;
-      });
-      child.on("exit", (code) => {
-        active.exited = { code };
-        // Something the CLI started can hold its output open, and then
-        // close never comes (#341).
-        void this.finishWithinGrace(active);
-      });
-      child.on("close", (code) => {
-        void this.finalize(active, code);
-        resolve();
-      });
-    });
   }
 
   private onEvent(active: ActiveRun, event: RunnerEvent) {
@@ -772,7 +779,6 @@ export class AgentRunner {
 
   /** Ends the session, cleans up and emits the run's one agent.run event. */
   private async endRun(active: ActiveRun, code: number | null) {
-    clearTimeout(active.killTimer);
     // The outcome is decided here, so the stop reason that led to it is too.
     const { stopReason } = active;
     const session = this.options.sessions.get(active.run.sessionId);
@@ -794,8 +800,8 @@ export class AgentRunner {
       exitCode: code,
       stopReason,
       toolCalls: active.toolCalls,
-      ...(active.spawnError
-        ? { launchFailure: { step: "spawn", error: active.spawnError } }
+      ...(active.cli.neverStarted && active.cli.error
+        ? { launchFailure: { step: "spawn", error: active.cli.error } }
         : {}),
       cleanupFailures,
     });
@@ -840,23 +846,9 @@ export class AgentRunner {
     return failures;
   }
 
-  /**
-   * SIGTERM now, SIGKILL after the grace period if the CLI is still running.
-   * Only the CLI itself: ending what it started is #341.
-   */
+  /** Stops the CLI; the run ends within the grace period whatever it does. */
   private terminate(active: ActiveRun) {
-    // The run ends on time even if the CLI's exit never comes.
-    void this.finishWithinGrace(active);
-    // No pid: the CLI never started, and its error and close are on the way.
-    // Killing it would throw.
-    if (active.child.pid === undefined) return;
-    active.child.kill("SIGTERM");
-    if (active.killTimer) return;
-    active.killTimer = setTimeout(
-      () => active.child.kill("SIGKILL"),
-      this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
-    );
-    active.killTimer.unref();
+    active.cli.terminate();
   }
 
   /**
@@ -868,32 +860,9 @@ export class AgentRunner {
     const active = this.active;
     if (!active || active.run.id !== runId) return false;
     if (active.finalized) return true;
-    if (!active.exited) {
-      active.stopReason ??= "user";
-      this.terminate(active);
-    }
-    void this.finishWithinGrace(active);
+    if (!active.cli.exited) active.stopReason ??= "user";
+    this.terminate(active);
     return true;
-  }
-
-  /**
-   * Ends the run when the CLI closes, or after the kill grace period plus a
-   * second if it never does: something the CLI started can hold its output
-   * open (#341). Every ending starts it: the CLI's exit, each kill, Stop and
-   * shutdown. The first call sets the deadline.
-   */
-  private finishWithinGrace(active: ActiveRun): Promise<void> {
-    active.finishing ??= new Promise<void>((resolve) => {
-      const giveUp = setTimeout(
-        resolve,
-        (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
-      );
-      void active.closed.then(() => {
-        clearTimeout(giveUp);
-        resolve();
-      });
-    }).then(() => this.finalize(active, active.exited?.code ?? null));
-    return active.finishing;
   }
 
   /**
@@ -902,7 +871,7 @@ export class AgentRunner {
    */
   tick() {
     const active = this.active;
-    if (!active || active.stopReason || active.finalized || active.exited) {
+    if (!active || active.stopReason || active.finalized || active.cli.exited) {
       return;
     }
     const session = this.options.sessions.get(active.run.sessionId);
@@ -943,19 +912,21 @@ export class AgentRunner {
     await conversations;
     const active = this.active;
     if (!active) return;
-    if (!active.finalized && !active.exited) {
+    if (!active.finalized && !active.cli.exited) {
       active.stopReason ??= "shutdown";
-      this.terminate(active);
     }
-    await this.finishWithinGrace(active);
+    this.terminate(active);
+    await active.cli.finished;
+    await this.finalize(active, active.cli.exited?.code ?? null);
   }
 }
 
 function describeEnding(active: ActiveRun, code: number | null): SessionEnding {
-  const errorOutput = active.errorLines.join("\n");
+  const errorOutput = active.cli.errorLines.join("\n");
+  const failure = active.failure ?? active.cli.error?.message;
   // A CLI that never started failed, whatever stop came meanwhile.
-  if (active.spawnError) {
-    const summary = active.spawnError.message;
+  if (active.cli.neverStarted && active.cli.error) {
+    const summary = active.cli.error.message;
     return { outcome: "failed", summary, error: summary };
   }
   switch (active.stopReason) {
@@ -975,14 +946,13 @@ function describeEnding(active: ActiveRun, code: number | null): SessionEnding {
         error: `The ${active.mcpFailure} MCP server did not start.${errorOutput ? `\n${errorOutput}` : ""}`,
       };
   }
-  if (code === 0 && !active.failure) {
+  if (code === 0 && !failure) {
     return {
       outcome: "done",
       summary: active.finalSummary || "The agent finished.",
     };
   }
-  const summary =
-    active.failure ?? `The agent exited with code ${code ?? "unknown"}.`;
+  const summary = failure ?? `The agent exited with code ${code ?? "unknown"}.`;
   return {
     outcome: "failed",
     summary,

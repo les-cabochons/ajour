@@ -546,6 +546,8 @@ export const catalog = defineCatalog({
           launch_count: operational<number>(),
           /** Launches that continued an earlier conversation of the provider. */
           resume_count: operational<number>(),
+          /** Turns that rebound the conversation to a new head of its pull request. */
+          head_change_count: operational<number>(),
           close_reason: operational<
             "replaced" | "idle" | "shutdown" | "failed"
           >(),
@@ -565,7 +567,7 @@ export const catalog = defineCatalog({
      */
     "agent.turn": {
       kinds: ["job"],
-      reasons: ["cli_failed", "cli_exited", "mcp_failed"],
+      reasons: ["cli_failed", "cli_exited", "mcp_failed", "stalled"],
       fields: {
         agent: {
           turn_id: operational(),
@@ -573,20 +575,25 @@ export const catalog = defineCatalog({
           task: operational<"deck.guide" | "deck.ask" | "deck.chat">(),
           cli: operational(),
           /** What it waited for, when the slot was busy. */
-          waited_for: operational<"timesheet-task" | "turn">(),
+          waited_for: operational<"agent-run" | "turn">(),
           wait_ms: operational<number>(),
           /** Whether the turn started a process that continued the conversation. */
           resumed: operational<boolean>(),
+          /** Set when the resume failed and the turn started a new provider conversation. */
+          history_lost: operational<boolean>(),
+          /** Set when the turn rebound the conversation to a new head. */
+          head_changed: operational<boolean>(),
           text_piece_count: operational<number>(),
           tool_call_count: operational<number>(),
           stop_reason: operational<
-            "user" | "replaced" | "shutdown" | "interrupt_timeout"
+            "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled"
           >(),
           exit_code: operational<number | null>(),
         },
         launch: {
           failed_step: operational<
             | "find_executable"
+            | "rebind_client"
             | "create_client"
             | "create_work_folder"
             | "build_invocation"

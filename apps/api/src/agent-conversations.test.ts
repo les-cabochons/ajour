@@ -5,11 +5,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
-import { fakeCliAdapter } from "./test-support/fake-cli-adapter.ts";
+import { createMcpClient } from "./mcp-clients.ts";
+import { AppApiStorage } from "./storage.ts";
+import { windowTokenHeader } from "./test-support/window-token.ts";
+import {
+  fakeCliAdapter,
+  fakeCodexAdapter,
+  type FakeConversation,
+} from "./test-support/fake-cli-adapter.ts";
 import {
   apiRequest,
   openEventStream,
   startLocalApi,
+  TEST_ORIGIN,
 } from "./test-support/local-api.ts";
 
 /**
@@ -20,9 +28,32 @@ import {
 
 const running: (() => Promise<void> | void)[] = [];
 
+/** Each test's fake CLI reports, so the escapees it started are killed after it. */
+const reports: string[] = [];
+
 afterEach(async () => {
-  for (const stop of running.splice(0).reverse()) await stop();
+  try {
+    for (const stop of running.splice(0).reverse()) await stop();
+  } finally {
+    for (const report of reports.splice(0)) await killEscapees(report);
+  }
 });
+
+/** Kills what a fake CLI's escapee step started, when it still runs. */
+async function killEscapees(report: string) {
+  const lines = (await readFile(report, "utf8").catch(() => ""))
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { grandchildPid?: number });
+  for (const { grandchildPid } of lines) {
+    if (grandchildPid === undefined) continue;
+    try {
+      process.kill(grandchildPid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+}
 
 const PR = { pullRequest: "pr-482", head: "a41c9e2" };
 const OTHER_PR = { pullRequest: "pr-485", head: "b52d0f3" };
@@ -84,21 +115,25 @@ interface Launch {
  * a timesheet task's run, and opens the window's event stream with MCP off.
  */
 async function startConversationApi(
-  conversation: (launch: { index: number; resume?: string }) => unknown[],
+  conversation: FakeConversation,
   options: {
     timesheet?: unknown[];
     idleMs?: number;
     interruptGraceMs?: number;
-    cli?: "claude-code" | "opencode";
+    stallMs?: number;
+    killGraceMs?: number;
+    cli?: "claude-code" | "codex" | "opencode";
+    statePath?: string;
   } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-conversation-"));
   running.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const report = path.join(root, "report.jsonl");
-  // Where the runner finds `claude`. The fake CLI runs in its place.
+  reports.push(report);
+  // Where the runner finds `claude` and `codex`. The fake CLI runs in their place.
   const bin = path.join(root, "bin");
   await mkdir(bin);
-  for (const name of ["claude", "opencode"]) {
+  for (const name of ["claude", "codex", "opencode"]) {
     await writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", {
       mode: 0o755,
     });
@@ -115,10 +150,14 @@ async function startConversationApi(
         () => mcpUrl,
         conversation,
       ),
+      fakeCodexAdapter(report, () => mcpUrl, conversation),
       opencodeAdapter,
     ],
     ...(options.idleMs ? { agentConversationIdleMs: options.idleMs } : {}),
     agentInterruptGraceMs: options.interruptGraceMs ?? 5000,
+    ...(options.stallMs ? { agentTurnStallMs: options.stallMs } : {}),
+    ...(options.killGraceMs ? { agentKillGraceMs: options.killGraceMs } : {}),
+    ...(options.statePath ? { statePath: options.statePath } : {}),
   });
   running.push(api.stop);
   mcpUrl = `${api.baseUrl}/mcp/ajour`;
@@ -193,6 +232,20 @@ async function startConversationApi(
       return (await reportLines())
         .filter((line) => line.stdin?.type === "user")
         .map((line) => String(line.stdin.message.content));
+    },
+    /** Each turn a Codex process read on stdin, in order. */
+    async codexTurnsRead(): Promise<string[]> {
+      return (await reportLines()).flatMap((line) =>
+        typeof line.codexTurn === "string" ? [line.codexTurn] : [],
+      );
+    },
+    /** The active MCP clients, as Settings > MCP lists them. */
+    async clients(): Promise<{ id: string; name: string }[]> {
+      return (await apiRequest(api.baseUrl, "/api/mcp/settings")).body.clients;
+    },
+    async currentRun() {
+      return (await apiRequest(api.baseUrl, "/api/agent-runs/current")).body
+        .run;
     },
     async mcpReplies() {
       return (await reportLines()).flatMap((line) =>
@@ -453,16 +506,27 @@ describe("a pull request's conversation", () => {
 
       const first = (await api.startTurn()).body;
       const second = (await api.startTurn()).body;
-      await api.cancel(second.id);
+      expect((await api.cancel(second.id)).status).toBe(200);
 
+      // It ends at once, while the turn ahead of it still runs.
       expect(
         await api.waitForTurnEvent(
           "ended",
           (event) => event.turnId === second.id,
         ),
       ).toMatchObject({ outcome: "cancelled" });
+      expect(
+        api
+          .turnEvents()
+          .some((event) => event.type === "ended" && event.turnId === first.id),
+      ).toBe(false);
+      expect((await api.cancel(second.id)).status).toBe(404);
       await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
       expect(await api.turnsRead()).toHaveLength(1);
+      expect(api.eventsOf(second.id).map((event) => event.type)).toEqual([
+        "waiting",
+        "ended",
+      ]);
     },
   );
 
@@ -585,7 +649,7 @@ describe("the one agent slot", () => {
           "waiting",
           (event) => event.turnId === turn.id,
         ),
-      ).toMatchObject({ waitingFor: "timesheet-task" });
+      ).toMatchObject({ waitingFor: "agent-run" });
       await api.waitForTurnEvent("ended", (event) => event.turnId === turn.id);
       expect(
         (await apiRequest(api.baseUrl, "/api/agent-runs/current")).body.run,
@@ -806,6 +870,627 @@ describe("a conversation's wide events", () => {
           (event) => event.agent?.turn_id === turn.id,
         ),
       ).toMatchObject({ outcome: "cancelled", agent: { stop_reason: "user" } });
+    },
+  );
+});
+
+/** The init event Claude Code prints, with the given MCP server status. */
+const initLine = (status: string) =>
+  JSON.stringify({
+    type: "system",
+    subtype: "init",
+    session_id: "s-0",
+    mcp_servers: [{ name: "ajour", status }],
+  });
+
+describe("a turn that goes wrong", () => {
+  it(
+    "fails a turn whose CLI dies, frees the slot, and resumes on the next turn",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(({ index }) =>
+        index === 0
+          ? [
+              { session: "s-0" },
+              { readTurn: true },
+              { stream: ["Par"] },
+              { stderr: "boom" },
+              { exit: 3 },
+            ]
+          : [{ session: "s-1" }, ...answer("Back"), { readTurn: true }],
+      );
+
+      const first = (await api.startTurn()).body;
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === first.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "Claude Code stopped: boom",
+      });
+      const second = await api.startTurn();
+
+      expect(second.body).toMatchObject({
+        state: "running",
+        conversationId: first.conversationId,
+      });
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === second.body.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      const launches = await api.launches();
+      expect(launches).toHaveLength(2);
+      expect(launches[1]!.argv).toEqual(
+        expect.arrayContaining(["--resume", "s-0"]),
+      );
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === first.id,
+        ),
+      ).toMatchObject({
+        outcome: "error",
+        outcome_reason: "cli_exited",
+        agent: { exit_code: 3, text_piece_count: 1 },
+      });
+    },
+  );
+
+  it(
+    "ends a cancelled turn whose CLI exits but never closes, as a Windows shim's child keeps the pipes",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 0
+            ? [
+                { session: "s-0" },
+                { readTurn: true },
+                { stream: ["Working"] },
+                // Holds the output open after the CLI is ended.
+                { escapee: 15_000 },
+                { hang: true },
+              ]
+            : [{ session: "s-1" }, ...answer("Next"), { readTurn: true }],
+        { interruptGraceMs: 100, killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+      await api.waitForTurnEvent("text", (event) => event.turnId === turn.id);
+      await vi.waitFor(async () =>
+        expect(
+          (await readFile(reports.at(-1)!, "utf8")).includes("grandchildPid"),
+        ).toBe(true),
+      );
+      const cancelledAt = Date.now();
+      await api.cancel(turn.id);
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "cancelled" });
+      // The interrupt grace, the kill grace and a second, not the escapee's 15.
+      expect(Date.now() - cancelledAt).toBeLessThan(5000);
+      const next = await api.startTurn();
+      expect(next.body.state).toBe("running");
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.body.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+    },
+  );
+
+  it(
+    "fails a turn whose CLI goes quiet past the stall limit, and frees the slot",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 0
+            ? [
+                { session: "s-0" },
+                { readTurn: true },
+                { stream: ["Hm"] },
+                { hang: true },
+              ]
+            : [{ session: "s-1" }, ...answer("Awake"), { readTurn: true }],
+        { stallMs: 400, killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "The agent stopped answering.",
+      });
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "error",
+        outcome_reason: "stalled",
+        agent: { stop_reason: "stalled" },
+      });
+      const next = await api.startTurn();
+      expect(next.body.state).toBe("running");
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.body.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+    },
+  );
+
+  it(
+    "fails a turn whose process can't start, and closes the conversation",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(() => ({
+        steps: [],
+        // A file in a folder that doesn't exist can't be written.
+        files: { [path.join("missing", "prompt.md")]: "x" },
+      }));
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "Ajour could not start the agent.",
+      });
+      expect(await api.waitForTurnEvent("conversation-closed")).toMatchObject({
+        conversationId: turn.conversationId,
+        reason: "failed",
+      });
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "error",
+        launch: { failed_step: "write_files" },
+      });
+      expect(await api.launches()).toEqual([]);
+      expect(await api.clients()).toEqual([]);
+    },
+  );
+
+  it(
+    "fails a turn whose Ajour MCP server didn't start",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { stdout: initLine("failed") },
+        { hang: true },
+      ]);
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "The ajour MCP server did not start.",
+      });
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === turn.id,
+        ),
+      ).toMatchObject({ outcome: "error", outcome_reason: "mcp_failed" });
+    },
+  );
+
+  it(
+    "starts the turn over without the history when the resume finds no conversation",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 1
+            ? [{ resumeFails: true }]
+            : [
+                { session: `s-${index}` },
+                ...answer(index === 0 ? "First" : "Fresh"),
+                { readTurn: true },
+              ],
+        { idleMs: 300 },
+      );
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      await api.waitForTurnEvent("conversation-closed");
+
+      const second = (await api.startTurn({ message: "Still there?" })).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === second.id,
+        ),
+      ).toEqual({
+        type: "ended",
+        turnId: second.id,
+        conversationId: second.conversationId,
+        outcome: "done",
+        historyLost: true,
+      });
+      expect(api.eventsOf(second.id)).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Fresh" }),
+      );
+      const launches = await api.launches();
+      expect(
+        launches.map((launch) => launch.argv.includes("--resume")),
+      ).toEqual([false, true, false]);
+      const read = await api.turnsRead();
+      expect(read).toHaveLength(2);
+      expect(read[1]).toContain("could not be restored");
+      expect(read[1]).toContain("Still there?");
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === second.id,
+        ),
+      ).toMatchObject({
+        outcome: "ok",
+        agent: { resumed: false, history_lost: true },
+      });
+    },
+  );
+});
+
+describe("a conversation on Codex", () => {
+  it(
+    "runs one process per turn and resumes the thread for the next",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) => [
+          { codexThread: "t-1" },
+          { codexReadTurn: true },
+          { codexMessage: index === 0 ? "First answer" : "Second answer" },
+          { codexDone: true },
+        ],
+        { cli: "codex" },
+      );
+
+      const first = (await api.startTurn({ message: "Why?" })).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      const second = (await api.startTurn({ task: "deck.chat" })).body;
+      await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === second.id,
+      );
+
+      expect(second.conversationId).toBe(first.conversationId);
+      for (const [turn, text] of [
+        [first, "First answer"],
+        [second, "Second answer"],
+      ] as const) {
+        expect(api.eventsOf(turn.id).map((event) => event.type)).toEqual([
+          "started",
+          "text",
+          "ended",
+        ]);
+        expect(api.eventsOf(turn.id)[1]).toMatchObject({ text });
+        expect(api.eventsOf(turn.id)[2]).toMatchObject({ outcome: "done" });
+      }
+      const launches = await api.launches();
+      expect(launches).toHaveLength(2);
+      expect(launches[0]!.argv).not.toContain("resume");
+      expect(launches[1]!.argv).toContain("resume");
+      expect(launches[1]!.argv.slice(-2)).toEqual(["t-1", "-"]);
+      const read = await api.codexTurnsRead();
+      expect(read).toHaveLength(2);
+      expect(read[0]).toContain("Why?");
+      expect(
+        named(api.events, "agent.turn").map((event) => event.agent?.resumed),
+      ).toEqual([false, true]);
+    },
+  );
+
+  it("fails a Codex turn its CLI fails", { timeout: 20_000 }, async () => {
+    const api = await startConversationApi(
+      () => [
+        { codexThread: "t-1" },
+        { codexReadTurn: true },
+        { codexDone: "Rate limited." },
+        { exit: 1 },
+      ],
+      { cli: "codex" },
+    );
+
+    const turn = (await api.startTurn()).body;
+
+    expect(
+      await api.waitForTurnEvent("ended", (event) => event.turnId === turn.id),
+    ).toMatchObject({ outcome: "failed", error: "Rate limited." });
+  });
+});
+
+describe("a conversation across heads", () => {
+  const NEW_HEAD = "c63e1f4";
+
+  it(
+    "keeps the conversation for a new head, rebinds its tools and tells the agent",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { session: "s-0" },
+        ...answer("At the old head"),
+        { readTurn: true },
+        {
+          mcp: {
+            method: "tools/call",
+            params: { name: "list_projects", arguments: {} },
+          },
+        },
+        { result: true },
+        { readTurn: true },
+      ]);
+
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      const second = (await api.startTurn({ head: NEW_HEAD })).body;
+      await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === second.id,
+      );
+
+      expect(second).toMatchObject({
+        conversationId: first.conversationId,
+        head: NEW_HEAD,
+      });
+      expect(
+        api.turnEvents().some((event) => event.type === "conversation-closed"),
+      ).toBe(false);
+      expect(await api.launches()).toHaveLength(1);
+      const read = await api.turnsRead();
+      expect(read[1]).toContain(
+        `The pull request's head changed from ${PR.head} to ${NEW_HEAD}.`,
+      );
+      expect(read[0]).not.toContain("head changed");
+      // The same client, bound to the new head.
+      const [refused] = await api.mcpReplies();
+      expect(refused!.reply.result.content[0].text).toContain(
+        `bound to pull request ${PR.pullRequest} at head ${NEW_HEAD}.`,
+      );
+      expect(await api.clients()).toHaveLength(1);
+      expect(
+        named(api.events, "agent.turn").map(
+          (event) => event.agent?.head_changed,
+        ),
+      ).toEqual([undefined, true]);
+    },
+  );
+
+  it(
+    "tells a resumed conversation when its pull request's head moved meanwhile",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(({ index }) => [
+        { session: `s-${index}` },
+        ...answer(`Answer ${index}`),
+        { readTurn: true },
+      ]);
+
+      for (const binding of [PR, OTHER_PR, { ...PR, head: NEW_HEAD }]) {
+        const turn = (await api.startTurn(binding)).body;
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id && event.outcome === "done",
+        );
+      }
+
+      const launches = await api.launches();
+      expect(launches[2]!.argv).toEqual(
+        expect.arrayContaining(["--resume", "s-0"]),
+      );
+      const read = await api.turnsRead();
+      expect(read[2]).toContain(
+        `The pull request's head changed from ${PR.head} to ${NEW_HEAD}.`,
+      );
+    },
+  );
+});
+
+describe("a plugin task waiting behind a turn", () => {
+  it(
+    "gives up when its request closes, and never runs",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { readTurn: true },
+        { wait: 1000 },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await apiRequest(api.baseUrl, "/api/mcp/settings", { enabled: true });
+      const turn = (await api.startTurn()).body;
+      await api.waitForTurnEvent(
+        "started",
+        (event) => event.turnId === turn.id,
+      );
+
+      const request = new AbortController();
+      const waiting = fetch(`${api.baseUrl}/api/agent-runs`, {
+        method: "POST",
+        headers: {
+          ...windowTokenHeader,
+          Origin: TEST_ORIGIN,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pluginId: "ajp-workday-agent",
+          taskId: "enter-week",
+          weekOf: "2026-10-12",
+        }),
+        signal: request.signal,
+      }).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      request.abort();
+      await waiting;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === turn.id);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(await api.currentRun()).toBeNull();
+      expect(await api.launches()).toHaveLength(1);
+      // Nothing is left starting, so the next one starts.
+      expect((await api.startTimesheetTask()).status).toBe(201);
+    },
+  );
+
+  it(
+    "checks again once the turn ends, and doesn't start once MCP turned off meanwhile",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { readTurn: true },
+        { wait: 800 },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await apiRequest(api.baseUrl, "/api/mcp/settings", { enabled: true });
+      const turn = (await api.startTurn()).body;
+      await api.waitForTurnEvent(
+        "started",
+        (event) => event.turnId === turn.id,
+      );
+
+      const run = api.startTimesheetTask();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await apiRequest(api.baseUrl, "/api/mcp/settings", { enabled: false });
+
+      expect(await run).toMatchObject({
+        status: 400,
+        body: { error: "Turn on MCP in Settings > MCP." },
+      });
+      expect(await api.launches()).toHaveLength(1);
+    },
+  );
+});
+
+describe("the MCP endpoint with MCP off", () => {
+  it(
+    "refuses a conversation's own token sent with an Origin, as a page would",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { readTurn: true },
+        { mcp: { method: "tools/list" }, origin: TEST_ORIGIN },
+        { mcp: { method: "tools/list" } },
+        { result: true },
+        { readTurn: true },
+      ]);
+
+      const turn = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === turn.id);
+
+      const [fromPage, fromAgent] = await api.mcpReplies();
+      expect(fromPage!.status).toBe(404);
+      expect(fromAgent!.status).toBe(200);
+      expect(
+        named(api.events, "mcp.request").map((event) => event.outcome_reason),
+      ).toEqual(["mcp_off", undefined]);
+    },
+  );
+
+  it(
+    "revokes a conversation client a crash left, which then gets no answer and no agent panel error",
+    { timeout: 20_000 },
+    async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "ajour-leftover-"));
+      running.push(() =>
+        rm(root, { recursive: true, force: true, maxRetries: 5 }),
+      );
+      const statePath = path.join(root, "state.json");
+      const leftover = await createMcpClient(
+        new AppApiStorage(statePath),
+        "Claude Code, pull request conversation",
+        { pullRequest: PR },
+      );
+
+      const api = await startConversationApi(() => [], { statePath });
+
+      await vi.waitFor(async () => expect(await api.clients()).toEqual([]));
+      const response = await fetch(`${api.baseUrl}/mcp/ajour`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${leftover.token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      expect(response.status).toBe(401);
+      expect(
+        named(api.events, "mcp.request").map((event) => event.outcome_reason),
+      ).toEqual(["token_revoked"]);
+      // A new window stream starts with the agent panel's snapshot.
+      const stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
+      running.push(stream.close);
+      expect(
+        (await stream.waitFor<{ errors: unknown[] }>("agents")).errors,
+      ).toEqual([]);
+    },
+  );
+
+  it(
+    "keeps a turn's events flowing on the window's stream when MCP turns off",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(() => [
+        { readTurn: true },
+        { stream: ["Before"] },
+        { wait: 600 },
+        { stream: ["After"] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await apiRequest(api.baseUrl, "/api/mcp/settings", { enabled: true });
+      // The window's stream while MCP is on.
+      const stream = await openEventStream(api.baseUrl, "/api/mcp/bridge");
+      running.push(stream.close);
+      const turn = (await api.startTurn()).body;
+      await stream.waitFor<AgentTurnEvent>(
+        "agent-turn",
+        (event) => event.type === "text" && event.text === "Before",
+      );
+
+      await apiRequest(api.baseUrl, "/api/mcp/settings", { enabled: false });
+
+      expect(
+        await stream.waitFor<AgentTurnEvent>(
+          "agent-turn",
+          (event) => event.type === "ended" && event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(
+        stream.events.some(
+          (event) =>
+            event.event === "agent-turn" &&
+            (event.data as AgentTurnEvent).type === "text" &&
+            (event.data as { text: string }).text === "After",
+        ),
+      ).toBe(true);
     },
   );
 });

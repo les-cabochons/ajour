@@ -118,3 +118,98 @@ describe("MCP clients", () => {
     expect((await authenticate(created.token))?.tools).toEqual([]);
   });
 });
+
+describe("a conversation's client", () => {
+  const binding = { pullRequest: "pr-482", head: "a41c9e2" };
+
+  it("drops a client whose pull request binding can't be read, rather than give it every tool", async () => {
+    const statePath = await tempStatePath();
+    const bound = await createMcpClient(
+      new AppApiStorage(statePath),
+      "Claude Code, pull request conversation",
+      { pullRequest: binding },
+    );
+    const damaged = await createMcpClient(
+      new AppApiStorage(statePath),
+      "Codex, pull request conversation",
+      { pullRequest: binding },
+    );
+    const missing = await createMcpClient(
+      new AppApiStorage(statePath),
+      "Codex, pull request conversation",
+      { pullRequest: binding },
+    );
+    const user = await createMcpClient(new AppApiStorage(statePath), "Codex");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.mcp.clients[1].pullRequest = { pullRequest: 482, head: "a41c9e2" };
+    state.mcp.clients[2].pullRequest = null;
+    await writeFile(statePath, JSON.stringify(state));
+
+    // Read back by a new storage, as after a restart, which revokes the
+    // conversation clients it finds but keeps their binding.
+    const authenticate = async (token: string) =>
+      authenticateMcpRequest(new AppApiStorage(statePath), `Bearer ${token}`);
+    expect(await authenticate(bound.token)).toMatchObject({
+      kind: "revoked",
+      client: { pullRequest: binding, tools: [] },
+    });
+    expect((await authenticate(damaged.token)).kind).toBe("unknown");
+    expect((await authenticate(missing.token)).kind).toBe("unknown");
+    expect((await authenticate(user.token)).kind).toBe("ok");
+  });
+
+  it("rebinds to a new head of its own pull request only", async () => {
+    const storage = new AppApiStorage(await tempStatePath());
+    const created = await createMcpClient(storage, "Claude Code", {
+      pullRequest: binding,
+    });
+    const user = await createMcpClient(storage, "Codex");
+
+    expect(
+      await storage.rebindMcpClient(created.client.id, {
+        ...binding,
+        head: "c63e1f4",
+      }),
+    ).toBe(true);
+    expect(
+      await storage.rebindMcpClient(created.client.id, {
+        pullRequest: "pr-485",
+        head: "b52d0f3",
+      }),
+    ).toBe(false);
+    expect(await storage.rebindMcpClient(user.client.id, binding)).toBe(false);
+
+    const result = await authenticateMcpRequest(
+      storage,
+      `Bearer ${created.token}`,
+    );
+    expect(result).toMatchObject({
+      kind: "ok",
+      client: { pullRequest: { ...binding, head: "c63e1f4" } },
+    });
+  });
+
+  it("revokes the conversation clients a restart finds, and keeps the others", async () => {
+    const statePath = await tempStatePath();
+    const before = new AppApiStorage(statePath);
+    const leftover = await createMcpClient(before, "Claude Code", {
+      pullRequest: binding,
+    });
+    const user = await createMcpClient(before, "Codex");
+
+    const after = new AppApiStorage(statePath);
+    const current = await createMcpClient(after, "Claude Code", {
+      pullRequest: binding,
+    });
+
+    const kind = async (storage: AppApiStorage, token: string) =>
+      (await authenticateMcpRequest(storage, `Bearer ${token}`)).kind;
+    expect(await kind(after, leftover.token)).toBe("revoked");
+    expect(await kind(after, user.token)).toBe("ok");
+    expect(await kind(after, current.token)).toBe("ok");
+    // Saved with the next write.
+    expect(
+      (await readFile(statePath, "utf8")).match(/"revokedAt"/g),
+    ).toHaveLength(1);
+  });
+});

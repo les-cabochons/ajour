@@ -225,6 +225,9 @@ export const claudeCodeAdapter: AgentCliAdapter = {
       "--output-format",
       "stream-json",
       "--verbose",
+      // Nothing resumes a run, so its transcript stays off disk, as Codex's
+      // --ephemeral keeps it (Claude Code 2.1.327).
+      "--no-session-persistence",
       ...(input.model ? ["--model", input.model] : []),
     ];
     return {

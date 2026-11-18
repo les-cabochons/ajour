@@ -56,6 +56,12 @@ describe("Claude Code adapter", () => {
     );
   });
 
+  it("keeps a run's session off disk, since nothing resumes a run", () => {
+    expect(claudeCodeAdapter.buildInvocation(input).args).toContain(
+      "--no-session-persistence",
+    );
+  });
+
   it("passes a model only when one is set", () => {
     expect(claudeCodeAdapter.buildInvocation(input).args).not.toContain(
       "--model",

@@ -1,8 +1,6 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import type {
   AgentCliId,
   AgentRunnerSettings,
@@ -19,7 +17,6 @@ import {
   type Unit,
 } from "../../../../packages/wide-events/index.ts";
 import type { ApiEvents } from "../events.ts";
-import { resolveSpawn, spawnRefusalMessage } from "../process-spawn/index.ts";
 import type { McpClientPullRequestBinding } from "../storage.ts";
 import type {
   AgentCliAdapter,
@@ -29,6 +26,7 @@ import type {
   ConversationInput,
 } from "./adapter.ts";
 import { defaultReadVersion } from "./cli-path.ts";
+import { startCliProcess, type CliProcess } from "./cli-process.ts";
 import { AgentRunError, childEnv, versionOnly } from "./launch.ts";
 import { buildConversationPrompt, buildTurnPrompt } from "./prompts.ts";
 import {
@@ -38,20 +36,21 @@ import {
 } from "./turn-slot.ts";
 
 /**
- * The pull request's conversation (#778): one at a time, for one pull request
- * at one head. Its turns run one after another, each holding the app's one
- * agent slot only while it runs, and stream their text to the window. A turn
- * for another pull request replaces the conversation, and so does idleness;
- * coming back continues the provider's conversation. See #643 and
- * docs/research/agent-sessions-for-deck.md.
+ * The pull request's conversation (#778): one at a time, for one pull
+ * request. Its turns run one after another, each holding the app's one agent
+ * slot only while it runs, and stream their text to the window. A turn for
+ * another pull request replaces the conversation, and so does idleness;
+ * coming back continues the provider's conversation. A new head keeps it:
+ * the next turn rebinds its tools to that head and tells the agent. See
+ * #643, ADR 0021 and docs/research/agent-sessions-for-deck.md.
  */
 
 /** A conversation with no turn for this long closes. Provisional (#643). */
 export const DEFAULT_CONVERSATION_IDLE_MS = 5 * 60_000;
+/** A running turn whose CLI prints nothing for this long fails, as a stalled run does. */
+export const DEFAULT_TURN_STALL_MS = 10 * 60_000;
 /** How long an interrupted turn has to end before its process is ended. */
 const INTERRUPT_GRACE_MS = 5000;
-const DEFAULT_KILL_GRACE_MS = 5000;
-const ERROR_LINES = 20;
 /** Pull requests whose provider conversation Ajour remembers, to resume it. */
 const REMEMBERED_SESSIONS = 20;
 
@@ -63,6 +62,11 @@ export interface AgentConversationsOptions {
       name: string,
       scope: { pullRequest: McpClientPullRequestBinding },
     ): Promise<McpClientCreateResponse>;
+    /** Binds a conversation's client to the pull request's new head. */
+    rebindMcpClient(
+      clientId: string,
+      binding: McpClientPullRequestBinding,
+    ): Promise<boolean>;
     revokeMcpClient(clientId: string): Promise<boolean>;
   };
   adapters: AgentCliAdapter[];
@@ -80,6 +84,8 @@ export interface AgentConversationsOptions {
   idleMs?: number;
   killGraceMs?: number;
   interruptGraceMs?: number;
+  /** How long a running turn's CLI may print nothing before the turn fails. */
+  stallMs?: number;
 }
 
 type ConversationUnit = Unit<AjourCatalog, "agent.conversation">;
@@ -87,12 +93,14 @@ type TurnUnit = Unit<AjourCatalog, "agent.turn">;
 type CloseReason = "replaced" | "idle" | "shutdown" | "failed";
 type LaunchStep =
   | "find_executable"
+  | "rebind_client"
   | "create_client"
   | "create_work_folder"
   | "build_invocation"
   | "write_files"
   | "spawn";
-type TurnStopReason = "user" | "replaced" | "shutdown" | "interrupt_timeout";
+type TurnStopReason =
+  "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled";
 
 /** How a turn ended, for the window and its event. */
 type TurnEnding =
@@ -102,7 +110,7 @@ type TurnEnding =
       outcome: "failed";
       /** For the window. Never logged. */
       message: string;
-      reason: "cli_failed" | "cli_exited" | "mcp_failed";
+      reason: "cli_failed" | "cli_exited" | "mcp_failed" | "stalled";
     }
   | { outcome: "failed"; message: string; launchFailure: LaunchFailure };
 
@@ -114,7 +122,11 @@ interface LaunchFailure {
 interface Turn {
   id: string;
   task: CoreAgentTask;
-  prompt: string;
+  message?: string;
+  /** The head the turn is about. The conversation rebinds to it when it starts. */
+  head: string;
+  /** The head the conversation was bound to before this turn, when it changed. */
+  headChangedFrom?: string;
   unit: TurnUnit;
   /** Aborts the wait for the slot. */
   wait: AbortController;
@@ -124,29 +136,36 @@ interface Turn {
   toolCalls: number;
   interrupting: boolean;
   interruptTimer?: NodeJS.Timeout;
+  /** Fails the turn when its CLI goes quiet for too long. */
+  stallTimer?: NodeJS.Timeout;
   stopReason?: TurnStopReason;
-  /** A per-turn process's own ending, which counts once the process closes. */
+  /**
+   * The CLI's own ending, which counts once its process finished: a
+   * per-turn process's, or one that may need the turn sent again.
+   */
   reported?: TurnEnding;
+  /** Set when a resume failed and the turn started a new provider conversation. */
+  historyLost: boolean;
+  /** The turn's latest send, which a turn's end waits for. */
+  sending?: Promise<void>;
   finish: (ending: TurnEnding) => void;
   ended: Promise<TurnEnding>;
   settled: boolean;
 }
 
-interface CliProcess {
-  child: ChildProcess;
+interface ConversationProcess {
+  proc: CliProcess;
   codec: ConversationCodec;
   resumed: boolean;
   /** Whether it named its provider session, so a resume worked. */
   namedSession: boolean;
-  exited?: { code: number | null };
-  killTimer?: NodeJS.Timeout;
-  errorLines: string[];
-  closed: Promise<void>;
 }
 
 interface Conversation {
   id: string;
+  /** Its pull request. A new head keeps the conversation. */
   key: string;
+  /** The pull request and the head its tools are bound to now. */
   binding: McpClientPullRequestBinding;
   adapter: AgentCliAdapter;
   protocol: ConversationAdapter;
@@ -156,7 +175,7 @@ interface Conversation {
   turns: Turn[];
   client?: { id: string; token: string };
   workDirectory?: string;
-  process?: CliProcess;
+  process?: ConversationProcess;
   providerSession?: string;
   idleTimer?: NodeJS.Timeout;
   /** Runs its turns while it has any. */
@@ -165,10 +184,8 @@ interface Conversation {
   turnCount: number;
   launchCount: number;
   resumeCount: number;
+  headChangeCount: number;
 }
-
-const bindingKey = (binding: McpClientPullRequestBinding) =>
-  `${binding.pullRequest}\n${binding.head}`;
 
 export class AgentConversations {
   private readonly options: AgentConversationsOptions;
@@ -180,10 +197,13 @@ export class AgentConversations {
     string,
     { conversation: Conversation; turn: Turn }
   >();
-  /** The provider's conversation per pull request and head, newest last. */
+  /**
+   * The provider's conversation per pull request, newest last, with the
+   * head it was last about.
+   */
   private readonly sessions = new Map<
     string,
-    { cli: AgentCliId; id: string }
+    { cli: AgentCliId; id: string; head: string }
   >();
   private stopping = false;
 
@@ -228,9 +248,9 @@ export class AgentConversations {
 
     // No await from here on: the conversation and its turn queue change in
     // one go, so two starts can't both open a conversation.
-    const binding = { pullRequest: request.pullRequest, head: request.head };
-    const key = bindingKey(binding);
+    const key = request.pullRequest;
     let conversation = this.conversation;
+    // Another pull request, CLI or model replaces it; a new head doesn't.
     if (
       conversation &&
       (conversation.key !== key ||
@@ -241,7 +261,7 @@ export class AgentConversations {
       conversation = null;
     }
     conversation ??= this.open(
-      binding,
+      { pullRequest: request.pullRequest, head: request.head },
       adapter,
       adapter.conversation,
       settings,
@@ -302,23 +322,25 @@ export class AgentConversations {
         conversation_mode: protocol.mode,
       },
     });
-    const key = bindingKey(binding);
+    const key = binding.pullRequest;
     const remembered = this.sessions.get(key);
+    const resumes = remembered?.cli === adapter.id;
     const conversation: Conversation = {
       id,
       key,
-      binding,
+      // A resumed conversation starts at the head it was about, so its
+      // first turn rebinds it and tells the agent when the head moved.
+      binding: resumes ? { ...binding, head: remembered.head } : binding,
       adapter,
       protocol,
       model: settings.model,
       unit,
       turns: [],
-      ...(remembered?.cli === adapter.id
-        ? { providerSession: remembered.id }
-        : {}),
+      ...(resumes ? { providerSession: remembered.id } : {}),
       turnCount: 0,
       launchCount: 0,
       resumeCount: 0,
+      headChangeCount: 0,
     };
     this.conversation = conversation;
     return conversation;
@@ -349,7 +371,8 @@ export class AgentConversations {
     const turn: Turn = {
       id,
       task: request.task,
-      prompt: buildTurnPrompt(request.task, request.message),
+      ...(request.message === undefined ? {} : { message: request.message }),
+      head: request.head,
       unit,
       wait: new AbortController(),
       waitedFrom: Date.now(),
@@ -357,12 +380,14 @@ export class AgentConversations {
       textPieces: 0,
       toolCalls: 0,
       interrupting: false,
+      historyLost: false,
       ended,
       settled: false,
       finish: (ending) => {
         if (turn.settled) return;
         turn.settled = true;
         clearTimeout(turn.interruptTimer);
+        clearTimeout(turn.stallTimer);
         finish(ending);
       },
     };
@@ -377,7 +402,7 @@ export class AgentConversations {
     while (conversation.turns.length > 0) {
       const turn = conversation.turns[0]!;
       await this.runTurn(conversation, turn);
-      conversation.turns.shift();
+      if (conversation.turns[0] === turn) conversation.turns.shift();
       this.turns.delete(turn.id);
     }
     if (!conversation.closing && this.conversation === conversation) {
@@ -399,7 +424,6 @@ export class AgentConversations {
       }
     }
     turn.unit.set({ agent: { wait_ms: Date.now() - turn.waitedFrom } });
-    let sending: Promise<void> | undefined;
     if (lease && !turn.settled) {
       turn.started = true;
       this.options.publish({
@@ -407,12 +431,13 @@ export class AgentConversations {
         turnId: turn.id,
         conversationId: conversation.id,
       });
-      sending = this.send(conversation, turn);
+      this.watchStall(conversation, turn);
+      turn.sending = this.send(conversation, turn);
     }
     const ending = await turn.ended;
     // A turn stopped while its process started ends once it has, so a close
     // never misses that process.
-    await sending;
+    await turn.sending;
     lease?.release();
     this.endTurn(conversation, turn, ending);
   }
@@ -431,11 +456,36 @@ export class AgentConversations {
     });
   }
 
-  /** Sends the turn to the conversation's process, starting one if needed. */
+  /** (Re)starts the running turn's stall timer: its CLI said something. */
+  private watchStall(conversation: Conversation, turn: Turn) {
+    clearTimeout(turn.stallTimer);
+    if (turn.settled) return;
+    turn.stallTimer = setTimeout(() => {
+      if (turn.settled) return;
+      turn.stopReason = "stalled";
+      const cli = conversation.process;
+      if (cli) {
+        this.terminate(cli);
+      } else {
+        turn.finish(STALLED);
+      }
+    }, this.options.stallMs ?? DEFAULT_TURN_STALL_MS);
+    turn.stallTimer.unref();
+  }
+
+  /**
+   * Sends the turn to the conversation's process, starting one if needed.
+   * A turn about a new head first rebinds the conversation's tools to it.
+   */
   private async send(conversation: Conversation, turn: Turn) {
     let step: LaunchStep = "find_executable";
     try {
+      if (turn.head !== conversation.binding.head) {
+        step = "rebind_client";
+        await this.rebind(conversation, turn);
+      }
       if (!conversation.process) {
+        step = "find_executable";
         const launched = await this.launch(conversation, (next) => {
           step = next;
         });
@@ -455,8 +505,22 @@ export class AgentConversations {
       }
       const { process: cli } = conversation;
       if (!cli || turn.settled) return;
-      this.write(cli, cli.codec.sendTurn(turn.prompt));
-      if (conversation.protocol.mode === "per-turn") cli.child.stdin?.end();
+      cli.proc.write(
+        cli.codec.sendTurn(
+          buildTurnPrompt(turn.task, turn.message, {
+            ...(turn.headChangedFrom
+              ? {
+                  headChange: {
+                    from: turn.headChangedFrom,
+                    to: conversation.binding.head,
+                  },
+                }
+              : {}),
+            ...(turn.historyLost ? { historyLost: true } : {}),
+          }),
+        ),
+      );
+      if (conversation.protocol.mode === "per-turn") cli.proc.endInput();
     } catch (error) {
       turn.finish({
         outcome: "failed",
@@ -469,11 +533,29 @@ export class AgentConversations {
     }
   }
 
+  /** Binds the conversation, and its client, to the turn's head. */
+  private async rebind(conversation: Conversation, turn: Turn) {
+    const binding = { pullRequest: conversation.key, head: turn.head };
+    turn.headChangedFrom = conversation.binding.head;
+    // The binding changes first: a client created later gets the new head.
+    conversation.binding = binding;
+    conversation.headChangeCount += 1;
+    const remembered = this.sessions.get(conversation.key);
+    if (remembered) remembered.head = binding.head;
+    turn.unit.set({ agent: { head_changed: true } });
+    if (conversation.client) {
+      await this.options.storage.rebindMcpClient(
+        conversation.client.id,
+        binding,
+      );
+    }
+  }
+
   /** Starts the conversation's process, and its client and folder the first time. */
   private async launch(
     conversation: Conversation,
     reached: (step: LaunchStep) => void,
-  ): Promise<CliProcess> {
+  ): Promise<ConversationProcess> {
     const { adapter, protocol } = conversation;
     const pathValue = await this.options.loginShellPath();
     const executable = await this.options.findExecutable(
@@ -540,82 +622,63 @@ export class AgentConversations {
     }
 
     reached("spawn");
-    const plan = resolveSpawn(
-      invocation.command,
-      invocation.args,
-      invocation.env,
-    );
-    if ("refused" in plan) {
-      throw new AgentRunError(
-        spawnRefusalMessage(plan.refused, adapter.label, invocation.command),
-        400,
-      );
-    }
-    const child = spawn(plan.command, plan.args, {
+    let cli: ConversationProcess | undefined;
+    const proc = startCliProcess({
+      invocation,
+      label: adapter.label,
       cwd: conversation.workDirectory,
-      env: plan.env,
-      shell: false,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdin: "pipe",
+      ...(this.options.killGraceMs === undefined
+        ? {}
+        : { killGraceMs: this.options.killGraceMs }),
+      onLine: (line) => {
+        if (cli) this.onLine(conversation, cli, line);
+      },
     });
-    const cli: CliProcess = {
-      child,
+    cli = {
+      proc,
       codec: protocol.createCodec(input),
       resumed: resume !== undefined,
       namedSession: false,
-      errorLines: [],
-      closed: Promise.resolve(),
     };
+    const started = cli;
     conversation.launchCount += 1;
     if (cli.resumed) conversation.resumeCount += 1;
     conversation.process = cli;
-    cli.closed = this.watch(conversation, cli);
-    this.write(cli, cli.codec.open());
+    // It ends when it closes, or a grace period after it exited or was
+    // ended: what it started can hold its output open (#341).
+    void proc.finished.then(({ code }) =>
+      this.onClose(conversation, started, code),
+    );
+    proc.write(cli.codec.open());
     return cli;
   }
 
-  private write(cli: CliProcess, lines: string[]) {
-    const stdin = cli.child.stdin;
-    if (!stdin || stdin.writableEnded || stdin.destroyed) return;
-    for (const line of lines) stdin.write(`${line}\n`);
-  }
-
-  /** Reads the process's output. Resolves when it closes. */
-  private watch(conversation: Conversation, cli: CliProcess): Promise<void> {
-    const { child } = cli;
-    // A process that is gone can't take a write.
-    child.stdin?.on("error", () => undefined);
-    createInterface({ input: child.stdout! }).on("line", (line) => {
-      const { events, reply } = cli.codec.read(line);
-      this.write(cli, reply);
-      for (const event of events) this.onEvent(conversation, cli, event);
-    });
-    createInterface({ input: child.stderr! }).on("line", (line) => {
-      cli.errorLines.push(line);
-      if (cli.errorLines.length > ERROR_LINES) cli.errorLines.shift();
-    });
-    return new Promise((resolve) => {
-      child.on("error", (error) => {
-        cli.errorLines.push(error.message);
-      });
-      child.on("exit", (code) => {
-        cli.exited = { code };
-      });
-      child.on("close", (code) => {
-        clearTimeout(cli.killTimer);
-        this.onClose(conversation, cli, code);
-        resolve();
-      });
-    });
+  private onLine(
+    conversation: Conversation,
+    cli: ConversationProcess,
+    line: string,
+  ) {
+    const { events, reply } = cli.codec.read(line);
+    cli.proc.write(reply);
+    const turn = conversation.turns[0];
+    // The CLI said something: the running turn isn't stalled.
+    if (turn?.started && !turn.settled && conversation.process === cli) {
+      this.watchStall(conversation, turn);
+    }
+    for (const event of events) this.onEvent(conversation, cli, event);
   }
 
   private onEvent(
     conversation: Conversation,
-    cli: CliProcess,
+    cli: ConversationProcess,
     event: ConversationEvent,
   ) {
     const turn = conversation.turns[0];
-    const running = turn?.started && !turn.settled ? turn : undefined;
+    const running =
+      turn?.started && !turn.settled && conversation.process === cli
+        ? turn
+        : undefined;
     switch (event.kind) {
       case "session":
         cli.namedSession = true;
@@ -638,7 +701,7 @@ export class AgentConversations {
         return;
       case "mcp-failed":
         if (running) {
-          this.reportEnding(conversation, running, {
+          this.reportEnding(conversation, cli, running, {
             outcome: "failed",
             message: `The ${event.server} MCP server did not start.`,
             reason: "mcp_failed",
@@ -652,6 +715,7 @@ export class AgentConversations {
         if (!running) return;
         this.reportEnding(
           conversation,
+          cli,
           running,
           event.kind === "turn-done"
             ? { outcome: "done" }
@@ -667,42 +731,74 @@ export class AgentConversations {
     }
   }
 
+  /** A resumed process that never named its session found no conversation to resume. */
+  private resumeFailed(cli: ConversationProcess) {
+    return cli.resumed && !cli.namedSession;
+  }
+
   /**
    * A warm process's turn ends with its own ending. A per-turn process's
-   * ending counts once it closes, so the next turn never starts a second
-   * process on the same conversation.
+   * ending counts once it finished, so the next turn never starts a second
+   * process on the same conversation. So does a failed resume's, whose turn
+   * is sent again to a new conversation.
    */
   private reportEnding(
     conversation: Conversation,
+    cli: ConversationProcess,
     turn: Turn,
     ending: TurnEnding,
   ) {
-    if (conversation.protocol.mode === "warm") turn.finish(ending);
-    else turn.reported ??= ending;
+    if (conversation.protocol.mode === "warm" && !this.resumeFailed(cli)) {
+      turn.finish(ending);
+      return;
+    }
+    turn.reported ??= ending;
+    if (this.resumeFailed(cli)) this.terminate(cli);
   }
 
   private onClose(
     conversation: Conversation,
-    cli: CliProcess,
+    cli: ConversationProcess,
     code: number | null,
   ) {
     if (conversation.process === cli) conversation.process = undefined;
-    // A resume that never named a session didn't work: start fresh next time.
-    if (cli.resumed && !cli.namedSession) {
+    const resumeFailed = this.resumeFailed(cli);
+    // A resume that never named a session didn't work: start fresh.
+    if (resumeFailed) {
       conversation.providerSession = undefined;
       this.sessions.delete(conversation.key);
     }
     const turn = conversation.turns[0];
     if (!turn?.started || turn.settled) return;
     turn.unit.set({ agent: { exit_code: code } });
-    if (turn.reported) {
+    if (
+      resumeFailed &&
+      turn.reported?.outcome !== "done" &&
+      turn.textPieces === 0 &&
+      !turn.historyLost &&
+      !turn.interrupting &&
+      !turn.stopReason &&
+      !conversation.closing
+    ) {
+      // The provider has no conversation to resume, such as after its own
+      // sessions were cleared. The turn starts a new one, once, and says the
+      // earlier turns are gone.
+      turn.historyLost = true;
+      turn.reported = undefined;
+      turn.unit.set({ agent: { history_lost: true } });
+      turn.sending = this.send(conversation, turn);
+      return;
+    }
+    if (turn.stopReason === "stalled") {
+      turn.finish(STALLED);
+    } else if (turn.reported) {
       turn.finish(turn.reported);
     } else if (turn.interrupting || turn.stopReason) {
       turn.finish({ outcome: "cancelled" });
     } else if (code === 0 && conversation.protocol.mode === "per-turn") {
       turn.finish({ outcome: "done" });
     } else {
-      const output = cli.errorLines.at(-1);
+      const output = cli.proc.errorLines.at(-1);
       turn.finish({
         outcome: "failed",
         message: output
@@ -715,7 +811,11 @@ export class AgentConversations {
 
   private rememberSession(conversation: Conversation, id: string) {
     this.sessions.delete(conversation.key);
-    this.sessions.set(conversation.key, { cli: conversation.adapter.id, id });
+    this.sessions.set(conversation.key, {
+      cli: conversation.adapter.id,
+      id,
+      head: conversation.binding.head,
+    });
     if (this.sessions.size > REMEMBERED_SESSIONS) {
       this.sessions.delete(this.sessions.keys().next().value!);
     }
@@ -729,9 +829,18 @@ export class AgentConversations {
     if (turn.settled) return;
     turn.stopReason ??= reason;
     if (!turn.started) {
-      // It waits: for the slot, or behind another turn.
+      // It waits: for the slot, or behind another turn. It ends now, so a
+      // second cancel finds nothing.
       turn.wait.abort();
       turn.finish({ outcome: "cancelled" });
+      this.turns.delete(turn.id);
+      const index = conversation.turns.indexOf(turn);
+      if (index > 0) {
+        // Behind another turn, so nothing runs it: it ends here.
+        conversation.turns.splice(index, 1);
+        this.endTurn(conversation, turn, { outcome: "cancelled" });
+      }
+      // The first one waits for the slot, and its run ends it at once.
       return;
     }
     const cli = conversation.process;
@@ -747,7 +856,7 @@ export class AgentConversations {
       this.terminate(cli);
       return;
     }
-    this.write(cli, lines);
+    cli.proc.write(lines);
     turn.interruptTimer = setTimeout(() => {
       turn.stopReason = "interrupt_timeout";
       this.terminate(cli);
@@ -771,6 +880,7 @@ export class AgentConversations {
       conversationId: conversation.id,
       outcome: ending.outcome,
       ...(ending.outcome === "failed" ? { error: ending.message } : {}),
+      ...(turn.historyLost ? { historyLost: true } : {}),
     });
     if (ending.outcome === "done") {
       unit.end("ok");
@@ -820,7 +930,8 @@ export class AgentConversations {
       const cli = conversation.process;
       if (!cli) return;
       this.terminate(cli);
-      await this.closedWithinGrace(cli);
+      // Comes a second after the kill grace period at the latest.
+      await cli.proc.finished;
     };
     await endProcess();
     // A process that never closed ends its turn here.
@@ -843,7 +954,11 @@ export class AgentConversations {
     }
     if (conversation.workDirectory) {
       try {
-        await rm(conversation.workDirectory, { recursive: true, force: true });
+        await rm(conversation.workDirectory, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+        });
       } catch (error) {
         failures.push({ step: "remove_work_folder", error });
       }
@@ -859,6 +974,7 @@ export class AgentConversations {
         turn_count: conversation.turnCount,
         launch_count: conversation.launchCount,
         resume_count: conversation.resumeCount,
+        head_change_count: conversation.headChangeCount,
         close_reason: reason,
       },
       cleanup: {
@@ -870,33 +986,13 @@ export class AgentConversations {
     conversation.unit.end(reason === "failed" ? "error" : "ok");
   }
 
-  /** Ends stdin, then SIGTERM, then SIGKILL after the grace period. */
-  private terminate(cli: CliProcess) {
-    cli.child.stdin?.end();
-    if (cli.child.pid === undefined || cli.exited) return;
-    cli.child.kill("SIGTERM");
-    if (cli.killTimer) return;
-    cli.killTimer = setTimeout(
-      () => cli.child.kill("SIGKILL"),
-      this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
-    );
-    cli.killTimer.unref();
-  }
-
-  /**
-   * Waits for the process to close, or gives up a second after the kill
-   * grace period: something it started can hold its output open (#341).
-   */
-  private closedWithinGrace(cli: CliProcess): Promise<void> {
-    return new Promise((resolve) => {
-      const giveUp = setTimeout(
-        resolve,
-        (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
-      );
-      void cli.closed.then(() => {
-        clearTimeout(giveUp);
-        resolve();
-      });
-    });
+  private terminate(cli: ConversationProcess) {
+    cli.proc.terminate();
   }
 }
+
+const STALLED: TurnEnding = {
+  outcome: "failed",
+  message: "The agent stopped answering.",
+  reason: "stalled",
+};

@@ -1,10 +1,72 @@
 import { fileURLToPath } from "node:url";
 import { claudeCodeAdapter } from "../agent-runner/adapters/claude-code.ts";
-import type { AgentCliAdapter } from "../agent-runner/adapter.ts";
+import { codexAdapter } from "../agent-runner/adapters/codex.ts";
+import type {
+  AgentCliAdapter,
+  ConversationAdapter,
+} from "../agent-runner/adapter.ts";
 
 const FAKE_CLI = fileURLToPath(
   new URL("../agent-runner/fake-cli.mjs", import.meta.url),
 );
+
+/**
+ * What a conversation's process runs: its steps, or its steps and the files
+ * the launch writes in place of the adapter's, such as a name that can't be
+ * written.
+ */
+export type FakeConversationScript =
+  unknown[] | { steps: unknown[]; files: Record<string, string> };
+
+export type FakeConversation = (launch: {
+  index: number;
+  resume?: string;
+}) => FakeConversationScript;
+
+const fakeEnv = (
+  baseEnv: Record<string, string>,
+  token: string,
+  steps: unknown[],
+  report: string,
+  mcpUrl: string,
+) => ({
+  ...baseEnv,
+  AJOUR_MCP_TOKEN: token,
+  FAKE_CLI_SCRIPT: JSON.stringify(steps),
+  FAKE_CLI_REPORT: report,
+  FAKE_CLI_MCP_URL: mcpUrl,
+});
+
+/**
+ * The real conversation adapter with the fake CLI in its CLI's place: the
+ * real arguments follow the fake's path, so a test can read `--resume`, and
+ * the real codec reads its output.
+ */
+function fakeConversation(
+  real: ConversationAdapter,
+  report: string,
+  mcpUrl: () => string,
+  conversation: FakeConversation,
+): ConversationAdapter {
+  let launches = 0;
+  return {
+    ...real,
+    buildInvocation: (input) => {
+      const invocation = real.buildInvocation(input);
+      const script = conversation({
+        index: launches++,
+        ...(input.resume ? { resume: input.resume } : {}),
+      });
+      const steps = Array.isArray(script) ? script : script.steps;
+      return {
+        command: process.execPath,
+        args: [FAKE_CLI, ...invocation.args],
+        env: fakeEnv(input.baseEnv, input.token, steps, report, mcpUrl()),
+        files: Array.isArray(script) ? invocation.files : script.files,
+      };
+    },
+  };
+}
 
 /**
  * Claude Code, played by the fake CLI: it runs `script` (see fake-cli.mjs)
@@ -22,48 +84,42 @@ export function fakeCliAdapter(
   script: unknown[],
   report: string,
   mcpUrl: () => string,
-  conversation: (launch: {
-    index: number;
-    resume?: string;
-  }) => unknown[] = () => [],
+  conversation: FakeConversation = () => [],
 ): AgentCliAdapter {
-  let launches = 0;
-  const env = (
-    baseEnv: Record<string, string>,
-    token: string,
-    steps: unknown[],
-  ) => ({
-    ...baseEnv,
-    AJOUR_MCP_TOKEN: token,
-    FAKE_CLI_SCRIPT: JSON.stringify(steps),
-    FAKE_CLI_REPORT: report,
-    FAKE_CLI_MCP_URL: mcpUrl(),
-  });
-  const claudeConversation = claudeCodeAdapter.conversation!;
   return {
     ...claudeCodeAdapter,
     buildInvocation: (input) => ({
       command: process.execPath,
       args: [FAKE_CLI],
-      env: env(input.baseEnv, input.token, script),
+      env: fakeEnv(input.baseEnv, input.token, script, report, mcpUrl()),
       files: { "prompt.md": input.prompt },
     }),
-    conversation: {
-      ...claudeConversation,
-      buildInvocation: (input) => {
-        const real = claudeConversation.buildInvocation(input);
-        const steps = conversation({
-          index: launches++,
-          ...(input.resume ? { resume: input.resume } : {}),
-        });
-        return {
-          command: process.execPath,
-          // The real arguments follow, so a test can read `--resume`.
-          args: [FAKE_CLI, ...real.args],
-          env: env(input.baseEnv, input.token, steps),
-          files: real.files,
-        };
-      },
-    },
+    conversation: fakeConversation(
+      claudeCodeAdapter.conversation!,
+      report,
+      mcpUrl,
+      conversation,
+    ),
+  };
+}
+
+/**
+ * Codex, played by the fake CLI, for a pull request's conversation: one
+ * process per turn, which reads the turn on stdin and speaks `exec --json`.
+ * The runner looks it up as `codex`.
+ */
+export function fakeCodexAdapter(
+  report: string,
+  mcpUrl: () => string,
+  conversation: FakeConversation,
+): AgentCliAdapter {
+  return {
+    ...codexAdapter,
+    conversation: fakeConversation(
+      codexAdapter.conversation!,
+      report,
+      mcpUrl,
+      conversation,
+    ),
   };
 }
