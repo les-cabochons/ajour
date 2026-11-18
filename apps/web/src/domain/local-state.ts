@@ -90,6 +90,11 @@ export interface LocalTaskSourceLink {
   assigned: boolean;
   /** The user's hours on the task as the source counts them, when it can. */
   myHours?: number;
+  /**
+   * The hours everyone used on the task as the source counts them, as of the
+   * connection's `asOf`. See `sourceTaskUsage` in domain/projects/project-budget.ts.
+   */
+  workedHours?: number;
 }
 
 /**

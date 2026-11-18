@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   LocalProject,
   LocalProjectSourceBudget,
+  LocalProjectTask,
   LocalTimesheetEntry,
   LocalTimesheetEntryCommit,
 } from "@/domain/local-state";
@@ -11,7 +12,7 @@ import {
   reconciliation,
   remainingEstimate,
   sourceRemainingMs,
-  sourceTaskConsumed,
+  sourceTaskUsage,
 } from "@/domain/projects/project-budget";
 
 /*
@@ -464,23 +465,85 @@ describe("re-committing after the source's time (known limitation)", () => {
   });
 });
 
-describe("sourceTaskConsumed", () => {
-  it("reads a source task's hours for the user against its estimate", () => {
-    expect(
-      sourceTaskConsumed({
-        budgetMs: 8 * HOUR,
-        source: { remoteId: "1001", assigned: true, myHours: 5.25 },
-      }),
-    ).toEqual({ budgetMs: 8 * HOUR, consumedMs: 5.25 * HOUR });
+describe("sourceTaskUsage", () => {
+  /** A source task of the project, with the source's worked hours. */
+  function sourceTask(
+    _id: string,
+    workedHours: number | undefined,
+    overrides: Partial<LocalProjectTask> = {},
+  ): LocalProjectTask {
+    return {
+      _id,
+      name: _id,
+      status: "active",
+      createdAt: 1,
+      source: {
+        remoteId: `remote-${_id}`,
+        assigned: true,
+        ...(workedHours === undefined ? {} : { workedHours }),
+      },
+      ...overrides,
+    };
+  }
+
+  it("adds the user's time the source can't have yet to the source's hours for everyone", () => {
+    // The source has 3.5 hours on Login, one of the user's committed 2-hour
+    // entries among them. The other was never committed.
+    const usage = sourceTaskUsage(
+      { _id: "acme", tasks: [sourceTask("login", 3.5)] },
+      [entry({ commit: committed(BEFORE) }), entry({})],
+      AS_OF,
+    );
+
+    expect(usage.get("login")).toEqual({
+      sourceMs: 3.5 * HOUR,
+      notCountedMs: 2 * HOUR,
+    });
   });
 
-  it("has nothing to read when the source gives no hours for the user, or doesn't know the task", () => {
-    expect(
-      sourceTaskConsumed({
-        budgetMs: 8 * HOUR,
-        source: { remoteId: "1002", assigned: false },
-      }),
-    ).toBeUndefined();
-    expect(sourceTaskConsumed({ budgetMs: 8 * HOUR })).toBeUndefined();
+  it("counts the task's whole life, not only the budget's period", () => {
+    const usage = sourceTaskUsage(
+      { _id: "acme", tasks: [sourceTask("login", 0)] },
+      [entry({ localDate: "2025-03-04" })],
+      AS_OF,
+    );
+
+    expect(usage.get("login")?.notCountedMs).toBe(2 * HOUR);
+  });
+
+  it("takes the committed hours off the task an entry left, and counts them on the task it went to", () => {
+    // Committed on Login before asOf, then moved to Export.
+    const moved = entry({ taskId: "export", commit: committed(BEFORE) });
+    const usage = sourceTaskUsage(
+      {
+        _id: "acme",
+        tasks: [sourceTask("login", 5), sourceTask("export", 1)],
+      },
+      [moved],
+      AS_OF,
+    );
+
+    expect(usage.get("login")?.notCountedMs).toBe(-2 * HOUR);
+    expect(usage.get("export")?.notCountedMs).toBe(2 * HOUR);
+  });
+
+  it("leaves out a task the source gives no worked hours for, and one that left the source", () => {
+    const usage = sourceTaskUsage(
+      {
+        _id: "acme",
+        tasks: [
+          sourceTask("export", undefined),
+          sourceTask("design", 4, {
+            status: "archived",
+            archivedByMissingSync: true,
+          }),
+          { _id: "local", name: "Local", status: "active", createdAt: 1 },
+        ],
+      },
+      [entry({ taskId: "local" })],
+      AS_OF,
+    );
+
+    expect([...usage.keys()]).toEqual([]);
   });
 });

@@ -97,11 +97,20 @@ export const projectSourceTaskSchema = z.object({
   group: z.string().trim().min(1).max(120).optional(),
   closed: z.boolean(),
   billable: z.boolean().optional(),
+  /** The task's budget in hours, one number for everyone on it. */
   estimateHours: hoursSchema.optional(),
   /** Whether the source assigns the task to the user. */
   assigned: z.boolean(),
   /** The user's hours on the task as the source counts them, when it can. */
   myHours: hoursSchema.optional(),
+  /**
+   * The hours used on the task as of `asOf`, everyone's and all time, the
+   * user's included, with the source's own corrections. Ajour adds the
+   * user's time on the task the source can't have yet, and their own
+   * adjustment, and reads the sum against the budget. Without it, the task
+   * reads the time logged in Ajour.
+   */
+  workedHours: hoursSchema.optional(),
 });
 export type ProjectSourceTask = z.infer<typeof projectSourceTaskSchema>;
 

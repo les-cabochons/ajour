@@ -129,6 +129,9 @@ function taskSourceOf(task: ProjectSourceTask) {
     ...(task.group !== undefined ? { group: task.group } : {}),
     assigned: task.assigned,
     ...(task.myHours !== undefined ? { myHours: task.myHours } : {}),
+    ...(task.workedHours !== undefined
+      ? { workedHours: task.workedHours }
+      : {}),
   };
 }
 

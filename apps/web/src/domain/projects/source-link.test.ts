@@ -58,6 +58,7 @@ describe("normalizeProject for a managed project", () => {
             group: "Support",
             assigned: true,
             myHours: 5,
+            workedHours: 12.5,
           },
         },
       ],
@@ -80,6 +81,7 @@ describe("normalizeProject for a managed project", () => {
         group: "Support",
         assigned: true,
         myHours: 5,
+        workedHours: 12.5,
       },
     });
   });
