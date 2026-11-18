@@ -56,7 +56,6 @@ interface HandoffTool {
     id: string;
     label: string;
     type: string;
-    placeholder?: string;
     helpText?: string;
   }[];
   connection?: "required" | "none";
@@ -211,7 +210,6 @@ function startRefusal(
     setting: {
       id: field.id,
       label: field.label,
-      ...(field.placeholder ? { placeholder: field.placeholder } : {}),
       ...(field.helpText ? { helpText: field.helpText } : {}),
       ...(typeof value === "string" && value.length <= 500 ? { value } : {}),
     },

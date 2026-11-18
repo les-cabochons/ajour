@@ -271,7 +271,6 @@ export const handoffStartRefusalSchema = z.object({
     .object({
       id: z.string().min(1).max(120),
       label: z.string().min(1).max(120),
-      placeholder: z.string().max(240).optional(),
       helpText: z.string().max(500).optional(),
       value: z.string().max(500).optional(),
     })
