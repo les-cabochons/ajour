@@ -8,7 +8,11 @@ import {
   samePluginProperties,
   type PluginProperties,
 } from "@/domain/projects/plugin-properties";
-import { formatSignedDurationHoursInput } from "@/domain/projects/task-budget";
+import {
+  formatSignedDurationHoursInput,
+  getTaskBudgetMs,
+  sameBudgetMs,
+} from "@/domain/projects/task-budget";
 import {
   formatDurationHoursInput,
   PLANNED_HOURS_LIMIT,
@@ -57,6 +61,7 @@ type SavedTask = Pick<
   | "name"
   | "billable"
   | "budgetMs"
+  | "budgetOverrideMs"
   | "adjustmentMs"
   | "pinnedSlot"
   | "pluginProperties"
@@ -92,17 +97,18 @@ export type ProjectTaskDraftCommit =
 const NAME_ERROR = "Enter a task name.";
 const COMMITS_AS_ERROR = "Pick the task it commits as.";
 
-/** Seeds the draft from a saved task, or blank for a new one. New tasks are billable. */
+/**
+ * Seeds the draft from a saved task, or blank for a new one. New tasks are
+ * billable. The budget is the one the task reads, its override included.
+ */
 export function createProjectTaskEditorFields(
   task?: SavedTask,
 ): ProjectTaskEditorFields {
+  const budgetMs = task ? getTaskBudgetMs(task) : undefined;
   return {
     name: task?.name ?? "",
     billable: task ? isProjectTaskBillable(task) : true,
-    budget:
-      typeof task?.budgetMs === "number"
-        ? formatDurationHoursInput(task.budgetMs)
-        : "",
+    budget: budgetMs === undefined ? "" : formatDurationHoursInput(budgetMs),
     adjustment:
       typeof task?.adjustmentMs === "number"
         ? formatSignedDurationHoursInput(task.adjustmentMs)
@@ -138,6 +144,19 @@ function readOptionalDuration(
     : { durationMs: undefined, error: typed.error };
 }
 
+/**
+ * Whether the typed budget differs from the one the task's project source
+ * sets, to the minute. Text that isn't a budget differs.
+ */
+export function isBudgetChangedFromSource(
+  text: string,
+  sourceBudgetMs: number | undefined,
+) {
+  if (text.trim() === "") return !sameBudgetMs(undefined, sourceBudgetMs);
+  const typed = readDurationInput(text, PLANNED_HOURS_LIMIT, { signed: false });
+  return !typed.ok || !sameBudgetMs(typed.durationMs, sourceBudgetMs);
+}
+
 /** Evaluates a draft against the saved task it edits, if any. */
 export function evaluateProjectTaskEditor(
   fields: ProjectTaskEditorFields,
@@ -148,7 +167,7 @@ export function evaluateProjectTaskEditor(
   const budget = readOptionalDuration(
     fields.budget,
     seeded.budget,
-    original?.budgetMs,
+    original ? getTaskBudgetMs(original) : undefined,
     false,
   );
   const adjustment = readOptionalDuration(

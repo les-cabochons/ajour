@@ -11,7 +11,8 @@ import { installDomShims } from "@/test-support/dom";
 
 /*
  * The task editor on a task of a managed project that its source knows
- * (#506): the name is the source's, and Commits as stays the user's.
+ * (#506): the name is the source's, the budget is the source's until the
+ * user types their own (#816), and Commits as stays the user's.
  */
 
 const workday: TaskPropertyPlugin = {
@@ -22,14 +23,21 @@ const workday: TaskPropertyPlugin = {
   },
 };
 
+const HOUR = 3_600_000;
+
 const task = {
   name: "Ticket #101 - Login",
   billable: true,
+  budgetMs: 8 * HOUR,
   source: { remoteId: "1001", assigned: true },
 };
 
-function renderEditor(sourceLabel?: string) {
-  const fields = createProjectTaskEditorFields(task);
+/** The editor on the source task, its budget field holding `budget` when given. */
+function renderEditor(sourceLabel?: string, budget?: string) {
+  const fields = {
+    ...createProjectTaskEditorFields(task),
+    ...(budget === undefined ? {} : { budget }),
+  };
   const onFieldsChange = vi.fn();
   render(
     <ProjectTaskEditorForm
@@ -40,6 +48,11 @@ function renderEditor(sourceLabel?: string) {
       taskId="task-1"
       taskPropertyPlugins={[workday]}
       sourceLock={sourceLabel ? { label: sourceLabel } : undefined}
+      sourceBudget={
+        sourceLabel
+          ? { label: sourceLabel, budgetMs: task.budgetMs }
+          : undefined
+      }
       onFieldsChange={onFieldsChange}
       onSave={() => {}}
       onClose={() => {}}
@@ -58,7 +71,7 @@ describe("the task editor on a source task", () => {
     )?.textContent;
   }
 
-  it("shows the name, budget and billable as the source's, with Adjustment and Commits as still the user's", () => {
+  it("locks the name and billable, links the budget to the source, and leaves Adjustment and Commits as to the user", () => {
     const onFieldsChange = renderEditor("Example planner");
     const hint = "Locked. Example planner sets it.";
 
@@ -66,9 +79,16 @@ describe("the task editor on a source task", () => {
     expect(name).toHaveProperty("readOnly", true);
     expect(describedBy(name)).toBe(hint);
 
+    // The source's budget, which the user may type over.
     const budget = screen.getByRole("textbox", { name: "budget" });
-    expect(budget).toHaveProperty("readOnly", true);
-    expect(describedBy(budget)).toBe(hint);
+    expect(budget).toHaveProperty("readOnly", false);
+    expect(describedBy(budget)).toBe(
+      "From Example planner. Type to use your own.",
+    );
+    expect(screen.queryByRole("button", { name: /Revert/ })).toBeNull();
+    fireEvent.change(budget, { target: { value: "12" } });
+    expect(onFieldsChange).toHaveBeenCalledWith({ budget: "12" });
+    onFieldsChange.mockClear();
 
     const billable = screen.getByRole("checkbox", { name: "Billable" });
     expect(billable.getAttribute("aria-disabled")).toBe("true");
@@ -83,6 +103,20 @@ describe("the task editor on a source task", () => {
     expect(screen.getByText("Commits as")).toBeTruthy();
     // The locks add no tab stops of their own.
     expect(document.querySelector("[role=img][tabindex]")).toBeNull();
+  });
+
+  it("turns the link into a revert once the budget differs, saying so and giving the source's", () => {
+    const onFieldsChange = renderEditor("Example planner", "12:00");
+
+    const budget = screen.getByRole("textbox", { name: "budget" });
+    expect(describedBy(budget)).toBe("Changed here. Example planner has 8h.");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Changed here. Example planner has 8h. Revert to it.",
+      }),
+    );
+
+    expect(onFieldsChange).toHaveBeenCalledWith({ budget: "8:00" });
   });
 
   it("leaves a local task's name editable", () => {
