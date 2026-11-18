@@ -1001,11 +1001,19 @@ describe("a turn that goes wrong", () => {
                 { hang: true },
               ]
             : [{ session: "s-1" }, ...answer("Awake"), { readTurn: true }],
-        { stallMs: 400, killGraceMs: 300 },
+        // The stall clock starts with the turn, so the limit also covers the
+        // process starting. A turn that stalls before it's sent never reaches
+        // the process, and the next turn would go to that process and hang.
+        { stallMs: 1_500, killGraceMs: 300 },
       );
 
       const turn = (await api.startTurn()).body;
 
+      // The CLI answered, then went quiet.
+      await api.waitForTurnEvent(
+        "text",
+        (event) => event.turnId === turn.id && event.text === "Hm",
+      );
       expect(
         await api.waitForTurnEvent(
           "ended",
@@ -1032,6 +1040,8 @@ describe("a turn that goes wrong", () => {
           (event) => event.turnId === next.body.id,
         ),
       ).toMatchObject({ outcome: "done" });
+      // Ajour ended the quiet process, so the next turn ran on a new one.
+      expect(await api.launches()).toHaveLength(2);
     },
   );
 
