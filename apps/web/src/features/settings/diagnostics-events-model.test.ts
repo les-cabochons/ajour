@@ -9,7 +9,7 @@ import {
   formatEventDuration,
   formatEventTime,
   formatQuery,
-  hiddenSensitiveFields,
+  missingSensitiveFields,
   joinedNameOf,
   logFilterOf,
   parseEventsView,
@@ -338,22 +338,20 @@ describe("an event's display", () => {
     ]);
   });
 
-  it("names the sensitive fields the catalog declares that weren't written, while they are off", () => {
+  it("names the sensitive fields the catalog declares that weren't written", () => {
     const update = event({
       name: "time_entry.update",
       kind: "command",
-      time_entry: { id: "entry-1" },
+      time_entry: { id: "entry-1", duration_after_ms: 60_000 },
       error: { type: "Error", code: "locked" },
     });
-    const hidden = hiddenSensitiveFields(update, false);
-    expect(hidden).toContain("time_entry.duration_before_ms");
-    expect(hidden).toContain("error.message");
-    expect(hidden).not.toContain("time_entry.id");
-    expect(hiddenSensitiveFields(update, true)).toEqual([]);
-    // No error, no message to hide.
-    expect(hiddenSensitiveFields(event(), false)).not.toContain(
-      "error.message",
-    );
+    const missing = missingSensitiveFields(update);
+    expect(missing).toContain("time_entry.duration_before_ms");
+    expect(missing).toContain("error.message");
+    expect(missing).not.toContain("time_entry.duration_after_ms");
+    expect(missing).not.toContain("time_entry.id");
+    // No error, no message to mark.
+    expect(missingSensitiveFields(event())).not.toContain("error.message");
   });
 
   it("joins connection, plugin, item and project names to their IDs", () => {

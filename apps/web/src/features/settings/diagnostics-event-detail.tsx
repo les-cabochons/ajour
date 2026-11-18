@@ -18,14 +18,16 @@ import { localStore } from "@/lib/local-store";
 import {
   domainFieldsOf,
   formatEventDuration,
-  hiddenSensitiveFields,
+  missingSensitiveFields,
   joinedNameOf,
   type EventDisplayNames,
 } from "./diagnostics-events-model";
 import { OutcomeDot } from "./diagnostics-event-table";
 
-/** What a sensitive field the file doesn't hold shows instead of its value. */
+/** What a sensitive field the file doesn't hold shows, while they are off. */
 export const HIDDEN_SENSITIVE = "hidden · sensitive fields are off";
+/** What it shows while they are on: the event was written before. */
+export const NOT_RECORDED = "not recorded";
 
 /**
  * Names from Ajour's own data for the IDs an event holds: connections and
@@ -70,9 +72,11 @@ export function useEventDisplayNames(): EventDisplayNames {
   }, [overview, workItems, projects]);
 }
 
-function Hidden() {
+function Omitted({ includeSensitive }: { includeSensitive: boolean }) {
   return (
-    <span className="text-xs text-muted-foreground">{HIDDEN_SENSITIVE}</span>
+    <span className="text-xs text-muted-foreground">
+      {includeSensitive ? NOT_RECORDED : HIDDEN_SENSITIVE}
+    </span>
   );
 }
 
@@ -120,8 +124,8 @@ export function EventDetail({
   onCopyJson: () => void;
 }) {
   const fields = domainFieldsOf(event);
-  const hidden = hiddenSensitiveFields(event, includeSensitive);
-  const hiddenFields = hidden.filter((path) => path !== "error.message");
+  const missing = missingSensitiveFields(event);
+  const missingFields = missing.filter((path) => path !== "error.message");
   const steps = event.steps ?? [];
   const failures = event.step_failures ?? [];
   const counts = Object.entries(event.counts ?? {});
@@ -225,15 +229,15 @@ export function EventDetail({
             <Row label="Message">
               {error.message !== undefined ? (
                 <span className="truncate text-xs">{error.message}</span>
-              ) : hidden.includes("error.message") ? (
-                <Hidden />
+              ) : missing.includes("error.message") ? (
+                <Omitted includeSensitive={includeSensitive} />
               ) : null}
             </Row>
           </>
         ) : null}
       </PropertyList>
 
-      {fields.length > 0 || hiddenFields.length > 0 ? (
+      {fields.length > 0 || missingFields.length > 0 ? (
         <>
           <SectionHeading>Fields</SectionHeading>
           <PropertyList>
@@ -242,9 +246,9 @@ export function EventDetail({
                 <IdValue id={value} name={joinedNameOf(path, value, names)} />
               </Row>
             ))}
-            {hiddenFields.map((path) => (
+            {missingFields.map((path) => (
               <Row key={path} label={path}>
-                <Hidden />
+                <Omitted includeSensitive={includeSensitive} />
               </Row>
             ))}
           </PropertyList>

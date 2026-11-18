@@ -531,6 +531,59 @@ describe("Live", () => {
     expect(main.tails[0]!.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the Time range on what it adds: a job that started before it and just ended stays out", async () => {
+    const main = installMain({ events: mixedLog() });
+    await openDiagnostics({ range: "15m" });
+    await click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByTestId("event-count").textContent).toBe("4 events");
+
+    await act(async () => {
+      main.write([
+        logged("backlog.sync_all", { minutesAgo: 20, kind: "job" }),
+        logged("time_entry.stop", { minutesAgo: 0 }),
+      ]);
+    });
+
+    expect(rowNames()).toContain("time_entry.stop");
+    expect(rowNames()).not.toContain("backlog.sync_all");
+    expect(screen.getByTestId("event-count").textContent).toBe("5 events");
+  });
+
+  it("keeps the list newest first when a long event it added belongs on a later page", async () => {
+    const events = Array.from({ length: 250 }, (_, index) =>
+      logged(`job.number_${index}`, { minutesAgo: index }),
+    );
+    const main = installMain({ events });
+    await openDiagnostics();
+    await click(screen.getByRole("button", { name: "Live" }));
+
+    // It started before all but the two oldest, and ended just now.
+    await act(async () => {
+      main.write([logged("backlog.sync_all", { minutesAgo: 247.5 })]);
+    });
+    const rows = screen.getByTestId("event-rows");
+    await act(async () => {
+      rows.scrollTop = 200 * 28 - 448;
+      fireEvent.scroll(rows);
+    });
+    await settle();
+    expect(main.queryLogs.mock.calls[1]![1]).toEqual({
+      limit: 200,
+      cursor: "200",
+    });
+    await act(async () => {
+      rows.scrollTop = 251 * 28;
+      fireEvent.scroll(rows);
+    });
+
+    expect(rowNames().slice(-4)).toEqual([
+      "job.number_247",
+      "backlog.sync_all",
+      "job.number_248",
+      "job.number_249",
+    ]);
+  });
+
   it("stops following when the page closes", async () => {
     const main = installMain({ events: mixedLog() });
     await openDiagnostics();
@@ -685,6 +738,25 @@ describe("the detail pane", () => {
 
     expect(screen.queryByText("hidden · sensitive fields are off")).toBeNull();
     expect(screen.getByText("60000")).toBeTruthy();
+  });
+
+  it("marks the sensitive fields an older event never got as not recorded, while they are on", async () => {
+    installMain({
+      settings: { include_sensitive: true },
+      events: [
+        logged("time_entry.update", {
+          time_entry: { id: "entry-1", running: false },
+          error: { type: "Error", code: "locked_week" },
+        }),
+      ],
+    });
+    await openDiagnostics();
+
+    await selectRow("time_entry.update");
+
+    const pane = screen.getByRole("region", { name: "Event details" });
+    expect(within(pane).getAllByText("not recorded")).toHaveLength(3); // duration_before_ms, duration_after_ms, error.message
+    expect(screen.queryByText("hidden · sensitive fields are off")).toBeNull();
   });
 
   it("Show trace opens the Actions tab on the event's trace", async () => {

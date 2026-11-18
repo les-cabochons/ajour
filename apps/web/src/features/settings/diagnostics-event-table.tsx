@@ -23,8 +23,13 @@ const OVERSCAN = 8;
 /** The list's height before it is measured, as tall as its CSS gives it. */
 const UNMEASURED_HEIGHT = 448;
 
+/**
+ * In a table narrower than 28rem (a 390px window) the runtime column is left
+ * out and duration narrows, so the name keeps room to read.
+ */
 const COLUMNS =
-  "grid grid-cols-[7.5rem_0.75rem_minmax(0,1fr)_4.5rem_4.5rem] items-center gap-x-2 px-2";
+  "grid grid-cols-[7rem_0.75rem_minmax(0,1fr)_3.5rem] items-center gap-x-2 px-2 @md:grid-cols-[7.5rem_0.75rem_minmax(0,1fr)_4.5rem_4.5rem]";
+const RUNTIME_COLUMN = "hidden @md:block";
 
 /**
  * An outcome as a dot: failed red, refused or cancelled amber, `ok` a quiet
@@ -87,7 +92,10 @@ const EventRow = memo(function EventRow({
       <span role="gridcell" className="truncate">
         {event.name}
       </span>
-      <span role="gridcell" className="truncate text-xs text-muted-foreground">
+      <span
+        role="gridcell"
+        className={cn(RUNTIME_COLUMN, "truncate text-xs text-muted-foreground")}
+      >
         {event.runtime}
       </span>
       <span role="gridcell" className="truncate text-right">
@@ -187,7 +195,7 @@ export function EventTable({
       aria-label="Events"
       aria-rowcount={events.length + 1}
       aria-colcount={5}
-      className="flex min-w-0 flex-col border-y"
+      className="@container flex min-w-0 flex-col border-y"
     >
       <div
         role="row"
@@ -200,7 +208,9 @@ export function EventTable({
         <span role="columnheader">Time</span>
         <span role="columnheader" aria-label="Outcome" />
         <span role="columnheader">Name</span>
-        <span role="columnheader">Runtime</span>
+        <span role="columnheader" className={RUNTIME_COLUMN}>
+          Runtime
+        </span>
         <span role="columnheader" className="text-right">
           Duration
         </span>

@@ -5,7 +5,11 @@ import {
   type DesktopLogFilter,
   type LoggedEvent,
 } from "@/lib/desktop-bridge";
-import { eventKey, tailFilterOf } from "./diagnostics-events-model";
+import {
+  eventKey,
+  startsInRange,
+  tailFilterOf,
+} from "./diagnostics-events-model";
 
 /** Events asked for at a time: one page of `logs.query`. */
 export const EVENTS_PAGE_SIZE = 200;
@@ -34,8 +38,9 @@ const LOADING: LogEventsState = {
 const startedMs = (event: LoggedEvent) => Date.parse(event.started_at) || 0;
 
 /**
- * Adds `added` to newest-first `events`, without the ones already there.
- * Returns how many were new.
+ * Adds `added` to newest-first `events`, without the ones already there,
+ * keeping the list newest first by start. Returns how many were new, counting
+ * none for a later page (`after`), which the first page's count holds.
  */
 function merge(
   events: LoggedEvent[],
@@ -50,12 +55,16 @@ function merge(
     return true;
   });
   if (fresh.length === 0) return { events, count: 0 };
-  if (where === "after") return { events: [...events, ...fresh], count: 0 };
-  const merged = [...fresh, ...events];
-  // A unit is written when it ends, so a long one can arrive after units
-  // that started later: keep the list newest first by start.
+  const merged =
+    where === "after" ? [...events, ...fresh] : [...fresh, ...events];
+  // A unit is written when it ends, so a long one can arrive through Live
+  // after units that started later, even ones a later page holds: keep the
+  // list newest first by start. The page cursor stays the server's.
   merged.sort((a, b) => startedMs(b) - startedMs(a));
-  return { events: merged, count: fresh.length };
+  return {
+    events: merged,
+    count: where === "after" ? 0 : fresh.length,
+  };
 }
 
 /**
@@ -108,8 +117,10 @@ export function useLogEvents(filter: DesktopLogFilter | null, live: boolean) {
     let stop: (() => void) | undefined;
     tailLogs(tailFilterOf(query), (batch) => {
       if (stopped) return;
+      const inRange = batch.filter((event) => startsInRange(event, query));
+      if (inRange.length === 0) return;
       setState((previous) => {
-        const merged = merge(previous.events, batch, "before");
+        const merged = merge(previous.events, inRange, "before");
         return merged.count === 0
           ? previous
           : {

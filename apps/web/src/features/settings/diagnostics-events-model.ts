@@ -287,6 +287,22 @@ export function tailFilterOf(filter: DesktopLogFilter): DesktopLogTailFilter {
   return tail;
 }
 
+/**
+ * Whether an event started within the filter's range, the part of it a tail
+ * can't follow: an event is written when it ends, so one that started before
+ * `from` can arrive while Live is on.
+ */
+export function startsInRange(
+  event: LoggedEvent,
+  filter: DesktopLogFilter,
+): boolean {
+  const started = Date.parse(event.started_at);
+  return (
+    (filter.from === undefined || started >= Date.parse(filter.from)) &&
+    (filter.to === undefined || started < Date.parse(filter.to))
+  );
+}
+
 /** The rows to render for a scroll position: those in view, and `overscan` more each side. */
 export function visibleRows({
   scrollTop,
@@ -388,14 +404,11 @@ function hasPath(event: LoggedEvent, path: string): boolean {
 
 /**
  * The sensitive fields the catalog declares for the event that it doesn't
- * hold, while sensitive fields are off: the detail pane shows them as hidden.
- * An error's message counts only when the event has an error.
+ * hold, whatever the setting is now: an event written while sensitive fields
+ * were off never got them. An error's message counts only when the event has
+ * an error.
  */
-export function hiddenSensitiveFields(
-  event: LoggedEvent,
-  includeSensitive: boolean,
-): string[] {
-  if (includeSensitive) return [];
+export function missingSensitiveFields(event: LoggedEvent): string[] {
   const spec = Object.hasOwn(catalog.events, event.name)
     ? (catalog.events as Record<string, { fields: FieldTree }>)[event.name]
     : undefined;
