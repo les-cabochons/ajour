@@ -164,7 +164,9 @@ describe("the Settings tab", () => {
     expect(choice("250 MB").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText(/The files stay on this computer/)).toBeTruthy();
     expect(
-      screen.getByText(/scrubbed error messages and time-entry durations/),
+      screen.getByText(
+        /scrubbed error messages, time-entry durations, and the days and weeks they fall on/,
+      ),
     ).toBeTruthy();
   });
 

@@ -151,7 +151,7 @@ Diagnostics is listed only in the desktop app. Its tabs are **Overview · Events
 
 - **Write events to a local file**: a switch, off by default. The files stay on this computer.
 - **Keep logs for**: 1, 7, 30 or 90 days. **Size limit**: 100 MB, 250 MB or 1 GB.
-- **Include sensitive fields**: a switch, off by default. It adds scrubbed error messages and time-entry durations.
+- **Include sensitive fields**: a switch, off by default. It adds scrubbed error messages, time-entry durations, and the days and weeks they fall on.
 - **Storage**: the bytes used, the file count and the oldest day, with **Open folder** (main opens it; the page never gets the path) and **Delete all logs**, which asks first.
 - A refused save shows "Couldn't save the setting. The log settings stay as they were." and the controls keep the stored values. When writing stopped on a full disk, a missing permission or a failed write, a warning gives the reason and says to turn the switch off and on again, or restart Ajour, once it is fixed.
 

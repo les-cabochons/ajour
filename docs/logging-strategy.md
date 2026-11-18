@@ -371,7 +371,7 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
   `ajour:delete-all-logs` (`logs.delete_all`) and `ajour:open-logs-folder`
   (`logs.open_folder`, which opens the folder with `shell.openPath` and
   answers nothing, so the path stays in main) go through the IPC
-  wrapper to `local-logs.cjs`. Each answers the settings, the state (`off`,
+  wrapper to `local-logs.cjs`. The first three answer the settings, the state (`off`,
   `on` or `warning`) and its reason, and the folder's bytes, file count and
   oldest day. Delete all logs removes every day file, and what was waiting
   to be written, then the folder when nothing else is in it; a file that

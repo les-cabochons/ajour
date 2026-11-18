@@ -179,7 +179,7 @@ function createLocalLogs({
       // replaced by one that names none.
       let failure;
       try {
-        mkdirSync(directory, { recursive: true });
+        mkdirSync(directory, { recursive: true, mode: 0o700 });
         failure = await openPath(directory);
       } catch {
         failure = true;

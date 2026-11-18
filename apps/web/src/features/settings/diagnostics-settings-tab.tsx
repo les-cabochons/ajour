@@ -119,7 +119,7 @@ export function DiagnosticsSettingsTab() {
           <SettingRow
             label="Include sensitive fields"
             labelFor="local-log-sensitive"
-            description="Adds scrubbed error messages and time-entry durations to the file. Off by default."
+            description="Adds scrubbed error messages, time-entry durations, and the days and weeks they fall on to the file. Off by default."
           >
             <Switch
               id="local-log-sensitive"
