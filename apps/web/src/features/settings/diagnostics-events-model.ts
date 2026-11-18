@@ -1,0 +1,443 @@
+import { format } from "date-fns";
+import type { Kind, Outcome, Runtime } from "@ajour/wide-events";
+import {
+  catalog,
+  envelopeFields,
+  type FieldTree,
+} from "@ajour/wide-events/catalog.ts";
+import type {
+  DesktopLogFilter,
+  DesktopLogTailFilter,
+  LoggedEvent,
+} from "@/lib/desktop-bridge";
+
+/*
+ * Diagnostics > Events (#443): what its chips and query box mean, as search
+ * keys and as the filter `logs.query` takes. The keys are the page's own, so
+ * a link (the Overview's, #445) opens the tab filtered:
+ *
+ *   problems=1, runtime, kind, launch (this | all | a launch ID), range,
+ *   name, outcome, trace, connection, plugin
+ *
+ * A value outside its format is dropped here, so main never refuses a query
+ * the page built.
+ */
+
+export const EVENT_RUNTIMES: readonly Runtime[] = ["renderer", "api", "main"];
+
+export const EVENT_KINDS: readonly Kind[] = [
+  "command",
+  "job",
+  "request",
+  "ipc",
+  "plugin_operation",
+  "lifecycle",
+  "navigation",
+  "crash",
+];
+
+export const EVENT_OUTCOMES: readonly Outcome[] = [
+  "ok",
+  "noop",
+  "refused",
+  "cancelled",
+  "timeout",
+  "error",
+];
+
+/** The Time chip's choices, newest window first. */
+export const EVENT_RANGES = {
+  "15m": { label: "Last 15 minutes", ms: 15 * 60_000 },
+  "1h": { label: "Last hour", ms: 60 * 60_000 },
+  "24h": { label: "Last 24 hours", ms: 24 * 60 * 60_000 },
+  "7d": { label: "Last 7 days", ms: 7 * 24 * 60 * 60_000 },
+} as const;
+
+export type EventRange = keyof typeof EVENT_RANGES;
+
+/** The query box's terms. `name` ending in `*` matches the start of a name. */
+export interface EventQueryTerms {
+  name?: string;
+  outcome?: Outcome[];
+  trace?: string;
+  connection?: string;
+  plugin?: string;
+}
+
+export type EventQueryTerm = keyof EventQueryTerms;
+
+const TERM_ORDER: readonly EventQueryTerm[] = [
+  "name",
+  "outcome",
+  "trace",
+  "connection",
+  "plugin",
+];
+
+export interface EventsView {
+  problems: boolean;
+  runtime?: Runtime;
+  kind?: Kind;
+  /** This launch, every launch, or the launch of that ID (Same launch). */
+  launch: "this" | "all" | (string & {});
+  range?: EventRange;
+  terms: EventQueryTerms;
+}
+
+export const DEFAULT_EVENTS_VIEW: EventsView = {
+  problems: false,
+  launch: "this",
+  terms: {},
+};
+
+// The formats main checks (apps/desktop/electron/local-log-query.cjs).
+const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
+const TRACE_ID = /^[0-9a-f]{32}$/;
+const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
+
+const isProblem = (outcome: Outcome) => outcome !== "ok" && outcome !== "noop";
+
+function oneOf<Value extends string>(
+  values: readonly Value[],
+  value: string | undefined,
+): Value | undefined {
+  return values.find((candidate) => candidate === value);
+}
+
+/** A name, or the start of one with a trailing `*`, in main's format. */
+function readName(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const name = value.endsWith("*") ? value.slice(0, -1) : value;
+  return EVENT_NAME.test(name) ? value : undefined;
+}
+
+function readOutcomes(value: string | undefined): Outcome[] | undefined {
+  if (!value) return undefined;
+  const outcomes = value.split(",").map((part) => part.trim());
+  const known = outcomes.map((part) => oneOf(EVENT_OUTCOMES, part));
+  if (known.some((outcome) => outcome === undefined)) return undefined;
+  return [...new Set(known as Outcome[])];
+}
+
+const readTrace = (value: string | undefined) =>
+  value && TRACE_ID.test(value) ? value : undefined;
+const readRecordId = (value: string | undefined) =>
+  value && RECORD_ID.test(value) ? value : undefined;
+
+const TERM_READERS: Record<
+  EventQueryTerm,
+  (value: string | undefined) => EventQueryTerms[EventQueryTerm]
+> = {
+  name: readName,
+  outcome: readOutcomes,
+  trace: readTrace,
+  connection: readRecordId,
+  plugin: readRecordId,
+};
+
+/** A search value as text: the narrow view's router parses `1` as a number. */
+function searchText(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  return undefined;
+}
+
+/** The view a page's search names. Unknown or malformed values are left out. */
+export function parseEventsView(search: Record<string, unknown>): EventsView {
+  const text = (key: string) => searchText(search[key]);
+  const launch = text("launch");
+  const terms: EventQueryTerms = {};
+  for (const term of TERM_ORDER) {
+    const value = TERM_READERS[term](text(term));
+    if (value !== undefined) Object.assign(terms, { [term]: value });
+  }
+  const runtime = oneOf(EVENT_RUNTIMES, text("runtime"));
+  const kind = oneOf(EVENT_KINDS, text("kind"));
+  const range = oneOf(Object.keys(EVENT_RANGES) as EventRange[], text("range"));
+  return {
+    problems: text("problems") === "1",
+    ...(runtime ? { runtime } : {}),
+    ...(kind ? { kind } : {}),
+    launch:
+      launch === "all" || (launch && readRecordId(launch)) ? launch : "this",
+    ...(range ? { range } : {}),
+    terms,
+  };
+}
+
+/** The search keys of a view, defaults left out. */
+export function eventsSearchOf(view: EventsView): Record<string, string> {
+  const search: Record<string, string> = {};
+  if (view.problems) search.problems = "1";
+  if (view.runtime) search.runtime = view.runtime;
+  if (view.kind) search.kind = view.kind;
+  if (view.launch !== "this") search.launch = view.launch;
+  if (view.range) search.range = view.range;
+  for (const term of TERM_ORDER) {
+    const value = view.terms[term];
+    if (value === undefined) continue;
+    search[term] = Array.isArray(value) ? value.join(",") : value;
+  }
+  return search;
+}
+
+export type EventQueryError =
+  | { kind: "unknown_term"; term: string }
+  | { kind: "invalid_value"; term: EventQueryTerm }
+  | { kind: "repeated_term"; term: EventQueryTerm };
+
+export type ParsedQuery =
+  { ok: true; terms: EventQueryTerms } | { ok: false; error: EventQueryError };
+
+/**
+ * The query box's text as terms: `name:`, `outcome:` (one or several,
+ * comma separated), `trace:`, `connection:` and `plugin:`, separated by
+ * spaces. A word with no term is the start of a name.
+ */
+export function parseQuery(text: string): ParsedQuery {
+  const terms: EventQueryTerms = {};
+  for (const word of text.trim().split(/\s+/).filter(Boolean)) {
+    const separator = word.indexOf(":");
+    const key = separator === -1 ? "name" : word.slice(0, separator);
+    const raw =
+      separator === -1
+        ? `${word.replace(/\*$/, "")}*`
+        : word.slice(separator + 1);
+    const term = oneOf(TERM_ORDER, key);
+    if (!term) return { ok: false, error: { kind: "unknown_term", term: key } };
+    if (terms[term] !== undefined) {
+      return { ok: false, error: { kind: "repeated_term", term } };
+    }
+    const value = TERM_READERS[term](raw);
+    if (value === undefined) {
+      return { ok: false, error: { kind: "invalid_value", term } };
+    }
+    Object.assign(terms, { [term]: value });
+  }
+  return { ok: true, terms };
+}
+
+/** Terms as the query box shows them. */
+export function formatQuery(terms: EventQueryTerms): string {
+  return TERM_ORDER.flatMap((term) => {
+    const value = terms[term];
+    if (value === undefined) return [];
+    return [`${term}:${Array.isArray(value) ? value.join(",") : value}`];
+  }).join(" ");
+}
+
+const TERM_FORMATS: Record<EventQueryTerm, string> = {
+  name: "an event name such as backlog.sync, or its start followed by *",
+  outcome: `${EVENT_OUTCOMES.join(", ")}, or several separated by commas`,
+  trace: "a trace ID of 32 hex characters",
+  connection: "a connection ID",
+  plugin: "a plugin ID",
+};
+
+/** The line under the query box when its text can't be read. */
+export function describeQueryError(error: EventQueryError): string {
+  switch (error.kind) {
+    case "unknown_term":
+      return `Ajour doesn't know ${error.term}:. Use name:, outcome:, trace:, connection: or plugin:.`;
+    case "repeated_term":
+      return `${error.term}: appears twice.`;
+    case "invalid_value":
+      return `${error.term}: takes ${TERM_FORMATS[error.term]}.`;
+  }
+}
+
+/**
+ * The `logs.query` filter of a view, at `now`. `launchId` is this launch's,
+ * absent outside the desktop app. Null when the view can match nothing:
+ * Problems only with `outcome:` terms that are all `ok` or `noop`.
+ */
+export function logFilterOf(
+  view: EventsView,
+  { now, launchId }: { now: number; launchId: string | undefined },
+): DesktopLogFilter | null {
+  const filter: DesktopLogFilter = {};
+  const outcomes = view.terms.outcome;
+  if (outcomes) {
+    const kept = view.problems ? outcomes.filter(isProblem) : outcomes;
+    if (kept.length === 0) return null;
+    filter.outcome = kept;
+  } else if (view.problems) {
+    filter.outcome = "problems";
+  }
+  if (view.runtime) filter.runtime = view.runtime;
+  if (view.kind) filter.kind = view.kind;
+  const launch = view.launch === "this" ? launchId : view.launch;
+  if (launch && launch !== "all") filter.launch_id = launch;
+  if (view.range) {
+    filter.from = new Date(now - EVENT_RANGES[view.range].ms).toISOString();
+  }
+  const { name, trace, connection, plugin } = view.terms;
+  if (name?.endsWith("*")) filter.name_prefix = name.slice(0, -1);
+  else if (name) filter.name = name;
+  if (trace) filter.trace_id = trace;
+  if (connection) filter.connection_id = connection;
+  if (plugin) filter.plugin_id = plugin;
+  return filter;
+}
+
+/** What Live follows: the same filter, without its range. */
+export function tailFilterOf(filter: DesktopLogFilter): DesktopLogTailFilter {
+  const { from: _from, to: _to, ...tail } = filter;
+  return tail;
+}
+
+/**
+ * Whether an event started within the filter's range, the part of it a tail
+ * can't follow: an event is written when it ends, so one that started before
+ * `from` can arrive while Live is on.
+ */
+export function startsInRange(
+  event: LoggedEvent,
+  filter: DesktopLogFilter,
+): boolean {
+  const started = Date.parse(event.started_at);
+  return (
+    (filter.from === undefined || started >= Date.parse(filter.from)) &&
+    (filter.to === undefined || started < Date.parse(filter.to))
+  );
+}
+
+/** The rows to render for a scroll position: those in view, and `overscan` more each side. */
+export function visibleRows({
+  scrollTop,
+  viewportHeight,
+  rowHeight,
+  count,
+  overscan,
+}: {
+  scrollTop: number;
+  viewportHeight: number;
+  rowHeight: number;
+  count: number;
+  overscan: number;
+}): { start: number; end: number } {
+  const inView = Math.ceil(viewportHeight / rowHeight);
+  const first = Math.min(
+    Math.max(0, Math.floor(scrollTop / rowHeight)),
+    Math.max(0, count - inView),
+  );
+  return {
+    start: Math.max(0, first - overscan),
+    end: Math.min(count, first + inView + overscan),
+  };
+}
+
+/** An event's identity, as main tells events apart: runtime, trace and span. */
+export function eventKey(event: LoggedEvent): string {
+  return `${event.runtime}:${event.trace_id}:${event.span_id}`;
+}
+
+/** The time column: today's events by the millisecond, others with their day. */
+export function formatEventTime(startedAt: string, now: number): string {
+  const started = new Date(startedAt);
+  if (Number.isNaN(started.getTime())) return startedAt;
+  return format(started, "yyyy-MM-dd") === format(now, "yyyy-MM-dd")
+    ? format(started, "HH:mm:ss.SSS")
+    : format(started, "MMM d HH:mm:ss");
+}
+
+/** A duration: ms below a second, seconds below a minute, then minutes. */
+export function formatEventDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${Number((ms / 1000).toFixed(2))} s`;
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+const ENVELOPE_KEYS = new Set(Object.keys(envelopeFields));
+
+/** A field's value as one line: lists joined with commas. */
+function displayValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(displayValue).join(", ");
+  if (value === null) return "null";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+/** The event's own fields, outside the envelope, as dotted paths in stored order. */
+export function domainFieldsOf(
+  event: LoggedEvent,
+): { path: string; value: string }[] {
+  const fields: { path: string; value: string }[] = [];
+  const walk = (value: unknown, path: string) => {
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      for (const [key, inner] of Object.entries(value)) {
+        walk(inner, `${path}.${key}`);
+      }
+      return;
+    }
+    fields.push({ path, value: displayValue(value) });
+  };
+  for (const [key, value] of Object.entries(event)) {
+    if (!ENVELOPE_KEYS.has(key)) walk(value, key);
+  }
+  return fields;
+}
+
+function sensitivePaths(tree: FieldTree, prefix = ""): string[] {
+  return Object.entries(tree).flatMap(([key, node]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if ("privacy" in node && typeof node.privacy === "string") {
+      return node.privacy === "sensitive" ? [path] : [];
+    }
+    return sensitivePaths(node as FieldTree, path);
+  });
+}
+
+function hasPath(event: LoggedEvent, path: string): boolean {
+  let value: unknown = event;
+  for (const key of path.split(".")) {
+    if (typeof value !== "object" || value === null || !(key in value)) {
+      return false;
+    }
+    value = (value as Record<string, unknown>)[key];
+  }
+  return true;
+}
+
+/**
+ * The sensitive fields the catalog declares for the event that it doesn't
+ * hold, whatever the setting is now: an event written while sensitive fields
+ * were off never got them. An error's message counts only when the event has
+ * an error.
+ */
+export function missingSensitiveFields(event: LoggedEvent): string[] {
+  const spec = Object.hasOwn(catalog.events, event.name)
+    ? (catalog.events as Record<string, { fields: FieldTree }>)[event.name]
+    : undefined;
+  const paths = spec ? sensitivePaths(spec.fields) : [];
+  if (event.error) paths.push("error.message");
+  return paths.filter((path) => !hasPath(event, path));
+}
+
+/** Names from Ajour's own data, for the IDs an event holds. Never written to the log. */
+export interface EventDisplayNames {
+  connections: ReadonlyMap<string, string>;
+  plugins: ReadonlyMap<string, string>;
+  backlogItems: ReadonlyMap<string, string>;
+  projects: ReadonlyMap<string, string>;
+}
+
+const JOINS: ReadonlyArray<[RegExp, keyof EventDisplayNames]> = [
+  [/(^|\.)connection(\.id|_id)$/, "connections"],
+  [/(^|\.)plugin(\.id|_id)$/, "plugins"],
+  [/(^|\.)backlog_item(\.id|_id)$/, "backlogItems"],
+  [/(^|\.)project(\.id|_id)$/, "projects"],
+];
+
+/** The name Ajour knows for the ID at `path`, such as a connection's label. */
+export function joinedNameOf(
+  path: string,
+  value: string,
+  names: EventDisplayNames,
+): string | undefined {
+  const join = JOINS.find(([pattern]) => pattern.test(path));
+  return join ? names[join[1]].get(value) : undefined;
+}
