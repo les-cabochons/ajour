@@ -549,6 +549,33 @@ describe("the logs channels", () => {
     ]);
   });
 
+  it("logs.open_folder: a folder main can't make is a failed call that names no path", async () => {
+    const opened: string[] = [];
+    const main = await mainProcess({
+      openPath: async (directory) => {
+        opened.push(directory);
+        return "";
+      },
+    });
+    // A file where the logs folder goes: making the folder throws, and
+    // Node's error names the path.
+    await writeFile(path.join(main.userData, "logs"), "");
+
+    const error = await main
+      .invoke("ajour:open-logs-folder")
+      .catch((thrown: Error) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "The log folder could not be opened.",
+    );
+    expect(opened).toEqual([]);
+    expect(main.recorded).toMatchObject([
+      { name: "logs.open_folder", outcome: "error" },
+    ]);
+    expect(JSON.stringify(main.recorded)).not.toContain(main.userData);
+  });
+
   it.each([
     "ajour:get-logs-status",
     "ajour:configure-logs",

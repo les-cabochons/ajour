@@ -175,8 +175,15 @@ function createLocalLogs({
       if (!directory || !openPath) {
         throw new Error("The log folder is unavailable.");
       }
-      mkdirSync(directory, { recursive: true });
-      const failure = await openPath(directory);
+      // Node's errors name the path, and this one crosses IPC: it is
+      // replaced by one that names none.
+      let failure;
+      try {
+        mkdirSync(directory, { recursive: true });
+        failure = await openPath(directory);
+      } catch {
+        failure = true;
+      }
       if (failure) throw new Error("The log folder could not be opened.");
     },
     /**

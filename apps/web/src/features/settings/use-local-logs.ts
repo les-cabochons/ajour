@@ -20,18 +20,33 @@ export function useLocalLogs() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const load = window.ajourDesktop?.getLogsStatus;
+    const desktop = window.ajourDesktop;
+    const load = desktop?.getLogsStatus;
     if (!load) return;
     let current = true;
-    load(traceCarrier())
-      .then((loaded) => {
-        if (current) setStatus(loaded);
-      })
-      .catch(() => {
-        if (current) setError("Couldn't read the log settings.");
-      });
+    const refresh = () => {
+      load(traceCarrier())
+        .then((loaded) => {
+          if (current) setStatus(loaded);
+        })
+        .catch(() => {
+          if (current) setError("Couldn't read the log settings.");
+        });
+    };
+    refresh();
+    // The sink writes after the call that turned it on has answered, so a
+    // failed write stops it later. Main pushes each change to whether it is
+    // writing; the page reads the status again then, and the warning shows
+    // while the page is open. The subscription's first, immediate call is
+    // the value already read.
+    let subscribed = false;
+    const unsubscribe = desktop.onWideEventsForwarding?.(() => {
+      if (subscribed) refresh();
+    });
+    subscribed = true;
     return () => {
       current = false;
+      unsubscribe?.();
     };
   }, []);
 

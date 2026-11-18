@@ -50,6 +50,7 @@ function installMain({
   let current = files;
   let stopped = warning;
   let refusing = refuseConfigure;
+  const forwardingListeners = new Set<(forwarding: boolean) => void>();
   const status = (): DesktopLogsStatus => ({
     settings: { ...settings },
     state: stopped ? "warning" : settings.enabled ? "on" : "off",
@@ -70,6 +71,18 @@ function installMain({
       return status();
     }),
     openLogsFolder: vi.fn(async () => undefined),
+    onWideEventsForwarding: (callback: (forwarding: boolean) => void) => {
+      forwardingListeners.add(callback);
+      callback(settings.enabled && !stopped);
+      return () => {
+        forwardingListeners.delete(callback);
+      };
+    },
+    /** A later write fails: main stops writing and pushes that to the window. */
+    failWrite: (reason: NonNullable<Warning>) => {
+      stopped = reason;
+      for (const listener of forwardingListeners) listener(false);
+    },
     /** Main refuses `logs.configure` from now on, or accepts it again. */
     refuse: (on: boolean) => {
       refusing = on;
@@ -348,6 +361,20 @@ describe("the warning", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("appears while the page is open when a later write stops logging", async () => {
+    const main = installMain({ settings: { enabled: true } });
+    await renderPage();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await act(async () => {
+      main.failWrite("disk_full");
+    });
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The disk is full.",
+    );
+  });
+
   it("goes away once the settings are saved again, which resumes writing", async () => {
     installMain({ settings: { enabled: true }, warning: "disk_full" });
     await renderPage();
@@ -375,7 +402,7 @@ describe("the Settings navigation", () => {
   const renderNavigation = () =>
     renderRoutes({
       routes: {
-        "/": () => <SettingsNavigation pathname="/settings" view="narrow" />,
+        "/": () => <SettingsNavigation />,
       },
     });
 
