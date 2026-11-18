@@ -1237,16 +1237,17 @@ describe("a turn that goes wrong", () => {
         () => [
           { session: "s-0" },
           { readTurn: true },
-          // Quiet on stdout for 1.2 s, past the 400 ms limit.
+          // Quiet on stdout for 2.4 s, past the 1.5 s limit, which leaves room
+          // for process startup before the first stderr line.
           ...Array.from({ length: 8 }, () => [
             { stderr: "Retrying the request" },
-            { wait: 150 },
+            { wait: 300 },
           ]).flat(),
           { stream: ["Done"] },
           { result: true },
           { readTurn: true },
         ],
-        { stallMs: 400, killGraceMs: 300 },
+        { stallMs: 1_500, killGraceMs: 300 },
       );
 
       const turn = (await api.startTurn()).body;
