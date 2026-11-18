@@ -248,6 +248,14 @@ describe("the Events search keys", () => {
     );
   });
 
+  it("keeps a version as long as a manifest allows, 80 characters", () => {
+    const long = "1.0.0-" + "a".repeat(74);
+    expect(parseEventsView({ version: long }).terms.version).toBe(long);
+    expect(
+      parseEventsView({ version: `${long}a` }).terms.version,
+    ).toBeUndefined();
+  });
+
   it("reads a plugin's version and asks for it as plugin_version", () => {
     const view = parseEventsView({
       plugin: "ajour.jira",

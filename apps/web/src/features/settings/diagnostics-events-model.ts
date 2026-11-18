@@ -121,7 +121,7 @@ const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
 const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
-const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
+const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,80}$/;
 const HOUR_START = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 

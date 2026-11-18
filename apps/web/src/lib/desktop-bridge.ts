@@ -341,6 +341,12 @@ export interface DesktopLogTrace extends DesktopLogReadStats {
  */
 export type DesktopLogActionView = "all" | "failed" | "slow";
 
+/** logs.actions filters on the common fields only: main refuses the others. */
+export type DesktopLogActionsFilter = Omit<
+  DesktopLogFilter,
+  "outcome_reason" | "plugin_version"
+> & { show?: DesktopLogActionView };
+
 /** One action: a trace root, with what its trace holds. */
 export interface DesktopLogAction {
   event: LoggedEvent;
@@ -624,7 +630,7 @@ declare global {
         trace?: TraceCarrier,
       ) => Promise<DesktopLogTrace>;
       listLogActions?: (
-        filter: DesktopLogFilter & { show?: DesktopLogActionView },
+        filter: DesktopLogActionsFilter,
         page?: DesktopLogPage,
         trace?: TraceCarrier,
       ) => Promise<DesktopLogActions>;
@@ -687,7 +693,7 @@ export function getLogTrace(traceId: string) {
 
 /** The actions, one row per trace root, newest first. */
 export function listLogActions(
-  filter: DesktopLogFilter & { show?: DesktopLogActionView } = {},
+  filter: DesktopLogActionsFilter = {},
   page?: DesktopLogPage,
 ) {
   return logsBridge("listLogActions")(filter, page, traceCarrier());

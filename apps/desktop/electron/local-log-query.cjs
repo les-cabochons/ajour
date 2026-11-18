@@ -42,7 +42,7 @@ const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
 /** An `outcome_reason`, as the catalog names them. */
 const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
 /** A plugin's `version`, as its manifest gives it. */
-const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
+const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,80}$/;
 const CURSOR = /^(\d{1,16})~(\d{4}-\d{2}-\d{2})~(\d{1,9})$/;
 
 const RUNTIMES = new Set(["renderer", "api", "main"]);

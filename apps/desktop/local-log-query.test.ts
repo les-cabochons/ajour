@@ -400,9 +400,12 @@ describe("logs.query", () => {
         outcome_reason: "timeout",
         plugin: { id: "ajour.jira", version },
       });
+    // A manifest's version may run to 80 characters.
+    const long = "1.0.0-" + "a".repeat(74);
     await writeEvents(directory, [
       operation("2.0.0", 3 * 60 * 1000),
       operation("2.1.0-beta.1", 2 * 60 * 1000),
+      operation(long, 60 * 1000),
     ]);
     const logs = service(directory);
     const versions = async (plugin_version: string) =>
@@ -413,9 +416,13 @@ describe("logs.query", () => {
       );
     expect(await versions("2.0.0")).toEqual(["2.0.0"]);
     expect(await versions("2.1.0-beta.1")).toEqual(["2.1.0-beta.1"]);
+    expect(await versions(long)).toEqual([long]);
     expect((await rejection(logs.query({ plugin_version: "2 0" }))).code).toBe(
       INVALID_LOG_QUERY,
     );
+    expect(
+      (await rejection(logs.query({ plugin_version: `${long}a` }))).code,
+    ).toBe(INVALID_LOG_QUERY);
   });
 
   it("pages the results with a cursor, each event once", async () => {
