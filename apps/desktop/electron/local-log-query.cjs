@@ -72,7 +72,8 @@ const MAX_INDEXED_DAYS = 31;
 const READ_CHUNK_BYTES = 1024 * 1024;
 /**
  * A name run once in the range has no p95 to call it slow; from two runs
- * on, the p95 picks out the slowest (#442: "p95 or slower for its name").
+ * on, Slow applies the name's p95 as its threshold (#442: "p95 or slower
+ * for its name").
  */
 const MIN_SLOW_SAMPLES = 2;
 /** The crashes the Overview lists, newest first. */
