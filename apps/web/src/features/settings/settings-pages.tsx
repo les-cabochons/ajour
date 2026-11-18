@@ -6,6 +6,7 @@ import {
 } from "@/features/settings/plugin-detail-search";
 import { SettingsSearchProvider } from "@/features/settings/settings-link";
 import type { SettingsLocation } from "@/features/settings/settings-location";
+import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { trackPageChunk } from "@/lib/route-events";
 
 /**
@@ -125,7 +126,8 @@ export function settingsPageElement(location: SettingsLocation) {
     case "agents":
       return <SettingsAgentsPage />;
     case "diagnostics":
-      return <SettingsDiagnosticsPage />;
+      // Desktop only: the web build has no log file (#438).
+      return hasLocalLogsBridge() ? <SettingsDiagnosticsPage /> : null;
     case "backlog":
       return <SettingsBacklogPage />;
     case "calendar":

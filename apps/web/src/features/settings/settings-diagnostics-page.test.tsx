@@ -12,6 +12,7 @@ import type { DesktopLogsStatus } from "@/lib/desktop-bridge";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import { SettingsNavigation } from "./settings-navigation";
 import { SettingsDiagnosticsPage } from "./settings-diagnostics-page";
+import { settingsPageElement } from "./settings-pages";
 
 /*
  * Settings > Diagnostics against a bridge that behaves as main does (#441):
@@ -397,6 +398,13 @@ describe("without the desktop bridge", () => {
     expect(screen.getByText("Diagnostics needs the desktop app.")).toBeTruthy();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByRole("tab")).toBeNull();
+  });
+});
+
+describe("the web build", () => {
+  it("has no Diagnostics page: the Settings window falls back to General", () => {
+    expect(settingsPageElement({ page: "diagnostics", search: {} })).toBeNull();
+    expect(settingsPageElement({ page: "general", search: {} })).not.toBeNull();
   });
 });
 

@@ -33,6 +33,7 @@ import {
   SettingsWhatsNewPage,
   SettingsWorkflowPage,
 } from "@/features/settings/settings-pages";
+import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { isNarrowView } from "@/lib/use-narrow-view";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
@@ -351,6 +352,12 @@ const settingsAgentsRoute = createRoute({
 const settingsDiagnosticsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/diagnostics",
+  // Desktop only: the web build has no log file (#438).
+  beforeLoad: () => {
+    if (!hasLocalLogsBridge()) {
+      throw redirect({ to: "/settings/general", replace: true });
+    }
+  },
   component: () => (
     <RouteSuspense>
       <SettingsDiagnosticsPage />
