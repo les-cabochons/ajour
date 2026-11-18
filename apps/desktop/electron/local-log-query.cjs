@@ -39,6 +39,10 @@ const TRACE_ID = /^[0-9a-f]{32}$/;
 const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
 /** Ajour's random IDs, plugin IDs and launch IDs: compared, never resolved. */
 const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
+/** An `outcome_reason`, as the catalog names them. */
+const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
+/** A plugin's `version`, as its manifest gives it. */
+const PLUGIN_VERSION = /^[0-9A-Za-z.+-]{1,80}$/;
 const CURSOR = /^(\d{1,16})~(\d{4}-\d{2}-\d{2})~(\d{1,9})$/;
 
 const RUNTIMES = new Set(["renderer", "api", "main"]);
@@ -78,6 +82,16 @@ const READ_CHUNK_BYTES = 1024 * 1024;
 const MIN_SLOW_SAMPLES = 2;
 /** The crashes the Overview lists, newest first. */
 const MAX_CRASHES = 100;
+/** The problem groups the Overview lists, and the places each names. */
+const MAX_PROBLEMS = 50;
+const MAX_PROBLEM_PLACES = 3;
+/** A reason no filter may list more of at once. */
+const MAX_REASONS = 16;
+/**
+ * The plugin operations the Overview's Plugins figure counts: timeouts,
+ * crashes and capacity refusals.
+ */
+const PLUGIN_PROBLEM_REASONS = new Set(["timeout", "crashed", "capacity"]);
 /** Tails one window may hold at once. */
 const MAX_TAILS_PER_OWNER = 8;
 /**
@@ -107,8 +121,13 @@ const FILTER_KEYS = [
   "connection_id",
   "plugin_id",
 ];
+/**
+ * What logs.query and logs.tail filter on besides, for the Overview's
+ * links: an `outcome_reason` (null for none) and a plugin's version.
+ */
+const QUERY_FILTER_KEYS = [...FILTER_KEYS, "outcome_reason", "plugin_version"];
 /** A tail follows what is written now, so it takes no range. */
-const TAIL_FILTER_KEYS = FILTER_KEYS.filter(
+const TAIL_FILTER_KEYS = QUERY_FILTER_KEYS.filter(
   (key) => key !== "from" && key !== "to",
 );
 const PAGE_KEYS = ["limit", "cursor"];
@@ -168,6 +187,27 @@ function oneOrMany(value, allowed, what) {
   return new Set(values);
 }
 
+/**
+ * One reason in its format, or a list of them, as a set; null for the
+ * events without a reason; undefined for no filter.
+ */
+function reasonsOf(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return new Set([undefined]);
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length === 0 || values.length > MAX_REASONS) {
+    throw invalidQuery("outcome_reason has no value, or too many.");
+  }
+  // Every element, holes of a sparse list too, is a reason in its format.
+  for (let index = 0; index < values.length; index += 1) {
+    const item = values[index];
+    if (typeof item !== "string" || !OUTCOME_REASON.test(item)) {
+      throw invalidQuery("outcome_reason is not in its format.");
+    }
+  }
+  return new Set(values);
+}
+
 /** The renderer's filter, checked, as what `matches` reads. */
 function readFilter(value, keys = FILTER_KEYS, optional = true) {
   const filter = plainObject(value, keys, "The filter", optional);
@@ -184,6 +224,12 @@ function readFilter(value, keys = FILTER_KEYS, optional = true) {
     trace: formatted(filter.trace_id, TRACE_ID, "trace_id"),
     connection: formatted(filter.connection_id, RECORD_ID, "connection_id"),
     plugin: formatted(filter.plugin_id, RECORD_ID, "plugin_id"),
+    reasons: reasonsOf(filter.outcome_reason),
+    pluginVersion: formatted(
+      filter.plugin_version,
+      PLUGIN_VERSION,
+      "plugin_version",
+    ),
   };
   if (filter.outcome === PROBLEMS) read.problems = true;
   else read.outcomes = oneOrMany(filter.outcome, OUTCOMES, "outcome");
@@ -230,7 +276,10 @@ function matches(entry, filter) {
     (filter.trace === undefined || entry.trace === filter.trace) &&
     (filter.connection === undefined ||
       entry.connection === filter.connection) &&
-    (filter.plugin === undefined || entry.plugin === filter.plugin)
+    (filter.plugin === undefined || entry.plugin === filter.plugin) &&
+    (filter.reasons === undefined || filter.reasons.has(entry.reason)) &&
+    (filter.pluginVersion === undefined ||
+      entry.pluginVersion === filter.pluginVersion)
   );
 }
 
@@ -321,7 +370,144 @@ function entryOf(event, intern) {
     launch: intern(event.launch_id),
     connection: intern(event.connection?.id),
     plugin: intern(event.plugin?.id),
+    pluginVersion: intern(event.plugin?.version),
   };
+}
+
+/** Most first, then the one whose last event started latest. */
+const mostThenLatest = (a, b) => b.count - a.count || b.last - a.last;
+
+/** Counts a problem in its group of name, outcome and reason, and its place. */
+function countProblem(groups, key, entry) {
+  let group = groups.get(key);
+  if (!group) {
+    group = {
+      name: entry.name,
+      outcome: entry.outcome,
+      ...(entry.reason === undefined ? {} : { outcome_reason: entry.reason }),
+      count: 0,
+      last: entry.started,
+      places: new Map(),
+    };
+    groups.set(key, group);
+  }
+  group.count += 1;
+  group.last = Math.max(group.last, entry.started);
+  // Where it happened: its connection, else its plugin.
+  const place =
+    entry.connection !== undefined
+      ? { connection_id: entry.connection }
+      : entry.plugin !== undefined
+        ? { plugin_id: entry.plugin }
+        : undefined;
+  if (!place) return;
+  const placeKey = place.connection_id ?? `plugin\n${place.plugin_id}`;
+  const counted = group.places.get(placeKey);
+  if (counted) {
+    counted.count += 1;
+    counted.last = Math.max(counted.last, entry.started);
+  } else {
+    group.places.set(placeKey, { ...place, count: 1, last: entry.started });
+  }
+}
+
+/** Counts a plugin operation's timeout, crash or refusal by plugin and version. */
+function countPluginProblem(problems, entry) {
+  const key = [
+    entry.plugin,
+    entry.pluginVersion ?? "",
+    entry.outcome,
+    entry.reason ?? "",
+  ].join("\n");
+  const counted = problems.get(key);
+  if (counted) {
+    counted.count += 1;
+    counted.last = Math.max(counted.last, entry.started);
+    return;
+  }
+  problems.set(key, {
+    plugin_id: entry.plugin,
+    ...(entry.pluginVersion === undefined
+      ? {}
+      : { plugin_version: entry.pluginVersion }),
+    outcome: entry.outcome,
+    ...(entry.reason === undefined ? {} : { outcome_reason: entry.reason }),
+    count: 1,
+    last: entry.started,
+  });
+}
+
+/** A sync's start, outcome and reason, as the Overview shows it. */
+function syncEnd(sync) {
+  return {
+    started_at: new Date(sync.started).toISOString(),
+    outcome: sync.outcome,
+    ...(sync.reason === undefined ? {} : { outcome_reason: sync.reason }),
+  };
+}
+
+/**
+ * Each connection's backlog syncs, from their hops. A sync is a trace's
+ * hops of one connection (the renderer's job, the local API's request and
+ * the plugin's operation), so it counts once; a hop without a connection
+ * joins its trace's one connection. A sync failed when a hop didn't end
+ * `ok` or `noop`. Its outcome and reason are then the failed hop's that
+ * started last with a reason, the innermost, which names the cause.
+ * Connections with a failure come first, the latest failure first.
+ */
+function syncsOf(syncHops) {
+  const connections = new Map();
+  for (const hops of syncHops.values()) {
+    const named = new Set(
+      hops.map((hop) => hop.connection).filter((id) => id !== undefined),
+    );
+    for (const connection of named) {
+      const own = hops
+        .filter(
+          (hop) =>
+            hop.connection === connection ||
+            (hop.connection === undefined && named.size === 1),
+        )
+        .sort(oldestFirst);
+      const failed = own.filter((hop) => isProblem(hop.outcome));
+      const cause =
+        failed.findLast((hop) => hop.reason !== undefined) ?? failed.at(-1);
+      const sync = {
+        started: own[0].started,
+        outcome: (cause ?? own[0]).outcome,
+        reason: cause?.reason,
+      };
+      const counted = connections.get(connection) ?? {
+        connection_id: connection,
+        sync_count: 0,
+        failed_count: 0,
+        last: undefined,
+        lastFailure: undefined,
+      };
+      counted.sync_count += 1;
+      if (!counted.last || sync.started > counted.last.started) {
+        counted.last = sync;
+      }
+      if (cause) {
+        counted.failed_count += 1;
+        if (!counted.lastFailure || sync.started > counted.lastFailure.started)
+          counted.lastFailure = sync;
+      }
+      connections.set(connection, counted);
+    }
+  }
+  return [...connections.values()]
+    .sort(
+      (a, b) =>
+        (b.lastFailure?.started ?? -Infinity) -
+          (a.lastFailure?.started ?? -Infinity) ||
+        b.last.started - a.last.started,
+    )
+    .map(({ last, lastFailure, ...counted }) => ({
+      ...counted,
+      last: syncEnd(last),
+      ...(lastFailure ? { last_failure: syncEnd(lastFailure) } : {}),
+    }));
 }
 
 /**
@@ -605,7 +791,7 @@ ${entry.span}`;
 
   /** logs.query: the events that pass the filter, newest first, one page. */
   async function query(filterValue, pageValue) {
-    const filter = readFilter(filterValue);
+    const filter = readFilter(filterValue, QUERY_FILTER_KEYS);
     const page = readPage(pageValue);
     const { indexes: days, stats } = await indexesFor(filter.from, filter.to);
     const matched = [];
@@ -896,8 +1082,11 @@ ${entry.span}`;
 
   /**
    * logs.aggregate: the Overview over this launch, 24 hours or 7 days:
-   * counts by name, outcome and reason; problems per hour by outcome; p50
-   * and p95 durations per name; the latest app.launch; the crashes.
+   * counts by name, outcome and reason; the problems among them with when
+   * the last one started and where they happened; each connection's backlog
+   * syncs; the plugins' timeouts, crashes and capacity refusals by version;
+   * problems per hour by outcome; p50 and p95 durations per name; the
+   * latest app.launch; the crashes.
    */
   async function aggregate(value) {
     const { range } = plainObject(value, ["range"], "The range", false);
@@ -915,6 +1104,10 @@ ${entry.span}`;
       time,
     );
     const counts = new Map();
+    const problemGroups = new Map();
+    /** Trace → its backlog.sync hops: one sync per trace and connection. */
+    const syncHops = new Map();
+    const pluginProblems = new Map();
     const durations = new Map();
     const problems = new Map();
     let latestLaunch;
@@ -946,7 +1139,21 @@ ${entry.span}`;
         durations.set(entry.name, list);
         const hour = Math.floor(entry.started / HOUR_MS) * HOUR_MS;
         if (hour < firstHour) firstHour = hour;
+        if (entry.name === "backlog.sync") {
+          const hops = syncHops.get(entry.trace) ?? [];
+          hops.push(entry);
+          syncHops.set(entry.trace, hops);
+        }
         if (isProblem(entry.outcome)) {
+          countProblem(problemGroups, key, entry);
+          if (
+            entry.kind === "plugin_operation" &&
+            entry.plugin !== undefined &&
+            (entry.outcome === "timeout" ||
+              PLUGIN_PROBLEM_REASONS.has(entry.reason))
+          ) {
+            countPluginProblem(pluginProblems, entry);
+          }
           const byOutcome = problems.get(hour) ?? {};
           byOutcome[entry.outcome] = (byOutcome[entry.outcome] ?? 0) + 1;
           problems.set(hour, byOutcome);
@@ -984,6 +1191,24 @@ ${entry.span}`;
           a.outcome.localeCompare(b.outcome) ||
           (a.outcome_reason ?? "").localeCompare(b.outcome_reason ?? ""),
       ),
+      problems: [...problemGroups.values()]
+        .sort(mostThenLatest)
+        .slice(0, MAX_PROBLEMS)
+        .map(({ places, last, ...group }) => ({
+          ...group,
+          last_at: new Date(last).toISOString(),
+          places: [...places.values()]
+            .sort(mostThenLatest)
+            .slice(0, MAX_PROBLEM_PLACES)
+            .map(({ last: _last, ...place }) => place),
+        })),
+      syncs: syncsOf(syncHops),
+      plugin_problems: [...pluginProblems.values()]
+        .sort(mostThenLatest)
+        .map(({ last, ...problem }) => ({
+          ...problem,
+          last_at: new Date(last).toISOString(),
+        })),
       problems_per_hour: perHour,
       durations: [...durations.entries()]
         .sort(([a], [b]) => a.localeCompare(b))

@@ -293,6 +293,138 @@ describe("logs.query", () => {
     ).toEqual(["api:plugin.request", "api:backlog.sync"]);
   });
 
+  it("filters on one outcome_reason or several, as the Overview's links ask", async () => {
+    const { directory } = await logFolder();
+    await writeEvents(directory, [
+      event({
+        name: "time_entry.create",
+        started_at: at(3 * 60 * 1000),
+        outcome: "refused",
+        outcome_reason: "locked_week",
+      }),
+      event({
+        name: "backlog.sync",
+        kind: "plugin_operation",
+        runtime: "api",
+        started_at: at(2 * 60 * 1000),
+        outcome: "timeout",
+        outcome_reason: "timeout",
+      }),
+      event({
+        name: "backlog.sync",
+        kind: "plugin_operation",
+        runtime: "api",
+        started_at: at(60 * 1000),
+        outcome: "refused",
+        outcome_reason: "capacity",
+      }),
+      event({ name: "time_entry.update", started_at: at(30 * 1000) }),
+    ]);
+    const logs = service(directory);
+    const reasons = async (filter: Record<string, unknown>) =>
+      (await logs.query(filter)).events.map(
+        (logged: LoggedEvent) => logged.outcome_reason,
+      );
+
+    expect(await reasons({ outcome_reason: "locked_week" })).toEqual([
+      "locked_week",
+    ]);
+    expect(
+      await reasons({
+        kind: "plugin_operation",
+        outcome_reason: ["timeout", "capacity", "crashed"],
+      }),
+    ).toEqual(["capacity", "timeout"]);
+    for (const refused of [
+      { outcome_reason: "../x" },
+      { outcome_reason: [] },
+      { outcome_reason: ["timeout", 3] },
+    ]) {
+      expect((await rejection(logs.query(refused))).code).toBe(
+        INVALID_LOG_QUERY,
+      );
+    }
+  });
+
+  it("refuses an outcome_reason list with an element outside its format, holes too, in a query and a tail", async () => {
+    const { directory } = await logFolder();
+    await writeEvents(directory, [event({ name: "time_entry.update" })]);
+    const logs = service(directory);
+    // A hole, read as undefined.
+    const sparse = [, "timeout"];
+    for (const outcome_reason of [[undefined], sparse, new Array(2)]) {
+      expect((await rejection(logs.query({ outcome_reason }))).code).toBe(
+        INVALID_LOG_QUERY,
+      );
+      expect(() => logs.subscribe({}, 1, { outcome_reason }, () => {})).toThrow(
+        expect.objectContaining({ code: INVALID_LOG_QUERY }),
+      );
+    }
+  });
+
+  it("filters on the events without a reason when outcome_reason is null", async () => {
+    const { directory } = await logFolder();
+    await writeEvents(directory, [
+      event({
+        name: "backlog.sync",
+        started_at: at(2 * 60 * 1000),
+        outcome: "error",
+        outcome_reason: "secret_unavailable",
+      }),
+      event({
+        name: "backlog.sync",
+        started_at: at(60 * 1000),
+        outcome: "error",
+      }),
+    ]);
+    const logs = service(directory);
+    const { events } = await logs.query({
+      name: "backlog.sync",
+      outcome: ["error"],
+      outcome_reason: null,
+    });
+    expect(
+      events.map((logged: LoggedEvent) => logged.outcome_reason ?? "none"),
+    ).toEqual(["none"]);
+  });
+
+  it("filters on a plugin's version, in its format", async () => {
+    const { directory } = await logFolder();
+    const operation = (version: string, offset: number) =>
+      event({
+        name: "backlog.sync",
+        kind: "plugin_operation",
+        runtime: "api",
+        started_at: at(offset),
+        outcome: "timeout",
+        outcome_reason: "timeout",
+        plugin: { id: "ajour.jira", version },
+      });
+    // A manifest's version may run to 80 characters.
+    const long = "1.0.0-" + "a".repeat(74);
+    await writeEvents(directory, [
+      operation("2.0.0", 3 * 60 * 1000),
+      operation("2.1.0-beta.1", 2 * 60 * 1000),
+      operation(long, 60 * 1000),
+    ]);
+    const logs = service(directory);
+    const versions = async (plugin_version: string) =>
+      (
+        await logs.query({ plugin_id: "ajour.jira", plugin_version })
+      ).events.map(
+        (logged: LoggedEvent) => (logged.plugin as { version: string }).version,
+      );
+    expect(await versions("2.0.0")).toEqual(["2.0.0"]);
+    expect(await versions("2.1.0-beta.1")).toEqual(["2.1.0-beta.1"]);
+    expect(await versions(long)).toEqual([long]);
+    expect((await rejection(logs.query({ plugin_version: "2 0" }))).code).toBe(
+      INVALID_LOG_QUERY,
+    );
+    expect(
+      (await rejection(logs.query({ plugin_version: `${long}a` }))).code,
+    ).toBe(INVALID_LOG_QUERY);
+  });
+
   it("pages the results with a cursor, each event once", async () => {
     const { directory } = await logFolder();
     const events = Array.from({ length: 250 }, (_, index) =>
@@ -927,6 +1059,20 @@ describe("logs.trace", () => {
 });
 
 describe("logs.actions", () => {
+  it("takes no outcome_reason or plugin_version, which only logs.query and logs.tail filter on", async () => {
+    const { directory } = await logFolder();
+    const logs = service(directory);
+    for (const filter of [
+      { outcome_reason: "timeout" },
+      { plugin_version: "1.0.0" },
+    ]) {
+      expect(
+        (await rejection(logs.actions({ show: "all", ...filter }))).code,
+      ).toBe(INVALID_LOG_QUERY);
+      expect(() => logs.subscribe({}, 1, filter, () => {})).not.toThrow();
+    }
+  });
+
   it("lists one row per trace root, with All, Failed and Slow", async () => {
     const { directory } = await logFolder();
     const failing = backlogSync(400, HOUR);
@@ -1194,6 +1340,196 @@ describe("logs.aggregate", () => {
       { name: "process.gone", outcome: "error", count: 1 },
     ]);
     expect(launch.problems_per_hour[0].hour).toBe("2026-11-17T10:00:00.000Z");
+  });
+
+  it("answers each connection's syncs, the plugins' timeouts, crashes and refusals, and where problems happened", async () => {
+    const { directory } = await logFolder();
+    // Connection A: two syncs failed, each a job, a request and an operation
+    // in one trace, the operation (the innermost hop) with the reason.
+    const failedSync = (seed: number, offset: number, reason: string) => {
+      const sync = backlogSync(seed, offset);
+      return [
+        sync.job,
+        { ...sync.request, outcome_reason: "plugin_error" },
+        {
+          ...sync.operation,
+          outcome: reason === "timeout" ? "timeout" : "error",
+          outcome_reason: reason,
+          plugin: { id: "ajour.jira", version: "2.1.0" },
+        },
+      ];
+    };
+    const okSync = (seed: number, offset: number, connection: string) =>
+      event({
+        name: "backlog.sync",
+        kind: "job",
+        trace_id: traceId(seed),
+        started_at: at(offset),
+        connection: { id: connection },
+      });
+    const pluginOperation = (
+      offset: number,
+      fields: Partial<LoggedEvent> & { version?: string },
+    ) => {
+      const { version = "2.1.0", ...rest } = fields;
+      return event({
+        name: "assignee.search",
+        kind: "plugin_operation",
+        runtime: "api",
+        trace_id: traceId(900 + offset),
+        started_at: at(offset),
+        plugin: { id: "ajour.jira", version },
+        connection: { id: "connection-a" },
+        ...rest,
+      });
+    };
+    await writeEvents(directory, [
+      okSync(1, 5 * HOUR, "connection-a"),
+      ...failedSync(2, 3 * HOUR, "plugin_error"),
+      ...failedSync(3, HOUR, "timeout"),
+      okSync(4, 4 * HOUR, "connection-b"),
+      ...failedSync(5, 3 * DAY, "crashed").map((hop) => ({
+        ...hop,
+        connection: { id: "connection-b" },
+      })),
+      okSync(6, 2 * HOUR, "connection-b"),
+      pluginOperation(40 * 60 * 1000, {
+        outcome: "refused",
+        outcome_reason: "capacity",
+      }),
+      pluginOperation(50 * 60 * 1000, {
+        outcome: "refused",
+        outcome_reason: "capacity",
+      }),
+      pluginOperation(20 * 60 * 1000, {
+        outcome: "refused",
+        outcome_reason: "capacity",
+        version: "2.2.0",
+      }),
+      // Refused for another reason: not the plugins' figure.
+      pluginOperation(10 * 60 * 1000, {
+        outcome: "refused",
+        outcome_reason: "access_off",
+      }),
+    ]);
+    const logs = service(directory);
+
+    const week = await logs.aggregate({ range: "7d" });
+    expect(week.syncs).toEqual([
+      {
+        connection_id: "connection-a",
+        sync_count: 3,
+        failed_count: 2,
+        last: {
+          started_at: at(HOUR),
+          outcome: "timeout",
+          outcome_reason: "timeout",
+        },
+        last_failure: {
+          started_at: at(HOUR),
+          outcome: "timeout",
+          outcome_reason: "timeout",
+        },
+      },
+      {
+        connection_id: "connection-b",
+        sync_count: 3,
+        failed_count: 1,
+        // Its last sync ended well, after the one that failed.
+        last: { started_at: at(2 * HOUR), outcome: "ok" },
+        last_failure: {
+          started_at: at(3 * DAY),
+          outcome: "error",
+          outcome_reason: "crashed",
+        },
+      },
+    ]);
+    expect(week.plugin_problems).toEqual([
+      {
+        plugin_id: "ajour.jira",
+        plugin_version: "2.1.0",
+        outcome: "refused",
+        outcome_reason: "capacity",
+        count: 2,
+        last_at: at(40 * 60 * 1000),
+      },
+      {
+        plugin_id: "ajour.jira",
+        plugin_version: "2.2.0",
+        outcome: "refused",
+        outcome_reason: "capacity",
+        count: 1,
+        last_at: at(20 * 60 * 1000),
+      },
+      {
+        plugin_id: "ajour.jira",
+        plugin_version: "2.1.0",
+        outcome: "timeout",
+        outcome_reason: "timeout",
+        count: 1,
+        last_at: at(HOUR - 20),
+      },
+      {
+        plugin_id: "ajour.jira",
+        plugin_version: "2.1.0",
+        outcome: "error",
+        outcome_reason: "crashed",
+        count: 1,
+        last_at: at(3 * DAY - 20),
+      },
+    ]);
+    // Problems by name, outcome and reason, most first, then the latest,
+    // with where they happened: the connection, else the plugin.
+    expect(week.problems.slice(0, 3)).toEqual([
+      {
+        name: "backlog.sync",
+        outcome: "error",
+        outcome_reason: "plugin_error",
+        count: 4,
+        last_at: at(HOUR - 10),
+        places: [
+          { connection_id: "connection-a", count: 3 },
+          { connection_id: "connection-b", count: 1 },
+        ],
+      },
+      {
+        name: "assignee.search",
+        outcome: "refused",
+        outcome_reason: "capacity",
+        count: 3,
+        last_at: at(20 * 60 * 1000),
+        places: [{ connection_id: "connection-a", count: 3 }],
+      },
+      {
+        name: "backlog.sync",
+        outcome: "error",
+        count: 3,
+        last_at: at(HOUR),
+        places: [
+          { connection_id: "connection-a", count: 2 },
+          { connection_id: "connection-b", count: 1 },
+        ],
+      },
+    ]);
+    expect(week.problems).toHaveLength(6);
+    expect(week.problems.at(-1)).toMatchObject({
+      name: "backlog.sync",
+      outcome: "error",
+      outcome_reason: "crashed",
+      count: 1,
+    });
+
+    // A day leaves out connection B's failed sync, three days ago.
+    const day = await logs.aggregate({ range: "24h" });
+    expect(
+      day.syncs.map((sync: { connection_id: string; failed_count: number }) => [
+        sync.connection_id,
+        sync.failed_count,
+      ]),
+    ).toEqual([
+      ["connection-a", 2],
+      ["connection-b", 0],
+    ]);
   });
 });
 

@@ -396,7 +396,11 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     cursor for the next. The filter takes a time range (`from` inclusive,
     `to` exclusive, ISO 8601 UTC), `launch_id`, `runtime`, `kind`,
     `outcome` (or `problems`: anything not `ok` or `noop`), `name` or
-    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`. A day file
+    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`; and, for
+    the Overview's links, `outcome_reason` (one or several, at most 16, each
+    a string in its format; `null` for the events without one) and
+    `plugin_version`, which `logs.query` and `logs.tail` take and
+    `logs.actions` refuses. A day file
     holds what was written that day, and an event is written when it ends,
     so a range also reads the day after its end, for an event that started
     in the range and ended after midnight; that day isn't counted missing.
@@ -417,7 +421,16 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     slow).
   - `ajour:aggregate-logs` (`logs.aggregate`): the Overview, over this
     launch, 24 hours or 7 days: counts by name, outcome and
-    `outcome_reason`; problems per hour by outcome, one bucket per hour of
+    `outcome_reason`; the problems among them, the 50 largest groups, each
+    with when its last one started and the 3 places it happened most (its
+    connection, else its plugin); each connection's backlog syncs, a trace's
+    hops of one connection counted as one sync, failed when a hop didn't end
+    `ok` or `noop`, with its last sync and last failure (the reason of the
+    failed hop that started last); the plugin operations that timed out,
+    crashed or were refused at `capacity`, by plugin, `plugin.version`,
+    outcome and reason (a refusal at capacity, which comes before the
+    operation reads its package, carries the version the plugin's last
+    operation recorded); problems per hour by outcome, one bucket per hour of
     the range; p50 and p95 `duration_ms` per name; the latest `app.launch`,
     whose `launch` fields are its phases; and the crash events, the first
     100 of them, newest first.

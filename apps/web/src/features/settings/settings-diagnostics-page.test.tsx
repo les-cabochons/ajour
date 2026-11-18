@@ -91,6 +91,10 @@ function installMain({
       stopped = reason;
       for (const listener of forwardingListeners) listener(false);
     },
+    /** The folder holds other files from now on, as once a write lands. */
+    setFiles: (files: { storage_bytes: number; file_count: number }) => {
+      current = files;
+    },
     /** Main refuses `logs.configure` from now on, or accepts it again. */
     refuse: (on: boolean) => {
       refusing = on;
@@ -100,9 +104,11 @@ function installMain({
   return bridge;
 }
 
-async function renderPage() {
+/** Opens the page on its Settings tab, which the log's data would otherwise move to Overview. */
+async function renderPage(path = "/?tab=settings") {
   const view = await renderRoutes({
     routes: { "/": SettingsDiagnosticsPage },
+    path,
   });
   // Let the page read logs.status.
   await act(async () => {});
@@ -130,28 +136,55 @@ async function click(element: HTMLElement) {
 }
 
 describe("the Settings tab", () => {
-  it("opens on Settings, and shows only the tabs that are built", async () => {
-    installMain();
-    await renderPage();
+  it("opens on Settings while the log folder holds no file, and shows every tab", async () => {
+    installMain({ files: { storage_bytes: 0, file_count: 0 } });
+    await renderPage("/");
 
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Overview",
       "Events",
       "Actions",
       "Settings",
     ]);
-    expect(tabs[2]!.getAttribute("aria-selected")).toBe("true");
+    expect(tabs[3]!.getAttribute("aria-selected")).toBe("true");
     expect(
       screen.getByRole("heading", { name: "Local log file" }),
     ).toBeTruthy();
   });
 
-  it("reads its tab from the tab search key, and opens on Settings for one not built", () => {
+  it("stays on Settings when turning logging on writes the first file", async () => {
+    const main = installMain({ files: { storage_bytes: 0, file_count: 0 } });
+    await renderPage("/");
+
+    await click(enabledSwitch());
+    main.setFiles({ storage_bytes: 512, file_count: 1 });
+    // Main pushes a change to whether it writes; the page reads the status again.
+    await act(async () => {
+      main.failWrite("disk_full");
+    });
+    await act(async () => {});
+    expect(main.getLogsStatus.mock.calls.length).toBeGreaterThan(2);
+
+    expect(
+      screen
+        .getByRole("tab", { name: "Settings" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("reads its tab from the tab search key; without one, Overview once the log has data, else Settings", () => {
     expect(diagnosticsTabOf({})).toBe("settings");
+    expect(diagnosticsTabOf({}, { hasData: true })).toBe("overview");
+    expect(diagnosticsTabOf({ tab: "overview" })).toBe("overview");
     expect(diagnosticsTabOf({ tab: "events" })).toBe("events");
-    expect(diagnosticsTabOf({ tab: "settings" })).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "settings" }, { hasData: true })).toBe(
+      "settings",
+    );
     expect(diagnosticsTabOf({ tab: "actions" })).toBe("actions");
-    expect(diagnosticsTabOf({ tab: "elsewhere" })).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "elsewhere" }, { hasData: true })).toBe(
+      "overview",
+    );
   });
 
   it("opens the tab its tab search key names, and keeps the pick in the search", async () => {

@@ -1,6 +1,9 @@
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { InvalidPluginResultError } from "./event-errors.ts";
+import { createApiEvents } from "./events.ts";
 import { PluginOperationLifetime } from "./plugin-operation-lifetime.ts";
 import type {
   PluginInvocation,
@@ -119,6 +122,46 @@ describe("plugin operation lifetime", () => {
     await stopped;
     await Promise.all(pending);
     expect(host.activeOperationCount).toBe(0);
+  });
+  it("names the plugin's known version on a capacity refusal, which comes before prepare", async () => {
+    const sink = createRecordingSink<AjourEvent>();
+    const host = new PluginOperationLifetime<string>({
+      name: "Plugin",
+      runtime: { runsPluginApi4: true, start: () => ({}) as never },
+      requestTimeoutMs: 1000,
+      events: createApiEvents({ sink, userDataPath: os.tmpdir() }),
+      eventNames: { sync: "backlog.sync" },
+    });
+    lifetimes.push(host);
+    const ready = deferred<void>();
+    const pending = Array.from({ length: 4 }, () =>
+      host
+        .run("a", "sync", async (record) => {
+          record.plugin({
+            version: "2.0.0",
+            source: "installed",
+            apiVersion: 4,
+          });
+          await ready.promise;
+          throw Error("stop");
+        })
+        .catch(() => undefined),
+    );
+    await expect(
+      host.run("a", "sync", async () => {
+        throw Error("must not prepare");
+      }),
+    ).rejects.toMatchObject({ reason: "capacity" });
+    ready.resolve();
+    await Promise.all(pending);
+    expect(
+      sink.events.find((event) => event.outcome_reason === "capacity")?.plugin,
+    ).toEqual({
+      id: "a",
+      version: "2.0.0",
+      source: "installed",
+      api_version: 4,
+    });
   });
   it("terminates a settled run before returning its result and frees its slot", async () => {
     const { host, runs, run } = setup();
