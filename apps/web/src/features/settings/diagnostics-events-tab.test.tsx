@@ -15,6 +15,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { traceOf } from "@/test-support/log-trace-fixtures";
 import type { LocalLogSettings } from "@ajour/wide-events/local-log-file.ts";
 import type {
   DesktopLogFilter,
@@ -173,6 +174,17 @@ function installMain({
         };
       },
     ),
+    // The Actions tab's reads, for Show trace.
+    listLogActions: vi.fn(async () => ({
+      show: "all",
+      actions: [],
+      next_cursor: null,
+      match_count: 0,
+      file_count: 0,
+      missing_file_count: 0,
+      skipped_line_count: 0,
+    })),
+    getLogTrace: vi.fn(async (traceId: string) => traceOf(traceId, [])),
     tailLogs: vi.fn(
       async (
         filter: DesktopLogFilter | undefined,
@@ -320,12 +332,13 @@ function mixedLog() {
 }
 
 describe("the Events tab", () => {
-  it("shows Events next to Settings, and opens on it from tab=events", async () => {
+  it("shows Events with the other tabs, and opens on it from tab=events", async () => {
     installMain({ events: mixedLog() });
     await openDiagnostics();
 
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Events",
+      "Actions",
       "Settings",
     ]);
     expect(
@@ -787,7 +800,7 @@ describe("the detail pane", () => {
   });
 
   it("Show trace opens the Actions tab on the event's trace", async () => {
-    installMain({ events: mixedLog() });
+    const main = installMain({ events: mixedLog() });
     const { router } = await openDiagnostics();
 
     await selectRow("logs.query");
@@ -798,6 +811,12 @@ describe("the detail pane", () => {
       tab: "actions",
       trace: TRACE_B,
     });
+    expect(
+      screen
+        .getByRole("tab", { name: "Actions" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(main.getLogTrace.mock.calls[0]![0]).toBe(TRACE_B);
   });
 
   it("Same name and Same launch filter on the event's own", async () => {
