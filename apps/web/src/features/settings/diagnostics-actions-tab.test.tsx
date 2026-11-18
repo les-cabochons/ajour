@@ -124,26 +124,31 @@ function installMain({
   );
   const bridge = {
     getLogsStatus: vi.fn(),
-    listLogActions: vi.fn(async (filter: { show?: DesktopLogActionView }) => {
-      if (refuseList) throw new Error("unavailable");
-      const show = filter.show ?? "all";
-      const shown = actions.filter((action) =>
-        show === "failed"
-          ? action.problem_count > 0
-          : show === "slow"
-            ? action.slow
-            : true,
-      );
-      return {
-        show,
-        actions: shown,
-        next_cursor: null,
-        match_count: shown.length,
-        file_count: 1,
-        missing_file_count: 0,
-        skipped_line_count: 0,
-      };
-    }),
+    listLogActions: vi.fn(
+      async (
+        filter: { show?: DesktopLogActionView },
+        _page?: { cursor?: string },
+      ) => {
+        if (refuseList) throw new Error("unavailable");
+        const show = filter.show ?? "all";
+        const shown = actions.filter((action) =>
+          show === "failed"
+            ? action.problem_count > 0
+            : show === "slow"
+              ? action.slow
+              : true,
+        );
+        return {
+          show,
+          actions: shown,
+          next_cursor: null as string | null,
+          match_count: shown.length,
+          file_count: 1,
+          missing_file_count: 0,
+          skipped_line_count: 0,
+        };
+      },
+    ),
     getLogTrace: vi.fn(async (traceId: string) => {
       const trace = byId.get(traceId);
       if (trace) return trace;
@@ -253,6 +258,88 @@ describe("the Actions tab", () => {
     expect(actionRows()[1]!.textContent).toContain("Schedule");
   });
 
+  it("keeps the trigger, surface and connection on a second line in the narrow layout", async () => {
+    installMain();
+    cachePluginsOverview({
+      connectionGroups: [
+        {
+          plugin: { id: "jira" },
+          connections: [{ id: "conn-jira", label: "Contoso Jira" }],
+        },
+      ],
+    } as never);
+    await renderDiagnostics();
+
+    // jsdom applies no breakpoint: read what the narrow layout doesn't hide.
+    const shownNarrow = Array.from(
+      actionRows()[0]!.querySelectorAll<HTMLElement>("span"),
+    ).filter(
+      (span) =>
+        !span.className.split(" ").includes("hidden") &&
+        !span.closest(".hidden"),
+    );
+    expect(shownNarrow.map((span) => span.textContent)).toContain(
+      "User · button · Contoso Jira",
+    );
+  });
+
+  it.each([
+    [
+      "a filter change",
+      () => click(filter("Failed")),
+      [RATE_LIMITED_SYNC_TRACE],
+    ],
+    [
+      "a Refresh",
+      () => click(screen.getByRole("button", { name: "Refresh" })),
+      [RATE_LIMITED_SYNC_TRACE, OK_TRACE],
+    ],
+  ] as const)(
+    "drops a Show more page that answers after %s",
+    async (_, change, expected) => {
+      const main = installMain();
+      let answerMore: (actions: DesktopLogAction[]) => void = () => {};
+      main.listLogActions.mockImplementation(
+        async (
+          { show = "all" }: { show?: DesktopLogActionView },
+          page?: { cursor?: string },
+        ) => {
+          const all = [actionOf(rateLimitedBacklogSync()), actionOf(okSync())];
+          const actions = page?.cursor
+            ? await new Promise<DesktopLogAction[]>((resolve) => {
+                answerMore = resolve;
+              })
+            : show === "failed"
+              ? all.slice(0, 1)
+              : all;
+          return {
+            show,
+            actions,
+            next_cursor: show === "all" ? `after-${actions.length}` : null,
+            match_count: actions.length,
+            file_count: 1,
+            missing_file_count: 0,
+            skipped_line_count: 0,
+          };
+        },
+      );
+      await renderDiagnostics();
+      await click(screen.getByRole("button", { name: "Show more" }));
+
+      await change();
+      await act(async () =>
+        answerMore([actionOf(traceOf(AGENT_TOOL_TRACE, agentToolCall()))]),
+      );
+      await settle();
+
+      expect(listedTraces()).toEqual(expected);
+      // Failed has one page: the old page's cursor doesn't come back.
+      expect(screen.queryByRole("button", { name: "Show more" }) !== null).toBe(
+        expected.length > 1,
+      );
+    },
+  );
+
   it.each([
     ["Failed", "failed", [RATE_LIMITED_SYNC_TRACE]],
     ["Slow", "slow", [OK_TRACE]],
@@ -351,7 +438,7 @@ describe("the Actions tab", () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.textContent).toContain("update_backlog_item");
     expect(items[0]!.textContent).toContain(
-      "backlog_item.update · time_entry.create",
+      "Wrote backlog_item.update, time_entry.create · Undo offered",
     );
   });
 

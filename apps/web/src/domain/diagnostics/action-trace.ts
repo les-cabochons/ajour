@@ -1,4 +1,5 @@
 import type { Envelope, Outcome, Trigger } from "@ajour/wide-events";
+import { catalog } from "@ajour/wide-events/catalog.ts";
 import { explainOutcomeReason } from "./outcome-reasons";
 
 /*
@@ -126,8 +127,6 @@ export interface WaterfallRow {
   depth: number;
   lane: TraceLane;
   failed: boolean;
-  deepestFailure: boolean;
-  missingParent: boolean;
   /** Where the bar starts, as a share of the whole trace: 0 to 1. */
   offset: number;
   /** How long the bar is, as a share of the whole trace. */
@@ -166,14 +165,12 @@ export function waterfallRows(trace: TraceTree): WaterfallRow[] {
     end = Math.max(end, endOf(event));
   }
   const total = end - start;
-  return spans.map(({ event, depth, deepest_failure, missing_parent }) => ({
+  return spans.map(({ event, depth }) => ({
     key: `${event.runtime}:${event.span_id}`,
     event,
     depth,
     lane: laneOf(event),
     failed: isProblem(event.outcome),
-    deepestFailure: deepest_failure,
-    missingParent: missing_parent,
     offset: total > 0 ? (startOf(event) - start) / total : 0,
     width: total > 0 ? Math.max(0, event.duration_ms) / total : 0,
   }));
@@ -253,6 +250,15 @@ export function describeAction(action: ActionRoot): ActionSummary {
 
 const TOOL_CALL = "agent_tool.call";
 
+/** A unit folded into a tool call's event, as that event recorded it. */
+export interface ToolCallStep {
+  name: string;
+  outcome: Outcome;
+  reason?: string;
+  /** A store command that ended ok: it wrote the local state. */
+  wrote: boolean;
+}
+
 export interface ToolCall {
   key: string;
   traceId: string;
@@ -262,20 +268,58 @@ export interface ToolCall {
   reason?: string;
   startedAt: string;
   durationMs: number;
-  /** The writes it caused, in the order they ran: the units folded into it. */
-  writes: string[];
-  /** Writes past the first 50 each event keeps. */
-  droppedWriteCount: number;
+  /** The units folded into it, in the order they started, each with its outcome. */
+  steps: ToolCallStep[];
+  /** Steps past the first 50 each event keeps. */
+  droppedStepCount: number;
   undoOffered: boolean;
+}
+
+const EVENT_SPECS: Readonly<
+  Record<string, { readonly kinds: readonly string[] } | undefined>
+> = catalog.events;
+
+/** A store command: the only folded unit that writes the local state. */
+function isStoreCommand(name: string): boolean {
+  return EVENT_SPECS[name]?.kinds.includes("command") ?? false;
+}
+
+/**
+ * An event's folded units with their outcomes. A unit that failed is in
+ * `step_failures`, matched to its step by name. One that ended ok or noop
+ * records nothing of its own, but a store command ends ok only when it
+ * wrote, so when the call counted no store write, its store commands ended
+ * noop.
+ */
+function stepsOf(event: TraceEvent, callWrote: boolean): ToolCallStep[] {
+  const failures = [...(event.step_failures ?? [])];
+  return (event.steps ?? []).map((name) => {
+    const index = failures.findIndex((failure) => failure.name === name);
+    const command = isStoreCommand(name);
+    if (index >= 0) {
+      const [failure] = failures.splice(index, 1);
+      return {
+        name,
+        outcome: failure!.outcome,
+        ...(failure!.outcome_reason ? { reason: failure!.outcome_reason } : {}),
+        wrote: false,
+      };
+    }
+    if (command && !callWrote) return { name, outcome: "noop", wrote: false };
+    return { name, outcome: "ok", wrote: command };
+  });
 }
 
 /** A call from its outermost event and the events under it. */
 function toolCallOf(call: TraceEvent, events: TraceEvent[]): ToolCall {
-  const writes: string[] = [];
+  const callWrote = events.some(
+    (event) => (event.counts?.store_write_count ?? 0) > 0,
+  );
+  const steps: ToolCallStep[] = [];
   let dropped = 0;
   let undoOffered = false;
   for (const event of events) {
-    writes.push(...(event.steps ?? []));
+    steps.push(...stepsOf(event, callWrote));
     dropped += event.dropped_step_count ?? 0;
     if (fieldOf(event, "agent_tool.undo_offered") === true) undoOffered = true;
   }
@@ -294,15 +338,40 @@ function toolCallOf(call: TraceEvent, events: TraceEvent[]): ToolCall {
     ...(call.outcome_reason ? { reason: call.outcome_reason } : {}),
     startedAt: call.started_at,
     durationMs: call.duration_ms,
-    writes,
-    droppedWriteCount: dropped,
+    steps,
+    droppedStepCount: dropped,
     undoOffered,
   };
 }
 
 /**
+ * What a call's trace recorded it did: "Wrote backlog_item.update ·
+ * time_entry.create was refused (locked_week)". Work a call only queues,
+ * such as a comment sent after its Undo, runs later in a trace of its own,
+ * so a call without a write says only that this trace recorded none.
+ */
+export function describeToolCallSteps(call: ToolCall): string {
+  const wrote = call.steps.filter((step) => step.wrote);
+  return [
+    wrote.length > 0
+      ? `Wrote ${wrote.map((step) => step.name).join(", ")}`
+      : "No write recorded in this trace",
+    ...call.steps
+      .filter((step) => !step.wrote)
+      .map(
+        (step) =>
+          `${step.name} ${OUTCOME_PHRASES[step.outcome]}${step.reason ? ` (${step.reason})` : ""}`,
+      ),
+    call.droppedStepCount > 0 ? `${call.droppedStepCount} more steps` : null,
+    call.undoOffered ? "Undo offered" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
  * The tool calls in a trace: each outermost `agent_tool.call` span, with
- * the writes folded into it and into the spans under it, such as the
+ * the steps folded into it and into the spans under it, such as the
  * window's answer to the local API's call.
  */
 export function toolCallsOfTrace(trace: TraceTree): ToolCall[] {

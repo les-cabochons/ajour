@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -26,6 +27,7 @@ import {
   OUTCOME_LABELS,
   TRACE_LANES,
   describeAction,
+  describeToolCallSteps,
   fieldOf,
   formatDurationMs,
   isProblem,
@@ -211,9 +213,14 @@ function useActionList(show: DesktopLogActionView, reload: number) {
     error: false,
   });
   const [loadingMore, setLoadingMore] = useState(false);
+  // Each filter and each Refresh starts a generation: a Show more page
+  // asked for in an earlier one is dropped when it answers.
+  const generation = useRef(0);
 
   useEffect(() => {
     let current = true;
+    generation.current += 1;
+    setLoadingMore(false);
     setState((previous) => ({ ...previous, actions: null, error: false }));
     listLogActions({ show }, { limit: PAGE_SIZE })
       .then((page) => {
@@ -242,18 +249,25 @@ function useActionList(show: DesktopLogActionView, reload: number) {
   const loadMore = useCallback(() => {
     const cursor = state.nextCursor;
     if (!cursor) return;
+    const asked = generation.current;
+    const current = () => asked === generation.current;
     setLoadingMore(true);
     listLogActions({ show }, { limit: PAGE_SIZE, cursor })
-      .then((page) =>
+      .then((page) => {
+        if (!current()) return;
         setState((previous) => ({
           actions: [...(previous.actions ?? []), ...page.actions],
           nextCursor: page.next_cursor,
           matchCount: page.match_count,
           error: false,
-        })),
-      )
-      .catch(() => setState((previous) => ({ ...previous, error: true })))
-      .finally(() => setLoadingMore(false));
+        }));
+      })
+      .catch(() => {
+        if (current()) setState((previous) => ({ ...previous, error: true }));
+      })
+      .finally(() => {
+        if (current()) setLoadingMore(false);
+      });
   }, [show, state.nextCursor]);
 
   return { ...state, loadingMore, loadMore };
@@ -328,16 +342,22 @@ function ActionRow({
         aria-current={selected ? "true" : undefined}
         onClick={onSelect}
         className={cn(
-          "grid h-9 w-full items-center gap-3 px-2 text-left text-sm hover:bg-[var(--highlight-bg)]",
+          "grid min-h-9 w-full items-center gap-3 px-2 py-1 text-left text-sm hover:bg-[var(--highlight-bg)] sm:h-9 sm:py-0",
           ROW_COLUMNS,
           selected && "bg-[var(--hover-bg)] hover:bg-[var(--hover-bg)]",
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-medium text-foreground">
-            {row.name}
+        <span className="flex min-w-0 flex-col">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium text-foreground">
+              {row.name}
+            </span>
+            {row.slow ? <Chip>Slow</Chip> : null}
           </span>
-          {row.slow ? <Chip>Slow</Chip> : null}
+          {/* Narrow, the trigger and the connection take a second line. */}
+          <span className="truncate text-xs text-[var(--text-secondary)] sm:hidden">
+            {[row.detail, connection].filter(Boolean).join(" · ")}
+          </span>
         </span>
         <span className="hidden truncate text-xs text-[var(--text-secondary)] sm:block">
           {row.detail}
@@ -603,11 +623,6 @@ function ToolCallsSection({
 
 function ToolCallRow({ call }: { call: ToolCall }) {
   const failed = isProblem(call.outcome);
-  const writes =
-    call.writes.length === 0
-      ? "No writes"
-      : call.writes.join(" · ") +
-        (call.droppedWriteCount > 0 ? ` · ${call.droppedWriteCount} more` : "");
   return (
     <li className="flex flex-col gap-0.5 border-b border-[var(--border-row)] px-2 py-2">
       <span className="grid grid-cols-[minmax(0,1fr)_auto_4.5rem] items-center gap-3">
@@ -635,8 +650,7 @@ function ToolCallRow({ call }: { call: ToolCall }) {
         </Value>
       </span>
       <span className="text-xs break-words text-[var(--text-secondary)]">
-        {writes}
-        {call.undoOffered ? " · Undo offered" : ""}
+        {describeToolCallSteps(call)}
       </span>
     </li>
   );

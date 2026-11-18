@@ -212,6 +212,7 @@ export function agentToolCall(
       at: at + 10,
       duration_ms: 80,
       steps: ["backlog_item.update", "time_entry.create"],
+      counts: { store_write_count: 2 },
       agent_tool: { name: tool, access: "write", undo_offered: true },
     }),
   ];

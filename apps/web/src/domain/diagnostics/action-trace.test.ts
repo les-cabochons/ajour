@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { LoggedEvent } from "@/lib/desktop-bridge";
 import {
+  AGENT_TOOL_TRACE,
   agentToolCall,
   actionOf,
   loggedEvent,
@@ -8,6 +10,7 @@ import {
 } from "@/test-support/log-trace-fixtures";
 import {
   describeAction,
+  describeToolCallSteps,
   formatDurationMs,
   laneOf,
   rootCauseOf,
@@ -21,7 +24,8 @@ const TRACE = "0af7651916cd43dd8448eb211c80319c";
 
 describe("the waterfall", () => {
   it("draws a backlog sync that failed at the broker in four levels, the three broker requests failed", () => {
-    const rows = waterfallRows(rateLimitedBacklogSync());
+    const trace = rateLimitedBacklogSync();
+    const rows = waterfallRows(trace);
 
     expect(rows.map((row) => [row.event.name, row.depth, row.lane])).toEqual([
       ["backlog.sync", 0, "renderer"],
@@ -40,11 +44,7 @@ describe("the waterfall", () => {
       600 / 1500,
       1200 / 1500,
     ]);
-    expect(broker.map((row) => row.deepestFailure)).toEqual([
-      true,
-      false,
-      false,
-    ]);
+    expect(rootCauseOf(trace)!.event).toBe(broker[0]!.event);
   });
 
   it("places each bar by its start and length within the whole trace", () => {
@@ -230,16 +230,59 @@ describe("an agent's tool calls", () => {
   it("lists the tool call of an agent_tool.call trace with the writes it caused", () => {
     const trace = traceOf("5cf92f3577b34da6a3ce929d0e0e4737", agentToolCall());
 
-    expect(toolCallsOfTrace(trace)).toEqual([
+    const calls = toolCallsOfTrace(trace);
+    expect(calls).toEqual([
       expect.objectContaining({
         tool: "update_backlog_item",
         access: "write",
         outcome: "ok",
         durationMs: 120,
-        writes: ["backlog_item.update", "time_entry.create"],
+        steps: [
+          { name: "backlog_item.update", outcome: "ok", wrote: true },
+          { name: "time_entry.create", outcome: "ok", wrote: true },
+        ],
         undoOffered: true,
       }),
     ]);
+    expect(describeToolCallSteps(calls[0]!)).toBe(
+      "Wrote backlog_item.update, time_entry.create · Undo offered",
+    );
+  });
+
+  it.each([
+    [
+      "a refused step as refused, not as a write",
+      {
+        steps: ["backlog_item.update", "time_entry.create"],
+        step_failures: [
+          {
+            name: "time_entry.create",
+            outcome: "refused",
+            outcome_reason: "locked_week",
+          },
+        ],
+        counts: { store_write_count: 1 },
+      },
+      "Wrote backlog_item.update · time_entry.create was refused (locked_week) · Undo offered",
+    ],
+    [
+      "the steps of a call that wrote nothing as having nothing to do",
+      { steps: ["time_entry.stop"], counts: {} },
+      "No write recorded in this trace · time_entry.stop had nothing to do · Undo offered",
+    ],
+    [
+      "a call that only queued its work, such as a comment, without claiming it wrote nothing",
+      { steps: undefined, counts: undefined },
+      "No write recorded in this trace · Undo offered",
+    ],
+  ] as const)("shows %s", (_, fields, text) => {
+    const [call, job] = agentToolCall();
+    const trace = traceOf(AGENT_TOOL_TRACE, [
+      call!,
+      { ...job!, ...fields } as LoggedEvent,
+    ]);
+
+    expect(describeToolCallSteps(toolCallsOfTrace(trace)[0]!)).toBe(text);
   });
 
   it("lists none for a trace with no tool call", () => {
