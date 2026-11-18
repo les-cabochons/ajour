@@ -16,8 +16,8 @@ import type {
  * keys and as the filter `logs.query` takes. The keys are the page's own, so
  * a link (the Overview's, #445) opens the tab filtered:
  *
- *   problems=1, runtime, kind, launch (this | all | a launch ID), range,
- *   name, outcome, trace, connection, plugin
+ *   problems=1, runtime, kind, launch (this | all | a launch ID), range
+ *   or hour, name, outcome, reason, trace, connection, plugin
  *
  * A value outside its format is dropped here, so main never refuses a query
  * the page built.
@@ -55,10 +55,14 @@ export const EVENT_RANGES = {
 
 export type EventRange = keyof typeof EVENT_RANGES;
 
+const HOUR_MS = 60 * 60_000;
+
 /** The query box's terms. `name` ending in `*` matches the start of a name. */
 export interface EventQueryTerms {
   name?: string;
   outcome?: Outcome[];
+  /** `outcome_reason`: one or several. */
+  reason?: string[];
   trace?: string;
   connection?: string;
   plugin?: string;
@@ -69,6 +73,7 @@ export type EventQueryTerm = keyof EventQueryTerms;
 const TERM_ORDER: readonly EventQueryTerm[] = [
   "name",
   "outcome",
+  "reason",
   "trace",
   "connection",
   "plugin",
@@ -81,6 +86,11 @@ export interface EventsView {
   /** This launch, every launch, or the launch of that ID (Same launch). */
   launch: "this" | "all" | (string & {});
   range?: EventRange;
+  /**
+   * One UTC hour, by its start (`2026-11-18T09:00:00.000Z`), as a bar of the
+   * Overview's chart opens it; it takes the place of `range`.
+   */
+  hour?: string;
   terms: EventQueryTerms;
 }
 
@@ -94,6 +104,8 @@ export const DEFAULT_EVENTS_VIEW: EventsView = {
 const EVENT_NAME = /^[a-z0-9_.]{1,128}$/;
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const RECORD_ID = /^[A-Za-z0-9._:@/-]{1,200}$/;
+const OUTCOME_REASON = /^[a-z0-9_]{1,64}$/;
+const HOUR_START = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/;
 
 const isProblem = (outcome: Outcome) => outcome !== "ok" && outcome !== "noop";
 
@@ -119,6 +131,22 @@ function readOutcomes(value: string | undefined): Outcome[] | undefined {
   return [...new Set(known as Outcome[])];
 }
 
+function readReasons(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const reasons = value.split(",").map((part) => part.trim());
+  if (reasons.some((reason) => !OUTCOME_REASON.test(reason))) return undefined;
+  return [...new Set(reasons)];
+}
+
+/** An hour's start, as main writes the chart's buckets. */
+function readHour(value: string | undefined): string | undefined {
+  if (!value || !HOUR_START.test(value)) return undefined;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && new Date(time).toISOString() === value
+    ? value
+    : undefined;
+}
+
 const readTrace = (value: string | undefined) =>
   value && TRACE_ID.test(value) ? value : undefined;
 const readRecordId = (value: string | undefined) =>
@@ -130,6 +158,7 @@ const TERM_READERS: Record<
 > = {
   name: readName,
   outcome: readOutcomes,
+  reason: readReasons,
   trace: readTrace,
   connection: readRecordId,
   plugin: readRecordId,
@@ -154,7 +183,10 @@ export function parseEventsView(search: Record<string, unknown>): EventsView {
   }
   const runtime = oneOf(EVENT_RUNTIMES, text("runtime"));
   const kind = oneOf(EVENT_KINDS, text("kind"));
-  const range = oneOf(Object.keys(EVENT_RANGES) as EventRange[], text("range"));
+  const hour = readHour(text("hour"));
+  const range = hour
+    ? undefined
+    : oneOf(Object.keys(EVENT_RANGES) as EventRange[], text("range"));
   return {
     problems: text("problems") === "1",
     ...(runtime ? { runtime } : {}),
@@ -162,6 +194,7 @@ export function parseEventsView(search: Record<string, unknown>): EventsView {
     launch:
       launch === "all" || (launch && readRecordId(launch)) ? launch : "this",
     ...(range ? { range } : {}),
+    ...(hour ? { hour } : {}),
     terms,
   };
 }
@@ -173,7 +206,8 @@ export function eventsSearchOf(view: EventsView): Record<string, string> {
   if (view.runtime) search.runtime = view.runtime;
   if (view.kind) search.kind = view.kind;
   if (view.launch !== "this") search.launch = view.launch;
-  if (view.range) search.range = view.range;
+  if (view.hour) search.hour = view.hour;
+  else if (view.range) search.range = view.range;
   for (const term of TERM_ORDER) {
     const value = view.terms[term];
     if (value === undefined) continue;
@@ -230,6 +264,7 @@ export function formatQuery(terms: EventQueryTerms): string {
 const TERM_FORMATS: Record<EventQueryTerm, string> = {
   name: "an event name such as backlog.sync, or its start followed by *",
   outcome: `${EVENT_OUTCOMES.join(", ")}, or several separated by commas`,
+  reason: "an outcome reason such as timeout, or several separated by commas",
   trace: "a trace ID of 32 hex characters",
   connection: "a connection ID",
   plugin: "a plugin ID",
@@ -239,7 +274,7 @@ const TERM_FORMATS: Record<EventQueryTerm, string> = {
 export function describeQueryError(error: EventQueryError): string {
   switch (error.kind) {
     case "unknown_term":
-      return `Ajour doesn't know ${error.term}:. Use name:, outcome:, trace:, connection: or plugin:.`;
+      return `Ajour doesn't know ${error.term}:. Use name:, outcome:, reason:, trace:, connection: or plugin:.`;
     case "repeated_term":
       return `${error.term}: appears twice.`;
     case "invalid_value":
@@ -269,15 +304,19 @@ export function logFilterOf(
   if (view.kind) filter.kind = view.kind;
   const launch = view.launch === "this" ? launchId : view.launch;
   if (launch && launch !== "all") filter.launch_id = launch;
-  if (view.range) {
+  if (view.hour) {
+    filter.from = view.hour;
+    filter.to = new Date(Date.parse(view.hour) + HOUR_MS).toISOString();
+  } else if (view.range) {
     filter.from = new Date(now - EVENT_RANGES[view.range].ms).toISOString();
   }
-  const { name, trace, connection, plugin } = view.terms;
+  const { name, reason, trace, connection, plugin } = view.terms;
   if (name?.endsWith("*")) filter.name_prefix = name.slice(0, -1);
   else if (name) filter.name = name;
   if (trace) filter.trace_id = trace;
   if (connection) filter.connection_id = connection;
   if (plugin) filter.plugin_id = plugin;
+  if (reason) filter.outcome_reason = reason;
   return filter;
 }
 
@@ -340,6 +379,13 @@ export function formatEventTime(startedAt: string, now: number): string {
   return format(started, "yyyy-MM-dd") === format(now, "yyyy-MM-dd")
     ? format(started, "HH:mm:ss.SSS")
     : format(started, "MMM d HH:mm:ss");
+}
+
+/** An hour of the Overview's chart, in local time: "Nov 18, 09:00–10:00". */
+export function formatEventHour(hour: string): string {
+  const start = Date.parse(hour);
+  if (!Number.isFinite(start)) return hour;
+  return `${format(start, "MMM d, HH:mm")}–${format(start + HOUR_MS, "HH:mm")}`;
 }
 
 /** A duration: ms below a second, seconds below a minute, then minutes. */

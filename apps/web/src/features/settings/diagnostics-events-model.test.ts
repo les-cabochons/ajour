@@ -84,9 +84,23 @@ describe("the query box", () => {
     expect(parseQuery(text)).toEqual({ ok: false, error });
   });
 
+  it("reads reason: as one outcome reason or several", () => {
+    expect(parseQuery("reason:timeout,capacity")).toEqual({
+      ok: true,
+      terms: { reason: ["timeout", "capacity"] },
+    });
+    expect(parseQuery("reason:Not-A-Reason")).toEqual({
+      ok: false,
+      error: { kind: "invalid_value", term: "reason" },
+    });
+    expect(describeQueryError({ kind: "invalid_value", term: "reason" })).toBe(
+      "reason: takes an outcome reason such as timeout, or several separated by commas.",
+    );
+  });
+
   it("says what is wrong with a term", () => {
     expect(describeQueryError({ kind: "unknown_term", term: "colour" })).toBe(
-      "Ajour doesn't know colour:. Use name:, outcome:, trace:, connection: or plugin:.",
+      "Ajour doesn't know colour:. Use name:, outcome:, reason:, trace:, connection: or plugin:.",
     );
     expect(describeQueryError({ kind: "invalid_value", term: "trace" })).toBe(
       "trace: takes a trace ID of 32 hex characters.",
@@ -147,6 +161,22 @@ describe("the Events search keys", () => {
       },
     });
     expect(eventsSearchOf(view)).toEqual(search);
+  });
+
+  it("reads an hour, which a bar of the Overview's chart opens, in place of a range", () => {
+    const hour = "2026-11-18T09:00:00.000Z";
+    const view = parseEventsView({
+      hour,
+      range: "24h",
+      reason: "timeout",
+    });
+    expect(view).toMatchObject({ hour, terms: { reason: ["timeout"] } });
+    expect(view.range).toBeUndefined();
+    expect(eventsSearchOf(view)).toEqual({ hour, reason: "timeout" });
+    expect(parseEventsView({ hour: "2026-11-18T09:30:00.000Z" }).hour).toBe(
+      undefined,
+    );
+    expect(parseEventsView({ hour: "yesterday" }).hour).toBe(undefined);
   });
 
   it("reads a router's parsed numbers, and keeps a launch ID for Same launch", () => {
@@ -218,6 +248,24 @@ describe("the logs.query filter", () => {
       trace_id: TRACE,
       connection_id: "c1",
       plugin_id: "p1",
+    });
+  });
+
+  it("asks for an hour as its from and to, and for reasons as outcome_reason", () => {
+    expect(
+      logFilterOf(
+        {
+          ...DEFAULT_EVENTS_VIEW,
+          launch: "all",
+          hour: "2026-11-18T09:00:00.000Z",
+          terms: { reason: ["timeout", "capacity"] },
+        },
+        context,
+      ),
+    ).toEqual({
+      from: "2026-11-18T09:00:00.000Z",
+      to: "2026-11-18T10:00:00.000Z",
+      outcome_reason: ["timeout", "capacity"],
     });
   });
 

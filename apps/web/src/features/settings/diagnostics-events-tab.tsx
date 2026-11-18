@@ -38,6 +38,7 @@ import {
   describeQueryError,
   eventKey,
   eventsSearchOf,
+  formatEventHour,
   formatQuery,
   logFilterOf,
   parseEventsView,
@@ -127,7 +128,7 @@ function QueryBox({
         aria-label="Query"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "diagnostics-query-error" : undefined}
-        placeholder="name:backlog.sync outcome:error trace: connection: plugin:"
+        placeholder="name:backlog.sync outcome:error reason: trace: connection: plugin:"
         value={draft}
         onChange={(changeEvent) => {
           setDraft(changeEvent.target.value);
@@ -280,21 +281,27 @@ export function DiagnosticsEventsTab() {
       />
       <FilterMenu
         label="Time"
-        value={view.range ?? ANY}
+        value={view.hour ?? view.range ?? ANY}
         choices={[
           { value: ANY, label: "Any time" },
           ...(Object.keys(EVENT_RANGES) as EventRange[]).map((range) => ({
             value: range,
             label: EVENT_RANGES[range].label,
           })),
+          // An hour a bar of the Overview's chart opened.
+          ...(view.hour
+            ? [{ value: view.hour, label: formatEventHour(view.hour) }]
+            : []),
         ]}
-        onChange={(range) =>
+        onChange={(range) => {
+          if (range === view.hour) return;
           show({
             ...view,
+            hour: undefined,
             range:
               range === ANY ? undefined : (range as EventRange | undefined),
-          })
-        }
+          });
+        }}
       />
       <QueryBox view={view} onApply={(terms) => show({ ...view, terms })} />
     </div>

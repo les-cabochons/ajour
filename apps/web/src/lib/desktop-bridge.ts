@@ -281,6 +281,8 @@ export interface DesktopLogFilter {
   trace_id?: string;
   connection_id?: string;
   plugin_id?: string;
+  /** One `outcome_reason`, or several. */
+  outcome_reason?: string | string[];
 }
 
 /** A page of results: at most `limit` (1 to 500, 100 by default), after `cursor`. */
@@ -353,6 +355,16 @@ export interface DesktopLogActions extends DesktopLogReadStats {
   match_count: number;
 }
 
+/** An outcome main counts as a problem: anything not `ok` or `noop`. */
+export type ProblemOutcome = Exclude<Outcome, "ok" | "noop">;
+
+/** A sync's start and how it ended: a failed one's, its innermost failed hop's. */
+export interface DesktopLogSyncEnd {
+  started_at: string;
+  outcome: Outcome;
+  outcome_reason?: string;
+}
+
 /** The Overview's range: this launch, 24 hours or 7 days. */
 export type DesktopLogRange = "launch" | "24h" | "7d";
 
@@ -368,10 +380,43 @@ export interface DesktopLogOverview extends DesktopLogReadStats {
     outcome_reason?: string;
     count: number;
   }[];
+  /**
+   * The problems among the counts, most first, then the latest: at most 50,
+   * each with when its last one started and where they happened (its
+   * connection, else its plugin), at most 3 places, most first.
+   */
+  problems: {
+    name: string;
+    outcome: ProblemOutcome;
+    outcome_reason?: string;
+    count: number;
+    last_at: string;
+    places: { connection_id?: string; plugin_id?: string; count: number }[];
+  }[];
+  /**
+   * Each connection's backlog syncs, one per trace. Connections with a
+   * failed sync first, the latest failure first.
+   */
+  syncs: {
+    connection_id: string;
+    sync_count: number;
+    failed_count: number;
+    last: DesktopLogSyncEnd;
+    last_failure?: DesktopLogSyncEnd;
+  }[];
+  /** Plugin operations' timeouts, crashes and capacity refusals, by plugin and version. */
+  plugin_problems: {
+    plugin_id: string;
+    plugin_version?: string;
+    outcome: ProblemOutcome;
+    outcome_reason?: string;
+    count: number;
+    last_at: string;
+  }[];
   /** One per hour of the range, oldest first, with each problem outcome's count. */
   problems_per_hour: {
     hour: string;
-    counts: Partial<Record<Exclude<Outcome, "ok" | "noop">, number>>;
+    counts: Partial<Record<ProblemOutcome, number>>;
   }[];
   durations: { name: string; count: number; p50_ms: number; p95_ms: number }[];
   latest_launch: LoggedEvent | null;
