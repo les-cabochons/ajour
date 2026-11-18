@@ -513,9 +513,35 @@ When(
     )!;
     acme.budget = { ...acme.budget!, consumed: 33.5, remaining: 6.5 };
     for (const task of acme.tasks) {
-      if (task.name === "Ticket #101 - Login") task.myHours = hours;
-      else delete task.myHours;
+      if (task.name === "Ticket #101 - Login") {
+        task.myHours = hours;
+        // Everyone's hours on the task now hold the two committed ones.
+        task.workedHours = (task.workedHours ?? 0) + 2;
+      } else delete task.myHours;
     }
+  },
+);
+
+// The task's name also shows in the budget card's hidden reconciliation
+// list, so the double click goes to its row in the task list.
+When("I open the task row {string}", async ({ page }, task: string) => {
+  await page
+    .getByRole("row")
+    .filter({ hasText: task })
+    .getByText(task, { exact: true })
+    .dblclick();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+Then(
+  "the task {string} reads {string}",
+  async ({ page }, task: string, consumed: string) => {
+    await expect(
+      page
+        .getByRole("row")
+        .filter({ hasText: task })
+        .locator(".project-task-consumed"),
+    ).toHaveText(consumed);
   },
 );
 

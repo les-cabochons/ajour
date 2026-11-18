@@ -92,6 +92,9 @@ export function normalizeTaskSourceLink(
     ...(finiteNumber(link.myHours) && link.myHours >= 0
       ? { myHours: link.myHours }
       : {}),
+    ...(finiteNumber(link.workedHours) && link.workedHours >= 0
+      ? { workedHours: link.workedHours }
+      : {}),
   };
 }
 

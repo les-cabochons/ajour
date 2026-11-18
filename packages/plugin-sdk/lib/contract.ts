@@ -1281,6 +1281,7 @@ export type ProjectSourceSyncResult =
             group?: string | undefined;
             estimateHours?: number | undefined;
             myHours?: number | undefined;
+            workedHours?: number | undefined;
           }[];
           complete: boolean;
           url?: string | undefined;
@@ -1326,6 +1327,7 @@ export type ProjectSourceSnapshot = {
       group?: string | undefined;
       estimateHours?: number | undefined;
       myHours?: number | undefined;
+      workedHours?: number | undefined;
     }[];
     complete: boolean;
     url?: string | undefined;
@@ -1367,6 +1369,7 @@ export type ProjectSourceProject = {
     group?: string | undefined;
     estimateHours?: number | undefined;
     myHours?: number | undefined;
+    workedHours?: number | undefined;
   }[];
   complete: boolean;
   url?: string | undefined;
@@ -1394,6 +1397,7 @@ export type ProjectSourceTask = {
   group?: string | undefined;
   estimateHours?: number | undefined;
   myHours?: number | undefined;
+  workedHours?: number | undefined;
 };
 
 /** A project's budget. The source writes every figure; `remaining` may be negative. */

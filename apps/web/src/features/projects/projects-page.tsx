@@ -103,7 +103,8 @@ import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { ProjectBudgetCard } from "@/features/projects/project-budget-card";
 import {
   budgetEntries as budgetEntriesOf,
-  sourceTaskConsumed,
+  sourceTaskUsage,
+  type SourceTaskUsage,
 } from "@/domain/projects/project-budget";
 import {
   ProjectPropertiesCard,
@@ -261,10 +262,31 @@ type ProjectDragState = {
   height: number;
 };
 
+/** A managed project's source task figures, by task ID. See `sourceTaskUsage`. */
+type SourceUsage = Map<string, SourceTaskUsage>;
+
+/**
+ * What a task has used against its budget, before the user's adjustment: for
+ * a task its source gives worked hours for, the source's figure for everyone
+ * plus the user's time it can't have yet; for any other, the time logged in
+ * Ajour.
+ */
+function getTaskUsedMs(
+  task: LocalProjectTask,
+  taskMetrics: Map<string, ProjectMetrics>,
+  sourceUsage: SourceUsage | undefined,
+) {
+  const fromSource = sourceUsage?.get(task._id);
+  return fromSource
+    ? fromSource.sourceMs + fromSource.notCountedMs
+    : (taskMetrics.get(task._id)?.durationMs ?? 0);
+}
+
 /** A project's budget: the sum of its active tasks' budgets, and what they consumed. */
 function getProjectBudget(
   project: LocalProject,
   taskMetrics: Map<string, ProjectMetrics>,
+  sourceUsage?: SourceUsage,
 ) {
   let budgetMs = 0;
   let consumedMs = 0;
@@ -277,7 +299,7 @@ function getProjectBudget(
       0,
       getProjectTaskTrackedWithAdjustmentMs({
         budgetMs: task.budgetMs,
-        trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
+        trackedMs: getTaskUsedMs(task, taskMetrics, sourceUsage),
         adjustmentMs: task.adjustmentMs,
       }),
     );
@@ -366,6 +388,7 @@ function ProjectsList({
   archived,
   weekMsByProject,
   taskMetricsByProject,
+  sourceUsageByProject,
   dragState,
   pressedProjectId,
   canReorder,
@@ -382,6 +405,8 @@ function ProjectsList({
   archived: boolean;
   weekMsByProject: Map<string, number>;
   taskMetricsByProject: TaskMetricsByProject;
+  /** Each managed project's source task figures, so its budget counts everyone's hours. */
+  sourceUsageByProject: Map<string, SourceUsage>;
   dragState: ProjectDragState | null;
   pressedProjectId: string | null;
   canReorder: boolean;
@@ -482,7 +507,11 @@ function ProjectsList({
               const name = getProjectDisplayName(project);
               const taskMetrics =
                 taskMetricsByProject.get(project._id) ?? new Map();
-              const budget = getProjectBudget(project, taskMetrics);
+              const budget = getProjectBudget(
+                project,
+                taskMetrics,
+                sourceUsageByProject.get(project._id),
+              );
               const activeTasks = project.tasks.filter(
                 (task) => task.status === "active",
               ).length;
@@ -639,6 +668,7 @@ function ProjectDetail({
   entries,
   budgetEntries,
   projectSource,
+  sourceUsage,
   weekMs,
   taskPropertyPlugins,
 }: {
@@ -657,6 +687,8 @@ function ProjectDetail({
   budgetEntries: readonly LocalTimesheetEntry[];
   /** A managed project's source record: its label and the user's hours. */
   projectSource: LocalProjectSource | undefined;
+  /** A managed project's source task figures, which its task rows read. */
+  sourceUsage: SourceUsage | undefined;
   /** Time logged on the project this week. */
   weekMs: number;
   /** The task open in the side panel, highlighted in the list. */
@@ -1008,16 +1040,13 @@ function ProjectDetail({
   }
 
   function renderConsumedBadge(task: LocalProjectTask) {
-    // A source task reads the source's hours for the user against its
-    // estimate; any other task, the time logged in Ajour.
-    const fromSource = sourceTaskConsumed(task);
-    const options = fromSource
-      ? { budgetMs: fromSource.budgetMs, trackedMs: fromSource.consumedMs }
-      : {
-          budgetMs: task.budgetMs,
-          trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
-          adjustmentMs: task.adjustmentMs,
-        };
+    // A source task reads the hours everyone used on it, any other task the
+    // time logged in Ajour; both add the user's adjustment.
+    const options = {
+      budgetMs: task.budgetMs,
+      trackedMs: getTaskUsedMs(task, taskMetrics, sourceUsage),
+      adjustmentMs: task.adjustmentMs,
+    };
     const budgetMs = normalizeProjectTaskBudgetMs(task.budgetMs);
     const consumedMs = getProjectTaskTrackedWithAdjustmentMs(options);
     const tone = projectTaskToneClassName[getProjectTaskConsumedTone(options)];
@@ -1921,6 +1950,37 @@ export function ProjectsPage() {
     return totals;
   }, [state.timesheetEntries]);
 
+  // Each managed project's task figures: the source's hours for everyone,
+  // plus the user's time it can't have yet, counted from the entries on the
+  // project, those committed there and the deleted ones.
+  const sourceUsageByProject = useMemo(() => {
+    const usage = new Map<string, SourceUsage>();
+    for (const project of state.projects) {
+      const asOf = project.source
+        ? state.projectSources?.[project.source.connectionId]?.asOf
+        : undefined;
+      if (!asOf) continue;
+      usage.set(
+        project._id,
+        sourceTaskUsage(
+          project,
+          budgetEntriesOf(
+            project._id,
+            state.timesheetEntries,
+            state.timesheetTombstones,
+          ),
+          asOf,
+        ),
+      );
+    }
+    return usage;
+  }, [
+    state.projects,
+    state.projectSources,
+    state.timesheetEntries,
+    state.timesheetTombstones,
+  ]);
+
   const isArchivePage = pathname === "/projects/archive";
 
   // Derive selected project from URL
@@ -2614,6 +2674,22 @@ export function ProjectsPage() {
               }
             : undefined
         }
+        sourceHours={(() => {
+          const usage =
+            visibleTaskEditor.taskId &&
+            sourceUsageByProject
+              .get(taskEditorProject._id)
+              ?.get(visibleTaskEditor.taskId);
+          return usage
+            ? {
+                label: getProjectSourceLabel(
+                  taskEditorProject,
+                  state.projectSources,
+                ),
+                ...usage,
+              }
+            : undefined;
+        })()}
         conflicts={
           taskCurrentFields
             ? describeTaskConflicts(
@@ -2696,6 +2772,7 @@ export function ProjectsPage() {
                 ? state.projectSources?.[selectedProject.source.connectionId]
                 : undefined
             }
+            sourceUsage={sourceUsageByProject.get(selectedProject._id)}
             weekMs={weekMsByProject.get(selectedProject._id) ?? 0}
             editingTaskId={visibleTaskEditor?.taskId}
             onProjectAction={runProjectAction}
@@ -2758,6 +2835,7 @@ export function ProjectsPage() {
               archived={isArchivePage}
               weekMsByProject={weekMsByProject}
               taskMetricsByProject={taskMetricsByProject}
+              sourceUsageByProject={sourceUsageByProject}
               dragState={projectDragState}
               pressedProjectId={pressedProjectId}
               canReorder={canReorderProjects}
