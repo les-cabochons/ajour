@@ -11,7 +11,10 @@ import type { LocalLogSettings } from "@ajour/wide-events/local-log-file.ts";
 import type { DesktopLogsStatus } from "@/lib/desktop-bridge";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import { SettingsNavigation } from "./settings-navigation";
-import { SettingsDiagnosticsPage } from "./settings-diagnostics-page";
+import {
+  diagnosticsTabOf,
+  SettingsDiagnosticsPage,
+} from "./settings-diagnostics-page";
 import { settingsPageElement, shownSettingsLocation } from "./settings-pages";
 
 /*
@@ -128,11 +131,19 @@ describe("the Settings tab", () => {
     await renderPage();
 
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Settings"]);
-    expect(tabs[0]!.getAttribute("aria-selected")).toBe("true");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Events", "Settings"]);
+    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
     expect(
       screen.getByRole("heading", { name: "Local log file" }),
     ).toBeTruthy();
+  });
+
+  it("reads its tab from the tab search key, and opens on Settings for one not built", () => {
+    expect(diagnosticsTabOf({})).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "events" })).toBe("events");
+    expect(diagnosticsTabOf({ tab: "settings" })).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "actions" })).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "elsewhere" })).toBe("settings");
   });
 
   it("shows the stored settings and what the folder holds, from logs.status", async () => {

@@ -78,6 +78,14 @@ export function rendererContext(
   };
 }
 
+/**
+ * This launch's ID as main handed it over, which every runtime's events
+ * carry. Undefined outside the desktop app, where no file holds this launch.
+ */
+export function desktopLaunchId(): string | undefined {
+  return text(record(readDesktopRuntime()?.launch).launch_id);
+}
+
 function readDesktopRuntime() {
   try {
     return window.ajourDesktop?.runtime;
