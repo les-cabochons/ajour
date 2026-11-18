@@ -184,6 +184,7 @@ const desktopApi = {
   configureLogs: (settings, trace) =>
     invoke("ajour:configure-logs", settings, ...traced(trace)),
   deleteAllLogs: (trace) => invoke("ajour:delete-all-logs", ...traced(trace)),
+  openLogsFolder: (trace) => invoke("ajour:open-logs-folder", ...traced(trace)),
   forwardWideEvents: (batch) =>
     ipcRenderer.send("ajour:forward-wide-events", batch),
   onWideEventsForwarding: (callback) => {

@@ -6,6 +6,7 @@ import {
 } from "@/features/settings/plugin-detail-search";
 import { SettingsSearchProvider } from "@/features/settings/settings-link";
 import type { SettingsLocation } from "@/features/settings/settings-location";
+import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { trackPageChunk } from "@/lib/route-events";
 
 /**
@@ -43,6 +44,13 @@ export const SettingsAgentsPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-agents-page");
     return { default: module.SettingsAgentsPage };
+  }),
+);
+export const SettingsDiagnosticsPage = lazy(
+  trackPageChunk(async () => {
+    const module =
+      await import("@/features/settings/settings-diagnostics-page");
+    return { default: module.SettingsDiagnosticsPage };
   }),
 );
 export const SettingsBacklogPage = lazy(
@@ -103,6 +111,18 @@ export function SettingsPageSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageSkeleton />}>{children}</Suspense>;
 }
 
+/**
+ * The location the Settings window opens for `location`: General in place
+ * of Diagnostics when this window has no log file (the web build, #438).
+ */
+export function shownSettingsLocation(
+  location: SettingsLocation,
+): SettingsLocation {
+  return location.page === "diagnostics" && !hasLocalLogsBridge()
+    ? { page: "general", search: {} }
+    : location;
+}
+
 /** The page at a settings location, or null when no page lives there. */
 export function settingsPageElement(location: SettingsLocation) {
   const { page, search } = location;
@@ -117,6 +137,9 @@ export function settingsPageElement(location: SettingsLocation) {
       return <SettingsMcpPage />;
     case "agents":
       return <SettingsAgentsPage />;
+    case "diagnostics":
+      // Desktop only: the web build has no log file (#438).
+      return hasLocalLogsBridge() ? <SettingsDiagnosticsPage /> : null;
     case "backlog":
       return <SettingsBacklogPage />;
     case "calendar":

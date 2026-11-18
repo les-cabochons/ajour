@@ -22,6 +22,8 @@ import {
   SettingsBacklogPage,
   SettingsCalendarPage,
   SettingsDebugPage,
+  SettingsDiagnosticsPage,
+  shownSettingsLocation,
   SettingsGeneralPage,
   SettingsMcpPage,
   SettingsPluginsPage,
@@ -32,6 +34,7 @@ import {
   SettingsWhatsNewPage,
   SettingsWorkflowPage,
 } from "@/features/settings/settings-pages";
+import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { isNarrowView } from "@/lib/use-narrow-view";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
@@ -249,9 +252,11 @@ const settingsRoute = createRoute({
     if (isNarrowView()) return;
     const window = settingsWindowRedirect(
       getLastAppLocation(),
-      settingsLocationOf(
-        location.pathname,
-        location.search as Record<string, unknown>,
+      shownSettingsLocation(
+        settingsLocationOf(
+          location.pathname,
+          location.search as Record<string, unknown>,
+        ),
       ),
     );
     throw redirect({
@@ -343,6 +348,22 @@ const settingsAgentsRoute = createRoute({
   component: () => (
     <RouteSuspense>
       <SettingsAgentsPage />
+    </RouteSuspense>
+  ),
+});
+
+const settingsDiagnosticsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/diagnostics",
+  // Desktop only: the web build has no log file (#438).
+  beforeLoad: () => {
+    if (!hasLocalLogsBridge()) {
+      throw redirect({ to: "/settings/general", replace: true });
+    }
+  },
+  component: () => (
+    <RouteSuspense>
+      <SettingsDiagnosticsPage />
     </RouteSuspense>
   ),
 });
@@ -455,6 +476,7 @@ const routeTree = rootRoute.addChildren([
       settingsVaultRoute,
       settingsMcpRoute,
       settingsAgentsRoute,
+      settingsDiagnosticsRoute,
       settingsBacklogRoute,
       settingsWorkflowRoute,
       settingsCalendarRoute,
