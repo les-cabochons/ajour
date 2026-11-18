@@ -337,6 +337,7 @@ describe("the Events tab", () => {
     await openDiagnostics();
 
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Overview",
       "Events",
       "Actions",
       "Settings",

@@ -123,7 +123,19 @@ function installMain({
     actionOf(byId.get(id)!, { slow: slow.includes(id) }),
   );
   const bridge = {
-    getLogsStatus: vi.fn(),
+    // The page reads it to pick its default tab.
+    getLogsStatus: vi.fn(async () => ({
+      settings: {
+        enabled: true,
+        retention_days: 7,
+        size_limit_mb: 250,
+        include_sensitive: false,
+      },
+      state: "on",
+      storage_bytes: 1024,
+      file_count: 1,
+      dropped_event_count: 0,
+    })),
     listLogActions: vi.fn(
       async (
         filter: { show?: DesktopLogActionView },
