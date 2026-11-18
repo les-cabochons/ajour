@@ -66,7 +66,10 @@ function inPeriod(localDate: string, since: string | undefined) {
 }
 
 /** Where a time sits: an entry now, or its committed copy. */
-type TimePlace = Pick<LocalTimesheetEntry, "projectId" | "taskId" | "localDate">;
+type TimePlace = Pick<
+  LocalTimesheetEntry,
+  "projectId" | "taskId" | "localDate"
+>;
 
 /**
  * Not counted yet, summed by place: each entry adds its time where it is now,

@@ -19,6 +19,7 @@ import {
   updateProjectTask,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
+import { getTaskBudgetMs } from "@/domain/projects/task-budget";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createFactories(): ProjectFactories {
@@ -725,7 +726,7 @@ describe("a managed project's locked fields", () => {
     });
   });
 
-  it("keeps a source task's billable and budget, and saves its adjustment", () => {
+  it("keeps a source task's billable, saves a budget of the user's own over the source's, and saves its adjustment", () => {
     const project = createManagedProject();
     const task = project.tasks[0]!;
     task.source = { remoteId: "1001", assigned: true };
@@ -738,11 +739,72 @@ describe("a managed project's locked fields", () => {
       adjustmentMs: 1_800_000,
     });
 
+    // The source's budget stays where the source writes it (#816).
     expect(updated?.tasks[0]).toMatchObject({
       billable: true,
       budgetMs: 3_600_000,
+      budgetOverrideMs: 7_200_000,
       adjustmentMs: 1_800_000,
     });
+    expect(getTaskBudgetMs(updated!.tasks[0]!)).toBe(7_200_000);
+  });
+
+  it("drops a source task's override when the user types the source's budget back, to the minute", () => {
+    const project = createManagedProject();
+    const task = project.tasks[0]!;
+    task.source = { remoteId: "1001", assigned: true };
+    // 8.33 hours from the source, which the editor shows as 8:20.
+    task.budgetMs = 8.33 * 3_600_000;
+    task.budgetOverrideMs = 10 * 3_600_000;
+
+    const [updated] = updateProjectTask([project], project._id, task._id, {
+      budgetMs: (8 * 60 + 20) * 60_000,
+    });
+
+    expect(updated?.tasks[0]?.budgetOverrideMs).toBeUndefined();
+    expect(getTaskBudgetMs(updated!.tasks[0]!)).toBe(8.33 * 3_600_000);
+  });
+
+  it("overrides with no budget when the user clears one the source sets, and keeps the override through other edits", () => {
+    const project = createManagedProject();
+    const task = project.tasks[0]!;
+    task.source = { remoteId: "1001", assigned: true };
+    task.budgetMs = 3_600_000;
+
+    const [cleared] = updateProjectTask([project], project._id, task._id, {
+      budgetMs: undefined,
+    });
+    expect(cleared?.tasks[0]?.budgetOverrideMs).toBe(0);
+    expect(getTaskBudgetMs(cleared!.tasks[0]!)).toBeUndefined();
+
+    const [renamed] = updateProjectTask([cleared!], project._id, task._id, {
+      adjustmentMs: 600_000,
+    });
+    expect(renamed?.tasks[0]?.budgetOverrideMs).toBe(0);
+  });
+
+  it("keeps a budget override only on a task its source knows, and makes it the budget of any other", () => {
+    const project = createManagedProject();
+    project.tasks[0]!.source = { remoteId: "1001", assigned: true };
+    project.tasks[0]!.budgetMs = 3_600_000;
+    project.tasks[0]!.budgetOverrideMs = 7_200_000;
+    project.tasks.push({
+      _id: "local",
+      name: "Local",
+      status: "active",
+      createdAt: 1,
+      budgetMs: 3_600_000,
+      budgetOverrideMs: 0,
+    });
+
+    const normalized = normalizeProject(project, () => 1);
+
+    expect(normalized.tasks[0]).toMatchObject({
+      budgetMs: 3_600_000,
+      budgetOverrideMs: 7_200_000,
+    });
+    expect(normalized.tasks[1]?.budgetOverrideMs).toBeUndefined();
+    expect(normalized.tasks[1]?.budgetMs).toBeUndefined();
   });
 
   it("lets a managed project's local task change its billable and budget", () => {

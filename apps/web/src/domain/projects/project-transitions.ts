@@ -31,8 +31,10 @@ import {
   normalizeTaskTeamLink,
 } from "@/domain/projects/team-link";
 import {
+  getTaskBudgetMs,
   normalizeProjectTaskAdjustmentMs,
   normalizeProjectTaskBudgetMs,
+  sameBudgetMs,
 } from "@/domain/projects/task-budget";
 
 /** The color a new project starts with. */
@@ -137,6 +139,10 @@ export function normalizeProject(
     tasks: (project.tasks ?? []).map((task) => {
       const createdAt = task.createdAt ?? getHydrationTimestamp();
       const status = task.status === "archived" ? "archived" : "active";
+      // Only a managed project can have tasks its source knows.
+      const taskSource = source
+        ? normalizeTaskSourceLink(task.source)
+        : undefined;
 
       return {
         ...task,
@@ -145,7 +151,16 @@ export function normalizeProject(
         archivedAt:
           status === "archived" ? (task.archivedAt ?? createdAt) : undefined,
         billable: task.billable ?? true,
-        budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
+        // Only a task its source knows keeps a budget override; on any other
+        // the overridden budget becomes its own.
+        ...(taskSource
+          ? {
+              budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
+              budgetOverrideMs: normalizeBudgetOverrideMs(
+                task.budgetOverrideMs,
+              ),
+            }
+          : { budgetMs: getTaskBudgetMs(task), budgetOverrideMs: undefined }),
         adjustmentMs: normalizeProjectTaskAdjustmentMs(task.adjustmentMs),
         pinnedSlot: isPinnedTaskSlot(task.pinnedSlot)
           ? task.pinnedSlot
@@ -155,8 +170,7 @@ export function normalizeProject(
         commitAs: normalizeTaskCommitAs(task.commitAs),
         // Only a project the team knows can have tasks the team knows.
         team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
-        // Only a managed project can have tasks its source knows.
-        source: source ? normalizeTaskSourceLink(task.source) : undefined,
+        source: taskSource,
         archivedByMissingSync: normalizeArchiveMark(task.archivedByMissingSync),
         archivedBySource: normalizeArchiveMark(task.archivedBySource),
       };
@@ -214,6 +228,38 @@ export function isManagedProject<T extends Pick<LocalProject, "source">>(
  */
 export function isSourceTask(task: Pick<LocalProjectTask, "source">) {
   return task.source !== undefined;
+}
+
+/** A stored budget override: whole milliseconds, 0 or more. */
+function normalizeBudgetOverrideMs(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
+}
+
+/**
+ * A source task's override for a budget the user typed: none when it reads
+ * as the source's budget, to the minute, and 0 when the user cleared a
+ * budget the source sets.
+ */
+function budgetOverrideFor(
+  task: Pick<LocalProjectTask, "budgetMs">,
+  typedMs: number | undefined,
+) {
+  const budgetMs = normalizeProjectTaskBudgetMs(typedMs);
+  return sameBudgetMs(budgetMs, task.budgetMs) ? undefined : (budgetMs ?? 0);
+}
+
+/**
+ * The task without its budget override, which becomes its own budget: for a
+ * task its source no longer knows.
+ */
+export function withBudgetOverrideFolded<T extends LocalProjectTask>(
+  task: T,
+): T {
+  if (task.budgetOverrideMs === undefined) return task;
+  const { budgetOverrideMs: _override, ...rest } = task;
+  return { ...rest, budgetMs: getTaskBudgetMs(task) } as T;
 }
 
 /**
@@ -484,7 +530,8 @@ export function updateProjectTask(
             task._id === taskId
               ? {
                   ...task,
-                  // A source task's name, billable and budget follow its source.
+                  // A source task's name and billable follow its source. Its
+                  // budget does too, unless the user types their own (#816).
                   name: isSourceTask(task)
                     ? task.name
                     : (patch.name ?? task.name),
@@ -496,6 +543,10 @@ export function updateProjectTask(
                     "budgetMs" in patch && !isSourceTask(task)
                       ? normalizeProjectTaskBudgetMs(patch.budgetMs)
                       : task.budgetMs,
+                  budgetOverrideMs:
+                    "budgetMs" in patch && isSourceTask(task)
+                      ? budgetOverrideFor(task, patch.budgetMs)
+                      : task.budgetOverrideMs,
                   adjustmentMs:
                     "adjustmentMs" in patch
                       ? normalizeProjectTaskAdjustmentMs(patch.adjustmentMs)
