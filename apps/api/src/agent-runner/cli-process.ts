@@ -32,6 +32,8 @@ export interface CliProcessOptions {
   killGraceMs?: number;
   /** Each stdout line, until the process finished. */
   onLine: (line: string) => void;
+  /** Each stderr line, until the process finished. */
+  onErrorLine?: (line: string) => void;
 }
 
 export interface CliProcessEnding {
@@ -122,7 +124,10 @@ export function startCliProcess(options: CliProcessOptions): CliProcess {
   createInterface({ input: child.stdout! }).on("line", (line) => {
     if (!done) options.onLine(line);
   });
-  createInterface({ input: child.stderr! }).on("line", pushError);
+  createInterface({ input: child.stderr! }).on("line", (line) => {
+    pushError(line);
+    if (!done) options.onErrorLine?.(line);
+  });
   child.on("error", (spawnError) => {
     error = spawnError;
     pushError(spawnError.message);

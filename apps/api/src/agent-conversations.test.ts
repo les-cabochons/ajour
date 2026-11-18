@@ -1101,6 +1101,165 @@ describe("a turn that goes wrong", () => {
     },
   );
 
+  // Each ending ends the first turn's process. The queued turn waits for it
+  // to finish, then runs on a new one, here about a new head.
+  it.each([
+    {
+      ending: "the MCP server failing",
+      first: [
+        { readTurn: true },
+        { stdout: initLine("failed") },
+        { hang: true },
+      ],
+      outcome: {
+        outcome: "failed",
+        error: "The ajour MCP server did not start.",
+      },
+      cancel: false,
+    },
+    {
+      ending: "the CLI exiting",
+      first: [{ readTurn: true }, { stderr: "boom" }, { exit: 3 }],
+      outcome: { outcome: "failed", error: "Claude Code stopped: boom" },
+      cancel: false,
+    },
+    {
+      ending: "the stall limit",
+      first: [{ readTurn: true }, { hang: true }],
+      outcome: { outcome: "failed", error: "The agent stopped answering." },
+      cancel: false,
+    },
+    {
+      // The CLI never answers the interrupt, so Ajour ends it.
+      ending: "a cancel the CLI ignores",
+      first: [{ readTurn: true }, { stream: ["Working"] }, { hang: true }],
+      outcome: { outcome: "cancelled" },
+      cancel: true,
+    },
+  ])(
+    "runs a queued turn on a new process after $ending",
+    { timeout: 20_000 },
+    async ({ first: script, outcome, cancel }) => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 0
+            ? [{ session: "s-0" }, ...script]
+            : [{ session: "s-0" }, ...answer("Next"), { readTurn: true }],
+        { stallMs: 1500, killGraceMs: 300, interruptGraceMs: 100 },
+      );
+
+      const first = (await api.startTurn()).body;
+      const queued = (await api.startTurn({ head: "c63e1f4" })).body;
+      expect(queued.state).toBe("waiting");
+      if (cancel) {
+        await api.waitForTurnEvent(
+          "text",
+          (event) => event.turnId === first.id,
+        );
+        await api.cancel(first.id);
+      }
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === first.id,
+        ),
+      ).toMatchObject(outcome);
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === queued.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(api.eventsOf(queued.id)).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Next" }),
+      );
+      const launches = await api.launches();
+      expect(launches).toHaveLength(2);
+      expect(launches[1]!.argv).toEqual(
+        expect.arrayContaining(["--resume", "s-0"]),
+      );
+      const read = await api.turnsRead();
+      expect(read).toHaveLength(2);
+      expect(read[1]).toContain("head changed from a41c9e2 to c63e1f4");
+    },
+  );
+
+  it(
+    "runs a queued turn after a turn whose resume found no conversation",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 1
+            ? [{ resumeFails: true }]
+            : index === 0
+              ? [{ session: "s-0" }, ...answer("First"), { readTurn: true }]
+              : [
+                  { session: "s-2" },
+                  ...answer("Fresh"),
+                  ...answer("Queued"),
+                  { readTurn: true },
+                ],
+        { idleMs: 300 },
+      );
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      await api.waitForTurnEvent("conversation-closed");
+
+      const retried = (await api.startTurn()).body;
+      const queued = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === retried.id,
+        ),
+      ).toMatchObject({ outcome: "done", historyLost: true });
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === queued.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(api.eventsOf(queued.id)).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Queued" }),
+      );
+      expect(await api.launches()).toHaveLength(3);
+    },
+  );
+
+  it(
+    "keeps a turn whose CLI reports progress only on stderr",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        () => [
+          { session: "s-0" },
+          { readTurn: true },
+          // Quiet on stdout for 1.2 s, past the 400 ms limit.
+          ...Array.from({ length: 8 }, () => [
+            { stderr: "Retrying the request" },
+            { wait: 150 },
+          ]).flat(),
+          { stream: ["Done"] },
+          { result: true },
+          { readTurn: true },
+        ],
+        { stallMs: 400, killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+    },
+  );
+
   it(
     "starts the turn over without the history when the resume finds no conversation",
     { timeout: 30_000 },

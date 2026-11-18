@@ -138,6 +138,8 @@ interface Turn {
   interruptTimer?: NodeJS.Timeout;
   /** Fails the turn when its CLI goes quiet for too long. */
   stallTimer?: NodeJS.Timeout;
+  /** The process the turn was last sent to. Only that process's ending ends it. */
+  process?: ConversationProcess;
   stopReason?: TurnStopReason;
   /**
    * The CLI's own ending, which counts once its process finished: a
@@ -159,6 +161,11 @@ interface ConversationProcess {
   resumed: boolean;
   /** Whether it named its provider session, so a resume worked. */
   namedSession: boolean;
+  /**
+   * Set once Ajour ends it. Its turn ends when it finished, and the next
+   * turn waits for that, then starts a new process.
+   */
+  ending: boolean;
 }
 
 interface Conversation {
@@ -464,7 +471,8 @@ export class AgentConversations {
       if (turn.settled) return;
       turn.stopReason = "stalled";
       const cli = conversation.process;
-      if (cli) {
+      // Its process's ending ends it. Not yet sent, it ends now.
+      if (cli && turn.process === cli) {
         this.terminate(cli);
       } else {
         turn.finish(STALLED);
@@ -483,6 +491,14 @@ export class AgentConversations {
       if (turn.head !== conversation.binding.head) {
         step = "rebind_client";
         await this.rebind(conversation, turn);
+      }
+      const dying = conversation.process;
+      if (dying?.ending) {
+        // An earlier turn's process that Ajour ended. The turn goes to a new
+        // one, which starts once that one finished.
+        await dying.proc.finished;
+        if (conversation.process === dying) conversation.process = undefined;
+        if (turn.settled) return;
       }
       if (!conversation.process) {
         step = "find_executable";
@@ -505,6 +521,7 @@ export class AgentConversations {
       }
       const { process: cli } = conversation;
       if (!cli || turn.settled) return;
+      turn.process = cli;
       cli.proc.write(
         cli.codec.sendTurn(
           buildTurnPrompt(turn.task, turn.message, {
@@ -634,12 +651,17 @@ export class AgentConversations {
       onLine: (line) => {
         if (cli) this.onLine(conversation, cli, line);
       },
+      // Progress and retries on stderr show the CLI is still at work.
+      onErrorLine: () => {
+        if (cli) this.onActivity(conversation, cli);
+      },
     });
     cli = {
       proc,
       codec: protocol.createCodec(input),
       resumed: resume !== undefined,
       namedSession: false,
+      ending: false,
     };
     const started = cli;
     conversation.launchCount += 1;
@@ -661,12 +683,22 @@ export class AgentConversations {
   ) {
     const { events, reply } = cli.codec.read(line);
     cli.proc.write(reply);
-    const turn = conversation.turns[0];
-    // The CLI said something: the running turn isn't stalled.
-    if (turn?.started && !turn.settled && conversation.process === cli) {
-      this.watchStall(conversation, turn);
-    }
+    this.onActivity(conversation, cli);
     for (const event of events) this.onEvent(conversation, cli, event);
+  }
+
+  /** The CLI printed something, on either stream: its turn isn't stalled. */
+  private onActivity(conversation: Conversation, cli: ConversationProcess) {
+    const turn = this.runningOn(conversation, cli);
+    if (turn) this.watchStall(conversation, turn);
+  }
+
+  /** The conversation's running turn, when it was sent to `cli`. */
+  private runningOn(conversation: Conversation, cli: ConversationProcess) {
+    const turn = conversation.turns[0];
+    return turn?.started && !turn.settled && turn.process === cli
+      ? turn
+      : undefined;
   }
 
   private onEvent(
@@ -674,11 +706,7 @@ export class AgentConversations {
     cli: ConversationProcess,
     event: ConversationEvent,
   ) {
-    const turn = conversation.turns[0];
-    const running =
-      turn?.started && !turn.settled && conversation.process === cli
-        ? turn
-        : undefined;
+    const running = this.runningOn(conversation, cli);
     switch (event.kind) {
       case "session":
         cli.namedSession = true;
@@ -700,6 +728,8 @@ export class AgentConversations {
         if (running) running.toolCalls += 1;
         return;
       case "mcp-failed":
+        // Ended first, so the turn ends once the process finished.
+        this.terminate(cli);
         if (running) {
           this.reportEnding(conversation, cli, running, {
             outcome: "failed",
@@ -707,7 +737,6 @@ export class AgentConversations {
             reason: "mcp_failed",
           });
         }
-        this.terminate(cli);
         return;
       case "turn-done":
       case "turn-interrupted":
@@ -740,7 +769,8 @@ export class AgentConversations {
    * A warm process's turn ends with its own ending. A per-turn process's
    * ending counts once it finished, so the next turn never starts a second
    * process on the same conversation. So does a failed resume's, whose turn
-   * is sent again to a new conversation.
+   * is sent again to a new conversation, and an ended process's, so the next
+   * turn never goes to a process on its way out.
    */
   private reportEnding(
     conversation: Conversation,
@@ -748,7 +778,11 @@ export class AgentConversations {
     turn: Turn,
     ending: TurnEnding,
   ) {
-    if (conversation.protocol.mode === "warm" && !this.resumeFailed(cli)) {
+    if (
+      conversation.protocol.mode === "warm" &&
+      !this.resumeFailed(cli) &&
+      !cli.ending
+    ) {
       turn.finish(ending);
       return;
     }
@@ -768,8 +802,9 @@ export class AgentConversations {
       conversation.providerSession = undefined;
       this.sessions.delete(conversation.key);
     }
-    const turn = conversation.turns[0];
-    if (!turn?.started || turn.settled) return;
+    // Only the turn this process ran: a later turn waits for a new one.
+    const turn = this.runningOn(conversation, cli);
+    if (!turn) return;
     turn.unit.set({ agent: { exit_code: code } });
     if (
       resumeFailed &&
@@ -844,8 +879,8 @@ export class AgentConversations {
       return;
     }
     const cli = conversation.process;
-    if (!cli) {
-      // Its process is still starting, and send() checks before it writes.
+    if (!cli || turn.process !== cli) {
+      // It isn't sent yet, and send() checks before it writes.
       turn.finish({ outcome: "cancelled" });
       return;
     }
@@ -987,6 +1022,7 @@ export class AgentConversations {
   }
 
   private terminate(cli: ConversationProcess) {
+    cli.ending = true;
     cli.proc.terminate();
   }
 }
