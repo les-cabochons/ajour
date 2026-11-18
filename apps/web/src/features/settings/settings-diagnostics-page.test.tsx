@@ -9,7 +9,11 @@ import {
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LocalLogSettings } from "@ajour/wide-events/local-log-file.ts";
 import type { DesktopLogsStatus } from "@/lib/desktop-bridge";
-import { installDomShims, renderRoutes } from "@/test-support/dom";
+import {
+  installDomShims,
+  renderRoutes,
+  stubNarrowView,
+} from "@/test-support/dom";
 import { SettingsNavigation } from "./settings-navigation";
 import {
   diagnosticsTabOf,
@@ -131,8 +135,12 @@ describe("the Settings tab", () => {
     await renderPage();
 
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Events", "Settings"]);
-    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Events",
+      "Actions",
+      "Settings",
+    ]);
+    expect(tabs[2]!.getAttribute("aria-selected")).toBe("true");
     expect(
       screen.getByRole("heading", { name: "Local log file" }),
     ).toBeTruthy();
@@ -142,8 +150,49 @@ describe("the Settings tab", () => {
     expect(diagnosticsTabOf({})).toBe("settings");
     expect(diagnosticsTabOf({ tab: "events" })).toBe("events");
     expect(diagnosticsTabOf({ tab: "settings" })).toBe("settings");
-    expect(diagnosticsTabOf({ tab: "actions" })).toBe("settings");
+    expect(diagnosticsTabOf({ tab: "actions" })).toBe("actions");
     expect(diagnosticsTabOf({ tab: "elsewhere" })).toBe("settings");
+  });
+
+  it("opens the tab its tab search key names, and keeps the pick in the search", async () => {
+    installMain();
+    const bridge = window.ajourDesktop as Record<string, unknown>;
+    bridge.listLogActions = vi.fn(async () => ({
+      show: "all",
+      actions: [],
+      next_cursor: null,
+      match_count: 0,
+      file_count: 0,
+      missing_file_count: 0,
+      skipped_line_count: 0,
+    }));
+    stubNarrowView(true);
+    try {
+      const { router } = await renderRoutes({
+        routes: { "/settings/diagnostics": SettingsDiagnosticsPage },
+        path: "/settings/diagnostics?tab=actions",
+      });
+      await act(async () => {});
+
+      expect(
+        screen
+          .getByRole("tab", { name: "Actions" })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(bridge.listLogActions).toHaveBeenCalled();
+
+      await click(screen.getByRole("tab", { name: "Settings" }));
+
+      expect(router.state.location.search).toEqual({ tab: "settings" });
+      expect(
+        screen
+          .getByRole("tab", { name: "Settings" })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+    } finally {
+      vi.unstubAllGlobals();
+      installDomShims();
+    }
   });
 
   it("shows the stored settings and what the folder holds, from logs.status", async () => {
