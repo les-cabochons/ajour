@@ -500,6 +500,33 @@ describe("the Events tab", () => {
     expect(rowNames()).not.toContain("job.number_0");
     expect(rowNames().length).toBeLessThan(40);
   });
+
+  it("offers to try again when the next page fails", async () => {
+    const events = Array.from({ length: 450 }, (_, index) =>
+      logged(`job.number_${index}`, { minutesAgo: index / 100 }),
+    );
+    const main = installMain({ events });
+    await openDiagnostics();
+    main.queryLogs.mockRejectedValueOnce(new Error("unreadable"));
+
+    const rows = screen.getByTestId("event-rows");
+    await act(async () => {
+      rows.scrollTop = 200 * 28 - 448;
+      fireEvent.scroll(rows);
+    });
+    await settle();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Couldn't load more events.",
+    );
+
+    await click(screen.getByRole("button", { name: "Try again" }));
+    expect(main.queryLogs.mock.calls[2]![1]).toEqual({
+      limit: 200,
+      cursor: "200",
+    });
+    expect(screen.queryByText(/Couldn't load more events/)).toBeNull();
+    expect(screen.getByTestId("event-count").textContent).toBe("450 events");
+  });
 });
 
 describe("Live", () => {

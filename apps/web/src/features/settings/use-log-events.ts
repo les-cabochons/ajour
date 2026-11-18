@@ -22,6 +22,8 @@ export interface LogEventsState {
   matchCount: number;
   nextCursor: string | null;
   loadingMore: boolean;
+  /** The last page asked for failed; `loadMore` asks again. */
+  moreError: boolean;
   /** Live couldn't follow the file. */
   liveError: boolean;
 }
@@ -32,6 +34,7 @@ const LOADING: LogEventsState = {
   matchCount: 0,
   nextCursor: null,
   loadingMore: false,
+  moreError: false,
   liveError: false,
 };
 
@@ -154,7 +157,11 @@ export function useLogEvents(filter: DesktopLogFilter | null, live: boolean) {
     if (!query || !now.nextCursor || now.loadingMore || now.status !== "ready")
       return;
     const run = generation.current;
-    setState((previous) => ({ ...previous, loadingMore: true }));
+    setState((previous) => ({
+      ...previous,
+      loadingMore: true,
+      moreError: false,
+    }));
     queryLogs(query, { limit: EVENTS_PAGE_SIZE, cursor: now.nextCursor })
       .then((result) => {
         if (generation.current !== run) return;
@@ -167,7 +174,11 @@ export function useLogEvents(filter: DesktopLogFilter | null, live: boolean) {
       })
       .catch(() => {
         if (generation.current !== run) return;
-        setState((previous) => ({ ...previous, loadingMore: false }));
+        setState((previous) => ({
+          ...previous,
+          loadingMore: false,
+          moreError: true,
+        }));
       });
   }, []);
 

@@ -360,6 +360,14 @@ export function DiagnosticsEventsTab() {
         {loggingOff && events.events.length > 0 ? (
           <span>Logging is off: no new events are written.</span>
         ) : null}
+        {events.moreError ? (
+          <span role="alert">
+            Couldn't load more events.{" "}
+            <Button variant="ghost" size="xs" onClick={events.loadMore}>
+              Try again
+            </Button>
+          </span>
+        ) : null}
         {live && events.liveError ? (
           <span role="alert">Live couldn't follow the log file.</span>
         ) : null}
