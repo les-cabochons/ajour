@@ -21,4 +21,5 @@ Ajour names the source only by the label the plugin gives, never by a product na
 - The first sync links an existing local project by code without asking. A project that only matches by name waits in a one-time review, so Ajour never locks the wrong project. Tasks link by exact name.
 - Any task of a managed project offers Merge into…, which moves its entries to another task, marks their committed copies stale so the next commit moves them in the timesheet tool, and archives the empty task.
 - The sync module lives next to `team-sync.ts`, not inside it. Linking, archiving on disappearance and restoring on return reuse the mechanisms the backlog sync already has.
+- A task's figure follows the same rule: the source writes everyone's worked hours on it as of `asOf`, and Ajour adds the task's Not counted yet and the user's adjustment, which stays personal so the user can count what the source never sees.
 - The budget card shows three things from two writers: the source's figures with their time, Ajour's Not counted yet line, and the reconciliation line when the source can give the user's hours. When it cannot, the card shows the plugin's note on why.

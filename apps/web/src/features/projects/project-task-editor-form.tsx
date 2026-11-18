@@ -35,6 +35,7 @@ import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
 import { LockHint } from "@/features/projects/project-source-ui";
+import { sourceNameOf } from "@/domain/projects/source-link";
 import type {
   ProjectTaskEditorFields,
   ProjectTaskEditorState,
@@ -74,6 +75,7 @@ export function ProjectTaskEditorForm({
   projectLocalOnly = false,
   project,
   sourceLock,
+  sourceHours,
   onFieldsChange,
   onSave,
   onClose,
@@ -108,6 +110,16 @@ export function ProjectTaskEditorForm({
    * Adjustment, the pinned slot and Commits as stay the user's.
    */
   sourceLock?: { label: string | undefined };
+  /**
+   * Present when the source gives the task's worked hours: the source's
+   * figure for everyone, and the user's time on the task it can't have yet.
+   * The task's row reads their sum with the adjustment against the budget.
+   */
+  sourceHours?: {
+    label: string | undefined;
+    sourceMs: number;
+    notCountedMs: number;
+  };
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   /** Cancel and ×: the draft is discarded. */
@@ -332,6 +344,23 @@ export function ProjectTaskEditorForm({
             Tracked{" "}
             <span className="font-mono text-foreground">
               {formatDurationHoursInput(trackedMs)}
+            </span>
+          </p>
+        ) : null}
+        {sourceHours ? (
+          <p className="text-xs text-muted-foreground">
+            {sourceNameOf(sourceHours.label, true)} counts{" "}
+            <span className="font-mono text-foreground">
+              {formatDurationHoursInput(sourceHours.sourceMs)}
+            </span>{" "}
+            for everyone · Not counted yet{" "}
+            <span className="font-mono text-foreground">
+              {/* One minus sign (U+2212), as the budget card writes it. */}
+              {sourceHours.notCountedMs < 0 &&
+              formatDurationHoursInput(-sourceHours.notCountedMs) !== "0:00"
+                ? "\u2212"
+                : ""}
+              {formatDurationHoursInput(Math.abs(sourceHours.notCountedMs))}
             </span>
           </p>
         ) : null}
