@@ -148,6 +148,38 @@ _Avoid_: Unread, new, woken
 A proposed code change in a code host, such as GitHub or Azure DevOps, that the user authored or was asked to review. It is separate from a backlog item.
 _Avoid_: PR (in user-facing text), merge request, code review, review item
 
+**Deck**:
+The view that lists the user's pull requests and opens each one for review. The name is shared with Review Deck, the Azure DevOps extension.
+_Avoid_: Pull requests page, PR hub, inbox
+
+**Guide**:
+A pull request's changes split into concerns, in reading order, each with a title and a one-line rationale.
+_Avoid_: AI review, walkthrough, guided view
+
+**Concern**:
+One group of hunks in a guide that change the same thing.
+_Avoid_: Group, cluster, section
+
+**Summary**:
+What Deck shows in place of a pull request's description: the problem it fixes, written from its linked ticket, the kinds of change, breaking changes, risky areas, test coverage and leftovers.
+_Avoid_: Description, overview, AI summary
+
+**Ask**:
+A question to the agent asked in place, anchored to selected lines, a concern or a summary line. Its answer streams in below the anchor.
+_Avoid_: Prompt, chat message, query
+
+**Version**:
+One push of a pull request on GitHub, or one iteration on Azure DevOps, with its commits.
+_Avoid_: Iteration (outside Azure DevOps), revision, update
+
+**Stack**:
+Pull requests that build on each other: each one targets the branch of the one below it, down to a trunk branch.
+_Avoid_: Chain, series, train
+
+**Layer**:
+One pull request in a stack.
+_Avoid_: Level, step, child pull request
+
 **Repository rule**:
 The project and task that time on pull requests from one repository is recorded against.
 _Avoid_: Repo mapping, review rule

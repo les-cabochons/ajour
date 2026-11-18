@@ -13,6 +13,22 @@ test-results/
 coverage/
 connectors/*/package/
 
+# Copied from Review Deck in its own style, so a sync stays a copy and a diff (packages/review-deck/VENDORED.md)
+packages/review-deck/analyze/
+packages/review-deck/cluster/
+packages/review-deck/core/
+packages/review-deck/diff/
+packages/review-deck/order/
+packages/review-deck/parse/
+packages/review-deck/review/
+packages/review-deck/score/
+packages/review-deck/stack/
+packages/review-deck/title/
+packages/review-deck/pipeline.ts
+packages/review-deck/tests/languages.test.ts
+packages/review-deck/tests/saved.test.ts
+packages/review-deck/tests/stack.test.ts
+
 # Release pipelines are changed only on purpose
 .github/workflows/
 
