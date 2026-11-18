@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DiagnosticsEventsTab } from "./diagnostics-events-tab";
+import { DiagnosticsActionsTab } from "./diagnostics-actions-tab";
 import { DiagnosticsSettingsTab } from "./diagnostics-settings-tab";
 import { useOpenSettings, useSettingsSearch } from "./settings-link";
 import { hasLocalLogsBridge } from "./use-local-logs";
@@ -10,7 +11,7 @@ const DIAGNOSTICS_NEEDS_DESKTOP_APP = "Diagnostics needs the desktop app.";
 /**
  * The Diagnostics tabs in display order (#438). A tab with a `panel` is built
  * and shown; one without is hidden until it is built, so nothing on the page
- * is dead. #443 gives Events its panel, #444 Actions and #445 Overview.
+ * is dead. #445 gives Overview its panel.
  */
 export type DiagnosticsTabId = "overview" | "events" | "actions" | "settings";
 
@@ -21,7 +22,7 @@ export const DIAGNOSTICS_TABS: ReadonlyArray<{
 }> = [
   { id: "overview", label: "Overview" },
   { id: "events", label: "Events", panel: DiagnosticsEventsTab },
-  { id: "actions", label: "Actions" },
+  { id: "actions", label: "Actions", panel: DiagnosticsActionsTab },
   { id: "settings", label: "Settings", panel: DiagnosticsSettingsTab },
 ];
 
