@@ -4603,7 +4603,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         // The round's time and outcome are the window's to keep (#685). The
         // connection's last sync and error stay the project source's, which
-        // a round every minute would otherwise hide.
+        // a round every few seconds would otherwise hide.
         const { summary } = await findConnectionSummary(
           storage,
           pluginManager,

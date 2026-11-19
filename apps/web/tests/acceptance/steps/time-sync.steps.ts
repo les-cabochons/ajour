@@ -403,7 +403,7 @@ When("I stop the running entry", async ({ page }) => {
 });
 
 When("{int} minute(s) pass(es)", async ({ page }, minutes: number) => {
-  // Fires the 60-second round that falls due meanwhile, once.
+  // Fires the check that falls due meanwhile, once.
   await page.clock.fastForward(minutes * 60_000);
 });
 
@@ -625,8 +625,8 @@ When("I open Sync review", async ({ page }) => {
 });
 
 When("a minute passes", async ({ page }) => {
-  // The runner has the plugins overview, and so its 60-second round, once
-  // the page is quiet.
+  // The runner has the plugins overview, and so its checks, once the page
+  // is quiet.
   await page.waitForLoadState("networkidle");
   await page.clock.fastForward("01:00");
 });

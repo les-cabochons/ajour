@@ -805,8 +805,13 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     The scheduler's 30-second tick records nothing.
   - `time_sync.round`, each round of a time sync (#692), in
     `lib/time-sync.ts`, always `schedule`: `time_sync_round.trigger` says
-    whether a store write, the 60-second poll, changes left over or a retry
-    started it. A store write that leaves nothing to send starts no round,
+    whether a store write, the check every 5 seconds (60 while the window
+    is hidden), changes left over or a retry started it. Since #843,
+    `has_cursor` says whether the round was a check, which sent the
+    plugin's cursor and no changes, and `unchanged` whether the plugin
+    answered that nothing changed there; such a check ends `noop`, keeps
+    nothing and never carries the cursor. A check whose full answer comes
+    back after Ajour changed is dropped, with `discarded: inputs_changed`. A store write that leaves nothing to send starts no round,
     so the runner's own writes record nothing. The counts are those of the
     route's event, plus `waiting_count`, and since #694 `received_count`,
     the entries Ajour took from the listing, and `held_count`, the listed

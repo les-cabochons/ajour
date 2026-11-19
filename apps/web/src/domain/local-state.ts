@@ -245,8 +245,8 @@ export interface LocalTimeSyncHold {
 /** What one round did, in counts, for the connection's status line. */
 export interface LocalTimeSyncRound {
   /**
-   * When the round ran. A later round that changes nothing keeps it, so the
-   * 60-second poll writes nothing.
+   * When the round ran. A later round that changes nothing keeps it, so a
+   * full round that finds nothing writes nothing, as a check does.
    */
   at: number;
   /** Changes the other system took, besides the put-backs. */
