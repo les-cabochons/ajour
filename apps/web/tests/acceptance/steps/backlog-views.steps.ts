@@ -2919,6 +2919,112 @@ Then("the item page's actions fit inside the window", async ({ page }) => {
   }
 });
 
+Given(
+  "the Backlog parent's description has an email pasted in a one-column table, then a ten-column table",
+  async ({ page }) => {
+    await page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      const parent = state.workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      );
+      // An email's layout table holds runs no line can break, like the
+      // Azure notice's rule of = signs and its tracking links.
+      const email = [
+        "| Notice |",
+        "| --- |",
+        `| Data Collector API retires.<br>${"=".repeat(150)}<br>See https://tracker.example/${"a1".repeat(120)} |`,
+      ];
+      const columns = Array.from({ length: 10 }, (_, i) => `Column_${i}`);
+      const wide = [
+        `| ${columns.join(" | ")} |`,
+        `| ${columns.map(() => "---").join(" | ")} |`,
+        `| ${columns.map((_, i) => `Subscription_value_${i}`).join(" | ")} |`,
+      ];
+      parent.description = [...email, "", ...wide].join("\n");
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    });
+  },
+);
+Given(
+  "the Backlog parent comes from the {string} project, at {string}",
+  async ({ page }, project: string, url: string) => {
+    await page.evaluate(
+      ({ project, url }) => {
+        const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+        const parent = state.workItems.find(
+          (item: { _id: string }) => item._id === "parent",
+        );
+        Object.assign(parent, { sourceProjectName: project, sourceUrl: url });
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { project, url },
+    );
+  },
+);
+When(
+  "I rest the mouse on {string} in the sidebar",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .locator("[data-backlog-item-id]")
+      .filter({ hasText: title })
+      .first()
+      .hover();
+  },
+);
+Then(
+  "the card's source line {string} links to {string}",
+  async ({ page }, origin: string, url: string) => {
+    // The card opens once the pointer has rested on the row for 800ms. The
+    // line names the link's host when the plugin gives no organization.
+    const link = page.getByRole("link", {
+      name: new RegExp(`^Open in .*${origin.replaceAll(".", "\\.")}`),
+    });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+  },
+);
+Then("both tables end before the properties card", async ({ page }) => {
+  const tables = page.locator(".backlog-item-page table");
+  await expect(tables).toHaveCount(2);
+  const card = await page
+    .locator(".backlog-item-properties-card")
+    .boundingBox();
+  // Where each table stops showing: its own right edge, or the edge of the
+  // nearest box that clips it sideways if that comes first.
+  const rights = await tables.evaluateAll((elements) =>
+    elements.map((table) => {
+      let right = table.getBoundingClientRect().right;
+      for (let box = table.parentElement; box; box = box.parentElement) {
+        if (getComputedStyle(box).overflowX !== "visible") {
+          right = Math.min(right, box.getBoundingClientRect().right);
+          break;
+        }
+      }
+      return right;
+    }),
+  );
+  for (const right of rights) expect(right).toBeLessThanOrEqual(card!.x);
+});
+Then(
+  "the one-column table wraps its long words, and the ten-column table scrolls sideways",
+  async ({ page }) => {
+    const scrolls = await page
+      .locator(".backlog-item-page table")
+      .evaluateAll((tables) =>
+        tables.map((table) => {
+          // Wider than its box, and the box scrolls rather than clips it.
+          const box = table.parentElement!;
+          return (
+            box.scrollWidth > box.clientWidth &&
+            ["auto", "scroll"].includes(getComputedStyle(box).overflowX)
+          );
+        }),
+      );
+    expect(scrolls).toEqual([false, true]);
+  },
+);
 When(
   "I open the page of the Backlog item {string}",
   async ({ page }, title: string) => {

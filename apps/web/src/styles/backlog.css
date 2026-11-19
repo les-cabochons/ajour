@@ -839,6 +839,11 @@
     color: var(--text);
   }
 
+  /* A synced item without a type or a parent has nothing to say here. */
+  .backlog-item-page-meta:empty {
+    display: none;
+  }
+
   .backlog-item-page-columns {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 18rem;

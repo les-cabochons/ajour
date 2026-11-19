@@ -89,13 +89,15 @@ export function PropertyAction({
 
 /**
  * A section of a properties card that its title opens and closes: a chevron,
- * the title and an optional trailing value. A top-level section sits under a
- * rule; a nested one does not. `indent` lines the content up under the title.
- * The project page's plugin sections and a description's frontmatter use it.
+ * the title and an optional trailing value, then an optional action outside
+ * the toggle. A top-level section sits under a rule; a nested one does not.
+ * `indent` lines the content up under the title. The project page's plugin
+ * sections, a description's frontmatter and a synced item's source use it.
  */
 export function PropertySection({
   title,
   trailing,
+  action,
   open,
   onOpenChange,
   nested = false,
@@ -103,7 +105,10 @@ export function PropertySection({
   children,
 }: {
   title: ReactNode;
+  /** Shown at the end of the toggle, and part of its name, such as a count. */
   trailing?: ReactNode;
+  /** A link or button after the toggle, outside it, such as Open in source. */
+  action?: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   nested?: boolean;
@@ -113,20 +118,25 @@ export function PropertySection({
   const contentId = useId();
   return (
     <div className={cn("flex flex-col gap-2.5", !nested && "border-t pt-3")}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={contentId}
-        className="flex min-w-0 items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-        onClick={() => onOpenChange(!open)}
-      >
-        <ChevronIcon
-          aria-hidden="true"
-          className={cn("size-4 shrink-0", open && "rotate-90")}
-        />
-        <span className="truncate">{title}</span>
-        {trailing}
-      </button>
+      {/* A link can't sit inside the toggle's button, so an action follows
+          it on the same line. */}
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={contentId}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+          onClick={() => onOpenChange(!open)}
+        >
+          <ChevronIcon
+            aria-hidden="true"
+            className={cn("size-4 shrink-0", open && "rotate-90")}
+          />
+          <span className="truncate">{title}</span>
+          {trailing}
+        </button>
+        {action}
+      </div>
       {open ? (
         <div
           id={contentId}

@@ -30,7 +30,10 @@ import {
 } from "@/features/backlog/work-item-icons";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
 import { useRowHoverCard } from "@/lib/row-hover-card";
-import { openModifiedSourceClick } from "@/lib/source-navigation";
+import {
+  openModifiedSourceClick,
+  safeSourceUrl,
+} from "@/lib/source-navigation";
 import { cn } from "@/lib/utils";
 
 type IconData = ReturnType<typeof useWorkItemIconData>;
@@ -84,6 +87,38 @@ function CardSection({
   );
 }
 
+/**
+ * Where the item comes from: a link that opens the item in its source when
+ * the plugin gives one, tinted on hover like the card's rows, else plain text.
+ */
+function SourceLine({
+  href,
+  onOpen,
+  children,
+}: {
+  href: string | undefined;
+  onOpen: () => void;
+  children: ReactNode;
+}) {
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      // The tint runs past the text by the padding, so the text stays in line
+      // with the title above.
+      className="-mx-1.5 flex h-6 items-center gap-2 rounded-sm px-1.5 text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      onClick={onOpen}
+    >
+      {children}
+    </a>
+  ) : (
+    <div className="flex h-5 items-center gap-2 text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 function MoreLine({ count }: { count: number }) {
   return count > 0 ? (
     <p className="flex h-6 items-center px-1.5 text-xs text-muted-foreground">
@@ -94,8 +129,9 @@ function MoreLine({ count }: { count: number }) {
 
 /**
  * The card's contents: the whole title, where the item comes from, its
- * parent, its subitems and the pull requests that name it. Subitems and pull
- * requests open on click; Ctrl or Cmd-click opens them in their source.
+ * parent, its subitems and the pull requests that name it. The source line
+ * opens the item in its source. Subitems and pull requests open on click;
+ * Ctrl or Cmd-click opens them in their source.
  */
 function BacklogItemSummaryCard({
   workItem,
@@ -126,6 +162,7 @@ function BacklogItemSummaryCard({
     (candidate) => candidate.id === workItem.source,
   );
   const logo = plugin?.iconSvg ?? iconData.pluginIconsBySource[workItem.source];
+  const sourceUrl = safeSourceUrl(workItem.sourceUrl);
   const from = getBacklogItemOriginFor(router.state.location);
   const { origin, parent } = summary;
 
@@ -141,7 +178,7 @@ function BacklogItemSummaryCard({
           {workItem.title}
         </p>
         {origin ? (
-          <div className="flex h-5 items-center gap-2 text-muted-foreground">
+          <SourceLine href={sourceUrl} onOpen={onNavigate}>
             {logo ? (
               <WorkItemIcon
                 icon={{
@@ -154,6 +191,7 @@ function BacklogItemSummaryCard({
               <SourceIcon aria-hidden className="size-4 shrink-0" />
             )}
             <span className="min-w-0 flex-1 truncate">
+              {sourceUrl ? <span className="sr-only">Open in </span> : null}
               {plugin ? (
                 <span className="sr-only">{plugin.displayName}: </span>
               ) : null}
@@ -162,7 +200,7 @@ function BacklogItemSummaryCard({
                 .join(" / ")}
             </span>
             {summary.key ? <Value tone="muted">{summary.key}</Value> : null}
-          </div>
+          </SourceLine>
         ) : null}
         {parent ? (
           <div className="flex h-5 items-center gap-2 text-muted-foreground">

@@ -31,6 +31,10 @@ export function Markdown({
         "[&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:whitespace-pre [&_pre_code]:bg-transparent [&_pre_code]:p-0",
         "[&_hr]:border-border",
         "[&_table]:w-full [&_table]:text-xs [&_td,&_th]:border [&_td,&_th]:px-2 [&_td,&_th]:py-1 [&_th]:text-left [&_th]:font-medium",
+        // A one-column table, such as a pasted email's layout, breaks its long
+        // words to fit the column. Cells beside others keep whole words: a
+        // short label would break letter by letter next to a long paragraph.
+        "[&_td:only-child,&_th:only-child]:[overflow-wrap:anywhere]",
         "[&_.task-list-item]:list-none",
         className,
       )}
