@@ -1289,6 +1289,93 @@ describe("taking the other system's changes", () => {
     });
   });
 
+  describe("when the later change there moves the entry where Ajour holds it", () => {
+    /** e1 moved there at 15:00 to a project the connection doesn't manage. */
+    const moved = () =>
+      remoteE1({
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        taskRemoteId: undefined,
+      });
+
+    /** e1 synced, edited to 2:00 in Ajour first seen at 14:30, then moved there. */
+    function heldOverEdit() {
+      const synced = runRound(stateWith([entry("e1")])).state;
+      const record = recordIn(synced);
+      const edited: TimeSyncState = {
+        ...synced,
+        timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+        timeSyncs: {
+          [CONNECTION.connectionId]: {
+            ...record,
+            copies: {
+              e1: {
+                ...record.copies.e1!,
+                changedAt: Date.parse("2026-11-12T14:30:00.000Z"),
+              },
+            },
+          },
+        },
+      };
+      const round = listingRoundOf(plan(edited))!;
+      return applyTimeSyncRound(
+        edited,
+        round,
+        { results: [], entries: [moved()] },
+        CONTEXT,
+        factoriesAt(Date.parse("2026-11-12T17:00:00.000Z")),
+      );
+    }
+
+    it("holds the move, keeps the entry, and doesn't send Ajour's older change over it", () => {
+      const { state, result } = heldOverEdit();
+
+      expect(entriesOf(state)).toEqual([
+        expect.objectContaining({
+          projectId: "acme",
+          durationMs: 2 * 60 * MINUTE,
+        }),
+      ]);
+      expect(recordIn(state).held).toEqual([
+        expect.objectContaining({
+          remoteId: "remote-1",
+          reason: "unmanagedProject",
+        }),
+      ]);
+      expect(result).toMatchObject({ received: 0, held: 1 });
+      expect(plan(state).request.changes).toEqual([]);
+    });
+
+    it("sends a change made in Ajour after the hold, which wins over the move there", () => {
+      const changedAgain = {
+        ...heldOverEdit().state,
+        timesheetEntries: [entry("e1", { durationMs: 3 * 60 * MINUTE })],
+      };
+      const at = Date.parse("2026-11-12T17:30:00.000Z");
+      const sends = [
+        expect.objectContaining({
+          syncKey: "e1",
+          values: expect.objectContaining({ minutes: 180 }),
+        }),
+      ];
+      const round = planTimeSyncRound(changedAgain, CONNECTION, CONTEXT, at)!;
+      expect(round.request.changes).toEqual(sends);
+
+      // Its listing goes first, and the move there no longer wins.
+      const { state } = applyTimeSyncRound(
+        changedAgain,
+        listingRoundOf(round)!,
+        { results: [], entries: [moved()] },
+        CONTEXT,
+        factoriesAt(at),
+      );
+
+      expect(recordIn(state).held).toEqual([]);
+      expect(recordIn(state).copies.e1).not.toHaveProperty("heldBack");
+      expect(plan(state).request.changes).toEqual(sends);
+    });
+  });
+
   it("dates a waiting change from the round that first saw it, so a later edit there wins", () => {
     const keys = Array.from(
       { length: 21 },
@@ -2178,7 +2265,10 @@ describe("a running entry from the other system", () => {
 
   describe("when Ajour changed its running entry too", () => {
     /** t1 moved to Ad hoc support in Ajour, first seen at `changedAt`, and stopped there at 15:25. */
-    function stoppedThereAfterEdit(changedAt: number) {
+    function stoppedThereAfterEdit(
+      changedAt: number,
+      stopped: TimeSyncRemoteEntry = t1StoppedThere(),
+    ) {
       const synced = sent();
       const record = recordIn(synced);
       const edited: TimeSyncState = {
@@ -2201,7 +2291,7 @@ describe("a running entry from the other system", () => {
       return applyTimeSyncRound(
         edited,
         round,
-        listing(t1StoppedThere())(round),
+        listing(stopped)(round),
         CONTEXT,
         factoriesFor(NOW + 31 * MINUTE),
       );
@@ -2221,6 +2311,24 @@ describe("a running entry from the other system", () => {
           }),
         }),
       ]);
+    });
+
+    it("keeps it running without sending Ajour's older change when the later stop there moved it to a project Ajour doesn't manage", () => {
+      const { state } = stoppedThereAfterEdit(NOW + 20 * MINUTE, {
+        ...t1StoppedThere(),
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        taskRemoteId: undefined,
+      });
+
+      expect(state.timers).toEqual([t1({ taskId: "ad-hoc" })]);
+      expect(recordIn(state).held).toEqual([
+        expect.objectContaining({
+          remoteId: "remote-1",
+          reason: "unmanagedProject",
+        }),
+      ]);
+      expect(changesAt(state, NOW + 32 * MINUTE)).toEqual([]);
     });
 
     it("stops it with the other system's values when the stop there is the later one", () => {
@@ -2545,6 +2653,24 @@ describe("reading stored time syncs back", () => {
       stored,
     );
     expect(normalizeTimeSyncs(undefined)).toEqual({});
+
+    // A change Ajour holds back stays held back after a restart (#835).
+    const record = stored.c1!;
+    const heldBack = {
+      c1: {
+        ...record,
+        copies: {
+          e1: {
+            ...record.copies.e1!,
+            changedAt: 250,
+            heldBack: { ...record.copies.e1!.agreed, minutes: 120 },
+          },
+        },
+      },
+    };
+    expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(heldBack)))).toEqual(
+      heldBack,
+    );
 
     const broken = structuredClone(stored) as Record<string, unknown>;
     (broken.c1 as LocalTimeSync).copies.e2 = {

@@ -178,6 +178,14 @@ export interface LocalSyncedCopy {
    * sides agree again. The later of it and `remoteUpdatedAt` wins a conflict.
    */
   changedAt?: number;
+  /**
+   * Ajour's values that lost to a later change there which Ajour holds, such
+   * as a move to a project the connection doesn't manage (#835). Ajour
+   * doesn't send them, since they would overwrite that change, while the
+   * entry keeps them. A new change in Ajour, or taking the change there,
+   * drops them.
+   */
+  heldBack?: TimeSyncEntryValues;
 }
 
 /** A change the other system refused, with its message for the user. */

@@ -466,6 +466,18 @@ function createReader(
   return { changeFor, syncKeys };
 }
 
+/**
+ * Whether this change is the one Ajour holds back, having lost to a later
+ * change there that Ajour holds (#835).
+ */
+function isHeldBack(copy: LocalSyncedCopy | undefined, change: TimeSyncChange) {
+  return (
+    copy?.heldBack !== undefined &&
+    change.kind === "upsert" &&
+    sameEntryValues(copy.heldBack, change.values)
+  );
+}
+
 /** Whether the other system already refused this very change. */
 function isRefused(
   refusal: LocalTimeSyncRefusal | undefined,
@@ -522,8 +534,8 @@ export interface TimeSyncPlan {
  * The next round of a connection at `now`, or undefined when it has no time
  * sync. It sends what differs from the synced copies, at most 20 changes in
  * day order with the running entry last, skipping a change the other system
- * already refused. The window is the current week and the 4 before it,
- * never before the start week.
+ * already refused and one Ajour holds back. The window is the current week
+ * and the 4 before it, never before the start week.
  */
 export function planTimeSyncRound(
   state: TimeSyncState,
@@ -544,6 +556,12 @@ export function planTimeSyncRound(
         !isRefused(
           Object.hasOwn(record.refusals, change.syncKey)
             ? record.refusals[change.syncKey]
+            : undefined,
+          change,
+        ) &&
+        !isHeldBack(
+          Object.hasOwn(record.copies, change.syncKey)
+            ? record.copies[change.syncKey]
             : undefined,
           change,
         ),
@@ -619,7 +637,9 @@ function firstSeenAt(
 
 /**
  * Notes when Ajour first saw each copied entry differ from its copy, as
- * `firstSeenAt` says, and clears that time once they agree. Drops a refusal
+ * `firstSeenAt` says, and clears that time once they agree. Drops the
+ * values held back of an entry that changed since, and dates its new
+ * change from now. Drops a refusal
  * whose entry changed since, so the next round sends the new values, and a
  * put-back that has no upsert left to send, such as one the other system
  * already refused.
@@ -641,8 +661,22 @@ function noteLocalChanges(
   );
   let copies = record.copies;
   for (const [syncKey, copy] of Object.entries(record.copies)) {
-    const changed = reader.changeFor(syncKey) !== undefined;
-    if (changed && copy.changedAt === undefined) {
+    const change = reader.changeFor(syncKey);
+    const changed = change !== undefined;
+    if (copy.heldBack && !(change && isHeldBack(copy, change))) {
+      // Ajour's entry changed since it held its change back: the new change
+      // is first seen now, so it is later than the change there (#835).
+      const { heldBack: _lost, changedAt: _old, ...rest } = copy;
+      copies = {
+        ...copies,
+        [syncKey]: changed
+          ? {
+              ...rest,
+              changedAt: firstSeenAt(plan, syncKey, copy.agreed, now),
+            }
+          : rest,
+      };
+    } else if (changed && copy.changedAt === undefined) {
       copies = {
         ...copies,
         [syncKey]: {
@@ -840,7 +874,9 @@ interface TakenListing {
  * - A copy whose remote entry changed since the last round, and holds other
  *   values than agreed, was edited there. When Ajour changed it too, the
  *   later of `changedAt` and the remote `updatedAt` wins, and a delete in
- *   Ajour wins over the edit.
+ *   Ajour wins over the edit. When the edit there wins but lands where
+ *   Ajour holds it, the entry stays as it is, and Ajour holds back its own
+ *   change, so it never goes over the edit there (#835).
  * - The copy of Ajour's running entry, agreed running, whose remote entry
  *   shows stopped, was stopped there: Ajour stops it with the minutes there,
  *   under the same rules when Ajour changed it too (#695).
@@ -970,6 +1006,38 @@ function takeListing(
   };
 
   /**
+   * When Ajour first saw its change of a copied entry. A change other than
+   * the one it holds back came after the hold, so this round first sees it
+   * (#835).
+   */
+  const localChangedAt = (
+    syncKey: string,
+    copy: LocalSyncedCopy,
+    local: TimeSyncChange | undefined,
+  ) =>
+    copy.changedAt !== undefined &&
+    (copy.heldBack === undefined || (local && isHeldBack(copy, local)))
+      ? copy.changedAt
+      : firstSeenAt(plan, syncKey, copy.agreed, now);
+
+  /**
+   * Holds a change there that Ajour can't take. Ajour's own change, which
+   * lost to it, is held back, so it never goes over the change there (#835).
+   */
+  const hold = (
+    syncKey: string,
+    copy: LocalSyncedCopy,
+    remote: TimeSyncRemoteEntry,
+    reason: TimeSyncHoldReason,
+    local: TimeSyncChange | undefined,
+  ) => {
+    held.push(holdOf(remote, reason));
+    if (local?.kind === "upsert") {
+      copies[syncKey] = { ...copy, heldBack: local.values };
+    }
+  };
+
+  /**
    * Takes the values there into a copied saved entry: its project and task,
    * kept when neither side moved them, its day and its whole minutes, which
    * keep the entry's seconds when they agree. A project or task Ajour holds
@@ -984,7 +1052,7 @@ function takeListing(
   ) => {
     const placement = placementOf(copy, entry, remote, local);
     if (placement.kind === "held") {
-      held.push(holdOf(remote, placement.reason));
+      hold(syncKey, copy, remote, placement.reason, local);
       return false;
     }
     placeIn(placement);
@@ -1031,8 +1099,7 @@ function takeListing(
   ) => {
     const local = reader.changeFor(syncKey);
     if (local?.kind === "delete") return;
-    const localAt =
-      copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
+    const localAt = localChangedAt(syncKey, copy, local);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       return;
@@ -1049,7 +1116,7 @@ function takeListing(
     // entry as it is, so its stop never goes back over the move there.
     const placement = placementOf(copy, timer, remote, local);
     if (placement.kind === "held") {
-      held.push(holdOf(remote, placement.reason));
+      hold(syncKey, copy, remote, placement.reason, local);
       return;
     }
     // Never before it started, nor after now.
@@ -1147,8 +1214,7 @@ function takeListing(
       continue;
     }
     // Both changed: Ajour's change wins when it is the later one.
-    const localAt =
-      copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
+    const localAt = localChangedAt(syncKey, copy, local);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
@@ -1590,6 +1656,7 @@ function normalizeValues(value: unknown): TimeSyncEntryValues | undefined {
 function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
   const copy = asRecord(value);
   const agreed = normalizeValues(copy?.agreed);
+  const heldBack = normalizeValues(copy?.heldBack);
   if (
     !copy ||
     !agreed ||
@@ -1603,6 +1670,7 @@ function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
     agreed,
     remoteUpdatedAt: copy.remoteUpdatedAt,
     ...(finiteNumber(copy.changedAt) ? { changedAt: copy.changedAt } : {}),
+    ...(heldBack ? { heldBack } : {}),
   };
 }
 
