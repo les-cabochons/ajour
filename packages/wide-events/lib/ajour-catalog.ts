@@ -405,7 +405,10 @@ export const catalog = defineCatalog({
         agent_tool: {
           /** One of Ajour's tools, or `other` for a name it doesn't have. */
           name: operational(),
-          /** Read and write tools run in the renderer; session tools in the API. */
+          /**
+           * Read and write data tools run in the renderer. Session tools, and
+           * the local log tools (`read`), run in the API.
+           */
           access: operational<"read" | "write" | "session">(),
           /** How long the renderer took to answer over the bridge. */
           bridge_ms: operational<number>(),

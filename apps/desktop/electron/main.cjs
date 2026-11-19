@@ -1908,6 +1908,12 @@ async function ensureInternalAppApiRunning() {
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
       eventSink: await mainEventSink,
+      // The MCP log tools read the same files as Settings › Diagnostics.
+      localLogs: {
+        writing: () => localLogs.writing(),
+        query: (filter, page) => localLogQuery.query(filter, page),
+        trace: (traceId) => localLogQuery.trace(traceId),
+      },
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
         throw internalAppApiPortInUseError(error);

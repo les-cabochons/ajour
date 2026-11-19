@@ -212,6 +212,7 @@ import {
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
+import type { LocalLogReader } from "./local-log-reader.ts";
 import { claudeCodeAdapter } from "./agent-runner/adapters/claude-code.ts";
 import { codexAdapter } from "./agent-runner/adapters/codex.ts";
 import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
@@ -347,6 +348,12 @@ interface AppApiServerOptions {
   reportProcessCrashes?: boolean;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
+  /**
+   * The local log file's reads, for the MCP log tools. The desktop app passes
+   * main's query service; without one, as in the standalone API, MCP lists
+   * no log tool.
+   */
+  localLogs?: LocalLogReader;
   /**
    * The PATH the agent runner finds the agent CLIs on. Defaults to the login
    * shell's PATH. Tests point it at a fake CLI.
@@ -1840,6 +1847,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ),
     events,
     readBody: readJsonBody,
+    localLogs: options.localLogs,
   };
 
   /**
