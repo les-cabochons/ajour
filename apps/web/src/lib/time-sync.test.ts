@@ -547,6 +547,27 @@ describe("a time sync round", () => {
     });
   });
 
+  it("makes the first round of a new day a full one, since the rules take entries by their day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const lateEvening = new Date();
+      lateEvening.setHours(23, 59, 0, 0);
+      vi.setSystemTime(lateEvening);
+      const { round, jobs } = await load();
+      await round("change");
+      expect(await round("check")).toEqual({ kind: "unchanged" });
+
+      // An entry there dated today was skipped yesterday: only a listing takes it.
+      vi.setSystemTime(lateEvening.getTime() + 2 * 60_000);
+      await round("check");
+      expect(jobs().at(-1)).toMatchObject({
+        time_sync_round: { trigger: "check", has_cursor: false },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("takes in a check what changed in the other system since the cursor", async () => {
     const { localStore, connectionId, round, jobs } = await load();
     await round("change");

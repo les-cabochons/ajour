@@ -206,6 +206,12 @@ interface CheckPoint {
   cursor: string;
   generation: number;
   inputs: TimeSyncInputs;
+  /**
+   * The day that answer was taken on. The rules take a remote entry by its
+   * day, such as one dated after today that waits for it, so a new day
+   * makes the next round full.
+   */
+  today: string;
 }
 
 /** Each connection's check point, while its last full answer gave a cursor. */
@@ -216,17 +222,18 @@ function hasCursor(ref: TimeSyncConnectionRef) {
   return checkPoints.has(keyOf(ref));
 }
 
-/** A check ready to send: its cursor, its plan, and the inputs it planned from. */
+/** A check ready to send: its cursor, its plan, the inputs it planned from, and the check point's day. */
 interface PlannedCheck {
   cursor: string;
   planned: PlannedTimeSyncRound;
   inputs: TimeSyncInputs;
+  today: string;
 }
 
 /**
  * The check a connection may send now, or undefined when its round must be
  * full: no cursor, the connection saved again since, something the rules
- * read changed, the cached overview doesn't show it active, or time passing
+ * read changed, a new day, the cached overview doesn't show it active, or time passing
  * left changes to send.
  */
 function planCheck(ref: TimeSyncConnectionRef): PlannedCheck | undefined {
@@ -250,7 +257,8 @@ function planCheck(ref: TimeSyncConnectionRef): PlannedCheck | undefined {
   }
   const planned = planFor(ref, overview);
   if (!planned || planned.plan.request.changes.length > 0) return undefined;
-  return { cursor: point.cursor, planned, inputs };
+  if (planned.context.today !== point.today) return undefined;
+  return { cursor: point.cursor, planned, inputs, today: point.today };
 }
 
 /**
@@ -323,6 +331,7 @@ export function runTimeSyncRound(
         cursor: answer.cursor,
         generation,
         inputs: inputsOf(localStore.snapshot(), ref),
+        today: context.today,
       });
     }
     job.set({
@@ -360,7 +369,7 @@ export function runTimeSyncRound(
    */
   const check = async (
     job: Unit<AjourCatalog, "time_sync.round">,
-    { cursor, planned, inputs }: PlannedCheck,
+    { cursor, planned, inputs, today }: PlannedCheck,
   ): Promise<TimeSyncRoundOutcome> => {
     const generation = connectionGeneration(pluginId, connectionId);
     job.set({ time_sync_round: { has_cursor: true, change_count: 0 } });
@@ -383,7 +392,12 @@ export function runTimeSyncRound(
           .end("noop");
         return { kind: "discarded" };
       }
-      checkPoints.set(key, { cursor: answer.cursor, generation, inputs });
+      checkPoints.set(key, {
+        cursor: answer.cursor,
+        generation,
+        inputs,
+        today,
+      });
       job.end("noop");
       return { kind: "unchanged" };
     }
