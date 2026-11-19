@@ -739,10 +739,26 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
 });
 
 const { terminalSettings, openPluginLink } = require("./terminal-settings.cjs");
+/**
+ * An installed terminal's icon, 32px for a 16px spot on a 2x screen. On macOS
+ * 26, `app.getFileIcon` gives the same blank square for every app, so the
+ * Quick Look thumbnail reads the real one there.
+ */
+async function terminalIcon(where) {
+  const image =
+    process.platform === "darwin"
+      ? await nativeImage.createThumbnailFromPath(where, {
+          width: 32,
+          height: 32,
+        })
+      : await app.getFileIcon(where, { size: "normal" });
+  return image.isEmpty() ? undefined : image.toDataURL();
+}
 const terminalPreferences = () =>
   terminalSettings(
     process.platform,
     path.join(app.getPath("userData"), "terminal-app.json"),
+    { icon: terminalIcon },
   );
 // The API opens terminal commands in the chosen app, where it is installed.
 const resolveTerminalApp = () => terminalPreferences().resolve();

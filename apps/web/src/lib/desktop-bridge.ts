@@ -44,7 +44,8 @@ export interface DevelopmentPluginSettings {
  */
 export interface DesktopTerminalApps {
   value: string | undefined;
-  choices: { value: string; label: string }[];
+  /** The installed terminals, each with its own icon as a data URL when main could read it. */
+  choices: { value: string; label: string; icon?: string }[];
 }
 
 export interface DesktopUpdateCheckResult {

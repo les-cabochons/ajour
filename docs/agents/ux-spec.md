@@ -1444,8 +1444,10 @@ Settings > General > Terminal shows the terminal app plugins open commands in.
 It lists only the apps installed on this computer: Terminal, iTerm2, Ghostty,
 kitty, WezTerm and Alacritty on macOS, Windows Terminal, WezTerm and Alacritty
 on Windows. Warp is left out: its stable builds may open a script in their
-editor instead of running it. Terminal and
-Windows Terminal are the defaults and always listed. Linux hides the setting.
+editor instead of running it. Each app shows its own icon before its name,
+read from the installed app, and only its name when Ajour can't read the icon.
+Terminal and Windows Terminal are the defaults and always listed. Linux hides
+the setting.
 The preference saves on change. When the chosen app is uninstalled, commands
 open in the default, and the choice comes back once the app is installed again.
 It does not change the ajour command installation.

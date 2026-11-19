@@ -7,7 +7,8 @@ const path = require("node:path");
  * default and is always offered. On macOS each is an app bundle looked up in
  * the Applications folders; on Windows an executable on PATH or in its usual
  * install folder. The API's `process-launch.ts` knows how each one starts a
- * command; this list only says which exist on this computer.
+ * command; this list only says which exist on this computer, and where, so
+ * Settings can show each one's own icon.
  */
 const TERMINALS = {
   darwin: [
@@ -29,7 +30,8 @@ const TERMINALS = {
   win32: [
     // Windows Terminal is an app execution alias. The launch looks it up on
     // the PATH it runs with, and asks the user to install it when missing.
-    { value: "wt", label: "Windows Terminal" },
+    // `exe` only finds its icon.
+    { value: "wt", label: "Windows Terminal", exe: "wt.exe", folders: [] },
     {
       value: "WezTerm",
       label: "WezTerm",
@@ -60,51 +62,68 @@ async function present(candidate) {
 
 /**
  * The terminal app setting of this computer, saved as JSON in `file`.
- * `computer` gives the user's home folder, the environment and an `exists`
- * check, so tests can describe what is installed.
+ * `computer` can replace the user's home folder, the environment and the
+ * `exists` check, so tests can describe what is installed. Its `icon` reads
+ * an installed app's icon as a data URL; main gives it, as only Electron can.
  */
-function terminalSettings(
-  platform,
-  file,
-  computer = {
-    home: require("node:os").homedir(),
-    env: process.env,
-    exists: present,
-  },
-) {
+function terminalSettings(platform, file, computer = {}) {
+  const {
+    home = require("node:os").homedir(),
+    env = process.env,
+    exists = present,
+    icon,
+  } = computer;
   const terminals = TERMINALS[platform] ?? [];
   const pathOf = platform === "win32" ? path.win32 : path.posix;
 
   /** Where a terminal is installed, `null` for the default found at launch, or undefined. */
   async function locate(terminal) {
     if (terminal === terminals[0]) return terminal.fixed ?? null;
+    return find(terminal);
+  }
+
+  /** Where a terminal's app bundle or executable is, or undefined. */
+  async function find(terminal) {
     if (terminal.bundle) {
       for (const folder of [
         "/Applications",
-        pathOf.join(computer.home, "Applications"),
+        pathOf.join(home, "Applications"),
       ]) {
         const candidate = pathOf.join(folder, terminal.bundle);
-        if (await computer.exists(candidate)) return candidate;
+        if (await exists(candidate)) return candidate;
       }
       return undefined;
     }
     // Only absolute PATH entries: a relative one depends on the current folder.
-    const folders = (computer.env.PATH ?? computer.env.Path ?? "")
+    const folders = (env.PATH ?? env.Path ?? "")
       .split(";")
       .filter((folder) => pathOf.isAbsolute(folder));
     for (const base of [
-      computer.env.ProgramFiles,
-      computer.env.LOCALAPPDATA &&
-        pathOf.join(computer.env.LOCALAPPDATA, "Programs"),
+      env.ProgramFiles,
+      env.LOCALAPPDATA && pathOf.join(env.LOCALAPPDATA, "Programs"),
     ])
       if (base)
         for (const folder of terminal.folders)
           folders.push(pathOf.join(base, folder));
     for (const folder of folders) {
       const candidate = pathOf.join(folder, terminal.exe);
-      if (await computer.exists(candidate)) return candidate;
+      if (await exists(candidate)) return candidate;
     }
     return undefined;
+  }
+
+  /**
+   * The terminal's own icon as a data URL, or undefined. The icon is only
+   * decoration, so a missing or unreadable one leaves the label alone.
+   */
+  async function iconOf({ terminal, where }) {
+    const source = where ?? (await find(terminal));
+    if (!icon || !source) return undefined;
+    try {
+      return await icon(source);
+    } catch {
+      return undefined;
+    }
   }
 
   /** The installed terminals, with where each is. */
@@ -143,14 +162,19 @@ function terminalSettings(
   }
 
   return {
-    /** What Settings shows: the terminal that opens commands, and the installed ones. */
+    /**
+     * What Settings shows: the terminal that opens commands, and the installed
+     * ones with their icons.
+     */
     async list() {
       const found = await installed();
+      const icons = await Promise.all(found.map(iconOf));
       return {
         value: (await chosen(found))?.terminal.value,
-        choices: found.map(({ terminal }) => ({
+        choices: found.map(({ terminal }, index) => ({
           value: terminal.value,
           label: terminal.label,
+          ...(icons[index] && { icon: icons[index] }),
         })),
       };
     },

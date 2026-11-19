@@ -8,7 +8,9 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it("Given the terminals main found, offers them and saves the pick", async () => {
+const ITERM_ICON = "data:image/png;base64,aVRlcm0=";
+
+it("Given the terminals main found, offers them with their icons and saves the pick", async () => {
   const setTerminalApp = vi.fn(async (value: string) => value);
   Object.defineProperty(window, "ajourDesktop", {
     configurable: true,
@@ -18,7 +20,7 @@ it("Given the terminals main found, offers them and saves the pick", async () =>
         value: "Terminal",
         choices: [
           { value: "Terminal", label: "Terminal" },
-          { value: "iTerm", label: "iTerm2" },
+          { value: "iTerm", label: "iTerm2", icon: ITERM_ICON },
           { value: "Ghostty", label: "Ghostty" },
         ],
       }),
@@ -34,6 +36,12 @@ it("Given the terminals main found, offers them and saves the pick", async () =>
   expect(
     (await screen.findAllByRole("option")).map((option) => option.textContent),
   ).toEqual(["Terminal", "iTerm2", "Ghostty"]);
+  // Only an app main read an icon for shows one, before its label.
+  expect(
+    screen
+      .getAllByRole("option")
+      .map((option) => option.querySelector("img")?.getAttribute("src")),
+  ).toEqual([undefined, ITERM_ICON, undefined]);
   // Base UI's select picks on Enter then click, as a pointer does.
   const ghostty = screen.getByRole("option", { name: "Ghostty" });
   fireEvent.keyDown(ghostty, { key: "Enter" });

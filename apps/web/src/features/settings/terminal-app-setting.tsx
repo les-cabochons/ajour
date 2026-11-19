@@ -3,7 +3,10 @@ import { SettingRow } from "@/components/app-surface";
 import { OptionSelect } from "@/components/ui/option-select";
 import type { DesktopTerminalApps } from "@/lib/desktop-bridge";
 
-/** Settings › General › Terminal: which installed terminal app opens plugin commands. */
+/**
+ * Settings › General › Terminal: which installed terminal app opens plugin
+ * commands, each shown with its own icon.
+ */
 export function TerminalAppSetting() {
   const desktop = window.ajourDesktop;
   const [value, setValue] = useState<string | null>(null);
@@ -54,7 +57,19 @@ export function TerminalAppSetting() {
       <OptionSelect
         label="Terminal app"
         value={value ?? ""}
-        options={choices}
+        options={choices.map((choice) => ({
+          value: choice.value,
+          label: choice.label,
+          icon: choice.icon && (
+            <img
+              alt=""
+              aria-hidden="true"
+              className="size-4 shrink-0"
+              src={choice.icon}
+            />
+          ),
+        }))}
+        iconLabel
         disabled={saving || value === null}
         onChange={(next) => {
           if (next === value) return;

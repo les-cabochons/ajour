@@ -11,11 +11,16 @@ const HOME = "/Users/me";
 const TERMINAL = "/System/Applications/Utilities/Terminal.app";
 
 /** A computer where only the `installed` paths exist. */
-function computer(installed: string[], env = {}) {
+function computer(
+  installed: string[],
+  env = {},
+  icon?: (where: string) => Promise<string | undefined>,
+) {
   return {
     home: HOME,
     env,
     exists: async (candidate: string) => installed.includes(candidate),
+    icon,
   };
 }
 
@@ -147,6 +152,51 @@ it("Given Windows with WezTerm on PATH and Alacritty in Program Files, offers th
 it("Given Windows Terminal, leaves finding it to the launch, which explains a missing one", async () => {
   await withSaved(undefined, async (file) => {
     const settings = terminalSettings("win32", file, computer([]));
+    expect(await settings.resolve()).toEqual({ app: "wt" });
+  });
+});
+
+it("Given installed terminals, shows each one's own icon, and none when it can't be read", async () => {
+  await withSaved(undefined, async (file) => {
+    const settings = terminalSettings(
+      "darwin",
+      file,
+      computer(
+        [TERMINAL, "/Applications/iTerm.app", "/Applications/Ghostty.app"],
+        {},
+        async (where) => {
+          if (where.endsWith("Ghostty.app")) throw new Error("no thumbnail");
+          return `data:image/png;base64,${where}`;
+        },
+      ),
+    );
+    expect((await settings.list()).choices).toEqual([
+      {
+        value: "Terminal",
+        label: "Terminal",
+        icon: `data:image/png;base64,${TERMINAL}`,
+      },
+      {
+        value: "iTerm",
+        label: "iTerm2",
+        icon: "data:image/png;base64,/Applications/iTerm.app",
+      },
+      { value: "Ghostty", label: "Ghostty" },
+    ]);
+  });
+});
+
+it("Given Windows Terminal on PATH, shows its icon but still lets the launch find it", async () => {
+  await withSaved(undefined, async (file) => {
+    const alias = "C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps";
+    const settings = terminalSettings(
+      "win32",
+      file,
+      computer([`${alias}\\wt.exe`], { PATH: alias }, async (where) => where),
+    );
+    expect((await settings.list()).choices).toEqual([
+      { value: "wt", label: "Windows Terminal", icon: `${alias}\\wt.exe` },
+    ]);
     expect(await settings.resolve()).toEqual({ app: "wt" });
   });
 });
