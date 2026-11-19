@@ -568,6 +568,13 @@ Feature: Backlog list and board views
     Then both tables end before the properties card
     And the one-column table wraps its long words, and the ten-column table scrolls sideways
 
+  Scenario: The hover card's source line opens the item in its source
+    Given the Backlog parent is synced
+    And the Backlog parent comes from the "Atlas" project, at "https://tracker.example/items/42"
+    When I open the Backlog workspace
+    And I rest the mouse on "Backlog parent" in the sidebar
+    Then the card's source line "tracker.example / Atlas" links to "https://tracker.example/items/42"
+
   Scenario: Narrow comments have no timeline
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

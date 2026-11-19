@@ -2945,6 +2945,46 @@ Given(
     });
   },
 );
+Given(
+  "the Backlog parent comes from the {string} project, at {string}",
+  async ({ page }, project: string, url: string) => {
+    await page.evaluate(
+      ({ project, url }) => {
+        const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+        const parent = state.workItems.find(
+          (item: { _id: string }) => item._id === "parent",
+        );
+        Object.assign(parent, { sourceProjectName: project, sourceUrl: url });
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      { project, url },
+    );
+  },
+);
+When(
+  "I rest the mouse on {string} in the sidebar",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .locator("[data-backlog-item-id]")
+      .filter({ hasText: title })
+      .first()
+      .hover();
+  },
+);
+Then(
+  "the card's source line {string} links to {string}",
+  async ({ page }, origin: string, url: string) => {
+    // The card opens once the pointer has rested on the row for 800ms. The
+    // line names the link's host when the plugin gives no organization.
+    const link = page.getByRole("link", {
+      name: new RegExp(`^Open in .*${origin.replaceAll(".", "\\.")}`),
+    });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+  },
+);
 Then("both tables end before the properties card", async ({ page }) => {
   const tables = page.locator(".backlog-item-page table");
   await expect(tables).toHaveCount(2);
