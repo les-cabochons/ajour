@@ -562,6 +562,12 @@ Feature: Backlog list and board views
     And I open the Backlog parent page
     Then the item page's actions fit inside the window
 
+  Scenario: Wide tables in a description stay beside the properties card
+    Given the Backlog parent's description has an email pasted in a one-column table, then a ten-column table
+    When I open the Backlog parent page
+    Then both tables end before the properties card
+    And the one-column table wraps its long words, and the ten-column table scrolls sideways
+
   Scenario: Narrow comments have no timeline
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

@@ -47,6 +47,14 @@ const components: Components = {
       <span>{label}</span>
     );
   },
+  // A table can't shrink below its longest word, such as a tracking URL in an
+  // email pasted into a source description, so a wide one scrolls sideways
+  // in its column instead of running under what sits beside it.
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table>{children}</table>
+    </div>
+  ),
   input: ({ type, checked }) =>
     type === "checkbox" ? (
       <Checkbox
