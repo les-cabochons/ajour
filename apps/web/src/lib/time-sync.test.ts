@@ -520,7 +520,7 @@ describe("a time sync round", () => {
 
   // Check rounds (#843): the example planner keeps a change marker, and
   // its cursor comes back with each full answer.
-  it("sends a check with the last cursor, and an unchanged answer writes nothing and reads no plugins overview", async () => {
+  it("sends a check with the last cursor, and an unchanged answer writes nothing, reads no plugins overview and ends quiet", async () => {
     const { localStore, round, jobs } = await load();
     await round("change");
     const before = localStore.snapshot();
@@ -538,6 +538,8 @@ describe("a time sync round", () => {
     ]);
     expect(jobs().at(-1)).toMatchObject({
       outcome: "noop",
+      // The local log file leaves it out (#844).
+      quiet: true,
       time_sync_round: {
         trigger: "check",
         has_cursor: true,
@@ -588,6 +590,7 @@ describe("a time sync round", () => {
       outcome: "ok",
       time_sync_round: { trigger: "check", has_cursor: true, unchanged: false },
     });
+    expect(jobs().at(-1)).not.toHaveProperty("quiet");
     // The marker moved with what the round took: the next check is unchanged.
     expect(await round("check")).toEqual({ kind: "unchanged" });
   });
