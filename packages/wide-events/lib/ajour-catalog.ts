@@ -756,6 +756,10 @@ export const catalog = defineCatalog({
             | "terminal"
             | "session"
           >(),
+          /** The terminal app a terminal command opened in (Settings › General › Terminal). */
+          terminal: operational<
+            "wt" | "WezTerm" | "Alacritty" | "Terminal" | "iTerm" | "Ghostty"
+          >(),
           /** A session's open or its end: one event each, never per line. */
           session: operational<"open" | "close">(),
           /** Why a session ended: the plugin closed it, idle, a gate, quit, or the program exited. */

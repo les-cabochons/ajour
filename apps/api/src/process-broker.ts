@@ -874,6 +874,7 @@ export class ProcessBroker implements ProcessBrokerPort {
                 app: process.platform === "win32" ? "wt" : "Terminal",
               })
             : undefined;
+        if (terminal) unit?.set({ process: { terminal: terminal.app } });
         const lastGate = await this.options.gate(caller);
         if (lastGate) return refuse(lastGate);
         if (signal.aborted) return refuse("operation_ended");

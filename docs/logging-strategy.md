@@ -1317,7 +1317,8 @@ Two tests hold the whole app to the model (#311):
 `plugin.process` is a detached child event per broker call. Its operational fields
 are `plugin.id`, `process.command_id`, `process.exit_code`,
 `process.decided_by`, `process.rule_id`, `process.reviewer_label` and
-`process.reviewer_score`. The envelope records outcome, reason and duration.
+`process.reviewer_score`, and for a terminal command `process.terminal`, the
+terminal app from Settings › General › Terminal, such as `iTerm`. The envelope records outcome, reason and duration.
 Unknown command ids become `undeclared`; raw caller text never becomes an event
 identifier. `process.rule_id` is the id of the rule-table rule that matched an
 undeclared command (`apps/api/src/process-rules.ts`), a fixed name such as

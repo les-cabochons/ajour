@@ -3,14 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginApi4ManifestSchema } from "../../../packages/shared/plugin-api-4.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
+import { createApiEvents } from "./events.ts";
 import { ProcessBroker } from "./process-broker.ts";
+import type { TerminalChoice } from "./process-launch.ts";
 import { FolderResolver } from "./repository-folders.ts";
 import { AppApiStorage } from "./storage.ts";
 
 // A terminal launch would open a real terminal window: record what it would
 // open instead, and let every other launch run.
 const terminalLaunches = vi.hoisted(
-  () => [] as { cwd: string; args: string[] }[],
+  () =>
+    [] as { cwd: string; args: string[]; terminal: TerminalChoice }[],
 );
 vi.mock("./process-launch.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./process-launch.ts")>();
@@ -19,7 +24,7 @@ vi.mock("./process-launch.ts", async (importOriginal) => {
     launchProcess: async (...call: Parameters<typeof actual.launchProcess>) => {
       const [plan, cwd, terminal] = call;
       if (!terminal) return actual.launchProcess(...call);
-      terminalLaunches.push({ cwd, args: plan.args });
+      terminalLaunches.push({ cwd, args: plan.args, terminal });
     },
   };
 });
@@ -52,6 +57,9 @@ const REPORT =
 async function fixture(
   mode: "capture" | "detached" | "terminal" | "session",
   args: unknown[],
+  terminal: TerminalChoice = {
+    app: process.platform === "win32" ? "wt" : "Terminal",
+  },
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-process-cwd-"));
   roots.push(root);
@@ -85,20 +93,20 @@ async function fixture(
   const storage = new AppApiStorage(path.join(root, "state.json"));
   const folder = await storage.addRepositoryFolder("project", repo, "repo");
   const other = await storage.addRepositoryFolder("project", root, "root");
+  const sink = createRecordingSink<AjourEvent>();
   const broker = new ProcessBroker({
+    events: createApiEvents({ sink, userDataPath: root }),
     folders: new FolderResolver(storage, {}),
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
-    terminal: async () => ({
-      app: process.platform === "win32" ? "wt" : "Terminal",
-    }),
+    terminal: async () => terminal,
   });
   const op = broker.forOperation({
     pluginId: manifest.id,
     manifest,
     method: "syncConnection",
   });
-  return { root, repo, folder, other, broker, op };
+  return { root, repo, folder, other, broker, op, sink };
 }
 
 // macOS reports /private/var for /var: compare the real paths.
@@ -191,6 +199,20 @@ describe("a declared command's working folder (#761)", () => {
       path.join(root, "tool.cjs"),
       "--file",
     ]);
+    await broker.shutdown();
+  });
+
+  it("opens a terminal command in the terminal app chosen in Settings, and logs which", async () => {
+    const iterm = { app: "iTerm" as const, path: "/Applications/iTerm.app" };
+    const { op, folder, broker, sink } = await fixture("terminal", [], iterm);
+    expect(
+      await op.run({ command: "show", args: { repo: folder.id } }),
+    ).toEqual({ started: true });
+    expect(terminalLaunches.map((launch) => launch.terminal)).toEqual([iterm]);
+    const event = sink.events.find((e) => e.name === "plugin.process") as
+      | { process?: { mode?: string; terminal?: string } }
+      | undefined;
+    expect(event?.process).toMatchObject({ mode: "terminal", terminal: "iTerm" });
     await broker.shutdown();
   });
 
