@@ -296,18 +296,25 @@ export function HandoffHost() {
   }, []);
 
   /**
-   * Shows the dialog a refused start leads to, unless another job's dialog
-   * shows. True when it showed one; the caller says why otherwise.
+   * Shows the dialog a refused start leads to. A start from a dialog shows
+   * it only while that dialog still shows, so one the user closed while the
+   * start or the thread lookup ran stays closed. A start in the background
+   * shows it unless another job's dialog shows. True when it showed one;
+   * the caller says why otherwise.
    */
   async function showFollowUp(
     job: Job,
     folder: RepositoryFolder,
     edits: StartEdits,
     error: unknown,
+    fromDialog: boolean,
   ) {
     const next = await followUpOf(job, folder, edits, error);
     if (!next || !mounted.current) return false;
-    if (shown.current.kind !== "idle" && !isShown(job)) return false;
+    const free = fromDialog
+      ? isShown(job)
+      : shown.current.kind === "idle" || isShown(job);
+    if (!free) return false;
     show(next);
     return true;
   }
@@ -317,7 +324,7 @@ export function HandoffHost() {
     try {
       await start(job, folder);
     } catch (error) {
-      if (!(await showFollowUp(job, folder, {}, error)))
+      if (!(await showFollowUp(job, folder, {}, error, false)))
         showStartError(job, error);
     } finally {
       settle(job);
@@ -364,7 +371,7 @@ export function HandoffHost() {
       await start(job, folder, edits);
     } catch (error) {
       // A refusal the window can act on replaces the dialog (#819).
-      if (await showFollowUp(job, folder, edits, error)) return;
+      if (await showFollowUp(job, folder, edits, error, true)) return;
       // A closed dialog can't show the refusal, so a toast does.
       if (!isShown(job)) showStartError(job, error);
       throw error;

@@ -219,6 +219,47 @@ it("asks again with the tool's new reason when it refuses the answer, and Cancel
   expect(isHandoffStarting(itemId)).toBe(false);
 });
 
+it("keeps a dialog the user closed while its start ran closed when the tool refuses again, and says why in a toast", async () => {
+  let refuseAgain: (error: unknown) => void = () => {};
+  vi.mocked(api.startHandoff)
+    .mockRejectedValueOnce(
+      refused({
+        error: 'Base ref "main" does not resolve.',
+        setting: { id: "base", label: "Worktree base" },
+      }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          refuseAgain = reject;
+        }),
+    );
+  await handOff();
+
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Worktree base"), {
+    target: { value: "dev" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Hand off" }));
+  await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(2));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(settingDialog()).toBeNull());
+
+  await act(async () => {
+    refuseAgain(
+      refused({
+        error: 'Base ref "dev" does not resolve.',
+        setting: { id: "base", label: "Worktree base", value: "dev" },
+      }),
+    );
+  });
+  expect(
+    (await screen.findAllByText("Couldn't hand off to T3 Code")).length,
+  ).toBeGreaterThan(0);
+  expect(settingDialog()).toBeNull();
+  expect(isHandoffStarting(itemId)).toBe(false);
+});
+
 it("offers the item's thread in the same tool when the branch exists, and links it", async () => {
   vi.mocked(api.startHandoff).mockRejectedValue(
     refused({
