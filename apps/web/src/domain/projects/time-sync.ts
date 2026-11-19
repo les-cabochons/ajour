@@ -1160,7 +1160,14 @@ function takeListing(
     received += 1;
   };
 
-  for (const [syncKey, copy] of Object.entries(record.copies)) {
+  for (const [syncKey, kept] of Object.entries(record.copies)) {
+    // Listed there, it wasn't dropped on the way after all, as a failed
+    // round may only have feared.
+    let copy = kept;
+    if (copy.droppedThere && listed.has(copy.remoteId)) {
+      const { droppedThere: _listed, ...rest } = copy;
+      copy = copies[syncKey] = rest;
+    }
     const outcome = outcomes.get(syncKey);
     if (outcome?.status === "failed" || outcome?.status === "refused") {
       // Missing from this round's listing, the plugin dropped it on the way,

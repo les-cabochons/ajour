@@ -1040,6 +1040,78 @@ describe("the running entry", () => {
     ]);
   });
 
+  it("reads a delete there again once the entry a failed Continue may have dropped is listed after all", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const copy = recordIn(saved).copies.e1!;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const failed = {
+      ...continued,
+      timeSyncs: failTimeSyncRound(
+        continued,
+        CONNECTION,
+        "The planner is down.",
+        NOW + 2 * MINUTE,
+        { plan: round, context: CONTEXT },
+      ),
+    };
+    // The retry is refused, and the planner still lists e1 as it was.
+    const retry = planTimeSyncRound(
+      failed,
+      CONNECTION,
+      CONTEXT,
+      NOW + 3 * MINUTE,
+    )!;
+    const refused = applyTimeSyncRound(
+      failed,
+      retry,
+      {
+        results: retry.request.changes.map((change) => ({
+          syncKey: change.syncKey,
+          status: "refused" as const,
+          message: "The planner refuses this start.",
+        })),
+        entries: [
+          {
+            remoteId: copy.remoteId,
+            clientRef: "e1",
+            ...copy.agreed,
+            updatedAt: copy.remoteUpdatedAt,
+          },
+        ],
+      },
+      CONTEXT,
+      factoriesAt(NOW + 3 * MINUTE),
+    ).state;
+    const discarded = act(refused, NOW + 30 * MINUTE, (app) =>
+      cancelTimer(app, app.timers[0]!._id),
+    );
+
+    // Someone deletes it there.
+    const poll = planTimeSyncRound(
+      discarded,
+      CONNECTION,
+      CONTEXT,
+      NOW + 31 * MINUTE,
+    )!;
+    expect(poll.request.changes).toEqual([]);
+    const { state } = applyTimeSyncRound(
+      discarded,
+      poll,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(NOW + 31 * MINUTE),
+    );
+    expect(entriesOf(state)).toEqual([]);
+  });
+
   it("sends Discard as a delete, and on a continued entry puts back its saved time, stopped", () => {
     const sent = roundAt(running(), NOW + 5 * MINUTE).state;
     const discarded = act(sent, NOW + 6 * MINUTE, (app) =>

@@ -201,8 +201,8 @@ export interface LocalSyncedCopy {
    * it failed or was refused, as when Continue's restart deleted it there
    * before the start failed, or a round that sent a Continue failed as a
    * whole. Ajour sends the entry again, even with the agreed values, and
-   * never reads it missing there as deleted. A change that syncs replaces
-   * the copy, and drops it.
+   * never reads it missing there as deleted. A listing that shows the entry
+   * drops it, and so does a change that syncs, which replaces the copy.
    */
   droppedThere?: true;
 }
