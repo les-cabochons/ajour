@@ -1223,12 +1223,21 @@ Decided in [Access review and credential management for existing plugins](https:
 
 Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
 
-API 4's `processes` declarations appear in Access as argv shapes, for example
+API 4's `processes` declarations appear in Access by program
+([#821](https://github.com/les-cabochons/ajour/issues/821)): one line per
+executable the manifest declares, titled by its first name, such as `t3`, with
+"Executable names: t3." Its commands sit behind an "N commands" disclosure, as
+a host's endpoints do, each as its argv shape, for example
 `t3 thread start <folder> - --title <text> --json`, with conditional groups in
-brackets, and schemes such as `codex:`. A command that declares a working
-folder (`cwd`) adds "Runs in the repository folder." to its description; the
-folder never shows in its argv shape. The existing New marker and update
-approval panel cover added or changed commands and added schemes. Changed
+brackets, and its description under it. Schemes such as `codex:` keep a line
+each. A command that declares a working folder (`cwd`) adds "Runs in the
+repository folder." to its description; the folder never shows in its argv
+shape. A program with an interpreter command says on its line that it runs
+code it is given. A program with an added or changed command shows "New
+commands" and its disclosure starts open, with each such command marked New; a
+program whose commands are all new is marked New itself. The update approval
+panel lists only those programs, with only their new commands, and added
+schemes. Changed
 command policies ask again even when they restrict access, and adding or
 changing a command's working folder changes its policy. Removed commands
 and schemes do not ask again. Declared capture commands run through the
