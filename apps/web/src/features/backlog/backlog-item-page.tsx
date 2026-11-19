@@ -6,7 +6,6 @@ import {
   RiAddLine as AddIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
-  RiExternalLinkLine as ExternalIcon,
   RiPlayFill as PlayIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
@@ -58,7 +57,6 @@ import {
   resolveWorkItemIcon,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
-import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { pickNextItemId } from "@/domain/backlog/next-item";
 import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
@@ -90,9 +88,9 @@ import {
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
  * docs/agents/ux-spec.md. The top bar holds the breadcrumb and the item's
- * actions; the page holds the back link, title, estimate figures and progress,
- * then the description beside the properties card and the folding Subitems
- * and Time entries cards.
+ * actions; the page holds the back link, the title with its type and parent,
+ * the estimate figures and progress, then the description beside the
+ * properties card and the folding Subitems and Time entries cards.
  * Every field edits in place, so the page has no editor panel and no "…" menu.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
@@ -268,10 +266,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       : { label: "Backlog", to: "/backlog" },
     { label: item.title },
   ];
-  const reference =
-    item.source === "azure_devops"
-      ? parseWorkItemReference(item.sourceId)
-      : item.sourceId;
   const loggedMs = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
   const progress = getCompletedEstimateShare(item);
   const notice = getVisitNotice(item, now, returnNotice);
@@ -454,38 +448,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               />
               <div className="backlog-item-page-meta">
                 {/* Plain text: the breadcrumb and the properties already name
-                    the project, and a chip here only tagged (council round 9). */}
+                    the project, and a chip here only tagged (council round 9).
+                    The source state, project and link sit in the properties'
+                    source section. */}
                 {item.sourceWorkItemType ? (
-                  <>
-                    <span>{item.sourceWorkItemType}</span>
-                    <span aria-hidden className="text-[var(--text-tertiary)]">
-                      ·
-                    </span>
-                  </>
-                ) : null}
-                {reference ? (
-                  item.sourceUrl ? (
-                    <a
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1"
-                    >
-                      {item.sourceStatusLabel
-                        ? `${item.sourceStatusLabel} in ${item.sourceProjectName ?? item.sourceConnectionLabel ?? "the source"}`
-                        : "Open in source"}
-                      <ExternalIcon className="size-3" />
-                    </a>
-                  ) : (
-                    <span>
-                      {[item.sourceProjectName, item.sourceStatusLabel]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  )
-                ) : (
+                  <span>{item.sourceWorkItemType}</span>
+                ) : item.source === "manual" ? (
                   <span>Manual item</span>
-                )}
+                ) : null}
                 {parent ? (
                   <Link
                     to="/backlog/$itemId"

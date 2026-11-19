@@ -33,6 +33,7 @@ const billet: LocalWorkItem = {
   status: "active",
   source: "tracker",
   sourceId: "https://tracker.example/items/331150",
+  sourceUrl: "https://tracker.example/items/331150",
   sourceExternalId: "331150",
   sourceConnectionId: "c1",
   sourceConnectionLabel: "Work",
@@ -47,7 +48,8 @@ function renderSection(item: LocalWorkItem, open = true) {
   return render(
     <SourceSection
       item={item}
-      label="Tracker"
+      pluginName="Tracker"
+      pluginIconSvg="<svg/>"
       now={now}
       open={open}
       onOpenChange={() => {}}
@@ -84,18 +86,17 @@ afterEach(() => {
 });
 
 describe("a synced item's source section", () => {
-  it("is titled by the plugin, carries the number, and lists the source's rows", () => {
+  it("is titled by the source project and lists the source's rows", () => {
     renderSection(billet);
 
     expect(
-      screen.getByRole("button", { name: /Tracker.*331150/ }),
+      screen.getByRole("button", { name: "Oliva Horticulture" }),
     ).toBeTruthy();
     const terms = screen.getAllByRole("term").map((dt) => dt.textContent);
     expect(terms).toEqual([
       "ID",
       "Type",
       "State",
-      "Project",
       "Assigned to",
       "Connection",
       "Synced",
@@ -127,8 +128,29 @@ describe("a synced item's source section", () => {
       sourceConnectionLabel: undefined,
     });
     const terms = screen.getAllByRole("term").map((dt) => dt.textContent);
-    expect(terms).toEqual(["ID", "State", "Project", "Assigned to", "Synced"]);
+    expect(terms).toEqual(["ID", "State", "Assigned to", "Synced"]);
     expect(screen.getByText("No one")).toBeTruthy();
+  });
+
+  it("opens the item in the source from the plugin's icon and the number", () => {
+    renderSection(billet);
+
+    const link = screen.getByRole("link", { name: "Open 331150 in Tracker" });
+    expect(link.getAttribute("href")).toBe(
+      "https://tracker.example/items/331150",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.textContent).toBe("331150");
+    expect(link.querySelector(".backlog-task-source-icon")).not.toBeNull();
+    cleanup();
+
+    // Without a link from the plugin, the number stays plain text. Closed,
+    // so the ID row's copy of the number is not on screen.
+    renderSection({ ...billet, sourceUrl: undefined }, false);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      screen.getByText("331150", { selector: "[data-slot=value]" }),
+    ).toBeTruthy();
   });
 
   it("copies the number", async () => {
@@ -154,17 +176,25 @@ describe("the section on the item page and in the peek", () => {
     expect(screen.queryByRole("term")).toBeNull();
   });
 
-  it("takes its title from the plugin, and falls back on the connection's label without the overview", () => {
+  it("takes its title from the source project, else from the plugin, else from the connection's label", () => {
+    const withoutProject = { ...billet, sourceProjectName: undefined };
     cachePluginsOverview(trackerOverview());
     render(<BacklogItemSourceSection item={billet} />);
     expect(
-      screen.getByRole("button", { name: /^Tracker.*331150/ }),
+      screen.getByRole("button", { name: "Oliva Horticulture" }),
+    ).toBeTruthy();
+    cleanup();
+
+    render(<BacklogItemSourceSection item={withoutProject} />);
+    expect(screen.getByRole("button", { name: "Tracker" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Open 331150 in Tracker" }),
     ).toBeTruthy();
     cleanup();
 
     cachePluginsOverview({ ...trackerOverview(), plugins: [] });
-    render(<BacklogItemSourceSection item={billet} />);
-    expect(screen.getByRole("button", { name: /^Work.*331150/ })).toBeTruthy();
+    render(<BacklogItemSourceSection item={withoutProject} />);
+    expect(screen.getByRole("button", { name: "Work" })).toBeTruthy();
   });
 
   it("stays closed on the next mount once the user closes it", () => {
@@ -172,7 +202,7 @@ describe("the section on the item page and in the peek", () => {
     const first = render(<BacklogItemSourceSection item={billet} />);
     expect(screen.getAllByRole("term").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Tracker.*331150/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Oliva Horticulture" }));
     expect(screen.queryByRole("term")).toBeNull();
     first.unmount();
 

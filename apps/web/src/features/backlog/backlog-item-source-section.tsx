@@ -16,6 +16,7 @@ import {
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
 import { BacklogRefresh } from "@/features/backlog/backlog-refresh";
+import { PluginIcon } from "@/features/backlog/work-item-icons";
 import {
   getCachedPluginsOverview,
   subscribePluginsOverview,
@@ -25,15 +26,17 @@ import {
   useBacklogItemCards,
 } from "@/lib/backlog-item-cards";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { safeSourceUrl } from "@/lib/source-navigation";
 import { useNow } from "@/lib/use-now";
 
 /**
  * The source's facts on a synced item, as a section at the end of the
  * properties card (#653), on the item page and in the peek: the item's
- * number with Copy, its type, its source state, the source project, who the
- * source assigns it to, the connection and the last sync with the refresh
- * control. The section is titled by the plugin, so core never names a
- * product; it starts open and this device remembers it closed.
+ * number with Copy, its type, its source state, who the source assigns it
+ * to, the connection and the last sync with the refresh control. The section
+ * is titled by the source project, else by the plugin, so core never names a
+ * product, and the plugin's icon and the item's number open it in the
+ * source. It starts open and this device remembers it closed.
  */
 export function BacklogItemSourceSection({ item }: { item: LocalWorkItem }) {
   const overview = useSyncExternalStore(
@@ -48,7 +51,8 @@ export function BacklogItemSourceSection({ item }: { item: LocalWorkItem }) {
   return (
     <SourceSection
       item={item}
-      label={plugin?.displayName ?? item.sourceConnectionLabel ?? "Source"}
+      pluginName={plugin?.displayName ?? item.sourceConnectionLabel ?? "Source"}
+      pluginIconSvg={plugin?.iconSvg}
       now={now}
       open={sourceOpen}
       onOpenChange={(sourceOpen) => updateBacklogItemCards({ sourceOpen })}
@@ -59,27 +63,49 @@ export function BacklogItemSourceSection({ item }: { item: LocalWorkItem }) {
 /** The section with everything resolved, so a test can render it as is. */
 export function SourceSection({
   item,
-  label,
+  pluginName,
+  pluginIconSvg,
   now,
   open,
   onOpenChange,
 }: {
   item: LocalWorkItem;
   /** The plugin's display name, as the plugins overview gives it. */
-  label: string;
+  pluginName: string;
+  /** The plugin's icon, shown before the item's number. */
+  pluginIconSvg?: string;
   now: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const number = item.sourceExternalId;
+  const sourceUrl = safeSourceUrl(item.sourceUrl);
+  // As tall as the number's text, so it reads as one more character.
+  const icon = pluginIconSvg ? (
+    <PluginIcon svg={pluginIconSvg} className="size-3" />
+  ) : null;
   return (
     <PropertySection
-      title={label}
-      trailing={
-        number ? (
-          <Value tone="muted" className="ml-auto">
-            #{number}
-          </Value>
+      // The project already says where the item lives, and the plugin's icon
+      // says which tool; a plugin without projects names itself.
+      title={item.sourceProjectName ?? pluginName}
+      action={
+        number && sourceUrl ? (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${number} in ${pluginName}`}
+            className="inline-flex shrink-0 items-center gap-1 text-source-link hover:underline"
+          >
+            {icon}
+            <Value className="text-source-link">{number}</Value>
+          </a>
+        ) : number ? (
+          <span className="inline-flex shrink-0 items-center gap-1">
+            {icon}
+            <Value tone="muted">{number}</Value>
+          </span>
         ) : undefined
       }
       open={open}
@@ -116,9 +142,6 @@ export function SourceSection({
               <span className="min-w-0 truncate">{item.sourceStatusLabel}</span>
             </Button>
           </PropertyRow>
-        ) : null}
-        {item.sourceProjectName ? (
-          <PropertyRow label="Project">{item.sourceProjectName}</PropertyRow>
         ) : null}
         {/* Absent when the plugin doesn't say; null when no one has it. */}
         {item.assignee !== undefined ? (
