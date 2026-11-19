@@ -689,8 +689,8 @@ export interface Settlement {
  * stream such as the MCP bridge ends when it closes. A response whose client
  * left before it flushed, other than a stream, is `cancelled` with
  * `client_closed`, without a status or bytes nobody received. An outcome
- * `serve` didn't record follows the status: a 4xx is `refused`, a 5xx an
- * `error`.
+ * `serve` didn't record, or a `noop` it recorded, follows the status: a 4xx
+ * is `refused`, a 5xx an `error`.
  */
 export async function serveWithEvent(
   events: ApiEvents,
@@ -756,13 +756,15 @@ export async function serveWithEvent(
         : {}),
     },
   });
-  // An outcome the route recorded, such as a plugin's timeout, stands.
+  // An outcome the route recorded, such as a plugin's timeout, stands. A
+  // quiet noop (`unit.quiet()`) is no failure: the client leaving or an
+  // error status still decides how the request ended, and it is then written.
   if (settlement) {
     unit.end(
       settlement.outcome,
       settlement.reason as Parameters<typeof unit.end>[1],
     );
-  } else if (unit.outcome === undefined) {
+  } else if (unit.outcome === undefined || unit.outcome === "noop") {
     if (!delivered) {
       const parseError = parserError(request);
       if (parseError) {

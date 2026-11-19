@@ -517,7 +517,10 @@ export class PluginOperationLifetime<TMethod extends string> {
             reject(error);
           } else {
             try {
-              resolve(prepared.parse(result));
+              const parsed = prepared.parse(result);
+              // The method's "nothing changed" answer is a quiet noop.
+              if (prepared.invocation.quiet?.(result)) unit.quiet();
+              resolve(parsed);
             } catch (parseError) {
               // The message is about what the plugin returned: callers show
               // it, and the event holds its type and code only.

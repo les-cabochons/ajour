@@ -46,6 +46,14 @@ export interface PluginInvocation {
    * renderer already open keeps what it started with.
    */
   lifecycle?: PluginLifecycle;
+  /**
+   * Whether a result is the method's "nothing changed" answer, such as a
+   * time sync check's `{ unchanged: true }`: the run's events then end as
+   * quiet noops, which the local log file leaves out (#844). Called with
+   * the result as the plugin returned it, before it is parsed. A method that
+   * has none is never quiet.
+   */
+  quiet?: (result: unknown) => boolean;
 }
 
 /** How an API 4 plugin's renderer lives (#217), from its manifest and its user. */

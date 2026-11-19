@@ -23,8 +23,8 @@
  * - removes every secret, in its common changed forms, from the answer;
  * - caps request and response size, rate, concurrency and time;
  * - emits a `plugin.request` event per request, with no header, body or
- *   query, and records the last request and blocked attempts for Access
- *   review.
+ *   query, a quiet noop for a 304, and records the last request and
+ *   blocked attempts for Access review.
  *
  * `CredentialBroker` is the in-process implementation of the port
  * (`broker-port.ts`, re-exported here); it sends, follows, scrubs, limits
@@ -412,6 +412,10 @@ export class CredentialBroker implements CredentialBrokerPort {
       else unit.refuse(error.reason);
     } else if (error !== undefined) {
       unit.cancel("aborted");
+    } else if (exchange.status === 304) {
+      // A conditional request's "nothing changed", from any service, such
+      // as a time sync check's change marker: a quiet noop (#844).
+      unit.quiet();
     }
     unit.end();
   }

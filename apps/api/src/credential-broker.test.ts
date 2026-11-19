@@ -2346,6 +2346,39 @@ describe("the credential broker", () => {
       expect(activity).toEqual([{ kind: "request", pluginId: "ajc-jira" }]);
     });
 
+    // A 304 is a conditional request's "nothing changed", such as a time
+    // sync check's change marker: the local log file leaves it out (#844).
+    it("ends a request answered 304 as a quiet noop, through a connection or not", async () => {
+      const { operation, requestEvents } = setup({
+        respond: (request) => ({
+          status: request.url.endsWith("/a.png") ? 200 : 304,
+        }),
+      });
+      const broker = operation();
+
+      await broker.publicFetch("https://avatars.example-cdn.com/marker", {
+        method: "HEAD",
+      });
+      await broker.http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+      });
+      await broker.publicFetch("https://avatars.example-cdn.com/a.png");
+
+      expect(
+        requestEvents().map(({ outcome, quiet, broker }) => ({
+          outcome,
+          quiet,
+          status: broker?.status_code,
+        })),
+      ).toEqual([
+        { outcome: "noop", quiet: true, status: 304 },
+        { outcome: "noop", quiet: true, status: 304 },
+        { outcome: "ok", quiet: undefined, status: 200 },
+      ]);
+    });
+
     it("refuses an undeclared host, plain http, another port, a credential header and a private address", async () => {
       const { operation, sent } = setup({
         resolver: fakeResolver({ "avatars.example-cdn.com": ["10.0.0.9"] }),

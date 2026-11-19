@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import type { Server } from "node:http";
+import { request as httpRequest, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,7 +11,11 @@ import { createAppApiServer, installPluginForServer } from "./server.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
-import { windowServerOptions } from "./test-support/window-token.ts";
+import {
+  TEST_WINDOW_ORIGIN,
+  windowServerOptions,
+  windowTokenHeader,
+} from "./test-support/window-token.ts";
 import {
   exampleProjectSourceDirectory,
   exampleProjectSourceManifest,
@@ -67,6 +72,8 @@ export async function validateConnection(connection, context) {
 }
 export async function syncTimeEntries(connection, request) {
   (globalThis.__plannerRounds ??= []).push(request);
+  const delay = globalThis.__plannerDelayMs;
+  if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
   const answer = globalThis.__plannerAnswer;
   if (answer instanceof Error) throw answer;
   return answer;
@@ -78,6 +85,7 @@ type Fixture = {
   __plannerRefusal?: string;
   __plannerRounds?: unknown[];
   __plannerAnswer?: unknown;
+  __plannerDelayMs?: number;
 };
 const fixture = globalThis as Fixture;
 
@@ -143,6 +151,7 @@ describe("time sync on the local API", () => {
     );
     delete fixture.__plannerValidated;
     delete fixture.__plannerRefusal;
+    delete fixture.__plannerDelayMs;
     delete fixture.__plannerRounds;
     delete fixture.__plannerAnswer;
   });
@@ -426,7 +435,7 @@ describe("time sync on the local API", () => {
     });
 
     // A check round (#843): the window sends its last cursor and no changes.
-    it("answers a check round the plugin found unchanged with the next cursor alone, and builds no connection summary", async () => {
+    it("answers a check round the plugin found unchanged with the next cursor alone, builds no connection summary, and ends quiet", async () => {
       const { setTimeEntries, sync, rounds, sink, connectionId } =
         await setup();
       await setTimeEntries(true);
@@ -445,13 +454,71 @@ describe("time sync on the local API", () => {
           candidate.name === "time_sync.round" && candidate.kind === "request",
       );
       expect(event).toMatchObject({
-        outcome: "ok",
+        outcome: "noop",
+        quiet: true,
         connection: { id: connectionId },
         time_sync_round: { change_count: 0, has_cursor: true, unchanged: true },
       });
       expect(event?.time_sync_round).not.toHaveProperty("entry_count");
+      // The local log file leaves both out (#844).
+      expect(
+        sink.events.find(
+          (candidate) =>
+            candidate.name === "time_sync.round" &&
+            candidate.kind === "plugin_operation",
+        ),
+      ).toMatchObject({ outcome: "noop", quiet: true });
       // The cursor may hold a read link: it never reaches an event.
       expect(JSON.stringify(sink.events)).not.toContain("marker-v7");
+    });
+
+    it("writes a check whose window left before the unchanged answer reached it as cancelled", async () => {
+      const { server, setTimeEntries, sink, connectionId } = await setup();
+      await setTimeEntries(true);
+      fixture.__plannerAnswer = { unchanged: true, cursor: "marker-v7" };
+      fixture.__plannerDelayMs = 200;
+      await new Promise<void>((resolve) =>
+        server.listen(0, "127.0.0.1", resolve),
+      );
+      const { port } = server.address() as AddressInfo;
+      const body = JSON.stringify({
+        ...round,
+        changes: [],
+        cursor: "marker-v7",
+      });
+
+      const outgoing = httpRequest({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: `/api/plugins/planner/connections/${connectionId}/sync-time-entries`,
+        headers: {
+          ...windowTokenHeader,
+          Origin: TEST_WINDOW_ORIGIN,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      });
+      outgoing.on("error", () => undefined);
+      outgoing.end(body);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      outgoing.destroy();
+
+      let event: AjourEvent | undefined;
+      for (let attempt = 0; !event && attempt < 100; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        event = sink.events.find(
+          (candidate) =>
+            candidate.name === "time_sync.round" &&
+            candidate.kind === "request",
+        );
+      }
+      server.close();
+      expect(event).toMatchObject({
+        outcome: "cancelled",
+        outcome_reason: "client_closed",
+      });
+      expect(event).not.toHaveProperty("quiet");
     });
 
     it("passes the next cursor of a full answer on with the round", async () => {
@@ -470,15 +537,18 @@ describe("time sync on the local API", () => {
         connection: expect.objectContaining({ id: connectionId }),
         ...answer,
       });
-      expect(
-        sink.events.find(
-          (candidate) =>
-            candidate.name === "time_sync.round" &&
-            candidate.kind === "request",
-        ),
-      ).toMatchObject({
+      const events = sink.events.filter(
+        (candidate) => candidate.name === "time_sync.round",
+      );
+      expect(events.find((event) => event.kind === "request")).toMatchObject({
+        outcome: "ok",
         time_sync_round: { has_cursor: true, unchanged: false, entry_count: 0 },
       });
+      // A check that found changes is written as any round is.
+      expect(events.map((event) => [event.kind, event.quiet])).toEqual([
+        ["plugin_operation", undefined],
+        ["request", undefined],
+      ]);
     });
 
     it("refuses an unchanged answer to a round that carries changes", async () => {

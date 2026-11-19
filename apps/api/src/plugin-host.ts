@@ -125,6 +125,7 @@ import {
   type ProjectSourceSyncResult,
 } from "../../../packages/shared/project-source.ts";
 import {
+  isUnchangedTimeSyncAnswer,
   parseTimeSyncAnswer,
   timeSyncRequestSchema,
   type TimeSyncAnswer,
@@ -1039,7 +1040,11 @@ export class PluginManager {
         connection: pluginInvocationConnectionSchema.parse(connection),
         request: round,
       },
-      { parse: (value: unknown) => parseTimeSyncAnswer(value, round) },
+      {
+        parse: (value: unknown) => parseTimeSyncAnswer(value, round),
+        // A check the plugin found unchanged: its events are quiet (#844).
+        quiet: isUnchangedTimeSyncAnswer,
+      },
       admit,
       requireCapability("timeSync"),
     );
@@ -1449,7 +1454,11 @@ export class PluginManager {
     pluginId: string,
     method: PluginMethod,
     params: Record<string, unknown>,
-    schema: { parse: (value: unknown) => T },
+    schema: {
+      parse: (value: unknown) => T;
+      /** The method's "nothing changed" answer: see `PluginInvocation.quiet`. */
+      quiet?: (value: unknown) => boolean;
+    },
     admit?: PluginAdmission,
     requirement?: Requirement,
   ): Promise<T> {
@@ -1582,6 +1591,7 @@ export class PluginManager {
               ...(broker ? { broker } : {}),
               ...(processBroker ? { processBroker } : {}),
               ...(lifecycle ? { lifecycle } : {}),
+              ...(schema.quiet ? { quiet: schema.quiet } : {}),
             },
             parse: (result: unknown) => schema.parse(result),
           };
