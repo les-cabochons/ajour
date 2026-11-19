@@ -379,7 +379,9 @@ interface AppApiServerOptions {
    */
   brokerTransport?: BrokerTransport;
   openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
-  terminal?: () => Promise<import("./process-launch.ts").TerminalApp>;
+  terminal?: () => Promise<
+    import("./process-launch.ts").TerminalChoice | undefined
+  >;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
   /** The clock of the plugins' crash budget. Tests move it. */

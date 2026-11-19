@@ -38,6 +38,16 @@ export interface DevelopmentPluginSettings {
   directories: string[];
 }
 
+/**
+ * Settings › General › Terminal: the terminal app that opens plugin commands,
+ * and the ones main found installed on this computer. Linux has none.
+ */
+export interface DesktopTerminalApps {
+  value: string | undefined;
+  /** The installed terminals, each with its own icon as a data URL when main could read it. */
+  choices: { value: string; label: string; icon?: string }[];
+}
+
 export interface DesktopUpdateCheckResult {
   track: UpdateTrack;
   currentVersion: string;
@@ -514,7 +524,9 @@ declare global {
       onTrayAction?: (
         callback: (action: DesktopTrayAction) => void,
       ) => () => void;
-      getTerminalApp?: () => Promise<string>;
+      /** The terminal app that opens plugin commands, and the installed ones to pick from. */
+      getTerminalApp?: () => Promise<DesktopTerminalApps>;
+      /** Saves an installed terminal app as the choice, and resolves with it. */
       setTerminalApp?: (value: string) => Promise<string>;
       getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
       /** Installs the ajour command of the app's own version, and resolves with how it ended. */

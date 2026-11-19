@@ -8,42 +8,54 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it.each(["win32", "darwin"])(
-  "Given %s, offers its terminal apps and saves the selection",
-  async (platform) => {
-    const setTerminalApp = vi.fn(async (value: string) => value);
-    Object.defineProperty(window, "ajourDesktop", {
-      configurable: true,
-      value: {
-        runtime: { platform },
-        getTerminalApp: async () => (platform === "win32" ? "wt" : "Terminal"),
-        setTerminalApp,
-      },
-    });
-    render(<TerminalAppSetting />);
-    const trigger = await screen.findByRole("combobox", {
-      name: "Terminal app",
-    });
-    await vi.waitFor(() =>
-      expect(trigger.hasAttribute("disabled")).toBe(false),
-    );
-    fireEvent.click(trigger);
-    expect(
-      await screen.findByRole("option", {
-        name: platform === "win32" ? "Windows Terminal" : "Terminal",
+const ITERM_ICON = "data:image/png;base64,aVRlcm0=";
+
+it("Given the terminals main found, offers them with their icons and saves the pick", async () => {
+  const setTerminalApp = vi.fn(async (value: string) => value);
+  Object.defineProperty(window, "ajourDesktop", {
+    configurable: true,
+    value: {
+      runtime: { platform: "darwin" },
+      getTerminalApp: async () => ({
+        value: "Terminal",
+        choices: [
+          { value: "Terminal", label: "Terminal" },
+          { value: "iTerm", label: "iTerm2", icon: ITERM_ICON },
+          { value: "Ghostty", label: "Ghostty" },
+        ],
       }),
-    ).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "PowerShell" })).toBeNull();
-    expect(screen.queryByRole("option", { name: "Command Prompt" })).toBeNull();
-    expect(screen.queryByRole("option", { name: "iTerm" })).toBeNull();
-  },
-);
+      setTerminalApp,
+    },
+  });
+  render(<TerminalAppSetting />);
+  const trigger = await screen.findByRole("combobox", {
+    name: "Terminal app",
+  });
+  await vi.waitFor(() => expect(trigger.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(trigger);
+  expect(
+    (await screen.findAllByRole("option")).map((option) => option.textContent),
+  ).toEqual(["Terminal", "iTerm2", "Ghostty"]);
+  // Only an app main read an icon for shows one, before its label.
+  expect(
+    screen
+      .getAllByRole("option")
+      .map((option) => option.querySelector("img")?.getAttribute("src")),
+  ).toEqual([undefined, ITERM_ICON, undefined]);
+  // Base UI's select picks on Enter then click, as a pointer does.
+  const ghostty = screen.getByRole("option", { name: "Ghostty" });
+  fireEvent.keyDown(ghostty, { key: "Enter" });
+  fireEvent.click(ghostty);
+  await vi.waitFor(() =>
+    expect(setTerminalApp).toHaveBeenCalledWith("Ghostty"),
+  );
+});
 it("Given Linux, hides the terminal preference", () => {
   Object.defineProperty(window, "ajourDesktop", {
     configurable: true,
     value: {
       runtime: { platform: "linux" },
-      getTerminalApp: async () => "Terminal",
+      getTerminalApp: async () => ({ value: undefined, choices: [] }),
       setTerminalApp: vi.fn(),
     },
   });
