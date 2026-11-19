@@ -48,7 +48,9 @@ import { wideEvents } from "@/lib/wide-events";
  * changes, sent while nothing the rules read changed in Ajour since that
  * answer was kept. A plugin with a change marker answers it unchanged
  * without listing, and the check keeps nothing. Any other round is full and
- * sends no cursor.
+ * sends no cursor. A plugin that answers without a cursor has nothing to
+ * check against, so its checks list at most once a minute, as the 60-second
+ * poll did before #843.
  */
 
 /** How long after a store write the runner sends its round. */
@@ -57,6 +59,11 @@ export const TIME_SYNC_DEBOUNCE_MS = 2_000;
 export const TIME_SYNC_CHECK_INTERVAL_MS = 5_000;
 /** How often it checks while the window is hidden, such as closed to the tray. */
 export const TIME_SYNC_HIDDEN_CHECK_INTERVAL_MS = 60_000;
+/**
+ * How long a connection without a cursor waits after its last listing
+ * before a check lists again: the 60-second poll of before #843.
+ */
+export const TIME_SYNC_LISTING_INTERVAL_MS = 60_000;
 /** The waits before each retry after a failed round; the last one repeats. */
 export const TIME_SYNC_RETRY_DELAYS_MS = [
   5_000, 15_000, 30_000, 60_000, 120_000, 300_000,
@@ -202,6 +209,11 @@ interface CheckPoint {
 
 /** Each connection's check point, while its last full answer gave a cursor. */
 const checkPoints = new Map<string, CheckPoint>();
+
+/** Whether the connection's last full answer gave a cursor to check against. */
+function hasCursor(ref: TimeSyncConnectionRef) {
+  return checkPoints.has(keyOf(ref));
+}
 
 /** A check ready to send: its cursor, its plan, and the inputs it planned from. */
 interface PlannedCheck {
@@ -522,6 +534,8 @@ interface ConnectionSlot {
   /** Until when rounds wait for the retry, after a failure. */
   retryAt?: number;
   retryTimer?: ReturnType<typeof setTimeout>;
+  /** When the connection's last round listed the other system. */
+  listedAt?: number;
 }
 
 /** Whether this window is hidden, such as closed to the tray or minimized. */
@@ -592,6 +606,7 @@ export function startTimeSyncRunner(
       .then(
         (outcome) => {
           if (outcome.kind === "idle") return;
+          if (outcome.kind !== "unchanged") slot.listedAt = Date.now();
           listener.succeeded(connection);
           // Changes that failed are sent again after a wait, as after a
           // failed round, never at once, or the same ones would loop.
@@ -631,10 +646,23 @@ export function startTimeSyncRunner(
     );
   };
 
-  /** Sends each active connection's check, then waits for the next. */
+  /**
+   * Sends each active connection's check, then waits for the next. A
+   * connection without a cursor lists at most once a minute.
+   */
   const check = () => {
     if (stopped) return;
-    for (const connection of active()) run(connection, "check");
+    for (const connection of active()) {
+      const { listedAt } = slotOf(keyOf(connection));
+      if (
+        !hasCursor(connection) &&
+        listedAt !== undefined &&
+        Date.now() - listedAt < TIME_SYNC_LISTING_INTERVAL_MS
+      ) {
+        continue;
+      }
+      run(connection, "check");
+    }
     scheduleCheck();
   };
 

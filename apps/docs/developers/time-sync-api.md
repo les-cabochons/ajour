@@ -23,7 +23,7 @@ export async function syncTimeEntries(
 
 Each call is one round for one connection. Apply `request.changes` in order, then list your entries from `request.from` to `request.to`, and answer both. Ajour runs a round only while the switch is on, under the usual 30-second operation timeout and the broker's request limits.
 
-Ajour runs a round about 2 seconds after the user changes an entry, and asks every 5 seconds while its window is on screen, every 60 seconds while it is hidden. Without a cursor, each of these rounds lists. See [Check rounds](#check-rounds) to make most of them free.
+Ajour runs a round about 2 seconds after the user changes an entry, and asks every 5 seconds while its window is on screen, every 60 seconds while it is hidden. Without a cursor, Ajour lists at most once a minute, as before. See [Check rounds](#check-rounds) to check every 5 seconds for free.
 
 ### The request
 

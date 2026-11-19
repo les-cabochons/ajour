@@ -67,6 +67,8 @@ let requests: TimeSyncRequest[];
 let overviewReads: number;
 /** The error the route answers the next round with, as when the plugin's service is down. */
 let failNext: string | undefined;
+/** True for a plugin that keeps no change marker: its answers carry no cursor. */
+let cursorless: boolean;
 let visibility: DocumentVisibilityState;
 
 function stubApi(remoteKey: string) {
@@ -85,6 +87,7 @@ function stubApi(remoteKey: string) {
         return Response.json({ error }, { status: 502 });
       }
       const answer = runExampleTimeSyncRound(remoteKey, request);
+      if (cursorless && "entries" in answer) delete answer.cursor;
       return Response.json(
         "unchanged" in answer ? answer : { connection, ...answer },
       );
@@ -101,6 +104,7 @@ beforeEach(() => {
   requests = [];
   overviewReads = 0;
   failNext = undefined;
+  cursorless = false;
   visibility = "visible";
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -169,6 +173,26 @@ async function start() {
 }
 
 describe("the time sync runner's checks", () => {
+  it("lists once a minute for a plugin without a cursor, as the poll did before #843", async () => {
+    cursorless = true;
+    const { stop } = await start();
+    expect(kinds()).toEqual(["full"]);
+
+    // Checks come every 5 seconds, but the minute since the listing hasn't passed.
+    await vi.advanceTimersByTimeAsync(55_000);
+    expect(requests).toHaveLength(1);
+    visibility = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    visibility = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requests).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(kinds()).toEqual(["full", "full"]);
+    stop();
+  });
+
   it("checks every 5 seconds while the window shows, every 60 while it is hidden, and at once when it shows again", async () => {
     const { stop } = await start();
     expect(kinds()).toEqual(["full"]);

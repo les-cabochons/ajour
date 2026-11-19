@@ -6,7 +6,7 @@ A time sync took changes made in the other system only with its 60-second round,
 
 **The contract.** `syncTimeEntries` takes an optional, opaque `cursor`, and its full answer may carry the next one. A plugin whose other system keeps a change marker, a version that moves on every time entry write there, puts in the cursor whatever lets it tell that the marker moved. To a request with a cursor and no changes, it may answer `{ unchanged: true, cursor }` without listing. Ajour refuses that answer to any other request, so an Ajour that never sends a cursor never gets it. Nothing in the manifest, the catalog or the plugin API version changes: a plugin without a marker answers as before.
 
-**The runner.** Ajour asks every 5 seconds while its window shows, every 60 seconds while it is hidden, and once when it shows again. A round is a check, the cursor and no changes, only while the inputs the rules read (projects, timers, entries, locked weeks and the connection's time sync record) are the objects the last full answer left, the plan has nothing to send, and the connection wasn't saved again since. A check reads the cached plugins overview, and an unchanged answer only moves the cursor: no lock, no store write, and no connection summary from the local API. Any other round is full and sends no cursor.
+**The runner.** Ajour asks every 5 seconds while its window shows, every 60 seconds while it is hidden, and once when it shows again. A round is a check, the cursor and no changes, only while the inputs the rules read (projects, timers, entries, locked weeks and the connection's time sync record) are the objects the last full answer left, the plan has nothing to send, and the connection wasn't saved again since. A check reads the cached plugins overview, and an unchanged answer only moves the cursor: no lock, no store write, and no connection summary from the local API. Any other round is full and sends no cursor. A connection whose last answer gave no cursor has nothing to check against, so its checks list at most once a minute, as the 60-second poll did.
 
 **The cursor stays in memory.** Ajour keeps it per connection in the window that ran the round, never in the state file or an event, because it may hold a read link to the marker. A reload, a failed round or a saved connection drops it, and the next round is full.
 
@@ -19,5 +19,5 @@ A time sync took changes made in the other system only with its 60-second round,
 ## Consequences
 
 - A plugin with a marker answers most rounds without calling its system's API, so that API can scale to zero while nothing changes.
-- A plugin without a marker lists every 5 seconds while the window shows, instead of every 60.
+- A plugin without a marker lists once a minute, as before. Only a plugin with a marker gets the 5-second checks.
 - A check plans the round each time, about a millisecond for 1,800 entries, so a rule that changes with time alone, such as a new day, still makes the round full.
