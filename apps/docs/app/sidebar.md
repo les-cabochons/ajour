@@ -47,7 +47,7 @@ A dot on an item means it came back on its own, from a snooze or a change in its
 Rest the mouse on an item for a moment to see a card beside the sidebar with what the row has no room for:
 
 - The whole title.
-- Where the item comes from: its tool's logo, the organization and project, and its ID, such as `48190` or `PAY-12`. A manual item has none.
+- Where the item comes from: its tool's logo, the organization and project, and its ID, such as `48190` or `PAY-12`. Click it to open the item in its source. A manual item has none.
 - On a subitem, its parent.
 - The subitems, open ones first, with how many are done, such as `1/2`. Eight show, then a count of the rest.
 - The pull requests whose title names the item, open ones first. Five show, then a count of the rest. A key such as `PAY-12` counts from any repository. A number such as `#1234` counts only from the same GitHub repository or Azure DevOps organization. Only pull requests on the [Pull requests](/pull-requests/) page count.
