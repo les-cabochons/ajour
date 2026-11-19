@@ -19,6 +19,12 @@ const TERMINALS = {
     },
     { value: "iTerm", label: "iTerm2", bundle: "iTerm.app" },
     { value: "Ghostty", label: "Ghostty", bundle: "Ghostty.app" },
+    { value: "kitty", label: "kitty", bundle: "kitty.app" },
+    { value: "WezTerm", label: "WezTerm", bundle: "WezTerm.app" },
+    { value: "Alacritty", label: "Alacritty", bundle: "Alacritty.app" },
+    // Warp is left out: its stable builds may open a `.command` script in
+    // its editor instead of running it (warpdotdev/warp#9020), and it has no
+    // command line that runs a program.
   ],
   win32: [
     // Windows Terminal is an app execution alias. The launch looks it up on
@@ -27,7 +33,9 @@ const TERMINALS = {
     {
       value: "WezTerm",
       label: "WezTerm",
-      exe: "wezterm.exe",
+      // The GUI program: wezterm.exe is a console one that forwards to it and
+      // may flash a console window.
+      exe: "wezterm-gui.exe",
       folders: ["WezTerm"],
     },
     {
@@ -58,17 +66,23 @@ async function present(candidate) {
 function terminalSettings(
   platform,
   file,
-  computer = { home: require("node:os").homedir(), env: process.env, exists: present },
+  computer = {
+    home: require("node:os").homedir(),
+    env: process.env,
+    exists: present,
+  },
 ) {
   const terminals = TERMINALS[platform] ?? [];
   const pathOf = platform === "win32" ? path.win32 : path.posix;
 
   /** Where a terminal is installed, `null` for the default found at launch, or undefined. */
   async function locate(terminal) {
-    if (terminal === terminals[0])
-      return terminal.fixed ?? null;
+    if (terminal === terminals[0]) return terminal.fixed ?? null;
     if (terminal.bundle) {
-      for (const folder of ["/Applications", pathOf.join(computer.home, "Applications")]) {
+      for (const folder of [
+        "/Applications",
+        pathOf.join(computer.home, "Applications"),
+      ]) {
         const candidate = pathOf.join(folder, terminal.bundle);
         if (await computer.exists(candidate)) return candidate;
       }
@@ -78,8 +92,14 @@ function terminalSettings(
     const folders = (computer.env.PATH ?? computer.env.Path ?? "")
       .split(";")
       .filter((folder) => pathOf.isAbsolute(folder));
-    for (const base of [computer.env.ProgramFiles, computer.env.LOCALAPPDATA && pathOf.join(computer.env.LOCALAPPDATA, "Programs")])
-      if (base) for (const folder of terminal.folders) folders.push(pathOf.join(base, folder));
+    for (const base of [
+      computer.env.ProgramFiles,
+      computer.env.LOCALAPPDATA &&
+        pathOf.join(computer.env.LOCALAPPDATA, "Programs"),
+    ])
+      if (base)
+        for (const folder of terminal.folders)
+          folders.push(pathOf.join(base, folder));
     for (const folder of folders) {
       const candidate = pathOf.join(folder, terminal.exe);
       if (await computer.exists(candidate)) return candidate;

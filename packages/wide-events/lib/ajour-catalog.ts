@@ -758,7 +758,13 @@ export const catalog = defineCatalog({
           >(),
           /** The terminal app a terminal command opened in (Settings › General › Terminal). */
           terminal: operational<
-            "wt" | "WezTerm" | "Alacritty" | "Terminal" | "iTerm" | "Ghostty"
+            | "wt"
+            | "WezTerm"
+            | "Alacritty"
+            | "Terminal"
+            | "iTerm"
+            | "Ghostty"
+            | "kitty"
           >(),
           /** A session's open or its end: one event each, never per line. */
           session: operational<"open" | "close">(),

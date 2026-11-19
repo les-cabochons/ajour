@@ -217,7 +217,9 @@ it.each([
           later: () => undefined,
         },
       );
-      expect(opened).toEqual([["-a", target, expect.stringMatching(/launch\.command$/)]]);
+      expect(opened).toEqual([
+        ["-a", target, expect.stringMatching(/launch\.command$/)],
+      ]);
       // The values stay in the script, never on the terminal's command line.
       expect(opened[0]!.join(" ")).not.toContain("a b");
     } finally {
@@ -227,8 +229,52 @@ it.each([
 );
 
 it.each([
+  [{ app: "kitty" as const, path: "/Applications/kitty.app" }, []],
   [
-    { app: "WezTerm" as const, path: "C:\\Tools\\wezterm.exe" },
+    { app: "WezTerm" as const, path: "/Applications/WezTerm.app" },
+    ["start", "--"],
+  ],
+  [{ app: "Alacritty" as const, path: "/Applications/Alacritty.app" }, ["-e"]],
+])(
+  "Given %o chosen on macOS, starts a new instance on the private script",
+  async (terminal, before) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-program-"));
+    try {
+      const opened: string[][] = [];
+      await launchProcess(
+        { command: "/tools/fake", args: ["a b"], env: {} },
+        "/repo",
+        terminal,
+        {
+          platform: "darwin",
+          temp: root,
+          start: async (plan) => {
+            expect(plan.command).toBe("/usr/bin/open");
+            opened.push(plan.args);
+          },
+          later: () => undefined,
+        },
+      );
+      expect(opened).toEqual([
+        [
+          "-n",
+          "-a",
+          terminal.path,
+          "--args",
+          ...before,
+          expect.stringMatching(/launch\.command$/),
+        ],
+      ]);
+      expect(opened[0]!.join(" ")).not.toContain("a b");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it.each([
+  [
+    { app: "WezTerm" as const, path: "C:\\Tools\\wezterm-gui.exe" },
     ["start", "--cwd", "C:\\repo", "--", "C:\\tools\\fake.exe", "last"],
   ],
   [
@@ -236,13 +282,7 @@ it.each([
       app: "Alacritty" as const,
       path: "C:\\Program Files\\Alacritty\\alacritty.exe",
     },
-    [
-      "--working-directory",
-      "C:\\repo",
-      "-e",
-      "C:\\tools\\fake.exe",
-      "last",
-    ],
+    ["--working-directory", "C:\\repo", "-e", "C:\\tools\\fake.exe", "last"],
   ],
 ])(
   "Given %o chosen on Windows, starts it on the command in the folder",
@@ -263,13 +303,42 @@ it.each([
   },
 );
 
+it("Given Alacritty on Windows, quotes each value with a space itself, since it joins them unquoted", async () => {
+  const started: string[][] = [];
+  await launchProcess(
+    {
+      command: "C:\\Program Files\\tool\\fake.exe",
+      args: ["a b", "last"],
+      env: {},
+    },
+    "C:\\My repo",
+    { app: "Alacritty", path: "C:\\Program Files\\Alacritty\\alacritty.exe" },
+    {
+      platform: "win32",
+      start: async (plan) => {
+        started.push(plan.args);
+      },
+    },
+  );
+  expect(started).toEqual([
+    [
+      "--working-directory",
+      "C:\\My repo",
+      "-e",
+      '"C:\\Program Files\\tool\\fake.exe"',
+      '"a b"',
+      "last",
+    ],
+  ]);
+});
+
 it("Given a Windows terminal installed under an unsafe path, refuses before spawning", async () => {
   const start = vi.fn(async () => undefined);
   await expect(
     launchProcess(
       { command: "C:\\tools\\fake.exe", args: ["last"], env: {} },
       "C:\\repo",
-      { app: "WezTerm", path: "C:\\R&D\\wezterm.exe" },
+      { app: "WezTerm", path: "C:\\R&D\\wezterm-gui.exe" },
       { platform: "win32", start },
     ),
   ).rejects.toMatchObject({ reason: "invalid_request" });
@@ -280,6 +349,7 @@ it.each([
   ["win32", { app: "iTerm" as const, path: "/Applications/iTerm.app" }],
   ["darwin", { app: "wt" as const }],
   ["win32", { app: "WezTerm" as const }],
+  ["darwin", { app: "kitty" as const }],
 ] as const)(
   "Given %s and a terminal it can't open, %o, refuses",
   async (platform, terminal) => {

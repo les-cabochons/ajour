@@ -38,7 +38,9 @@ it("Given the terminals main found, offers them and saves the pick", async () =>
   const ghostty = screen.getByRole("option", { name: "Ghostty" });
   fireEvent.keyDown(ghostty, { key: "Enter" });
   fireEvent.click(ghostty);
-  await vi.waitFor(() => expect(setTerminalApp).toHaveBeenCalledWith("Ghostty"));
+  await vi.waitFor(() =>
+    expect(setTerminalApp).toHaveBeenCalledWith("Ghostty"),
+  );
 });
 it("Given Linux, hides the terminal preference", () => {
   Object.defineProperty(window, "ajourDesktop", {

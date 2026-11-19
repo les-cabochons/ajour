@@ -19,12 +19,7 @@ export class ProcessLaunchRefused extends Error {
 }
 /** The terminal apps a terminal command can open in: Windows, then macOS. */
 export type TerminalApp =
-  | "wt"
-  | "WezTerm"
-  | "Alacritty"
-  | "Terminal"
-  | "iTerm"
-  | "Ghostty";
+  "wt" | "WezTerm" | "Alacritty" | "Terminal" | "iTerm" | "Ghostty" | "kitty";
 /**
  * The terminal app chosen in Settings › General › Terminal, as main found it
  * on this computer: the app bundle on macOS, the executable on Windows.
@@ -36,7 +31,22 @@ export interface TerminalChoice {
   path?: string;
 }
 // macOS apps that run a `.command` script `open -a` hands them.
-const SCRIPT_TERMINALS: readonly TerminalApp[] = ["Terminal", "iTerm", "Ghostty"];
+const SCRIPT_TERMINALS: readonly TerminalApp[] = [
+  "Terminal",
+  "iTerm",
+  "Ghostty",
+];
+/**
+ * macOS apps that run the script as a program instead, in a new instance:
+ * `open -n -a <app> --args <these> <script>`. Through `open -a` kitty asks to
+ * confirm every script, WezTerm runs one only while it already runs, and
+ * Alacritty declares no document types.
+ */
+const PROGRAM_TERMINALS: Partial<Record<TerminalApp, readonly string[]>> = {
+  kitty: [],
+  WezTerm: ["start", "--"],
+  Alacritty: ["-e"],
+};
 type Plan = Exclude<SpawnResolution, { refused: string }>;
 /**
  * How long a child has to read its input. Shorter than an operation's
@@ -185,8 +195,10 @@ export async function launchProcess(
   if (platform === "win32") {
     if (
       terminal.app !== "wt" &&
-      !((terminal.app === "WezTerm" || terminal.app === "Alacritty") &&
-        terminal.path)
+      !(
+        (terminal.app === "WezTerm" || terminal.app === "Alacritty") &&
+        terminal.path
+      )
     )
       throw new ProcessLaunchRefused("Unsupported terminal");
     const check = (value: string, literal = false) => {
@@ -227,7 +239,18 @@ export async function launchProcess(
         exe,
         terminal.app === "WezTerm"
           ? ["start", "--cwd", cwd, "--", ...command]
-          : ["--working-directory", cwd, "-e", ...command],
+          : // Alacritty joins what follows -e with plain spaces, unquoted, and
+            // Windows splits that line again. The allowlist leaves no quote
+            // and no trailing backslash, so quoting a value with a space
+            // keeps it one argument.
+            [
+              "--working-directory",
+              cwd,
+              "-e",
+              ...command.map((value) =>
+                value.includes(" ") ? `"${value}"` : value,
+              ),
+            ],
         plan.env,
       );
     }
@@ -235,7 +258,11 @@ export async function launchProcess(
       throw new ProcessLaunchRefused("Terminal spawn refused");
     return start(launch, cwd, false);
   }
-  if (platform !== "darwin" || !SCRIPT_TERMINALS.includes(terminal.app))
+  const program = terminal.path ? PROGRAM_TERMINALS[terminal.app] : undefined;
+  if (
+    platform !== "darwin" ||
+    (!SCRIPT_TERMINALS.includes(terminal.app) && !program)
+  )
     throw new ProcessLaunchRefused("Unsupported terminal");
   const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
   // Terminal may already be running. Forward only launcher changes, not inherited secrets.
@@ -283,7 +310,9 @@ export async function launchProcess(
     await start(
       {
         command: "/usr/bin/open",
-        args: ["-a", terminal.path ?? terminal.app, script],
+        args: program
+          ? ["-n", "-a", terminal.path!, "--args", ...program, script]
+          : ["-a", terminal.path ?? terminal.app, script],
         env: plan.env,
       },
       cwd,

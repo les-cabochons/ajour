@@ -1195,17 +1195,22 @@ the terminal app owns the process.
 `process-launch.ts` opens a terminal command in the app chosen in Settings ›
 General › Terminal (`TerminalChoice`: the app, and where main found it). On
 Windows: Windows Terminal (`wt -d <folder> -- <command>`, looked up on PATH at
-launch), WezTerm (`wezterm start --cwd <folder> -- <command>`) and Alacritty
-(`alacritty --working-directory <folder> -e <command>`). Each re-joins argv, so
+launch), WezTerm (`wezterm-gui start --cwd <folder> -- <command>`) and
+Alacritty (`alacritty --working-directory <folder> -e <command>`). Alacritty
+joins what follows `-e` with plain spaces, so Ajour quotes each value that has a
+space itself. Each re-joins argv, so
 executable paths, the terminal's own path, resolved launcher prefixes,
 arguments and cwd must use the strict terminal allowlist: non-empty ASCII letters,
 digits, spaces and `. _ - : / \ @ + = , ~ ( )`, with no trailing backslash.
 Only manifest literals may start with a dash. Invalid values return `invalid_request`
 with a terminal-mode reason. Missing Windows Terminal asks the user to install it.
 On macOS, private executable `.command` files use POSIX single-quoted arguments,
-and `open -a <app> <script>` hands the chosen app (Terminal, iTerm2 or Ghostty,
-each declares `.command` scripts) only the script's path, so no value reaches its
-command line. Each script is deleted after five minutes, never at broker
+and the chosen app gets only the script's path, so no value reaches its command
+line: `open -a <app> <script>` for Terminal, iTerm2 and Ghostty, which run the
+`.command` scripts they declare, and `open -n -a <app> --args <script>` for kitty,
+WezTerm (`start --`) and Alacritty (`-e`), which run it as a program in a new
+instance. Through `open -a` kitty asks to confirm every script, WezTerm runs one
+only while it already runs, and Alacritty declares no document types. Each script is deleted after five minutes, never at broker
 shutdown; the next launch sweeps script directories older than an hour.
 `apps/desktop/electron/terminal-settings.cjs` lists the installed apps (macOS
 bundles in `/Applications` and `~/Applications`, Windows executables on PATH or

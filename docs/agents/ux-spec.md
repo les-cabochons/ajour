@@ -1441,8 +1441,10 @@ Repository folders survive project archive and Undo, including Undo of creating 
 ### Plugin terminals and links
 
 Settings > General > Terminal shows the terminal app plugins open commands in.
-It lists only the apps installed on this computer: Terminal, iTerm2 and Ghostty
-on macOS, Windows Terminal, WezTerm and Alacritty on Windows. Terminal and
+It lists only the apps installed on this computer: Terminal, iTerm2, Ghostty,
+kitty, WezTerm and Alacritty on macOS, Windows Terminal, WezTerm and Alacritty
+on Windows. Warp is left out: its stable builds may open a script in their
+editor instead of running it. Terminal and
 Windows Terminal are the defaults and always listed. Linux hides the setting.
 The preference saves on change. When the chosen app is uninstalled, commands
 open in the default, and the choice comes back once the app is installed again.

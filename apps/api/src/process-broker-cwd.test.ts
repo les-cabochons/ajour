@@ -14,8 +14,7 @@ import { AppApiStorage } from "./storage.ts";
 // A terminal launch would open a real terminal window: record what it would
 // open instead, and let every other launch run.
 const terminalLaunches = vi.hoisted(
-  () =>
-    [] as { cwd: string; args: string[]; terminal: TerminalChoice }[],
+  () => [] as { cwd: string; args: string[]; terminal: TerminalChoice }[],
 );
 vi.mock("./process-launch.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./process-launch.ts")>();
@@ -34,16 +33,14 @@ afterEach(async () => {
   terminalLaunches.length = 0;
   await Promise.all(
     // A detached child can hold its folder open while it exits on Windows.
-    roots
-      .splice(0)
-      .map((p) =>
-        rm(p, {
-          recursive: true,
-          force: true,
-          maxRetries: 20,
-          retryDelay: 100,
-        }),
-      ),
+    roots.splice(0).map((p) =>
+      rm(p, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      }),
+    ),
   );
 });
 
@@ -210,9 +207,11 @@ describe("a declared command's working folder (#761)", () => {
     ).toEqual({ started: true });
     expect(terminalLaunches.map((launch) => launch.terminal)).toEqual([iterm]);
     const event = sink.events.find((e) => e.name === "plugin.process") as
-      | { process?: { mode?: string; terminal?: string } }
-      | undefined;
-    expect(event?.process).toMatchObject({ mode: "terminal", terminal: "iTerm" });
+      { process?: { mode?: string; terminal?: string } } | undefined;
+    expect(event?.process).toMatchObject({
+      mode: "terminal",
+      terminal: "iTerm",
+    });
     await broker.shutdown();
   });
 

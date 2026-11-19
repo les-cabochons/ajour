@@ -76,13 +76,28 @@ it("Given macOS with iTerm2 and Ghostty installed, offers them after Terminal", 
   });
 });
 
-it("Given a terminal that isn't installed, refuses to save it", async () => {
+it("Given macOS with every supported app installed, lists them in order", async () => {
   await withSaved(undefined, async (file) => {
+    const apps = ["iTerm", "Ghostty", "kitty", "WezTerm", "Alacritty"];
     const settings = terminalSettings(
       "darwin",
       file,
-      computer([TERMINAL]),
+      computer([TERMINAL, ...apps.map((app) => `/Applications/${app}.app`)]),
     );
+    expect((await settings.list()).choices.map((c) => c.label)).toEqual([
+      "Terminal",
+      "iTerm2",
+      "Ghostty",
+      "kitty",
+      "WezTerm",
+      "Alacritty",
+    ]);
+  });
+});
+
+it("Given a terminal that isn't installed, refuses to save it", async () => {
+  await withSaved(undefined, async (file) => {
+    const settings = terminalSettings("darwin", file, computer([TERMINAL]));
     await expect(settings.save("iTerm")).rejects.toThrow("Unsupported");
     await expect(readFile(file, "utf8")).rejects.toThrow();
   });
@@ -90,11 +105,7 @@ it("Given a terminal that isn't installed, refuses to save it", async () => {
 
 it("Given a saved terminal that was uninstalled, opens Terminal and keeps the choice", async () => {
   await withSaved("iTerm", async (file) => {
-    const settings = terminalSettings(
-      "darwin",
-      file,
-      computer([TERMINAL]),
-    );
+    const settings = terminalSettings("darwin", file, computer([TERMINAL]));
     expect((await settings.list()).value).toBe("Terminal");
     expect(await settings.resolve()).toEqual({
       app: "Terminal",
@@ -110,8 +121,9 @@ it("Given Windows with WezTerm on PATH and Alacritty in Program Files, offers th
     const settings = terminalSettings(
       "win32",
       file,
-      computer([
-          "C:\\Tools\\wezterm.exe",
+      computer(
+        [
+          "C:\\Tools\\wezterm-gui.exe",
           "C:\\Program Files\\Alacritty\\alacritty.exe",
         ],
         { PATH: "C:\\Tools;relative\\bin", ProgramFiles: "C:\\Program Files" },
@@ -127,7 +139,7 @@ it("Given Windows with WezTerm on PATH and Alacritty in Program Files, offers th
     });
     expect(await settings.resolve()).toEqual({
       app: "WezTerm",
-      path: "C:\\Tools\\wezterm.exe",
+      path: "C:\\Tools\\wezterm-gui.exe",
     });
   });
 });
