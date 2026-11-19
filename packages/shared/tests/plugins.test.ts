@@ -15,6 +15,7 @@ import {
   pluginHasBacklog,
   pluginRunsCode,
   pluginConnectionFormFields,
+  pluginOverviewGroupSchema,
   connectionAgentAccess,
   backlogImportCandidateInputSchema,
   backlogSearchAssigneesRequestSchema,
@@ -569,5 +570,71 @@ describe("agent access to comments", () => {
   it("reads None from a connection saved before the setting", () => {
     expect(connectionAgentAccess({})).toBe("none");
     expect(connectionAgentAccess({ agentAccess: "read" })).toBe("read");
+  });
+});
+
+describe("on-premises", () => {
+  /**
+   * A plugin as the overview sends it to the web app, which parses it with
+   * the overview schema before the connection form reads it.
+   */
+  function overviewPlugin(baseAddress?: {
+    field: string;
+    allowOnPremises?: boolean;
+  }) {
+    return pluginOverviewGroupSchema.parse({
+      plugin: {
+        ...validManifest,
+        apiVersion: 4,
+        connectionFields: [
+          { id: "label", label: "Connection label", type: "text" },
+          { id: "serverUrl", label: "Server address", type: "url" },
+          { id: "token", label: "Token", type: "password", secret: true },
+        ],
+        ...(baseAddress
+          ? {
+              network: {
+                baseAddress,
+                endpoints: [{ method: "GET", path: "/global/health" }],
+              },
+            }
+          : {}),
+      },
+      enabled: true,
+      connections: [],
+    }).plugin;
+  }
+
+  const fieldIds = (plugin: ReturnType<typeof overviewPlugin>) =>
+    pluginConnectionFormFields(plugin).map((field) => field.id);
+
+  it("is Ajour's checkbox right after the address, for a plugin whose manifest allows it", () => {
+    const plugin = overviewPlugin({
+      field: "serverUrl",
+      allowOnPremises: true,
+    });
+
+    expect(fieldIds(plugin)).toEqual([
+      "label",
+      "serverUrl",
+      "onPremises",
+      "token",
+    ]);
+    expect(
+      pluginConnectionFormFields(plugin).find(
+        (field) => field.id === "onPremises",
+      ),
+    ).toMatchObject({
+      label: "On-premises",
+      type: "checkbox",
+      defaultValue: false,
+    });
+  });
+
+  it("is absent when the manifest doesn't allow it", () => {
+    expect(fieldIds(overviewPlugin({ field: "serverUrl" }))).not.toContain(
+      "onPremises",
+    );
+    expect(fieldIds(overviewPlugin())).not.toContain("onPremises");
   });
 });

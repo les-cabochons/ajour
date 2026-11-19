@@ -595,11 +595,44 @@ const allowLossyField: PluginField = {
 
 /**
  * Whether the user marked the connection on-premises, so Ajour's broker may
- * send its requests to private addresses: only for a plugin API 4 plugin
- * whose manifest allows it (`network.baseAddress.allowOnPremises`). Ajour
- * owns the setting; its form field comes with the connection access work.
+ * send its requests to an http:// or private address: only for a plugin API
+ * 4 plugin whose manifest allows it (`network.baseAddress.allowOnPremises`).
+ * Ajour owns the setting, and its form shows it after the address (#647).
  */
 export const ON_PREMISES_FIELD_ID = "onPremises";
+
+const onPremisesField: PluginField = {
+  id: ON_PREMISES_FIELD_ID,
+  label: "On-premises",
+  type: "checkbox",
+  helpText:
+    "Lets this connection reach a server on this computer or your own network, and use an http:// address.",
+  required: false,
+  secret: false,
+  defaultValue: false,
+};
+
+/**
+ * What Ajour reads of a plugin API 4 manifest's `network` outside the API:
+ * the field that holds the connection's address, and whether a connection
+ * may be marked on-premises. `plugin-api-4.ts` has the whole schema.
+ */
+export const pluginNetworkSummarySchema = z.object({
+  baseAddress: z
+    .object({
+      field: z.string().min(1).max(120),
+      allowOnPremises: z.boolean().optional(),
+    })
+    .optional(),
+});
+export type PluginNetworkSummary = z.infer<typeof pluginNetworkSummarySchema>;
+
+/** Whether a connection of the plugin may be marked on-premises. */
+export function pluginAllowsOnPremises(plugin: {
+  network?: PluginNetworkSummary;
+}) {
+  return plugin.network?.baseAddress?.allowOnPremises === true;
+}
 
 /** The connection fields Ajour owns, which a plugin cannot declare. */
 export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
@@ -609,16 +642,31 @@ export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The connection form's fields: the plugin's own, then the ones Ajour adds
- * for what the plugin provides. A plugin field with an id Ajour owns is
+ * The connection form's fields: the plugin's own, with On-premises right
+ * after the address field when the manifest allows it, then the ones Ajour
+ * adds for what the plugin provides. A plugin field with an id Ajour owns is
  * dropped.
  */
 export function pluginConnectionFormFields(
-  plugin: Pick<PluginManifest, "connectionFields" | "capabilities">,
+  plugin: Pick<PluginManifest, "connectionFields" | "capabilities"> & {
+    network?: PluginNetworkSummary;
+  },
 ): PluginField[] {
   const fields = plugin.connectionFields.filter(
     (field) => !AJOUR_CONNECTION_FIELD_IDS.has(field.id),
   );
+  if (pluginAllowsOnPremises(plugin)) {
+    const address = fields.findIndex(
+      (field) => field.id === plugin.network?.baseAddress?.field,
+    );
+    // The API 4 manifest names a declared field; after the plugin's own
+    // fields otherwise.
+    fields.splice(
+      address === -1 ? fields.length : address + 1,
+      0,
+      onPremisesField,
+    );
+  }
   return [
     ...fields,
     ...(plugin.capabilities.connector?.comments ||
@@ -811,6 +859,8 @@ const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
   unavailableReason: z.string().max(1000).optional(),
   /** Absent for a plugin with no recorded origin, which counts as unsigned. */
   origin: pluginOriginSchema.optional(),
+  /** A plugin API 4 plugin's network, as far as its connection form needs it. */
+  network: pluginNetworkSummarySchema.optional(),
 });
 export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
