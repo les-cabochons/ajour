@@ -4,7 +4,6 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiCornerDownRightLine,
   RiAddLine as AddIcon,
-  RiArchiveLine as ArchiveIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
@@ -13,11 +12,6 @@ import {
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { PageHeader, type PageBreadcrumbItem } from "@/components/page-header";
-import {
-  PropertyAction,
-  PropertyActions,
-  PropertyRow,
-} from "@/components/property-list";
 import { ObjectActionItems } from "@/components/object-actions-menu";
 import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
@@ -48,6 +42,7 @@ import {
   InlineTitle,
   DescriptionSection,
 } from "@/features/backlog/backlog-item-inline-edit";
+import { BacklogItemLifecycleLine } from "@/features/backlog/backlog-item-lifecycle-line";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
 import { ESTIMATE_FIGURES } from "@/features/backlog/backlog-estimates";
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
@@ -247,8 +242,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             ? "Stop the clock on this item"
             : "Start the clock on this item now",
     }));
-  // Listed only for synced items: Archive leaves the source as it is.
-  const archiveAction = actions.find((action) => action.id === "archive");
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
     ? state.workItems.find((candidate) =>
@@ -346,19 +339,29 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     );
   }
 
+  // The header keeps the ways to work on the item. The moves that change
+  // its lifecycle head the properties card (`BacklogItemLifecycleLine`,
+  // #827). In the narrow view that card sits under the description and the
+  // comments, so the header keeps them too, under the title.
   const headerButtons =
     item.status === "archived" ? (
-      <Button variant="outline" onClick={() => runAction("restore")}>
-        Restore
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("restore")}>
+          Restore
+        </Button>
+      </span>
     ) : item.status === "settled" ? (
-      <Button variant="outline" onClick={() => runAction("unsettle")}>
-        <UnsettleIcon data-icon="inline-start" /> Unsettle
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("unsettle")}>
+          <UnsettleIcon data-icon="inline-start" /> Unsettle
+        </Button>
+      </span>
     ) : isSnoozed ? (
-      <Button variant="outline" onClick={() => runAction("unsnooze")}>
-        Unsnooze
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("unsnooze")}>
+          Unsnooze
+        </Button>
+      </span>
     ) : (
       <>
         {/* Start entry (Stop while the item's entry runs) is split: its arrow
@@ -398,17 +401,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         </SplitButton>
         {/* Absent without a handoff tool, as in the web build. */}
         <HandoffButton item={item} />
-        <Button variant="ghost" onClick={() => runAction("snooze")}>
-          <SnoozeIcon data-icon="inline-start" /> Snooze
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={(event) =>
-            runAction("settle", { askToSettle: event.shiftKey })
-          }
-        >
-          <SettleIcon data-icon="inline-start" /> Settle
-        </Button>
+        <span className="hidden narrow:contents">
+          <Button variant="ghost" onClick={() => runAction("snooze")}>
+            <SnoozeIcon data-icon="inline-start" /> Snooze
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={(event) =>
+              runAction("settle", { askToSettle: event.shiftKey })
+            }
+          >
+            <SettleIcon data-icon="inline-start" /> Settle
+          </Button>
+        </span>
       </>
     );
 
@@ -592,17 +597,21 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 className="backlog-item-card backlog-item-properties-card"
                 aria-label="Properties"
               >
+                {/* The item's lifecycle and the moves that change it, then
+                    the properties, which leave the Lifecycle row to it. */}
+                <BacklogItemLifecycleLine
+                  item={item}
+                  isSnoozed={isSnoozed}
+                  actions={actions}
+                  onAction={runAction}
+                />
                 {/* A synced item's source rows and its refresh are the
                     properties' source section (#653). */}
-                <BacklogItemProperties item={item} state={state} />
-                {archiveAction && !archiveAction.disabledReason ? (
-                  <PropertyActions>
-                    <PropertyAction onClick={() => runAction("archive")}>
-                      <ArchiveIcon aria-hidden="true" />
-                      {archiveAction.label}
-                    </PropertyAction>
-                  </PropertyActions>
-                ) : null}
+                <BacklogItemProperties
+                  item={item}
+                  state={state}
+                  lifecycleRow={false}
+                />
               </section>
               {!isSubitem ? (
                 <SubitemsCard

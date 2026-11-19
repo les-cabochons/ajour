@@ -43,7 +43,8 @@ const LONG_NAME_LIST_WIDTH = 320;
 /**
  * A backlog item's properties, each changed in place with Undo: state,
  * priority, project and task, then Missing from sync for synced items. The
- * peek and the item page show the same rows; `children` adds rows before
+ * peek and the item page show the same rows, but for Lifecycle, which the
+ * item page's card says in its first line; `children` adds rows before
  * Missing from sync. The description's frontmatter follows: plain values as
  * rows, then the source section of a synced item (#653) and the frontmatter's
  * lists and nested keys as sections. A button after Project offers the
@@ -52,10 +53,13 @@ const LONG_NAME_LIST_WIDTH = 320;
 export function BacklogItemProperties({
   item,
   state,
+  lifecycleRow = true,
   children,
 }: {
   item: LocalWorkItem;
   state: LocalAppState;
+  /** False on the item page, whose card opens with the lifecycle (#827). */
+  lifecycleRow?: boolean;
   children?: ReactNode;
 }) {
   const project = state.projects.find((p) => p._id === item.projectId);
@@ -81,9 +85,11 @@ export function BacklogItemProperties({
         <PropertyRow label="Priority">
           <BacklogPriorityPicker item={item} full />
         </PropertyRow>
-        <PropertyRow label="Lifecycle">
-          <span className="capitalize">{item.status}</span>
-        </PropertyRow>
+        {lifecycleRow ? (
+          <PropertyRow label="Lifecycle">
+            <span className="capitalize">{item.status}</span>
+          </PropertyRow>
+        ) : null}
         <PropertyRow label="Project">
           <SearchableSelect
             value={item.projectId ?? ""}

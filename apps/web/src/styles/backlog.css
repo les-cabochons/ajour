@@ -869,6 +869,27 @@
     padding: 0.875rem 1rem 1rem;
   }
 
+  /* The properties card's first line: the item's lifecycle, then the moves
+     that change it, the last one's icon on the card's right edge. A rule
+     sets the line apart from the properties. */
+  .backlog-item-lifecycle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: var(--control-height);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .backlog-item-lifecycle-moves {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.125rem;
+    margin-right: -0.5rem;
+  }
+
   .backlog-item-card-header {
     display: flex;
     align-items: center;
