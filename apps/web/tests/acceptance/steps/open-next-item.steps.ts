@@ -9,18 +9,19 @@ const { When, Then } = createBdd();
  * backlog item, in that order.
  */
 
-const headerButton = (page: Page, name: string) =>
+/** A move on the first line of the item page's properties card (#827). */
+const lifecycleButton = (page: Page, name: string) =>
   page
-    .getByRole("group", { name: "Item actions" })
+    .getByRole("group", { name: /^Lifecycle:/ })
     .getByRole("button", { name, exact: true });
 
 const sidebar = (page: Page) =>
   page.getByRole("navigation", { name: "Primary navigation" });
 
 When(
-  "I settle the open item from its page header with its subitems",
+  "I settle the open item from its properties card with its subitems",
   async ({ page }) => {
-    await headerButton(page, "Settle").click();
+    await lifecycleButton(page, "Settle").click();
     const choice = page.getByRole("dialog", { name: /^Also settle/ });
     await choice.getByRole("button", { name: /^Include subitem/ }).click();
     await expect(choice).toHaveCount(0);
@@ -33,9 +34,9 @@ When("I press B on the item page", async ({ page }) => {
 });
 
 When(
-  "I open the settle dialog from its page header and cancel it",
+  "I open the settle dialog from its properties card and cancel it",
   async ({ page }) => {
-    await headerButton(page, "Settle").click();
+    await lifecycleButton(page, "Settle").click();
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toHaveCount(0);
