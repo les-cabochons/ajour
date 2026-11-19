@@ -564,6 +564,26 @@ describe("applying a round", () => {
       );
     });
 
+    it("keeps the latest day a create went for, so a retry dated before the window doesn't forget it", () => {
+      const since = {
+        ...stateWith([entry("e1")]),
+        timeSyncs: startTimeSync({}, CONNECTION, "2026-09-07", 100),
+      };
+      const failed = runRound(since, fail).state;
+      // Moved to a day before the window, it fails again there.
+      const moved = runRound(
+        {
+          ...failed,
+          timesheetEntries: [entry("e1", { localDate: "2026-10-05" })],
+        },
+        fail,
+      ).state;
+
+      expect(plan({ ...moved, timesheetEntries: [] }).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
     it("forgets a create once its day leaves the window, where the plugin no longer finds it", () => {
       const failed = runRound(stateWith([entry("e1")]), fail).state;
       // Five weeks later, the window starts on 2026-11-16, and the create
@@ -767,6 +787,16 @@ describe("the running entry", () => {
     return { round, state: applied.state };
   }
 
+  /** A round whose listing goes first, at `now`, where the other system lists nothing. */
+  const listedFirst = (state: TimeSyncState, now: number) =>
+    applyTimeSyncRound(
+      state,
+      listingRoundOf(planTimeSyncRound(state, CONNECTION, CONTEXT, now)!)!,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(now),
+    ).state;
+
   it("sends the running entry as running, counting since its count would have started from zero", () => {
     expect(changesAt(running(), NOW + 10 * MINUTE)).toEqual([
       {
@@ -932,15 +962,6 @@ describe("the running entry", () => {
       CONTEXT,
       factoriesAt(NOW + 2 * MINUTE),
     ).state;
-    const listedFirst = (state: TimeSyncState, now: number) =>
-      applyTimeSyncRound(
-        state,
-        listingRoundOf(planTimeSyncRound(state, CONNECTION, CONTEXT, now)!)!,
-        { results: [], entries: [] },
-        CONTEXT,
-        factoriesAt(now),
-      ).state;
-
     const stopped = listedFirst(
       act(refused, NOW + 30 * MINUTE, (app, factories) =>
         saveTimer(app, app.timers[0]!._id, factories),
@@ -965,6 +986,48 @@ describe("the running entry", () => {
       ),
       NOW + 31 * MINUTE,
     );
+    expect(entriesOf(discarded)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 90 * MINUTE }),
+    ]);
+    expect(changesAt(discarded, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 90 }),
+      }),
+    ]);
+  });
+
+  it("keeps an entry a Continue may have dropped there when its whole round failed, and sends it again once discarded", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    // The planner may have deleted e1 there before the round failed.
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const failed = {
+      ...continued,
+      timeSyncs: failTimeSyncRound(
+        continued,
+        CONNECTION,
+        "The planner is down.",
+        NOW + 2 * MINUTE,
+        { plan: round, context: CONTEXT },
+      ),
+    };
+
+    const discarded = listedFirst(
+      act(failed, NOW + 30 * MINUTE, (app) =>
+        cancelTimer(app, app.timers[0]!._id),
+      ),
+      NOW + 31 * MINUTE,
+    );
+
     expect(entriesOf(discarded)).toEqual([
       expect.objectContaining({ _id: "e1", durationMs: 90 * MINUTE }),
     ]);

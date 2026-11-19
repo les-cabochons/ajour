@@ -1456,13 +1456,43 @@ function unconfirmedAfter(
       change.kind === "upsert" &&
       !Object.hasOwn(record.copies, change.syncKey)
     ) {
-      unconfirmed[change.syncKey] = change.values.localDate;
+      // The latest day sent, so an earlier try still in the window counts.
+      const sent = change.values.localDate;
+      const before = unconfirmed[change.syncKey];
+      unconfirmed[change.syncKey] = before && before > sent ? before : sent;
     }
   }
   for (const [syncKey, localDate] of Object.entries(unconfirmed)) {
     if (localDate < plan.request.from) delete unconfirmed[syncKey];
   }
   return Object.keys(unconfirmed).length > 0 ? { unconfirmed } : {};
+}
+
+/**
+ * The copies after a round that failed as a whole (#834). A Continue it sent
+ * may have gone halfway: a plugin may run a saved entry again by deleting
+ * it there, then starting a new one. Its copy is marked dropped there, so
+ * the entry goes again and is never read as deleted.
+ */
+function copiesAfterFailedRound(
+  copies: Record<string, LocalSyncedCopy>,
+  plan: TimeSyncPlan,
+): Record<string, LocalSyncedCopy> {
+  let next = copies;
+  for (const change of plan.request.changes) {
+    const copy = Object.hasOwn(copies, change.syncKey)
+      ? copies[change.syncKey]
+      : undefined;
+    if (
+      copy &&
+      change.kind === "upsert" &&
+      change.values.running &&
+      !copy.agreed.running
+    ) {
+      next = { ...next, [change.syncKey]: { ...copy, droppedThere: true } };
+    }
+  }
+  return next;
 }
 
 /**
@@ -1607,7 +1637,8 @@ export interface PlannedTimeSyncRound {
 /**
  * A round that failed as a whole leaves the entries as they are: its changes
  * wait for the next one, and the creates it sent count as unconfirmed, since
- * the other system may have made them first (#838). The connection keeps
+ * the other system may have made them first (#838), and a Continue it sent
+ * marks its entry dropped there (#834). The connection keeps
  * the error until a round goes through. A round that got as far as its plan
  * notes the local changes it saw, unless Time entries went off and on since,
  * and then it keeps nothing.
@@ -1627,7 +1658,12 @@ export function failTimeSyncRound(
   const { unconfirmed: _before, ...rest } = record;
   const failed = {
     ...(planned ? rest : record),
-    ...(planned ? unconfirmedAfter(record, planned.plan, undefined) : {}),
+    ...(planned
+      ? {
+          ...unconfirmedAfter(record, planned.plan, undefined),
+          copies: copiesAfterFailedRound(record.copies, planned.plan),
+        }
+      : {}),
     error: { at: now, message },
   };
   return {

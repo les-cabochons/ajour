@@ -199,9 +199,10 @@ export interface LocalSyncedCopy {
   /**
    * The other system stopped listing the entry in the round whose change for
    * it failed or was refused, as when Continue's restart deleted it there
-   * before the start failed. Ajour sends the entry again, even with the
-   * agreed values, and never reads it missing there as deleted. A change
-   * that syncs replaces the copy, and drops it.
+   * before the start failed, or a round that sent a Continue failed as a
+   * whole. Ajour sends the entry again, even with the agreed values, and
+   * never reads it missing there as deleted. A change that syncs replaces
+   * the copy, and drops it.
    */
   droppedThere?: true;
 }
