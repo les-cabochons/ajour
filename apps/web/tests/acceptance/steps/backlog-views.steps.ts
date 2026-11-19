@@ -3014,8 +3014,12 @@ Then(
       .locator(".backlog-item-page table")
       .evaluateAll((tables) =>
         tables.map((table) => {
+          // Wider than its box, and the box scrolls rather than clips it.
           const box = table.parentElement!;
-          return box.scrollWidth > box.clientWidth;
+          return (
+            box.scrollWidth > box.clientWidth &&
+            ["auto", "scroll"].includes(getComputedStyle(box).overflowX)
+          );
         }),
       );
     expect(scrolls).toEqual([false, true]);
