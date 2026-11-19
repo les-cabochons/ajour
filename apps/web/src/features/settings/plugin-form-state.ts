@@ -7,7 +7,7 @@ import {
   type PluginField,
   type PluginFieldValue,
   type PluginFieldValues,
-  type PluginManifest,
+  type PluginOverviewItem,
   type PluginOrigin,
   type SwitchableCapability,
 } from "@ajour/shared";
@@ -38,7 +38,7 @@ function buildDefaultValue(field: PluginField): PluginFieldValue {
  * the saved secret. The form shows the saved secret's state instead.
  */
 export function buildPluginFormValues(
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   editableValues?: PluginFieldValues,
 ): PluginFieldValues {
   const values: PluginFieldValues = {};
@@ -73,7 +73,7 @@ export type PluginFormState = {
 /** The form for a new connection, or for editing `connection`. */
 export function createPluginFormState(
   instance: number,
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   connection?: {
     id: string;
     editableValues: PluginFieldValues;
@@ -127,7 +127,7 @@ function sameAccess(left: readonly string[], right: readonly string[]) {
 
 /** Whether the form holds a change: a value, a reminder date or its access. */
 export function isPluginFormDirty(
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   form: PluginFormState,
 ) {
   return (
@@ -138,7 +138,7 @@ export function isPluginFormDirty(
 }
 
 /** The ids of the secret fields the form can show a state for. */
-export function secretFieldIds(plugin: PluginManifest) {
+export function secretFieldIds(plugin: PluginOverviewItem) {
   return pluginConnectionFormFields(plugin)
     .filter((field) => field.secret)
     .map((field) => field.id);
@@ -235,7 +235,7 @@ export function areExpiryDraftsEqual(
  * or a team, which always syncs on it.
  */
 export function isPluginFieldShown(
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   field: PluginField,
   values: PluginFieldValues,
   inactiveCapabilities: readonly SwitchableCapability[] = [],
@@ -272,7 +272,7 @@ function isFieldEmpty(value: PluginFieldValue | undefined) {
  * (`savedSecrets`), because an empty value keeps it.
  */
 export function canSubmitPluginForm(
-  plugin: PluginManifest | undefined,
+  plugin: PluginOverviewItem | undefined,
   values: PluginFieldValues,
   options?: {
     savedSecrets?: ReadonlySet<string>;
@@ -304,7 +304,7 @@ export function canSubmitPluginForm(
 }
 
 export function arePluginFormValuesEqual(
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   left: PluginFieldValues,
   right: PluginFieldValues,
 ) {

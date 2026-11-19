@@ -51,6 +51,8 @@ import {
   AGENT_ACCESS_FIELD_ID,
   AJOUR_CONNECTION_FIELD_IDS,
   ALLOW_LOSSY_FIELD_ID,
+  ON_PREMISES_FIELD_ID,
+  pluginAllowsOnPremises,
   agentAccessSchema,
   connectionAgentAccess,
   pluginOriginSchema,
@@ -926,7 +928,7 @@ function createMissingPluginManifest(pluginId: string): PluginOverviewItem {
 
 function toEditableValues(
   connection: StoredConnection,
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
 ): PluginFieldValues {
   const editableValues: PluginFieldValues = {
     label: connection.label,
@@ -950,6 +952,12 @@ function toEditableValues(
       connection.allowLossyConversion === true;
   } else {
     delete editableValues[ALLOW_LOSSY_FIELD_ID];
+  }
+  // So the form opens with it on, and an update doesn't turn it off.
+  if (pluginAllowsOnPremises(plugin)) {
+    editableValues[ON_PREMISES_FIELD_ID] = connection.onPremises === true;
+  } else {
+    delete editableValues[ON_PREMISES_FIELD_ID];
   }
 
   return editableValues;
@@ -1065,7 +1073,7 @@ function connectionSecretState(
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   installed: boolean,
   vault: VaultView,
 ): PluginConnectionSummary {
