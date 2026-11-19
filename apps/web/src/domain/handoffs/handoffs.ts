@@ -92,30 +92,48 @@ export function listHandoffTools(
   });
 }
 
-/**
- * Where *Choose your tools* leads while handoff plugins are active and none
- * of their tools is on: that plugin's tool list, or, with several such
- * plugins, the plugins list, since the tools are chosen per plugin.
- * Undefined while a tool is on, or no handoff plugin is active.
- */
-export function getHandoffToolsChoice(
-  overview: PluginsOverview | null | undefined,
-): { page: string; search?: Record<string, string> } | undefined {
-  if (!overview?.pluginsEnabled) return undefined;
-  const plugins = overview.connectionGroups.filter(
+/** The plugins whose handoff capability is on. */
+function activeHandoffPlugins(overview: PluginsOverview | null | undefined) {
+  if (!overview?.pluginsEnabled) return [];
+  return overview.connectionGroups.filter(
     (group) =>
       group.plugin.capabilities.handoff &&
       !group.missing &&
       isCapabilityActive(group, "handoff"),
   );
-  if (!plugins.length || plugins.some((g) => g.enabledHandoffTools?.length))
-    return undefined;
+}
+
+/**
+ * Where the tools' switches are: the handoff plugin's tool list, or, with
+ * several such plugins, the plugins list, since the tools are chosen per
+ * plugin. Undefined when no handoff plugin is active.
+ */
+export function getHandoffToolsPage(
+  overview: PluginsOverview | null | undefined,
+): { page: string; search?: Record<string, string> } | undefined {
+  const plugins = activeHandoffPlugins(overview);
+  if (!plugins.length) return undefined;
   return plugins.length === 1
     ? {
         page: `plugins/${plugins[0]!.plugin.id}`,
         search: { section: HANDOFF_TOOLS_SECTION },
       }
     : { page: "plugins" };
+}
+
+/**
+ * Where *Choose your tools* leads while handoff plugins are active and none
+ * of their tools is on (`getHandoffToolsPage`). Undefined while a tool is
+ * on, or no handoff plugin is active.
+ */
+export function getHandoffToolsChoice(
+  overview: PluginsOverview | null | undefined,
+) {
+  return activeHandoffPlugins(overview).some(
+    (group) => group.enabledHandoffTools?.length,
+  )
+    ? undefined
+    : getHandoffToolsPage(overview);
 }
 
 /** The plugin page's search value that scrolls to its Handoff tools. */
@@ -138,8 +156,33 @@ export function getHandoffToolNote(tool: HandoffTool) {
 }
 
 /**
- * The split button's tool: the one last handed off to on this device while
- * it can still run, else the first that can.
+ * What a tool's row says under its name in the hand-off sheet: why it can't
+ * run, else whether Ajour follows its threads or it only starts them.
+ */
+export function getHandoffToolSummary(tool: HandoffTool) {
+  return (
+    getHandoffToolRefusal(tool) ??
+    (tool.followsState
+      ? "Follows progress"
+      : "Starts a thread; doesn't report progress")
+  );
+}
+
+/**
+ * Where a hand off's thread starts, as the hand-off sheet says it: the
+ * project's one repository folder, or that Ajour asks, since a project with
+ * none or several opens the repository picker first.
+ */
+export function getHandoffFolderNote(folders: readonly { name: string }[]) {
+  if (folders.length === 1) return `Starts in ${folders[0]!.name}`;
+  return folders.length
+    ? "Asks which folder to start in"
+    : "Asks for a repository folder first";
+}
+
+/**
+ * The hand-off sheet's first tool: the one last handed off to on this device
+ * while it can still run, else the first that can.
  */
 export function pickHandoffTool(
   tools: readonly HandoffTool[],
@@ -147,6 +190,20 @@ export function pickHandoffTool(
 ): HandoffTool | undefined {
   const usable = tools.filter((tool) => tool.available !== false);
   return usable.find((tool) => tool.key === lastKey) ?? usable[0];
+}
+
+/**
+ * The tools in the hand-off sheet's order: `pickHandoffTool`'s first, then
+ * the others as their plugins list them.
+ */
+export function orderHandoffTools(
+  tools: readonly HandoffTool[],
+  lastKey: string | undefined,
+): readonly HandoffTool[] {
+  const first = pickHandoffTool(tools, lastKey);
+  return first
+    ? [first, ...tools.filter((tool) => tool.key !== first.key)]
+    : tools;
 }
 
 /** Why an item can't be handed off at all, whatever the tool. */

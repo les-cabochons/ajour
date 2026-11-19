@@ -632,6 +632,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               {handoffs.shown ? (
                 <HandoffsCard
                   itemId={itemId}
+                  item={item}
                   handoffs={handoffs.records}
                   tools={handoffs.tools}
                   offers={handoffs.offers}

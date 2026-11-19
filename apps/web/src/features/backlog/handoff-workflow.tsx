@@ -56,7 +56,7 @@ import {
 import { setHandoffs, upsertHandoff } from "@/lib/handoffs";
 import {
   getHandoffTools,
-  getHandoffToolsChoiceNow,
+  getHandoffToolsPageNow,
   hasSeenHandoffNotice,
   markHandoffNoticeSeen,
   setLastHandoffTool,
@@ -66,6 +66,7 @@ import {
   isHandoffStarting,
   listenForChooseHandoffTools,
   listenForHandoffRequests,
+  setHandoffLaunching,
   setHandoffStarting,
 } from "@/features/backlog/handoff-request";
 import { useOpenSettings } from "@/features/settings/settings-link";
@@ -164,6 +165,8 @@ async function start(
   const { settings = {}, ...overrides } = edits;
   const state = localStore.snapshot();
   const current = currentItem(job);
+  // The Handoffs card names the tool while it starts the thread.
+  setHandoffLaunching(current._id, tool.key);
   const record = await startHandoff({
     pluginId: tool.pluginId,
     toolId: tool.toolId,
@@ -174,7 +177,7 @@ async function start(
     item: getHandoffItem(current, state.workItems),
     ...overrides,
     settings,
-  });
+  }).finally(() => setHandoffLaunching(current._id));
   upsertHandoff(record);
   setLastHandoffTool(tool.key);
   // No Undo: the thread already runs in the tool.
@@ -382,14 +385,14 @@ export function HandoffHost() {
   }
 
   const openSettings = useOpenSettings();
-  // No tool is on: the plugin's tool list, or the plugins list when several
-  // plugins hand off (`getHandoffToolsChoice`).
+  // The tools' switches: the plugin's tool list, or the plugins list when
+  // several plugins hand off (`getHandoffToolsPage`).
   useEffect(
     () =>
       listenForChooseHandoffTools(() => {
-        const choice = getHandoffToolsChoiceNow();
+        const tools = getHandoffToolsPageNow();
         void openSettings(
-          settingsLocationOf(choice?.page ?? "plugins", choice?.search),
+          settingsLocationOf(tools?.page ?? "plugins", tools?.search),
         );
       }),
     [openSettings],
