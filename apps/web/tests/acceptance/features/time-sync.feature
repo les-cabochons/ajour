@@ -38,6 +38,13 @@ Feature: Time entries sync through a time sync plugin
     And I stop the running entry
     Then the planner shows "Ticket #102 - Export" stopped at 3 minutes, as the entry it showed running
 
+  Scenario: A Start reaches the planner within seconds, and a Stop under 30 seconds takes it back
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    Then the planner shows "Ticket #101 - Login" running
+    When I stop the running entry
+    Then the planner holds no entry
+
   Scenario: A timer started in another tool becomes the running entry, and the previous one is saved
     Given the example planner manages "Acme - Support", with Time entries on
     When I start an entry on "Ticket #101 - Login"

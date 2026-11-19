@@ -815,20 +815,38 @@ describe("the running entry", () => {
     ]);
   });
 
-  it("keeps a running entry local until it has run 30 seconds, and a Stop before then too", () => {
-    const state = running();
-
-    expect(changesAt(state, NOW + 29_999)).toEqual([]);
-    expect(changesAt(state, NOW + 30_000)).toEqual([
+  it("sends a running entry in the round right after Start, before it has run 30 seconds (#840)", () => {
+    expect(changesAt(running(), NOW + 2_000)).toEqual([
       expect.objectContaining({
+        kind: "upsert",
         syncKey: "t1",
-        values: expect.objectContaining({ running: true, minutes: 1 }),
+        values: expect.objectContaining({
+          running: true,
+          countingSince: at(0),
+          minutes: 1,
+        }),
       }),
     ]);
-    const stopped = act(state, NOW + 20_000, (app, factories) =>
+  });
+
+  it("deletes there a sent running entry saved under 30 seconds, and keeps an unsent one local", () => {
+    const sent = roundAt(running(), NOW + 2_000).state;
+    const stopped = act(sent, NOW + 20_000, (app, factories) =>
       saveTimer(app, "t1", factories),
     );
-    expect(changesAt(stopped, NOW + 22_000)).toEqual([]);
+    expect(changesAt(stopped, NOW + 22_000)).toEqual([
+      {
+        kind: "delete",
+        syncKey: "t1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({ running: true }),
+      },
+    ]);
+
+    const neverSent = act(running(), NOW + 1_000, (app, factories) =>
+      saveTimer(app, "t1", factories),
+    );
+    expect(changesAt(neverSent, NOW + 3_000)).toEqual([]);
   });
 
   it("sends Stop as the same entry stopped: the saved entry keeps the running entry's key", () => {
@@ -876,8 +894,8 @@ describe("the running entry", () => {
       ),
     );
 
-    // Two seconds later: the second entry takes over from the first at once,
-    // and stays there in the next round, though it hasn't run 30 seconds.
+    // Two seconds later: the first entry goes stopped and the second running,
+    // and the second stays there in the next round.
     const { round, state } = roundAt(switched, NOW + 45 * MINUTE + 2_000);
     expect(changesAt(state, NOW + 45 * MINUTE + 4_000)).toEqual([]);
     expect(round.request.changes).toEqual([
@@ -2503,27 +2521,18 @@ describe("a running entry from the other system", () => {
     remote.start(0);
     const later = running(t1({ startedAt: NOW + 10 * MINUTE }));
 
-    // Ten seconds in, Ajour's entry hasn't gone there yet.
-    const first = roundAt(
+    // Ten seconds in, Ajour's entry goes there (#840): the other system stops
+    // its own, and Ajour takes that one as a saved entry in the same round.
+    const { state, result } = roundAt(
       later,
       NOW + 10 * MINUTE + 10_000,
       remote.answer(NOW + 10 * MINUTE + 10_000),
     );
-    expect(first.state.timers).toEqual(later.timers);
-    expect(entriesOf(first.state)).toEqual([]);
-    expect(first.result).toMatchObject({ received: 0, held: 0 });
-
-    // Once it goes, the other system stops its own, and Ajour takes that one
-    // as a saved entry.
-    const second = roundAt(
-      first.state,
-      NOW + 10 * MINUTE + 40_000,
-      remote.answer(NOW + 10 * MINUTE + 40_000),
-    );
-    expect(second.state.timers).toEqual(later.timers);
-    expect(entriesOf(second.state)).toEqual([
-      expect.objectContaining({ taskId: "ad-hoc", durationMs: 11 * MINUTE }),
+    expect(state.timers).toEqual(later.timers);
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({ taskId: "ad-hoc", durationMs: 10 * MINUTE }),
     ]);
+    expect(result).toMatchObject({ received: 1, held: 0 });
     expect(remote.running()).toEqual([
       expect.objectContaining({ clientRef: "t1" }),
     ]);
