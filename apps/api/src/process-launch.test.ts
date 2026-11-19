@@ -22,7 +22,7 @@ it.each([
       launchProcess(
         { command: "/tools/fake", args: [], env: { [name]: value } },
         "/repo",
-        "Terminal",
+        { app: "Terminal" },
         { platform: "darwin", start },
       ),
     ).rejects.toMatchObject({ reason: "invalid_request" });
@@ -49,7 +49,7 @@ it("Given launcher environment changes, exports only changed values with POSIX q
         },
       },
       "/repo",
-      "Terminal",
+      { app: "Terminal" },
       {
         platform: "darwin",
         temp: root,
@@ -102,7 +102,7 @@ it.each([
           env: {},
         },
         field === "cwd" ? value : "C:\\repo",
-        "wt",
+        { app: "wt" },
         ports,
       ),
     ).rejects.toMatchObject({
@@ -116,7 +116,7 @@ it("Given the reviewer's final safe value, permits last", async () => {
     launchProcess(
       { command: "C:\\tools\\fake.exe", args: ["last"], env: {} },
       "C:\\repo",
-      "wt",
+      { app: "wt" },
       ports,
     ),
   ).resolves.toBeUndefined();
@@ -126,7 +126,7 @@ it("Given a manifest literal flag, permits only its declared position", async ()
     launchProcess(
       { command: "C:\\tools\\fake.exe", args: ["--resume", "id-1"], env: {} },
       "C:\\repo",
-      "wt",
+      { app: "wt" },
       { ...ports, literalArgIndices: [0] },
     ),
   ).resolves.toBeUndefined();
@@ -136,7 +136,7 @@ it("Given missing Windows Terminal, explains how to install it", async () => {
     launchProcess(
       { command: "C:\\tools\\fake.exe", args: [], env: {} },
       "C:\\repo",
-      "wt",
+      { app: "wt" },
       { ...ports, find: async () => null },
     ),
   ).rejects.toThrow("Install Windows Terminal to open commands in a terminal");
@@ -152,7 +152,7 @@ it.each(["Terminal"] as const)(
       await launchProcess(
         { command: "/tools/fake", args: ["a'b", "$(touch bad)", ""], env: {} },
         "/repo's folder",
-        terminal,
+        { app: terminal },
         {
           platform: "darwin",
           temp: root,
@@ -187,6 +187,115 @@ it.each(["Terminal"] as const)(
   },
 );
 
+it.each([
+  [{ app: "Terminal" as const }, "Terminal"],
+  [
+    { app: "iTerm" as const, path: "/Applications/iTerm.app" },
+    "/Applications/iTerm.app",
+  ],
+  [
+    { app: "Ghostty" as const, path: "/Users/me/Applications/Ghostty.app" },
+    "/Users/me/Applications/Ghostty.app",
+  ],
+])(
+  "Given %o chosen on macOS, opens the private script with it",
+  async (terminal, target) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-app-"));
+    try {
+      const opened: string[][] = [];
+      await launchProcess(
+        { command: "/tools/fake", args: ["a b"], env: {} },
+        "/repo",
+        terminal,
+        {
+          platform: "darwin",
+          temp: root,
+          start: async (plan) => {
+            expect(plan.command).toBe("/usr/bin/open");
+            opened.push(plan.args);
+          },
+          later: () => undefined,
+        },
+      );
+      expect(opened).toEqual([["-a", target, expect.stringMatching(/launch\.command$/)]]);
+      // The values stay in the script, never on the terminal's command line.
+      expect(opened[0]!.join(" ")).not.toContain("a b");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it.each([
+  [
+    { app: "WezTerm" as const, path: "C:\\Tools\\wezterm.exe" },
+    ["start", "--cwd", "C:\\repo", "--", "C:\\tools\\fake.exe", "last"],
+  ],
+  [
+    {
+      app: "Alacritty" as const,
+      path: "C:\\Program Files\\Alacritty\\alacritty.exe",
+    },
+    [
+      "--working-directory",
+      "C:\\repo",
+      "-e",
+      "C:\\tools\\fake.exe",
+      "last",
+    ],
+  ],
+])(
+  "Given %o chosen on Windows, starts it on the command in the folder",
+  async (terminal, args) => {
+    const started: { command: string; args: string[] }[] = [];
+    await launchProcess(
+      { command: "C:\\tools\\fake.exe", args: ["last"], env: {} },
+      "C:\\repo",
+      terminal,
+      {
+        platform: "win32",
+        start: async (plan) => {
+          started.push({ command: plan.command, args: plan.args });
+        },
+      },
+    );
+    expect(started).toEqual([{ command: terminal.path, args }]);
+  },
+);
+
+it("Given a Windows terminal installed under an unsafe path, refuses before spawning", async () => {
+  const start = vi.fn(async () => undefined);
+  await expect(
+    launchProcess(
+      { command: "C:\\tools\\fake.exe", args: ["last"], env: {} },
+      "C:\\repo",
+      { app: "WezTerm", path: "C:\\R&D\\wezterm.exe" },
+      { platform: "win32", start },
+    ),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+  expect(start).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["win32", { app: "iTerm" as const, path: "/Applications/iTerm.app" }],
+  ["darwin", { app: "wt" as const }],
+  ["win32", { app: "WezTerm" as const }],
+] as const)(
+  "Given %s and a terminal it can't open, %o, refuses",
+  async (platform, terminal) => {
+    const start = vi.fn(async () => undefined);
+    await expect(
+      launchProcess(
+        { command: "/tools/fake", args: [], env: {} },
+        "/repo",
+        terminal,
+        { platform, start, find: async () => "C:\\tools\\wt.exe" },
+      ),
+    ).rejects.toThrow("Unsupported terminal");
+    expect(start).not.toHaveBeenCalled();
+  },
+);
+
 it("Given stale macOS scripts, sweeps only directories older than one hour", async () => {
   const { mkdir, utimes } = await import("node:fs/promises");
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-sweep-"));
@@ -201,7 +310,7 @@ it("Given stale macOS scripts, sweeps only directories older than one hour", asy
     await launchProcess(
       { command: "/bin/tool", args: [], env: {} },
       "/repo",
-      "Terminal",
+      { app: "Terminal" },
       {
         platform: "darwin",
         temp: root,

@@ -16,7 +16,7 @@ import {
   launchProcess,
   startUnowned,
   ProcessLaunchRefused,
-  type TerminalApp,
+  type TerminalChoice,
 } from "./process-launch.ts";
 import { pluginProcessesSchema } from "../../../packages/shared/plugin-api-4.ts";
 
@@ -126,7 +126,8 @@ export interface ProcessBrokerOptions {
    * argument. Undefined, or a throw, refuses the argument.
    */
   connectionAddress?(caller: BrokerCaller): Promise<string | undefined>;
-  terminal?: () => Promise<TerminalApp>;
+  /** The terminal app chosen on this computer, for terminal commands. */
+  terminal?: () => Promise<TerminalChoice | undefined>;
   openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
   enabledGate?: ProcessBrokerOptions["gate"];
 
@@ -869,8 +870,9 @@ export class ProcessBroker implements ProcessBrokerPort {
         if (!cwd) return refuse("folder_refused");
         const terminal =
           command.mode === "terminal"
-            ? ((await this.options.terminal?.()) ??
-              (process.platform === "win32" ? "wt" : "Terminal"))
+            ? ((await this.options.terminal?.()) ?? {
+                app: process.platform === "win32" ? "wt" : "Terminal",
+              })
             : undefined;
         const lastGate = await this.options.gate(caller);
         if (lastGate) return refuse(lastGate);

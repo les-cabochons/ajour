@@ -1349,7 +1349,7 @@ describe("detached commands with stdin", () => {
 
   it("Given a terminal command and stdin, refuses at run time and starts nothing", async () => {
     const records: unknown[][] = [];
-    const terminal = vi.fn(async () => "wt" as const);
+    const terminal = vi.fn(async () => ({ app: "wt" as const }));
     const { op, folder, broker, manifest } = await detachedFixture(idle, {
       terminal,
       record: (...args) => {

@@ -744,10 +744,11 @@ const terminalPreferences = () =>
     process.platform,
     path.join(app.getPath("userData"), "terminal-app.json"),
   );
-const readTerminalApp = () => terminalPreferences().read();
+// The API opens terminal commands in the chosen app, where it is installed.
+const resolveTerminalApp = () => terminalPreferences().resolve();
 ipc.handle("ajour:get-terminal-app", async (event) => {
   assertActiveDesktopWindow(event, "read the terminal app");
-  return readTerminalApp();
+  return terminalPreferences().list();
 });
 ipc.handle("ajour:set-terminal-app", async (event, value) => {
   assertActiveDesktopWindow(event, "set the terminal app");
@@ -1891,7 +1892,7 @@ async function ensureInternalAppApiRunning() {
         openPluginLink(url, declaredSchemes, (href) =>
           shell.openExternal(href),
         ),
-      terminal: readTerminalApp,
+      terminal: resolveTerminalApp,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),

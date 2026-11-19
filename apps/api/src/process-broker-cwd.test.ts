@@ -89,7 +89,9 @@ async function fixture(
     folders: new FolderResolver(storage, {}),
     gate: async () => undefined,
     executableOverride: async () => process.execPath,
-    terminal: async () => (process.platform === "win32" ? "wt" : "Terminal"),
+    terminal: async () => ({
+      app: process.platform === "win32" ? "wt" : "Terminal",
+    }),
   });
   const op = broker.forOperation({
     pluginId: manifest.id,
