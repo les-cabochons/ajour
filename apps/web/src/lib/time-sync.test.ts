@@ -263,6 +263,37 @@ describe("a time sync round", () => {
     );
   });
 
+  it("counts no create as unconfirmed when the listing that goes first fails, since none left Ajour", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    await round("change");
+    // An edit lists first; the new entry's create waits behind it.
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+    const synced = localStore
+      .snapshot()
+      .timesheetEntries.find((item) => item._id === entryId)!;
+    localStore.saveManualTimeEntry({
+      localDate: synced.localDate,
+      projectId: synced.projectId!,
+      taskId: synced.taskId!,
+      note: "",
+      durationMs: HOUR,
+    });
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+      String(url).endsWith("/sync-time-entries")
+        ? new Response(JSON.stringify({ error: "The planner is down." }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          })
+        : fetchAsTheApp(url, init),
+    );
+
+    await expect(round("change")).rejects.toThrow("The planner is down.");
+
+    expect(localStore.snapshot().timeSyncs?.[connectionId]).not.toHaveProperty(
+      "unconfirmed",
+    );
+  });
+
   it("takes an entry logged in the other system, and an edit there makes an older Undo of it refuse", async () => {
     const { localStore, connectionId, entryId, round, jobs } = await load();
     await round("change");

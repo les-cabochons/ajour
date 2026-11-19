@@ -906,6 +906,77 @@ describe("the running entry", () => {
     ]);
   });
 
+  it("keeps an entry a refused Continue dropped there, and sends it again once stopped or discarded", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    // Continue made the planner delete e1 there, then it refused the start.
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const refused = applyTimeSyncRound(
+      continued,
+      round,
+      {
+        results: round.request.changes.map((change) => ({
+          syncKey: change.syncKey,
+          status: "refused" as const,
+          message: "The planner refuses this start.",
+        })),
+        entries: [],
+      },
+      CONTEXT,
+      factoriesAt(NOW + 2 * MINUTE),
+    ).state;
+    const listedFirst = (state: TimeSyncState, now: number) =>
+      applyTimeSyncRound(
+        state,
+        listingRoundOf(planTimeSyncRound(state, CONNECTION, CONTEXT, now)!)!,
+        { results: [], entries: [] },
+        CONTEXT,
+        factoriesAt(now),
+      ).state;
+
+    const stopped = listedFirst(
+      act(refused, NOW + 30 * MINUTE, (app, factories) =>
+        saveTimer(app, app.timers[0]!._id, factories),
+      ),
+      NOW + 31 * MINUTE,
+    );
+    expect(entriesOf(stopped)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 119 * MINUTE }),
+    ]);
+    expect(changesAt(stopped, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 119 }),
+      }),
+    ]);
+
+    // Discard puts back the saved time both sides agreed on: it goes again.
+    const discarded = listedFirst(
+      act(refused, NOW + 30 * MINUTE, (app) =>
+        cancelTimer(app, app.timers[0]!._id),
+      ),
+      NOW + 31 * MINUTE,
+    );
+    expect(entriesOf(discarded)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 90 * MINUTE }),
+    ]);
+    expect(changesAt(discarded, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 90 }),
+      }),
+    ]);
+  });
+
   it("sends Discard as a delete, and on a continued entry puts back its saved time, stopped", () => {
     const sent = roundAt(running(), NOW + 5 * MINUTE).state;
     const discarded = act(sent, NOW + 6 * MINUTE, (app) =>
@@ -1430,6 +1501,31 @@ describe("taking the other system's changes", () => {
       ]);
       expect(result).toMatchObject({ received: 0, held: 1 });
       expect(plan(state).request.changes).toEqual([]);
+    });
+
+    it("sends Ajour's change once the entry there moves back, so nothing is held any more", () => {
+      const { state } = heldOverEdit();
+      // At 18:00 someone moves it back there, to the values both sides agreed on.
+      const at = Date.parse("2026-11-12T18:30:00.000Z");
+      const poll = planTimeSyncRound(state, CONNECTION, CONTEXT, at)!;
+      const { state: back } = applyTimeSyncRound(
+        state,
+        poll,
+        {
+          results: [],
+          entries: [remoteE1({ updatedAt: "2026-11-12T18:00:00.000Z" })],
+        },
+        CONTEXT,
+        factoriesAt(at),
+      );
+
+      expect(recordIn(back).held).toEqual([]);
+      expect(plan(back).request.changes).toEqual([
+        expect.objectContaining({
+          syncKey: "e1",
+          values: expect.objectContaining({ minutes: 120 }),
+        }),
+      ]);
     });
 
     it("sends a change made in Ajour after the hold, which wins over the move there", () => {
@@ -2740,7 +2836,8 @@ describe("reading stored time syncs back", () => {
     );
     expect(normalizeTimeSyncs(undefined)).toEqual({});
 
-    // A change Ajour holds back stays held back after a restart (#835).
+    // A change Ajour holds back stays held back after a restart (#835), and
+    // an entry dropped there is still sent again (#834).
     const record = stored.c1!;
     const heldBack = {
       c1: {
@@ -2750,6 +2847,7 @@ describe("reading stored time syncs back", () => {
             ...record.copies.e1!,
             changedAt: 250,
             heldBack: { ...record.copies.e1!.agreed, minutes: 120 },
+            droppedThere: true as const,
           },
         },
       },

@@ -196,6 +196,14 @@ export interface LocalSyncedCopy {
    * drops them.
    */
   heldBack?: TimeSyncEntryValues;
+  /**
+   * The other system stopped listing the entry in the round whose change for
+   * it failed or was refused, as when Continue's restart deleted it there
+   * before the start failed. Ajour sends the entry again, even with the
+   * agreed values, and never reads it missing there as deleted. A change
+   * that syncs replaces the copy, and drops it.
+   */
+  droppedThere?: true;
 }
 
 /** A change the other system refused, with its message for the user. */

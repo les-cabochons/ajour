@@ -453,7 +453,7 @@ function createReader(
         !copy && entry?.timeSyncRemoteId
           ? { remoteId: entry.timeSyncRemoteId }
           : {};
-      return copy && sameEntryValues(copy.agreed, values)
+      return copy && !copy.droppedThere && sameEntryValues(copy.agreed, values)
         ? undefined
         : { kind: "upsert", syncKey, ...known, ...remote, values };
     }
@@ -489,6 +489,17 @@ function isHeldBack(copy: LocalSyncedCopy | undefined, change: TimeSyncChange) {
     change.kind === "upsert" &&
     sameEntryValues(copy.heldBack, change.values)
   );
+}
+
+/**
+ * Whether Ajour's entry changed since Ajour held its change back (#835): the
+ * copy holds values back, and the entry's change now, if any, is another.
+ */
+function changedSinceHeldBack(
+  copy: LocalSyncedCopy,
+  change: TimeSyncChange | undefined,
+) {
+  return copy.heldBack !== undefined && !(change && isHeldBack(copy, change));
 }
 
 /** Whether the other system already refused this very change. */
@@ -651,11 +662,10 @@ function firstSeenAt(
 /**
  * Notes when Ajour first saw each copied entry differ from its copy, as
  * `firstSeenAt` says, and clears that time once they agree. Drops the
- * values held back of an entry that changed since, and dates its new
- * change from now. Drops a refusal
- * whose entry changed since, so the next round sends the new values, and a
- * put-back that has no upsert left to send, such as one the other system
- * already refused.
+ * values held back of an entry that changed since, and dates its new change
+ * from the round that first sees it. Drops a refusal whose entry changed
+ * since, so the next round sends the new values, and a put-back that has no
+ * upsert left to send, such as one the other system already refused.
  */
 function noteLocalChanges(
   state: TimeSyncState,
@@ -676,9 +686,9 @@ function noteLocalChanges(
   for (const [syncKey, copy] of Object.entries(record.copies)) {
     const change = reader.changeFor(syncKey);
     const changed = change !== undefined;
-    if (copy.heldBack && !(change && isHeldBack(copy, change))) {
-      // Ajour's entry changed since it held its change back: the new change
-      // is first seen now, so it is later than the change there (#835).
+    if (changedSinceHeldBack(copy, change)) {
+      // The new change is first seen by this round, so it is later than the
+      // change there that won over the one held back (#835).
       const { heldBack: _lost, changedAt: _old, ...rest } = copy;
       copies = {
         ...copies,
@@ -909,8 +919,10 @@ interface TakenListing {
  * takes it.
  *
  * A copy whose change this round failed or was refused is left as it is,
- * since the change is sent again, and a copy whose refusal still matches
- * Ajour's change is never read as deleted there. The copy of the running entry while it runs on
+ * since the change is sent again. When this listing misses its remote
+ * entry, the plugin dropped it on the way, such as Continue's restart: the
+ * copy is marked dropped there, so the entry goes again, and is never read
+ * as deleted there. The copy of the running entry while it runs on
  * both sides or while a Continue shares today's entry's copy (#693), a
  * saved entry that runs again there, and a remote entry that can't take
  * part yet, such as one dated after today, are left for a later round. A
@@ -1028,8 +1040,7 @@ function takeListing(
     copy: LocalSyncedCopy,
     local: TimeSyncChange | undefined,
   ) =>
-    copy.changedAt !== undefined &&
-    (copy.heldBack === undefined || (local && isHeldBack(copy, local)))
+    copy.changedAt !== undefined && !changedSinceHeldBack(copy, local)
       ? copy.changedAt
       : firstSeenAt(plan, syncKey, copy.agreed, now);
 
@@ -1152,6 +1163,11 @@ function takeListing(
   for (const [syncKey, copy] of Object.entries(record.copies)) {
     const outcome = outcomes.get(syncKey);
     if (outcome?.status === "failed" || outcome?.status === "refused") {
+      // Missing from this round's listing, the plugin dropped it on the way,
+      // such as Continue's restart before a start that failed: it goes again.
+      if (!listed.has(copy.remoteId) && inWindow(copy.agreed.localDate)) {
+        copies[syncKey] = { ...copy, droppedThere: true };
+      }
       continue;
     }
     const remote = listed.get(copy.remoteId);
@@ -1178,14 +1194,10 @@ function takeListing(
         delete copies[syncKey];
         continue;
       }
-      // A refusal of Ajour's current change keeps the entry: the other
-      // system may have dropped it on the way, such as Continue's restart.
-      // Once the entry changed since, the refusal no longer stands, and the
-      // delete there wins as it does over any edit in Ajour.
-      const refusal = Object.hasOwn(record.refusals, syncKey)
-        ? record.refusals[syncKey]
-        : undefined;
-      if (local && isRefused(refusal, local)) continue;
+      // Dropped on the way, it isn't deleted there: it goes again. An entry
+      // still listed after its refusal, then missing, was deleted there,
+      // and that delete wins over the refused change as over any edit.
+      if (copy.droppedThere) continue;
       if (locked(entry.localDate)) {
         // The next round creates it again. Not when this round just sent
         // it: an entry the other system took but doesn't list yet is not a
@@ -1234,6 +1246,20 @@ function takeListing(
     }
     if (!canTake(remote)) continue;
     if (takeValues(syncKey, copy, entry, remote, local)) received += 1;
+  }
+
+  // A change held back goes again once the entry there is listed and no
+  // longer held, such as one moved back to the values agreed (#835).
+  const stillHeld = new Set(held.map((hold) => hold.remoteId));
+  for (const [syncKey, copy] of Object.entries(copies)) {
+    if (
+      copy.heldBack &&
+      listed.has(copy.remoteId) &&
+      !stillHeld.has(copy.remoteId)
+    ) {
+      const { heldBack: _free, ...rest } = copy;
+      copies[syncKey] = rest;
+    }
   }
 
   // Remote ids are this connection's: another system may use the same.
@@ -1443,8 +1469,9 @@ function unconfirmedAfter(
  * Applies a round's answer. A synced change updates its copy, or drops it
  * for a delete, and an upsert that puts an entry back counts as put back,
  * not sent. A refused one keeps its message and is not sent again until
- * the entry changes. A failed one changes nothing and is sent again next
- * round. Then Ajour takes what changed in the listing, as `takeListing`
+ * the entry changes. A failed one is sent again next round, and a failed
+ * create counts as unconfirmed, since the other system may have made it
+ * (#838). Then Ajour takes what changed in the listing, as `takeListing`
  * says, and holds what it can't take. It returns the state the round leaves.
  */
 export function applyTimeSyncRound(
@@ -1578,10 +1605,12 @@ export interface PlannedTimeSyncRound {
 }
 
 /**
- * A round that failed as a whole changes nothing: its changes wait for the
- * next one. The connection keeps the error until a round goes through. A
- * round that got as far as its plan notes the local changes it saw, unless
- * Time entries went off and on since, and then it keeps nothing.
+ * A round that failed as a whole leaves the entries as they are: its changes
+ * wait for the next one, and the creates it sent count as unconfirmed, since
+ * the other system may have made them first (#838). The connection keeps
+ * the error until a round goes through. A round that got as far as its plan
+ * notes the local changes it saw, unless Time entries went off and on since,
+ * and then it keeps nothing.
  */
 export function failTimeSyncRound(
   state: TimeSyncState,
@@ -1723,6 +1752,7 @@ function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
     remoteUpdatedAt: copy.remoteUpdatedAt,
     ...(finiteNumber(copy.changedAt) ? { changedAt: copy.changedAt } : {}),
     ...(heldBack ? { heldBack } : {}),
+    ...(copy.droppedThere === true ? { droppedThere: true as const } : {}),
   };
 }
 
