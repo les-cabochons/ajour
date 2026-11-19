@@ -1440,9 +1440,13 @@ Repository folders survive project archive and Undo, including Undo of creating 
 
 ### Plugin terminals and links
 
-Settings > General > Terminal shows the terminal app plugins open commands in:
-Windows Terminal on Windows and Terminal on macOS. Linux hides the setting.
-The preference saves on change. It does not change the ajour command installation.
+Settings > General > Terminal shows the terminal app plugins open commands in.
+It lists only the apps installed on this computer: Terminal, iTerm2 and Ghostty
+on macOS, Windows Terminal, WezTerm and Alacritty on Windows. Terminal and
+Windows Terminal are the defaults and always listed. Linux hides the setting.
+The preference saves on change. When the chosen app is uninstalled, commands
+open in the default, and the choice comes back once the app is installed again.
+It does not change the ajour command installation.
 
 An approved declared command can start detached or open in a terminal in its
 repository folder. Ajour reports that it started and leaves the process running
@@ -1458,10 +1462,10 @@ with how long it may sit unused. No window opens. Ajour ends the program and
 everything it started when the plugin closes it, after that idle time, when
 the plugin is turned off, removed, updated or suspended, when its process
 access is turned off, and when Ajour quits.
-A saved PowerShell, Command Prompt or iTerm choice from an earlier build moves to
-Windows Terminal or Terminal. On Windows, terminal mode refuses values outside its
-strict allowlist and explains the refusal. If Windows Terminal is missing, Ajour
-asks the user to install it.
+A saved PowerShell or Command Prompt choice from an earlier build moves to
+Windows Terminal. On Windows, terminal mode refuses values outside its strict
+allowlist, the chosen app's install path included, and explains the refusal. If
+Windows Terminal is missing, Ajour asks the user to install it.
 
 An enabled plugin may open HTTPS links. A custom link scheme must be declared
 and approved, and unsigned plugins also need the global switch and per-plugin
