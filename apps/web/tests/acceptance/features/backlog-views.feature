@@ -856,7 +856,7 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I settle it in Waiting with the comment "Waiting on the client"
     And I open the Backlog parent page
-    And I unsettle it from its page header
+    And I unsettle it from its properties card
     And I archive it from its properties card
     Then no comment went to the source and the comment field shows the draft "Waiting on the client"
 
@@ -908,7 +908,7 @@ Feature: Backlog list and board views
 
   Scenario: Settling the open item opens the next row, and Undo stays there
     When I open the Backlog parent page
-    And I settle the open item from its page header with its subitems
+    And I settle the open item from its properties card with its subitems
     Then the item page shows "Other backlog item"
     When I undo the settle
     Then the item page shows "Other backlog item"
@@ -925,7 +925,7 @@ Feature: Backlog list and board views
     And its plugin lists seven comments, two new from others since my last visit
     And its plugin settles items and records what it writes
     When I open the Backlog parent page
-    And I open the settle dialog from its page header and cancel it
+    And I open the settle dialog from its properties card and cancel it
     Then the item page shows "Backlog parent"
 
   Scenario: Settling another item from the sidebar stays on the open item
@@ -1300,7 +1300,7 @@ Feature: Backlog list and board views
 
   Scenario: Start entry on the item page offers New entry… in its menu
     When I open the Backlog parent page
-    Then the item page's actions have Start entry, Snooze and Settle and no New entry button
+    Then the item page's header has Start entry and no New entry, Snooze or Settle button, which its properties card offers
     When I open the other ways to log time
     Then the menu says Start entry starts the clock and New entry… logs time without it
     When I choose New entry… in that menu

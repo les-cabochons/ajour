@@ -1045,7 +1045,7 @@ When(
   "I settle it in Waiting with the comment {string}",
   async ({ page }, text: string) => {
     await page
-      .getByRole("group", { name: "Item actions" })
+      .getByRole("group", { name: /^Lifecycle:/ })
       .getByRole("button", { name: "Settle", exact: true })
       .click();
     await pickWaiting(page);
@@ -1208,9 +1208,9 @@ Then(
   },
 );
 
-When("I unsettle it from its page header", async ({ page }) => {
+When("I unsettle it from its properties card", async ({ page }) => {
   await page
-    .getByRole("group", { name: "Item actions" })
+    .getByRole("group", { name: /^Lifecycle:/ })
     .getByRole("button", { name: "Unsettle", exact: true })
     .click();
 });

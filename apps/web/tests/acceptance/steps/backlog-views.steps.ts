@@ -2342,17 +2342,22 @@ Then(
   },
 );
 Then(
-  "the item page's actions have Start entry, Snooze and Settle and no New entry button",
+  "the item page's header has Start entry and no New entry, Snooze or Settle button, which its properties card offers",
   async ({ page }) => {
     const bar = page.getByRole("group", { name: "Item actions" });
-    for (const name of ["Start entry", "Snooze", "Settle"]) {
+    await expect(
+      bar.getByRole("button", { name: "Start entry", exact: true }),
+    ).toBeVisible();
+    await expect(
+      bar.getByRole("button", { name: /^(New entry|Snooze|Settle)/ }),
+    ).toHaveCount(0);
+    // The moves that change the lifecycle head the properties card (#827).
+    const line = page.getByRole("group", { name: "Lifecycle: Active" });
+    for (const name of ["Snooze", "Settle"]) {
       await expect(
-        bar.getByRole("button", { name, exact: true }),
+        line.getByRole("button", { name, exact: true }),
       ).toBeVisible();
     }
-    await expect(bar.getByRole("button", { name: /^New entry/ })).toHaveCount(
-      0,
-    );
   },
 );
 When("I open the other ways to log time", async ({ page }) => {
@@ -2504,7 +2509,7 @@ Then(
   async ({ page }) => {
     await expect(
       page
-        .getByRole("group", { name: "Item actions" })
+        .getByRole("group", { name: "Lifecycle: Archived" })
         .getByRole("button", { name: "Restore", exact: true }),
     ).toBeVisible();
     const { workItems } = await readBacklogState(page);
