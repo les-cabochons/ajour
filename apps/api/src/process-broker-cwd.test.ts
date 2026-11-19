@@ -29,22 +29,20 @@ afterEach(async () => {
   terminalLaunches.length = 0;
   await Promise.all(
     // A detached child can hold its folder open while it exits on Windows.
-    roots
-      .splice(0)
-      .map((p) =>
-        rm(p, {
-          recursive: true,
-          force: true,
-          maxRetries: 20,
-          retryDelay: 100,
-        }),
-      ),
+    roots.splice(0).map((p) =>
+      rm(p, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      }),
+    ),
   );
 });
 
-/** A tool that reports its working folder and argv, as stdout or a file. */
+/** A tool that reports its working folder, argv and PWD, as stdout or a file. */
 const REPORT =
-  "const report=JSON.stringify([process.cwd(),process.argv.slice(2)]);" +
+  "const report=JSON.stringify([process.cwd(),process.argv.slice(2),process.env.PWD??null]);" +
   "if(process.argv.includes('--file'))require('fs').writeFileSync(require('path').join(process.cwd(),'report.json'),report);" +
   "else process.stdout.write(report+'\\n');" +
   "if(process.argv.includes('--stay'))process.stdin.resume();";
@@ -175,6 +173,41 @@ describe("a declared command's working folder (#761)", () => {
     await same(cwd, repo);
     expect(argv).toEqual(["--file"]);
   });
+
+  // `opencode run` takes its folder from PWD before its working directory.
+  // Ajour started from a terminal has a PWD of its own, which a child
+  // inherits unless Ajour sets it (#836). Windows programs don't read PWD.
+  it.skipIf(process.platform === "win32")(
+    "gives a detached command its folder in PWD, not Ajour's own",
+    async () => {
+      const { op, folder, repo, root, broker } = await fixture("detached", [
+        "--file",
+      ]);
+      const saved = process.env.PWD;
+      process.env.PWD = root;
+      try {
+        expect(
+          await op.run({ command: "show", args: { repo: folder.id } }),
+        ).toEqual({ started: true });
+      } finally {
+        if (saved === undefined) delete process.env.PWD;
+        else process.env.PWD = saved;
+      }
+      op.close();
+      await broker.shutdown();
+      const report = path.join(repo, "report.json");
+      await expect
+        .poll(() => readFile(report, "utf8").catch(() => ""))
+        .not.toBe("");
+      const [cwd, , pwd] = JSON.parse(await readFile(report, "utf8")) as [
+        string,
+        string[],
+        string | null,
+      ];
+      await same(cwd, repo);
+      await same(pwd ?? "", repo);
+    },
+  );
 
   it("opens a terminal command in the resolved folder", async () => {
     const { op, folder, repo, root, broker } = await fixture("terminal", [

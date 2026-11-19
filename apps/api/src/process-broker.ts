@@ -813,6 +813,11 @@ export class ProcessBroker implements ProcessBrokerPort {
         }
       }
       cwd ??= osCwd();
+      // Some programs, such as `opencode run`, read PWD as their folder before
+      // the working directory. A child would inherit Ajour's own PWD when
+      // Ajour starts from a terminal, so it gets its working folder (#836).
+      if (process.platform !== "win32")
+        plan = { ...plan, env: { ...plan.env, PWD: cwd } };
       const finalGate = await this.options.gate(caller);
       if (finalGate) {
         decidedBy = "gate";
