@@ -17,7 +17,7 @@ This package provides:
 Until the SDK is published, vendor the packed package in your plugin repo:
 
 ```sh
-pnpm add -D file:vendor/ajour-plugin-sdk-0.2.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.3.0.tgz
 ```
 
 Once it's published, swap the file dependency for a version range.
@@ -143,6 +143,8 @@ The snapshot is `ProjectSourceSnapshot`. Nothing in it names a product: `source.
 A time sync keeps the user's time entries in step with your system, both ways. Declare `"timeSync": {}` beside `"projectSource": {}`: only entries on projects the same connection manages take part. Its switch, Time entries, starts off. Turning it on calls `validateConnection` with `timeSync` among `context.capabilities`, so throw there, with a sentence the user reads, when the token can't write time entries.
 
 Export `syncTimeEntries(connection, request)`. Each call is one round: apply `request.changes` in order, at most 20, then list your entries from `request.from` to `request.to`, local dates in `request.timeZone`. Send each change's `syncKey` as your client reference, and adopt the entry you already hold under it, so a retry never duplicates. `agreed` holds the values both sides last agreed on, so you can keep what Ajour doesn't own, such as a real start time. Answer one result per change, `synced` with the entry as you stored it (none for a delete), `refused` with a sentence when your system won't take it, or `failed` with a sentence to retry next round, and the `entries` in the window, each with `clientRef` when Ajour created it and `updatedAt`. Minutes are whole. A running entry has `countingSince`, the instant its count would have started from zero. Ajour never sends a note. See [the time sync API](https://docs.ajour.day/developers/time-sync-api).
+
+Ajour asks every 5 seconds while its window is on screen, and every 60 seconds while it is hidden. When your system keeps a change marker, a version that moves on every time entry write there, add a `cursor` to the full answer. Ajour keeps it in memory and sends it back in a check round, a request with `cursor` and no changes. When the marker hasn't moved since that cursor, answer `{ unchanged: true, cursor }` without listing, so a check costs your system nothing. Ajour refuses an unchanged answer to any other request. The cursor is yours and may hold a read link: Ajour never saves it or writes it to a log. Without a cursor, every round lists, as before 0.3.0. Since 0.3.0, `syncTimeEntries` returns `TimeSyncAnswer`, the full `TimeSyncResult` or a `TimeSyncUnchangedResult`.
 
 ### What needs the user's consent again
 

@@ -122,10 +122,10 @@ import {
   type ProjectSourceSyncResult,
 } from "../../../packages/shared/project-source.ts";
 import {
-  parseTimeSyncResult,
+  parseTimeSyncAnswer,
   timeSyncRequestSchema,
+  type TimeSyncAnswer,
   type TimeSyncRequest,
-  type TimeSyncResult,
 } from "../../../packages/shared/time-sync.ts";
 import {
   codeHostOperations,
@@ -1017,15 +1017,15 @@ export class PluginManager {
 
   /**
    * Runs one time sync round: the plugin applies the changes in order, then
-   * lists the remote entries in the window. See
-   * packages/shared/time-sync.ts.
+   * lists the remote entries in the window, or answers a check round
+   * unchanged. See packages/shared/time-sync.ts.
    */
   async syncTimeEntries(
     pluginId: string,
     connection: PluginInvocationConnection,
     request: TimeSyncRequest,
     admit?: PluginAdmission,
-  ): Promise<TimeSyncResult> {
+  ): Promise<TimeSyncAnswer> {
     const round = timeSyncRequestSchema.parse(request);
     return await this.invokePlugin(
       pluginId,
@@ -1034,7 +1034,7 @@ export class PluginManager {
         connection: pluginInvocationConnectionSchema.parse(connection),
         request: round,
       },
-      { parse: (value: unknown) => parseTimeSyncResult(value, round) },
+      { parse: (value: unknown) => parseTimeSyncAnswer(value, round) },
       admit,
       requireCapability("timeSync"),
     );

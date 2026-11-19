@@ -8,8 +8,8 @@ import type {
   PluginConnection,
   ProjectSourceSyncRequest,
   ProjectSourceSyncResult,
+  TimeSyncAnswer,
   TimeSyncRequest,
-  TimeSyncResult,
   ValidationResult,
 } from "../../plugin-sdk/index.ts";
 import { FIXTURE_CURSOR, fixtureSnapshot } from "./fixture.ts";
@@ -36,11 +36,12 @@ export async function syncProjects(
 /**
  * One time sync round against the connection's in-memory remote: it applies
  * the changes in order, adopting a create whose client reference it holds,
- * refuses an entry over 24 hours, then lists the window.
+ * refuses an entry over 24 hours, then lists the window with its change
+ * marker as the cursor. A check whose marker hasn't moved answers unchanged.
  */
 export async function syncTimeEntries(
   connection: PluginConnection,
   request: TimeSyncRequest,
-): Promise<TimeSyncResult> {
+): Promise<TimeSyncAnswer> {
   return runRound(connection.id, request);
 }

@@ -14,6 +14,7 @@ import { windowServerOptions } from "./test-support/window-token.ts";
 import {
   exampleProjectSourceDirectory,
   exampleProjectSourceManifest,
+  logExampleRemoteEntry,
 } from "../../../packages/example/index.ts";
 
 /*
@@ -424,6 +425,78 @@ describe("time sync on the local API", () => {
       expect((await group()).connections[0]).not.toHaveProperty("lastError");
     });
 
+    // A check round (#843): the window sends its last cursor and no changes.
+    it("answers a check round the plugin found unchanged with the next cursor alone, and builds no connection summary", async () => {
+      const { setTimeEntries, sync, rounds, sink, connectionId } =
+        await setup();
+      await setTimeEntries(true);
+      const check = { ...round, changes: [], cursor: "marker-v7" };
+      fixture.__plannerAnswer = { unchanged: true, cursor: "marker-v7" };
+
+      const response = await sync(check);
+
+      expect(response).toEqual({
+        status: 200,
+        body: { unchanged: true, cursor: "marker-v7" },
+      });
+      expect(rounds()).toEqual([check]);
+      const event = sink.events.find(
+        (candidate) =>
+          candidate.name === "time_sync.round" && candidate.kind === "request",
+      );
+      expect(event).toMatchObject({
+        outcome: "ok",
+        connection: { id: connectionId },
+        time_sync_round: { change_count: 0, has_cursor: true, unchanged: true },
+      });
+      expect(event?.time_sync_round).not.toHaveProperty("entry_count");
+      // The cursor may hold a read link: it never reaches an event.
+      expect(JSON.stringify(sink.events)).not.toContain("marker-v7");
+    });
+
+    it("passes the next cursor of a full answer on with the round", async () => {
+      const { setTimeEntries, sync, sink, connectionId } = await setup();
+      await setTimeEntries(true);
+      const answer = { results: [], entries: [], cursor: "marker-v8" };
+      fixture.__plannerAnswer = answer;
+
+      const response = await sync({
+        ...round,
+        changes: [],
+        cursor: "marker-v7",
+      });
+
+      expect(response.body).toEqual({
+        connection: expect.objectContaining({ id: connectionId }),
+        ...answer,
+      });
+      expect(
+        sink.events.find(
+          (candidate) =>
+            candidate.name === "time_sync.round" &&
+            candidate.kind === "request",
+        ),
+      ).toMatchObject({
+        time_sync_round: { has_cursor: true, unchanged: false, entry_count: 0 },
+      });
+    });
+
+    it("refuses an unchanged answer to a round that carries changes", async () => {
+      const { setTimeEntries, sync } = await setup();
+      await setTimeEntries(true);
+      fixture.__plannerAnswer = { unchanged: true, cursor: "marker-v7" };
+
+      const response = await sync({ ...round, cursor: "marker-v7" });
+
+      expect(response).toEqual({
+        status: 502,
+        body: {
+          error:
+            "The plugin's result is not valid: unchanged: a plugin may answer unchanged only to a request with a cursor and no changes.",
+        },
+      });
+    });
+
     it("refuses a round of more than 20 changes before the plugin runs", async () => {
       const { setTimeEntries, sync, rounds } = await setup();
       await setTimeEntries(true);
@@ -534,6 +607,50 @@ describe("time sync on the local API", () => {
       });
       // "d" is still there, before the window.
       expect(remoteIds(second.body)).toEqual(["example-1"]);
+    });
+
+    it("keeps a change marker: a check is unchanged until a write there or from Ajour moves it", async () => {
+      const { setTimeEntries, sync, connectionId } = await setup(
+        exampleProjectSourceDirectory,
+      );
+      expect((await setTimeEntries(true)).status).toBe(200);
+      const window = {
+        from: "2026-11-09",
+        to: "2026-11-15",
+        timeZone: "America/Toronto",
+      };
+      const cursorOf = (body: unknown) => (body as { cursor: string }).cursor;
+
+      const full = await sync({
+        ...window,
+        changes: [
+          { kind: "upsert", syncKey: "a", values: saved("2026-11-10", 60) },
+        ],
+      });
+      const first = cursorOf(full.body);
+      expect(first).toEqual(expect.any(String));
+
+      const check = await sync({ ...window, changes: [], cursor: first });
+      expect(check.body).toEqual({ unchanged: true, cursor: first });
+
+      logExampleRemoteEntry(connectionId, saved("2026-11-11", 30));
+      const moved = await sync({ ...window, changes: [], cursor: first });
+      expect(moved.body).toMatchObject({
+        entries: [{ clientRef: "a" }, { minutes: 30 }],
+      });
+      const second = cursorOf(moved.body);
+      expect(second).not.toBe(first);
+
+      // A round with changes always lists, and moves the marker.
+      const edited = await sync({
+        ...window,
+        changes: [
+          { kind: "upsert", syncKey: "a", values: saved("2026-11-10", 45) },
+        ],
+        cursor: second,
+      });
+      expect(edited.body).toHaveProperty("entries");
+      expect(cursorOf(edited.body)).not.toBe(second);
     });
   });
 });

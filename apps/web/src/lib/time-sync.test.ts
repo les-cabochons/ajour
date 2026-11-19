@@ -147,6 +147,8 @@ describe("a time sync round", () => {
         connection: { id: connectionId },
         time_sync_round: {
           trigger: "change",
+          has_cursor: false,
+          unchanged: false,
           change_count: 1,
           synced_count: 1,
           put_back_count: 0,
@@ -163,16 +165,16 @@ describe("a time sync round", () => {
     expect(JSON.stringify(jobs()[0])).not.toMatch(/Acme|Ticket|redirect/);
   });
 
-  it("starts no round for a store write that leaves nothing to send, while the poll still lists the window", async () => {
+  it("starts no round for a store write that leaves nothing to send, while the check still asks the other system", async () => {
     const { round, jobs } = await load();
     await round("change");
 
     expect(await round("change")).toEqual({ kind: "idle" });
     expect(jobs()).toHaveLength(1);
 
-    expect(await round("poll")).toMatchObject({ kind: "applied", synced: 0 });
+    expect(await round("check")).toEqual({ kind: "unchanged" });
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { trigger: "poll", change_count: 0 },
+      time_sync_round: { trigger: "check", change_count: 0 },
     });
   });
 
@@ -238,9 +240,11 @@ describe("a time sync round", () => {
       const response = await fetchAsTheApp(url, init);
       if (!String(url).endsWith("/sync-time-entries")) return response;
       const answer = (await response.clone().json()) as {
-        entries: { clientRef?: string }[];
+        entries?: { clientRef?: string }[];
       };
-      listed.push(answer.entries.map((entry) => entry.clientRef));
+      if (answer.entries) {
+        listed.push(answer.entries.map((entry) => entry.clientRef));
+      }
       if (loseAnswer) {
         loseAnswer = false;
         throw new TypeError("The connection dropped.");
@@ -255,7 +259,8 @@ describe("a time sync round", () => {
 
     localStore.deleteTimesheetEntry(entryId);
     expect(await round("change")).toMatchObject({ synced: 1 });
-    await round("poll");
+    // The delete was the last write there.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
 
     expect(listed.at(-1)).toEqual([]);
     expect(localStore.snapshot().timeSyncs?.[connectionId]).not.toHaveProperty(
@@ -311,7 +316,7 @@ describe("a time sync round", () => {
       taskName: "Design review",
     });
 
-    expect(await round("poll")).toMatchObject({ received: 1, held: 1 });
+    expect(await round("check")).toMatchObject({ received: 1, held: 1 });
     const taken = localStore
       .snapshot()
       .timesheetEntries.find((entry) => entry._id !== entryId)!;
@@ -323,7 +328,7 @@ describe("a time sync round", () => {
       }),
     ]);
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { trigger: "poll", received_count: 1, held_count: 1 },
+      time_sync_round: { trigger: "check", received_count: 1, held_count: 1 },
     });
     // A round adds no Undo toast, and nothing it took goes back.
     expect(await round("change")).toEqual({ kind: "idle" });
@@ -338,7 +343,7 @@ describe("a time sync round", () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     editExampleRemoteEntry(connectionId, copy!.remoteId, { minutes: 20 });
 
-    expect(await round("poll")).toMatchObject({ received: 1 });
+    expect(await round("check")).toMatchObject({ received: 1 });
     expect(
       localStore
         .snapshot()
@@ -361,7 +366,7 @@ describe("a time sync round", () => {
 
     // The store refuses a write to the submitted week, so neither round
     // would go through if it made one.
-    expect(await round("poll")).toMatchObject({ received: 0, putBack: 0 });
+    expect(await round("check")).toMatchObject({ received: 0, putBack: 0 });
     expect(await round("change")).toMatchObject({ synced: 0, putBack: 1 });
 
     expect(
@@ -371,7 +376,8 @@ describe("a time sync round", () => {
       outcome: "ok",
       time_sync_round: { trigger: "change", put_back_count: 1 },
     });
-    expect(await round("poll")).toMatchObject({ putBack: 0 });
+    // Nothing went back again, so nothing changed there since.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
     expect(
       localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
     ).toMatchObject({ remoteId, agreed: { minutes: 90 } });
@@ -403,8 +409,8 @@ describe("a time sync round", () => {
       outcome: "ok",
       time_sync_round: { trigger: "change", listed_first: true },
     });
-    // Nothing was created there again for the next round to list.
-    expect(await round("poll")).toMatchObject({ received: 0 });
+    // Nothing was created there again since the round.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
   });
 
   it("counts what the listing took with what the round then sent, on the job and in Settings", async () => {
@@ -511,6 +517,107 @@ describe("a time sync round", () => {
 
     expect(rounds).toBe(1);
   }, 15_000);
+
+  // Check rounds (#843): the example planner keeps a change marker, and
+  // its cursor comes back with each full answer.
+  it("sends a check with the last cursor, and an unchanged answer writes nothing and reads no plugins overview", async () => {
+    const { localStore, round, jobs } = await load();
+    await round("change");
+    const before = localStore.snapshot();
+    const reads: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      reads.push(new URL(url).pathname);
+      return fetchAsTheApp(url, init);
+    });
+
+    expect(await round("check")).toEqual({ kind: "unchanged" });
+
+    expect(localStore.snapshot()).toBe(before);
+    expect(reads).toEqual([
+      `/api/plugins/${PLUGIN}/connections/${jobs()[0]!.connection!.id}/sync-time-entries`,
+    ]);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "noop",
+      time_sync_round: {
+        trigger: "check",
+        has_cursor: true,
+        change_count: 0,
+        unchanged: true,
+      },
+    });
+  });
+
+  it("takes in a check what changed in the other system since the cursor", async () => {
+    const { localStore, connectionId, round, jobs } = await load();
+    await round("change");
+    logExampleRemoteEntry(connectionId, {
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+
+    expect(await round("check")).toMatchObject({
+      kind: "applied",
+      received: 1,
+    });
+
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "ok",
+      time_sync_round: { trigger: "check", has_cursor: true, unchanged: false },
+    });
+    // The marker moved with what the round took: the next check is unchanged.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
+  });
+
+  it("sends a full round, without the cursor, once Ajour changed since the last one", async () => {
+    const { localStore, entryId, round, jobs } = await load();
+    await round("change");
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+
+    expect(await round("check")).toMatchObject({ kind: "applied", synced: 1 });
+
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: { trigger: "check", has_cursor: false, change_count: 1 },
+    });
+  });
+
+  it("drops what a check took when Ajour changed while it ran, and sends a full round next", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    logExampleRemoteEntry(connectionId, {
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+    // The user edits the entry while the check is on its way.
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const response = await fetchAsTheApp(url, init);
+      if (String(url).endsWith("/sync-time-entries")) {
+        localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+        vi.stubGlobal("fetch", fetchAsTheApp);
+      }
+      return response;
+    });
+
+    expect(await round("check")).toEqual({ kind: "discarded" });
+
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "noop",
+      time_sync_round: { trigger: "check", discarded: "inputs_changed" },
+    });
+    expect(await round("check")).toMatchObject({
+      kind: "applied",
+      synced: 1,
+      received: 1,
+    });
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: { has_cursor: false },
+    });
+  });
 
   it("drops the synced copies when Time entries goes off", async () => {
     const { appApi, localStore, connectionId, round } = await load();
