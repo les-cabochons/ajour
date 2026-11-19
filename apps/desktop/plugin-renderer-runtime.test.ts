@@ -769,6 +769,89 @@ describe("the sandboxed renderer runtime", () => {
     ]);
   });
 
+  // A time sync check every few seconds that finds nothing writes no line
+  // to the local log file (#844): the local API says which answer is its
+  // method's "nothing changed", and a 304 is a conditional request's.
+  describe("quiet calls", () => {
+    const unchanged = (result: unknown) =>
+      (result as { unchanged?: unknown } | null)?.unchanged === true;
+    const calls = (recorded: ReturnType<typeof setUp>["recorded"]) =>
+      recorded
+        .filter((event) => event.name === "plugin_renderer.call")
+        .filter((event) => event.plugin_renderer?.message !== "ready")
+        .map((event) => [
+          event.plugin_renderer?.message,
+          event.outcome,
+          event.quiet,
+        ]);
+    /** Runs one operation: its page asks for it, fetches, and settles with `result`. */
+    async function runOnce(
+      extra: Record<string, unknown>,
+      status: number,
+      result: unknown,
+    ) {
+      const setup = setUp();
+      const publicFetch = vi.fn(async () => ({
+        status,
+        headers: {},
+        body: new Uint8Array(),
+      }));
+      const run = setup.start("planner", {
+        method: "syncTimeEntries",
+        broker: { http: vi.fn(), publicFetch, close: vi.fn() },
+        ...extra,
+      });
+      const { driver } = await setup.ready();
+      const { runId } = (await driver.send({ type: "next" })) as {
+        runId: string;
+      };
+      await driver.send({
+        type: "publicFetch",
+        runId,
+        callId: 1,
+        url: "https://marker.example.net/m",
+        init: { method: "HEAD" },
+      });
+      await driver.send({
+        type: "settled",
+        runId,
+        outcome: { ok: true, result },
+      });
+      await run.terminate("settled");
+      return calls(setup.recorded);
+    }
+
+    it("ends a check's calls quiet: the hand-over, a 304 and the unchanged answer", async () => {
+      expect(
+        await runOnce({ quiet: unchanged }, 304, {
+          unchanged: true,
+          cursor: "v2",
+        }),
+      ).toEqual([
+        // The page's wait for the run, however long, is no work of its own.
+        ["next", "noop", true],
+        ["publicFetch", "noop", true],
+        ["settled", "noop", true],
+      ]);
+    });
+
+    it("writes them as usual when the run found something, or its method has no quiet answer", async () => {
+      expect(
+        await runOnce({ quiet: unchanged }, 200, { results: [], entries: [] }),
+      ).toEqual([
+        // Handed over before the run's answer was known.
+        ["next", "noop", true],
+        ["publicFetch", "ok", undefined],
+        ["settled", "ok", undefined],
+      ]);
+      expect(await runOnce({}, 200, { unchanged: true })).toEqual([
+        ["next", "ok", undefined],
+        ["publicFetch", "ok", undefined],
+        ["settled", "ok", undefined],
+      ]);
+    });
+  });
+
   it("gives the plugin the broker's refusal, and only the kind of any other failure", async () => {
     const { start, ready } = setUp();
     const http = vi

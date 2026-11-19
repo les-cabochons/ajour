@@ -175,6 +175,31 @@ describe("the main process's events", () => {
     expect(sink.events[0]!.started_at).toBe(new Date(-400).toISOString());
   });
 
+  it("keeps a quiet noop recorded before the package loaded quiet, unless it failed after", async () => {
+    const clock = { now: 1_000 };
+    const { events, sink, attach } = attached(clock);
+    const call = () =>
+      events.start("plugin_renderer.call", { kind: "ipc", trigger: "user" });
+
+    const quiet = call().quiet();
+    expect(quiet.outcome).toBe("noop");
+    quiet.end();
+    call().quiet().refuse("unknown_run").end();
+    const waited = call();
+    clock.now = 16_000;
+    waited.quiet({ waited: true }).end();
+    attach();
+    await events.ready;
+
+    expect(
+      sink.events.map(({ outcome, quiet }) => ({ outcome, quiet })),
+    ).toEqual([
+      { outcome: "noop", quiet: true },
+      { outcome: "refused", quiet: undefined },
+      { outcome: "noop", quiet: true },
+    ]);
+  });
+
   it("knows a unit's name and recorded outcome before the package loads", () => {
     const { events } = attached({ now: 0 });
 

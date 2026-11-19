@@ -809,12 +809,18 @@ function createPluginRendererRuntime({
     });
   }
 
-  async function brokerCall(run, callId, sendRequest) {
+  /**
+   * One `ajour.http` or `ajour.publicFetch` call, on `unit`, its IPC event.
+   * A 304, a conditional request's "nothing changed", ends it quiet, as the
+   * broker's own event (#844).
+   */
+  async function brokerCall(unit, run, callId, sendRequest) {
     const controller = new AbortController();
     const id = typeof callId === "number" ? callId : undefined;
     if (id !== undefined) run.aborts.set(id, controller);
     try {
       const response = await sendRequest(controller.signal);
+      if (response.status === 304) unit?.quiet();
       return {
         ok: true,
         response: {
@@ -860,6 +866,24 @@ function createPluginRendererRuntime({
     };
   }
 
+  /**
+   * Hands the page its next command. A hand-over of the start of a run that
+   * may end quietly, such as a time sync check, ends quiet: its time is the
+   * page's wait, and the run's own events say how it went (#844). Main can't
+   * know yet whether that run will find something.
+   */
+  async function handOver(unit, renderer) {
+    const command = await nextCommand(renderer);
+    if (
+      isRecord(command) &&
+      command.type === "start" &&
+      renderer.runs.get(command.runId)?.quiet
+    ) {
+      unit?.quiet({ waited: true });
+    }
+    return command;
+  }
+
   /** One message from a registered plugin page, already identified. */
   function handleMessage(renderer, message) {
     const unit = events.current();
@@ -869,7 +893,7 @@ function createPluginRendererRuntime({
     const type = /** @type {string} */ (message.type);
     if (type === "ready") return onReady(renderer);
     if (!renderer.ready) throw new Error("The plugin's page isn't ready.");
-    if (type === "next") return nextCommand(renderer);
+    if (type === "next") return handOver(unit, renderer);
     if (type === "blocked") {
       blocked(renderer.pluginId, "policy");
       return undefined;
@@ -891,11 +915,12 @@ function createPluginRendererRuntime({
     }
     if (type === "settled") {
       run.reportedSettled = true;
-      run.settle(
-        outcomeFromPage(
-          refusedImportOutcome(run, message.outcome) ?? message.outcome,
-        ),
+      const outcome = outcomeFromPage(
+        refusedImportOutcome(run, message.outcome) ?? message.outcome,
       );
+      // The method's "nothing changed" answer, as the local API reads it.
+      if (outcome.ok && run.quiet?.(outcome.result)) unit?.quiet();
+      run.settle(outcome);
       return undefined;
     }
     if (type === "abort") {
@@ -925,12 +950,12 @@ function createPluginRendererRuntime({
           (key) => [key, given[key]],
         ),
       );
-      return brokerCall(run, message.callId, (signal) =>
+      return brokerCall(unit, run, message.callId, (signal) =>
         broker.http({ ...request, signal }),
       );
     }
     const init = isRecord(message.init) ? message.init : {};
-    return brokerCall(run, message.callId, (signal) =>
+    return brokerCall(unit, run, message.callId, (signal) =>
       broker.publicFetch(String(message.url), {
         ...(typeof init.method === "string" ? { method: init.method } : {}),
         ...(isRecord(init.headers) ? { headers: init.headers } : {}),
@@ -1010,6 +1035,12 @@ function createPluginRendererRuntime({
         runId,
         broker: invocation.broker,
         processBroker: invocation.processBroker,
+        /**
+         * The local API's test of the method's "nothing changed" answer,
+         * when it has one (`PluginInvocation.quiet`).
+         * @type {((result: unknown) => boolean) | undefined}
+         */
+        quiet: invocation.quiet,
         aborts: new Map(),
         done: false,
         reportedSettled: false,
