@@ -32,8 +32,18 @@ interface Move {
  */
 const MOVES: Record<LifecycleState, readonly Move[]> = {
   Active: [
-    { id: "snooze", label: "Snooze", icon: SnoozeIcon, shortcut: "item.snooze" },
-    { id: "settle", label: "Settle", icon: SettleIcon, shortcut: "item.settle" },
+    {
+      id: "snooze",
+      label: "Snooze",
+      icon: SnoozeIcon,
+      shortcut: "item.snooze",
+    },
+    {
+      id: "settle",
+      label: "Settle",
+      icon: SettleIcon,
+      shortcut: "item.settle",
+    },
     { id: "archive", label: "Archive", icon: ArchiveIcon, iconOnly: true },
   ],
   Snoozed: [{ id: "unsnooze", label: "Unsnooze", icon: ReturnIcon }],

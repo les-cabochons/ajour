@@ -43,7 +43,9 @@ function renderLine({
 }
 
 const moves = () =>
-  screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
+  screen
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
 
 it.each([
   {
@@ -76,14 +78,17 @@ it.each([
     state: "Archived",
     offers: ["Restore"],
   },
-])("names the state of $name and offers its moves", ({ item, state, offers }) => {
-  renderLine(item);
-  expect(
-    screen.getByRole("group", { name: `Lifecycle: ${state}` }),
-  ).toBeTruthy();
-  expect(screen.getByText(state)).toBeTruthy();
-  expect(moves()).toEqual(offers);
-});
+])(
+  "names the state of $name and offers its moves",
+  ({ item, state, offers }) => {
+    renderLine(item);
+    expect(
+      screen.getByRole("group", { name: `Lifecycle: ${state}` }),
+    ).toBeTruthy();
+    expect(screen.getByText(state)).toBeTruthy();
+    expect(moves()).toEqual(offers);
+  },
+);
 
 it("runs each move in one click, and Settle asks first with Shift", () => {
   const onAction = renderLine();
