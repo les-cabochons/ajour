@@ -860,8 +860,8 @@ interface TakenListing {
  * takes it.
  *
  * A copy whose change this round failed or was refused is left as it is,
- * since the change is sent again, and a copy whose refusal stands is never
- * read as deleted there. The copy of the running entry while it runs on
+ * since the change is sent again, and a copy whose refusal still matches
+ * Ajour's change is never read as deleted there. The copy of the running entry while it runs on
  * both sides or while a Continue shares today's entry's copy (#693), a
  * saved entry that runs again there, and a remote entry that can't take
  * part yet, such as one dated after today, are left for a later round. A
@@ -1098,9 +1098,14 @@ function takeListing(
         delete copies[syncKey];
         continue;
       }
-      // A refused change keeps the entry, as the refusal stands: the other
+      // A refusal of Ajour's current change keeps the entry: the other
       // system may have dropped it on the way, such as Continue's restart.
-      if (Object.hasOwn(record.refusals, syncKey)) continue;
+      // Once the entry changed since, the refusal no longer stands, and the
+      // delete there wins as it does over any edit in Ajour.
+      const refusal = Object.hasOwn(record.refusals, syncKey)
+        ? record.refusals[syncKey]
+        : undefined;
+      if (local && isRefused(refusal, local)) continue;
       if (locked(entry.localDate)) {
         // The next round creates it again. Not when this round just sent
         // it: an entry the other system took but doesn't list yet is not a

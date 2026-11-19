@@ -22,6 +22,7 @@ import {
   describeTimeSyncHoldReason,
   describeTimeSyncStatus,
   failTimeSyncRound,
+  listingRoundOf,
   normalizeTimeSyncs,
   planTimeSyncRound,
   reconcileTimeSyncs,
@@ -1467,6 +1468,41 @@ describe("taking the other system's changes", () => {
 
     expect(entriesOf(state).map((item) => item._id)).toEqual(["e1"]);
     expect(Object.keys(recordIn(state).copies)).toEqual(["e1"]);
+  });
+
+  it("takes a delete there once the entry changed since its refusal, instead of creating it again", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const tooLong = {
+      ...synced,
+      timesheetEntries: [entry("e1", { durationMs: 25 * 60 * MINUTE })],
+    };
+    const refused = runRound(tooLong, (round) => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "refused" as const,
+        message: "The planner refuses an entry over 24 hours.",
+      })),
+      entries: [remoteE1({ updatedAt: "2026-11-12T14:00:00.000Z" })],
+    })).state;
+    // The user corrects it in Ajour, and someone deletes it there before the
+    // next round, whose listing goes first.
+    const corrected = {
+      ...refused,
+      timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+    };
+    const round = listingRoundOf(plan(corrected))!;
+
+    const { state } = applyTimeSyncRound(
+      corrected,
+      round,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(300),
+    );
+
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).copies).toEqual({});
+    expect(plan(state).request.changes).toEqual([]);
   });
 
   it("keeps Ajour's values on the first round: an entry it made is its own, not a new one", () => {
