@@ -1309,7 +1309,7 @@ removes it from the picks and refreshes its handoffs, which pause as unknown
 with a reason through the same path as a removed tool; an older record whose
 tool now needs a connection pauses too. The connection reaches the plugin
 without secrets, and its requests go through the credential broker, so an
-on-premises loopback server such as OpenCode's stays inside G1. The API's 15 second tick checks which records are due:
+on-premises loopback server stays inside G1. The API's 15 second tick checks which records are due:
 30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
 refresh after 24 hours since their last common-state change. Manual refresh still
 checks them. A failed read preserves state and retries at the normal cadence.
