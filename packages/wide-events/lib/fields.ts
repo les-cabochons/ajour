@@ -170,6 +170,7 @@ export const envelopeFields = {
     message: sensitive(),
     retriable: operational<boolean>(),
   },
+  quiet: operational<true>(),
 } as const satisfies {
   readonly [Key in EnvelopeKey]: Field<unknown> | FieldTree;
 };

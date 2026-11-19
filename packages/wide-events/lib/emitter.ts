@@ -62,6 +62,20 @@ export interface UnitInit<C extends Catalog, Name extends EventName<C>> {
   parent?: string | TraceParent;
 }
 
+/**
+ * How long a quiet unit may take and stay quiet: one that takes this long or
+ * longer is written, since a slow check is worth a line.
+ */
+export const QUIET_LIMIT_MS = 2000;
+
+export interface QuietOptions {
+  /**
+   * The unit's time was a wait, not work, such as a long poll's: it stays
+   * quiet however long it took.
+   */
+  waited?: boolean;
+}
+
 export interface FailOptions<Reason extends string> {
   /** A thrown timeout is a `timeout`, not an `error`. */
   outcome?: "error" | "timeout";
@@ -94,6 +108,16 @@ export interface Unit<C extends Catalog, Name extends EventName<C>> {
   refuse(reason?: ReasonOf<C, Name>): this;
   /** Records that the unit was cancelled, and why. */
   cancel(reason?: ReasonOf<C, Name>): this;
+  /**
+   * Records that the unit is a quiet noop: routine work that found nothing
+   * to do, such as a check that found nothing changed. It records `noop`,
+   * unless a worse outcome is already recorded, and its event carries
+   * `quiet: true`, which the local log file leaves out. The event loses the
+   * mark, and is written as usual, when the unit ends with another outcome,
+   * an error lands on it, a unit folded into it fails, or it takes
+   * `QUIET_LIMIT_MS` or longer, unless `waited` says that time was a wait.
+   */
+  quiet(options?: QuietOptions): this;
   /**
    * Emits the unit's event, once: a later call changes nothing. The outcome
    * defaults to the one recorded, or `ok`.
@@ -208,6 +232,8 @@ class UnitState {
   counts?: Record<string, number>;
   /** Private, so nothing outside the unit can rewrite how it ended. */
   #outcome?: Outcome;
+  /** Set by `quiet()`: whether the event may be a quiet noop. */
+  quietly?: QuietOptions;
   reason?: string;
   /** Described, and its message scrubbed, only when the event is built. */
   failure?: {
@@ -299,6 +325,32 @@ class UnitState {
     this.#outcome = "cancelled";
     this.reason = reason;
     return this;
+  }
+
+  quiet(options: QuietOptions = {}) {
+    if (this.ended) return this;
+    this.quietly = options;
+    // A problem already recorded stays: quiet never hides one.
+    if (this.#outcome === undefined || this.#outcome === "ok") {
+      this.#outcome = "noop";
+    }
+    return this;
+  }
+
+  /**
+   * Whether the event of a unit that took `durationMs` is a quiet noop:
+   * marked quiet, ended `noop`, with no error and no failed step, and fast
+   * enough, or waiting.
+   */
+  isQuiet(durationMs: number) {
+    const { quietly } = this;
+    return (
+      quietly !== undefined &&
+      this.#outcome === "noop" &&
+      this.failure === undefined &&
+      this.stepFailures === undefined &&
+      (quietly.waited === true || durationMs < QUIET_LIMIT_MS)
+    );
   }
 
   /** A thrown error ends the unit as an error, unless the work recorded its outcome. */
@@ -502,6 +554,7 @@ class EmitterState {
     // it for a sink that is off right now, such as the local log file.
     if (this.sink === nowhere || !isAccepting(this.sink)) return;
     const { context } = this;
+    const durationMs = this.now() - unit.startedAt;
     const event: Envelope & Fields = {
       schema: 1,
       name: unit.name,
@@ -509,7 +562,7 @@ class EmitterState {
       runtime: context.runtime,
       outcome: unit.outcome ?? "ok",
       started_at: new Date(unit.startedAt).toISOString(),
-      duration_ms: this.now() - unit.startedAt,
+      duration_ms: durationMs,
       trace_id: unit.traceId,
       span_id: unit.spanId,
       launch_id: context.launch_id,
@@ -529,6 +582,7 @@ class EmitterState {
     if (unit.failure) {
       event.error = this.describe(unit.failure.error, unit.failure);
     }
+    if (unit.isQuiet(durationMs)) event.quiet = true;
     try {
       this.sink.emit(event);
     } catch {

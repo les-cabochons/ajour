@@ -1,6 +1,11 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { createEmitter, worstOutcome } from "../index.ts";
+import {
+  createEmitter,
+  QUIET_LIMIT_MS,
+  worstOutcome,
+  type Unit,
+} from "../index.ts";
 import { apiContext, recordingEmitter, testCatalog } from "./fixtures.ts";
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
@@ -450,5 +455,91 @@ describe("one event per unit of work", () => {
     expect(
       events.run("backlog.sync", { kind: "job", trigger: "user" }, () => 3),
     ).toBe(3);
+  });
+});
+
+describe("a quiet noop", () => {
+  /** An emitter whose clock each unit moves by `ms` before it ends. */
+  function timed() {
+    let time = Date.parse("2026-11-19T12:00:00.000Z");
+    const { events, recorded } = recordingEmitter({ now: () => time });
+    const job = (
+      ms: number,
+      work: (unit: Unit<typeof testCatalog, "backlog.sync">) => void,
+    ) =>
+      events.run(
+        "backlog.sync",
+        { kind: "job", trigger: "schedule" },
+        (unit) => {
+          work(unit);
+          time += ms;
+        },
+      );
+    return { events, recorded, job };
+  }
+  const marks = (recorded: { outcome: string; quiet?: true }[]) =>
+    recorded.map(({ outcome, quiet }) => ({ outcome, quiet }));
+
+  it("ends `noop` with the quiet mark while it takes under 2 s, or however long it waited", () => {
+    const { recorded, job } = timed();
+
+    job(QUIET_LIMIT_MS - 1, (unit) => unit.quiet());
+    job(QUIET_LIMIT_MS, (unit) => unit.quiet());
+    job(15_000, (unit) => unit.quiet({ waited: true }));
+    job(5, (unit) => unit.end("noop"));
+
+    expect(QUIET_LIMIT_MS).toBe(2000);
+    expect(marks(recorded)).toEqual([
+      { outcome: "noop", quiet: true },
+      // A slow check is worth a line.
+      { outcome: "noop", quiet: undefined },
+      // A long poll's time is its wait, not its work.
+      { outcome: "noop", quiet: true },
+      // Only a unit marked quiet is.
+      { outcome: "noop", quiet: undefined },
+    ]);
+  });
+
+  it("loses the mark when it ends another way or a failure lands on it, and never hides a problem recorded first", () => {
+    const { events, recorded, job } = timed();
+
+    job(5, (unit) => unit.quiet().refuse("plugin_off"));
+    job(5, (unit) => unit.quiet().cancel("plugin_off"));
+    job(5, (unit) =>
+      unit.quiet().fail(new Error("Slow"), { outcome: "timeout" }),
+    );
+    job(5, (unit) => unit.quiet().end("ok"));
+    job(5, (unit) => unit.refuse("capacity").quiet());
+    expect(() =>
+      job(5, (unit) => {
+        unit.quiet();
+        throw new Error("Broke after it");
+      }),
+    ).toThrow("Broke after it");
+    job(5, (unit) => {
+      unit.quiet();
+      events.run(
+        "time_entry.update",
+        { kind: "command", trigger: "system" },
+        (inner) => inner.refuse("locked_week"),
+      );
+    });
+
+    expect(marks(recorded)).toEqual([
+      { outcome: "refused", quiet: undefined },
+      { outcome: "cancelled", quiet: undefined },
+      { outcome: "timeout", quiet: undefined },
+      { outcome: "ok", quiet: undefined },
+      { outcome: "refused", quiet: undefined },
+      // The outcome it recorded stands, with the error that came after.
+      { outcome: "noop", quiet: undefined },
+      // A unit folded into it failed.
+      { outcome: "noop", quiet: undefined },
+    ]);
+    expect(recorded[4]).toMatchObject({ outcome_reason: "capacity" });
+    expect(recorded[5]).toMatchObject({ error: { type: "Error" } });
+    expect(recorded[6]).toMatchObject({
+      step_failures: [{ name: "time_entry.update", outcome: "refused" }],
+    });
   });
 });

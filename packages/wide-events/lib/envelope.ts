@@ -133,6 +133,13 @@ export interface Envelope extends RuntimeContext {
    */
   counts?: Record<string, number>;
   error?: EventError;
+  /**
+   * A quiet noop (`unit.quiet()`): routine work that found nothing to do,
+   * such as a check that found nothing changed. The local log file leaves
+   * it out. Set only when the unit ended `noop`, with no error and no failed
+   * step, in under `QUIET_LIMIT_MS` unless that time was a wait.
+   */
+  quiet?: true;
 }
 
 /** A folded unit that failed, without content: never its message or fields. */

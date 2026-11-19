@@ -162,6 +162,36 @@ describe("the local log file", () => {
     expect(await log.lines("2026-10-26")).toHaveLength(2);
   });
 
+  it("leaves a quiet noop out, and writes one that failed or took 2 s", async () => {
+    const log = await logFile();
+    const check = () =>
+      log.events.start("time_sync.round", {
+        kind: "job",
+        trigger: "schedule",
+      });
+
+    check().quiet().end();
+    check().quiet().fail(new Error("Storage down")).end();
+    const slow = check().quiet();
+    log.setTime("2026-10-26T12:00:02.000Z");
+    slow.end();
+    sync(log.events);
+    await log.file.flush();
+
+    expect(
+      (await log.lines("2026-10-26")).map(({ name, outcome, duration_ms }) => ({
+        name,
+        outcome,
+        duration_ms,
+      })),
+    ).toEqual([
+      { name: "time_sync.round", outcome: "error", duration_ms: 0 },
+      { name: "time_sync.round", outcome: "noop", duration_ms: 2000 },
+      { name: "backlog.sync", outcome: "ok", duration_ms: 0 },
+    ]);
+    expect(await log.file.status()).toMatchObject({ dropped_event_count: 0 });
+  });
+
   it("creates no file and no folder while off, which is the default", async () => {
     const log = await logFile({ settings: { enabled: false } });
 
