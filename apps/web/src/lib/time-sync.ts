@@ -204,6 +204,8 @@ export function runTimeSyncRound(
     };
 
     let planned: PlannedTimeSyncRound | undefined;
+    /** The round whose request went to the plugin last, for a failure. */
+    let sending: PlannedTimeSyncRound | undefined;
     let answer: TimeSyncRouteResponse;
     try {
       const overview = await job.enter(() => getPluginsOverview());
@@ -238,6 +240,7 @@ export function runTimeSyncRound(
         // Takes what changed there first, so a change Ajour should lose
         // never goes over it, then plans again from what that left.
         job.set({ time_sync_round: { listed_first: true } });
+        sending = { plan: listing, context: planned.context };
         const listed = await job.enter(() =>
           syncTimeEntries(pluginId, connectionId, listing.request),
         );
@@ -260,14 +263,18 @@ export function runTimeSyncRound(
         });
       }
       const { request: sent } = planned.plan;
+      sending = planned;
       answer = await job.enter(() =>
         syncTimeEntries(pluginId, connectionId, sent),
       );
     } catch (error) {
-      // The changes wait for the next round; the connection shows why.
+      // The changes wait for the next round; the connection shows why. Only
+      // the creates of a request that went out may be there (#838).
       const message =
         error instanceof Error ? error.message : "The round failed.";
-      job.enter(() => localStore.failTimeSyncRound(ref, message, planned));
+      job.enter(() =>
+        localStore.failTimeSyncRound(ref, message, sending ?? planned),
+      );
       throw error;
     }
     return keep(planned, answer);

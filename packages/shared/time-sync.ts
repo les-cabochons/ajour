@@ -99,7 +99,11 @@ const changeKeyShape = {
    * saved. Send it as the client reference, so a retry never duplicates.
    */
   syncKey: syncKeySchema,
-  /** The remote entry's id, when Ajour knows it. */
+  /**
+   * The remote entry's id, when Ajour knows it. Without one, find the entry
+   * by its client reference: a create whose answer was lost made it. An
+   * upsert then updates it, and a delete deletes it, if there is one.
+   */
   remoteId: remoteIdSchema.optional(),
   /**
    * The values both sides last agreed on, when there are some. Use them to

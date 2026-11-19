@@ -179,7 +179,7 @@ The values of a time entry as it was last committed: its day, project, task, not
 _Avoid_: Snapshot, fingerprint, synced copy (that is a time sync's)
 
 **Synced copy**:
-The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. See ADR 0018.
+The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. When a later change there can't be taken, such as a move to a project the connection doesn't manage, the synced copy holds back Ajour's older values, which aren't sent while the entry keeps them. See ADR 0018.
 _Avoid_: Committed copy, remote copy, mirror
 
 **Submitted week**:
