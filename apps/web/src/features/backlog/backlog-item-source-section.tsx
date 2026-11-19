@@ -9,6 +9,7 @@ import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { showToast } from "@/components/ui/toast";
 import { Value } from "@/components/ui/value";
+import { getWorkItemKey } from "@/domain/backlog/backlog-item-summary";
 import { syncAge } from "@/domain/backlog/sync-freshness";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
@@ -78,7 +79,9 @@ export function SourceSection({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const number = item.sourceExternalId;
+  // Items synced before Ajour kept the number read it from their link until
+  // their next sync, so they keep a way to open the source.
+  const number = item.sourceExternalId ?? getWorkItemKey(item);
   const sourceUrl = safeSourceUrl(item.sourceUrl);
   // As tall as the number's text, so it reads as one more character.
   const icon = pluginIconSvg ? (

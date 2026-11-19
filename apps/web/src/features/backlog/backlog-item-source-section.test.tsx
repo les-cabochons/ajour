@@ -153,6 +153,16 @@ describe("a synced item's source section", () => {
     ).toBeTruthy();
   });
 
+  it("still opens an item synced before Ajour kept its number, from its link", () => {
+    renderSection({ ...billet, sourceExternalId: undefined }, false);
+
+    expect(
+      screen
+        .getByRole("link", { name: "Open 331150 in Tracker" })
+        .getAttribute("href"),
+    ).toBe("https://tracker.example/items/331150");
+  });
+
   it("copies the number", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
