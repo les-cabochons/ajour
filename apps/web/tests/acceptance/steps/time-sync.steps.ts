@@ -8,6 +8,7 @@ import {
   logExampleRemoteEntry,
   runExampleTimeSyncRound,
   startExampleRemoteTimer,
+  stopExampleRemoteTimer,
 } from "../../../../../packages/example/index.ts";
 import { timeEntryEditor } from "../../fixtures/time-entry-editor";
 
@@ -18,9 +19,11 @@ import { timeEntryEditor } from "../../fixtures/time-entry-editor";
  * connection: a 400 with the connection's label and the plugin's sentence.
  * With Time entries on, its sync-time-entries route is a stateful fake
  * remote: the example planner's own in-memory remote, one per page, where
- * a step logs, edits and deletes entries, or starts a timer, as another
- * tool would. The page's clock runs as usual, and a step moves it forward
- * to reach the next 60-second round without waiting for it.
+ * a step logs, edits and deletes entries, or starts and stops a timer, as
+ * another tool would. It keeps a change marker, so it answers a check round
+ * unchanged until something changes there (#843). The page's clock runs as
+ * usual, so the checks every 5 seconds go by themselves, and a step moves
+ * it forward to stand for minutes of work.
  */
 
 const { Given, When, Then } = createBdd();
@@ -157,8 +160,9 @@ function today() {
 
 /**
  * Each page's fake remote: the example planner's remote under a key of its
- * own, the remote id it first gave each task's entry, and the entry another
- * tool logged last, for its edit and delete.
+ * own, the remote id it first gave each task's entry, the entry another
+ * tool logged last, for its edit and delete, and how many checks it
+ * answered unchanged, with Ajour's saved state before them.
  */
 const remotes = new WeakMap<
   Page,
@@ -167,17 +171,22 @@ const remotes = new WeakMap<
     failNextChange?: string;
     firstIds: Map<string, string>;
     loggedId?: string;
+    unchangedChecks: number;
+    /** Ajour's saved state when the checks a step waits for began. */
+    stateBeforeChecks?: string | null;
   }
 >();
 
 /** What the page's fake remote holds now. */
 function remoteEntries(page: Page) {
-  return runExampleTimeSyncRound(remotes.get(page)!.key, {
+  const answer = runExampleTimeSyncRound(remotes.get(page)!.key, {
     from: "2000-01-01",
     to: "2100-12-31",
     timeZone: "UTC",
     changes: [],
-  }).entries;
+  });
+  // Without a cursor, the planner always lists.
+  return "entries" in answer ? answer.entries : [];
 }
 
 Given(
@@ -186,6 +195,7 @@ Given(
     remotes.set(page, {
       key: `acceptance-${crypto.randomUUID()}`,
       firstIds: new Map(),
+      unchangedChecks: 0,
     });
     await page.clock.install();
     // Synced a moment ago, so the project source scheduler leaves it alone.
@@ -258,6 +268,12 @@ Given(
           return;
         }
         const answer = runExampleTimeSyncRound(remote.key, request);
+        if ("unchanged" in answer) {
+          // As the route answers it: no connection summary.
+          remote.unchangedChecks += 1;
+          await route.fulfill({ json: answer, headers: cors });
+          return;
+        }
         await route.fulfill({
           json: {
             connection: overview("on").connectionGroups[0]!.connections[0],
@@ -535,6 +551,50 @@ When(
       taskName: task,
       countingSince: new Date(now).toISOString(),
     });
+  },
+);
+
+When("another tool stops the timer in the planner", async ({ page }) => {
+  // Now on the page's clock, which Ajour counts by and the steps move.
+  const now = await page.evaluate(() => Date.now());
+  stopExampleRemoteTimer(remotes.get(page)!.key, new Date(now).toISOString());
+});
+
+Then("no entry runs in Ajour within seconds", async ({ page }) => {
+  // No step moves the clock: a check, every 5 seconds, brings the stop.
+  await expect(runningEntryCard(page)).toHaveCount(0, { timeout: 12_000 });
+});
+
+/** Ajour's saved state, as the page keeps it. */
+function savedState(page: Page) {
+  return page.evaluate(() => localStorage.getItem("ajour.local-state.v2"));
+}
+
+/** Waits until the fake remote has answered `count` more checks unchanged. */
+async function unchangedChecks(page: Page, count: number) {
+  const remote = remotes.get(page)!;
+  const target = remote.unchangedChecks + count;
+  await expect
+    .poll(() => remote.unchangedChecks, { timeout: 20_000 })
+    .toBeGreaterThanOrEqual(target);
+}
+
+When(
+  "the planner answers {int} checks unchanged",
+  async ({ page }, count: number) => {
+    // The first unchanged answer means Ajour kept the last full one.
+    await unchangedChecks(page, 1);
+    remotes.get(page)!.stateBeforeChecks = await savedState(page);
+    await unchangedChecks(page, count);
+  },
+);
+
+Then(
+  "Ajour's saved state did not change during those checks",
+  async ({ page }) => {
+    const before = remotes.get(page)!.stateBeforeChecks;
+    expect(before).toEqual(expect.any(String));
+    expect(await savedState(page)).toBe(before);
   },
 );
 

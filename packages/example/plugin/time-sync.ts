@@ -186,6 +186,28 @@ export function deleteElsewhere(connectionId: string, remoteId: string) {
   if (remote.entries.delete(remoteId)) written(remote);
 }
 
+/** Stops the entry running there at `at`, with its whole minutes. */
+function stopRunning(remote: Remote, at: number) {
+  for (const entry of remote.entries.values()) {
+    if (!entry.running || !entry.countingSince) continue;
+    const minutes = Math.round((at - Date.parse(entry.countingSince)) / 60_000);
+    remote.entries.set(
+      entry.remoteId,
+      stored(entry.remoteId, entry.clientRef, {
+        ...entry,
+        running: false,
+        minutes: Math.max(0, minutes),
+      }),
+    );
+    written(remote);
+  }
+}
+
+/** Stops the timer running there as another tool would, at `stoppedAt`. */
+export function stopElsewhere(connectionId: string, stoppedAt: string) {
+  stopRunning(remoteOf(connectionId), Date.parse(stoppedAt));
+}
+
 /**
  * Starts a timer as another tool would, counting from `countingSince`. The
  * planner keeps one running entry per person, as a real system does, so the
@@ -198,21 +220,7 @@ export function startElsewhere(
   },
 ): TimeSyncRemoteEntry {
   const remote = remoteOf(connectionId);
-  const startedAt = Date.parse(values.countingSince);
-  for (const entry of remote.entries.values()) {
-    if (!entry.running || !entry.countingSince) continue;
-    const minutes = Math.round(
-      (startedAt - Date.parse(entry.countingSince)) / 60_000,
-    );
-    remote.entries.set(
-      entry.remoteId,
-      stored(entry.remoteId, entry.clientRef, {
-        ...entry,
-        running: false,
-        minutes: Math.max(0, minutes),
-      }),
-    );
-  }
+  stopRunning(remote, Date.parse(values.countingSince));
   const entry = stored(`example-${remote.nextId++}`, undefined, {
     ...values,
     minutes: 0,
