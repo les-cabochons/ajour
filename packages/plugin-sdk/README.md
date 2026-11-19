@@ -472,6 +472,29 @@ plugin's page lists them for each tool:
 | Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`              |
 | Updates within seconds | A hook tells Ajour the thread changed.               | `hooks: true`, `false` by default |
 
+A start the tool refuses throws an `Error` with the tool's reason. Two
+properties of that error let Ajour help the user instead of only showing the
+reason:
+
+- `branchExists: true`: the `branch` Ajour asked for already exists, such as
+  one an earlier thread of the item works on. When the tool lists a thread
+  that names the item's key (`listsThreads`), Ajour offers to link it.
+- `setting: "<id>"`: the tool refused the value of one of its own `text`
+  settings, such as a base branch the repository doesn't have. Ajour asks the
+  user for it and calls `startHandoff` again with the answer in
+  `request.settings`. Once a start with it succeeds, Ajour sends it with
+  every later start of that tool from the same repository folder.
+
+Ajour ignores a `setting` the tool doesn't declare, or that isn't a `text`
+setting, and a `branchExists` on a start without a branch. An older Ajour
+only shows the reason.
+
+```ts
+throw Object.assign(new Error('Neither "main" nor "master" exists.'), {
+  setting: "base",
+});
+```
+
 A tool sets `hooks: true` when its threads post the start's hook URL, as
 Claude Code's per-start settings do. Commands aren't tied to tools in the
 manifest, so the tool says it: the plugin must declare a command with a

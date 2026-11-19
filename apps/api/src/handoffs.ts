@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import type {
   DetectToolsResult,
   Handoff,
+  HandoffFolderSettings,
+  HandoffStartRefusal,
   HandoffStartRoute,
   StartHandoffRequest,
   StartHandoffResult,
@@ -29,6 +31,7 @@ import type { AppApiStorage } from "./storage.ts";
 import type { ApiEvents } from "./events.ts";
 import { adoptHandoff, shouldRefresh, startHandoff } from "./handoff-state.ts";
 import { createHookToken } from "./handoff-hooks.ts";
+import { PluginOperationFailure } from "./plugin-operation-lifetime.ts";
 
 /** A saved connection as a handoff operation receives it: no secrets. */
 export interface HandoffConnection {
@@ -48,6 +51,13 @@ export interface HandoffConnection {
 interface HandoffTool {
   id: string;
   label?: string;
+  /** The tool's own settings, as its manifest declares them. */
+  settings?: readonly {
+    id: string;
+    label: string;
+    type: string;
+    helpText?: string;
+  }[];
   connection?: "required" | "none";
   listsThreads?: boolean;
   /** False for a tool that can only start a thread; true when absent. */
@@ -152,10 +162,59 @@ interface ThreadListing {
   failed: boolean;
 }
 
-export class HandoffRefused extends Error {}
+export class HandoffRefused extends Error {
+  /** What the window can do about it beside the reason (#819). */
+  readonly refusal?: Omit<HandoffStartRefusal, "error">;
+  constructor(message: string, refusal?: Omit<HandoffStartRefusal, "error">) {
+    super(message);
+    if (refusal && Object.keys(refusal).length) this.refusal = refusal;
+  }
+}
 export class HandoffTemplateRefused extends HandoffRefused {}
 /** A start or link with a tool switched off (#760): `tool_off`. */
 export class HandoffToolOff extends HandoffRefused {}
+
+/** The settings among `settings` that the tool declares. */
+function declaredSettings(
+  settings: HandoffFolderSettings,
+  declared: ReadonlySet<string>,
+): HandoffFolderSettings {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) => declared.has(key)),
+  );
+}
+
+/**
+ * What the window can do about a refused start, from the plugin's hint
+ * (#819). A branch that exists counts only when the start asked for one. A
+ * setting counts only when it is one of the tool's text settings: the
+ * window asks for it with its label, and a value the start sent is the one
+ * refused.
+ */
+function startRefusal(
+  error: unknown,
+  tool: HandoffTool,
+  request: StartHandoffRequest,
+): Omit<HandoffStartRefusal, "error"> | undefined {
+  const hint =
+    error instanceof PluginOperationFailure ? error.handoffRefusal : undefined;
+  if (!hint) return undefined;
+  if ("branchExists" in hint)
+    return request.branch ? { branchExists: true } : undefined;
+  const field = tool.settings?.find(
+    (candidate) => candidate.id === hint.setting && candidate.type === "text",
+  );
+  if (!field) return undefined;
+  const value = request.settings[field.id];
+  return {
+    setting: {
+      id: field.id,
+      label: field.label,
+      ...(field.helpText ? { helpText: field.helpText } : {}),
+      ...(typeof value === "string" && value.length <= 500 ? { value } : {}),
+    },
+  };
+}
 
 /** Why a tool that uses a connection has none to run with. */
 const pickConnection = (tool: HandoffTool) =>
@@ -255,6 +314,21 @@ export class Handoffs {
     const follows = tool.followsState !== false;
     const hook =
       this.options.hookUrl && follows ? createHookToken() : undefined;
+    // The folder's remembered settings, then the route's own (#819). Only
+    // settings the tool still declares count.
+    const declared = new Set((tool.settings ?? []).map((field) => field.id));
+    const named = declaredSettings(input.settings, declared);
+    const settings = {
+      ...declaredSettings(
+        await this.options.storage.getHandoffFolderSettings(
+          input.pluginId,
+          tool.id,
+          folder.id,
+        ),
+        declared,
+      ),
+      ...named,
+    };
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
@@ -262,7 +336,7 @@ export class Handoffs {
       ...(branch ? { branch } : {}),
       prompt,
       item: { key: input.item.key, url: input.item.url },
-      settings: input.settings,
+      settings,
       ...(hook ? { hook: { url: this.options.hookUrl!(id, hook.token) } } : {}),
     });
     let result: StartHandoffResult;
@@ -278,6 +352,7 @@ export class Handoffs {
         error instanceof Error
           ? error.message
           : "The tool refused the handoff.",
+        startRefusal(error, tool, request),
       );
     }
     const { pluginId, toolId, workItemId, projectId, folderId } = input;
@@ -301,6 +376,17 @@ export class Handoffs {
     await this.options.storage
       .useRepositoryFolder(input.projectId, input.folderId)
       .catch(() => undefined);
+    // The tool took the settings the route named, such as the base branch
+    // the user gave when it refused another: later starts here use them.
+    if (Object.keys(named).length)
+      await this.options.storage
+        .rememberHandoffFolderSettings(
+          input.pluginId,
+          tool.id,
+          folder.id,
+          named,
+        )
+        .catch(() => undefined);
     await this.publish();
     return record;
   }

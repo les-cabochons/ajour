@@ -429,6 +429,38 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
+  it("passes on why a hand-off tool refused a start, and drops a hint it can't read (#819)", async () => {
+    const { start, ready } = setUp();
+    const cases: [unknown, unknown][] = [
+      [{ branchExists: true }, { branchExists: true }],
+      [{ setting: " base " }, { setting: "base" }],
+      [{ setting: "x".repeat(121) }, undefined],
+      [{ setting: 3 }, undefined],
+      [{ branchExists: "yes" }, undefined],
+    ];
+    for (const [handoffRefusal, passed] of cases) {
+      const failing = start("handoff");
+      const { driver } = await ready();
+      const run = (await driver.send({ type: "next" })) as { runId: string };
+      await driver.send({
+        type: "settled",
+        runId: run.runId,
+        outcome: {
+          ok: false,
+          failure: "plugin_error",
+          message: "Refused.",
+          handoffRefusal,
+        },
+      });
+      await expect(failing.settled).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: "Refused.",
+        ...(passed ? { handoffRefusal: passed } : {}),
+      });
+    }
+  });
+
   describe("a package of TypeScript source", () => {
     let packageDirectory: string;
 

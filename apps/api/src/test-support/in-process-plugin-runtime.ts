@@ -16,6 +16,7 @@ import type {
 import {
   MAX_PLUGIN_RESULT_BYTES,
   cutPluginErrorMessage,
+  handoffRefusalOf,
   httpStatusOf,
   type PluginInvocation,
   type PluginRun,
@@ -172,6 +173,9 @@ export class InProcessPluginRuntime implements PluginRuntime {
           : {}),
         ...(httpStatusOf(error) !== undefined
           ? { httpStatus: httpStatusOf(error) }
+          : {}),
+        ...(handoffRefusalOf(error)
+          ? { handoffRefusal: handoffRefusalOf(error) }
           : {}),
       };
     }

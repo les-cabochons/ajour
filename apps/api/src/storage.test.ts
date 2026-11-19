@@ -1143,6 +1143,8 @@ describe("state files from earlier versions", () => {
     handoffTemplates: {},
     handoffToolConnections: {},
     handoffEnabledTools: {},
+    // Added for #819 without a new version: no folder remembered settings.
+    handoffFolderSettings: {},
     repositoryFolders: [],
     version: 13,
     connections: [],

@@ -343,13 +343,24 @@ export class AppApiError extends Error {
   readonly status: number;
   /** The access choice a refusal names, when the connection's access is off. */
   readonly accessOff?: string;
+  /**
+   * The refusal's JSON body, for a route that says more than its `error`,
+   * such as a refused hand off (#819). The caller parses what it expects.
+   */
+  readonly payload?: Readonly<Record<string, unknown>>;
 
-  constructor(message: string, status: number, accessOff?: string) {
+  constructor(
+    message: string,
+    status: number,
+    accessOff?: string,
+    payload?: Readonly<Record<string, unknown>>,
+  ) {
     super(message);
     // `name` stays "Error": it is the `error.type` of the events a failed
     // call records, which a status doesn't change.
     this.status = status;
     if (accessOff) this.accessOff = accessOff;
+    if (payload) this.payload = payload;
   }
 }
 
@@ -564,12 +575,15 @@ async function requestAppApi<T>(
   if (!response.ok) {
     let detail = response.statusText || "Request failed";
     let accessOff: string | undefined;
+    let body: Record<string, unknown> | undefined;
     try {
       const payload = (await response.json()) as {
         error?: string;
         reason?: unknown;
         access?: unknown;
       };
+      if (payload && typeof payload === "object" && !Array.isArray(payload))
+        body = payload;
       if (
         typeof payload.error === "string" &&
         payload.error.trim().length > 0
@@ -582,7 +596,7 @@ async function requestAppApi<T>(
       // Ignore non-JSON error responses.
     }
 
-    throw new AppApiError(detail, response.status, accessOff);
+    throw new AppApiError(detail, response.status, accessOff, body);
   }
 
   return parseJsonResponse(response, schema);

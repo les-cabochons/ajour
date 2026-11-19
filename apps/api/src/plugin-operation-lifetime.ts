@@ -6,6 +6,7 @@ import { createApiEvents, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
 import {
   cutPluginErrorMessage,
+  type HandoffRefusalHint,
   type PluginCrashCause,
   type PluginInvocation,
   type PluginRunOutcome,
@@ -105,15 +106,19 @@ export class PluginOperationFailure extends Error {
   readonly reason: OperationFailureReason;
   /** The HTTP status the plugin's error named, if it did. See `PluginRunOutcome`. */
   readonly httpStatus: number | undefined;
+  /** Why a hand-off tool refused a start, if the plugin's error said. */
+  readonly handoffRefusal: HandoffRefusalHint | undefined;
 
   constructor(
     message: string,
     reason: OperationFailureReason,
     httpStatus?: number,
+    handoffRefusal?: HandoffRefusalHint,
   ) {
     super(message);
     this.reason = reason;
     this.httpStatus = httpStatus;
+    this.handoffRefusal = handoffRefusal;
   }
 }
 
@@ -427,6 +432,7 @@ export class PluginOperationLifetime<TMethod extends string> {
     message: unknown,
     reason: OperationFailureReason = "plugin_error",
     httpStatus?: number,
+    handoffRefusal?: HandoffRefusalHint,
   ): Error {
     const text = typeof message === "string" ? message.trim() : "";
     return new PluginOperationFailure(
@@ -435,6 +441,7 @@ export class PluginOperationLifetime<TMethod extends string> {
         : `Unknown ${this.options.name.toLowerCase()} error.`,
       reason,
       httpStatus,
+      handoffRefusal,
     );
   }
 
@@ -450,6 +457,7 @@ export class PluginOperationLifetime<TMethod extends string> {
           outcome.message,
           "plugin_error",
           outcome.httpStatus,
+          outcome.handoffRefusal,
         );
       case "missing_export":
         return this.pluginFailure(

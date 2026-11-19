@@ -71,11 +71,11 @@ export type PluginManifest = {
               id: string;
               label: string;
               options?: { value: string; label: string }[] | undefined;
+              helpText?: string | undefined;
               min?: number | undefined;
               max?: number | undefined;
               required?: boolean | undefined;
               placeholder?: string | undefined;
-              helpText?: string | undefined;
               secret?: boolean | undefined;
               defaultValue?: string | number | boolean | undefined;
               step?: number | undefined;
@@ -156,11 +156,11 @@ export type PluginManifest = {
                   id: string;
                   label: string;
                   options?: { value: string; label: string }[] | undefined;
+                  helpText?: string | undefined;
                   min?: number | undefined;
                   max?: number | undefined;
                   required?: boolean | undefined;
                   placeholder?: string | undefined;
-                  helpText?: string | undefined;
                   secret?: boolean | undefined;
                   defaultValue?: string | number | boolean | undefined;
                   step?: number | undefined;
@@ -210,11 +210,11 @@ export type PluginManifest = {
         id: string;
         label: string;
         options?: { value: string; label: string }[] | undefined;
+        helpText?: string | undefined;
         min?: number | undefined;
         max?: number | undefined;
         required?: boolean | undefined;
         placeholder?: string | undefined;
-        helpText?: string | undefined;
         secret?: boolean | undefined;
         defaultValue?: string | number | boolean | undefined;
         step?: number | undefined;
@@ -343,11 +343,11 @@ export type PluginField = {
   id: string;
   label: string;
   options?: { value: string; label: string }[] | undefined;
+  helpText?: string | undefined;
   min?: number | undefined;
   max?: number | undefined;
   required?: boolean | undefined;
   placeholder?: string | undefined;
-  helpText?: string | undefined;
   secret?: boolean | undefined;
   defaultValue?: string | number | boolean | undefined;
   step?: number | undefined;
@@ -648,7 +648,7 @@ export type BacklogSyncResult = {
         fields: {
           originalEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;
@@ -658,7 +658,7 @@ export type BacklogSyncResult = {
             | undefined;
           remainingEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;
@@ -668,7 +668,7 @@ export type BacklogSyncResult = {
             | undefined;
           completedEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;

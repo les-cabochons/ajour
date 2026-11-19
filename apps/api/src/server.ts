@@ -2092,6 +2092,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.refuse(
           error instanceof HandoffToolOff ? "tool_off" : "handoff_refused",
         );
+        if (error.refusal?.branchExists)
+          unit.set({ handoff: { refusal: "branch_exists" } });
+        if (error.refusal?.setting)
+          unit.set({
+            handoff: {
+              refusal: "setting",
+              refused_setting: error.refusal.setting.id,
+            },
+          });
         writeJson(
           response,
           error instanceof HandoffTemplateRefused ? 400 : 409,
@@ -2100,6 +2109,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               error instanceof Error
                 ? error.message
                 : "The tool refused the handoff.",
+            // What the window can offer instead (#819).
+            ...error.refusal,
           },
         );
       }
