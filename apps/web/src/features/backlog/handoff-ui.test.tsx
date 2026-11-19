@@ -266,7 +266,9 @@ it("asks for the folder when the project has several, then starts there", async 
     name: "Choose repository folder",
   });
   const web = await within(picker).findByRole("radio", { name: /web/ });
-  expect((web as HTMLInputElement).checked).toBe(true);
+  // The picker selects the last used folder in an effect, after the radios
+  // first render, so a slow runner can find the radio before it's checked.
+  await waitFor(() => expect((web as HTMLInputElement).checked).toBe(true));
   const use = within(picker).getByRole("button", { name: "Use folder" });
   await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
   fireEvent.click(use);
