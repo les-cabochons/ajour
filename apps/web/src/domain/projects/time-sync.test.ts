@@ -504,6 +504,92 @@ describe("applying a round", () => {
     ]);
   });
 
+  describe("a create whose answer never came", () => {
+    const fail = (round: TimeSyncPlan): TimeSyncResult => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "failed",
+        message: "The planner timed out.",
+      })),
+      entries: [],
+    });
+
+    it("sends a delete without a remote id once the entry is gone from Ajour, then forgets it", () => {
+      // The planner may have made e1 before its answer was lost.
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      const deleted = { ...failed, timesheetEntries: [] };
+
+      expect(plan(deleted).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+
+      const { state } = runRound(deleted);
+      expect(plan(state).request.changes).toEqual([]);
+    });
+
+    it("sends the create again while the entry stays, and forgets it once that syncs", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      expect(plan(failed).request.changes).toEqual([
+        expect.objectContaining({ kind: "upsert", syncKey: "e1" }),
+      ]);
+
+      const { state } = runRound(failed);
+
+      expect(recordIn(state)).not.toHaveProperty("unconfirmed");
+      // Deleted now, it goes by its remote id, as any synced entry does.
+      expect(plan({ ...state, timesheetEntries: [] }).request.changes).toEqual([
+        expect.objectContaining({
+          kind: "delete",
+          syncKey: "e1",
+          remoteId: "remote-1",
+        }),
+      ]);
+    });
+
+    it("counts each create of a round that failed as a whole, since the plugin may have made it first", () => {
+      const before = stateWith([entry("e1")]);
+      const failed = {
+        ...before,
+        timeSyncs: failTimeSyncRound(
+          before,
+          CONNECTION,
+          "The planner is down.",
+          300,
+          { plan: plan(before), context: CONTEXT },
+        ),
+      };
+
+      expect(plan({ ...failed, timesheetEntries: [] }).request.changes).toEqual(
+        [{ kind: "delete", syncKey: "e1" }],
+      );
+    });
+
+    it("forgets a create once its day leaves the window, where the plugin no longer finds it", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      // Five weeks later, the window starts on 2026-11-16, and the create
+      // fails again.
+      const later = { ...CONTEXT, today: "2026-12-17" };
+      const round = planTimeSyncRound(failed, CONNECTION, later, 400)!;
+      const { state } = applyTimeSyncRound(
+        failed,
+        round,
+        fail(round),
+        later,
+        factoriesAt(500),
+      );
+
+      expect(recordIn(state)).not.toHaveProperty("unconfirmed");
+      expect(
+        planTimeSyncRound(
+          { ...state, timesheetEntries: [] },
+          CONNECTION,
+          later,
+          600,
+        )!.request.changes,
+      ).toEqual([]);
+    });
+  });
+
   it("notes when it first saw a local change, until both sides agree again", () => {
     const synced = runRound(stateWith([entry("e1")])).state;
     const edited = {
@@ -2670,6 +2756,11 @@ describe("reading stored time syncs back", () => {
     };
     expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(heldBack)))).toEqual(
       heldBack,
+    );
+    // So does a create whose answer never came (#838).
+    const unconfirmed = { c1: { ...record, unconfirmed: { e2: TODAY } } };
+    expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(unconfirmed)))).toEqual(
+      unconfirmed,
     );
 
     const broken = structuredClone(stored) as Record<string, unknown>;

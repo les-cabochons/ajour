@@ -392,7 +392,7 @@ function wholeMinutes(durationMs: number) {
 function createReader(
   state: Pick<TimeSyncState, "projects" | "timers" | "timesheetEntries">,
   connection: TimeSyncConnectionRef,
-  record: Pick<LocalTimeSync, "startWeek" | "copies">,
+  record: Pick<LocalTimeSync, "startWeek" | "copies" | "unconfirmed">,
   context: TimeSyncContext,
   now: number,
 ) {
@@ -431,7 +431,8 @@ function createReader(
   /**
    * The change one sync key needs against its synced copy, refused or not:
    * an upsert when the entry takes part and differs from the copy, a delete
-   * when a copy exists and the entry is gone or no longer takes part.
+   * when a copy exists, or a create whose answer never came, and the entry
+   * is gone or no longer takes part.
    */
   const changeFor = (syncKey: string): TimeSyncChange | undefined => {
     const entry = entries.get(syncKey);
@@ -456,12 +457,24 @@ function createReader(
         ? undefined
         : { kind: "upsert", syncKey, ...known, ...remote, values };
     }
-    return copy ? { kind: "delete", syncKey, ...known } : undefined;
+    if (copy) return { kind: "delete", syncKey, ...known };
+    // A create the other system may have made: deleted there by the client
+    // reference it was sent with (#838).
+    return record.unconfirmed && Object.hasOwn(record.unconfirmed, syncKey)
+      ? { kind: "delete", syncKey }
+      : undefined;
   };
 
-  /** Every sync key a change may be for: the entries, and the copies of entries now gone. */
+  /**
+   * Every sync key a change may be for: the entries, the copies of entries
+   * now gone, and the creates whose answer never came.
+   */
   const syncKeys = () =>
-    new Set([...entries.keys(), ...Object.keys(record.copies)]);
+    new Set([
+      ...entries.keys(),
+      ...Object.keys(record.copies),
+      ...Object.keys(record.unconfirmed ?? {}),
+    ]);
 
   return { changeFor, syncKeys };
 }
@@ -883,7 +896,7 @@ interface TakenListing {
  * - A listed entry with neither a copy nor a client reference was logged
  *   elsewhere: Ajour adds it. One with a client reference is Ajour's own,
  *   such as one a send whose answer was lost made, and the next send
- *   adopts it.
+ *   adopts it, or deletes it once its entry is gone (#838).
  * - Such an entry still running there was started in another tool: it
  *   becomes the running entry, as `takeRunning` says (#695).
  *
@@ -1394,6 +1407,39 @@ function takeListing(
 }
 
 /**
+ * The creates whose answer never came, after a round (#838). A create the
+ * round sent joins them when its change failed, or when the round failed
+ * as a whole and `outcomes` is undefined, since the other system may have
+ * made it first. A change the round synced leaves them, and so does a
+ * create whose day left the window, where the plugin no longer finds it.
+ */
+function unconfirmedAfter(
+  record: LocalTimeSync,
+  plan: TimeSyncPlan,
+  outcomes: ReadonlyMap<string, TimeSyncChangeResult> | undefined,
+): Pick<LocalTimeSync, "unconfirmed"> {
+  const unconfirmed: Record<string, string> = { ...record.unconfirmed };
+  for (const change of plan.request.changes) {
+    const status = outcomes
+      ? outcomes.get(change.syncKey)?.status
+      : ("failed" as const);
+    if (status === "synced") {
+      delete unconfirmed[change.syncKey];
+    } else if (
+      status === "failed" &&
+      change.kind === "upsert" &&
+      !Object.hasOwn(record.copies, change.syncKey)
+    ) {
+      unconfirmed[change.syncKey] = change.values.localDate;
+    }
+  }
+  for (const [syncKey, localDate] of Object.entries(unconfirmed)) {
+    if (localDate < plan.request.from) delete unconfirmed[syncKey];
+  }
+  return Object.keys(unconfirmed).length > 0 ? { unconfirmed } : {};
+}
+
+/**
  * Applies a round's answer. A synced change updates its copy, or drops it
  * for a delete, and an upsert that puts an entry back counts as put back,
  * not sent. A refused one keeps its message and is not sent again until
@@ -1475,12 +1521,13 @@ export function applyTimeSyncRound(
     context,
     factories,
   );
-  const { error: _cleared, ...rest } = record;
+  const { error: _cleared, unconfirmed: _before, ...rest } = record;
   const next = noteLocalChanges(
     taken.state,
     plan.connection,
     {
       ...rest,
+      ...unconfirmedAfter(record, plan, outcomes),
       copies: taken.copies,
       refusals,
       held: taken.held,
@@ -1548,7 +1595,12 @@ export function failTimeSyncRound(
   if (!record || (planned && planned.plan.startedAt !== record.startedAt)) {
     return state.timeSyncs;
   }
-  const failed = { ...record, error: { at: now, message } };
+  const { unconfirmed: _before, ...rest } = record;
+  const failed = {
+    ...(planned ? rest : record),
+    ...(planned ? unconfirmedAfter(record, planned.plan, undefined) : {}),
+    error: { at: now, message },
+  };
   return {
     ...state.timeSyncs,
     [connection.connectionId]: planned
@@ -1713,6 +1765,16 @@ function normalizeRefusal(value: unknown): LocalTimeSyncRefusal | undefined {
   return { message: refusal.message, change, at: refusal.at };
 }
 
+/** The creates whose answer never came, as stored: a day each (#838). */
+function normalizeUnconfirmed(
+  value: unknown,
+): Pick<LocalTimeSync, "unconfirmed"> {
+  const unconfirmed = normalizeRecords(value, (day) =>
+    typeof day === "string" && isValidLocalDate(day) ? day : undefined,
+  );
+  return Object.keys(unconfirmed).length > 0 ? { unconfirmed } : {};
+}
+
 /** The records of `value` that `normalize` keeps, by key. */
 function normalizeRecords<T>(
   value: unknown,
@@ -1761,6 +1823,7 @@ export function normalizeTimeSyncs(
       puttingBack: Array.isArray(record.puttingBack)
         ? [...new Set(record.puttingBack.filter(nonEmptyString))].sort()
         : [],
+      ...normalizeUnconfirmed(record.unconfirmed),
       ...(lastRound &&
       finiteNumber(lastRound.at) &&
       finiteNumber(lastRound.synced) &&

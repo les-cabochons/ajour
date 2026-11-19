@@ -155,6 +155,16 @@ export interface LocalTimeSync {
    * and counts as put back instead of sent.
    */
   puttingBack: string[];
+  /**
+   * Creates Ajour sent without getting the entry back, by sync key, with the
+   * day sent (#838): the change failed, or the whole round did, so the other
+   * system may hold the entry. While the entry takes part, its next create
+   * finds it there by its client reference. Once it no longer does, Ajour
+   * sends a delete without a remote id, which finds it the same way. Ajour
+   * forgets a create once a change for it syncs, or its day leaves the
+   * window.
+   */
+  unconfirmed?: Record<string, string>;
   /** What the last round that reached the plugin did. */
   lastRound?: LocalTimeSyncRound;
   /** Why the last round failed, until a round goes through. */

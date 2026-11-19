@@ -229,6 +229,40 @@ describe("a time sync round", () => {
     ).toMatchObject({ agreed: { minutes: 90 } });
   });
 
+  it("deletes there an entry whose create answer was lost, once it is deleted in Ajour", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    /** The client references of the planner's entries, as each round listed them. */
+    const listed: (string | undefined)[][] = [];
+    let loseAnswer = true;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const response = await fetchAsTheApp(url, init);
+      if (!String(url).endsWith("/sync-time-entries")) return response;
+      const answer = (await response.clone().json()) as {
+        entries: { clientRef?: string }[];
+      };
+      listed.push(answer.entries.map((entry) => entry.clientRef));
+      if (loseAnswer) {
+        loseAnswer = false;
+        throw new TypeError("The connection dropped.");
+      }
+      return response;
+    });
+
+    // The planner makes the entry, but its answer never reaches Ajour.
+    await expect(round("change")).rejects.toThrow();
+    expect(listed).toEqual([[entryId]]);
+    expect(localStore.snapshot().timeSyncs?.[connectionId]?.copies).toEqual({});
+
+    localStore.deleteTimesheetEntry(entryId);
+    expect(await round("change")).toMatchObject({ synced: 1 });
+    await round("poll");
+
+    expect(listed.at(-1)).toEqual([]);
+    expect(localStore.snapshot().timeSyncs?.[connectionId]).not.toHaveProperty(
+      "unconfirmed",
+    );
+  });
+
   it("takes an entry logged in the other system, and an edit there makes an older Undo of it refuse", async () => {
     const { localStore, connectionId, entryId, round, jobs } = await load();
     await round("change");
