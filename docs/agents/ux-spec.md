@@ -1527,7 +1527,7 @@ whose native data exceeds 4 KB keeps the handoff with capped status and label an
 ### Handoff connections
 
 A handoff tool may hand off through one of its plugin's connections, such as
-OpenCode's loopback server. The plugin's settings page then has a Handoff
+a server the tool runs on this computer. The plugin's settings page then has a Handoff
 connections section with one picker per such tool, listing the plugin's
 connections; the pick is saved on this computer and takes effect at once.
 Without a pick, the plugin's only connection is used and the row says so; with
@@ -1536,8 +1536,8 @@ without one is missing with "Pick a connection for <tool> in its settings on the
 plugin's page.", and a connection that fails marks only its own tools missing,
 with the reason. A start uses the pick unless the request names a connection,
 and refuses a tool that uses none when one is named. Each handoff keeps its
-connection, and Open runs its resume command through it, so an
-`opencode attach` gets that connection's address. A handoff started before its
+connection, and Open runs its resume command through it, so a command that
+takes the connection's address gets that connection's. A handoff started before its
 tool used a connection still opens its saved link, but doesn't resume: "This
 tool now hands off through a connection. Start a new handoff." Deleting the connection forgets it as a pick and pauses its handoffs
 as Unknown with "The connection this handoff ran through was deleted."; they stay
