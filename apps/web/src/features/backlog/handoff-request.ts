@@ -33,8 +33,8 @@ let chooseRequests = 0;
 const chooseRequestListeners = new Set<() => void>();
 
 /**
- * *Choose your tools*: no handoff tool is on, so the button and the row
- * menus lead to the tools' switches. The host opens the page.
+ * *Choose your tools*, while no handoff tool is on, and the hand-off sheet's
+ * *Choose tools…*: both lead to the tools' switches. The host opens the page.
  */
 export function requestChooseHandoffTools() {
   chooseRequests += 1;
@@ -98,4 +98,26 @@ const getStartingVersion = () => startingVersion;
 export function useHandoffStarting(itemId: string) {
   useSyncExternalStore(subscribeStarting, getStartingVersion);
   return starting.has(itemId);
+}
+
+/**
+ * The items a tool is starting a thread for now, with that tool's key: from
+ * the moment Ajour asks the tool until it answers. Shorter than starting,
+ * which also covers the dialogs before and after. The Handoffs card names
+ * the tool meanwhile, since a start can take seconds.
+ */
+const launching = new Map<string, string>();
+
+export function setHandoffLaunching(itemId: string, toolKey?: string) {
+  if (launching.get(itemId) === toolKey) return;
+  if (toolKey) launching.set(itemId, toolKey);
+  else launching.delete(itemId);
+  startingVersion++;
+  startingListeners.forEach((listener) => listener());
+}
+
+/** The key of the tool starting a thread for the item now, if one is. */
+export function useHandoffLaunching(itemId: string) {
+  useSyncExternalStore(subscribeStarting, getStartingVersion);
+  return launching.get(itemId);
 }

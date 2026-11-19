@@ -130,8 +130,9 @@ const settingDialog = () =>
 
 async function handOff() {
   await renderRoutes({ routes: { "/": Page } });
+  fireEvent.click(await screen.findByRole("button", { name: "Hand off" }));
   fireEvent.click(
-    await screen.findByRole("button", { name: /Hand off to T3 Code/ }),
+    await screen.findByRole("menuitem", { name: "Hand off to T3 Code" }),
   );
 }
 

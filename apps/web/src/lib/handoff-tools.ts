@@ -5,6 +5,7 @@ import {
   getHandoffToolNote,
   getHandoffToolRefusal,
   getHandoffToolsChoice,
+  getHandoffToolsPage,
   listHandoffTools,
   type DetectedTools,
   type HandoffTool,
@@ -85,6 +86,13 @@ export function getHandoffToolsChoiceNow() {
   if (choice.overview !== overview)
     choice = { overview, value: getHandoffToolsChoice(overview) };
   return choice.value;
+}
+
+/** Where the tools' switches are now (`getHandoffToolsPage`). */
+export function getHandoffToolsPageNow() {
+  return isDesktop()
+    ? getHandoffToolsPage(getCachedPluginsOverview())
+    : undefined;
 }
 
 let actionTools: {
