@@ -105,8 +105,9 @@ export interface TimeSyncContext {
 }
 
 /**
- * An entry shorter than this stays local, so a mis-click never leaves Ajour.
- * A running entry waits until it has run this long.
+ * A saved entry shorter than this stays local, so a mis-click never leaves
+ * Ajour, and one already sent is deleted there. A running entry goes at
+ * once, whatever it has run (#840).
  */
 export const TIME_SYNC_MIN_DURATION_MS = 30_000;
 
@@ -279,13 +280,12 @@ function runningSourceOf(
 
 /**
  * Reads what entries send for one connection's time sync, against the
- * projects and the running entries. Built again once a round adds a task.
+ * projects. Built again once a round adds a task.
  */
 function createValuesReader(
   projectList: readonly LocalProject[],
-  timers: readonly LocalTimer[],
   connection: TimeSyncConnectionRef,
-  record: Pick<LocalTimeSync, "startWeek" | "copies">,
+  record: Pick<LocalTimeSync, "startWeek">,
   context: TimeSyncContext,
 ) {
   const projects = new Map(
@@ -300,18 +300,6 @@ function createValuesReader(
   const isManagedHere = (project: LocalProject) =>
     project.source?.pluginId === connection.pluginId &&
     project.source.connectionId === connection.connectionId;
-
-  /** The sync keys of the running entries. */
-  const runningKeys = new Set(timers.map(entrySyncKey));
-  /**
-   * Whether the other system shows a running entry that no longer runs in
-   * Ajour, such as the first entry of a switch. A running entry then takes
-   * over from it at once, in the same round as its stop, instead of after
-   * 30 seconds.
-   */
-  const takesOver = Object.entries(record.copies).some(
-    ([syncKey, copy]) => copy.agreed.running && !runningKeys.has(syncKey),
-  );
 
   /**
    * The name the task goes under: the commit name the Commit page uses, or
@@ -333,15 +321,11 @@ function createValuesReader(
    * What the entry sends, or undefined when it doesn't take part: its
    * project is managed by this connection, neither the project nor the task
    * is Local only, its day is from the start week and not after today, and
-   * it lasts at least 30 seconds. A running entry the other system doesn't
-   * show yet waits until it has run 30 seconds, unless it takes over from
-   * one shown running there; once shown, it stays until it stops. The note
-   * never leaves Ajour.
+   * a saved entry lasts at least 30 seconds. A running entry takes part
+   * from its Start, so the other system shows it in the next round (#840).
+   * The note never leaves Ajour.
    */
-  const valuesOf = (
-    entry: SyncSource,
-    shown: boolean,
-  ): TimeSyncEntryValues | undefined => {
+  const valuesOf = (entry: SyncSource): TimeSyncEntryValues | undefined => {
     const project = entry.projectId ? projects.get(entry.projectId) : undefined;
     if (!project?.source || !isManagedHere(project)) return undefined;
     const task = entry.taskId
@@ -353,10 +337,7 @@ function createValuesReader(
       return undefined;
     }
     const running = entry.countingSince !== undefined;
-    if (
-      entry.durationMs < TIME_SYNC_MIN_DURATION_MS &&
-      !(running && (shown || takesOver))
-    ) {
+    if (!running && entry.durationMs < TIME_SYNC_MIN_DURATION_MS) {
       return undefined;
     }
     const taskName = sentTaskName(project, task);
@@ -398,7 +379,6 @@ function createReader(
 ) {
   const { valuesOf } = createValuesReader(
     state.projects,
-    state.timers,
     connection,
     record,
     context,
@@ -438,7 +418,7 @@ function createReader(
     const copy = Object.hasOwn(record.copies, syncKey)
       ? record.copies[syncKey]
       : undefined;
-    const values = entry ? valuesOf(entry, copy !== undefined) : undefined;
+    const values = entry ? valuesOf(entry) : undefined;
     const known = copy ? { remoteId: copy.remoteId, agreed: copy.agreed } : {};
     if (values) {
       // An entry taken from there, whose copy went with Time entries off,
@@ -905,13 +885,7 @@ function takeListing(
     answer.entries.map((entry) => [entry.remoteId, entry]),
   );
   let current = state;
-  let values = createValuesReader(
-    state.projects,
-    state.timers,
-    connection,
-    record,
-    context,
-  );
+  let values = createValuesReader(state.projects, connection, record, context);
   const copies = { ...record.copies };
   const held: LocalTimeSyncHold[] = [];
   const puttingBack = new Set(record.puttingBack);
@@ -925,7 +899,7 @@ function takeListing(
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
     return {
       remoteId: remote.remoteId,
-      agreed: (entry && values.valuesOf(entry, true)) ?? remoteValuesOf(remote),
+      agreed: (entry && values.valuesOf(entry)) ?? remoteValuesOf(remote),
       remoteUpdatedAt: remote.updatedAt,
     };
   };
@@ -936,7 +910,6 @@ function takeListing(
       current = { ...current, projects: placement.projects };
       values = createValuesReader(
         current.projects,
-        current.timers,
         connection,
         record,
         context,
@@ -1247,7 +1220,7 @@ function takeListing(
     copies[entrySyncKey(timer)] = {
       remoteId: remote.remoteId,
       agreed:
-        values.valuesOf(runningSourceOf(timer, now, undefined), true) ??
+        values.valuesOf(runningSourceOf(timer, now, undefined)) ??
         remoteValuesOf(remote),
       remoteUpdatedAt: remote.updatedAt,
     };

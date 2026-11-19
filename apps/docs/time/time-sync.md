@@ -33,7 +33,7 @@ For each entry, the other system gets its day, its time rounded to the nearest m
 
 ## Your running entry
 
-Your running entry shows in the other system as running, with the same elapsed time as in Ajour. It goes there once it has run 30 seconds, within a minute after that, so a Start you discard right away stays in Ajour.
+Your running entry shows in the other system as running, with the same elapsed time as in Ajour. It goes there about 2 seconds after Start. If you stop or discard it before it has run 30 seconds, Ajour deletes it there again.
 
 - **Stop** stops that same entry there, with its time in whole minutes.
 - **Start** on another task while an entry runs stops the first entry and starts the second there, in one go, at the same instant.
