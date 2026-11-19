@@ -48,7 +48,8 @@ import { wideEvents } from "@/lib/wide-events";
  * changes, sent while nothing the rules read changed in Ajour since that
  * answer was kept. A plugin with a change marker answers it unchanged
  * without listing, and the check keeps nothing. Any other round is full and
- * sends no cursor. A plugin that answers without a cursor has nothing to
+ * sends no cursor, unless it has changes to send: the plugin then gets the
+ * cursor too, to reuse what it keeps there. A plugin that answers without a cursor has nothing to
  * check against, so its checks list at most once a minute, as the 60-second
  * poll did before #843.
  */
@@ -478,7 +479,17 @@ export function runTimeSyncRound(
           },
         });
       }
-      const { request: sent } = planned.plan;
+      // A round with changes also carries the plugin's cursor, when this
+      // window holds one, so the plugin can reuse what it keeps there. It
+      // can't answer unchanged to it: the round has changes.
+      const point = checkPoints.get(key);
+      const withCursor =
+        point?.generation === generation &&
+        planned.plan.request.changes.length > 0;
+      const sent = withCursor
+        ? { ...planned.plan.request, cursor: point.cursor }
+        : planned.plan.request;
+      if (withCursor) job.set({ time_sync_round: { has_cursor: true } });
       sending = planned;
       const sentAnswer = await job.enter(() =>
         syncTimeEntries(pluginId, connectionId, sent),

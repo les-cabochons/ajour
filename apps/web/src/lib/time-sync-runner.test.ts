@@ -96,9 +96,13 @@ function stubApi(remoteKey: string) {
   });
 }
 
-/** Each round so far: a check sends the cursor, a full round none. */
+/** Each round so far: a check sends the cursor and no changes, a full round anything else. */
 const kinds = () =>
-  requests.map((request) => (request.cursor === undefined ? "full" : "check"));
+  requests.map((request) =>
+    request.cursor !== undefined && request.changes.length === 0
+      ? "check"
+      : "full",
+  );
 
 beforeEach(() => {
   requests = [];
@@ -173,6 +177,24 @@ async function start() {
 }
 
 describe("the time sync runner's checks", () => {
+  it("sends the cursor with a round that has changes, so the plugin can reuse what it keeps there", async () => {
+    const { localStore, stop } = await start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(kinds()).toEqual(["full", "check"]);
+
+    localStore.saveManualTimeEntry({
+      localDate: new Date().toISOString().slice(0, 10),
+      projectId: "acme",
+      taskId: "login",
+      durationMs: 90 * 60_000,
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    const sent = requests.at(-1)!;
+    expect(sent.changes).toHaveLength(1);
+    expect(sent.cursor).toBe(requests[1]!.cursor);
+    stop();
+  });
+
   it("lists once a minute for a plugin without a cursor, as the poll did before #843", async () => {
     cursorless = true;
     const { stop } = await start();

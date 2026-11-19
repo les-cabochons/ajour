@@ -73,7 +73,7 @@ When your system keeps a change marker, a version that moves on every write to t
 2. Ajour keeps the cursor in its window's memory, never in its saved state or its log, so it may hold a read link. When nothing changed in Ajour since your last full answer, its next round is a check: the same window, `cursor`, and no changes.
 3. When the marker is where the cursor says, answer `{ unchanged: true, cursor }`, with the cursor for the next check, without calling your system's API. Otherwise list and answer in full, with the new cursor.
 
-Ajour refuses an unchanged answer to a request without a cursor or with changes, and an Ajour without check rounds never sends a cursor. Any change in Ajour, a failed round or a saved connection makes the next round full, without a cursor. List anyway when you can't read the marker, and now and then, such as once an hour, so a missed write can't hide for long.
+Ajour refuses an unchanged answer to a request without a cursor or with changes, and an Ajour without check rounds never sends a cursor. Any change in Ajour, a failed round or a saved connection makes the next round full. A full round with changes still carries your cursor, so you can reuse what it holds, such as a read link; a full round without changes carries none. List anyway when you can't read the marker, and now and then, such as once an hour, so a missed write can't hide for long.
 
 ## Types
 

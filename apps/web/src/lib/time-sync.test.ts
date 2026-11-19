@@ -571,15 +571,17 @@ describe("a time sync round", () => {
     expect(await round("check")).toEqual({ kind: "unchanged" });
   });
 
-  it("sends a full round, without the cursor, once Ajour changed since the last one", async () => {
+  it("sends a full round once Ajour changed since the last one, with its changes and the cursor", async () => {
     const { localStore, entryId, round, jobs } = await load();
     await round("change");
     localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
 
     expect(await round("check")).toMatchObject({ kind: "applied", synced: 1 });
 
+    // The plugin may reuse what it keeps in the cursor; it can't answer
+    // unchanged to a round with changes.
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { trigger: "check", has_cursor: false, change_count: 1 },
+      time_sync_round: { trigger: "check", has_cursor: true, change_count: 1 },
     });
   });
 
@@ -614,8 +616,10 @@ describe("a time sync round", () => {
       synced: 1,
       received: 1,
     });
+    // The full round lists first, with no changes and no cursor, then sends
+    // the edit with the cursor that listing gave.
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { has_cursor: false },
+      time_sync_round: { listed_first: true, has_cursor: true },
     });
   });
 
