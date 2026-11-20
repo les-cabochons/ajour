@@ -2165,6 +2165,30 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       );
     },
+    // Closes the thread in its tool, then forgets the handoff (#850).
+    handoffClose: async ({ response, params, unit }) => {
+      unit.set({ handoff: { id: params.handoffId } });
+      const record = (await storage.listHandoffs()).find(
+        (h) => h.id === params.handoffId,
+      );
+      if (!record) {
+        writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      unit.set({
+        plugin: { id: record.pluginId },
+        handoff: { tool: record.toolId },
+      });
+      try {
+        const closed = await handoffs.close(record.id);
+        unit.set({ handoff: { closes: closed.closesThreads } });
+        writeJson(response, 200, await storage.listHandoffs());
+      } catch (error) {
+        if (!(error instanceof HandoffRefused)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: error.message });
+      }
+    },
     handoffRemove: async ({ response, params, unit }) => {
       unit.set({ handoff: { id: params.handoffId } });
       await handoffs.remove(params.handoffId);

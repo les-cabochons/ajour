@@ -7,6 +7,9 @@ import {
   readHandoffStatesResultSchema,
   listThreadsRequestSchema,
   listThreadsResultSchema,
+  closeThreadRequestSchema,
+  closeThreadResultSchema,
+  type CloseThreadRequest,
   type ListThreadsRequest,
   type StartHandoffRequest,
   type ReadHandoffStatesRequest,
@@ -303,6 +306,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   startHandoff: "handoff.start",
   readHandoffStates: "handoff.refresh",
   listThreads: "handoff.threads",
+  closeThread: "handoff.close",
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
@@ -356,6 +360,7 @@ export function capabilityOfMethod(
       "startHandoff",
       "readHandoffStates",
       "listThreads",
+      "closeThread",
     ].includes(method)
   )
     return "handoff";
@@ -1315,6 +1320,42 @@ export class PluginManager {
         if (!tool?.listsThreads)
           throw new PluginOperationRefused(
             `${tool?.label ?? request.tool} doesn't list its threads.`,
+            "not_supported",
+          );
+      },
+    );
+  }
+
+  /**
+   * Closes one handoff's thread in its tool, for a tool that declares
+   * `closesThreads` (#850). The plugin stops the thread's work first when
+   * it runs, and answers nothing once the thread is closed or gone.
+   */
+  async closeThread(
+    pluginId: string,
+    request: CloseThreadRequest,
+    projectId: string,
+    connection?: PluginInvocationConnection,
+  ) {
+    const parsed = closeThreadRequestSchema.parse(request);
+    return this.invokePlugin(
+      pluginId,
+      "closeThread",
+      {
+        request: parsed,
+        projectId,
+        ...handoffConnectionParams(pluginId, connection),
+      },
+      { parse: (value: unknown) => closeThreadResultSchema.parse(value) },
+      undefined,
+      (manifest) => {
+        requireHandoffTool(manifest, request.tool, connection);
+        const tool = manifest.capabilities.handoff?.tools.find(
+          (t) => t.id === request.tool,
+        );
+        if (!tool?.closesThreads)
+          throw new PluginOperationRefused(
+            `${tool?.label ?? request.tool} can't close its threads.`,
             "not_supported",
           );
       },

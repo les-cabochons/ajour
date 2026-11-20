@@ -1981,6 +1981,28 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * Close a handoff's thread in its tool, then forget the handoff (#850).
+     * `closes` is what the tool does to the conversation.
+     */
+    "handoff.close": {
+      kinds: ["request", "plugin_operation", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        // Ajour's or the tool's refusal: the handoff stays.
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          closes: operational<"archive" | "delete">(),
+        },
+      },
+    },
     "handoff.open": {
       kinds: ["request", "plugin_operation", "job", "command"],
       reasons: [

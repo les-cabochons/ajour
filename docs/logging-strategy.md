@@ -1063,6 +1063,7 @@ channel to read the event each emits.
 | `event_rule.forget`                  | command                                 | store command                                    |
 | `event_rule.hide`                    | command                                 | store command                                    |
 | `handoff.adopt`                      | request, command                        | route, client call                               |
+| `handoff.close`                      | request, plugin_operation, command      | route, plugin method, client call                |
 | `handoff.connections_read`           | request, job                            | route, client call                               |
 | `handoff.connections_update`         | request, command                        | route, client call                               |
 | `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
@@ -1257,6 +1258,11 @@ A handoff whose tool doesn't follow state (`started`) is never read: the tick,
 Refresh all and hooks skip it and open no `handoff.refresh` event, and a
 refresh of that one handoff is a `handoff.refresh` request refused with
 `handoff_refused`.
+Close (#850) is one `handoff.close` request, which records the plugin, the
+handoff's id and tool, and, once the tool closed the thread, `handoff.closes`:
+`archive` or `delete`. It refuses with `handoff_refused` a tool that doesn't
+close threads, a plugin that can't run, and the tool's own refusal, which its
+`handoff.close` plugin operation holds as `plugin_error`.
 `handoff.adopt` records the plugin, tool and new handoff id, and refuses with
 `handoff_refused`, or `tool_off` for a tool turned off; `handoff.dismiss_thread` records the plugin and tool. None
 records a thread's title or id, the item's keys, or a folder. The privacy canary

@@ -18,6 +18,9 @@ import type {
   ReadHandoffStatesResult,
   ListThreadsRequest,
   ListThreadsResult,
+  CloseThreadRequest,
+  CloseThreadResult,
+  HandoffCloseKind,
 } from "../../../packages/shared/handoffs.ts";
 import {
   sameThread,
@@ -62,6 +65,8 @@ interface HandoffTool {
   listsThreads?: boolean;
   /** False for a tool that can only start a thread; true when absent. */
   followsState?: boolean;
+  /** How the tool closes a thread (#850). Absent, it can't. */
+  closesThreads?: HandoffCloseKind;
 }
 
 interface Options {
@@ -102,6 +107,13 @@ interface Options {
       projectId: string,
       connection?: HandoffConnection,
     ): Promise<ListThreadsResult>;
+    /** Never called for a tool without `closesThreads`. */
+    closeThread?(
+      pluginId: string,
+      request: CloseThreadRequest,
+      projectId: string,
+      connection?: HandoffConnection,
+    ): Promise<CloseThreadResult>;
   };
   /**
    * The plugin's saved connection, for an operation, or undefined when it
@@ -727,6 +739,75 @@ export class Handoffs {
     await this.options.storage.removeHandoff(id);
     this.options.onRemove?.(id);
     await this.publish();
+  }
+  /**
+   * Closes a handoff's thread in its tool, then forgets the handoff as
+   * `remove` does (#850). Only a tool that declares `closesThreads` is
+   * asked; the plugin stops the thread's work first when it runs. Any
+   * refusal, Ajour's or the tool's, keeps the handoff. It runs as a batch,
+   * so no refresh reads the thread while the tool closes it.
+   */
+  async close(id: string): Promise<{
+    pluginId: string;
+    toolId: string;
+    closesThreads: HandoffCloseKind;
+  }> {
+    return this.runBatch(async () => {
+      const record = (await this.options.storage.listHandoffs()).find(
+        (h) => h.id === id,
+      );
+      if (!record) throw new HandoffRefused("This handoff no longer exists.");
+      const plugin = (await this.options.plugins.listPlugins()).find(
+        (p) => p.id === record.pluginId,
+      );
+      const tool = plugin?.capabilities.handoff?.tools.find(
+        (t) => t.id === record.toolId,
+      );
+      if (!plugin)
+        throw new HandoffRefused("The handoff plugin is unavailable.");
+      if (!tool) throw new HandoffRefused("The handoff tool was removed.");
+      if (!tool.closesThreads || !this.options.plugins.closeThread)
+        throw new HandoffRefused(
+          `${tool.label ?? tool.id} can't close its threads. Remove it from the item instead.`,
+        );
+      const unavailable = await this.options.unavailableReason?.(
+        record.pluginId,
+        record.toolId,
+        "closing its thread",
+      );
+      if (unavailable) throw new HandoffRefused(unavailable);
+      let connection: HandoffConnection | undefined;
+      if (tool.connection === "required") {
+        if (!record.connectionId)
+          throw new HandoffRefused(HANDOFF_NEEDS_CONNECTION);
+        connection = await this.options.connection?.(
+          record.pluginId,
+          record.connectionId,
+        );
+        if (!connection) throw new HandoffRefused(DELETED_CONNECTION);
+      }
+      const { threadId, folderId, native } = record;
+      try {
+        await this.options.plugins.closeThread(
+          record.pluginId,
+          { tool: record.toolId, handoff: { id, threadId, folderId, native } },
+          record.projectId,
+          ...(connection ? [connection] : []),
+        );
+      } catch (error) {
+        throw new HandoffRefused(
+          error instanceof Error
+            ? error.message
+            : "The tool refused to close the thread.",
+        );
+      }
+      await this.remove(id);
+      return {
+        pluginId: record.pluginId,
+        toolId: record.toolId,
+        closesThreads: tool.closesThreads,
+      };
+    });
   }
   async tick() {
     if (this.ticking) return;
