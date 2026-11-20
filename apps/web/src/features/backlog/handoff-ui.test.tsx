@@ -45,6 +45,7 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   openHandoff: vi.fn(),
   refreshHandoffs: vi.fn(),
   removeHandoff: vi.fn(),
+  closeHandoff: vi.fn(),
   startHandoff: vi.fn(),
   useRepositoryFolder: vi.fn(),
 }));
@@ -1021,6 +1022,96 @@ it("opens, refreshes and removes a thread from the card", async () => {
       "Removed from the item. The thread stays in T3 Code.",
     ),
   ).toBeTruthy();
+});
+
+it("closes a thread in its tool, or deletes it after asking, and keeps it when the tool refuses (#850)", async () => {
+  cachePluginsOverview(
+    handoffOverview({ closes: { claude: "archive", t3: "delete" } }),
+  );
+  const claude = handoffRecord({
+    id: "h-claude",
+    toolId: "claude",
+    workItemId: itemId,
+    title: "[PAY-12] Claude thread",
+  });
+  const t3 = handoffRecord({
+    id: "h-t3",
+    workItemId: itemId,
+    title: "[PAY-12] T3 thread",
+  });
+  vi.mocked(api.closeHandoff)
+    .mockResolvedValueOnce([t3])
+    .mockRejectedValueOnce(new Error("The worktree has unpushed work."));
+  await renderPage();
+  act(() => setHandoffs([claude, t3]));
+
+  // A tool that keeps the conversation closes it at once.
+  const claudeRow = await cardRow(claude.title);
+  fireEvent.click(
+    within(claudeRow).getByRole("button", { name: "Handoff actions" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Close in Claude Code" }),
+  );
+  await waitFor(() =>
+    expect(api.closeHandoff).toHaveBeenCalledWith("h-claude"),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("listitem", { name: claude.title })).toBeNull(),
+  );
+  expect(
+    await screen.findByText("Closed in Claude Code and removed from the item."),
+  ).toBeTruthy();
+
+  // A tool that deletes it asks first, and Cancel sends nothing.
+  const t3Row = await cardRow(t3.title);
+  const deleteInT3 = async () => {
+    fireEvent.click(
+      within(t3Row).getByRole("button", { name: "Handoff actions" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete in T3 Code" }),
+    );
+    return screen.findByRole("alertdialog");
+  };
+  let dialog = await deleteInT3();
+  expect(
+    within(dialog).getByText("Delete this thread in T3 Code?"),
+  ).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "T3 Code deletes its conversation for good, and Ajour removes it from this item.",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(api.closeHandoff).toHaveBeenCalledTimes(1);
+
+  // The tool's refusal keeps the row and says why.
+  dialog = await deleteInT3();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+  await waitFor(() => expect(api.closeHandoff).toHaveBeenCalledWith("h-t3"));
+  expect(
+    (await screen.findAllByText("Couldn't delete the thread")).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getAllByText("The worktree has unpushed work.").length,
+  ).toBeGreaterThan(0);
+  await waitFor(() =>
+    expect(screen.queryByText("Delete this thread in T3 Code?")).toBeNull(),
+  );
+  expect(await cardRow(t3.title)).toBeTruthy();
+});
+
+it("offers no close for a tool that can't close its threads", async () => {
+  await renderPage();
+  act(() => setHandoffs([handoffRecord({ workItemId: itemId })]));
+  const row = await cardRow("[PAY-12] Fix login redirect");
+  fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
+  await screen.findByRole("menuitem", { name: "Remove from item" });
+  expect(
+    screen.queryByRole("menuitem", { name: /^(Close|Delete) in / }),
+  ).toBeNull();
 });
 
 it("says why a thread didn't open, in the setting's words", async () => {

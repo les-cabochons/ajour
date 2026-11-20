@@ -1990,6 +1990,18 @@ export function removeHandoff(id: string) {
     handoffsSnapshotSchema,
   );
 }
+/**
+ * Closes the handoff's thread in its tool, then forgets the handoff (#850).
+ * Answers the handoffs left; a refusal keeps it, in the API's words.
+ */
+export function closeHandoff(id: string) {
+  return appApiRequest(
+    "closeHandoff",
+    `/api/handoffs/${encodeURIComponent(id)}/close`,
+    { method: "POST", body: "{}" },
+    handoffsSnapshotSchema,
+  );
+}
 /** Opens the handoff's thread: its link, else its resume command in a terminal. */
 export function openHandoff(id: string) {
   return appApiRequest(

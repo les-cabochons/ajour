@@ -27,6 +27,7 @@ import {
 import { Value } from "@/components/ui/value";
 import {
   getHandoffChip,
+  getHandoffCloseAction,
   isHandoffFollowed,
   sortHandoffs,
   type HandoffTool,
@@ -39,10 +40,12 @@ import {
 import { useHandoffLaunching } from "@/features/backlog/handoff-request";
 import { useHandoffTools } from "@/lib/handoff-tools";
 import {
+  closeHandoffThread,
   openHandoffThread,
   refreshHandoffThread,
   removeHandoffFromItem,
 } from "@/features/backlog/handoff-workflow";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   getSubitemHoursLeft,
   getSubitemProgress,
@@ -714,8 +717,22 @@ function HandoffRow({
   });
   // A started thread's tool reports nothing, so its time is when it started.
   const started = handoff.state === "started" && !followed;
+  const close = getHandoffCloseAction(tool);
+  // The question before a delete mounts only while it is asked.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const runClose = (action: NonNullable<typeof close>) => {
+    setClosing(true);
+    void closeHandoffThread(handoff.id, action).finally(() =>
+      setClosing(false),
+    );
+  };
   return (
-    <li className="handoff-row" aria-label={handoff.title}>
+    <li
+      className="handoff-row"
+      aria-label={handoff.title}
+      aria-busy={closing || undefined}
+    >
       <div className="handoff-row-head">
         {tool ? (
           <HandoffToolIcon tool={tool} className="size-4 shrink-0" />
@@ -743,6 +760,8 @@ function HandoffRow({
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground"
+                    // A close runs until the tool answers, which takes seconds.
+                    disabled={closing}
                   />
                 }
               />
@@ -758,6 +777,16 @@ function HandoffRow({
                 Refresh
               </DropdownMenuItem>
             )}
+            {close ? (
+              <DropdownMenuItem
+                variant={close.confirm ? "destructive" : undefined}
+                onClick={() =>
+                  close.confirm ? setConfirmingClose(true) : runClose(close)
+                }
+              >
+                {close.label}
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem
               variant="destructive"
               onClick={() => void removeHandoffFromItem(handoff.id, toolLabel)}
@@ -766,6 +795,17 @@ function HandoffRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {confirmingClose && close?.confirm ? (
+          <ConfirmDialog
+            open
+            onOpenChange={setConfirmingClose}
+            question={close.confirm}
+            onConfirm={() => {
+              setConfirmingClose(false);
+              runClose(close);
+            }}
+          />
+        ) : null}
       </div>
       <div className="handoff-row-meta">
         <Tooltip>

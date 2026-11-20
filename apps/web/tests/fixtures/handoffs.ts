@@ -1,4 +1,4 @@
-import type { Handoff } from "@ajour/shared/handoffs";
+import type { Handoff, HandoffCloseKind } from "@ajour/shared/handoffs";
 import type { PluginsOverview } from "@ajour/shared";
 
 const ICON =
@@ -7,12 +7,18 @@ const ICON =
 /**
  * One active `agent-handoff` plugin with T3 Code and Claude Code, and with
  * `copilot`, Copilot CLI, which doesn't follow its threads' state. Every
- * tool is on unless `enabled` names the ones that are.
+ * tool is on unless `enabled` names the ones that are. `closes` says how
+ * each tool closes its threads (#850); none does by default.
  */
 export function handoffOverview({
   copilot = false,
   enabled,
-}: { copilot?: boolean; enabled?: string[] } = {}): PluginsOverview {
+  closes = {},
+}: {
+  copilot?: boolean;
+  enabled?: string[];
+  closes?: Partial<Record<"t3" | "claude", HandoffCloseKind>>;
+} = {}): PluginsOverview {
   const plugin = {
     id: "agent-handoff",
     version: "1.0.0",
@@ -31,6 +37,7 @@ export function handoffOverview({
             connection: "none" as const,
             followsState: true,
             hooks: false,
+            ...(closes.t3 ? { closesThreads: closes.t3 } : {}),
           },
           {
             id: "claude",
@@ -40,6 +47,7 @@ export function handoffOverview({
             connection: "none" as const,
             followsState: true,
             hooks: true,
+            ...(closes.claude ? { closesThreads: closes.claude } : {}),
           },
           ...(copilot
             ? [

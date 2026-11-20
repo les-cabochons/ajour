@@ -31,9 +31,21 @@ beforeEach(() => {
 });
 
 const tools = [
-  { id: "claude", label: "Claude Code", followsState: true, hooks: true },
+  {
+    id: "claude",
+    label: "Claude Code",
+    followsState: true,
+    hooks: true,
+    closesThreads: "archive" as const,
+  },
   { id: "t3", label: "T3 Code", followsState: true, listsThreads: true },
   { id: "copilot", label: "Copilot CLI", followsState: false },
+  {
+    id: "opencode",
+    label: "OpenCode",
+    followsState: true,
+    closesThreads: "delete" as const,
+  },
 ];
 
 function render(path = "/") {
@@ -58,8 +70,13 @@ it("lists each handoff tool with the features it supports", async () => {
   const row = (label: string) =>
     screen.getByText(label).closest(".settings-row")!.textContent;
   expect(row("Claude Code")).toContain(
-    "Starts threads · Follows state · Updates within seconds",
+    "Starts threads · Follows state · Updates within seconds · Closes threads",
   );
+  // A tool that closes a thread by deleting it says so (#850).
+  expect(row("OpenCode")).toContain(
+    "Starts threads · Follows state · Deletes threads",
+  );
+  expect(row("T3 Code")).not.toContain("Closes threads");
   // Only a tool that says it posts hooks updates within seconds.
   expect(row("T3 Code")).toContain(
     "Starts threads · Follows state · Finds threads",
