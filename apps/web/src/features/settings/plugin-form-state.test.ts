@@ -507,12 +507,9 @@ describe("sectionConnectionBlocks", () => {
     ]);
   });
 
-  it("shows the fields by item type under the field mapping, one input per field they replace", () => {
+  it("shows the fields by item type last under the field mapping, one input per field they replace", () => {
     const sections = sectionConnectionBlocks(
       groupConnectionFields([
-        field("token", "API token", { secret: true }),
-        field("original", "Original estimate field"),
-        field("remaining", "Remaining field"),
         {
           id: "byType",
           label: "By work item type",
@@ -521,6 +518,9 @@ describe("sectionConnectionBlocks", () => {
           required: false,
           overrides: ["original", "remaining"],
         },
+        field("token", "API token", { secret: true }),
+        field("original", "Original estimate field"),
+        field("remaining", "Remaining field"),
         field("autoSync", "Auto sync to backlog", { type: "checkbox" }),
       ]),
     );

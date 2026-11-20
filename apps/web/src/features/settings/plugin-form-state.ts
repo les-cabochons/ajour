@@ -505,10 +505,7 @@ export interface ConnectionFormSection {
   blocks: ConnectionFormBlock[];
 }
 
-/**
- * A block that maps the service's own fields: "Remaining field", a row of
- * values, or the fields by item type.
- */
+/** A block that maps the service's own fields: "Remaining field" or a row of values. */
 function isMappingBlock(block: ConnectionFormBlock) {
   return block.kind !== "field" || /\bfield$/i.test(block.field.label.trim());
 }
@@ -516,13 +513,16 @@ function isMappingBlock(block: ConnectionFormBlock) {
 /**
  * Splits a connection form into Connection (everything up to its last
  * secret: where and who), Sync (what comes over and when) and Field
- * mapping (which of the service's fields mean what, by item type too). Order inside a section
- * is the manifest's. A form with no secret, or with only one kind of
- * field, stays one untitled section.
+ * mapping (which of the service's fields mean what). Order inside a section
+ * is the manifest's, except the fields by item type: they come last in
+ * Field mapping, after the fields they replace, wherever the manifest
+ * declares them. A form with no secret, or with only one kind of field,
+ * stays one untitled section.
  */
 export function sectionConnectionBlocks(
-  blocks: ConnectionFormBlock[],
+  allBlocks: ConnectionFormBlock[],
 ): ConnectionFormSection[] {
+  const blocks = allBlocks.filter((block) => block.kind !== "typeOverrides");
   let lastSecret = -1;
   blocks.forEach((block, index) => {
     if (block.kind === "field" && block.field.secret) lastSecret = index;
@@ -532,7 +532,13 @@ export function sectionConnectionBlocks(
   const sections: ConnectionFormSection[] = [
     { title: "Connection", blocks: connection },
     { title: "Sync", blocks: rest.filter((block) => !isMappingBlock(block)) },
-    { title: "Field mapping", blocks: rest.filter(isMappingBlock) },
+    {
+      title: "Field mapping",
+      blocks: [
+        ...rest.filter(isMappingBlock),
+        ...allBlocks.filter((block) => block.kind === "typeOverrides"),
+      ],
+    },
   ];
   return sections.filter((section) => section.blocks.length > 0);
 }
