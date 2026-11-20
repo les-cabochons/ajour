@@ -932,6 +932,86 @@ function issue(
   context.addIssue({ code: z.ZodIssueCode.custom, path, message });
 }
 
+/**
+ * A `typeOverrides` field is a connection field that names, in `overrides`,
+ * the text connection fields an item type can replace. The form edits it
+ * per type, so it is never secret or required, and it has no place among an
+ * agent task's or a handoff tool's settings.
+ */
+function checkTypeOverrides(
+  manifest: {
+    connectionFields: readonly PluginApi4Field[];
+    capabilities: {
+      agentTask?: {
+        tasks: readonly { settings: readonly PluginApi4Field[] }[];
+      };
+      handoff?: { tools: readonly { settings: readonly PluginApi4Field[] }[] };
+    };
+  },
+  context: z.RefinementCtx,
+) {
+  const fields = new Map(
+    manifest.connectionFields.map((field) => [field.id, field]),
+  );
+  manifest.connectionFields.forEach((field, index) => {
+    const path = ["connectionFields", index];
+    if (field.type !== "typeOverrides") {
+      if (field.overrides) {
+        issue(
+          context,
+          [...path, "overrides"],
+          `Only a typeOverrides field takes overrides, and "${field.id}" is a ${field.type} field.`,
+        );
+      }
+      return;
+    }
+    const name = `The typeOverrides field "${field.id}"`;
+    if (field.secret || field.required) {
+      issue(context, path, `${name} can't be secret or required.`);
+    }
+    if (!field.overrides) {
+      issue(
+        context,
+        [...path, "overrides"],
+        `${name} needs overrides: the ids of the text fields an item type can replace.`,
+      );
+      return;
+    }
+    for (const id of field.overrides) {
+      const target = fields.get(id);
+      if (!target || target.type !== "text" || target.secret) {
+        issue(
+          context,
+          [...path, "overrides"],
+          `${name} can only override a text connection field that isn't secret, and "${id}" isn't one.`,
+        );
+      }
+    }
+  });
+
+  const settingsLists = [
+    ...(manifest.capabilities.agentTask?.tasks ?? []).map(
+      (task, index) =>
+        [["capabilities", "agentTask", "tasks", index], task.settings] as const,
+    ),
+    ...(manifest.capabilities.handoff?.tools ?? []).map(
+      (tool, index) =>
+        [["capabilities", "handoff", "tools", index], tool.settings] as const,
+    ),
+  ];
+  for (const [path, settings] of settingsLists) {
+    settings.forEach((field, index) => {
+      if (field.type === "typeOverrides") {
+        issue(
+          context,
+          [...path, "settings", index],
+          `The typeOverrides field "${field.id}" belongs in connectionFields.`,
+        );
+      }
+    });
+  }
+}
+
 function checkNetwork(
   manifest: {
     connectionFields: readonly PluginApi4Field[];
@@ -1224,6 +1304,7 @@ export const pluginApi4ManifestSchema = strictObject(
     );
   checkNetwork(manifest, context);
   checkHandoffConnections(manifest, context);
+  checkTypeOverrides(manifest, context);
 });
 export type PluginApi4Manifest = z.infer<typeof pluginApi4ManifestSchema>;
 export type PluginApi4ManifestInput = z.input<typeof pluginApi4ManifestSchema>;

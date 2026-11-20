@@ -110,6 +110,11 @@ export const pluginSummaryValuesSchema = z.record(
 );
 export type PluginSummaryValues = z.infer<typeof pluginSummaryValuesSchema>;
 
+/**
+ * `typeOverrides` holds, per item type, the text a type uses instead of some
+ * of the connection's text fields (`overrides`). Its value is a JSON text,
+ * see `type-overrides.ts`. Connection fields only.
+ */
 export const pluginFieldTypeSchema = z.enum([
   "text",
   "password",
@@ -117,6 +122,7 @@ export const pluginFieldTypeSchema = z.enum([
   "select",
   "number",
   "checkbox",
+  "typeOverrides",
 ]);
 export type PluginFieldType = z.infer<typeof pluginFieldTypeSchema>;
 
@@ -177,6 +183,15 @@ export const pluginFieldSchema = z.object({
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   step: z.number().finite().optional(),
+  /**
+   * A `typeOverrides` field's: the ids of the text connection fields an
+   * item type can replace, which the form shows as one input each per type.
+   */
+  overrides: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1)
+    .max(4)
+    .optional(),
   /**
    * The capability the field configures. The connection form hides it, and
    * skips its required check, while that capability is off. Absent for a
