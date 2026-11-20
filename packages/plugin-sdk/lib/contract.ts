@@ -9,58 +9,6 @@ export type PluginManifest = {
   apiVersion: 4;
   displayName: string;
   capabilities: {
-    projectDataShape?:
-      | {
-          apiVersion: 1;
-          datasets?:
-            | {
-                id: string;
-                displayName: string;
-                columns: {
-                  key: string;
-                  type: "string" | "number" | "boolean";
-                  header: string;
-                  required?: boolean | undefined;
-                  width?: number | undefined;
-                }[];
-              }[]
-            | undefined;
-        }
-      | undefined;
-    connector?:
-      | {
-          description?:
-            | { maxLength?: number | undefined; write?: boolean | undefined }
-            | undefined;
-          comments?:
-            | {
-                maxLength?: number | undefined;
-                edit?: boolean | undefined;
-                delete?: boolean | undefined;
-                reactions?:
-                  | (
-                      | "like"
-                      | "dislike"
-                      | "heart"
-                      | "hooray"
-                      | "laugh"
-                      | "confused"
-                      | "rocket"
-                      | "eyes"
-                    )[]
-                  | undefined;
-                mentions?: boolean | undefined;
-              }
-            | undefined;
-          settle?: boolean | undefined;
-          assign?: boolean | undefined;
-        }
-      | undefined;
-    codeHost?: {} | undefined;
-    calendar?: {} | undefined;
-    team?: { apiVersion: 1 } | undefined;
-    projectSource?: {} | undefined;
-    timeSync?: {} | undefined;
     handoff?:
       | {
           tools: {
@@ -87,13 +35,13 @@ export type PluginManifest = {
               step?: number | undefined;
               overrides?: string[] | undefined;
               capability?:
+                | "handoff"
                 | "connector"
                 | "codeHost"
                 | "calendar"
                 | "team"
                 | "projectSource"
                 | "timeSync"
-                | "handoff"
                 | undefined;
               passToPlugin?: boolean | undefined;
             }[];
@@ -103,10 +51,63 @@ export type PluginManifest = {
             listsThreads?: boolean | undefined;
             followsState?: boolean | undefined;
             hooks?: boolean | undefined;
+            closesThreads?: "archive" | "delete" | undefined;
           }[];
           promptTemplate?: string | undefined;
         }
       | undefined;
+    projectDataShape?:
+      | {
+          apiVersion: 1;
+          datasets?:
+            | {
+                id: string;
+                displayName: string;
+                columns: {
+                  key: string;
+                  type: "string" | "number" | "boolean";
+                  header: string;
+                  required?: boolean | undefined;
+                  width?: number | undefined;
+                }[];
+              }[]
+            | undefined;
+        }
+      | undefined;
+    connector?:
+      | {
+          description?:
+            | { maxLength?: number | undefined; write?: boolean | undefined }
+            | undefined;
+          comments?:
+            | {
+                delete?: boolean | undefined;
+                maxLength?: number | undefined;
+                edit?: boolean | undefined;
+                reactions?:
+                  | (
+                      | "like"
+                      | "dislike"
+                      | "heart"
+                      | "hooray"
+                      | "laugh"
+                      | "confused"
+                      | "rocket"
+                      | "eyes"
+                    )[]
+                  | undefined;
+                mentions?: boolean | undefined;
+              }
+            | undefined;
+          settle?: boolean | undefined;
+          assign?: boolean | undefined;
+        }
+      | undefined;
+    codeHost?: {} | undefined;
+    calendar?: {} | undefined;
+    team?: { apiVersion: 1 } | undefined;
+    projectSource?: {} | undefined;
+    timeSync?: {} | undefined;
     agentTask?:
       | {
           tasks: {
@@ -174,13 +175,13 @@ export type PluginManifest = {
                   step?: number | undefined;
                   overrides?: string[] | undefined;
                   capability?:
+                    | "handoff"
                     | "connector"
                     | "codeHost"
                     | "calendar"
                     | "team"
                     | "projectSource"
                     | "timeSync"
-                    | "handoff"
                     | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
@@ -236,13 +237,13 @@ export type PluginManifest = {
         step?: number | undefined;
         overrides?: string[] | undefined;
         capability?:
+          | "handoff"
           | "connector"
           | "codeHost"
           | "calendar"
           | "team"
           | "projectSource"
           | "timeSync"
-          | "handoff"
           | undefined;
         passToPlugin?: boolean | undefined;
       }[]
@@ -377,13 +378,13 @@ export type PluginField = {
   step?: number | undefined;
   overrides?: string[] | undefined;
   capability?:
+    | "handoff"
     | "connector"
     | "codeHost"
     | "calendar"
     | "team"
     | "projectSource"
     | "timeSync"
-    | "handoff"
     | undefined;
   passToPlugin?: boolean | undefined;
 };
@@ -581,13 +582,13 @@ export type PluginConnection = {
 
 export type ValidationContext = {
   capabilities: (
+    | "handoff"
     | "connector"
     | "codeHost"
     | "calendar"
     | "team"
     | "projectSource"
     | "timeSync"
-    | "handoff"
   )[];
 };
 
@@ -1688,3 +1689,15 @@ export type ListThreadsResult = {
     updatedAt?: number | undefined;
   }[];
 };
+
+export type CloseThreadRequest = {
+  tool: string;
+  handoff: {
+    id: string;
+    threadId: string;
+    native: Record<string, unknown>;
+    folderId: string;
+  };
+};
+
+export type CloseThreadResult = {};
