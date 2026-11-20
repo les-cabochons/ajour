@@ -29,6 +29,7 @@ import {
   type HandoffThreadDismissal,
   type HandoffThreadOffer,
   type ListedHandoffThread,
+  type ThreadIdentity,
 } from "../../../packages/shared/handoff-threads.ts";
 import type { AppApiStorage } from "./storage.ts";
 import type { ApiEvents } from "./events.ts";
@@ -260,6 +261,12 @@ export class Handoffs {
     string,
     ThreadListing | Promise<ThreadListing>
   >();
+  /**
+   * When each thread was closed in its tool (#850), by `closedThreadKey`, so
+   * a listing taken before the close, cached or under way, never offers it
+   * again. Kept as long as Link accepts a listing.
+   */
+  private readonly closedThreads = new Map<string, number>();
   constructor(options: Options) {
     this.options = options;
     this.now = options.now ?? (() => Date.now());
@@ -625,13 +632,16 @@ export class Handoffs {
       (result): ThreadListing => ({
         at: now,
         failed: false,
-        threads: result.threads.map((thread) => ({
-          ...thread,
-          pluginId,
-          toolId,
-          folderId,
-          ...(connection ? { connectionId: connection.id } : {}),
-        })),
+        threads: result.threads
+          .map((thread) => ({
+            ...thread,
+            pluginId,
+            toolId,
+            folderId,
+            ...(connection ? { connectionId: connection.id } : {}),
+          }))
+          // A thread closed while the tool listed may still be in its answer.
+          .filter((thread) => !this.closedSince(thread, now)),
       }),
       // The plugin operation's event holds why; the item page offers none.
       (): ThreadListing => ({ at: now, failed: true, threads: [] }),
@@ -731,6 +741,33 @@ export class Handoffs {
     if (projects.size && !projects.has(projectId))
       throw new HandoffRefused("This item's threads are in another project.");
   }
+  /**
+   * A thread closed in its tool leaves the listings taken before the close,
+   * so the item page offers it no more and Link refuses it: those listings
+   * are kept for minutes. A listing under way drops it when it lands
+   * (`closedSince`). A listing taken after the close shows what the tool
+   * lists then.
+   */
+  private forgetListedThread(thread: ThreadIdentity) {
+    const at = this.now();
+    for (const [key, closedAt] of this.closedThreads)
+      if (at - closedAt > THREAD_LINK_MAX_AGE_MS)
+        this.closedThreads.delete(key);
+    this.closedThreads.set(closedThreadKey(thread), at);
+    for (const [key, cached] of this.listings)
+      if (!(cached instanceof Promise))
+        this.listings.set(key, {
+          ...cached,
+          threads: cached.threads.filter(
+            (listed) => !sameThread(listed, thread),
+          ),
+        });
+  }
+  /** Whether the thread was closed in its tool at or after `since`. */
+  private closedSince(thread: ThreadIdentity, since: number) {
+    const closedAt = this.closedThreads.get(closedThreadKey(thread));
+    return closedAt !== undefined && closedAt >= since;
+  }
   /** "Not this one": the thread is offered to that item no more. */
   async dismissThread(dismissal: HandoffThreadDismissal) {
     await this.options.storage.dismissHandoffThread(dismissal);
@@ -801,6 +838,7 @@ export class Handoffs {
             : "The tool refused to close the thread.",
         );
       }
+      this.forgetListedThread(record);
       await this.remove(id);
       return {
         pluginId: record.pluginId,
@@ -1080,6 +1118,16 @@ export class Handoffs {
     }
     return { succeeded, failures };
   }
+}
+
+/** One thread's key in `closedThreads`, as `sameThread` tells threads apart. */
+function closedThreadKey(thread: ThreadIdentity) {
+  return JSON.stringify([
+    thread.pluginId,
+    thread.toolId,
+    thread.connectionId ?? null,
+    thread.threadId,
+  ]);
 }
 
 /** A listing is one tool's, in one folder, through one connection or none. */

@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 import { Handoffs, HandoffRefused } from "./handoffs.ts";
 import { startHandoff } from "./handoff-state.ts";
 import { AppApiStorage } from "./storage.ts";
+import { turnOnHandoffTools } from "./test-support/handoff-tool-switches.ts";
 import type {
   CloseThreadRequest,
   HandoffCloseKind,
@@ -163,4 +164,116 @@ it("never asks a tool that doesn't close threads, or one that can't run", async 
 
   expect(t.closes).toEqual([]);
   expect(await t.ids()).toEqual(["h1", "h2", "h3"]);
+});
+
+/**
+ * A closed thread leaves the listings taken before the close, cached or
+ * under way: the item page offers it no more, and Link refuses it. The
+ * Codex review of #851 found that the five-minute listing cache offered it
+ * again.
+ */
+async function listingSetup() {
+  const t = await setup();
+  await turnOnHandoffTools(t.storage, { agent: ["codex"] });
+  const folder = await t.storage.addRepositoryFolder("p", os.tmpdir(), "Repo");
+  const listed = {
+    threadId: "thread-h1",
+    title: "[PAY-12] Fix login redirect",
+    native: {},
+  };
+  let answer: () => Promise<{ threads: (typeof listed)[] }> = async () => ({
+    threads: [listed],
+  });
+  const service = new Handoffs({
+    storage: t.storage,
+    onChange: () => {},
+    plugins: {
+      listPlugins: async () => [
+        {
+          id: "agent",
+          capabilities: {
+            handoff: {
+              tools: [
+                {
+                  id: "codex",
+                  label: "Codex",
+                  listsThreads: true,
+                  closesThreads: "archive",
+                },
+              ],
+            },
+          },
+        },
+      ],
+      startHandoff: async () => {
+        throw new Error("not used");
+      },
+      readHandoffStates: async (_plugin, request) =>
+        request.handoffs.map((h) => ({ id: h.id, state: "ready", native: {} })),
+      listThreads: () => answer(),
+      closeThread: async () => ({}),
+    },
+  });
+  const offered = async () =>
+    (await service.findThreads("p", "item-12", ["PAY-12"])).offers.map(
+      (offer) => offer.threadId,
+    );
+  const link = () =>
+    service.adopt({
+      pluginId: "agent",
+      toolId: "codex",
+      folderId: folder.id,
+      threadId: "thread-h1",
+      projectId: "p",
+      workItemId: "item-12",
+    });
+  return {
+    ...t,
+    service,
+    offered,
+    link,
+    answerWith: (next: typeof answer) => {
+      answer = next;
+    },
+  };
+}
+
+it("stops offering a closed thread from the listing taken before the close", async () => {
+  const t = await listingSetup();
+  expect(await t.offered()).toEqual(["thread-h1"]);
+  const linked = await t.link();
+
+  await t.service.close(linked.id);
+
+  expect(await t.offered()).toEqual([]);
+  await expect(t.link()).rejects.toThrow("This thread is no longer listed.");
+});
+
+it("leaves a closed thread out of a listing that was under way during the close", async () => {
+  const t = await listingSetup();
+  await t.add("h1", "codex");
+  let release!: () => void;
+  t.answerWith(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({
+            threads: [
+              {
+                threadId: "thread-h1",
+                title: "[PAY-12] Fix login redirect",
+                native: {},
+              },
+            ],
+          });
+      }),
+  );
+  const finding = t.offered();
+  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+
+  await t.service.close("h1");
+  release();
+
+  expect(await finding).toEqual([]);
+  expect(await t.offered()).toEqual([]);
 });

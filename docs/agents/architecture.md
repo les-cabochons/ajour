@@ -1489,7 +1489,10 @@ message reaches the user. POST `/api/handoffs/:handoffId/close` runs
 the tool's own refusal, and keeps the handoff for each. Once the plugin
 answers, it forgets the handoff as `remove` does, hook state included, and
 answers the handoffs left. A close runs inside `runBatch`, so no refresh batch
-reads the thread while the tool closes it. The plugin host refuses the
+reads the thread while the tool closes it. The closed thread also leaves every
+thread listing taken before the close, cached or under way
+(`forgetListedThread`), so the item page doesn't offer it again and Link
+refuses it; a listing taken after the close shows what the tool lists then. The plugin host refuses the
 operation too for a tool that doesn't declare it (`not_supported`). The
 window asks before a `delete` close, never before an `archive` one.
 
