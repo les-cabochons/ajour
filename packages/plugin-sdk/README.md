@@ -17,7 +17,7 @@ This package provides:
 Until the SDK is published, vendor the packed package in your plugin repo:
 
 ```sh
-pnpm add -D file:vendor/ajour-plugin-sdk-0.2.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.3.0.tgz
 ```
 
 Once it's published, swap the file dependency for a version range.
@@ -65,6 +65,23 @@ Once it's published, swap the file dependency for a version range.
 ```
 
 Unknown keys are refused, so a misspelt key fails at install instead of being ignored.
+
+### Fields by item type
+
+A `typeOverrides` connection field lets each item type use other text fields than the connection's own, such as Original Estimate for a Task where the connection names Effort. `overrides` lists the ids of one to four text connection fields that aren't secret. The field can't be secret or required, and it belongs in `connectionFields` only.
+
+```json
+{
+  "id": "estimateFieldsByType",
+  "label": "By work item type",
+  "type": "typeOverrides",
+  "overrides": ["originalEstimateFieldName", "remainingEstimateFieldName"]
+}
+```
+
+The connection form shows one row per item type found in the connection's synced items, with one input per overridden field. The plugin receives the value as JSON text, `{ "<type name>": { "<field id>": "<text>" } }`, with only the filled inputs, or `""`. Read it with `parseTypeOverrides`, and look up a type's text with `typeOverrideFor`, which matches type names in any case. Return the value in `normalizedConfig` from `validateConnection`, or Ajour drops it.
+
+An Ajour older than this field type refuses to install the plugin.
 
 ### Secret fields
 
