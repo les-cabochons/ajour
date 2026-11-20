@@ -265,7 +265,7 @@ function BacklogItemSummaryCard({
             return (
               <Link
                 key={item._id}
-                to="/pull-requests/$itemId"
+                to="/deck/$itemId"
                 params={{ itemId: item._id }}
                 className={cardRow}
                 onClick={(event) => follow(event, item.facts.url)}

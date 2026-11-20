@@ -22,11 +22,11 @@ describe("parseBacklogItemSearch", () => {
     expect(parseBacklogItemSearch({ action: 1 })).toEqual({});
   });
 
-  it("keeps a Time, Projects or Pull requests page as the origin", () => {
+  it("keeps a Time, Projects or Deck page as the origin", () => {
     for (const from of [
       "/time/2026-10-15?view=week",
       "/projects/p1",
-      "/pull-requests",
+      "/deck",
     ]) {
       expect(parseBacklogItemSearch({ from })).toEqual({ from });
     }
@@ -35,6 +35,7 @@ describe("parseBacklogItemSearch", () => {
   it("drops an origin outside those sections", () => {
     for (const from of [
       "/backlog",
+      "/pull-requests",
       "/settings/general",
       "https://example.com/time/x",
       "//example.com",

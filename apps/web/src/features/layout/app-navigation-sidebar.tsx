@@ -225,15 +225,11 @@ export function AppNavigationSidebar({
   const views: SidebarViewOption[] = [
     { view: "time", count: <TodayTotal /> },
     { view: "backlog", count: listed.length },
-    ...(pullRequests.enabled
-      ? [
-          {
-            view: "pull-requests",
-            count: pullRequests.items.length,
-            highlighted: returnedPullRequests > 0,
-          } as const,
-        ]
-      : []),
+    {
+      view: "deck",
+      count: pullRequests.items.length,
+      highlighted: returnedPullRequests > 0,
+    },
     { view: "projects" },
   ];
 
@@ -273,6 +269,7 @@ export function AppNavigationSidebar({
         pathname={sectionPathname}
         selectedTimeDate={selectedTimeDate}
         options={views}
+        hasCodeHost={pullRequests.enabled}
       />
 
       {/* The search row. Its hairline parts it from the list. */}

@@ -31,18 +31,17 @@ describe("getSettingsGroups", () => {
     }
   });
 
-  it("lists Pull requests under Work only in the narrow view with a code host", () => {
-    const work = (view: "wide" | "narrow") =>
-      getSettingsGroups(view, true)
-        .find((group) => group.label === "Work")!
-        .pages.map((page) => page.label);
-    expect(work("narrow")).toContain("Pull requests");
-    expect(work("wide")).not.toContain("Pull requests");
+  it("lists no Deck entry, which the narrow bottom switcher holds", () => {
+    for (const view of ["wide", "narrow"] as const) {
+      const routes = getSettingsPages(view).map((page) => page.to);
+      expect(routes).not.toContain("/deck");
+      expect(routes).not.toContain("/pull-requests");
+    }
   });
 
   it("lists Calendar under Work only while a calendar plugin is on", () => {
     const work = (hasCalendar: boolean) =>
-      getSettingsGroups("wide", false, hasCalendar)
+      getSettingsGroups("wide", hasCalendar)
         .find((group) => group.label === "Work")!
         .pages.map((page) => page.to);
     expect(work(true)).toContain("/settings/calendar");
@@ -66,7 +65,7 @@ describe("getSettingsGroups", () => {
 
 describe("Diagnostics", () => {
   const app = (hasDiagnostics: boolean, view: "wide" | "narrow" = "wide") =>
-    getSettingsGroups(view, false, false, hasDiagnostics)[0]!.pages.map(
+    getSettingsGroups(view, false, hasDiagnostics)[0]!.pages.map(
       (page) => page.to,
     );
 

@@ -22,7 +22,7 @@ const hostedActionIds: readonly HostedBacklogItemActionId[] = [
 const originLabels: Partial<Record<AppSection, string>> = {
   time: "Time",
   projects: "Projects",
-  "pull-requests": "Pull requests",
+  deck: "Deck",
 };
 
 /** A valid `from`, split for the back link and the section switchers. */
@@ -51,7 +51,7 @@ export function parseBacklogItemSearch(
 /**
  * The page a backlog item was opened from, as an in-app href such as
  * `/time/2026-10-15?view=week`, or undefined. Only a page of Time, Projects
- * or Pull requests counts, which also drops external URLs.
+ * or Deck counts, which also drops external URLs.
  */
 export function parseBacklogItemOrigin(value: unknown): string | undefined {
   return resolveOrigin(value)?.href;

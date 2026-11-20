@@ -13,12 +13,10 @@ import {
   RiSettings3Line as Settings,
   RiSparkling2Line as Sparkle,
   RiTerminalBoxLine as Terminal,
-  RiGitPullRequestLine as PullRequestIcon,
   RiPulseLine as Diagnostics,
   RiFlowChart as Workflow,
 } from "@remixicon/react";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
-import { useCodeHostConnections } from "@/lib/code-host-connections";
 import { hasLocalLogsBridge } from "./use-local-logs";
 
 /**
@@ -32,12 +30,12 @@ export type SettingsNavigationView = "wide" | "narrow";
  * The settings pages in display order, grouped under a heading. The narrow
  * view has no Projects sidebar, so its Projects entry opens the full
  * Projects section, where project import and export is an action. Wide
- * windows keep the separate import and export page. Diagnostics is listed
- * only where the local log file is reachable: the desktop app's bridge.
+ * windows keep the separate import and export page. Deck is not a settings
+ * page: the narrow view reaches it from the bottom switcher. Diagnostics is
+ * listed only where the local log file is reachable: the desktop app's bridge.
  */
 export function getSettingsGroups(
   view: SettingsNavigationView,
-  hasCodeHost = false,
   hasCalendar = false,
   hasDiagnostics = false,
 ) {
@@ -69,15 +67,6 @@ export function getSettingsGroups(
       label: "Work",
       pages: [
         { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
-        ...(view === "narrow" && hasCodeHost
-          ? [
-              {
-                to: "/pull-requests",
-                label: "Pull requests",
-                icon: PullRequestIcon,
-              } as const,
-            ]
-          : []),
         { to: "/settings/workflow", label: "Workflow", icon: Workflow },
         view === "narrow"
           ? { to: "/projects", label: "Projects", icon: FolderKanban }
@@ -115,16 +104,12 @@ export const unlistedSettingsPages = [
 /** The settings pages in display order, without their groups. */
 export function getSettingsPages(
   view: SettingsNavigationView,
-  hasCodeHost = false,
   hasCalendar = false,
   hasDiagnostics = false,
 ) {
-  return getSettingsGroups(
-    view,
-    hasCodeHost,
-    hasCalendar,
-    hasDiagnostics,
-  ).flatMap((group) => group.pages);
+  return getSettingsGroups(view, hasCalendar, hasDiagnostics).flatMap(
+    (group) => group.pages,
+  );
 }
 
 /**
@@ -132,11 +117,9 @@ export function getSettingsPages(
  * full-width rows, and each page it opens has a back arrow to it.
  */
 export function SettingsNavigation() {
-  const { groups: codeHosts } = useCodeHostConnections();
   const calendars = useCalendarSources();
   const groups = getSettingsGroups(
     "narrow",
-    codeHosts.length > 0,
     calendars.length > 0,
     hasLocalLogsBridge(),
   );

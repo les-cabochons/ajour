@@ -4,7 +4,7 @@ import {
 } from "@/domain/pull-requests/pull-request-lifecycle";
 import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { SidebarSectionHeader } from "@/features/layout/sidebar-backlog-list";
-import { PullRequestRow } from "@/features/pull-requests/pull-request-row";
+import { PullRequestRow } from "@/features/deck/pull-request-row";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
 import { useLocalState } from "@/lib/local-hooks";
 import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
@@ -13,11 +13,11 @@ import { useNow } from "@/lib/use-now";
 /** The pull requests that need the user, as their own sidebar list. */
 export function useSidebarPullRequests() {
   const state = useLocalState();
-  const { overview, groups } = useCodeHostConnections();
+  const { overview, groups, enabled } = useCodeHostConnections();
   const now = useNow();
   return {
-    enabled: groups.length > 0,
-    items: groups.length
+    enabled,
+    items: enabled
       ? selectSidebarPullRequests(
           selectVisiblePullRequests(state.pullRequests ?? [], overview, now),
           now,
@@ -34,7 +34,7 @@ export function useSidebarPullRequests() {
 /**
  * The collapsible Pull requests section of the sidebar work list, shown while
  * pull requests need the user and `matcher` accepts some. The nav
- * lists the Pull requests page as soon as a code host plugin is enabled.
+ * lists Deck as soon as a code host plugin is enabled.
  */
 export function SidebarPullRequests({
   pathname,
@@ -69,7 +69,7 @@ export function SidebarPullRequests({
               item={item}
               now={now}
               compact
-              selected={pathname === `/pull-requests/${item._id}`}
+              selected={pathname === `/deck/${item._id}`}
               showConnection={connectionCount > 1}
             />
           ))

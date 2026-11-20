@@ -149,7 +149,7 @@ const SECTION_TITLES: Record<
 > = {
   time: "Time",
   backlog: "Backlog",
-  "pull-requests": "Pull requests",
+  deck: "Deck",
   projects: "Projects",
   settings: "Settings",
 };
@@ -180,8 +180,8 @@ function DefaultPageHeader({
     ? "Backlog"
     : pathname.startsWith("/projects")
       ? "Projects"
-      : pathname.startsWith("/pull-requests")
-        ? "Pull requests"
+      : pathname.startsWith("/deck")
+        ? "Deck"
         : "Ajour";
   return <PageTitle as="div">{title}</PageTitle>;
 }
@@ -595,7 +595,7 @@ export function AppShell() {
   const narrowSettingsPage =
     isNarrowView && isSettingsActive
       ? [
-          ...getSettingsPages("wide", false, true, true),
+          ...getSettingsPages("wide", true, true),
           ...unlistedSettingsPages,
         ].find((page) => pathname.startsWith(page.to))
       : undefined;

@@ -13,7 +13,7 @@ export async function syncPullRequests(
 ): Promise<CodeHostSyncResult>;
 ```
 
-Ajour calls it when the user presses **Sync** on the Pull requests page, and on the connection's timer while automatic pull request sync is on. See `pullRequestAutoSync` in [Reserved fields](/developers/manifest#reserved-fields). Return:
+Ajour calls it when the user presses **Sync** in Deck, and on the connection's timer while automatic pull request sync is on. See `pullRequestAutoSync` in [Reserved fields](/developers/manifest#reserved-fields). Return:
 
 - `viewer`: the user the token belongs to.
 - `instanceUrl`: optional, the code host's URL, such as `https://github.com`. Never secret. With `viewer`, it lets a new connection to the same account take over the pull requests of a removed one.

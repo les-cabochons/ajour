@@ -452,7 +452,6 @@ export function CommandPalette({
         settingsPages: [
           ...getSettingsPages(
             isNarrowView ? "narrow" : "wide",
-            false,
             hasCalendar,
             hasLocalLogsBridge(),
           ),

@@ -11,12 +11,12 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 
 - **The title bar** has the date, **+** for a new entry, **Start**, and the totals. While an entry runs, **Start** becomes **Stop**, and the totals show the running time.
 - **Click the totals** for the day and week totals and the running entry. Click outside the running entry's editor to save it and close it.
-- **The toggle** at the bottom left switches between **Time**, **Backlog** and **Settings**. **Commit**, at its right end, opens the [Commit page](/time/commit) for the week on screen.
+- **The toggle** at the bottom left switches between **Time**, **Backlog**, **Deck** and **Settings**. **Deck** shows when a code host plugin is enabled. **Commit**, at its right end, opens the [Commit page](/time/commit) for the week on screen.
 - **The sidebar** is gone.
 - **Editors** open full width instead of in a side panel.
 - **Backlog rows** always show their **…** button. Day rows show **Continue**, or **Stop** on the running entry. On a touch screen, a long press opens a row's right-click menu.
 - **New backlog items** start from the **+** of a group header.
-- **Projects** and **Pull requests** open from the Settings list.
+- **Projects** opens from the Settings list.
 
 ## What is not available
 
