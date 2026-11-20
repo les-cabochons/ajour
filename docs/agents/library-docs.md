@@ -258,9 +258,15 @@ The backlog editor module is feature-local because its vocabulary and commands b
   npm: the contract types, the `ajour` global's types and the
   `createFakeAjour` test fake. `scripts/generate-contract.mjs` generates its
   `lib/contract.ts` from the shared schemas and copies
-  `plugin-request-rules.ts` to `lib/request-rules.ts`, and its tests fail
-  while either is stale. The published files import nothing outside the
-  package.
+  `plugin-request-rules.ts` to `lib/request-rules.ts` and
+  `type-overrides.ts` to `lib/type-overrides.ts`, and its tests fail while
+  any is stale. The published files import nothing outside the package.
+- A `typeOverrides` connection field's value, the text fields an item type
+  uses instead of the connection's, is read and written by
+  `packages/shared/type-overrides.ts`, which imports nothing so the SDK can
+  copy it. The connection form's rows are `features/settings/type-overrides-rows.ts`,
+  and the item types of a connection's synced items come from
+  `domain/backlog/source-item-types.ts`.
 - A settle's change to the source is a `pendingSourceWrite` on the work item,
   set by `settleBacklogItem`, a move or `changeBacklogItemPriority`, and
   cleared by `completeSourceWrite` or

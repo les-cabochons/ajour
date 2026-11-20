@@ -57,6 +57,7 @@ import {
   type PluginDisplayEntry,
 } from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
+import { countSourceItemTypes } from "@/domain/backlog/source-item-types";
 import type {
   PluginConnectionSummary,
   PluginFieldValues,
@@ -674,6 +675,19 @@ export function SettingsPluginsPage({
     [state.workItems],
   );
 
+  // The item types of the edited connection's items, for its fields by type.
+  const formItemTypes = useMemo(
+    () =>
+      formState?.editingConnectionId
+        ? countSourceItemTypes(
+            state.workItems,
+            formState.pluginId,
+            formState.editingConnectionId,
+          )
+        : [],
+    [state.workItems, formState?.pluginId, formState?.editingConnectionId],
+  );
+
   const pluginGroups = overview?.connectionGroups ?? [];
   const filteredDisplayEntries = displayEntries.filter(
     (entry) =>
@@ -932,6 +946,7 @@ export function SettingsPluginsPage({
       <PluginConnectionForm
         group={group}
         form={groupFormState}
+        itemTypes={formItemTypes}
         setForm={setFormState}
         connection={editedConnection}
         vault={overview?.vault}

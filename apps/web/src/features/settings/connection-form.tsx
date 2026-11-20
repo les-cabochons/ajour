@@ -12,6 +12,7 @@ import {
 import { AppPanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
+import type { SourceItemTypeCount } from "@/domain/backlog/source-item-types";
 import {
   areExpiryDraftsValid,
   canSubmitPluginForm,
@@ -26,6 +27,9 @@ import {
 import { ConnectionAccessGroup } from "./connection-access-ui";
 import { PluginFieldInput } from "./plugin-settings-ui";
 import { TeamCreateField } from "./team-connection-ui";
+import { TypeOverridesField } from "./type-overrides-field";
+
+const NO_ITEM_TYPES: readonly SourceItemTypeCount[] = [];
 
 /** Why a secret can't be saved on this computer, or undefined while it can. */
 export function vaultBlockedReason(status: VaultStatusSummary | undefined) {
@@ -53,6 +57,7 @@ export function PluginConnectionForm({
   onSave,
   onRemoveSecret,
   status,
+  itemTypes = NO_ITEM_TYPES,
 }: {
   group: PluginOverviewGroup;
   form: PluginFormState;
@@ -71,6 +76,8 @@ export function PluginConnectionForm({
   onRemoveSecret: (fieldId: string) => void;
   /** The edited connection's status chip and note: the form stands in for its row. */
   status?: ReactNode;
+  /** The item types of the edited connection's synced items, for a typeOverrides field. */
+  itemTypes?: readonly SourceItemTypeCount[];
 }) {
   const { plugin } = group;
   const editing = form.editingConnectionId !== null;
@@ -133,6 +140,21 @@ export function PluginConnectionForm({
   const renderBlock = (block: ConnectionFormBlock) =>
     block.kind === "field" ? (
       renderField(block.field)
+    ) : block.kind === "typeOverrides" ? (
+      <TypeOverridesField
+        // A form opened anew starts its rows over.
+        key={`${form.instance}/${block.field.id}`}
+        field={block.field}
+        columns={block.columns}
+        found={itemTypes}
+        value={form.values[block.field.id]}
+        onChange={(text) =>
+          update((current) => ({
+            ...current,
+            values: { ...current.values, [block.field.id]: text },
+          }))
+        }
+      />
     ) : (
       <fieldset
         key={`${form.instance}/${block.fields[0]!.field.id}`}
