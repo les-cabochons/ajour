@@ -385,6 +385,12 @@ export const pluginCapabilitiesObjectSchema = z.object({
       comments: backlogCommentsCapabilitySchema.optional(),
       /** Two-way descriptions. See ADR 0009. */
       description: backlogDescriptionCapabilitySchema.optional(),
+      /**
+       * `describeItemTypes`: each item type's icon, its fields, and the
+       * fields it would use for a `typeOverrides` field's columns, for the
+       * connection form. A read: no access choice gates it.
+       */
+      itemTypes: z.boolean().optional(),
     })
     .optional(),
   codeHost: z.object({}).optional(),
@@ -1449,6 +1455,60 @@ export const backlogSettleStatesResultSchema = z.object({
 });
 export type BacklogSettleStatesResult = z.infer<
   typeof backlogSettleStatesResultSchema
+>;
+
+/**
+ * The item types a connection form asks a plugin with `connector.itemTypes`
+ * about: those of the connection's synced items, each with one of its items
+ * so the plugin can find the item's project, then the types the saved value
+ * names, without one.
+ */
+export const backlogItemTypesRequestSchema = z.object({
+  types: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        sourceId: z.string().trim().min(1).max(400).optional(),
+      }),
+    )
+    .max(200),
+});
+export type BacklogItemTypesRequest = z.infer<
+  typeof backlogItemTypesRequestSchema
+>;
+
+/** A field an item type has in its source: its name, and its id if the source has one. */
+export const backlogItemTypeFieldSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  id: z.string().trim().min(1).max(200).optional(),
+});
+
+/**
+ * What a plugin says about one item type. `iconSvg` follows the manifest
+ * icon's rule: Ajour draws it as an image, never as markup. `fields` lists
+ * the type's own fields; without it, Ajour can't tell what the type lacks.
+ * `suggestions` proposes, by the id of a field a `typeOverrides` field
+ * replaces, the type's fields to use instead, best first.
+ */
+export const backlogItemTypeSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  iconSvg: z.string().min(1).max(20000).optional(),
+  fields: z.array(backlogItemTypeFieldSchema).max(1000).optional(),
+  suggestions: z
+    .record(
+      z.string().min(1).max(120),
+      z.array(z.string().trim().min(1).max(200)).max(20),
+    )
+    .optional(),
+});
+export type BacklogItemType = z.infer<typeof backlogItemTypeSchema>;
+
+/** The answer: the types asked about that the plugin knows, and any other type it offers. */
+export const backlogItemTypesResultSchema = z.object({
+  types: z.array(backlogItemTypeSchema).max(200),
+});
+export type BacklogItemTypesResult = z.infer<
+  typeof backlogItemTypesResultSchema
 >;
 
 /**
