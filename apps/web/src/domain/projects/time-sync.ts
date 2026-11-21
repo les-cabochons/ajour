@@ -1267,16 +1267,19 @@ function takeListing(
 
   /**
    * The sync keys this Ajour sends as client references: of its entries and
-   * running entries, of its copies, and of the creates whose answer never
-   * came (#838). An entry there with one of them is Ajour's own, never a new
-   * one. Any other client reference is another Ajour's, such as one on the
-   * user's other machine, so its entry was logged elsewhere (#853).
+   * running entries, of its copies, of the creates whose answer never came
+   * (#838), and of this round's changes, such as a create whose entry the
+   * user deleted while it was on the way. An entry there with one of them is
+   * Ajour's own, never a new one. Any other client reference is another
+   * Ajour's, such as one on the user's other machine, so its entry was
+   * logged elsewhere (#853).
    */
   const ownKeys = new Set([
     ...saved.keys(),
     ...timers.keys(),
     ...Object.keys(record.copies),
     ...Object.keys(record.unconfirmed ?? {}),
+    ...plan.request.changes.map((change) => change.syncKey),
   ]);
   const sentHere = (remote: TimeSyncRemoteEntry) =>
     remote.clientRef !== undefined && ownKeys.has(remote.clientRef);

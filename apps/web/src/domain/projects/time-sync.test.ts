@@ -543,6 +543,29 @@ describe("applying a round", () => {
       ]);
     });
 
+    it("never takes back an entry deleted while its create was on the way, though the planner lists it", () => {
+      const before = stateWith([entry("e1")]);
+      const round = plan(before);
+      const deleted = { ...before, timesheetEntries: [] };
+
+      // The planner made e1, but its answer was lost.
+      const { state } = applyTimeSyncRound(
+        deleted,
+        round,
+        {
+          ...fail(round),
+          entries: [remoteEntry("remote-1", { clientRef: "e1", minutes: 90 })],
+        },
+        CONTEXT,
+        factoriesAt(300),
+      );
+
+      expect(entriesOf(state)).toEqual([]);
+      expect(plan(state).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
     it("sends the create again while the entry stays, and forgets it once that syncs", () => {
       const failed = runRound(stateWith([entry("e1")]), fail).state;
       expect(plan(failed).request.changes).toEqual([
