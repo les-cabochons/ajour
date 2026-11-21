@@ -267,7 +267,20 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `packages/shared/type-overrides.ts`, which imports nothing so the SDK can
   copy it. The connection form's rows are `features/settings/type-overrides-rows.ts`,
   and the item types of a connection's synced items come from
-  `domain/backlog/source-item-types.ts`.
+  `domain/backlog/source-item-types.ts`, each with one item's `sourceId`.
+- A backlog plugin that declares `"connector": { "itemTypes": true }`
+  exports `describeItemTypes(connection, { types: [{ name, sourceId? }] })`
+  and answers, per type, an optional `iconSvg`, its `fields` and, by
+  overridden field id, the `suggestions` to propose (#848). The schemas are
+  `backlogItemTypesRequestSchema` and `backlogItemTypesResultSchema` in
+  `packages/shared/plugins.ts`; the API runs it at
+  `POST /api/plugins/:pluginId/connections/:connectionId/item-types`, a read
+  that no access choice gates. `TypeOverridesField` calls it once per
+  opening of a saved connection's form (`describeBacklogItemTypes` in
+  `lib/app-api.ts`), and `missingField` and `otherItemTypes` in
+  `type-overrides-rows.ts` turn the answer into hints and the Add a type
+  options. The example tracker, `packages/example/tracker/`, answers it from
+  memory for the tests.
 - A settle's change to the source is a `pendingSourceWrite` on the work item,
   set by `settleBacklogItem`, a move or `changeBacklogItemPriority`, and
   cleared by `completeSourceWrite` or

@@ -106,6 +106,10 @@ _Avoid_: Completed, closed column, final state
 The state a synced backlog item has in its source tool. Each source state maps to one workflow state.
 _Avoid_: Remote status, source status
 
+**Item type**:
+The kind a synced backlog item has in its source tool, such as Task or Bug. A connection can let an item type use other source fields than its own, and its plugin can describe each type's icon and fields.
+_Avoid_: Work item type, source type
+
 **Settle**:
 To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state, priority or assignee in its source tool at the same time.
 _Avoid_: Complete, close, finish, resolve
