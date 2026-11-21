@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
-import type { TimeSyncRequest } from "@ajour/shared";
+import type { TimeSyncEntryValues, TimeSyncRequest } from "@ajour/shared";
 import {
   deleteExampleRemoteEntry,
   editExampleRemoteEntry,
@@ -161,8 +161,9 @@ function today() {
 /**
  * Each page's fake remote: the example planner's remote under a key of its
  * own, the remote id it first gave each task's entry, the entry another
- * tool logged last, for its edit and delete, and how many checks it
- * answered unchanged, with Ajour's saved state before them.
+ * tool logged last, for its edit and delete, how many checks it answered
+ * unchanged, with Ajour's saved state before them, and the task of the
+ * timer another Ajour runs, for its stop.
  */
 const remotes = new WeakMap<
   Page,
@@ -174,6 +175,7 @@ const remotes = new WeakMap<
     unchangedChecks: number;
     /** Ajour's saved state when the checks a step waits for began. */
     stateBeforeChecks?: string | null;
+    otherAjourTimer?: string;
   }
 >();
 
@@ -595,6 +597,68 @@ Then(
     const before = remotes.get(page)!.stateBeforeChecks;
     expect(before).toEqual(expect.any(String));
     expect(await savedState(page)).toBe(before);
+  },
+);
+
+/**
+ * Sends a change to the page's fake remote as another Ajour on the same
+ * planner would, such as one on the user's other machine (#853): through
+ * the plugin, with its own sync key as the client reference.
+ */
+function sendAsAnotherAjour(
+  page: Page,
+  syncKey: string,
+  values: TimeSyncEntryValues,
+) {
+  runExampleTimeSyncRound(remotes.get(page)!.key, {
+    from: today(),
+    to: today(),
+    timeZone: "UTC",
+    changes: [{ kind: "upsert", syncKey, values }],
+  });
+}
+
+const OTHER_AJOUR_TIMER = "timer_on-the-other-machine";
+
+Given(
+  "another Ajour logged {int} minutes on {string} today in the planner",
+  async ({ page }, minutes: number, task: string) => {
+    sendAsAnotherAjour(page, "timesheet_entry_on-the-other-machine", {
+      localDate: today(),
+      minutes,
+      running: false,
+      projectRemoteId: "ACME-SUP",
+      taskName: task,
+    });
+  },
+);
+
+When(
+  "another Ajour starts a timer on {string} in the planner",
+  async ({ page }, task: string) => {
+    const now = await page.evaluate(() => Date.now());
+    remotes.get(page)!.otherAjourTimer = task;
+    sendAsAnotherAjour(page, OTHER_AJOUR_TIMER, {
+      localDate: today(),
+      minutes: 0,
+      running: true,
+      countingSince: new Date(now).toISOString(),
+      projectRemoteId: "ACME-SUP",
+      taskName: task,
+    });
+  },
+);
+
+When(
+  "another Ajour stops its timer in the planner at {int} minutes",
+  async ({ page }, minutes: number) => {
+    sendAsAnotherAjour(page, OTHER_AJOUR_TIMER, {
+      localDate: today(),
+      minutes,
+      running: false,
+      projectRemoteId: "ACME-SUP",
+      taskName: remotes.get(page)!.otherAjourTimer!,
+    });
   },
 );
 

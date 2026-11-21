@@ -883,12 +883,15 @@ interface TakenListing {
  * - The copy of Ajour's running entry, agreed running, whose remote entry
  *   shows stopped, was stopped there: Ajour stops it with the minutes there,
  *   under the same rules when Ajour changed it too (#695).
- * - A listed entry with neither a copy nor a client reference was logged
- *   elsewhere: Ajour adds it. One with a client reference is Ajour's own,
- *   such as one a send whose answer was lost made, and the next send
- *   adopts it, or deletes it once its entry is gone (#838).
- * - Such an entry still running there was started in another tool: it
- *   becomes the running entry, as `takeRunning` says (#695).
+ * - A listed entry with neither a copy nor one of this Ajour's sync keys as
+ *   its client reference was logged elsewhere, in another tool or by
+ *   another Ajour, such as one on the user's other machine (#853): Ajour
+ *   adds it. One with such a key is Ajour's own, such as one a send whose
+ *   answer was lost made, and the next send adopts it, or deletes it once
+ *   its entry is gone (#838).
+ * - Such an entry still running there was started in another tool or
+ *   another Ajour: it becomes the running entry, as `takeRunning` says
+ *   (#695).
  *
  * A submitted week stays as the user committed it (#696). An edit there
  * to one of its entries, or one that moves an entry into it, is put back:
@@ -1263,16 +1266,33 @@ function takeListing(
   }
 
   /**
-   * The running entry started in another tool that Ajour may take. The
-   * other system keeps one running entry per person: should it list more,
-   * the one that started last.
+   * The sync keys this Ajour sends as client references: of its entries and
+   * running entries, of its copies, of the creates whose answer never came
+   * (#838), and of this round's changes, such as a create whose entry the
+   * user deleted while it was on the way. An entry there with one of them is
+   * Ajour's own, never a new one. Any other client reference is another
+   * Ajour's, such as one on the user's other machine, so its entry was
+   * logged elsewhere (#853).
+   */
+  const ownKeys = new Set([
+    ...saved.keys(),
+    ...timers.keys(),
+    ...Object.keys(record.copies),
+    ...Object.keys(record.unconfirmed ?? {}),
+    ...plan.request.changes.map((change) => change.syncKey),
+  ]);
+  const sentHere = (remote: TimeSyncRemoteEntry) =>
+    remote.clientRef !== undefined && ownKeys.has(remote.clientRef);
+
+  /**
+   * The running entry started in another tool or another Ajour that Ajour
+   * may take. The other system keeps one running entry per person: should
+   * it list more, the one that started last.
    */
   const startedElsewhere = answer.entries
     .filter(
       (remote) =>
-        remote.running &&
-        !known.has(remote.remoteId) &&
-        remote.clientRef === undefined,
+        remote.running && !known.has(remote.remoteId) && !sentHere(remote),
     )
     .reduce<TimeSyncRemoteEntry | undefined>(
       (latest, remote) =>
@@ -1347,7 +1367,7 @@ function takeListing(
   for (const remote of answer.entries) {
     if (
       known.has(remote.remoteId) ||
-      remote.clientRef !== undefined ||
+      sentHere(remote) ||
       !inWindow(remote.localDate)
     ) {
       continue;
