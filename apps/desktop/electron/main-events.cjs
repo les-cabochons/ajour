@@ -152,6 +152,7 @@ const TRIGGERS = {
   retry: "user",
   reload: "user",
   track_change: "user",
+  update_check: "user",
   menu: "user",
   tray: "user",
   all_windows_closed: "user",

@@ -22,7 +22,7 @@ On macOS, open the app once, then go to **System Settings › Privacy & Security
 
 ## Updates
 
-Ajour checks GitHub for a newer version on startup, every 4 hours, and when you open **Settings › General**. To check now, click the arrow beside the version at the bottom left of the Settings window, or press **Check again** in **Settings › General › Application updates**. On macOS, you can also choose **Ajour › Check for updates…** in the menu bar. Checks never download an update.
+Ajour checks GitHub for a newer version on startup, every 4 hours, and when you open **Settings › General**. To check now, click the arrow beside the version at the bottom left of the Settings window, or press **Check again** in **Settings › General › Application updates**. On macOS, you can also choose **Ajour › Check for updates…** in the menu bar. These checks also look for new plugin versions, shown on the **Plugins** page. Checks never download an update.
 
 Pick the track in **Settings › General › Application updates**:
 
