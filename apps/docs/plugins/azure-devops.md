@@ -53,6 +53,8 @@ A process can keep estimates in different fields by type. On Scrum, Product Back
 
 **Add a type** names a type that hasn't synced yet. Saving checks every field a type names against the organization, and refuses one it can't find, naming the type. Needs Azure DevOps plugin 2.1.0.
 
+From plugin 2.2.0, each row shows the type's Azure DevOps icon, and the inputs suggest the type's own fields. When a type lacks the connection's field, the row says so, such as "Task has no Effort field.", and proposes one the type has: Original Estimate, Effort, Story Points or Size for the original estimate, Remaining Work and Completed Work for the others. **Use it** fills the input; nothing is saved until you do. **Add a type** lists the project's other types, without test and disabled ones. The plugin reads the types and icons once per project while Ajour runs. 2.2.0 adds the two addresses it reads them from, so Ajour asks you to allow it again after the update.
+
 ## What it syncs
 
 The plugin reads the 200 most recently changed work items of these types, and keeps the open ones: Task, Product Backlog Item, User Story, Requirement, Issue and Bug. With **Assigned to me**, only items assigned to you.
