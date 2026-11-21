@@ -1473,6 +1473,10 @@ async function runBacklogSync(
     connection: { id: connectionId },
     backlog_sync: { trigger, items_sent: payload.workItems.length },
   });
+  // A one-item sync names its item, so an item's refresh or estimate upload
+  // can be found among its events.
+  const scopedItem = input?.sourceId ? payload.workItems[0] : undefined;
+  if (scopedItem) job.set({ backlog_item: { id: scopedItem.localWorkItemId } });
   const result = await appApiRequest(
     "syncBacklogConnection",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
