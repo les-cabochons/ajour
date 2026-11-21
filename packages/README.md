@@ -14,7 +14,7 @@ packages/
     tests/          ← tests and fixtures (a subfolder, so private).
 ```
 
-`packages/example/` is the example project source plugin Ajour's tests load (#504), not a template: a new package follows the layout above.
+`packages/example/` holds the example plugins Ajour's tests load, a project source (#504) and a tracker that describes its item types (#848), not a template: a new package follows the layout above.
 
 ## Rules
 
