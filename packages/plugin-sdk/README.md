@@ -17,7 +17,7 @@ This package provides:
 Until the SDK is published, vendor the packed package in your plugin repo:
 
 ```sh
-pnpm add -D file:vendor/ajour-plugin-sdk-0.3.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.4.0.tgz
 ```
 
 Once it's published, swap the file dependency for a version range.
@@ -82,6 +82,8 @@ A `typeOverrides` connection field lets each item type use other text fields tha
 The connection form shows one row per item type found in the connection's synced items, with one input per overridden field. The plugin receives the value as JSON text, `{ "<type name>": { "<field id>": "<text>" } }`, with only the filled inputs, or `""`. Read it with `parseTypeOverrides`, and look up a type's text with `typeOverrideFor`, which matches type names in any case. Return the value in `normalizedConfig` from `validateConnection`, or Ajour drops it.
 
 An Ajour older than this field type refuses to install the plugin.
+
+Declare `"connector": { "itemTypes": true }` and export `describeItemTypes(connection, { types })` to tell the form about each type. Each requested type has a `name` and, when a synced item has it, that item's `sourceId`, so you can find its project. Answer `{ types }`: per type, an optional `iconSvg` (20,000 characters at most, drawn as an image), the `fields` it has as `{ name, id? }`, and `suggestions`, the field names to propose by overridden field id, best first. Add types the request didn't name to offer them under Add a type. When a type lacks the connection's field, the form says so and proposes your first suggestion; nothing is saved until the user takes it. When the call fails, the form works without it. An older Ajour ignores the flag and never calls.
 
 ### Secret fields
 

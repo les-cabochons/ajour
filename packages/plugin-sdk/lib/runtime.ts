@@ -17,6 +17,8 @@ import type {
   DataShapeExportResult,
   DataShapeImportResult,
   DataShapeSheet,
+  DescribeItemTypesRequest,
+  DescribeItemTypesResult,
   PluginConnection,
   PluginHttpMethod,
   ProjectSourceSyncRequest,
@@ -252,6 +254,15 @@ export type PluginModule = {
     connection: PluginConnection,
     request: WriteDescriptionRequest,
   ) => Awaitable<WriteDescriptionResult>;
+  /**
+   * The item types the connection form shows, for `connector.itemTypes`:
+   * each type's icon, its fields, and the fields it would use for a
+   * `typeOverrides` field's columns. Answer other types too, for Add a type.
+   */
+  describeItemTypes?: (
+    connection: PluginConnection,
+    request: DescribeItemTypesRequest,
+  ) => Awaitable<DescribeItemTypesResult>;
   syncProjects?: (
     connection: PluginConnection,
     request: ProjectSourceSyncRequest,

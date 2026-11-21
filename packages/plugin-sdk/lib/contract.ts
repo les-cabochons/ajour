@@ -101,6 +101,7 @@ export type PluginManifest = {
             | undefined;
           settle?: boolean | undefined;
           assign?: boolean | undefined;
+          itemTypes?: boolean | undefined;
         }
       | undefined;
     codeHost?: {} | undefined;
@@ -779,6 +780,20 @@ export type WriteDescriptionResult = {
     cut?: boolean | undefined;
   };
   outcome: "written" | "conflict";
+};
+
+/** Needs `connector.itemTypes`. A request type without `sourceId` has no synced item yet. */
+export type DescribeItemTypesRequest = {
+  types: { name: string; sourceId?: string | undefined }[];
+};
+
+export type DescribeItemTypesResult = {
+  types: {
+    name: string;
+    fields?: { name: string; id?: string | undefined }[] | undefined;
+    iconSvg?: string | undefined;
+    suggestions?: Record<string, string[]> | undefined;
+  }[];
 };
 
 /** Each code host operation's request and result, by the function name it exports. */
