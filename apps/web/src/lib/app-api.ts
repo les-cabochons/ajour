@@ -1557,7 +1557,10 @@ async function runBacklogSync(
                 : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
-    localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
+    localStore.applyBacklogSyncWorkItemUpdates(
+      result.workItemUpdates,
+      payload.workItems,
+    );
     // The estimate changes the connection didn't upload stay, held for
     // review: editing work items is off, or the user hasn't approved them.
     // After the answer, so a field it uploaded no longer differs and loses a
