@@ -1614,13 +1614,15 @@ export function listBacklogSettleStates(
 /**
  * What a connection's plugin says about its item types, for the connection
  * form's fields by item type. Only for a plugin with `connector.itemTypes`.
+ * Async, so a request the schema refuses, such as a saved type name over
+ * 120 characters, rejects like a failed call instead of throwing.
  */
-export function describeBacklogItemTypes(
+export async function describeBacklogItemTypes(
   pluginId: string,
   connectionId: string,
   request: BacklogItemTypesRequest,
 ) {
-  return appApiRequest(
+  return await appApiRequest(
     "describeBacklogItemTypes",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/item-types`,
     {

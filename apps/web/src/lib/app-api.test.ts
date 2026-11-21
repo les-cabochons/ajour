@@ -3,6 +3,7 @@ import type { PluginsOverview } from "@ajour/shared";
 import {
   appApiErrorStatus,
   cachePluginsOverview,
+  describeBacklogItemTypes,
   getPluginsOverview,
   isPluginApiMissing,
   subscribePluginsOverview,
@@ -126,5 +127,20 @@ describe("missing app API", () => {
       throw new TypeError("Failed to fetch");
     });
     expect(appApiErrorStatus(unreachable)).toBeUndefined();
+  });
+});
+
+describe("item types lookup", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("rejects a request the route would refuse, so the form's failure handler gets it, and sends nothing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    // A saved override can name a type longer than the route takes.
+    const lookup = describeBacklogItemTypes("tracker", "contoso", {
+      types: [{ name: "T".repeat(121) }],
+    });
+    await expect(lookup).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
