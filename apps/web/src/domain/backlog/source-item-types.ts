@@ -1,18 +1,30 @@
 import type { LocalWorkItem } from "@/domain/local-state";
 
-/** An item type a connection's items have, and how many of them. */
-export type SourceItemTypeCount = { name: string; count: number };
+/**
+ * An item type a connection's items have, how many of them, and the source
+ * id of one of them, so its plugin can find the item's project.
+ */
+export type SourceItemTypeCount = {
+  name: string;
+  count: number;
+  sourceId?: string;
+};
 
 /**
  * The item types of one connection's synced items in the backlog, active or
  * settled, most items first, then by name. Names that differ only in case or
- * spaces are one type, spelled as its first item spells it.
+ * spaces are one type, spelled as its first item spells it. Its `sourceId`
+ * is its first item's that has one.
  */
 export function countSourceItemTypes(
   workItems: ReadonlyArray<
     Pick<
       LocalWorkItem,
-      "source" | "sourceConnectionId" | "sourceWorkItemType" | "status"
+      | "source"
+      | "sourceConnectionId"
+      | "sourceId"
+      | "sourceWorkItemType"
+      | "status"
     >
   >,
   source: string,
@@ -30,9 +42,10 @@ export function countSourceItemTypes(
       continue;
     }
     const key = name.toLowerCase();
-    const counted = byKey.get(key);
-    if (counted) counted.count += 1;
-    else byKey.set(key, { name, count: 1 });
+    const counted = byKey.get(key) ?? { name, count: 0 };
+    counted.count += 1;
+    counted.sourceId ??= workItem.sourceId;
+    byKey.set(key, counted);
   }
   return [...byKey.values()].sort(
     (left, right) =>

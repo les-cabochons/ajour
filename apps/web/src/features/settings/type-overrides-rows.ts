@@ -1,6 +1,9 @@
 import {
   formatTypeOverrides,
   parseTypeOverrides,
+  type BacklogItemType,
+  type BacklogItemTypesRequest,
+  type BacklogItemTypesResult,
   type PluginFieldValue,
 } from "@ajour/shared";
 import type { SourceItemTypeCount } from "@/domain/backlog/source-item-types";
@@ -25,6 +28,7 @@ export type TypeOverrideRow = {
   removable: boolean;
 };
 
+/** Two names of one type or field: trimmed, in any case. */
 function sameType(left: string, right: string) {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
@@ -113,4 +117,74 @@ export function withoutDraft(
   typeName: string,
 ): TypeOverrideDraft[] {
   return drafts.filter((draft) => !sameType(draft.name, typeName));
+}
+
+/**
+ * What the form asks the plugin about: the types found, each with one of
+ * its items, then the types only the saved value names, without one.
+ */
+export function itemTypesRequest(
+  found: readonly SourceItemTypeCount[],
+  drafts: readonly TypeOverrideDraft[],
+): BacklogItemTypesRequest {
+  return {
+    types: [
+      ...found.map((type) =>
+        type.sourceId
+          ? { name: type.name, sourceId: type.sourceId }
+          : { name: type.name },
+      ),
+      ...drafts
+        .filter(
+          (draft) => !found.some((type) => sameType(type.name, draft.name)),
+        )
+        .map((draft) => ({ name: draft.name })),
+    ],
+  };
+}
+
+/** What the plugin said about a type, matched by name in any case. */
+export function describedType(
+  described: BacklogItemTypesResult | undefined,
+  typeName: string,
+): BacklogItemType | undefined {
+  return described?.types.find((type) => sameType(type.name, typeName));
+}
+
+/** A field the connection names and a type lacks, and what the plugin proposes instead. */
+export type MissingField = { field: string; proposal?: string };
+
+/**
+ * The connection's field a type lacks, for one chip: the chip is empty, so
+ * the type would use the connection's field, and the type's fields, by name
+ * or id in any case, don't include it. Nothing when the plugin gave the
+ * type no fields, since Ajour can't tell. The proposal is the plugin's
+ * first suggestion for that column; the form never saves it by itself.
+ */
+export function missingField(
+  type: BacklogItemType | undefined,
+  fieldId: string,
+  connectionField: string,
+  chipText: string,
+): MissingField | undefined {
+  const field = connectionField.trim();
+  if (!type?.fields || !field || chipText.trim()) return undefined;
+  const hasIt = type.fields.some(
+    (candidate) =>
+      sameType(candidate.name, field) ||
+      (candidate.id !== undefined && sameType(candidate.id, field)),
+  );
+  if (hasIt) return undefined;
+  const proposal = type.suggestions?.[fieldId]?.[0];
+  return proposal ? { field, proposal } : { field };
+}
+
+/** The plugin's types that have no row yet, for Add a type, in its order. */
+export function otherItemTypes(
+  described: BacklogItemTypesResult | undefined,
+  rows: readonly TypeOverrideRow[],
+): BacklogItemType[] {
+  return (described?.types ?? []).filter(
+    (type) => !rows.some((row) => sameType(row.name, type.name)),
+  );
 }
