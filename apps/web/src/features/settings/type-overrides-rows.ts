@@ -29,7 +29,7 @@ export type TypeOverrideRow = {
 };
 
 /** Two names of one type or field: trimmed, in any case. */
-function sameType(left: string, right: string) {
+export function sameName(left: string, right: string) {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
@@ -69,11 +69,11 @@ export function typeOverrideRows(
     name: type.name,
     count: type.count,
     values:
-      drafts.find((draft) => sameType(draft.name, type.name))?.values ?? {},
+      drafts.find((draft) => sameName(draft.name, type.name))?.values ?? {},
     removable: false,
   }));
   const otherRows = drafts
-    .filter((draft) => !found.some((type) => sameType(type.name, draft.name)))
+    .filter((draft) => !found.some((type) => sameName(type.name, draft.name)))
     .map((draft) => ({
       name: draft.name,
       values: draft.values,
@@ -89,11 +89,11 @@ export function withDraftText(
   fieldId: string,
   text: string,
 ): TypeOverrideDraft[] {
-  if (!drafts.some((draft) => sameType(draft.name, typeName))) {
+  if (!drafts.some((draft) => sameName(draft.name, typeName))) {
     return [...drafts, { name: typeName, values: { [fieldId]: text } }];
   }
   return drafts.map((draft) =>
-    sameType(draft.name, typeName)
+    sameName(draft.name, typeName)
       ? { ...draft, values: { ...draft.values, [fieldId]: text } }
       : draft,
   );
@@ -105,7 +105,7 @@ export function withDraftAdded(
   typeName: string,
 ): TypeOverrideDraft[] {
   const name = typeName.trim();
-  if (!name || drafts.some((draft) => sameType(draft.name, name))) {
+  if (!name || drafts.some((draft) => sameName(draft.name, name))) {
     return [...drafts];
   }
   return [...drafts, { name, values: {} }];
@@ -116,7 +116,7 @@ export function withoutDraft(
   drafts: readonly TypeOverrideDraft[],
   typeName: string,
 ): TypeOverrideDraft[] {
-  return drafts.filter((draft) => !sameType(draft.name, typeName));
+  return drafts.filter((draft) => !sameName(draft.name, typeName));
 }
 
 /**
@@ -136,7 +136,7 @@ export function itemTypesRequest(
       ),
       ...drafts
         .filter(
-          (draft) => !found.some((type) => sameType(type.name, draft.name)),
+          (draft) => !found.some((type) => sameName(type.name, draft.name)),
         )
         .map((draft) => ({ name: draft.name })),
     ],
@@ -148,7 +148,7 @@ export function describedType(
   described: BacklogItemTypesResult | undefined,
   typeName: string,
 ): BacklogItemType | undefined {
-  return described?.types.find((type) => sameType(type.name, typeName));
+  return described?.types.find((type) => sameName(type.name, typeName));
 }
 
 /** A field the connection names and a type lacks, and what the plugin proposes instead. */
@@ -171,8 +171,8 @@ export function missingField(
   if (!type?.fields || !field || chipText.trim()) return undefined;
   const hasIt = type.fields.some(
     (candidate) =>
-      sameType(candidate.name, field) ||
-      (candidate.id !== undefined && sameType(candidate.id, field)),
+      sameName(candidate.name, field) ||
+      (candidate.id !== undefined && sameName(candidate.id, field)),
   );
   if (hasIt) return undefined;
   const proposal = type.suggestions?.[fieldId]?.[0];
@@ -185,6 +185,6 @@ export function otherItemTypes(
   rows: readonly TypeOverrideRow[],
 ): BacklogItemType[] {
   return (described?.types ?? []).filter(
-    (type) => !rows.some((row) => sameType(row.name, type.name)),
+    (type) => !rows.some((row) => sameName(row.name, type.name)),
   );
 }

@@ -20,6 +20,7 @@ import {
   itemTypesRequest,
   missingField,
   otherItemTypes,
+  sameName,
   typeOverrideRows,
   valueOfDrafts,
   withDraftAdded,
@@ -167,7 +168,9 @@ export function TypeOverridesField({
       ) : null}
       {rows.map((row, rowIndex) => {
         const type = describedType(described, row.name);
-        const fieldNames = type?.fields?.map((typeField) => typeField.name);
+        const fieldNames = [
+          ...new Set(type?.fields?.map((typeField) => typeField.name)),
+        ];
         const listId = `${idPrefix}-${rowIndex}-fields`;
         const chips = columns.map((column) => ({
           column,
@@ -231,7 +234,7 @@ export function TypeOverridesField({
                         id={id}
                         className="composer-estimate-input type-override-input"
                         autoComplete="off"
-                        list={fieldNames?.length ? listId : undefined}
+                        list={fieldNames.length ? listId : undefined}
                         placeholder={
                           missing
                             ? (missing.proposal ?? "none on this type")
@@ -253,20 +256,24 @@ export function TypeOverridesField({
                   );
                 })}
               </div>
-              {fieldNames?.length ? (
+              {fieldNames.length ? (
                 <datalist id={listId}>
                   {fieldNames.map((name) => (
                     <option key={name} value={name} />
                   ))}
                 </datalist>
               ) : null}
-              {chips.map(({ column, missing }) =>
-                missing ? (
+              {chips.map(({ column, missing }) => {
+                if (!missing) return null;
+                const hintId = `${idPrefix}-${rowIndex}-${column.field.id}-hint`;
+                return (
                   <p
                     key={column.field.id}
                     className="text-xs text-muted-foreground"
                   >
-                    {row.name} has no {missing.field} field.
+                    <span id={hintId}>
+                      {row.name} has no {missing.field} field.
+                    </span>
                     {missing.proposal ? (
                       <>
                         {" "}
@@ -274,6 +281,7 @@ export function TypeOverridesField({
                           type="button"
                           variant="link"
                           className="h-auto p-0 text-xs"
+                          aria-describedby={hintId}
                           onClick={() =>
                             update(
                               withDraftText(
@@ -290,8 +298,8 @@ export function TypeOverridesField({
                       </>
                     ) : null}
                   </p>
-                ) : null,
-              )}
+                );
+              })}
             </div>
           </fieldset>
         );
@@ -310,10 +318,10 @@ export function TypeOverridesField({
           ariaLabel="Add a type"
           emptyMessage="Type its name as the source spells it"
           create={{
+            // Nothing to add when a row or an option already has the name.
             label: (text) =>
-              rows.some(
-                (row) => row.name.trim().toLowerCase() === text.toLowerCase(),
-              )
+              rows.some((row) => sameName(row.name, text)) ||
+              addOptions.some((option) => sameName(option.label, text))
                 ? null
                 : `Add "${text}"`,
             onCreate: addType,
