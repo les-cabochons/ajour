@@ -507,6 +507,41 @@ describe("sectionConnectionBlocks", () => {
     ]);
   });
 
+  it("shows the fields by item type last under the field mapping, one input per field they replace", () => {
+    const sections = sectionConnectionBlocks(
+      groupConnectionFields([
+        {
+          id: "byType",
+          label: "By work item type",
+          type: "typeOverrides",
+          secret: false,
+          required: false,
+          overrides: ["original", "remaining"],
+        },
+        field("token", "API token", { secret: true }),
+        field("original", "Original estimate field"),
+        field("remaining", "Remaining field"),
+        field("autoSync", "Auto sync to backlog", { type: "checkbox" }),
+      ]),
+    );
+
+    const mapping = sections.find(
+      (section) => section.title === "Field mapping",
+    );
+    expect(mapping?.blocks.map((block) => block.kind)).toEqual([
+      "field",
+      "field",
+      "typeOverrides",
+    ]);
+    expect(mapping?.blocks[2]).toMatchObject({
+      field: { id: "byType" },
+      columns: [
+        { field: { id: "original" }, label: "Original estimate" },
+        { field: { id: "remaining" }, label: "Remaining" },
+      ],
+    });
+  });
+
   it("leaves a form without a secret in one section", () => {
     const sections = sectionConnectionBlocks(
       groupConnectionFields([

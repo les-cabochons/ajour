@@ -222,7 +222,7 @@ Ajour draws the connection form from `connectionFields`, in order. The values re
 | -------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                 | string                      | 1 to 120 characters. Keep it unique: values are keyed by it.                                                                                                                                                               |
 | `label`              | string                      | The form label. 1 to 120 characters.                                                                                                                                                                                       |
-| `type`               | string                      | `text`, `password`, `url`, `select`, `number` or `checkbox`.                                                                                                                                                               |
+| `type`               | string                      | `text`, `password`, `url`, `select`, `number`, `checkbox` or `typeOverrides`. See [Fields by item type](#fields-by-item-type).                                                                                             |
 | `placeholder`        | string                      | Optional. Up to 240 characters. Says what to type, such as "Name this connection", never an example value or a default. Ajour shows it in italics in an empty field.                                                       |
 | `helpText`           | string                      | Optional. Shown under the field. Up to 500 characters.                                                                                                                                                                     |
 | `required`           | boolean                     | Defaults to `false`.                                                                                                                                                                                                       |
@@ -230,9 +230,30 @@ Ajour draws the connection form from `connectionFields`, in order. The values re
 | `defaultValue`       | string, number or boolean   | Optional.                                                                                                                                                                                                                  |
 | `options`            | array of `{ value, label }` | For `select`. Up to 50.                                                                                                                                                                                                    |
 | `min`, `max`, `step` | number                      | Optional, for `number`.                                                                                                                                                                                                    |
+| `overrides`          | array of field IDs          | For `typeOverrides` only. 1 to 4 IDs of `text` connection fields that aren't secret.                                                                                                                                       |
 | `capability`         | string                      | Optional. `connector`, `codeHost`, `calendar`, `team`, `projectSource` or `timeSync`: the capability the field configures. The form hides the field, and skips its required check, while the user has that capability off. |
 
 Values are strings, numbers or booleans. Strings are at most 4,000 characters. Without a `defaultValue`, a checkbox starts unchecked, a number at `min` or 0, and other fields empty.
+
+### Fields by item type
+
+A `typeOverrides` field lets each item type use other text fields than the connection's own. For example, a connection names Effort as its original estimate field, and Tasks use Original Estimate instead. `overrides` lists the text fields a type can replace.
+
+```json
+{
+  "id": "estimateFieldsByType",
+  "label": "By work item type",
+  "type": "typeOverrides",
+  "capability": "connector",
+  "overrides": ["originalEstimateFieldName", "remainingEstimateFieldName"]
+}
+```
+
+The form shows the field under Field mapping, with its label as a heading and its `helpText` under it. It lists one row per item type in the connection's synced items, with the item count, and one input per overridden field. An empty input means the type uses the connection's field. The user can add a type by name, and remove a type that has no synced items. A new connection shows no types until its first sync.
+
+Your plugin receives a JSON text, `{ "<type name>": { "<field id>": "<text>" } }`, with only the filled inputs, or `""` for none. Read it with `parseTypeOverrides` from the SDK, and look up a type's text with `typeOverrideFor`, which matches type names in any case. Check the texts in `validateConnection` and return the value in `normalizedConfig`.
+
+A `typeOverrides` field can't be `secret` or `required`, and it belongs in `connectionFields` only. An Ajour that doesn't know this field type refuses to install the plugin.
 
 ### Secret fields
 

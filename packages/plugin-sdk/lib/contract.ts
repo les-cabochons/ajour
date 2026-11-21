@@ -67,7 +67,13 @@ export type PluginManifest = {
             id: string;
             settings: {
               type:
-                "number" | "url" | "text" | "password" | "select" | "checkbox";
+                | "number"
+                | "url"
+                | "text"
+                | "password"
+                | "select"
+                | "checkbox"
+                | "typeOverrides";
               id: string;
               label: string;
               options?: { value: string; label: string }[] | undefined;
@@ -79,6 +85,7 @@ export type PluginManifest = {
               secret?: boolean | undefined;
               defaultValue?: string | number | boolean | undefined;
               step?: number | undefined;
+              overrides?: string[] | undefined;
               capability?:
                 | "connector"
                 | "codeHost"
@@ -152,7 +159,8 @@ export type PluginManifest = {
                     | "text"
                     | "password"
                     | "select"
-                    | "checkbox";
+                    | "checkbox"
+                    | "typeOverrides";
                   id: string;
                   label: string;
                   options?: { value: string; label: string }[] | undefined;
@@ -164,6 +172,7 @@ export type PluginManifest = {
                   secret?: boolean | undefined;
                   defaultValue?: string | number | boolean | undefined;
                   step?: number | undefined;
+                  overrides?: string[] | undefined;
                   capability?:
                     | "connector"
                     | "codeHost"
@@ -206,7 +215,14 @@ export type PluginManifest = {
   entrypoint?: string | undefined;
   connectionFields?:
     | {
-        type: "number" | "url" | "text" | "password" | "select" | "checkbox";
+        type:
+          | "number"
+          | "url"
+          | "text"
+          | "password"
+          | "select"
+          | "checkbox"
+          | "typeOverrides";
         id: string;
         label: string;
         options?: { value: string; label: string }[] | undefined;
@@ -218,6 +234,7 @@ export type PluginManifest = {
         secret?: boolean | undefined;
         defaultValue?: string | number | boolean | undefined;
         step?: number | undefined;
+        overrides?: string[] | undefined;
         capability?:
           | "connector"
           | "codeHost"
@@ -339,7 +356,14 @@ export type PluginManifest = {
 
 /** A connection field or agent task setting. Secret fields never reach the plugin. */
 export type PluginField = {
-  type: "number" | "url" | "text" | "password" | "select" | "checkbox";
+  type:
+    | "number"
+    | "url"
+    | "text"
+    | "password"
+    | "select"
+    | "checkbox"
+    | "typeOverrides";
   id: string;
   label: string;
   options?: { value: string; label: string }[] | undefined;
@@ -351,6 +375,7 @@ export type PluginField = {
   secret?: boolean | undefined;
   defaultValue?: string | number | boolean | undefined;
   step?: number | undefined;
+  overrides?: string[] | undefined;
   capability?:
     | "connector"
     | "codeHost"

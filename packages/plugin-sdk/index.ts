@@ -25,3 +25,10 @@ export type {
 
 /** The plugin API this SDK describes. */
 export const PLUGIN_API_VERSION = 4;
+
+export {
+  formatTypeOverrides,
+  parseTypeOverrides,
+  typeOverrideFor,
+  type TypeOverrides,
+} from "./lib/type-overrides.js";

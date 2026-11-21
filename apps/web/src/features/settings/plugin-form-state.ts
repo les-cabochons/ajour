@@ -363,7 +363,10 @@ export function connectionSaveBlock(
       };
 }
 
-/** One block of a connection form: a field, or a row of fields that share a help text. */
+/**
+ * One block of a connection form: a field, a row of fields that share a help
+ * text, or a `typeOverrides` field with one input per field it replaces.
+ */
 export type ConnectionFormBlock =
   | { kind: "field"; field: PluginField }
   | {
@@ -373,6 +376,12 @@ export type ConnectionFormBlock =
       /** The help the fields share, shown once under the row. */
       help: string;
       fields: Array<{ field: PluginField; label: string }>;
+    }
+  | {
+      kind: "typeOverrides";
+      field: PluginField;
+      /** The fields a type can replace, labelled as a row of chips is. */
+      columns: Array<{ field: PluginField; label: string }>;
     };
 
 const ROW_FIELD_TYPES = new Set(["text", "number"]);
@@ -409,8 +418,9 @@ function splitLabels(labels: string[]) {
  * Groups the fields of a connection form for display. Two to four short
  * fields in a row whose labels end alike and whose help says the same after
  * its first sentence (Urgent, High, Medium and Low priority values) become
- * one row under a shared legend, with the help shown once. Every other field
- * stands alone. Manifests stay as they are: this is the host's layout.
+ * one row under a shared legend, with the help shown once. A `typeOverrides`
+ * field gets its own block. Every other field stands alone. Manifests stay
+ * as they are: this is the host's layout.
  */
 export function groupConnectionFields(
   fields: PluginField[],
@@ -419,6 +429,12 @@ export function groupConnectionFields(
   let index = 0;
   while (index < fields.length) {
     const first = fields[index]!;
+    if (first.type === "typeOverrides") {
+      const block = typeOverridesBlock(first, fields);
+      if (block) blocks.push(block);
+      index += 1;
+      continue;
+    }
     const help =
       ROW_FIELD_TYPES.has(first.type) && !first.secret
         ? sharedHelpPart(first.helpText)
@@ -454,27 +470,59 @@ export function groupConnectionFields(
   return blocks;
 }
 
+/**
+ * A `typeOverrides` field's block: one column per field it replaces that the
+ * form shows, or nothing when none shows. The columns drop the words their
+ * labels share, as a row does: "Original estimate field" and "Remaining
+ * field" become "Original estimate" and "Remaining".
+ */
+function typeOverridesBlock(
+  field: PluginField,
+  fields: PluginField[],
+): ConnectionFormBlock | undefined {
+  const replaced = (field.overrides ?? []).flatMap((id) => {
+    const target = fields.find((candidate) => candidate.id === id);
+    return target ? [target] : [];
+  });
+  if (replaced.length === 0) return undefined;
+  const split =
+    replaced.length > 1
+      ? splitLabels(replaced.map((target) => target.label))
+      : undefined;
+  return {
+    kind: "typeOverrides",
+    field,
+    columns: replaced.map((target, index) => ({
+      field: target,
+      label: split?.labels[index] ?? target.label,
+    })),
+  };
+}
+
 /** A titled part of a connection form. */
 export interface ConnectionFormSection {
   title: "Connection" | "Sync" | "Field mapping";
   blocks: ConnectionFormBlock[];
 }
 
-/** A block that maps the service's own fields: "Remaining field", or a row of values. */
+/** A block that maps the service's own fields: "Remaining field" or a row of values. */
 function isMappingBlock(block: ConnectionFormBlock) {
-  return block.kind === "row" || /\bfield$/i.test(block.field.label.trim());
+  return block.kind !== "field" || /\bfield$/i.test(block.field.label.trim());
 }
 
 /**
  * Splits a connection form into Connection (everything up to its last
  * secret: where and who), Sync (what comes over and when) and Field
  * mapping (which of the service's fields mean what). Order inside a section
- * is the manifest's. A form with no secret, or with only one kind of
- * field, stays one untitled section.
+ * is the manifest's, except the fields by item type: they come last in
+ * Field mapping, after the fields they replace, wherever the manifest
+ * declares them. A form with no secret, or with only one kind of field,
+ * stays one untitled section.
  */
 export function sectionConnectionBlocks(
-  blocks: ConnectionFormBlock[],
+  allBlocks: ConnectionFormBlock[],
 ): ConnectionFormSection[] {
+  const blocks = allBlocks.filter((block) => block.kind !== "typeOverrides");
   let lastSecret = -1;
   blocks.forEach((block, index) => {
     if (block.kind === "field" && block.field.secret) lastSecret = index;
@@ -484,7 +532,13 @@ export function sectionConnectionBlocks(
   const sections: ConnectionFormSection[] = [
     { title: "Connection", blocks: connection },
     { title: "Sync", blocks: rest.filter((block) => !isMappingBlock(block)) },
-    { title: "Field mapping", blocks: rest.filter(isMappingBlock) },
+    {
+      title: "Field mapping",
+      blocks: [
+        ...rest.filter(isMappingBlock),
+        ...allBlocks.filter((block) => block.kind === "typeOverrides"),
+      ],
+    },
   ];
   return sections.filter((section) => section.blocks.length > 0);
 }
