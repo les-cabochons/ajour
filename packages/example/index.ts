@@ -22,7 +22,7 @@ export {
   startElsewhere as startExampleRemoteTimer,
   stopElsewhere as stopExampleRemoteTimer,
 } from "./plugin/time-sync.ts";
-export { describeItemTypes as describeExampleItemTypes } from "./tracker/plugin.ts";
+export { describeItemTypes as describeExampleItemTypes } from "./tracker/item-types.ts";
 
 /** The plugin's manifest, as `plugin/plugin.json` declares it. */
 export const exampleProjectSourceManifest = manifest;
