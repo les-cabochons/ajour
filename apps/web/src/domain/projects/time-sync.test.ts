@@ -527,6 +527,22 @@ describe("applying a round", () => {
       expect(plan(state).request.changes).toEqual([]);
     });
 
+    it("never takes the entry back while its delete is owed, though the planner lists it", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      const deleted = { ...failed, timesheetEntries: [] };
+
+      // The planner had made e1, and the delete times out too.
+      const { state } = runRound(deleted, (round) => ({
+        ...fail(round),
+        entries: [remoteEntry("remote-1", { clientRef: "e1", minutes: 90 })],
+      }));
+
+      expect(entriesOf(state)).toEqual([]);
+      expect(plan(state).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
     it("sends the create again while the entry stays, and forgets it once that syncs", () => {
       const failed = runRound(stateWith([entry("e1")]), fail).state;
       expect(plan(failed).request.changes).toEqual([
@@ -1289,6 +1305,27 @@ describe("taking the other system's changes", () => {
     expect(describeTimeSyncStatus(recordIn(state))?.summary).toBe(
       "Time entries · 1 received",
     );
+  });
+
+  it("adds an entry another Ajour sent, since its client reference is none of this Ajour's sync keys (#853)", () => {
+    const { state, result } = runRound(
+      stateWith([]),
+      listing(
+        remoteEntry("other", {
+          clientRef: "timesheet_entry_from-the-other-machine",
+        }),
+      ),
+    );
+
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({
+        taskId: "login",
+        durationMs: 45 * MINUTE,
+        timeSyncRemoteId: "other",
+      }),
+    ]);
+    expect(result).toMatchObject({ received: 1, held: 0 });
+    expect(plan(state).request.changes).toEqual([]);
   });
 
   it("keeps the remote id of an entry it took, so Time entries off and on updates that entry instead of adding one", () => {
@@ -2587,6 +2624,114 @@ describe("a running entry from the other system", () => {
     expect(result).toMatchObject({ received: 0, held: 1 });
     // Nothing goes back over the move there.
     expect(changesAt(state, NOW + 27 * MINUTE)).toEqual([]);
+  });
+
+  /*
+   * Another Ajour on the same planner, such as one on the user's other
+   * machine (#853). It sends its own sync keys as client references, so its
+   * entries are logged elsewhere for this Ajour, and the planner keeps both
+   * in line.
+   */
+  describe("with another Ajour on the same planner", () => {
+    /** Saves the running entry `timerId` at `now`, as Stop does. */
+    function stop(state: TimeSyncState, timerId: string, now: number) {
+      const next = saveTimer(
+        { ...state, workItems: [] } as unknown as LocalAppState,
+        timerId,
+        { createId: (prefix) => `${prefix}-stopped`, now: () => now },
+      );
+      return {
+        ...state,
+        timers: next.timers,
+        timesheetEntries: next.timesheetEntries,
+      };
+    }
+
+    it("runs the timer the other Ajour started, and stops it when that Ajour stops it", () => {
+      const remote = oneRunningEntryRemote();
+      // The other Ajour starts t1 at 15:00, and its round sends it.
+      const other = roundAt(
+        running(),
+        NOW + 2_000,
+        remote.answer(NOW + 2_000),
+      ).state;
+
+      const here = roundAt(
+        stateWith([]),
+        NOW + 5_000,
+        remote.answer(NOW + 5_000),
+      ).state;
+      expect(here.timers).toEqual([
+        expect.objectContaining({
+          startedAt: NOW,
+          taskId: "login",
+          timeSyncRemoteId: "remote-1",
+        }),
+      ]);
+      expect(changesAt(here, NOW + 7_000)).toEqual([]);
+
+      // The other Ajour stops it at 15:25.
+      roundAt(
+        stop(other, "t1", NOW + 25 * MINUTE),
+        NOW + 25 * MINUTE + 2_000,
+        remote.answer(NOW + 25 * MINUTE + 2_000),
+      );
+
+      const after = roundAt(
+        here,
+        NOW + 25 * MINUTE + 5_000,
+        remote.answer(NOW + 25 * MINUTE + 5_000),
+      ).state;
+      expect(after.timers).toEqual([]);
+      expect(entriesOf(after)).toEqual([
+        expect.objectContaining({ taskId: "login", durationMs: 25 * MINUTE }),
+      ]);
+      expect(changesAt(after, NOW + 26 * MINUTE)).toEqual([]);
+    });
+
+    it("leaves both Ajours with the same entries and running timer when this one starts a timer", () => {
+      const remote = oneRunningEntryRemote();
+      const other = roundAt(
+        running(),
+        NOW + 2_000,
+        remote.answer(NOW + 2_000),
+      ).state;
+
+      // This Ajour starts t2 on Ad hoc support at 15:10: the planner stops t1.
+      const t2 = t1({
+        _id: "t2",
+        taskId: "ad-hoc",
+        startedAt: NOW + 10 * MINUTE,
+        note: undefined,
+      });
+      const here = roundAt(
+        { ...stateWith([]), timers: [t2] },
+        NOW + 10 * MINUTE + 2_000,
+        remote.answer(NOW + 10 * MINUTE + 2_000),
+      ).state;
+      const there = roundAt(
+        other,
+        NOW + 10 * MINUTE + 5_000,
+        remote.answer(NOW + 10 * MINUTE + 5_000),
+      ).state;
+
+      for (const state of [here, there]) {
+        expect(entriesOf(state)).toEqual([
+          expect.objectContaining({
+            taskId: "login",
+            durationMs: 10 * MINUTE,
+          }),
+        ]);
+        expect(state.timers).toEqual([
+          expect.objectContaining({
+            taskId: "ad-hoc",
+            startedAt: NOW + 10 * MINUTE,
+          }),
+        ]);
+      }
+      expect(changesAt(here, NOW + 11 * MINUTE)).toEqual([]);
+      expect(changesAt(there, NOW + 11 * MINUTE)).toEqual([]);
+    });
   });
 
   describe("when Ajour changed its running entry too", () => {
