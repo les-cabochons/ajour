@@ -77,6 +77,8 @@ When your system keeps a change marker, a version that moves on every write to t
 
 Ajour refuses an unchanged answer to a request without a cursor or with changes, and an Ajour without check rounds never sends a cursor. Any change in Ajour, a failed round or a saved connection makes the next round full. A full round with changes still carries your cursor, so you can reuse what it holds, such as a read link; a full round without changes carries none. List anyway when you can't read the marker, and now and then, such as once an hour, so a missed write can't hide for long.
 
+A check you answer unchanged writes no line to the user's local log file, and neither does a request of yours answered 304, such as a `HEAD` to the marker with `If-None-Match`. So a check every few seconds costs the user no log space. A check that fails, or takes 2 seconds or more, is written as any round is.
+
 ## Types
 
 ```ts

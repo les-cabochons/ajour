@@ -228,7 +228,9 @@ function warningOf(error: unknown): LocalLogWarning {
 /**
  * The built-in exporter of the desktop main process (ADR 0014): one NDJSON
  * line per event, in `<directory>/YYYY-MM-DD.ndjson` for the UTC day it was
- * emitted. Each event passes the privacy filter first. `emit` only queues the
+ * emitted, but a quiet noop (`quiet: true`), which it leaves out, so a check
+ * every few seconds that finds nothing writes nothing. Each event passes the
+ * privacy filter first. `emit` only queues the
  * line: the writes run later, in batches, and never throw into the work. A
  * failed write stops writing, with a warning, until the settings are saved
  * again. Nothing creates the folder until an event is written.
@@ -366,9 +368,12 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
     return found.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
   }
 
-  /** Queues one event's line. Whether it did: false when it was dropped. */
+  /**
+   * Queues one event's line. Whether it did: false when it was dropped, or
+   * left out as a quiet noop (see `Unit.quiet`), which is never written.
+   */
   function offer(event: Parameters<Sink["emit"]>[0]) {
-    if (!writing()) return false;
+    if (!writing() || event.quiet === true) return false;
     if (pending.length >= MAX_PENDING_LINES) {
       dropped += 1;
       return false;

@@ -8,6 +8,11 @@ import {
   type LocalLogFile,
 } from "@ajour/wide-events/local-log-file.ts";
 import {
+  exampleProjectSourceDirectory,
+  exampleProjectSourceManifest,
+} from "../../../../packages/example/index.ts";
+import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import {
   fetchAsTheApp,
   startLocalApi,
   waitForEvent,
@@ -106,6 +111,8 @@ beforeEach(async () => {
     },
   });
   api = await startLocalApi({
+    // The example planner, for its time sync.
+    pluginDirectories: [exampleProjectSourceDirectory],
     eventSink: file.sink,
     launch: {
       id: LAUNCH.launch_id,
@@ -200,5 +207,71 @@ describe("the renderer's events in the local log file", () => {
     const text = JSON.stringify(lines);
     expect(text).not.toContain("Secret roadmap item");
     expect(text).not.toContain("tok_local_log_canary");
+  });
+
+  // A time sync check every few seconds that finds nothing changed (#844).
+  it("writes no line for a time sync check the plugin finds unchanged, in any runtime", async () => {
+    const appApi = await import("@/lib/app-api");
+    const { localStore } = await import("@/lib/local-store");
+    const { syncProjectSourceConnection } =
+      await import("@/lib/project-source-sync");
+    const { runTimeSyncRound } = await import("@/lib/time-sync");
+    const pluginId = exampleProjectSourceManifest.id;
+    const { connection } = await appApi.savePluginConnection(pluginId, {
+      label: "Planner",
+      tenantLabel: "Example",
+      serviceUrl: "https://planner.example",
+    });
+    await appApi.setPluginEnabled(pluginId, true, "timeSync");
+    await syncProjectSourceConnection(pluginId, connection.id);
+    const project = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate.source?.remoteId === "ACME-SUP")!;
+    localStore.saveManualTimeEntry({
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      projectId: project._id,
+      taskId: project.tasks[0]!._id,
+      note: "Fixed the redirect for Acme",
+      durationMs: 3_600_000,
+    });
+    const roundEvents = (kind: string) =>
+      api.events.filter(
+        (event) => event.name === "time_sync.round" && event.kind === kind,
+      );
+    const roundLines = async () =>
+      (await linesInTheFile()).filter(
+        (line) => line.name === "time_sync.round",
+      );
+
+    // A full round is written in every runtime it crosses.
+    expect(
+      await runTimeSyncRound(pluginId, connection.id, "change"),
+    ).toMatchObject({ kind: "applied", synced: 1 });
+    await waitForEvent(
+      api.events,
+      (event) => event.name === "time_sync.round" && event.kind === "request",
+    );
+    hidePage();
+    const before = await linesInTheFile();
+    expect(
+      before
+        .filter((line) => line.name === "time_sync.round")
+        .map((line) => `${String(line.runtime)} ${String(line.kind)}`)
+        .sort(),
+    ).toEqual(["api plugin_operation", "api request", "renderer job"]);
+
+    // The check that follows answers unchanged, and writes nothing.
+    expect(await runTimeSyncRound(pluginId, connection.id, "check")).toEqual({
+      kind: "unchanged",
+    });
+    await waitForEvent(api.events, () => roundEvents("request").length === 2);
+    hidePage();
+
+    expect(roundEvents("request").at(-1)).toMatchObject({ quiet: true });
+    expect(roundEvents("plugin_operation").at(-1)).toMatchObject({
+      quiet: true,
+    });
+    expect(await roundLines()).toHaveLength(3);
+    expect(await linesInTheFile()).toHaveLength(before.length);
   });
 });

@@ -262,6 +262,19 @@ function describeIssues(error: z.ZodError) {
 }
 
 /**
+ * Whether a plugin's answer, as it returned it, says nothing changed:
+ * `{ unchanged: true }`. It doesn't check the rest of the answer, which
+ * `parseTimeSyncAnswer` does.
+ */
+export function isUnchangedTimeSyncAnswer(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { unchanged?: unknown }).unchanged === true
+  );
+}
+
+/**
  * Parses a plugin's answer to `request`, along the branch its `unchanged`
  * picks. An unchanged answer is refused unless the request carried a cursor
  * and no changes. A bad field, a change without a result, a second result
@@ -272,11 +285,7 @@ export function parseTimeSyncAnswer(
   value: unknown,
   request: Pick<TimeSyncRequest, "changes" | "cursor">,
 ): TimeSyncAnswer {
-  const unchanged =
-    typeof value === "object" &&
-    value !== null &&
-    (value as { unchanged?: unknown }).unchanged === true;
-  if (unchanged) {
+  if (isUnchangedTimeSyncAnswer(value)) {
     if (request.cursor === undefined || request.changes.length > 0) {
       refuseAnswer([
         "unchanged: a plugin may answer unchanged only to a request with a cursor and no changes",

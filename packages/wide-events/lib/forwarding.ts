@@ -64,7 +64,8 @@ export interface ForwardingSink extends Sink {
 /**
  * The renderer's side of forwarding (#440): it keeps events and sends them
  * in one batch a second after the first one waits, or as soon as 100 wait,
- * or when `flush` is called. It sets no timer while nothing waits. A batch
+ * or when `flush` is called. A quiet noop (`quiet: true`) is never kept, as
+ * the local log file would leave it out. It sets no timer while nothing waits. A batch
  * whose send throws is dropped and its events counted, in the next batch
  * that is sent: it never retries, and never waits. While `accepting` answers
  * false the emitter builds no event for it, and what was waiting when it
@@ -80,6 +81,8 @@ export function createForwardingSink(
   const sink: ForwardingSink = {
     accepting: () => options.accepting(),
     emit(event) {
+      // The local log file leaves a quiet noop out: it isn't sent at all.
+      if (event.quiet === true) return;
       waiting.push(event);
       if (waiting.length >= FORWARD_BATCH_SIZE) sink.flush();
       else timer ??= setTimeout(sink.flush, FORWARD_FLUSH_MS);
@@ -273,6 +276,7 @@ function envelopeOf(
       (matches(value.parent_span_id, SPAN_ID) &&
         value.parent_span_id !== ZERO_SPAN_ID)) &&
     (value.window_id === undefined || matches(value.window_id, WINDOW_ID)) &&
+    (value.quiet === undefined || value.quiet === true) &&
     isRecord(value.app) &&
     isRecord(value.device);
   if (!valid) return null;

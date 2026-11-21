@@ -4608,9 +4608,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         // A check round the plugin found unchanged (#843): nothing to count,
         // and the window keeps the connection it already has, so no overview
-        // is built every few seconds.
+        // is built every few seconds. It is a quiet noop, which the local
+        // log file leaves out (#844).
         if ("unchanged" in result) {
-          unit.set({ time_sync_round: { unchanged: true } });
+          unit.set({ time_sync_round: { unchanged: true } }).quiet();
           writeJson(response, 200, timeSyncRouteResponseSchema.parse(result));
           return;
         }

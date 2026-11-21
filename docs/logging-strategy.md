@@ -48,6 +48,10 @@ user can turn on a local log file (ADR 0014); otherwise they go nowhere.
 - **Runtimes** are `renderer`, `api` and `main`. On desktop the local API runs
   inside the main process, but it stays its own runtime. A plugin operation's
   event reports its host's runtime.
+- **A quiet noop** is routine work that found nothing to do, such as a time
+  sync check that found nothing changed. Its event is built as any other,
+  and the local log file leaves it out, unless it failed or was slow. See
+  [Quiet noops](#quiet-noops).
 
 ## Names
 
@@ -134,6 +138,7 @@ type WideEvent = {
     message?: string;
     retriable?: boolean;
   };
+  quiet?: true; // added by #844: a quiet noop, which the local log file leaves out
   // plus the event's own nested objects, typed per name in the catalog
 };
 ```
@@ -209,10 +214,10 @@ sink:
   allows for the name), `trigger` and `surface`, and `detached` or a `parent`
   span.
 - A unit has `set(fields)`, `count(counter, n)`, `fail(error, options)`,
-  `refuse(reason)`, `cancel(reason)` and `end(outcome?)`. The outcome
-  defaults to the one recorded, or `ok`. `end` emits once; anything after it
-  changes nothing. A unit also has `enter(fn)`, `rename(name)` and
-  `traceparent()`.
+  `refuse(reason)`, `cancel(reason)`, `quiet(options?)` and `end(outcome?)`.
+  The outcome defaults to the one recorded, or `ok`. `end` emits once;
+  anything after it changes nothing. A unit also has `enter(fn)`,
+  `rename(name)` and `traceparent()`.
 - `run(name, init, fn)` runs a sync or async function as a unit, active while
   it runs, and ends it in every path. A thrown error ends it as an `error`,
   unless the work recorded its outcome first. A sync function stays sync.
@@ -233,7 +238,7 @@ user turned off costs nothing.
 - `nowhere` is the default, and drops everything. With it an event is never
   built: it costs object writes only, with no serialization, no I/O and no
   timers.
-- `recording` is for tests.
+- `recording` is for tests. It keeps quiet noops, with `quiet: true`.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
@@ -475,6 +480,67 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
 Remote exporters, such as Grafana and Application Insights, will be more
 sinks behind the same contract, each with its own sensitive fields setting.
 
+## Quiet noops
+
+A time sync check runs every 5 seconds while the window shows (#843). One
+that found nothing changed wrote up to 7 lines across the runtimes it
+crosses: the window's job, the local API's request and plugin operation,
+the broker's request when the plugin reads its change marker through
+`ajour.publicFetch`, and the main process's calls of the plugin's page
+(`next`, the fetch and `settled`). That is about 17,000 traces and 75 to 90
+MB a day, where a whole day of everything else wrote about 34 MB. Since #844
+it writes none.
+
+- **`unit.quiet(options?)`** (`packages/wide-events`) records `noop`,
+  unless a worse outcome is already recorded, and marks the unit quiet. The
+  emitter sets `quiet: true` on its event only when the unit ended `noop`,
+  with no error, no failed step in `step_failures`, and in under
+  `QUIET_LIMIT_MS` (2 seconds). A quiet unit that ends refused, cancelled,
+  timed out or failed, on which an error lands, or that took 2 seconds or
+  more is written as usual, without the mark. `{ waited: true }` says the
+  unit's time was a wait, such as a long poll's, so it stays quiet however
+  long it took.
+- **Which sinks drop it.** The local log file leaves out an event with
+  `quiet: true`, and the renderer's forwarding sink never sends one, so it
+  costs no IPC. The console and recording sinks keep it. Main's batch reader
+  takes `quiet` only as `true` or absent. Settings › Diagnostics and the MCP
+  log tools (`find_log_events`, `get_log_trace`) read the file, so they show
+  every other event as before and no quiet noop. The Overview's counts and
+  percentiles of `time_sync.round` cover the rounds written: full rounds,
+  and checks that failed or were slow.
+- **Where each runtime marks it.** Each marks what it knows; nothing in core
+  names a product.
+  - The window's `time_sync.round` job, when the plugin answers unchanged.
+  - The local API's `time_sync.round` request, when the plugin answers
+    `{ unchanged: true }`. The request seam still ends it `cancelled` when
+    its client left, and by its status for a 4xx or a 5xx: a recorded
+    `noop` gives way to them, as no outcome does.
+  - The plugin operation, from the method's own test of its "nothing
+    changed" answer: the host hands it to the runtime as
+    `PluginInvocation.quiet`, and the lifetime asks it once the result
+    parsed. `syncTimeEntries` has one (`isUnchangedTimeSyncAnswer`); no
+    other method does yet.
+  - The broker's `plugin.request` answered 304, through a connection or a
+    public fetch, for any plugin and any host: a 304 is the "nothing
+    changed" answer of a conditional request, such as a `HEAD` with
+    `If-None-Match` to a change marker.
+  - The main process's `plugin_renderer.call` for `http` or `publicFetch`
+    answered 304; for `settled` with the method's "nothing changed" answer,
+    read with the invocation's `quiet` test; and for `next` when it hands
+    the page the start of a run that has such a test, as a wait. Main can't
+    know then whether the run will find something, so a full time sync
+    round's `next` is left out too. That call is its own trace root and
+    holds only the page's wait; the run's other events are written.
+- **A slow check stays whole.** A parent lasts at least as long as its
+  child, so when a check's broker request takes 2 seconds, its plugin
+  operation, request and job are written with it, in one trace. Main's
+  `publicFetch` call is written as its own root, its `settled` and `next`
+  calls are not.
+- **Known gap.** A failed unit is always written, but its quiet parent in
+  another runtime is not: a plugin that swallows a failed request and still
+  answers unchanged leaves that `plugin.request` without its parent, which
+  the viewer shows as a root marked `missing_parent`.
+
 ## Traces
 
 Every event is a W3C span, so a future exporter can send it to a trace
@@ -561,7 +627,10 @@ The local API emits these (#305, #306):
   typed against the catalog, so a route's event that lacks one of these
   reasons fails to compile.
 - **The event ends once**, by the seam, when the handler has settled and the
-  response has flushed or closed: `end()` only starts the flush. A handler
+  response has flushed or closed: `end()` only starts the flush. A route
+  that marks its request a quiet noop (`unit.quiet()`, see
+  [Quiet noops](#quiet-noops)) records `noop`, which still gives way to the
+  client leaving and to a 4xx or 5xx status. A handler
   that weighs outcomes itself, such as MCP's for a batch, returns how the
   request ends instead of ending it, so the status and sizes still land.
 - **A client that leaves** before its response flushed, while its body still
@@ -641,7 +710,9 @@ connection (`secret_unavailable`), an inactive plugin or capability,
 `response_too_large`, `unchecked_response` for an answer the redaction
 couldn't check within its budgets, `rate_limited`, `too_many_queued`);
 cancelled for `aborted` or `operation_ended`; `timeout`; or an error for
-`network`, whose message is the broker's own.
+`network`, whose message is the broker's own. A request answered 304, the
+"nothing changed" answer of a conditional request, ends as a quiet noop,
+whatever its plugin or host ([Quiet noops](#quiet-noops)).
 
 Plugin discovery skips an invalid package without a log line: the active
 event counts it in `counts.invalid_plugin`, as it counts a bundled archive
@@ -809,8 +880,9 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     is hidden), changes left over or a retry started it. Since #843,
     `has_cursor` says whether the round was a check, which sent the
     plugin's cursor and no changes, and `unchanged` whether the plugin
-    answered that nothing changed there; such a check ends `noop`, keeps
-    nothing and never carries the cursor. A check whose full answer comes
+    answered that nothing changed there; such a check ends as a quiet
+    noop (#844), which the local log file leaves out unless it took 2
+    seconds or more, keeps nothing and never carries the cursor. A check whose full answer comes
     back after Ajour changed is dropped, with `discarded: inputs_changed`. A store write that leaves nothing to send starts no round,
     so the runner's own writes record nothing. The counts are those of the
     route's event, plus `waiting_count`, and since #694 `received_count`,
@@ -937,7 +1009,9 @@ renderer's trace. The listener adds its own fields through
 `events.current()`. One channel, `ajour:forward-wide-events`, records only
 its failures (`record: "failures"`): a call it accepts and that succeeds
 emits nothing, so forwarding the renderer's events never adds an event per
-batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A channel missing from
+batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A plugin page's call
+(`ajour:plugin-renderer`) can end as a quiet noop instead, which the file
+leaves out: see [Quiet noops](#quiet-noops). A channel missing from
 `IPC_CHANNELS`, or registered the wrong way, fails `just typecheck`: the
 wrapper's methods take only the table's channels of their mode, and the
 desktop typecheck checks main.cjs. It also throws when it registers.

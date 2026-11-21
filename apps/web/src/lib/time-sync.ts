@@ -268,7 +268,8 @@ function planCheck(ref: TimeSyncConnectionRef): PlannedCheck | undefined {
  * window's round runs first. A store write starts a round only when it
  * leaves something to send, so the runner's own writes start none. A check
  * that finds nothing changed in Ajour sends the cursor without the lock or
- * a fresh overview, and keeps nothing when the plugin answers unchanged. A
+ * a fresh overview, and keeps nothing when the plugin answers unchanged: its
+ * job is then a quiet noop, which the local log file leaves out. A
  * round that fails keeps its error on the connection, drops the cursor and
  * throws.
  */
@@ -398,7 +399,9 @@ export function runTimeSyncRound(
         inputs,
         today,
       });
-      job.end("noop");
+      // A check every few seconds that found nothing: the local log file
+      // leaves it out, unless it was slow (#844).
+      job.quiet().end();
       return { kind: "unchanged" };
     }
     const full = answer;

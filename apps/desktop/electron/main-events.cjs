@@ -276,6 +276,18 @@ function createMainEvents({ now = Date.now } = {}) {
         record("cancel", [reason]);
         return unit;
       },
+      quiet(options) {
+        // As the package's: a worse outcome already recorded stays.
+        if (
+          !unit.real &&
+          !unit.ended &&
+          (outcome === undefined || outcome === "ok")
+        ) {
+          outcome = "noop";
+        }
+        record("quiet", [options]);
+        return unit;
+      },
       end(endOutcome, reason) {
         if (!unit.real && !unit.ended && endOutcome !== undefined) {
           outcome = endOutcome;
