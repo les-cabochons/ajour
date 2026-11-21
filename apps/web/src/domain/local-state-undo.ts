@@ -370,20 +370,36 @@ export function restoreUndo(
     } {
   // A fetch timestamp is sync evidence, not an independent edit. Keep it on
   // both snapshots so it neither blocks Undo nor gets rolled back by Undo.
+  // So are the estimates' sync state an upload or a sync left since, unless
+  // the action changed it itself, as Keep local does: Undo then puts the old
+  // value back over what the source agreed on, and it uploads again.
   const currentItems = new Map(state.workItems.map((item) => [item._id, item]));
-  const keepFreshness = (item: LocalWorkItem | undefined) => {
+  const keepSyncEvidence = (
+    item: LocalWorkItem | undefined,
+    keepEstimateSync: boolean,
+  ) => {
     const current = item && currentItems.get(item._id);
     return item && current
-      ? { ...item, sourceSyncedAt: current.sourceSyncedAt }
+      ? {
+          ...item,
+          sourceSyncedAt: current.sourceSyncedAt,
+          ...(keepEstimateSync ? { estimateSync: current.estimateSync } : {}),
+        }
       : item;
   };
   undo = {
     ...undo,
-    workItems: undo.workItems.map((change) => ({
-      ...change,
-      before: keepFreshness(change.before),
-      after: keepFreshness(change.after),
-    })),
+    workItems: undo.workItems.map((change) => {
+      const keepEstimateSync = recordsEqual(
+        change.before?.estimateSync,
+        change.after?.estimateSync,
+      );
+      return {
+        ...change,
+        before: keepSyncEvidence(change.before, keepEstimateSync),
+        after: keepSyncEvidence(change.after, keepEstimateSync),
+      };
+    }),
   };
   const changedTimeEntries = undo.timesheetEntries.length > 0;
   const strictCollections = UNDO_COLLECTIONS.filter(

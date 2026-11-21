@@ -999,6 +999,8 @@ export const catalog = defineCatalog({
           /** In the renderer: the items the answer added straight to the backlog. */
           imported_count: operational<number>(),
         },
+        /** In the renderer: the item a one-item sync, such as a refresh, was scoped to. */
+        backlog_item: { id: operational() },
       },
     },
     /**

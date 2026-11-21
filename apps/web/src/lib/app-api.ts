@@ -1358,7 +1358,7 @@ function replaceCachedConnection(
   });
 }
 
-/** Who starts each kind of backlog sync: the user, the scheduler, or a time entry saved on a synced item. */
+/** Who starts each kind of backlog sync: the user, the scheduler, or a change on a synced item to upload. */
 const BACKLOG_SYNC_TRIGGERS = {
   manual: "user",
   auto: "schedule",
@@ -1375,8 +1375,10 @@ export function syncBacklogConnection(
   input?: Partial<Pick<BacklogSyncRequest, "trigger" | "refresh" | "sourceId">>,
 ): Promise<SyncBacklogConnectionResult> {
   const trigger = input?.trigger ?? "manual";
+  // An upload of one item's changes shows as that item's running sync, so
+  // other syncs wait for it instead of sending its change a second time.
   const finish =
-    trigger === "source_write"
+    trigger === "source_write" && !input?.sourceId
       ? () => {}
       : startBacklogSync({
           pluginId,
@@ -1473,6 +1475,10 @@ async function runBacklogSync(
     connection: { id: connectionId },
     backlog_sync: { trigger, items_sent: payload.workItems.length },
   });
+  // A one-item sync names its item, so an item's refresh or estimate upload
+  // can be found among its events.
+  const scopedItem = input?.sourceId ? payload.workItems[0] : undefined;
+  if (scopedItem) job.set({ backlog_item: { id: scopedItem.localWorkItemId } });
   const result = await appApiRequest(
     "syncBacklogConnection",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,

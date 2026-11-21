@@ -27,7 +27,6 @@ import {
 } from "@/domain/local-state";
 import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
-import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
@@ -718,13 +717,8 @@ export function TimeEntryEditorForm({
         ),
         "Entry created",
       );
-      // Logged time changes the backlog item's estimates, so push them to its source.
-      const workItem = workItemId
-        ? state.workItems.find((item) => item._id === workItemId)
-        : undefined;
-      if (workItem) {
-        syncBacklogWorkItemToSource(workItem);
-      }
+      // Logged time changes the backlog item's estimates: the estimate
+      // watcher (`features/backlog/estimate-pushes.ts`) sends them.
     });
   }
 

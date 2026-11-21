@@ -364,6 +364,42 @@ describe("a backlog sync's event", () => {
       }),
     ]);
   });
+
+  it("names its item on the backlog.sync job when the sync is scoped to one", async () => {
+    const events = await recorded();
+    const { syncBacklogConnection, itemId } = await setup();
+    events.length = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          answer(
+            { author: "Ana", at: "2026-10-18T10:30:00Z" },
+            { commentFacts: [] },
+          ),
+        ),
+      ),
+    );
+
+    await syncBacklogConnection("azure_devops", "c1", {
+      trigger: "source_write",
+      refresh: true,
+      sourceId: "s1",
+    });
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        name: "backlog.sync",
+        trigger: "system",
+        outcome: "ok",
+        backlog_item: { id: itemId },
+        backlog_sync: expect.objectContaining({
+          trigger: "source_write",
+          items_sent: 1,
+        }),
+      }),
+    ]);
+  });
 });
 
 describe("backlog refresh status", () => {

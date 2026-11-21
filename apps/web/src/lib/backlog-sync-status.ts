@@ -55,6 +55,23 @@ export function startBacklogSync(status: Omit<BacklogSyncStatus, "running">) {
             failedAt: Date.now(),
             error: error instanceof Error ? error.message : "Sync failed",
           }
-        : { lastSuccessAt: Date.now(), failedAt: undefined, error: undefined }),
+        : {
+            // An upload brings back no item, so the item is no fresher.
+            ...(status.trigger === "source_write"
+              ? {}
+              : { lastSuccessAt: Date.now() }),
+            failedAt: undefined,
+            error: undefined,
+          }),
     }));
+}
+
+/** Resolves at the next change of any backlog sync's status. */
+export function nextBacklogSyncChange() {
+  return new Promise<void>((resolve) => {
+    const unsubscribe = subscribeBacklogSync(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
 }

@@ -100,6 +100,7 @@ import {
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
 import { watchSettleEnds } from "@/features/backlog/backlog-source-writes";
+import { watchEstimateChanges } from "@/features/backlog/estimate-pushes";
 import { flushPendingWrites } from "@/features/layout/pending-writes-flush";
 import { BacklogAutoSyncScheduler } from "@/features/layout/backlog-auto-sync-scheduler";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
@@ -219,7 +220,8 @@ function PageHeaderSlot({
 
 /**
  * Sends the settle writes and comments left from a session that quit
- * during their Undo window, once at launch (`flushPendingWrites`).
+ * during their Undo window, once at launch (`flushPendingWrites`), and each
+ * synced item's estimate change once its Undo window ends.
  */
 function PendingSourceWritesFlush() {
   useEffect(() => {
@@ -227,6 +229,7 @@ function PendingSourceWritesFlush() {
   }, []);
   // A settle that ends turns its waiting comments into drafts.
   useEffect(() => watchSettleEnds(), []);
+  useEffect(() => watchEstimateChanges(), []);
   return null;
 }
 
