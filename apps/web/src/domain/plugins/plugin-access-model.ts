@@ -115,6 +115,7 @@ const OPERATION_LABELS: Record<string, string> = {
   validateConnection: "check its settings",
   syncConnection: "sync backlog items",
   listSettleStates: "list the states it can settle to",
+  describeItemTypes: "describe its item types",
   writeSettle: "settle backlog items in the source",
   readDescription: "read descriptions",
   writeDescription: "edit descriptions",

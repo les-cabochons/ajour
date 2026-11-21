@@ -565,6 +565,9 @@ describe("plugin operation events: validation and pre-flight", () => {
     await expect(
       host.listSettleStates("jira", connection, { sourceId: "ENG-1" }),
     ).rejects.toThrow("does not support settling");
+    await expect(
+      host.describeItemTypes("jira", connection, { types: [] }),
+    ).rejects.toThrow("does not describe item types");
     await host.shutdown();
     await expect(host.syncConnection("jira", connection)).rejects.toThrow(
       "shutting down",
@@ -583,6 +586,7 @@ describe("plugin operation events: validation and pre-flight", () => {
       ["comment.list", "refused", "not_supported"],
       ["team.sync", "refused", "not_supported"],
       ["source_state.list", "refused", "not_supported"],
+      ["item_type.describe", "refused", "not_supported"],
       ["backlog.sync", "refused", "host_stopping"],
     ]);
   });

@@ -78,6 +78,8 @@ import {
   type SwitchableCapability,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -3481,6 +3483,44 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
+    // A read for the connection form: no access choice gates it.
+    itemTypeDescribe: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "describing item types",
+        (plugin) => Boolean(plugin.capabilities.connector?.itemTypes),
+        "This plugin does not describe item types.",
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const typesRequest = await readRequest(
+        request,
+        backlogItemTypesRequestSchema,
+      );
+      unit.set({ item_type: { requested_count: typesRequest.types.length } });
+      try {
+        const result = backlogItemTypesResultSchema.parse(
+          await pluginManager.describeItemTypes(
+            target.pluginId,
+            pluginConnection(target.connection),
+            typesRequest,
+            target.call.admit,
+          ),
+        );
+        unit.set({ item_type: { result_count: result.types.length } });
+        writeJson(response, 200, result);
+      } catch (error) {
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
+      }
+    },
+
     settleWrite: async (context) => {
       const target = await backlogTarget(
         context,
@@ -4754,6 +4794,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit,
     }: RouteContext<
       | "settleStateList"
+      | "itemTypeDescribe"
       | "settleWrite"
       | "assigneeSearch"
       | "descriptionRead"

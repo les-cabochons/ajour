@@ -84,6 +84,7 @@ export const APP_API_CLIENT = {
   syncTimeEntries: "time_sync.round",
   syncBacklogConnection: "backlog.sync",
   listBacklogSettleStates: "source_state.list",
+  describeBacklogItemTypes: "item_type.describe",
   searchBacklogAssignees: "assignee.search",
   writeBacklogSettle: "backlog.write_source",
   readBacklogDescription: "description.read",

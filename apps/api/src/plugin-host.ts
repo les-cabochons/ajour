@@ -77,6 +77,8 @@ import {
   pluginFieldValuesSchema,
   backlogPluginSyncResultSchema,
   pluginValidationResultSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -94,6 +96,8 @@ import {
   type PluginSandboxStatus,
   type BacklogPluginSyncResult,
   type PluginValidationResult,
+  type BacklogItemTypesRequest,
+  type BacklogItemTypesResult,
   type BacklogSettleStatesRequest,
   type BacklogSettleStatesResult,
   type BacklogSettleWriteRequest,
@@ -314,6 +318,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   searchAssignees: "assignee.search",
   readDescription: "description.read",
   writeDescription: "description.write",
+  describeItemTypes: "item_type.describe",
   ...CODE_HOST_EVENTS,
   ...CALENDAR_EVENTS,
   ...COMMENT_EVENTS,
@@ -346,6 +351,7 @@ export function capabilityOfMethod(
     method === "searchAssignees" ||
     method === "readDescription" ||
     method === "writeDescription" ||
+    method === "describeItemTypes" ||
     method in backlogCommentOperations
   ) {
     return "connector";
@@ -411,6 +417,11 @@ const requireSettle = requireFeature(
 const requireAssign = requireFeature(
   (manifest) => manifest.capabilities.connector?.assign,
   "does not support assignees",
+);
+
+const requireItemTypes = requireFeature(
+  (manifest) => manifest.capabilities.connector?.itemTypes,
+  "does not describe item types",
 );
 
 function comparePlugins(left: PluginManifest, right: PluginManifest) {
@@ -1378,6 +1389,26 @@ export class PluginManager {
       backlogSettleStatesResultSchema,
       admit,
       requireSettle,
+    );
+  }
+
+  /** The item types the connection form shows, from a plugin with `connector.itemTypes`. */
+  async describeItemTypes(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: BacklogItemTypesRequest,
+    admit?: PluginAdmission,
+  ): Promise<BacklogItemTypesResult> {
+    return await this.invokePlugin(
+      pluginId,
+      "describeItemTypes",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: backlogItemTypesRequestSchema.parse(request),
+      },
+      backlogItemTypesResultSchema,
+      admit,
+      requireItemTypes,
     );
   }
 

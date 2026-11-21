@@ -1085,6 +1085,7 @@ channel to read the event each emits.
 | `handoff.tools_read`                 | request, job                            | route, client call                               |
 | `handoff.tools_update`               | request, command                        | route, client call                               |
 | `handoff.visibility`                 | request, job                            | route, client call                               |
+| `item_type.describe`                 | command, request, plugin_operation      | route, plugin method, client call                |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
 | `logs.actions`                       | ipc                                     | IPC channel                                      |

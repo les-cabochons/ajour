@@ -42,6 +42,8 @@ import {
   unsignedPluginsActivationUpdateSchema,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -62,6 +64,7 @@ import {
   timeSyncRouteResponseSchema,
   type TimeSyncRequest,
   type TimeSyncRouteResponse,
+  type BacklogItemTypesRequest,
   type BacklogSettleWriteRequest,
   type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
@@ -1605,6 +1608,26 @@ export function listBacklogSettleStates(
       ),
     },
     backlogSettleStatesResultSchema,
+  );
+}
+
+/**
+ * What a connection's plugin says about its item types, for the connection
+ * form's fields by item type. Only for a plugin with `connector.itemTypes`.
+ */
+export function describeBacklogItemTypes(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogItemTypesRequest,
+) {
+  return appApiRequest(
+    "describeBacklogItemTypes",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/item-types`,
+    {
+      method: "POST",
+      body: JSON.stringify(backlogItemTypesRequestSchema.parse(request)),
+    },
+    backlogItemTypesResultSchema,
   );
 }
 
