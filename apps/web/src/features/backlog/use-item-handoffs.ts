@@ -82,6 +82,23 @@ export function useItemHandoffs(
       current = false;
     };
   }, [itemId, projectId, named, canList]);
+  // A thread linked another way, such as the hand-off flow's "Link that
+  // thread" dialog, leaves the offers for good, as the card's Link does.
+  // Hiding it only behind its handoff would offer it again once Close takes
+  // the handoff off the card, and the tool no longer lists it (#850).
+  useEffect(() => {
+    const linked = (offer: HandoffThreadOffer) =>
+      records.some((record) => sameThread(record, offer));
+    setFound((current) =>
+      current?.offers.some(linked)
+        ? {
+            ...current,
+            offers: current.offers.filter((offer) => !linked(offer)),
+          }
+        : current,
+    );
+  }, [records]);
+  // Filtered here too, so the offer and its handoff never show together.
   const offers =
     found?.itemId === itemId && found.offers.length
       ? found.offers.filter(

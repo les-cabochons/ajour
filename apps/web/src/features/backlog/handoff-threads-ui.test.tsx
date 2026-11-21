@@ -176,6 +176,36 @@ it("links a found thread as a handoff, which replaces the offer", async () => {
   ).toBeTruthy();
 });
 
+it("offers a thread linked another way no more once Close takes it off the card (#850)", async () => {
+  await renderPage();
+  // The hand-off flow's "Link that thread" dialog links it without the
+  // card's Link, so the offer is only hidden behind the handoff.
+  act(() =>
+    setHandoffs([
+      handoffRecord({
+        id: "linked",
+        workItemId: "item-12",
+        threadId: "t-12",
+        state: "done",
+      }),
+    ]),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("listitem", { name: /^Found in T3 Code/ }),
+    ).toBeNull(),
+  );
+  // Close in <tool> answers with the handoffs left. The tool no longer
+  // lists the thread, so Link would refuse it.
+  act(() => setHandoffs([]));
+  expect(
+    screen.queryByRole("listitem", { name: /^Found in T3 Code/ }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("listitem", { name: /^Found in Claude Code/ }),
+  ).toBeTruthy();
+});
+
 it("says why a link failed, in the API's words, and keeps the offer", async () => {
   vi.mocked(api.adoptHandoffThread).mockRejectedValue(
     new Error("This thread is already linked to an item."),
