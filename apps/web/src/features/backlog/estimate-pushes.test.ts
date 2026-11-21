@@ -62,6 +62,8 @@ function fakeApi() {
   const api = {
     syncs: [] as BacklogSyncRequest[],
     gate: undefined as Promise<void> | undefined,
+    /** The source rejected the token: the connection pauses, syncs fail. */
+    tokenRejected: false,
   };
   const plugin = {
     id: "azure_devops",
@@ -96,7 +98,21 @@ function fakeApi() {
           pluginsEnabled: true,
           plugins: [plugin],
           connectionGroups: [
-            { plugin, enabled: true, connections: [connection] },
+            {
+              plugin,
+              enabled: true,
+              connections: [
+                api.tokenRejected
+                  ? {
+                      ...connection,
+                      paused: {
+                        reason: "secret_rejected",
+                        message: "Update the saved token",
+                      },
+                    }
+                  : connection,
+              ],
+            },
           ],
           totalPendingImportCount: 0,
           totalSelectedImportCount: 0,
@@ -106,6 +122,12 @@ function fakeApi() {
         const request = JSON.parse(String(init?.body)) as BacklogSyncRequest;
         api.syncs.push(request);
         await api.gate;
+        if (api.tokenRejected) {
+          return Response.json(
+            { error: "The source rejected the token." },
+            { status: 401 },
+          );
+        }
         const fields = [
           "remainingEstimateHours",
           "completedEstimateHours",
@@ -335,6 +357,25 @@ it("holds an item refresh and a Backlog refresh until the item's upload answers,
     ["auto", "42", 3],
     ["auto", undefined, 3],
   ]);
+});
+
+it("drops a Backlog refresh that waited for an upload which paused the connection", async () => {
+  const api = fakeApi();
+  const { localStore, item, refreshBacklog, ESTIMATE_PUSH_DELAY_MS } =
+    await load();
+  let release!: () => void;
+  api.gate = new Promise((resolve) => (release = resolve));
+
+  localStore.updateWorkItemWithUndo(item()._id, { remainingEstimateHours: 3 });
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+  await vi.waitFor(() => expect(api.syncs).toHaveLength(1));
+  const refresh = refreshBacklog({ trigger: "auto" });
+  api.tokenRejected = true;
+  api.gate = undefined;
+  release();
+  await refresh;
+
+  expect(api.syncs).toHaveLength(1);
 });
 
 it("puts the old value back with Undo after the upload, and sends it", async () => {
