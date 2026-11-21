@@ -220,6 +220,13 @@ it("sends an estimate edit when its Undo window ends, as a sync of that item alo
       items: [["42", 3]],
     },
   ]);
+  // The upload brought back no item, so the item is no fresher.
+  const { getBacklogSyncSnapshot } = await import("@/lib/backlog-sync-status");
+  const upload = getBacklogSyncSnapshot().find(
+    (status) => status.sourceId === "42",
+  );
+  expect(upload).toMatchObject({ trigger: "source_write", running: 0 });
+  expect(upload?.lastSuccessAt).toBeUndefined();
   await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS * 2);
   expect(api.syncs).toHaveLength(1);
 });
@@ -286,7 +293,7 @@ it("holds a change made while the item's upload is on its way until that upload'
   ]);
 });
 
-it("lets an item refresh and a Backlog refresh wait while the item's upload is on its way", async () => {
+it("holds an item refresh and a Backlog refresh until the item's upload answers, then runs them", async () => {
   const api = fakeApi();
   const { localStore, item, refreshBacklog, ESTIMATE_PUSH_DELAY_MS } =
     await load();
@@ -297,22 +304,37 @@ it("lets an item refresh and a Backlog refresh wait while the item's upload is o
   await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
   await vi.waitFor(() => expect(api.syncs).toHaveLength(1));
   // Opening its page, then the Backlog page, while it uploads.
-  await refreshBacklog({
-    source: {
-      pluginId: "azure_devops",
-      connectionId: "contoso",
-      sourceId: "42",
-    },
-    trigger: "auto",
-  });
-  await refreshBacklog({ trigger: "auto" });
+  const refreshes = Promise.all([
+    refreshBacklog({
+      source: {
+        pluginId: "azure_devops",
+        connectionId: "contoso",
+        sourceId: "42",
+      },
+      trigger: "auto",
+    }),
+    refreshBacklog({ trigger: "auto" }),
+  ]);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(api.syncs).toHaveLength(1);
   api.gate = undefined;
   release();
+  await refreshes;
 
-  await vi.waitFor(() =>
-    expect(item().estimateSync?.remainingEstimateHours?.baselineValue).toBe(3),
-  );
-  expect(api.syncs).toHaveLength(1);
+  // Each refresh read the item once the upload agreed on 3, so none sends
+  // it again.
+  expect(
+    api.syncs.map((sync) => [
+      sync.trigger,
+      sync.sourceId,
+      sync.workItems.find((workItem) => workItem.sourceId === "42")
+        ?.estimateSync?.remainingEstimateHours?.baselineValue,
+    ]),
+  ).toEqual([
+    ["source_write", "42", 5],
+    ["auto", "42", 3],
+    ["auto", undefined, 3],
+  ]);
 });
 
 it("puts the old value back with Undo after the upload, and sends it", async () => {

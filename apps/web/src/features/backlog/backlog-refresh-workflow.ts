@@ -4,7 +4,11 @@ import {
   getPluginsOverview,
   syncBacklogConnection,
 } from "@/lib/app-api";
-import { getBacklogSyncSnapshot } from "@/lib/backlog-sync-status";
+import {
+  getBacklogSyncSnapshot,
+  nextBacklogSyncChange,
+  type BacklogSyncStatus,
+} from "@/lib/backlog-sync-status";
 
 export interface BacklogRefreshSource {
   pluginId: string;
@@ -39,23 +43,28 @@ export async function refreshBacklog({
     // Match the scheduler's sequential admission so several connections
     // cannot exhaust their plugin's operation quota.
     for (const row of targets) {
-      // Another entry point can start a queued connection while this one
-      // waits for the preceding connection to finish. Any running sync of
-      // the connection serves a whole refresh. An item's refresh is served
-      // by a sync of the whole connection or of the same item; another
-      // item's sync leaves it to run.
-      if (
-        getBacklogSyncSnapshot().some(
+      const running = () =>
+        getBacklogSyncSnapshot().filter(
           (s) =>
             s.pluginId === row.pluginId &&
             s.connectionId === row.connection.id &&
-            s.running > 0 &&
-            (!source ||
-              s.sourceId === undefined ||
-              s.sourceId === source.sourceId),
-        )
-      )
-        continue;
+            s.running > 0,
+        );
+      // A running sync of the whole connection, or of this same item, serves
+      // the refresh. An upload of one item's estimates brings back no item,
+      // so it serves none.
+      const serves = (s: BacklogSyncStatus) =>
+        s.trigger !== "source_write" &&
+        (s.sourceId === undefined || s.sourceId === source?.sourceId);
+      // A running sync that sends some of the same items: the refresh waits
+      // for its answer, so it never sends a change a second time.
+      const overlaps = (s: BacklogSyncStatus) =>
+        !source || s.sourceId === undefined || s.sourceId === source.sourceId;
+      // Another entry point can also start this connection meanwhile.
+      while (!running().some(serves) && running().some(overlaps)) {
+        await nextBacklogSyncChange();
+      }
+      if (running().some(serves)) continue;
       try {
         await syncBacklogConnection(row.pluginId, row.connection.id, {
           refresh: true,
