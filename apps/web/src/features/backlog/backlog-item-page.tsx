@@ -78,6 +78,7 @@ import {
 } from "@/features/backlog/backlog-item-side-cards";
 import { HandoffButton } from "@/features/backlog/handoff-button";
 import { useItemHandoffs } from "@/features/backlog/use-item-handoffs";
+import { useBacklogItemRefreshOnOpen } from "@/features/backlog/use-backlog-refresh-on-open";
 import { getHandoffItemKeys } from "@/domain/handoffs/handoffs";
 import {
   updateBacklogItemCards,
@@ -158,6 +159,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     setAddingSubitem(false);
     focusRef.current?.focus({ preventScroll: true });
   }, [itemId]);
+  // Each visit syncs a synced item both ways, so the page shows the
+  // source's values and the item's estimate changes go out.
+  useBacklogItemRefreshOnOpen(itemId);
 
   // The sidebar and the command palette ask for Edit and Add subitem with
   // `?action=`. Only enabled actions of the item run: Edit renames the item,

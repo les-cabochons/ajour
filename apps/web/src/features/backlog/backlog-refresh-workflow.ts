@@ -40,13 +40,16 @@ export async function refreshBacklog({
     // cannot exhaust their plugin's operation quota.
     for (const row of targets) {
       // Another entry point can start a queued connection while this one
-      // waits for the preceding connection to finish.
+      // waits for the preceding connection to finish. A running sync serves
+      // this refresh only when it covers it: the whole connection, or this
+      // same item. Another item's sync leaves it to run.
       if (
         getBacklogSyncSnapshot().some(
           (s) =>
             s.pluginId === row.pluginId &&
             s.connectionId === row.connection.id &&
-            s.running > 0,
+            s.running > 0 &&
+            (s.sourceId === undefined || s.sourceId === source?.sourceId),
         )
       )
         continue;
