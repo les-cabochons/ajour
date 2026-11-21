@@ -79,7 +79,8 @@ export function watchEstimateChanges() {
       // item, and the next scheduled sync uploads it.
     } finally {
       sending.delete(itemId);
-      if (sendAgain.delete(itemId)) void push(itemId);
+      // A newer change still in its Undo window goes when its wait ends.
+      if (sendAgain.delete(itemId) && !timers.has(itemId)) void push(itemId);
     }
   };
 

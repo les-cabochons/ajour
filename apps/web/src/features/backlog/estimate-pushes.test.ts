@@ -149,6 +149,8 @@ async function load() {
   const { getPluginsOverview } = await import("@/lib/app-api");
   const { ESTIMATE_PUSH_DELAY_MS, watchEstimateChanges } =
     await import("@/features/backlog/estimate-pushes");
+  const { refreshBacklog } =
+    await import("@/features/backlog/backlog-refresh-workflow");
   await getPluginsOverview();
   localStore.importSyncedWorkItems([candidate("42"), candidate("43")]);
   const item = (sourceId = "42") =>
@@ -156,7 +158,7 @@ async function load() {
       .snapshot()
       .workItems.find((workItem) => workItem.sourceId === sourceId)!;
   stopWatching = watchEstimateChanges();
-  return { localStore, item, ESTIMATE_PUSH_DELAY_MS };
+  return { localStore, item, refreshBacklog, ESTIMATE_PUSH_DELAY_MS };
 }
 
 /** What each sync uploaded: its item and remaining estimate. */
@@ -281,5 +283,58 @@ it("holds a change made while the item's upload is on its way until that upload'
   expect(uploads(api).map((sync) => sync.items)).toEqual([
     [["42", 3]],
     [["42", 2]],
+  ]);
+});
+
+it("lets an item refresh and a Backlog refresh wait while the item's upload is on its way", async () => {
+  const api = fakeApi();
+  const { localStore, item, refreshBacklog, ESTIMATE_PUSH_DELAY_MS } =
+    await load();
+  let release!: () => void;
+  api.gate = new Promise((resolve) => (release = resolve));
+
+  localStore.updateWorkItemWithUndo(item()._id, { remainingEstimateHours: 3 });
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+  await vi.waitFor(() => expect(api.syncs).toHaveLength(1));
+  // Opening its page, then the Backlog page, while it uploads.
+  await refreshBacklog({
+    source: {
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      sourceId: "42",
+    },
+    trigger: "auto",
+  });
+  await refreshBacklog({ trigger: "auto" });
+  api.gate = undefined;
+  release();
+
+  await vi.waitFor(() =>
+    expect(item().estimateSync?.remainingEstimateHours?.baselineValue).toBe(3),
+  );
+  expect(api.syncs).toHaveLength(1);
+});
+
+it("puts the old value back with Undo after the upload, and sends it", async () => {
+  const api = fakeApi();
+  const { localStore, item, ESTIMATE_PUSH_DELAY_MS } = await load();
+
+  const token = localStore.updateWorkItemWithUndo(item()._id, {
+    remainingEstimateHours: 3,
+  });
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+  await vi.waitFor(() =>
+    expect(item().estimateSync?.remainingEstimateHours?.baselineValue).toBe(3),
+  );
+  expect(localStore.undo(token!)).toBe("restored");
+  expect(item().remainingEstimateHours).toBe(5);
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+
+  await vi.waitFor(() =>
+    expect(item().estimateSync?.remainingEstimateHours?.baselineValue).toBe(5),
+  );
+  expect(uploads(api).map((sync) => sync.items)).toEqual([
+    [["42", 3]],
+    [["42", 5]],
   ]);
 });

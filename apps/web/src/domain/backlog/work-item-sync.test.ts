@@ -2230,6 +2230,50 @@ describe("backlog estimate sync", () => {
     });
   });
 
+  it("keeps an estimate typed while the sync ran instead of the source's new value", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    // The request sent 5. The user typed 3 before its answer, which pulls 6.
+    const typed = {
+      ...imported,
+      workItems: imported.workItems.map((workItem) => ({
+        ...workItem,
+        remainingEstimateHours: 3,
+      })),
+    };
+    const synced = applyBacklogSyncWorkItemUpdates(
+      typed,
+      [
+        {
+          localWorkItemId: "work-item-1",
+          sourceId: "source-1",
+          fields: {
+            remainingEstimateHours: {
+              status: "pulled",
+              localValue: 5,
+              remoteValue: 6,
+              baselineValue: 5,
+              nextBaselineValue: 6,
+            },
+          },
+        },
+      ],
+      () => 700,
+    );
+
+    // Both sides changed: the next upload finds the conflict.
+    expect(synced.workItems[0]).toMatchObject({
+      remainingEstimateHours: 3,
+      estimateSync: {
+        remainingEstimateHours: { baselineValue: 5, remoteValue: 6 },
+      },
+    });
+  });
+
   it("folds split updates and ignores stale source identities", () => {
     const imported = importSyncedWorkItems(
       createState(),
