@@ -303,6 +303,16 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - The local API's route table and request seam: `apps/api/src/routes.ts`. A new route is an entry in `ROUTES`, with its event name, and a handler in `createAppApiServer`. A new plugin method needs a name in `PLUGIN_OPERATION_EVENTS` (`apps/api/src/plugin-host.ts`).
 - The packaged app copies the package into its internal API runtime (`apps/desktop/scripts/prepare-internal-api.cjs`).
 
+## Review Deck
+
+- Package: `packages/review-deck` (`@ajour/review-deck`), a copy of Review Deck's grouping pipeline (#595). `VENDORED.md` records the upstream commit, the layout and every local change. Change the copied files only to carry an upstream change or a change listed there.
+- Entry points: `pipeline.ts` (`runPipeline`, `buildDiff`, `mergeConfig`, the result types, and `createPipelineDeps`, Ajour's `PipelineDeps`), `saved.ts` (the `saved-reviews` format 4) and `stack.ts` (stack detection and trunk patterns). `pipeline.ts` runs in Node only; `saved.ts` and `stack.ts` also run in the browser.
+- Every diff is built with `buildDiff` from both versions of each file, so hunk ids are Review Deck's `path#index`, with 3 lines of context.
+- Dependencies:
+  - `web-tree-sitter` parses source files, with one grammar wasm per language from `tree-sitter-typescript` (TypeScript and TSX), `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-java`, `tree-sitter-c-sharp`, `tree-sitter-ruby`, `tree-sitter-php` and `tree-sitter-cpp` (C and C++). `createPipelineDeps` resolves each wasm from its npm package. Only the wasm files are used: the grammars' native bindings are never built.
+  - `graphology` and `graphology-communities-louvain` cluster related hunks into concerns.
+  - `diff` (jsdiff) builds the diffs with `structuredPatch`.
+
 ## Documentation Lookup Rules
 
 - For third-party API or framework questions, fetch current official docs before changing code.
