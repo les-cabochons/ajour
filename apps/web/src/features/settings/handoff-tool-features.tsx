@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   handoffToolFeatureLabels,
   handoffToolFeatures,
+  type HandoffCloseKind,
 } from "@ajour/shared/handoffs";
 import { SettingRow } from "@/components/app-surface";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +22,7 @@ interface Tool {
   followsState?: boolean;
   listsThreads?: boolean;
   hooks?: boolean;
+  closesThreads?: HandoffCloseKind;
 }
 
 function errorMessage(reason: unknown, fallback: string) {

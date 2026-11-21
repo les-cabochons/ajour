@@ -1367,11 +1367,12 @@ start's hook URL. `checkHandoffConnections` refuses it unless the plugin
 declares a command with a `hook-url` slot (`declaresHookUrl`) and the tool
 follows state. `handoffToolFeatures` in `packages/shared/handoffs.ts`
 derives each tool's features for the plugin's page from `followsState`,
-`listsThreads` and `hooks` alone.
+`listsThreads`, `hooks` and `closesThreads` alone.
 
 The authenticated window routes are GET and POST `/api/handoffs`, POST
-`/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE
-`/api/handoffs/:handoffId`, POST `/api/handoffs/visibility`, and POST
+`/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, POST
+`/api/handoffs/:handoffId/close`, DELETE `/api/handoffs/:handoffId`, POST
+`/api/handoffs/visibility`, and POST
 `/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
@@ -1396,7 +1397,7 @@ every tool's threads.
 (409, `tool_off`), `detect` asks the plugin only when a tool is on and
 keeps only the answers for tools that are on, `findThreads` lists only tools
 that are on, and `adopt` refuses a thread of a tool turned off since its
-listing (409, `tool_off`). Refreshes, hooks, Open and Remove ignore the switches: turning a tool
+listing (409, `tool_off`). Refreshes, hooks, Open, Close and Remove ignore the switches: turning a tool
 off keeps its handoffs, which are the user's records. Tools that run each
 other, such as T3 Code running Codex and Claude Code threads, are not
 filtered against each other: each tool that is on shows its own listing.
@@ -1473,6 +1474,27 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+### Closing threads
+
+A tool that declares `closesThreads` (ticket #850) answers the optional
+`closeThread({ tool, handoff: { id, threadId, folderId, native } })`,
+connection first for a tool that uses one, with `{}`. `archive` means the tool
+keeps the conversation where the user can reopen it, `delete` that it deletes
+it for good. The plugin stops the thread's work first when it runs, and
+answers `{}` for a thread the tool no longer has; it throws to refuse, and its
+message reaches the user. POST `/api/handoffs/:handoffId/close` runs
+`Handoffs.close`, which refuses (409) a tool that doesn't declare
+`closesThreads`, a plugin that can't run, a tool whose connection is gone, and
+the tool's own refusal, and keeps the handoff for each. Once the plugin
+answers, it forgets the handoff as `remove` does, hook state included, and
+answers the handoffs left. A close runs inside `runBatch`, so no refresh batch
+reads the thread while the tool closes it. The closed thread also leaves every
+thread listing taken before the close, cached or under way
+(`forgetListedThread`), so the item page doesn't offer it again and Link
+refuses it; a listing taken after the close shows what the tool lists then. The plugin host refuses the
+operation too for a tool that doesn't declare it (`not_supported`). The
+window asks before a `delete` close, never before an `archive` one.
 
 ## Handoff hooks
 

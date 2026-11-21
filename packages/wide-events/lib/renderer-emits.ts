@@ -38,6 +38,7 @@ export const APP_API_CLIENT = {
   startHandoff: "handoff.start",
   refreshHandoffs: "handoff.refresh",
   removeHandoff: "handoff.remove",
+  closeHandoff: "handoff.close",
   openHandoff: "handoff.open",
   detectHandoffTools: "handoff.detect",
   findHandoffThreads: "handoff.threads",

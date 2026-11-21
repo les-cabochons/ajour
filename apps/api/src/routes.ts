@@ -120,6 +120,11 @@ export const ROUTES = {
     path: "/api/handoffs/:handoffId/open",
     name: "handoff.open",
   },
+  handoffClose: {
+    method: "POST",
+    path: "/api/handoffs/:handoffId/close",
+    name: "handoff.close",
+  },
   handoffRemove: {
     method: "DELETE",
     path: "/api/handoffs/:handoffId",

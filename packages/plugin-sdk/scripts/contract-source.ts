@@ -207,3 +207,7 @@ export type ListThreadsRequest =
   import("../../shared/handoffs.ts").ListThreadsRequest;
 export type ListThreadsResult =
   import("../../shared/handoffs.ts").ListThreadsResult;
+export type CloseThreadRequest =
+  import("../../shared/handoffs.ts").CloseThreadRequest;
+export type CloseThreadResult =
+  import("../../shared/handoffs.ts").CloseThreadResult;

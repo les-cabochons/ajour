@@ -5,6 +5,8 @@ import type {
   ReadHandoffStatesResult,
   ListThreadsRequest,
   ListThreadsResult,
+  CloseThreadRequest,
+  CloseThreadResult,
   DetectToolsResult,
   BacklogCommentOperations,
   BacklogSyncResult,
@@ -282,6 +284,15 @@ export type PluginModule = {
   listThreads?(
     ...args: HandoffArguments<ListThreadsRequest>
   ): Awaitable<ListThreadsResult>;
+  /**
+   * Closes one handoff's thread in its tool, for a tool that declares
+   * `closesThreads`: stop its work when it runs, then archive or delete it,
+   * as the manifest says. Answer `{}` once it is closed, or when the tool no
+   * longer has it; throw to refuse, in words the user reads.
+   */
+  closeThread?(
+    ...args: HandoffArguments<CloseThreadRequest>
+  ): Awaitable<CloseThreadResult>;
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,

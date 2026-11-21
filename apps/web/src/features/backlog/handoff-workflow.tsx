@@ -37,6 +37,7 @@ import {
   getHandoffItemRefusal,
   getHandoffProjectName,
   getHandoffToolRefusal,
+  type HandoffCloseAction,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
 import { repositoryFolderSelection } from "@/domain/projects/repository-folders";
@@ -44,6 +45,7 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   AppApiError,
   adoptHandoffThread,
+  closeHandoff,
   dismissHandoffThread,
   findHandoffThreads,
   getHandoffTemplates,
@@ -862,6 +864,26 @@ export async function removeHandoffFromItem(
   } catch (error) {
     showErrorToast({
       title: "Couldn't remove the thread",
+      description: errorMessage(error, "The local API didn't answer."),
+    });
+  }
+}
+
+/**
+ * Close in <tool> or Delete in <tool> (#850): the tool closes the thread,
+ * stopping its work first, then Ajour forgets it. A refusal, Ajour's or the
+ * tool's, keeps the thread on the card and says why.
+ */
+export async function closeHandoffThread(
+  handoffId: string,
+  action: HandoffCloseAction,
+) {
+  try {
+    setHandoffs(await closeHandoff(handoffId));
+    showToast(action.done);
+  } catch (error) {
+    showErrorToast({
+      title: action.failure,
       description: errorMessage(error, "The local API didn't answer."),
     });
   }

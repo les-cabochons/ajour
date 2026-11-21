@@ -473,7 +473,7 @@ end idle sessions.
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
 `iconSvg`, `settings` and optional `connection`, `listsThreads`,
-`followsState` and `hooks`. The host treats handoff like the other switchable
+`followsState`, `hooks` and `closesThreads`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
@@ -482,12 +482,14 @@ The plugin exports `detectTools()`, `startHandoff(request)` and
 Each tool declares the features it supports, and Ajour uses only those. The
 plugin's page lists them for each tool:
 
-| Feature                | What Ajour does                                      | Declared by                       |
-| ---------------------- | ---------------------------------------------------- | --------------------------------- |
-| Starts threads         | Calls `startHandoff`.                                | every tool                        |
-| Follows state          | Calls `readHandoffStates` for the thread's state.    | `followsState`, `true` by default |
-| Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`              |
-| Updates within seconds | A hook tells Ajour the thread changed.               | `hooks: true`, `false` by default |
+| Feature                | What Ajour does                                       | Declared by                       |
+| ---------------------- | ----------------------------------------------------- | --------------------------------- |
+| Starts threads         | Calls `startHandoff`.                                 | every tool                        |
+| Follows state          | Calls `readHandoffStates` for the thread's state.     | `followsState`, `true` by default |
+| Finds threads          | Calls `listThreads` to offer the user's own threads.  | `listsThreads: true`              |
+| Updates within seconds | A hook tells Ajour the thread changed.                | `hooks: true`, `false` by default |
+| Closes threads         | Calls `closeThread`; the tool keeps the conversation. | `closesThreads: "archive"`        |
+| Deletes threads        | Calls `closeThread` after asking the user.            | `closesThreads: "delete"`         |
 
 A start the tool refuses throws an `Error` with the tool's reason. Two
 properties of that error let Ajour help the user instead of only showing the
@@ -584,6 +586,27 @@ key in brackets, exactly, as `[PAY-12] Fix login redirect`. Link turns it
 into a handoff whose state is `unknown` until its first `readHandoffStates`,
 which runs at once. Links and resumes follow a start's rules, except that an
 unsafe link or an undeclared resume is dropped instead of refusing the list.
+
+A tool that sets `closesThreads` also answers `closeThread(request)`
+(connection first for a tool with one), when the user closes a thread from
+the item's Handoffs card. The request is
+`{ tool, handoff: { id, threadId, folderId, native } }`, one handoff as a
+state read sends it. Stop the thread's work first when it runs, then close
+it: `"archive"` keeps the conversation where the user can reopen it, such as
+an archived session; `"delete"` deletes it for good, and Ajour asks the user
+before calling. Return `{}` once it is closed, and also when the tool no
+longer has the thread. Throw an `Error` to refuse, with a reason the user
+reads, such as unpushed work you won't throw away. Ajour then forgets the
+handoff, or keeps it after a refusal. It never calls `closeThread` for a
+tool without `closesThreads`.
+
+```ts
+export async function closeThread(request: CloseThreadRequest) {
+  await stopIfRunning(request.handoff.threadId);
+  await archive(request.handoff.threadId); // a missing thread is fine
+  return {};
+}
+```
 
 ## License
 
