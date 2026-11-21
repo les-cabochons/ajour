@@ -333,9 +333,6 @@ Then("{string} shows no icon", async ({ page }, rowName: string) => {
   await expect(row(page, rowName).locator("img")).toHaveCount(0);
 });
 
-Then(
-  "the fields by item type say {string}",
-  async ({ page }, text: string) => {
-    await expect(page.getByText(text, { exact: true })).toBeVisible();
-  },
-);
+Then("the fields by item type say {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: true })).toBeVisible();
+});
