@@ -401,3 +401,43 @@ it("puts the old value back with Undo after the upload, and sends it", async () 
     [["42", 5]],
   ]);
 });
+
+it("waits for Sync review's Send of a held estimate instead of sending it again", async () => {
+  const api = fakeApi();
+  const { localStore, item, ESTIMATE_PUSH_DELAY_MS } = await load();
+  const { sendHeldEdit } = await import("@/features/backlog/held-edit-review");
+  // A change held while editing was off waits for review.
+  localStore.updateWorkItemWithUndo(item()._id, { remainingEstimateHours: 3 });
+  localStore.holdPendingEstimates({
+    pluginId: "azure_devops",
+    connectionId: "contoso",
+  });
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+  expect(api.syncs).toEqual([]);
+  let release!: () => void;
+  api.gate = new Promise((resolve) => (release = resolve));
+
+  const send = sendHeldEdit({
+    kind: "estimate",
+    itemId: item()._id,
+    pluginId: "azure_devops",
+    connectionId: "contoso",
+    field: "remainingEstimateHours",
+    at: 1,
+  });
+  // Send runs past the wait the release started in the watcher.
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS * 2);
+  api.gate = undefined;
+  release();
+  await send;
+  await vi.advanceTimersByTimeAsync(ESTIMATE_PUSH_DELAY_MS);
+
+  expect(uploads(api)).toEqual([
+    {
+      trigger: "source_write",
+      refresh: true,
+      sourceId: "42",
+      items: [["42", 3]],
+    },
+  ]);
+});
