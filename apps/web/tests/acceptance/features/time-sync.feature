@@ -89,6 +89,19 @@ Feature: Time entries sync through a time sync plugin
     And a minute passes
     Then the Day view shows no "Ticket #101 - Login" entry
 
+  Scenario: Another Ajour's entry and timer show here, as they do on the other machine
+    Given the example planner manages "Acme - Support", with Time entries on
+    And another Ajour logged 45 minutes on "Ticket #101 - Login" today in the planner
+    When I open today in the Day view
+    And a minute passes
+    Then today's "Ticket #101 - Login" entry shows "0:45"
+    When another Ajour starts a timer on "Ticket #102 - Export" in the planner
+    And a minute passes
+    Then the running entry is on "Ticket #102 - Export"
+    When another Ajour stops its timer in the planner at 2 minutes
+    Then no entry runs in Ajour within seconds
+    And today's "Ticket #102 - Export" entry shows "0:02"
+
   Scenario: An entry logged in another tool on a project the connection doesn't manage waits in Sync review
     Given the example planner manages "Acme - Support", with Time entries on
     And another tool logged 30 minutes on "Design review" of project "GLOBEX-INT" today in the planner
