@@ -109,4 +109,4 @@ A plugin is **signed** when it comes from a source signed with a key you approve
 - **Allow installing unsigned plugins** is off at first. While it is off, Ajour installs only signed plugins. When it is on, Ajour warns you before every unsigned install or update.
 - **Deactivate unsigned plugins** pauses every unsigned plugin you already have.
 
-Ajour reads your plugin sources at launch and every 15 minutes. Change this under **Refresh catalog**.
+Ajour reads your plugin sources at launch and every 15 minutes. Change this under **Refresh catalog**. Checking for an Ajour update reads them again too, so the Plugins page shows the latest version of each plugin.

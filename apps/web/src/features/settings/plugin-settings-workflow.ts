@@ -833,7 +833,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         catalogSettings,
         statusMessage:
           refreshMinutes === 0
-            ? "Catalog will refresh at app launch only."
+            ? "Catalog will refresh at app launch and when you check for updates."
             : `Catalog refresh set to every ${refreshMinutes} minutes.`,
       });
     } catch (error) {

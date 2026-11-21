@@ -1548,7 +1548,10 @@ export const catalog = defineCatalog({
       kinds: ["job"],
       fields: {
         catalog: {
-          trigger: operational<"launch" | "interval" | "request">(),
+          /** `update_check`: a check for Ajour's own update, which checks plugins too. */
+          trigger: operational<
+            "launch" | "interval" | "request" | "update_check"
+          >(),
           source: operational<"network" | "cache" | "built_in">(),
           entry_count: operational<number>(),
           sources_total: operational<number>(),

@@ -849,6 +849,10 @@ ipc.onMessage("ajour:tray-panel-command", (event, command) => {
 
 ipc.handle("ajour:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
+  // A check for Ajour checks its plugins too: the catalog lists their
+  // latest versions. The check doesn't wait for it, and the Plugins page
+  // updates when the refresh sends the new catalog.
+  void refreshPluginCatalog("update_check");
   return await automaticUpdateController.checkNow(track, {
     unit: events.current(),
   });
