@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TIME_SYNC_MAX_CHANGES,
-  parseTimeSyncResult,
+  parseTimeSyncAnswer,
   timeSyncRequestSchema,
   type TimeSyncChange,
   type TimeSyncRequest,
@@ -180,7 +180,7 @@ describe("a time sync round's result", () => {
       ],
     };
 
-    expect(parseTimeSyncResult(result, request)).toEqual(result);
+    expect(parseTimeSyncAnswer(result, request)).toEqual(result);
   });
 
   it("refuses a result that leaves a change unanswered or answers one twice", () => {
@@ -190,12 +190,12 @@ describe("a time sync round's result", () => {
     };
 
     expect(() =>
-      parseTimeSyncResult({ results: [synced], entries: [] }, request),
+      parseTimeSyncAnswer({ results: [synced], entries: [] }, request),
     ).toThrow(
       'The plugin\'s result is not valid: results: no result for the change "entry-1"; results: no result for the change "running-7".',
     );
     expect(() =>
-      parseTimeSyncResult(
+      parseTimeSyncAnswer(
         {
           results: [
             synced,
@@ -222,7 +222,7 @@ describe("a time sync round's result", () => {
 
   it("refuses a synced upsert without the entry as stored", () => {
     expect(() =>
-      parseTimeSyncResult(
+      parseTimeSyncAnswer(
         {
           results: [{ syncKey: "entry-1", status: "synced" }],
           entries: [],
@@ -238,9 +238,58 @@ describe("a time sync round's result", () => {
     const { updatedAt: _updatedAt, ...entry } = remoteEntry("te-50");
 
     expect(() =>
-      parseTimeSyncResult({ results: [], entries: [entry] }, round()),
+      parseTimeSyncAnswer({ results: [], entries: [entry] }, round()),
     ).toThrow(
       "The plugin's result is not valid: entries[0].updatedAt: Required.",
+    );
+  });
+});
+
+// A check round (#843): Ajour sends the last cursor and no changes, and a
+// plugin whose change marker didn't move answers unchanged without listing.
+describe("a check round's cursor", () => {
+  const cursor = "marker-v7";
+  const check: TimeSyncRequest = { ...round(), cursor };
+
+  it("rides on the request, opaque to Ajour, and comes back with a full answer", () => {
+    expect(timeSyncRequestSchema.parse(check)).toEqual(check);
+    expect(requestIssues({ ...round(), cursor: "" }).map(([at]) => at)).toEqual(
+      ["cursor"],
+    );
+
+    const full = {
+      results: [],
+      entries: [remoteEntry("te-50")],
+      cursor: "marker-v8",
+    };
+    expect(parseTimeSyncAnswer(full, check)).toEqual(full);
+    // A plugin without a marker answers as before.
+    expect(parseTimeSyncAnswer({ results: [], entries: [] }, round())).toEqual({
+      results: [],
+      entries: [],
+    });
+  });
+
+  it("lets a plugin answer unchanged, with the next cursor, to a request with a cursor and no changes", () => {
+    expect(
+      parseTimeSyncAnswer({ unchanged: true, cursor: "marker-v7" }, check),
+    ).toEqual({ unchanged: true, cursor: "marker-v7" });
+  });
+
+  it.each([
+    ["a request without a cursor", round()],
+    ["a request that carries changes", { ...round([deletedEntry]), cursor }],
+  ])("refuses an unchanged answer to %s", (_name, request) => {
+    expect(() =>
+      parseTimeSyncAnswer({ unchanged: true, cursor: "marker-v7" }, request),
+    ).toThrow(
+      "The plugin's result is not valid: unchanged: a plugin may answer unchanged only to a request with a cursor and no changes.",
+    );
+  });
+
+  it("refuses an unchanged answer without the next cursor", () => {
+    expect(() => parseTimeSyncAnswer({ unchanged: true }, check)).toThrow(
+      "The plugin's result is not valid: cursor: Required.",
     );
   });
 });

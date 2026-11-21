@@ -18,16 +18,19 @@ Turning it on calls `validateConnection` for each of your plugin's connections, 
 export async function syncTimeEntries(
   connection: PluginConnection,
   request: TimeSyncRequest,
-): Promise<TimeSyncResult>;
+): Promise<TimeSyncAnswer>;
 ```
 
 Each call is one round for one connection. Apply `request.changes` in order, then list your entries from `request.from` to `request.to`, and answer both. Ajour runs a round only while the switch is on, under the usual 30-second operation timeout and the broker's request limits.
+
+Ajour runs a round about 2 seconds after the user changes an entry, and asks every 5 seconds while its window is on screen, every 60 seconds while it is hidden. Without a cursor, Ajour lists at most once a minute, as before. See [Check rounds](#check-rounds) to check every 5 seconds for free.
 
 ### The request
 
 - **`from` and `to`.** The window to list, as local dates, `YYYY-MM-DD`, both included.
 - **`timeZone`.** The user's IANA time zone, such as `America/Toronto`. The window's dates and each entry's `localDate` are days in it.
 - **`changes`.** At most 20, in the order to apply them. One per entry. It can be empty: before a round that changes entries your system has, Ajour sends one with no changes and takes its listing first, so a later change on your side isn't overwritten.
+- **`cursor`.** The cursor of your last answer, in a check round only. See [Check rounds](#check-rounds).
 
 A change is an `upsert`, with the entry's `values`, or a `delete`. It has:
 
@@ -62,6 +65,16 @@ List the user's running entry with `running: true` and `countingSince`. One Ajou
 
 Ajour checks every answer before it uses any of it. It refuses one that leaves a change without a result, answers a change twice, or gives a synced upsert no entry, naming the field.
 
+### Check rounds
+
+When your system keeps a change marker, a version that moves on every write to the user's time entries there, from any tool, a check can skip the listing:
+
+1. Add `cursor` to the full answer: whatever lets you tell later whether the marker moved, such as its ETag. Read the marker after you apply the changes and before you list, so a write that lands during the listing moves it again.
+2. Ajour keeps the cursor in its window's memory, never in its saved state or its log, so it may hold a read link. When nothing changed in Ajour since your last full answer, its next round is a check: the same window, `cursor`, and no changes.
+3. When the marker is where the cursor says, answer `{ unchanged: true, cursor }`, with the cursor for the next check, without calling your system's API. Otherwise list and answer in full, with the new cursor.
+
+Ajour refuses an unchanged answer to a request without a cursor or with changes, and an Ajour without check rounds never sends a cursor. Any change in Ajour, a failed round or a saved connection makes the next round full. A full round with changes still carries your cursor, so you can reuse what it holds, such as a read link; a full round without changes carries none. List anyway when you can't read the marker, and now and then, such as once an hour, so a missed write can't hide for long.
+
 ## Types
 
 ```ts
@@ -73,6 +86,8 @@ interface TimeSyncRequest {
   timeZone: string;
   /** At most 20, in order. */
   changes: TimeSyncChange[];
+  /** Your last answer's cursor, in a check round only. */
+  cursor?: string;
 }
 
 type TimeSyncChange =
@@ -104,10 +119,20 @@ interface TimeSyncEntryValues {
   taskRemoteId?: string;
 }
 
+type TimeSyncAnswer = TimeSyncResult | TimeSyncUnchangedResult;
+
 interface TimeSyncResult {
   results: TimeSyncChangeResult[];
   /** At most 2,000. */
   entries: TimeSyncRemoteEntry[];
+  /** Up to 2,000 characters, opaque to Ajour. */
+  cursor?: string;
+}
+
+/** Only to a request with a cursor and no changes. */
+interface TimeSyncUnchangedResult {
+  unchanged: true;
+  cursor: string;
 }
 
 type TimeSyncChangeResult =
@@ -124,7 +149,7 @@ interface TimeSyncRemoteEntry extends TimeSyncEntryValues {
 }
 ```
 
-`@ajour/plugin-sdk` 0.2.0 has these types, generated from Ajour's schemas. The example plugin Ajour's own tests load, `packages/example`, answers rounds from an in-memory remote.
+`@ajour/plugin-sdk` 0.3.0 has these types, generated from Ajour's schemas. The example plugin Ajour's own tests load, `packages/example`, answers rounds from an in-memory remote with a change marker.
 
 ## Errors
 

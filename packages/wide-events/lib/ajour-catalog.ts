@@ -2672,12 +2672,23 @@ export const catalog = defineCatalog({
           failed_count: operational<number>(),
           /** The remote entries the plugin listed in the window. */
           entry_count: operational<number>(),
+          /**
+           * Ajour sent the cursor of the last answer: a check round, with no
+           * changes (#843). The cursor itself never reaches an event.
+           */
+          has_cursor: operational<boolean>(),
+          /**
+           * The plugin answered that nothing changed there since the
+           * cursor, so the round listed nothing and kept nothing.
+           */
+          unchanged: operational<boolean>(),
           // In the renderer, for the whole round.
           /**
-           * What started it: a store write, the 60-second poll, changes
-           * left over from the last round, or a retry after a failure.
+           * What started it: a store write, the check every 5 seconds (60
+           * while the window is hidden), changes left over from the last
+           * round, or a retry after a failure.
            */
-          trigger: operational<"change" | "poll" | "more" | "retry">(),
+          trigger: operational<"change" | "check" | "more" | "retry">(),
           /** Changes beyond this round's 20, for the next one. */
           waiting_count: operational<number>(),
           /** Entries Ajour took from the listing: added, edited or deleted (#694). */
@@ -2697,10 +2708,13 @@ export const catalog = defineCatalog({
            */
           listed_first: operational<boolean>(),
           /**
-           * Why the answer was not kept: the connection was saved again, or
-           * Time entries went off while the round ran.
+           * Why the answer was not kept: the connection was saved again,
+           * Time entries went off, or, for a check, the entries or the time
+           * sync changed while the round ran.
            */
-          discarded: operational<"connection_changed" | "time_sync_stopped">(),
+          discarded: operational<
+            "connection_changed" | "time_sync_stopped" | "inputs_changed"
+          >(),
         },
       },
     },

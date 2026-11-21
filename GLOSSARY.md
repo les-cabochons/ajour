@@ -258,6 +258,10 @@ _Avoid_: The product's name (such as Chronops) in Ajour, project sync, project c
 A plugin capability that keeps a live copy of the user's time entries in another system, both ways, on the projects its project source manages. It is not a commit: the timesheet tool gets a week only through Commit. Its switch, Time entries, starts off. See ADR 0018.
 _Avoid_: The product's name in Ajour, time push, live commit, sync (alone)
 
+**Check** (time sync):
+A time sync round that sends the cursor of the plugin's last full answer and no changes, while nothing the rules read changed in Ajour since. A plugin whose other system keeps a change marker, a version that moves on every time entry write there, answers it unchanged without listing. Ajour asks every 5 seconds while its window shows. See ADR 0021.
+_Avoid_: Poll, ping, heartbeat
+
 **Backlog** (capability):
 A plugin capability that syncs backlog items, with their descriptions, estimates and comments, between Ajour and a source tool such as Azure DevOps, Jira or GitHub issues. Say "backlog capability" wherever the user's backlog could be meant.
 _Avoid_: Connector, integration, sync plugin

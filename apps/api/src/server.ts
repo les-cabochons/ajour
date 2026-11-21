@@ -4592,7 +4592,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
       const round = await readRequest(request, timeSyncRequestSchema);
-      unit.set({ time_sync_round: { change_count: round.changes.length } });
+      unit.set({
+        time_sync_round: {
+          change_count: round.changes.length,
+          has_cursor: round.cursor !== undefined,
+        },
+      });
       const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.syncTimeEntries(
@@ -4601,10 +4606,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           round,
           call.admit,
         );
+        // A check round the plugin found unchanged (#843): nothing to count,
+        // and the window keeps the connection it already has, so no overview
+        // is built every few seconds.
+        if ("unchanged" in result) {
+          unit.set({ time_sync_round: { unchanged: true } });
+          writeJson(response, 200, timeSyncRouteResponseSchema.parse(result));
+          return;
+        }
         const count = (status: string) =>
           result.results.filter((answer) => answer.status === status).length;
         unit.set({
           time_sync_round: {
+            unchanged: false,
             synced_count: count("synced"),
             refused_count: count("refused"),
             failed_count: count("failed"),
@@ -4613,7 +4627,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         // The round's time and outcome are the window's to keep (#685). The
         // connection's last sync and error stay the project source's, which
-        // a round every minute would otherwise hide.
+        // a round every few seconds would otherwise hide.
         const { summary } = await findConnectionSummary(
           storage,
           pluginManager,

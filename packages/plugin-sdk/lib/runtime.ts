@@ -29,8 +29,8 @@ import type {
   SettleStatesResult,
   SettleWriteRequest,
   SettleWriteResult,
+  TimeSyncAnswer,
   TimeSyncRequest,
-  TimeSyncResult,
   ValidationContext,
   ValidationResult,
   WriteDescriptionRequest,
@@ -296,7 +296,7 @@ export type PluginModule = {
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,
-  ) => Awaitable<TimeSyncResult>;
+  ) => Awaitable<TimeSyncAnswer>;
 } & OperationHandlers<CodeHostOperations> &
   OperationHandlers<CalendarOperations> &
   OperationHandlers<BacklogCommentOperations>;

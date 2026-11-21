@@ -60,7 +60,7 @@ Use this file as the local index for important library choices. Check official d
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`
 - Project task budgets and consumption: `apps/web/src/domain/projects/task-budget.ts`
 - What a task commits as (sent, Not known yet, Local only), the one resolver the Commit page and agent tools read: `apps/web/src/domain/projects/commit-target.ts`
-- The time sync rules (#692, #694, #696, ADR 0018): which saved entries take part, the sync key, a round's changes from the synced copies, applying its answer, taking the other system's adds, edits and deletes through the entry transitions in `domain/time/timesheet-entry.ts`, putting back the edits and deletes made there in a submitted week, the entries it holds and why, starting and stopping with the Time entries switches, normalization and the connection's status line: `apps/web/src/domain/projects/time-sync.ts`. Sync review's held time entries: `features/settings/time-sync-review.tsx`. The runner beside the project source runner, which plans, sends and keeps each round as a `time_sync.round` job, and times the rounds (2 s after a store write, every 60 s, at once while changes wait, backing off after a failure): `apps/web/src/lib/time-sync.ts`. `features/layout/backlog-auto-sync-scheduler.tsx` starts it and shows its failures in the connection's toast.
+- The time sync rules (#692, #694, #696, ADR 0018): which saved entries take part, the sync key, a round's changes from the synced copies, applying its answer, taking the other system's adds, edits and deletes through the entry transitions in `domain/time/timesheet-entry.ts`, putting back the edits and deletes made there in a submitted week, the entries it holds and why, starting and stopping with the Time entries switches, normalization and the connection's status line: `apps/web/src/domain/projects/time-sync.ts`. Sync review's held time entries: `features/settings/time-sync-review.tsx`. The runner beside the project source runner, which plans, sends and keeps each round as a `time_sync.round` job, and times the rounds (2 s after a store write, a check every 5 s while the window shows and every 60 s while it is hidden, at once while changes wait, backing off after a failure), keeping each connection's cursor in memory for checks (#843, ADR 0021): `apps/web/src/lib/time-sync.ts`. `features/layout/backlog-auto-sync-scheduler.tsx` starts it and shows its failures in the connection's toast.
 - A managed project's budget card figures (Not counted yet, estimated Remaining, reconciliation): `apps/web/src/domain/projects/project-budget.ts`
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`
 - Project task/workbook import transitions and the canonical transfer-row contract: `apps/web/src/domain/projects/project-import.ts`
@@ -214,9 +214,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
   and URLs.
 - The time sync capability (spec #685, #691, ADR 0018) is plugin API 4 only
   and needs `projectSource`: `packages/shared/time-sync.ts` owns a round's
-  request, changes, remote entries and result, and `parseTimeSyncResult`,
-  which names a bad field and refuses a change left unanswered or answered
-  twice. The plugin exports `syncTimeEntries(connection, request)`; the API
+  request, changes, remote entries and answer, and `parseTimeSyncAnswer`,
+  which names a bad field, refuses a change left unanswered or answered
+  twice, and refuses an unchanged answer to a request that is not a check:
+  a cursor and no changes (#843, ADR 0021). The plugin exports `syncTimeEntries(connection, request)`; the API
   runs it at
   `POST /api/plugins/:pluginId/connections/:connectionId/sync-time-entries`
   while the Time entries switch is on, and keeps nothing of a round. That

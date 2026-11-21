@@ -45,6 +45,22 @@ Feature: Time entries sync through a time sync plugin
     When I stop the running entry
     Then the planner holds no entry
 
+  Scenario: A timer stopped in another tool stops in Ajour within seconds, without waiting for a minute
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    And 2 minutes pass
+    Then the planner shows "Ticket #101 - Login" running for 2 minutes
+    When another tool stops the timer in the planner
+    Then no entry runs in Ajour within seconds
+    And today's "Ticket #101 - Login" entry shows "0:02"
+
+  Scenario: Checks that find nothing changed in the planner write nothing in Ajour
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I log "1:30" on "Ticket #101 - Login" today
+    Then the planner holds 90 minutes on "Ticket #101 - Login" today
+    When the planner answers 2 checks unchanged
+    Then Ajour's saved state did not change during those checks
+
   Scenario: A timer started in another tool becomes the running entry, and the previous one is saved
     Given the example planner manages "Acme - Support", with Time entries on
     When I start an entry on "Ticket #101 - Login"

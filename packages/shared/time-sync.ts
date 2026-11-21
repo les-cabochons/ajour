@@ -12,6 +12,13 @@ import { calendarDateSchema, describePath } from "./project-source.ts";
  * The plugin exports `syncTimeEntries(connection, request)`, which runs one
  * round: it applies the changes in order, then lists the remote entries in
  * the window, and answers both.
+ *
+ * A plugin whose other system keeps a change marker, a version that moves on
+ * every time entry write there, may also answer with a cursor (#842). The
+ * cursor is opaque to Ajour, as a project source's is. Ajour keeps the last
+ * one in the window's memory and sends it back in a check round, with no
+ * changes. A plugin that finds the marker where the cursor left it answers
+ * `{ unchanged: true, cursor }` without listing.
  */
 
 /** What a plugin exports for the capability. `plugin-methods.ts` passes the arguments. */
@@ -125,8 +132,16 @@ export const timeSyncChangeSchema = z.discriminatedUnion("kind", [
 export type TimeSyncChange = z.infer<typeof timeSyncChangeSchema>;
 
 /**
+ * A plugin's cursor: opaque to Ajour, such as a change marker's ETag. It may
+ * hold a read link, so Ajour keeps it in memory only, never in the state.
+ */
+const cursorSchema = z.string().min(1).max(2_000);
+
+/**
  * What `syncTimeEntries` receives: the window to list, as local dates in
- * the user's time zone, and the changes to apply first, in order.
+ * the user's time zone, the changes to apply first, in order, and the
+ * cursor of the last answer, when Ajour holds one. Ajour before #843 sends
+ * no cursor.
  */
 export const timeSyncRequestSchema = z
   .object({
@@ -139,6 +154,7 @@ export const timeSyncRequestSchema = z
       .max(100)
       .refine(isTimeZone, "Use an IANA time zone, such as America/Toronto."),
     changes: z.array(timeSyncChangeSchema).max(TIME_SYNC_MAX_CHANGES),
+    cursor: cursorSchema.optional(),
   })
   .superRefine((request, context) => {
     if (request.to < request.from) {
@@ -203,37 +219,75 @@ export const timeSyncChangeResultSchema = z.discriminatedUnion("status", [
 export type TimeSyncChangeResult = z.infer<typeof timeSyncChangeResultSchema>;
 
 /**
- * What `syncTimeEntries` answers: one result per change, and the remote
- * entries in the window after the changes.
+ * The full answer to a round: one result per change, the remote entries in
+ * the window after the changes, and the cursor for the next round when the
+ * plugin keeps one. Without a cursor, the next round lists again.
  */
 export const timeSyncResultSchema = z.object({
   results: z.array(timeSyncChangeResultSchema).max(TIME_SYNC_MAX_CHANGES),
   entries: z.array(timeSyncRemoteEntrySchema).max(TIME_SYNC_MAX_ENTRIES),
+  cursor: cursorSchema.optional(),
 });
 export type TimeSyncResult = z.infer<typeof timeSyncResultSchema>;
 
 /**
- * Parses a plugin's answer to `request`. A bad field, a change without a
- * result, a second result for one change, or a synced upsert without the
- * entry is refused with its path, in one sentence.
+ * The answer to a check round: nothing changed there since the cursor Ajour
+ * sent, with the cursor for the next round.
  */
-export function parseTimeSyncResult(
+export const timeSyncUnchangedResultSchema = z.object({
+  unchanged: z.literal(true),
+  cursor: cursorSchema,
+});
+export type TimeSyncUnchangedResult = z.infer<
+  typeof timeSyncUnchangedResultSchema
+>;
+
+/** What `syncTimeEntries` answers: the full answer, or unchanged. */
+export const timeSyncAnswerSchema = z.union([
+  timeSyncUnchangedResultSchema,
+  timeSyncResultSchema,
+]);
+export type TimeSyncAnswer = z.infer<typeof timeSyncAnswerSchema>;
+
+/** Refuses an answer with its problems, in one sentence. */
+function refuseAnswer(problems: string[]): never {
+  throw new Error(`The plugin's result is not valid: ${problems.join("; ")}.`);
+}
+
+/** Each issue as its path and message, as a person reads them. */
+function describeIssues(error: z.ZodError) {
+  return error.issues.map(
+    (issue) => `${describePath(issue.path)}: ${issue.message}`,
+  );
+}
+
+/**
+ * Parses a plugin's answer to `request`, along the branch its `unchanged`
+ * picks. An unchanged answer is refused unless the request carried a cursor
+ * and no changes. A bad field, a change without a result, a second result
+ * for one change, or a synced upsert without the entry is refused with its
+ * path, in one sentence.
+ */
+export function parseTimeSyncAnswer(
   value: unknown,
-  request: Pick<TimeSyncRequest, "changes">,
-): TimeSyncResult {
-  const refuse = (problems: string[]): never => {
-    throw new Error(
-      `The plugin's result is not valid: ${problems.join("; ")}.`,
-    );
-  };
-  const parsed = timeSyncResultSchema.safeParse(value);
-  if (!parsed.success) {
-    refuse(
-      parsed.error.issues.map(
-        (issue) => `${describePath(issue.path)}: ${issue.message}`,
-      ),
-    );
+  request: Pick<TimeSyncRequest, "changes" | "cursor">,
+): TimeSyncAnswer {
+  const unchanged =
+    typeof value === "object" &&
+    value !== null &&
+    (value as { unchanged?: unknown }).unchanged === true;
+  if (unchanged) {
+    if (request.cursor === undefined || request.changes.length > 0) {
+      refuseAnswer([
+        "unchanged: a plugin may answer unchanged only to a request with a cursor and no changes",
+      ]);
+    }
+    const parsed = timeSyncUnchangedResultSchema.safeParse(value);
+    if (!parsed.success) refuseAnswer(describeIssues(parsed.error));
+    return parsed.data!;
   }
+  const parsed = timeSyncResultSchema.safeParse(value);
+  if (!parsed.success) refuseAnswer(describeIssues(parsed.error));
   const result = parsed.data!;
   const changes = new Map(
     request.changes.map((change) => [change.syncKey, change]),
@@ -266,6 +320,6 @@ export function parseTimeSyncResult(
       problems.push(`results: no result for the change "${syncKey}"`);
     }
   }
-  if (problems.length > 0) refuse(problems);
+  if (problems.length > 0) refuseAnswer(problems);
   return result;
 }

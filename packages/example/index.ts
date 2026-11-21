@@ -4,7 +4,7 @@
 // snapshot, and a time sync over an in-memory remote per connection
 // (`plugin/time-sync.ts`). This file hands out its folder, the fixture it
 // serves, its time sync round, and a way to log, edit and delete remote
-// entries, and start a timer there, as another tool would, so a test can
+// entries, and start and stop a timer there, as another tool would, so a test can
 // assert on what Ajour received, answer a mocked route the way the plugin
 // would, or change the remote under Ajour.
 import path from "node:path";
@@ -18,6 +18,7 @@ export {
   logElsewhere as logExampleRemoteEntry,
   runRound as runExampleTimeSyncRound,
   startElsewhere as startExampleRemoteTimer,
+  stopElsewhere as stopExampleRemoteTimer,
 } from "./plugin/time-sync.ts";
 
 /** The plugin's manifest, as `plugin/plugin.json` declares it. */
