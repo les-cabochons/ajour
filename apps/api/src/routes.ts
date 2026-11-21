@@ -348,6 +348,11 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/connections/:connectionId/settle-states",
     name: "source_state.list",
   },
+  itemTypeDescribe: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/item-types",
+    name: "item_type.describe",
+  },
   settleWrite: {
     method: "POST",
     path: "/api/plugins/:pluginId/connections/:connectionId/settle",

@@ -22,6 +22,7 @@ export type PluginMethod =
   | "searchAssignees"
   | "readDescription"
   | "writeDescription"
+  | "describeItemTypes"
   | CodeHostOperation
   | CalendarOperation
   | BacklogCommentOperation
@@ -67,6 +68,7 @@ const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   searchAssignees: CONNECTION_AND_REQUEST,
   readDescription: CONNECTION_AND_REQUEST,
   writeDescription: CONNECTION_AND_REQUEST,
+  describeItemTypes: CONNECTION_AND_REQUEST,
   ...connectionOperations(codeHostOperations),
   ...connectionOperations(calendarOperations),
   ...connectionOperations(backlogCommentOperations),

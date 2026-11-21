@@ -74,6 +74,7 @@ const canaryPlugin: TestPlugin = {
   capabilities: {
     connector: {
       settle: true,
+      itemTypes: true,
       comments: {
         edit: true,
         delete: true,
@@ -160,6 +161,15 @@ export async function syncConnection(connection) {
 export async function listSettleStates(connection) {
   await check(connection);
   return { states: [{ name: "Done " + MARKER, category: "Done " + MARKER, done: true }] };
+}
+export async function describeItemTypes(connection, request) {
+  await check(connection);
+  return { types: [...request.types, { name: "Epic " + MARKER }].map((type) => ({
+    name: type.name,
+    iconSvg: "<svg><title>" + MARKER + "</title></svg>",
+    fields: [{ name: "Effort " + MARKER, id: "Field." + MARKER }],
+    suggestions: { estimate: ["Original Estimate " + MARKER] },
+  })) };
 }
 export async function writeSettle(connection, request) {
   await check(connection);
@@ -1030,6 +1040,10 @@ describe("the privacy canary", () => {
       commentId: comment.id,
     });
 
+    // The connection form's lookup of the item types, by name.
+    await app.appApi.describeBacklogItemTypes("canary", connections.work, {
+      types: [{ name: `Story ${MARKER}`, sourceId: synced.sourceId! }],
+    });
     // A settle that writes the source and posts its comment.
     await app.appApi.listBacklogSettleStates(
       "canary",
@@ -1060,6 +1074,7 @@ describe("the privacy canary", () => {
         "renderer command backlog_item.save_description",
         "api plugin_operation description.read",
         "api plugin_operation description.write",
+        "api plugin_operation item_type.describe",
         "renderer command comment.list",
         "renderer command mention.search",
         "renderer command comment.post",

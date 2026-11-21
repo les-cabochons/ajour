@@ -18,6 +18,8 @@ import type {
   declaredCommandSchema,
 } from "../../shared/plugin-api-4.ts";
 import type {
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogPluginSyncResultSchema,
   backlogReadDescriptionRequestSchema,
   backlogReadDescriptionResultSchema,
@@ -124,6 +126,13 @@ export type WriteDescriptionRequest = Output<
 >;
 export type WriteDescriptionResult = Input<
   typeof backlogWriteDescriptionResultSchema
+>;
+/** Needs `connector.itemTypes`. A request type without `sourceId` has no synced item yet. */
+export type DescribeItemTypesRequest = Output<
+  typeof backlogItemTypesRequestSchema
+>;
+export type DescribeItemTypesResult = Input<
+  typeof backlogItemTypesResultSchema
 >;
 
 /** Each code host operation's request and result, by the function name it exports. */

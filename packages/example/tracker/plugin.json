@@ -1,0 +1,35 @@
+{
+  "id": "example-tracker",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Example tracker",
+  "description": "A backlog that describes its item types from memory, for Ajour's own tests.",
+  "iconSvg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='currentColor'/></svg>",
+  "entrypoint": "plugin.ts",
+  "connectionFields": [
+    { "id": "label", "label": "Label", "type": "text", "required": true },
+    {
+      "id": "tenantLabel",
+      "label": "Workspace",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "originalEstimateFieldName",
+      "label": "Original estimate field",
+      "type": "text"
+    },
+    {
+      "id": "remainingEstimateFieldName",
+      "label": "Remaining field",
+      "type": "text"
+    },
+    {
+      "id": "estimateFieldsByType",
+      "label": "By item type",
+      "type": "typeOverrides",
+      "overrides": ["originalEstimateFieldName", "remainingEstimateFieldName"]
+    }
+  ],
+  "capabilities": { "connector": { "itemTypes": true } }
+}

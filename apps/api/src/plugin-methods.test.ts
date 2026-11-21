@@ -22,6 +22,7 @@ describe("plugin method table", () => {
     "writeSettle",
     "readDescription",
     "writeDescription",
+    "describeItemTypes",
   ])("passes %s the connection, then the request", (method) => {
     expect(
       pluginMethodArguments(method as never, { connection, request }),

@@ -42,6 +42,8 @@ import {
   unsignedPluginsActivationUpdateSchema,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -62,6 +64,7 @@ import {
   timeSyncRouteResponseSchema,
   type TimeSyncRequest,
   type TimeSyncRouteResponse,
+  type BacklogItemTypesRequest,
   type BacklogSettleWriteRequest,
   type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
@@ -1605,6 +1608,28 @@ export function listBacklogSettleStates(
       ),
     },
     backlogSettleStatesResultSchema,
+  );
+}
+
+/**
+ * What a connection's plugin says about its item types, for the connection
+ * form's fields by item type. Only for a plugin with `connector.itemTypes`.
+ * Async, so a request the schema refuses, such as a saved type name over
+ * 120 characters, rejects like a failed call instead of throwing.
+ */
+export async function describeBacklogItemTypes(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogItemTypesRequest,
+) {
+  return await appApiRequest(
+    "describeBacklogItemTypes",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/item-types`,
+    {
+      method: "POST",
+      body: JSON.stringify(backlogItemTypesRequestSchema.parse(request)),
+    },
+    backlogItemTypesResultSchema,
   );
 }
 

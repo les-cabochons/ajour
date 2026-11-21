@@ -4,6 +4,7 @@ import {
   isCapabilityActive,
   pluginConnectionFormFields,
   pluginHasTeam,
+  type BacklogItemTypesRequest,
   type PluginConnectionSummary,
   type PluginField,
   type PluginOverviewGroup,
@@ -13,6 +14,7 @@ import { AppPanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
 import type { SourceItemTypeCount } from "@/domain/backlog/source-item-types";
+import { describeBacklogItemTypes } from "@/lib/app-api";
 import {
   areExpiryDraftsValid,
   canSubmitPluginForm,
@@ -133,6 +135,17 @@ export function PluginConnectionForm({
     />
   );
 
+  // The plugin is asked about the item types only for a saved connection,
+  // while its backlog capability runs.
+  const editingConnectionId = form.editingConnectionId;
+  const describeItemTypes =
+    editingConnectionId !== null &&
+    plugin.capabilities.connector?.itemTypes &&
+    isCapabilityActive(group, "connector")
+      ? (request: BacklogItemTypesRequest) =>
+          describeBacklogItemTypes(plugin.id, editingConnectionId, request)
+      : undefined;
+
   const shownFields = pluginConnectionFormFields(plugin).filter((field) =>
     isPluginFieldShown(plugin, field, form.values, group.inactiveCapabilities),
   );
@@ -148,6 +161,14 @@ export function PluginConnectionForm({
         columns={block.columns}
         found={itemTypes}
         value={form.values[block.field.id]}
+        connectionValues={Object.fromEntries(
+          block.columns.map(({ field }) => [
+            field.id,
+            String(form.values[field.id] ?? ""),
+          ]),
+        )}
+        pluginName={plugin.displayName}
+        describe={describeItemTypes}
         onChange={(text) =>
           update((current) => ({
             ...current,

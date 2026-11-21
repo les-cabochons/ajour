@@ -6,6 +6,7 @@ const item = (
   overrides: Partial<{
     source: string;
     sourceConnectionId: string;
+    sourceId: string;
     status: "active" | "settled" | "archived";
   }> = {},
 ) => ({
@@ -20,8 +21,9 @@ describe("countSourceItemTypes", () => {
   it("counts the types of one connection's items in the backlog, most first", () => {
     const types = countSourceItemTypes(
       [
-        item("Bug"),
+        item("Bug", { sourceId: "contoso:7" }),
         item("Task"),
+        item("Task", { sourceId: "contoso:12" }),
         item("task", { status: "settled" }),
         item(" Task "),
         item("Product Backlog Item"),
@@ -36,9 +38,10 @@ describe("countSourceItemTypes", () => {
       "contoso",
     );
 
+    // Each type keeps one of its items, so its plugin can find its project.
     expect(types).toEqual([
-      { name: "Task", count: 3 },
-      { name: "Bug", count: 2 },
+      { name: "Task", count: 4, sourceId: "contoso:12" },
+      { name: "Bug", count: 2, sourceId: "contoso:7" },
       { name: "Product Backlog Item", count: 1 },
     ]);
   });

@@ -1061,6 +1061,22 @@ export const catalog = defineCatalog({
       },
     },
     /**
+     * The item types a connection form shows, as its plugin describes them.
+     * Counts only, never a type's or a field's name.
+     */
+    "item_type.describe": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        item_type: {
+          requested_count: operational<number>(),
+          result_count: operational<number>(),
+        },
+      },
+    },
+    /**
      * Source states: those Ajour has seen on synced items, or those a settle
      * can write, which the plugin lists.
      */

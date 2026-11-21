@@ -5,5 +5,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["*.ts", "plugin", "tests"]
+  "include": ["*.ts", "plugin", "tracker", "tests"]
 }
