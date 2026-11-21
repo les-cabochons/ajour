@@ -53,6 +53,7 @@ Ajour compares whole minutes, so a few seconds more never send a change.
 At each check, Ajour looks at your entries in the other system for this week and the 4 before it, never before the week you turned **Time entries** on, and takes what changed there:
 
 - An entry logged in another tool, such as a timer on a work item, appears on its project and task.
+- An entry your Ajour on another computer sent there appears too, so each Ajour connected to the same account shows the same entries.
 - An edit there changes the entry in Ajour.
 - A delete there deletes the entry in Ajour. If you committed it, the next [commit](/time/commit) removes it from your timesheet tool.
 
@@ -64,7 +65,7 @@ If an entry changed on both sides before Ajour checked, the later change wins, a
 
 You have one running entry across both tools, so the same minutes never count twice.
 
-- A timer you start in another tool, such as on a work item, becomes your running entry in Ajour at the next check, on its project and task. Its time counts from when you started it there.
+- A timer you start in another tool, such as on a work item, or in your Ajour on another computer, becomes your running entry in Ajour at the next check, on its project and task. Its time counts from when you started it there.
 - If an entry was running in Ajour, Ajour saves it with the time it ran until the other timer started.
 - If you start an entry in Ajour after that timer, your entry in Ajour wins. The other system stops its timer once your entry shows there, and Ajour takes the stopped one as a saved entry.
 - Stop your running entry in the other tool, and Ajour stops it too, with the time it has there.

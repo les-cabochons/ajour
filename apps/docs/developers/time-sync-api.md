@@ -59,9 +59,11 @@ Answer one result per change, by its `syncKey`:
 - **`refused`**, with `message`, when your system won't take the change, such as an entry over 24 hours. Ajour shows the message and sends the entry again only once it changes.
 - **`failed`**, with `message`, when it may work later. Ajour sends it again next round.
 
-Then list `entries`, every entry of the user in the window after the changes, at most 2,000. Each has your `remoteId`, `clientRef` when Ajour created it, its values as above, and `updatedAt`, when your system last changed it, as an ISO date-time. When both sides changed an entry between two rounds, the later change wins.
+Then list `entries`, every entry of the user in the window after the changes, at most 2,000. Each has your `remoteId`, `clientRef` when an Ajour created it, whichever one, its values as above, and `updatedAt`, when your system last changed it, as an ISO date-time. When both sides changed an entry between two rounds, the later change wins.
 
-List the user's running entry with `running: true` and `countingSince`. One Ajour didn't create becomes the user's running entry in Ajour, and Ajour saves its own at that `countingSince`. Keep one running entry per person: when a timer starts, in your system or from an upsert Ajour sends, stop the one running before at that instant. Ajour then reads the stop of its own running entry, and keeps the minutes you list.
+A user may connect several Ajours to your system, such as one on each of their computers. Each sends its own sync keys, so an Ajour takes an entry whose `clientRef` is another Ajour's as one logged in your system, and every Ajour shows the same entries.
+
+List the user's running entry with `running: true` and `countingSince`. One this Ajour didn't send, from your system or another Ajour, becomes the user's running entry in Ajour, and Ajour saves its own at that `countingSince`. Keep one running entry per person: when a timer starts, in your system or from an upsert Ajour sends, stop the one running before at that instant. Ajour then reads the stop of its own running entry, and keeps the minutes you list.
 
 Ajour checks every answer before it uses any of it. It refuses one that leaves a change without a result, answers a change twice, or gives a synced upsert no entry, naming the field.
 
