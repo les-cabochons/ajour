@@ -514,7 +514,7 @@ function PluginsHeader({
                 )
               }
               options={[
-                { value: "0", label: "At launch only" },
+                { value: "0", label: "At launch" },
                 { value: "15", label: "Every 15 min" },
                 { value: "30", label: "Every 30 min" },
                 { value: "60", label: "Every hour" },
