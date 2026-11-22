@@ -17,7 +17,7 @@ This package provides:
 Until the SDK is published, vendor the packed package in your plugin repo:
 
 ```sh
-pnpm add -D file:vendor/ajour-plugin-sdk-0.2.0.tgz
+pnpm add -D file:vendor/ajour-plugin-sdk-0.4.0.tgz
 ```
 
 Once it's published, swap the file dependency for a version range.
@@ -65,6 +65,25 @@ Once it's published, swap the file dependency for a version range.
 ```
 
 Unknown keys are refused, so a misspelt key fails at install instead of being ignored.
+
+### Fields by item type
+
+A `typeOverrides` connection field lets each item type use other text fields than the connection's own, such as Original Estimate for a Task where the connection names Effort. `overrides` lists the ids of one to four text connection fields that aren't secret. The field can't be secret or required, and it belongs in `connectionFields` only.
+
+```json
+{
+  "id": "estimateFieldsByType",
+  "label": "By work item type",
+  "type": "typeOverrides",
+  "overrides": ["originalEstimateFieldName", "remainingEstimateFieldName"]
+}
+```
+
+The connection form shows one row per item type found in the connection's synced items, with one input per overridden field. The plugin receives the value as JSON text, `{ "<type name>": { "<field id>": "<text>" } }`, with only the filled inputs, or `""`. Read it with `parseTypeOverrides`, and look up a type's text with `typeOverrideFor`, which matches type names in any case. Return the value in `normalizedConfig` from `validateConnection`, or Ajour drops it.
+
+An Ajour older than this field type refuses to install the plugin.
+
+Declare `"connector": { "itemTypes": true }` and export `describeItemTypes(connection, { types })` to tell the form about each type. Each requested type has a `name` and, when a synced item has it, that item's `sourceId`, so you can find its project. Answer `{ types }`: per type, an optional `iconSvg` (20,000 characters at most, drawn as an image), the `fields` it has as `{ name, id? }`, and `suggestions`, the field names to propose by overridden field id, best first. Add types the request didn't name to offer them under Add a type. When a type lacks the connection's field, the form says so and proposes your first suggestion; nothing is saved until the user takes it. When the call fails, the form works without it. An older Ajour ignores the flag and never calls.
 
 ### Secret fields
 
@@ -143,6 +162,8 @@ The snapshot is `ProjectSourceSnapshot`. Nothing in it names a product: `source.
 A time sync keeps the user's time entries in step with your system, both ways. Declare `"timeSync": {}` beside `"projectSource": {}`: only entries on projects the same connection manages take part. Its switch, Time entries, starts off. Turning it on calls `validateConnection` with `timeSync` among `context.capabilities`, so throw there, with a sentence the user reads, when the token can't write time entries.
 
 Export `syncTimeEntries(connection, request)`. Each call is one round: apply `request.changes` in order, at most 20, then list your entries from `request.from` to `request.to`, local dates in `request.timeZone`. Send each change's `syncKey` as your client reference, and adopt the entry you already hold under it, so a retry never duplicates. `agreed` holds the values both sides last agreed on, so you can keep what Ajour doesn't own, such as a real start time. Answer one result per change, `synced` with the entry as you stored it (none for a delete), `refused` with a sentence when your system won't take it, or `failed` with a sentence to retry next round, and the `entries` in the window, each with `clientRef` when Ajour created it and `updatedAt`. Minutes are whole. A running entry has `countingSince`, the instant its count would have started from zero. Ajour never sends a note. See [the time sync API](https://docs.ajour.day/developers/time-sync-api).
+
+Ajour asks every 5 seconds while its window is on screen, and every 60 seconds while it is hidden. When your system keeps a change marker, a version that moves on every time entry write there, add a `cursor` to the full answer. Ajour keeps it in memory and sends it back in a check round, a request with `cursor` and no changes. When the marker hasn't moved since that cursor, answer `{ unchanged: true, cursor }` without listing, so a check costs your system nothing. Ajour refuses an unchanged answer to any other request. The cursor is yours and may hold a read link: Ajour never saves it or writes it to a log. Without a cursor, every round lists, as before 0.3.0. Since 0.3.0, `syncTimeEntries` returns `TimeSyncAnswer`, the full `TimeSyncResult` or a `TimeSyncUnchangedResult`.
 
 ### What needs the user's consent again
 
@@ -456,7 +477,7 @@ end idle sessions.
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
 `iconSvg`, `settings` and optional `connection`, `listsThreads`,
-`followsState` and `hooks`. The host treats handoff like the other switchable
+`followsState`, `hooks` and `closesThreads`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
@@ -465,12 +486,37 @@ The plugin exports `detectTools()`, `startHandoff(request)` and
 Each tool declares the features it supports, and Ajour uses only those. The
 plugin's page lists them for each tool:
 
-| Feature                | What Ajour does                                      | Declared by                       |
-| ---------------------- | ---------------------------------------------------- | --------------------------------- |
-| Starts threads         | Calls `startHandoff`.                                | every tool                        |
-| Follows state          | Calls `readHandoffStates` for the thread's state.    | `followsState`, `true` by default |
-| Finds threads          | Calls `listThreads` to offer the user's own threads. | `listsThreads: true`              |
-| Updates within seconds | A hook tells Ajour the thread changed.               | `hooks: true`, `false` by default |
+| Feature                | What Ajour does                                       | Declared by                       |
+| ---------------------- | ----------------------------------------------------- | --------------------------------- |
+| Starts threads         | Calls `startHandoff`.                                 | every tool                        |
+| Follows state          | Calls `readHandoffStates` for the thread's state.     | `followsState`, `true` by default |
+| Finds threads          | Calls `listThreads` to offer the user's own threads.  | `listsThreads: true`              |
+| Updates within seconds | A hook tells Ajour the thread changed.                | `hooks: true`, `false` by default |
+| Closes threads         | Calls `closeThread`; the tool keeps the conversation. | `closesThreads: "archive"`        |
+| Deletes threads        | Calls `closeThread` after asking the user.            | `closesThreads: "delete"`         |
+
+A start the tool refuses throws an `Error` with the tool's reason. Two
+properties of that error let Ajour help the user instead of only showing the
+reason:
+
+- `branchExists: true`: the `branch` Ajour asked for already exists, such as
+  one an earlier thread of the item works on. When the tool lists a thread
+  that names the item's key (`listsThreads`), Ajour offers to link it.
+- `setting: "<id>"`: the tool refused the value of one of its own `text`
+  settings, such as a base branch the repository doesn't have. Ajour asks the
+  user for it and calls `startHandoff` again with the answer in
+  `request.settings`. Once a start with it succeeds, Ajour sends it with
+  every later start of that tool from the same repository folder.
+
+Ajour ignores a `setting` the tool doesn't declare, or that isn't a `text`
+setting, and a `branchExists` on a start without a branch. An older Ajour
+only shows the reason.
+
+```ts
+throw Object.assign(new Error('Neither "main" nor "master" exists.'), {
+  setting: "base",
+});
+```
 
 A tool sets `hooks: true` when its threads post the start's hook URL, as
 Claude Code's per-start settings do. Commands aren't tied to tools in the
@@ -544,6 +590,27 @@ key in brackets, exactly, as `[PAY-12] Fix login redirect`. Link turns it
 into a handoff whose state is `unknown` until its first `readHandoffStates`,
 which runs at once. Links and resumes follow a start's rules, except that an
 unsafe link or an undeclared resume is dropped instead of refusing the list.
+
+A tool that sets `closesThreads` also answers `closeThread(request)`
+(connection first for a tool with one), when the user closes a thread from
+the item's Handoffs card. The request is
+`{ tool, handoff: { id, threadId, folderId, native } }`, one handoff as a
+state read sends it. Stop the thread's work first when it runs, then close
+it: `"archive"` keeps the conversation where the user can reopen it, such as
+an archived session; `"delete"` deletes it for good, and Ajour asks the user
+before calling. Return `{}` once it is closed, and also when the tool no
+longer has the thread. Throw an `Error` to refuse, with a reason the user
+reads, such as unpushed work you won't throw away. Ajour then forgets the
+handoff, or keeps it after a refusal. It never calls `closeThread` for a
+tool without `closesThreads`.
+
+```ts
+export async function closeThread(request: CloseThreadRequest) {
+  await stopIfRunning(request.handoff.threadId);
+  await archive(request.handoff.threadId); // a missing thread is fine
+  return {};
+}
+```
 
 ## License
 

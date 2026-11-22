@@ -6,6 +6,7 @@ import { createApiEvents, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
 import {
   cutPluginErrorMessage,
+  type HandoffRefusalHint,
   type PluginCrashCause,
   type PluginInvocation,
   type PluginRunOutcome,
@@ -105,15 +106,19 @@ export class PluginOperationFailure extends Error {
   readonly reason: OperationFailureReason;
   /** The HTTP status the plugin's error named, if it did. See `PluginRunOutcome`. */
   readonly httpStatus: number | undefined;
+  /** Why a hand-off tool refused a start, if the plugin's error said. */
+  readonly handoffRefusal: HandoffRefusalHint | undefined;
 
   constructor(
     message: string,
     reason: OperationFailureReason,
     httpStatus?: number,
+    handoffRefusal?: HandoffRefusalHint,
   ) {
     super(message);
     this.reason = reason;
     this.httpStatus = httpStatus;
+    this.handoffRefusal = handoffRefusal;
   }
 }
 
@@ -174,6 +179,14 @@ type OperationUnit = Unit<AjourCatalog, PluginOperationEventName>;
  */
 export class PluginOperationLifetime<TMethod extends string> {
   private readonly operations = new Set<Operation>();
+  /**
+   * Each plugin's package as its last operation recorded it, so a capacity
+   * refusal, which comes before `prepare`, still names its version.
+   */
+  private readonly knownPlugins = new Map<
+    string,
+    Parameters<OperationRecord["plugin"]>[0]
+  >();
   private shutdownPromise?: Promise<void>;
   private shuttingDown = false;
 
@@ -241,6 +254,7 @@ export class PluginOperationLifetime<TMethod extends string> {
     };
     const record: OperationRecord = {
       plugin: (facts) => {
+        this.knownPlugins.set(pluginId, facts);
         unit.set({
           plugin: {
             version: facts.version,
@@ -266,6 +280,8 @@ export class PluginOperationLifetime<TMethod extends string> {
           this.countOperations((other) => other.pluginId === pluginId) >=
           MAX_CONCURRENT_OPERATIONS
         ) {
+          const known = this.knownPlugins.get(pluginId);
+          if (known) record.plugin(known);
           throw new PluginOperationRefused(
             `Too many operations of ${this.options.name.toLowerCase()} "${pluginId}" are already running.`,
             "capacity",
@@ -416,6 +432,7 @@ export class PluginOperationLifetime<TMethod extends string> {
     message: unknown,
     reason: OperationFailureReason = "plugin_error",
     httpStatus?: number,
+    handoffRefusal?: HandoffRefusalHint,
   ): Error {
     const text = typeof message === "string" ? message.trim() : "";
     return new PluginOperationFailure(
@@ -424,6 +441,7 @@ export class PluginOperationLifetime<TMethod extends string> {
         : `Unknown ${this.options.name.toLowerCase()} error.`,
       reason,
       httpStatus,
+      handoffRefusal,
     );
   }
 
@@ -439,6 +457,7 @@ export class PluginOperationLifetime<TMethod extends string> {
           outcome.message,
           "plugin_error",
           outcome.httpStatus,
+          outcome.handoffRefusal,
         );
       case "missing_export":
         return this.pluginFailure(
@@ -498,7 +517,10 @@ export class PluginOperationLifetime<TMethod extends string> {
             reject(error);
           } else {
             try {
-              resolve(prepared.parse(result));
+              const parsed = prepared.parse(result);
+              // The method's "nothing changed" answer is a quiet noop.
+              if (prepared.invocation.quiet?.(result)) unit.quiet();
+              resolve(parsed);
             } catch (parseError) {
               // The message is about what the plugin returned: callers show
               // it, and the event holds its type and code only.

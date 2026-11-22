@@ -152,6 +152,7 @@ const TRIGGERS = {
   retry: "user",
   reload: "user",
   track_change: "user",
+  update_check: "user",
   menu: "user",
   tray: "user",
   all_windows_closed: "user",
@@ -274,6 +275,18 @@ function createMainEvents({ now = Date.now } = {}) {
       cancel(reason) {
         if (!unit.real && !unit.ended) outcome = "cancelled";
         record("cancel", [reason]);
+        return unit;
+      },
+      quiet(options) {
+        // As the package's: a worse outcome already recorded stays.
+        if (
+          !unit.real &&
+          !unit.ended &&
+          (outcome === undefined || outcome === "ok")
+        ) {
+          outcome = "noop";
+        }
+        record("quiet", [options]);
         return unit;
       },
       end(endOutcome, reason) {

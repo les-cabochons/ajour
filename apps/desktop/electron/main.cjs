@@ -739,15 +739,32 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
 });
 
 const { terminalSettings, openPluginLink } = require("./terminal-settings.cjs");
+/**
+ * An installed terminal's icon, 32px for a 16px spot on a 2x screen. On macOS
+ * 26, `app.getFileIcon` gives the same blank square for every app, so the
+ * Quick Look thumbnail reads the real one there.
+ */
+async function terminalIcon(where) {
+  const image =
+    process.platform === "darwin"
+      ? await nativeImage.createThumbnailFromPath(where, {
+          width: 32,
+          height: 32,
+        })
+      : await app.getFileIcon(where, { size: "normal" });
+  return image.isEmpty() ? undefined : image.toDataURL();
+}
 const terminalPreferences = () =>
   terminalSettings(
     process.platform,
     path.join(app.getPath("userData"), "terminal-app.json"),
+    { icon: terminalIcon },
   );
-const readTerminalApp = () => terminalPreferences().read();
+// The API opens terminal commands in the chosen app, where it is installed.
+const resolveTerminalApp = () => terminalPreferences().resolve();
 ipc.handle("ajour:get-terminal-app", async (event) => {
   assertActiveDesktopWindow(event, "read the terminal app");
-  return readTerminalApp();
+  return terminalPreferences().list();
 });
 ipc.handle("ajour:set-terminal-app", async (event, value) => {
   assertActiveDesktopWindow(event, "set the terminal app");
@@ -832,6 +849,10 @@ ipc.onMessage("ajour:tray-panel-command", (event, command) => {
 
 ipc.handle("ajour:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
+  // A check for Ajour checks its plugins too: the catalog lists their
+  // latest versions. The check doesn't wait for it, and the Plugins page
+  // updates when the refresh sends the new catalog.
+  void refreshPluginCatalog("update_check");
   return await automaticUpdateController.checkNow(track, {
     unit: events.current(),
   });
@@ -1891,7 +1912,7 @@ async function ensureInternalAppApiRunning() {
         openPluginLink(url, declaredSchemes, (href) =>
           shell.openExternal(href),
         ),
-      terminal: readTerminalApp,
+      terminal: resolveTerminalApp,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
@@ -1908,6 +1929,12 @@ async function ensureInternalAppApiRunning() {
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
       eventSink: await mainEventSink,
+      // The MCP log tools read the same files as Settings › Diagnostics.
+      localLogs: {
+        writing: () => localLogs.writing(),
+        query: (filter, page) => localLogQuery.query(filter, page),
+        trace: (traceId) => localLogQuery.trace(traceId),
+      },
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
         throw internalAppApiPortInUseError(error);

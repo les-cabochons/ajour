@@ -1,22 +1,28 @@
 // The example planner's time sync: an in-memory remote that answers
 // `syncTimeEntries` rounds, so Ajour's own tests have a time sync to talk
-// to. Erasable TypeScript only, with explicit .ts imports.
+// to. It keeps a change marker, as the spec of #842 has a real system
+// keep: a version that moves on every write to the remote, from Ajour or
+// another tool. Erasable TypeScript only, with explicit .ts imports.
 import type {
+  TimeSyncAnswer,
   TimeSyncChange,
   TimeSyncChangeResult,
   TimeSyncEntryValues,
   TimeSyncRemoteEntry,
   TimeSyncRequest,
-  TimeSyncResult,
 } from "../../plugin-sdk/index.ts";
 
 /** The longest entry the example planner takes, as a real system might refuse. */
 const MAX_MINUTES = 24 * 60;
 
-/** One connection's remote: its entries by remote id, and the next id to give. */
+/**
+ * One connection's remote: its entries by remote id, the next id to give,
+ * and its change marker's version.
+ */
 interface Remote {
   entries: Map<string, TimeSyncRemoteEntry>;
   nextId: number;
+  version: number;
 }
 
 /*
@@ -32,7 +38,7 @@ function remoteOf(connectionId: string): Remote {
   const remotes = (holder[REMOTES] ??= new Map());
   let remote = remotes.get(connectionId);
   if (!remote) {
-    remote = { entries: new Map(), nextId: 1 };
+    remote = { entries: new Map(), nextId: 1, version: 0 };
     remotes.set(connectionId, remote);
   }
   return remote;
@@ -67,10 +73,23 @@ function stored(
   };
 }
 
+/** A write to the remote, from Ajour or another tool, moves its marker. */
+function written(remote: Remote) {
+  remote.version += 1;
+}
+
+/** The cursor of the remote's marker as it stands: its version. */
+function cursorOf(remote: Remote) {
+  return `v${remote.version}`;
+}
+
 function apply(remote: Remote, change: TimeSyncChange): TimeSyncChangeResult {
   const existing = findEntry(remote, change);
   if (change.kind === "delete") {
-    if (existing) remote.entries.delete(existing.remoteId);
+    if (existing) {
+      remote.entries.delete(existing.remoteId);
+      written(remote);
+    }
     return { syncKey: change.syncKey, status: "synced" };
   }
   if (change.values.minutes > MAX_MINUTES) {
@@ -89,16 +108,25 @@ function apply(remote: Remote, change: TimeSyncChange): TimeSyncChangeResult {
     change.values,
   );
   remote.entries.set(remoteId, entry);
+  written(remote);
   return { syncKey: change.syncKey, status: "synced", entry };
 }
 
-/** Applies the changes in order, then lists the window by day. */
+/**
+ * Applies the changes in order, then reads the marker and lists the window
+ * by day, with the marker as the cursor. A check, a cursor and no changes,
+ * whose marker hasn't moved answers unchanged without listing.
+ */
 export function runRound(
   connectionId: string,
   request: TimeSyncRequest,
-): TimeSyncResult {
+): TimeSyncAnswer {
   const remote = remoteOf(connectionId);
+  if (request.cursor === cursorOf(remote) && request.changes.length === 0) {
+    return { unchanged: true, cursor: cursorOf(remote) };
+  }
   const results = request.changes.map((change) => apply(remote, change));
+  const cursor = cursorOf(remote);
   const entries = [...remote.entries.values()]
     .filter(
       (entry) =>
@@ -109,7 +137,7 @@ export function runRound(
         a.localDate.localeCompare(b.localDate) ||
         a.remoteId.localeCompare(b.remoteId),
     );
-  return { results, entries };
+  return { results, entries, cursor };
 }
 
 /*
@@ -130,6 +158,7 @@ export function logElsewhere(
     running: false,
   });
   remote.entries.set(entry.remoteId, entry);
+  written(remote);
   return entry;
 }
 
@@ -147,12 +176,36 @@ export function editElsewhere(
     ...values,
   });
   remote.entries.set(remoteId, entry);
+  written(remote);
   return entry;
 }
 
 /** Deletes an entry as another tool would. */
 export function deleteElsewhere(connectionId: string, remoteId: string) {
-  remoteOf(connectionId).entries.delete(remoteId);
+  const remote = remoteOf(connectionId);
+  if (remote.entries.delete(remoteId)) written(remote);
+}
+
+/** Stops the entry running there at `at`, with its whole minutes. */
+function stopRunning(remote: Remote, at: number) {
+  for (const entry of remote.entries.values()) {
+    if (!entry.running || !entry.countingSince) continue;
+    const minutes = Math.round((at - Date.parse(entry.countingSince)) / 60_000);
+    remote.entries.set(
+      entry.remoteId,
+      stored(entry.remoteId, entry.clientRef, {
+        ...entry,
+        running: false,
+        minutes: Math.max(0, minutes),
+      }),
+    );
+    written(remote);
+  }
+}
+
+/** Stops the timer running there as another tool would, at `stoppedAt`. */
+export function stopElsewhere(connectionId: string, stoppedAt: string) {
+  stopRunning(remoteOf(connectionId), Date.parse(stoppedAt));
 }
 
 /**
@@ -167,26 +220,13 @@ export function startElsewhere(
   },
 ): TimeSyncRemoteEntry {
   const remote = remoteOf(connectionId);
-  const startedAt = Date.parse(values.countingSince);
-  for (const entry of remote.entries.values()) {
-    if (!entry.running || !entry.countingSince) continue;
-    const minutes = Math.round(
-      (startedAt - Date.parse(entry.countingSince)) / 60_000,
-    );
-    remote.entries.set(
-      entry.remoteId,
-      stored(entry.remoteId, entry.clientRef, {
-        ...entry,
-        running: false,
-        minutes: Math.max(0, minutes),
-      }),
-    );
-  }
+  stopRunning(remote, Date.parse(values.countingSince));
   const entry = stored(`example-${remote.nextId++}`, undefined, {
     ...values,
     minutes: 0,
     running: true,
   });
   remote.entries.set(entry.remoteId, entry);
+  written(remote);
   return entry;
 }

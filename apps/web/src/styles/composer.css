@@ -286,6 +286,36 @@
   padding-top: 2px;
 }
 
+/* A typeOverrides field: under the fields it replaces, one row per item
+   type, its count under its name, and chips that hold field names. */
+.connection-rows .connection-type-overrides {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-row);
+}
+
+.connection-rows .connection-type-overrides-title {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.connection-rows .connection-type-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.connection-rows .connection-row-count {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .connection-rows .inline-field {
   width: calc(100% + 10px);
   height: 32px;
@@ -422,6 +452,49 @@
   .composer-code-input:placeholder-shown {
   width: 4ch;
   min-width: 4ch;
+}
+
+/* A field name by item type is text, not a number, and runs longer. Empty,
+   it keeps room for "same", as a code keeps room for "Add": a type with no
+   field of its own uses the connection's. */
+.composer-chips .composer-chip.composer-estimate .type-override-input {
+  max-width: 24ch;
+  font-family: inherit;
+}
+
+.composer-chips
+  .composer-chip.composer-estimate
+  .type-override-input:placeholder-shown {
+  width: 4.5ch;
+  min-width: 4.5ch;
+}
+
+/* A chip on a type that lacks the connection's field shows, at its own
+   width, the plugin's proposal or "none on this type". A proposal's chip is
+   dashed: nothing is saved until Use it fills it (#848). */
+.composer-chips
+  .composer-chip.composer-estimate[data-missing="true"]
+  .type-override-input:placeholder-shown {
+  width: auto;
+  min-width: 0;
+}
+
+.composer-chips .composer-chip.composer-estimate[data-proposed="true"] {
+  border: 1px dashed var(--field-border);
+}
+
+/* A type's icon from its plugin, before its name. A row without one keeps
+   the slot when another has one, so the names line up. */
+.connection-rows .connection-type-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.connection-rows
+  .connection-row-label[data-icon-slot="true"]
+  .connection-row-count {
+  padding-inline-start: 20px;
 }
 
 /* A select row shows its arrow at rest, faintly: it says "pick me". */

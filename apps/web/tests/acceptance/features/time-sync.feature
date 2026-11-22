@@ -38,6 +38,29 @@ Feature: Time entries sync through a time sync plugin
     And I stop the running entry
     Then the planner shows "Ticket #102 - Export" stopped at 3 minutes, as the entry it showed running
 
+  Scenario: A Start reaches the planner within seconds, and a Stop under 30 seconds takes it back
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    Then the planner shows "Ticket #101 - Login" running
+    When I stop the running entry
+    Then the planner holds no entry
+
+  Scenario: A timer stopped in another tool stops in Ajour within seconds, without waiting for a minute
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I start an entry on "Ticket #101 - Login"
+    And 2 minutes pass
+    Then the planner shows "Ticket #101 - Login" running for 2 minutes
+    When another tool stops the timer in the planner
+    Then no entry runs in Ajour within seconds
+    And today's "Ticket #101 - Login" entry shows "0:02"
+
+  Scenario: Checks that find nothing changed in the planner write nothing in Ajour
+    Given the example planner manages "Acme - Support", with Time entries on
+    When I log "1:30" on "Ticket #101 - Login" today
+    Then the planner holds 90 minutes on "Ticket #101 - Login" today
+    When the planner answers 2 checks unchanged
+    Then Ajour's saved state did not change during those checks
+
   Scenario: A timer started in another tool becomes the running entry, and the previous one is saved
     Given the example planner manages "Acme - Support", with Time entries on
     When I start an entry on "Ticket #101 - Login"
@@ -65,6 +88,19 @@ Feature: Time entries sync through a time sync plugin
     When another tool deletes that entry in the planner
     And a minute passes
     Then the Day view shows no "Ticket #101 - Login" entry
+
+  Scenario: Another Ajour's entry and timer show here, as they do on the other machine
+    Given the example planner manages "Acme - Support", with Time entries on
+    And another Ajour logged 45 minutes on "Ticket #101 - Login" today in the planner
+    When I open today in the Day view
+    And a minute passes
+    Then today's "Ticket #101 - Login" entry shows "0:45"
+    When another Ajour starts a timer on "Ticket #102 - Export" in the planner
+    And a minute passes
+    Then the running entry is on "Ticket #102 - Export"
+    When another Ajour stops its timer in the planner at 2 minutes
+    Then no entry runs in Ajour within seconds
+    And today's "Ticket #102 - Export" entry shows "0:02"
 
   Scenario: An entry logged in another tool on a project the connection doesn't manage waits in Sync review
     Given the example planner manages "Acme - Support", with Time entries on

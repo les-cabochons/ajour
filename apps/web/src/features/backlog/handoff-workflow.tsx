@@ -6,6 +6,10 @@ import {
   type HandoffTemplates,
 } from "@ajour/shared/handoff-templates";
 import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
+import {
+  handoffStartRefusalSchema,
+  type HandoffStartRefusal,
+} from "@ajour/shared/handoffs";
 import type { RepositoryFolder } from "@ajour/shared/repository-folders";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RepositoryPicker } from "@/components/repository-picker";
@@ -29,16 +33,21 @@ import {
 } from "@/components/ui/toast";
 import {
   getHandoffItem,
+  getHandoffItemKeys,
   getHandoffItemRefusal,
   getHandoffProjectName,
   getHandoffToolRefusal,
+  type HandoffCloseAction,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
 import { repositoryFolderSelection } from "@/domain/projects/repository-folders";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
+  AppApiError,
   adoptHandoffThread,
+  closeHandoff,
   dismissHandoffThread,
+  findHandoffThreads,
   getHandoffTemplates,
   listRepositoryFolders,
   openHandoff,
@@ -49,7 +58,7 @@ import {
 import { setHandoffs, upsertHandoff } from "@/lib/handoffs";
 import {
   getHandoffTools,
-  getHandoffToolsChoiceNow,
+  getHandoffToolsPageNow,
   hasSeenHandoffNotice,
   markHandoffNoticeSeen,
   setLastHandoffTool,
@@ -59,6 +68,7 @@ import {
   isHandoffStarting,
   listenForChooseHandoffTools,
   listenForHandoffRequests,
+  setHandoffLaunching,
   setHandoffStarting,
 } from "@/features/backlog/handoff-request";
 import { useOpenSettings } from "@/features/settings/settings-link";
@@ -104,11 +114,34 @@ interface Job {
   folder?: RepositoryFolder;
 }
 
+/**
+ * What one start sends besides the item: Review prompt's prompt and branch,
+ * and the tool settings the user gave when the tool refused one (#819).
+ */
+interface StartEdits {
+  promptOverride?: string;
+  branchOverride?: string;
+  settings?: Record<string, string>;
+}
+
+type RefusedSetting = NonNullable<HandoffStartRefusal["setting"]>;
+
 type Step =
   | { kind: "idle" }
   | { kind: "notice"; job: Job }
   | { kind: "picker"; job: Job }
-  | { kind: "review"; job: Job };
+  | { kind: "review"; job: Job }
+  // The branch exists, and the tool lists the item's thread (#819).
+  | { kind: "link"; job: Job; offer: HandoffThreadOffer }
+  // The tool refused one of its settings: ask for it, then start again.
+  | {
+      kind: "setting";
+      job: Job;
+      folder: RepositoryFolder;
+      edits: StartEdits;
+      reason: string;
+      setting: RefusedSetting;
+    };
 
 const IDLE: Step = { kind: "idle" };
 
@@ -116,15 +149,26 @@ const jobOf = (step: Step) => (step.kind === "idle" ? undefined : step.job);
 
 let nextJobId = 0;
 
+/** The job's item as the store holds it now. */
+function currentItem(job: Job) {
+  return (
+    localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === job.item._id) ?? job.item
+  );
+}
+
 async function start(
   job: Job,
   folder: RepositoryFolder,
-  overrides: { promptOverride?: string; branchOverride?: string } = {},
+  edits: StartEdits = {},
 ) {
-  const { tool, item, projectId } = job;
+  const { tool, projectId } = job;
+  const { settings = {}, ...overrides } = edits;
   const state = localStore.snapshot();
-  const current =
-    state.workItems.find((candidate) => candidate._id === item._id) ?? item;
+  const current = currentItem(job);
+  // The Handoffs card names the tool while it starts the thread.
+  setHandoffLaunching(current._id, tool.key);
   const record = await startHandoff({
     pluginId: tool.pluginId,
     toolId: tool.toolId,
@@ -134,8 +178,8 @@ async function start(
     projectName: getHandoffProjectName(current, state.projects),
     item: getHandoffItem(current, state.workItems),
     ...overrides,
-    settings: {},
-  });
+    settings,
+  }).finally(() => setHandoffLaunching(current._id));
   upsertHandoff(record);
   setLastHandoffTool(tool.key);
   // No Undo: the thread already runs in the tool.
@@ -152,6 +196,52 @@ function showStartError(job: Job, error: unknown) {
     title: `Couldn't hand off to ${job.tool.label}`,
     description: errorMessage(error, "The tool refused the hand off."),
   });
+}
+
+/** What a refused start's answer says the window can do, if anything. */
+function refusalOf(error: unknown): HandoffStartRefusal | undefined {
+  if (!(error instanceof AppApiError) || error.status !== 409) return undefined;
+  const parsed = handoffStartRefusalSchema.safeParse(error.payload);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * The dialog a refused start leads to (#819): the tool's setting it refused,
+ * to ask for it, or, when the branch exists, the item's thread that the same
+ * tool lists, to link it. Undefined when there is none: the refusal then
+ * shows as it is.
+ */
+async function followUpOf(
+  job: Job,
+  folder: RepositoryFolder,
+  edits: StartEdits,
+  error: unknown,
+): Promise<Step | undefined> {
+  const refusal = refusalOf(error);
+  if (refusal?.setting)
+    return {
+      kind: "setting",
+      job,
+      folder,
+      edits,
+      reason: refusal.error,
+      setting: refusal.setting,
+    };
+  if (!refusal?.branchExists) return undefined;
+  const item = currentItem(job);
+  const keys = getHandoffItemKeys(item);
+  if (!keys.length) return undefined;
+  try {
+    const { offers } = await findHandoffThreads(job.projectId, item._id, keys);
+    const offer = offers.find(
+      (candidate) =>
+        candidate.pluginId === job.tool.pluginId &&
+        candidate.toolId === job.tool.toolId,
+    );
+    return offer ? { kind: "link", job, offer } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function HandoffHost() {
@@ -210,12 +300,37 @@ export function HandoffHost() {
     };
   }, []);
 
+  /**
+   * Shows the dialog a refused start leads to. A start from a dialog shows
+   * it only while that dialog still shows, so one the user closed while the
+   * start or the thread lookup ran stays closed. A start in the background
+   * shows it unless another job's dialog shows. True when it showed one;
+   * the caller says why otherwise.
+   */
+  async function showFollowUp(
+    job: Job,
+    folder: RepositoryFolder,
+    edits: StartEdits,
+    error: unknown,
+    fromDialog: boolean,
+  ) {
+    const next = await followUpOf(job, folder, edits, error);
+    if (!next || !mounted.current) return false;
+    const free = fromDialog
+      ? isShown(job)
+      : shown.current.kind === "idle" || isShown(job);
+    if (!free) return false;
+    show(next);
+    return true;
+  }
+
   async function startInBackground(job: Job, folder: RepositoryFolder) {
     running.current.add(job.id);
     try {
       await start(job, folder);
     } catch (error) {
-      showStartError(job, error);
+      if (!(await showFollowUp(job, folder, {}, error, false)))
+        showStartError(job, error);
     } finally {
       settle(job);
     }
@@ -254,12 +369,14 @@ export function HandoffHost() {
   async function startReviewed(
     job: Job,
     folder: RepositoryFolder,
-    overrides: { promptOverride: string; branchOverride: string },
+    edits: StartEdits,
   ) {
     running.current.add(job.id);
     try {
-      await start(job, folder, overrides);
+      await start(job, folder, edits);
     } catch (error) {
+      // A refusal the window can act on replaces the dialog (#819).
+      if (await showFollowUp(job, folder, edits, error, true)) return;
       // A closed dialog can't show the refusal, so a toast does.
       if (!isShown(job)) showStartError(job, error);
       throw error;
@@ -270,14 +387,14 @@ export function HandoffHost() {
   }
 
   const openSettings = useOpenSettings();
-  // No tool is on: the plugin's tool list, or the plugins list when several
-  // plugins hand off (`getHandoffToolsChoice`).
+  // The tools' switches: the plugin's tool list, or the plugins list when
+  // several plugins hand off (`getHandoffToolsPage`).
   useEffect(
     () =>
       listenForChooseHandoffTools(() => {
-        const choice = getHandoffToolsChoiceNow();
+        const tools = getHandoffToolsPageNow();
         void openSettings(
-          settingsLocationOf(choice?.page ?? "plugins", choice?.search),
+          settingsLocationOf(tools?.page ?? "plugins", tools?.search),
         );
       }),
     [openSettings],
@@ -403,7 +520,127 @@ export function HandoffHost() {
           />
         ) : null}
       </Dialog>
+      <ConfirmDialog
+        open={step.kind === "link"}
+        onOpenChange={(open) => {
+          if (!open) dismiss("link");
+        }}
+        question={
+          step.kind === "link"
+            ? {
+                title: "Link the existing thread?",
+                body: `${step.job.tool.label} already has this item's branch, in the thread "${step.offer.title}". Link that thread to the item instead of starting another.`,
+                action: "Link thread",
+              }
+            : null
+        }
+        onConfirm={() => {
+          const current = shown.current;
+          if (current.kind !== "link") return;
+          void linkHandoffThread(current.offer, {
+            workItemId: current.job.item._id,
+            projectId: current.job.projectId,
+          }).then((linked) => {
+            if (linked)
+              showToast(`Linked the thread in ${current.job.tool.label}.`);
+          });
+        }}
+      />
+      <Dialog
+        open={step.kind === "setting"}
+        onOpenChange={(open) => {
+          if (!open) dismiss("setting");
+        }}
+      >
+        {step.kind === "setting" ? (
+          <RefusedSettingContent
+            key={`${step.job.id}:${step.setting.id}:${step.reason}`}
+            step={step}
+            onStart={(value) =>
+              startReviewed(step.job, step.folder, {
+                ...step.edits,
+                settings: { ...step.edits.settings, [step.setting.id]: value },
+              })
+            }
+            onCancel={() => dismiss("setting")}
+          />
+        ) : null}
+      </Dialog>
     </>
+  );
+}
+
+/**
+ * The tool refused one of its settings (#819), such as a worktree base the
+ * repository doesn't have: its reason, then the setting as its manifest
+ * names it, filled with the value refused. Hand off starts again with the
+ * answer, which Ajour keeps for the folder once the tool takes it.
+ */
+function RefusedSettingContent({
+  step,
+  onStart,
+  onCancel,
+}: {
+  step: Extract<Step, { kind: "setting" }>;
+  onStart: (value: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const { job, folder, reason, setting } = step;
+  const [value, setValue] = useState(setting.value ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const canStart = Boolean(value.trim()) && !busy;
+  return (
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Hand off to {job.tool.label}</DialogTitle>
+        <DialogDescription>{reason}</DialogDescription>
+      </DialogHeader>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canStart) return;
+          setBusy(true);
+          setError("");
+          void onStart(value.trim())
+            .catch((failure: unknown) =>
+              setError(errorMessage(failure, "The tool refused the hand off.")),
+            )
+            .finally(() => setBusy(false));
+        }}
+      >
+        <Field>
+          <FieldLabel htmlFor="handoff-setting">{setting.label}</FieldLabel>
+          <Input
+            id="handoff-setting"
+            className="font-mono"
+            value={value}
+            disabled={busy}
+            autoFocus
+            aria-describedby="handoff-setting-description"
+            onChange={(event) => setValue(event.target.value)}
+          />
+          <FieldDescription id="handoff-setting-description">
+            {setting.helpText ? `${setting.helpText} ` : ""}
+            Ajour uses it for the next hand offs from {folder.name}.
+          </FieldDescription>
+        </Field>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={!canStart}>
+            Hand off
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   );
 }
 
@@ -627,6 +864,26 @@ export async function removeHandoffFromItem(
   } catch (error) {
     showErrorToast({
       title: "Couldn't remove the thread",
+      description: errorMessage(error, "The local API didn't answer."),
+    });
+  }
+}
+
+/**
+ * Close in <tool> or Delete in <tool> (#850): the tool closes the thread,
+ * stopping its work first, then Ajour forgets it. A refusal, Ajour's or the
+ * tool's, keeps the thread on the card and says why.
+ */
+export async function closeHandoffThread(
+  handoffId: string,
+  action: HandoffCloseAction,
+) {
+  try {
+    setHandoffs(await closeHandoff(handoffId));
+    showToast(action.done);
+  } catch (error) {
+    showErrorToast({
+      title: action.failure,
       description: errorMessage(error, "The local API didn't answer."),
     });
   }

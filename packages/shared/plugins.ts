@@ -16,7 +16,11 @@ import {
   projectSourceCapabilitySchema,
   projectSourceSnapshotSchema,
 } from "./project-source.ts";
-import { timeSyncCapabilitySchema, timeSyncResultSchema } from "./time-sync.ts";
+import {
+  timeSyncCapabilitySchema,
+  timeSyncResultSchema,
+  timeSyncUnchangedResultSchema,
+} from "./time-sync.ts";
 import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
@@ -110,6 +114,11 @@ export const pluginSummaryValuesSchema = z.record(
 );
 export type PluginSummaryValues = z.infer<typeof pluginSummaryValuesSchema>;
 
+/**
+ * `typeOverrides` holds, per item type, the text a type uses instead of some
+ * of the connection's text fields (`overrides`). Its value is a JSON text,
+ * see `type-overrides.ts`. Connection fields only.
+ */
 export const pluginFieldTypeSchema = z.enum([
   "text",
   "password",
@@ -117,6 +126,7 @@ export const pluginFieldTypeSchema = z.enum([
   "select",
   "number",
   "checkbox",
+  "typeOverrides",
 ]);
 export type PluginFieldType = z.infer<typeof pluginFieldTypeSchema>;
 
@@ -177,6 +187,15 @@ export const pluginFieldSchema = z.object({
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   step: z.number().finite().optional(),
+  /**
+   * A `typeOverrides` field's: the ids of the text connection fields an
+   * item type can replace, which the form shows as one input each per type.
+   */
+  overrides: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1)
+    .max(4)
+    .optional(),
   /**
    * The capability the field configures. The connection form hides it, and
    * skips its required check, while that capability is off. Absent for a
@@ -366,6 +385,12 @@ export const pluginCapabilitiesObjectSchema = z.object({
       comments: backlogCommentsCapabilitySchema.optional(),
       /** Two-way descriptions. See ADR 0009. */
       description: backlogDescriptionCapabilitySchema.optional(),
+      /**
+       * `describeItemTypes`: each item type's icon, its fields, and the
+       * fields it would use for a `typeOverrides` field's columns, for the
+       * connection form. A read: no access choice gates it.
+       */
+      itemTypes: z.boolean().optional(),
     })
     .optional(),
   codeHost: z.object({}).optional(),
@@ -595,11 +620,44 @@ const allowLossyField: PluginField = {
 
 /**
  * Whether the user marked the connection on-premises, so Ajour's broker may
- * send its requests to private addresses: only for a plugin API 4 plugin
- * whose manifest allows it (`network.baseAddress.allowOnPremises`). Ajour
- * owns the setting; its form field comes with the connection access work.
+ * send its requests to an http:// or private address: only for a plugin API
+ * 4 plugin whose manifest allows it (`network.baseAddress.allowOnPremises`).
+ * Ajour owns the setting, and its form shows it after the address (#647).
  */
 export const ON_PREMISES_FIELD_ID = "onPremises";
+
+const onPremisesField: PluginField = {
+  id: ON_PREMISES_FIELD_ID,
+  label: "On-premises",
+  type: "checkbox",
+  helpText:
+    "Lets this connection reach a server on this computer or your own network, and use an http:// address.",
+  required: false,
+  secret: false,
+  defaultValue: false,
+};
+
+/**
+ * What Ajour reads of a plugin API 4 manifest's `network` outside the API:
+ * the field that holds the connection's address, and whether a connection
+ * may be marked on-premises. `plugin-api-4.ts` has the whole schema.
+ */
+export const pluginNetworkSummarySchema = z.object({
+  baseAddress: z
+    .object({
+      field: z.string().min(1).max(120),
+      allowOnPremises: z.boolean().optional(),
+    })
+    .optional(),
+});
+export type PluginNetworkSummary = z.infer<typeof pluginNetworkSummarySchema>;
+
+/** Whether a connection of the plugin may be marked on-premises. */
+export function pluginAllowsOnPremises(plugin: {
+  network?: PluginNetworkSummary;
+}) {
+  return plugin.network?.baseAddress?.allowOnPremises === true;
+}
 
 /** The connection fields Ajour owns, which a plugin cannot declare. */
 export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
@@ -609,16 +667,31 @@ export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The connection form's fields: the plugin's own, then the ones Ajour adds
- * for what the plugin provides. A plugin field with an id Ajour owns is
+ * The connection form's fields: the plugin's own, with On-premises right
+ * after the address field when the manifest allows it, then the ones Ajour
+ * adds for what the plugin provides. A plugin field with an id Ajour owns is
  * dropped.
  */
 export function pluginConnectionFormFields(
-  plugin: Pick<PluginManifest, "connectionFields" | "capabilities">,
+  plugin: Pick<PluginManifest, "connectionFields" | "capabilities"> & {
+    network?: PluginNetworkSummary;
+  },
 ): PluginField[] {
   const fields = plugin.connectionFields.filter(
     (field) => !AJOUR_CONNECTION_FIELD_IDS.has(field.id),
   );
+  if (pluginAllowsOnPremises(plugin)) {
+    const address = fields.findIndex(
+      (field) => field.id === plugin.network?.baseAddress?.field,
+    );
+    // The API 4 manifest names a declared field; after the plugin's own
+    // fields otherwise.
+    fields.splice(
+      address === -1 ? fields.length : address + 1,
+      0,
+      onPremisesField,
+    );
+  }
   return [
     ...fields,
     ...(plugin.capabilities.connector?.comments ||
@@ -811,6 +884,8 @@ const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
   unavailableReason: z.string().max(1000).optional(),
   /** Absent for a plugin with no recorded origin, which counts as unsigned. */
   origin: pluginOriginSchema.optional(),
+  /** A plugin API 4 plugin's network, as far as its connection form needs it. */
+  network: pluginNetworkSummarySchema.optional(),
 });
 export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
@@ -1383,6 +1458,60 @@ export type BacklogSettleStatesResult = z.infer<
 >;
 
 /**
+ * The item types a connection form asks a plugin with `connector.itemTypes`
+ * about: those of the connection's synced items, each with one of its items
+ * so the plugin can find the item's project, then the types the saved value
+ * names, without one.
+ */
+export const backlogItemTypesRequestSchema = z.object({
+  types: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        sourceId: z.string().trim().min(1).max(400).optional(),
+      }),
+    )
+    .max(200),
+});
+export type BacklogItemTypesRequest = z.infer<
+  typeof backlogItemTypesRequestSchema
+>;
+
+/** A field an item type has in its source: its name, and its id if the source has one. */
+export const backlogItemTypeFieldSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  id: z.string().trim().min(1).max(200).optional(),
+});
+
+/**
+ * What a plugin says about one item type. `iconSvg` follows the manifest
+ * icon's rule: Ajour draws it as an image, never as markup. `fields` lists
+ * the type's own fields; without it, Ajour can't tell what the type lacks.
+ * `suggestions` proposes, by the id of a field a `typeOverrides` field
+ * replaces, the type's fields to use instead, best first.
+ */
+export const backlogItemTypeSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  iconSvg: z.string().min(1).max(20000).optional(),
+  fields: z.array(backlogItemTypeFieldSchema).max(1000).optional(),
+  suggestions: z
+    .record(
+      z.string().min(1).max(120),
+      z.array(z.string().trim().min(1).max(200)).max(20),
+    )
+    .optional(),
+});
+export type BacklogItemType = z.infer<typeof backlogItemTypeSchema>;
+
+/** The answer: the types asked about that the plugin knows, and any other type it offers. */
+export const backlogItemTypesResultSchema = z.object({
+  types: z.array(backlogItemTypeSchema).max(200),
+});
+export type BacklogItemTypesResult = z.infer<
+  typeof backlogItemTypesResultSchema
+>;
+
+/**
  * Writes a settle to one backlog item. Only changed fields are sent. The
  * plugin turns the priority level into a value of its source priority field.
  * `assignee`, only sent to a plugin with `connector.assign`, is an id from
@@ -1610,11 +1739,13 @@ export type ProjectSourceSyncRouteResponse = z.infer<
 
 /**
  * What `POST /api/plugins/:pluginId/connections/:connectionId/sync-time-entries`
- * answers: the connection as the overview shows it, and the plugin's answer
- * to the round. The route takes the round as `syncTimeEntries` receives it,
- * `timeSyncRequestSchema`.
+ * answers: the plugin's answer to the round, with the connection as the
+ * overview shows it, or the plugin's unchanged answer to a check round
+ * alone, so a check builds no overview. The route takes the round as
+ * `syncTimeEntries` receives it, `timeSyncRequestSchema`.
  */
-export const timeSyncRouteResponseSchema = timeSyncResultSchema.extend({
-  connection: pluginConnectionSummarySchema,
-});
+export const timeSyncRouteResponseSchema = z.union([
+  timeSyncUnchangedResultSchema,
+  timeSyncResultSchema.extend({ connection: pluginConnectionSummarySchema }),
+]);
 export type TimeSyncRouteResponse = z.infer<typeof timeSyncRouteResponseSchema>;

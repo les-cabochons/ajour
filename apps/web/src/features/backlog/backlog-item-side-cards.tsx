@@ -5,6 +5,7 @@ import {
   RiArrowRightSLine as ChevronIcon,
   RiGitBranchLine as BranchIcon,
   RiGitPullRequestLine as PullRequestIcon,
+  RiLoader4Line as SpinnerIcon,
   RiMoreLine as MoreIcon,
 } from "@remixicon/react";
 import { isHttpsUrl, type Handoff } from "@ajour/shared/handoffs";
@@ -26,17 +27,25 @@ import {
 import { Value } from "@/components/ui/value";
 import {
   getHandoffChip,
+  getHandoffCloseAction,
   isHandoffFollowed,
   sortHandoffs,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
 import { syncAge } from "@/domain/backlog/sync-freshness";
-import { HandoffToolIcon } from "@/features/backlog/handoff-button";
 import {
+  HandoffStartButtons,
+  HandoffToolIcon,
+} from "@/features/backlog/handoff-button";
+import { useHandoffLaunching } from "@/features/backlog/handoff-request";
+import { useHandoffTools } from "@/lib/handoff-tools";
+import {
+  closeHandoffThread,
   openHandoffThread,
   refreshHandoffThread,
   removeHandoffFromItem,
 } from "@/features/backlog/handoff-workflow";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   getSubitemHoursLeft,
   getSubitemProgress,
@@ -426,6 +435,7 @@ function pullRequestLabel(pullRequest: { url: string; title?: string }) {
  */
 export function HandoffsCard({
   itemId,
+  item,
   handoffs,
   tools,
   offers = NO_OFFERS,
@@ -438,6 +448,11 @@ export function HandoffsCard({
 }: {
   /** The item the card shows; an action started on another moves no focus. */
   itemId: string;
+  /**
+   * The item, for the buttons that hand it off and the thread that is
+   * starting. Without it the card only lists.
+   */
+  item?: LocalWorkItem;
   handoffs: readonly Handoff[];
   /** For each thread's tool name and icon. */
   tools: readonly HandoffTool[];
@@ -466,6 +481,10 @@ export function HandoffsCard({
   );
   const toolOf = (pluginId: string, toolId: string) =>
     tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
+  // The tools that are on can take the item; the web build has none.
+  const starters = useHandoffTools(item?.projectId);
+  const launchingKey = useHandoffLaunching(itemId);
+  const launching = tools.find((tool) => tool.key === launchingKey);
   // Where focus goes once a settled offer has left the list, after the
   // render that removes it, and from which button.
   const refocus = useRef<{
@@ -525,6 +544,18 @@ export function HandoffsCard({
         )
       }
     >
+      {launching ? (
+        <div className="handoff-starting" role="status">
+          <HandoffToolIcon tool={launching} className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            Starting in {launching.label}…
+          </span>
+          <SpinnerIcon
+            aria-hidden="true"
+            className="mr-1.5 size-4 shrink-0 animate-spin"
+          />
+        </div>
+      ) : null}
       {sorted.length ? (
         <ul className="handoff-rows" aria-label="Handoffs">
           {sorted.map((handoff) => (
@@ -536,7 +567,7 @@ export function HandoffsCard({
             />
           ))}
         </ul>
-      ) : offers.length ? null : (
+      ) : offers.length || launching || (item && starters.length) ? null : (
         empty
       )}
       {offers.length ? (
@@ -560,6 +591,16 @@ export function HandoffsCard({
             />
           ))}
         </ul>
+      ) : null}
+      {item && starters.length ? (
+        <div className="handoff-start">
+          <p>
+            {sorted.length
+              ? "Hand off again"
+              : "Hand this item off to a coding tool and follow its work here."}
+          </p>
+          <HandoffStartButtons item={item} />
+        </div>
       ) : null}
     </FoldingCard>
   );
@@ -676,8 +717,22 @@ function HandoffRow({
   });
   // A started thread's tool reports nothing, so its time is when it started.
   const started = handoff.state === "started" && !followed;
+  const close = getHandoffCloseAction(tool);
+  // The question before a delete mounts only while it is asked.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const runClose = (action: NonNullable<typeof close>) => {
+    setClosing(true);
+    void closeHandoffThread(handoff.id, action).finally(() =>
+      setClosing(false),
+    );
+  };
   return (
-    <li className="handoff-row" aria-label={handoff.title}>
+    <li
+      className="handoff-row"
+      aria-label={handoff.title}
+      aria-busy={closing || undefined}
+    >
       <div className="handoff-row-head">
         {tool ? (
           <HandoffToolIcon tool={tool} className="size-4 shrink-0" />
@@ -705,6 +760,8 @@ function HandoffRow({
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground"
+                    // A close runs until the tool answers, which takes seconds.
+                    disabled={closing}
                   />
                 }
               />
@@ -720,6 +777,16 @@ function HandoffRow({
                 Refresh
               </DropdownMenuItem>
             )}
+            {close ? (
+              <DropdownMenuItem
+                variant={close.confirm ? "destructive" : undefined}
+                onClick={() =>
+                  close.confirm ? setConfirmingClose(true) : runClose(close)
+                }
+              >
+                {close.label}
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem
               variant="destructive"
               onClick={() => void removeHandoffFromItem(handoff.id, toolLabel)}
@@ -728,6 +795,17 @@ function HandoffRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {confirmingClose && close?.confirm ? (
+          <ConfirmDialog
+            open
+            onOpenChange={setConfirmingClose}
+            question={close.confirm}
+            onConfirm={() => {
+              setConfirmingClose(false);
+              runClose(close);
+            }}
+          />
+        ) : null}
       </div>
       <div className="handoff-row-meta">
         <Tooltip>

@@ -196,6 +196,25 @@ describe("the renderer's forwarding sink", () => {
     expect(renderer.batches).toHaveLength(1);
   });
 
+  it("never sends a quiet noop, which the local log file leaves out, and sets no timer for one", () => {
+    vi.useFakeTimers();
+    const renderer = forwarding();
+    const check = () =>
+      renderer.events.start("time_sync.round", {
+        kind: "job",
+        trigger: "schedule",
+      });
+
+    check().quiet().end();
+    expect(vi.getTimerCount()).toBe(0);
+    check().quiet().refuse("capability_off").end();
+    vi.advanceTimersByTime(FORWARD_FLUSH_MS);
+
+    expect(renderer.batches.flatMap((batch) => batch.events)).toMatchObject([
+      { name: "time_sync.round", outcome: "refused" },
+    ]);
+  });
+
   it("never counts more unsent events than the cap", () => {
     const batches: ForwardedBatch[] = [];
     let failing = true;

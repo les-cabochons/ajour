@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import type {
   DetectToolsResult,
   Handoff,
+  HandoffFolderSettings,
+  HandoffStartRefusal,
   HandoffStartRoute,
   StartHandoffRequest,
   StartHandoffResult,
@@ -16,6 +18,9 @@ import type {
   ReadHandoffStatesResult,
   ListThreadsRequest,
   ListThreadsResult,
+  CloseThreadRequest,
+  CloseThreadResult,
+  HandoffCloseKind,
 } from "../../../packages/shared/handoffs.ts";
 import {
   sameThread,
@@ -24,11 +29,13 @@ import {
   type HandoffThreadDismissal,
   type HandoffThreadOffer,
   type ListedHandoffThread,
+  type ThreadIdentity,
 } from "../../../packages/shared/handoff-threads.ts";
 import type { AppApiStorage } from "./storage.ts";
 import type { ApiEvents } from "./events.ts";
 import { adoptHandoff, shouldRefresh, startHandoff } from "./handoff-state.ts";
 import { createHookToken } from "./handoff-hooks.ts";
+import { PluginOperationFailure } from "./plugin-operation-lifetime.ts";
 
 /** A saved connection as a handoff operation receives it: no secrets. */
 export interface HandoffConnection {
@@ -48,10 +55,19 @@ export interface HandoffConnection {
 interface HandoffTool {
   id: string;
   label?: string;
+  /** The tool's own settings, as its manifest declares them. */
+  settings?: readonly {
+    id: string;
+    label: string;
+    type: string;
+    helpText?: string;
+  }[];
   connection?: "required" | "none";
   listsThreads?: boolean;
   /** False for a tool that can only start a thread; true when absent. */
   followsState?: boolean;
+  /** How the tool closes a thread (#850). Absent, it can't. */
+  closesThreads?: HandoffCloseKind;
 }
 
 interface Options {
@@ -92,6 +108,13 @@ interface Options {
       projectId: string,
       connection?: HandoffConnection,
     ): Promise<ListThreadsResult>;
+    /** Never called for a tool without `closesThreads`. */
+    closeThread?(
+      pluginId: string,
+      request: CloseThreadRequest,
+      projectId: string,
+      connection?: HandoffConnection,
+    ): Promise<CloseThreadResult>;
   };
   /**
    * The plugin's saved connection, for an operation, or undefined when it
@@ -152,10 +175,59 @@ interface ThreadListing {
   failed: boolean;
 }
 
-export class HandoffRefused extends Error {}
+export class HandoffRefused extends Error {
+  /** What the window can do about it beside the reason (#819). */
+  readonly refusal?: Omit<HandoffStartRefusal, "error">;
+  constructor(message: string, refusal?: Omit<HandoffStartRefusal, "error">) {
+    super(message);
+    if (refusal && Object.keys(refusal).length) this.refusal = refusal;
+  }
+}
 export class HandoffTemplateRefused extends HandoffRefused {}
 /** A start or link with a tool switched off (#760): `tool_off`. */
 export class HandoffToolOff extends HandoffRefused {}
+
+/** The settings among `settings` that the tool declares. */
+function declaredSettings(
+  settings: HandoffFolderSettings,
+  declared: ReadonlySet<string>,
+): HandoffFolderSettings {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) => declared.has(key)),
+  );
+}
+
+/**
+ * What the window can do about a refused start, from the plugin's hint
+ * (#819). A branch that exists counts only when the start asked for one. A
+ * setting counts only when it is one of the tool's text settings: the
+ * window asks for it with its label, and a value the start sent is the one
+ * refused.
+ */
+function startRefusal(
+  error: unknown,
+  tool: HandoffTool,
+  request: StartHandoffRequest,
+): Omit<HandoffStartRefusal, "error"> | undefined {
+  const hint =
+    error instanceof PluginOperationFailure ? error.handoffRefusal : undefined;
+  if (!hint) return undefined;
+  if ("branchExists" in hint)
+    return request.branch ? { branchExists: true } : undefined;
+  const field = tool.settings?.find(
+    (candidate) => candidate.id === hint.setting && candidate.type === "text",
+  );
+  if (!field) return undefined;
+  const value = request.settings[field.id];
+  return {
+    setting: {
+      id: field.id,
+      label: field.label,
+      ...(field.helpText ? { helpText: field.helpText } : {}),
+      ...(typeof value === "string" && value.length <= 500 ? { value } : {}),
+    },
+  };
+}
 
 /** Why a tool that uses a connection has none to run with. */
 const pickConnection = (tool: HandoffTool) =>
@@ -189,6 +261,12 @@ export class Handoffs {
     string,
     ThreadListing | Promise<ThreadListing>
   >();
+  /**
+   * When each thread was closed in its tool (#850), by `closedThreadKey`, so
+   * a listing taken before the close, cached or under way, never offers it
+   * again. Kept as long as Link accepts a listing.
+   */
+  private readonly closedThreads = new Map<string, number>();
   constructor(options: Options) {
     this.options = options;
     this.now = options.now ?? (() => Date.now());
@@ -255,6 +333,21 @@ export class Handoffs {
     const follows = tool.followsState !== false;
     const hook =
       this.options.hookUrl && follows ? createHookToken() : undefined;
+    // The folder's remembered settings, then the route's own (#819). Only
+    // settings the tool still declares count.
+    const declared = new Set((tool.settings ?? []).map((field) => field.id));
+    const named = declaredSettings(input.settings, declared);
+    const settings = {
+      ...declaredSettings(
+        await this.options.storage.getHandoffFolderSettings(
+          input.pluginId,
+          tool.id,
+          folder.id,
+        ),
+        declared,
+      ),
+      ...named,
+    };
     const request = startHandoffRequestSchema.parse({
       tool: input.toolId,
       folder: { id: folder.id, name: folder.name },
@@ -262,7 +355,7 @@ export class Handoffs {
       ...(branch ? { branch } : {}),
       prompt,
       item: { key: input.item.key, url: input.item.url },
-      settings: input.settings,
+      settings,
       ...(hook ? { hook: { url: this.options.hookUrl!(id, hook.token) } } : {}),
     });
     let result: StartHandoffResult;
@@ -278,6 +371,7 @@ export class Handoffs {
         error instanceof Error
           ? error.message
           : "The tool refused the handoff.",
+        startRefusal(error, tool, request),
       );
     }
     const { pluginId, toolId, workItemId, projectId, folderId } = input;
@@ -301,6 +395,17 @@ export class Handoffs {
     await this.options.storage
       .useRepositoryFolder(input.projectId, input.folderId)
       .catch(() => undefined);
+    // The tool took the settings the route named, such as the base branch
+    // the user gave when it refused another: later starts here use them.
+    if (Object.keys(named).length)
+      await this.options.storage
+        .rememberHandoffFolderSettings(
+          input.pluginId,
+          tool.id,
+          folder.id,
+          named,
+        )
+        .catch(() => undefined);
     await this.publish();
     return record;
   }
@@ -527,13 +632,16 @@ export class Handoffs {
       (result): ThreadListing => ({
         at: now,
         failed: false,
-        threads: result.threads.map((thread) => ({
-          ...thread,
-          pluginId,
-          toolId,
-          folderId,
-          ...(connection ? { connectionId: connection.id } : {}),
-        })),
+        threads: result.threads
+          .map((thread) => ({
+            ...thread,
+            pluginId,
+            toolId,
+            folderId,
+            ...(connection ? { connectionId: connection.id } : {}),
+          }))
+          // A thread closed while the tool listed may still be in its answer.
+          .filter((thread) => !this.closedSince(thread, now)),
       }),
       // The plugin operation's event holds why; the item page offers none.
       (): ThreadListing => ({ at: now, failed: true, threads: [] }),
@@ -633,6 +741,33 @@ export class Handoffs {
     if (projects.size && !projects.has(projectId))
       throw new HandoffRefused("This item's threads are in another project.");
   }
+  /**
+   * A thread closed in its tool leaves the listings taken before the close,
+   * so the item page offers it no more and Link refuses it: those listings
+   * are kept for minutes. A listing under way drops it when it lands
+   * (`closedSince`). A listing taken after the close shows what the tool
+   * lists then.
+   */
+  private forgetListedThread(thread: ThreadIdentity) {
+    const at = this.now();
+    for (const [key, closedAt] of this.closedThreads)
+      if (at - closedAt > THREAD_LINK_MAX_AGE_MS)
+        this.closedThreads.delete(key);
+    this.closedThreads.set(closedThreadKey(thread), at);
+    for (const [key, cached] of this.listings)
+      if (!(cached instanceof Promise))
+        this.listings.set(key, {
+          ...cached,
+          threads: cached.threads.filter(
+            (listed) => !sameThread(listed, thread),
+          ),
+        });
+  }
+  /** Whether the thread was closed in its tool at or after `since`. */
+  private closedSince(thread: ThreadIdentity, since: number) {
+    const closedAt = this.closedThreads.get(closedThreadKey(thread));
+    return closedAt !== undefined && closedAt >= since;
+  }
   /** "Not this one": the thread is offered to that item no more. */
   async dismissThread(dismissal: HandoffThreadDismissal) {
     await this.options.storage.dismissHandoffThread(dismissal);
@@ -641,6 +776,76 @@ export class Handoffs {
     await this.options.storage.removeHandoff(id);
     this.options.onRemove?.(id);
     await this.publish();
+  }
+  /**
+   * Closes a handoff's thread in its tool, then forgets the handoff as
+   * `remove` does (#850). Only a tool that declares `closesThreads` is
+   * asked; the plugin stops the thread's work first when it runs. Any
+   * refusal, Ajour's or the tool's, keeps the handoff. It runs as a batch,
+   * so no refresh reads the thread while the tool closes it.
+   */
+  async close(id: string): Promise<{
+    pluginId: string;
+    toolId: string;
+    closesThreads: HandoffCloseKind;
+  }> {
+    return this.runBatch(async () => {
+      const record = (await this.options.storage.listHandoffs()).find(
+        (h) => h.id === id,
+      );
+      if (!record) throw new HandoffRefused("This handoff no longer exists.");
+      const plugin = (await this.options.plugins.listPlugins()).find(
+        (p) => p.id === record.pluginId,
+      );
+      const tool = plugin?.capabilities.handoff?.tools.find(
+        (t) => t.id === record.toolId,
+      );
+      if (!plugin)
+        throw new HandoffRefused("The handoff plugin is unavailable.");
+      if (!tool) throw new HandoffRefused("The handoff tool was removed.");
+      if (!tool.closesThreads || !this.options.plugins.closeThread)
+        throw new HandoffRefused(
+          `${tool.label ?? tool.id} can't close its threads. Remove it from the item instead.`,
+        );
+      const unavailable = await this.options.unavailableReason?.(
+        record.pluginId,
+        record.toolId,
+        "closing its thread",
+      );
+      if (unavailable) throw new HandoffRefused(unavailable);
+      let connection: HandoffConnection | undefined;
+      if (tool.connection === "required") {
+        if (!record.connectionId)
+          throw new HandoffRefused(HANDOFF_NEEDS_CONNECTION);
+        connection = await this.options.connection?.(
+          record.pluginId,
+          record.connectionId,
+        );
+        if (!connection) throw new HandoffRefused(DELETED_CONNECTION);
+      }
+      const { threadId, folderId, native } = record;
+      try {
+        await this.options.plugins.closeThread(
+          record.pluginId,
+          { tool: record.toolId, handoff: { id, threadId, folderId, native } },
+          record.projectId,
+          ...(connection ? [connection] : []),
+        );
+      } catch (error) {
+        throw new HandoffRefused(
+          error instanceof Error
+            ? error.message
+            : "The tool refused to close the thread.",
+        );
+      }
+      this.forgetListedThread(record);
+      await this.remove(id);
+      return {
+        pluginId: record.pluginId,
+        toolId: record.toolId,
+        closesThreads: tool.closesThreads,
+      };
+    });
   }
   async tick() {
     if (this.ticking) return;
@@ -913,6 +1118,16 @@ export class Handoffs {
     }
     return { succeeded, failures };
   }
+}
+
+/** One thread's key in `closedThreads`, as `sameThread` tells threads apart. */
+function closedThreadKey(thread: ThreadIdentity) {
+  return JSON.stringify([
+    thread.pluginId,
+    thread.toolId,
+    thread.connectionId ?? null,
+    thread.threadId,
+  ]);
 }
 
 /** A listing is one tool's, in one folder, through one connection or none. */

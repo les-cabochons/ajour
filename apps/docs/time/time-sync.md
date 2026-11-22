@@ -1,6 +1,6 @@
 # Time sync
 
-A plugin with **Time entries** keeps a live copy of your time entries in another system, such as the planning tool that manages your projects, both ways. Your team sees your hours there within seconds, days before you commit the week, and time you log there in another tool shows in Ajour within a minute.
+A plugin with **Time entries** keeps a live copy of your time entries in another system, such as the planning tool that manages your projects, both ways. Your team sees your hours there within seconds, days before you commit the week, and time you log there in another tool shows in Ajour within seconds while Ajour is on screen, within a minute while it is hidden.
 
 A time sync is not a commit. Your timesheet tool still gets the week only when you [commit it](/time/commit), and a time sync never marks an entry committed.
 
@@ -33,7 +33,7 @@ For each entry, the other system gets its day, its time rounded to the nearest m
 
 ## Your running entry
 
-Your running entry shows in the other system as running, with the same elapsed time as in Ajour. It goes there once it has run 30 seconds, within a minute after that, so a Start you discard right away stays in Ajour.
+Your running entry shows in the other system as running, with the same elapsed time as in Ajour. It goes there about 2 seconds after Start. If you stop or discard it before it has run 30 seconds, Ajour deletes it there again.
 
 - **Stop** stops that same entry there, with its time in whole minutes.
 - **Start** on another task while an entry runs stops the first entry and starts the second there, in one go, at the same instant.
@@ -44,15 +44,16 @@ Ajour sends the running entry again only when its count changes by a minute or m
 
 ## When it sends
 
-Ajour sends a change about 2 seconds after you add, edit, move or delete an entry, and checks again every minute while the plugin is on. An entry you move to a **Local only** task, to a project the connection doesn't manage, or to a later day is deleted there. **Merge into** and **Undo** are sent like any other change.
+Ajour sends a change about 2 seconds after you add, edit, move or delete an entry. While the plugin is on, it also checks the other system every 5 seconds while its window is on screen, and every minute while the window is hidden, such as closed to the tray. An entry you move to a **Local only** task, to a project the connection doesn't manage, or to a later day is deleted there. **Merge into** and **Undo** are sent like any other change.
 
 Ajour compares whole minutes, so a few seconds more never send a change.
 
 ## What Ajour takes
 
-Every minute, Ajour reads your entries in the other system for this week and the 4 before it, never before the week you turned **Time entries** on, and takes what changed there:
+At each check, Ajour looks at your entries in the other system for this week and the 4 before it, never before the week you turned **Time entries** on, and takes what changed there:
 
 - An entry logged in another tool, such as a timer on a work item, appears on its project and task.
+- An entry your Ajour on another computer sent there appears too, so each Ajour connected to the same account shows the same entries.
 - An edit there changes the entry in Ajour.
 - A delete there deletes the entry in Ajour. If you committed it, the next [commit](/time/commit) removes it from your timesheet tool.
 
@@ -64,7 +65,7 @@ If an entry changed on both sides before Ajour checked, the later change wins, a
 
 You have one running entry across both tools, so the same minutes never count twice.
 
-- A timer you start in another tool, such as on a work item, becomes your running entry in Ajour within a minute, on its project and task. Its time counts from when you started it there.
+- A timer you start in another tool, such as on a work item, or in your Ajour on another computer, becomes your running entry in Ajour at the next check, on its project and task. Its time counts from when you started it there.
 - If an entry was running in Ajour, Ajour saves it with the time it ran until the other timer started.
 - If you start an entry in Ajour after that timer, your entry in Ajour wins. The other system stops its timer once your entry shows there, and Ajour takes the stopped one as a saved entry.
 - Stop your running entry in the other tool, and Ajour stops it too, with the time it has there.
@@ -75,7 +76,7 @@ A week you [submitted](/time/commit) stays as you committed it, so your timeshee
 
 - An edit there to one of its entries is put back: about 2 seconds after Ajour sees it, Ajour sends its own values over it. So is an edit that moves an entry into the week.
 - A delete there is put back too: Ajour creates the entry again.
-- An entry logged there in that week, or a timer started there while the week is submitted, is held, and **Sync review** lists it with "The week is submitted. Reopen it to take this entry." Reopen the week, and Ajour takes it within a minute.
+- An entry logged there in that week, or a timer started there while the week is submitted, is held, and **Sync review** lists it with "The week is submitted. Reopen it to take this entry." Reopen the week, and Ajour takes it at the next check.
 
 If the other system refuses to take Ajour's values back, the connection shows its reason, and Ajour leaves that entry there as it is.
 

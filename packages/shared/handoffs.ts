@@ -142,6 +142,23 @@ export const listedThreadSchema = startHandoffResultSchema
 export const listThreadsResultSchema = z
   .object({ threads: z.array(listedThreadSchema).max(200) })
   .strict();
+/**
+ * Closing one handoff's thread in its tool (#850), for a tool that declares
+ * `closesThreads`. The handoff is as a state read sends it. The tool stops
+ * the thread's work when it runs, then archives or deletes the thread as
+ * the manifest says. A thread the tool no longer has counts as closed. A
+ * refusal is thrown, in words the user reads.
+ */
+export const closeThreadRequestSchema = z
+  .object({
+    tool: id,
+    handoff: readHandoffStatesRequestSchema.shape.handoffs.element,
+  })
+  .strict();
+/** A close answers nothing: Ajour removes the handoff once it returns. */
+export const closeThreadResultSchema = z.object({}).strict();
+/** What closing does to a thread's conversation in its tool. */
+export const handoffCloseKindSchema = z.enum(["archive", "delete"]);
 export const handoffUpdateSchema = z
   .object({
     id,
@@ -257,6 +274,41 @@ export const handoffStartRouteSchema = z
   })
   .strict();
 /**
+ * Why the start route refused a start, beside the tool's reason (#819).
+ * `branchExists`: the branch Ajour asked for already exists, so the window
+ * looks for the item's listed thread to offer for linking. `setting`: the
+ * tool refused the value of one of its own text settings, so the window asks
+ * for it, with what the manifest says of it, and hands off again with the
+ * answer. `value` is the value refused, when the start named one.
+ */
+export const handoffStartRefusalSchema = z.object({
+  error: z.string(),
+  branchExists: z.literal(true).optional(),
+  setting: z
+    .object({
+      id: z.string().min(1).max(120),
+      label: z.string().min(1).max(120),
+      helpText: z.string().max(500).optional(),
+      value: z.string().max(500).optional(),
+    })
+    .strict()
+    .optional(),
+});
+export type HandoffStartRefusal = z.infer<typeof handoffStartRefusalSchema>;
+
+/**
+ * The tool settings a repository folder's starts use (#819), by setting id:
+ * the answers a start in that folder sent and the tool accepted. A start's
+ * own settings win over them.
+ */
+export const handoffFolderSettingsSchema =
+  startHandoffRequestSchema.shape.settings.refine(
+    (value) => Object.keys(value).length <= 50,
+    "At most 50 settings.",
+  );
+export type HandoffFolderSettings = z.infer<typeof handoffFolderSettingsSchema>;
+
+/**
  * The connection each tool of one plugin hands off through, by tool id: the
  * tool's settings pick it, and detection runs for it.
  */
@@ -276,26 +328,33 @@ export type HandoffState = z.infer<typeof handoffStateSchema>;
 /**
  * What a handoff tool can do, in the order the plugin's page lists them:
  * every tool starts threads; `followsState` reads their state; `listsThreads`
- * finds the user's own; `hooks` makes state change within seconds.
+ * finds the user's own; `hooks` makes state change within seconds;
+ * `closesThreads` closes them in the tool, keeping or deleting them.
  */
 export const handoffToolFeatureLabels = {
   "starts-threads": "Starts threads",
   "follows-state": "Follows state",
   "finds-threads": "Finds threads",
   "updates-within-seconds": "Updates within seconds",
+  "closes-threads": "Closes threads",
+  "deletes-threads": "Deletes threads",
 } as const;
 export type HandoffToolFeature = keyof typeof handoffToolFeatureLabels;
+export type HandoffCloseKind = z.infer<typeof handoffCloseKindSchema>;
 
 export function handoffToolFeatures(tool: {
   followsState?: boolean;
   listsThreads?: boolean;
   hooks?: boolean;
+  closesThreads?: HandoffCloseKind;
 }): HandoffToolFeature[] {
   return [
     "starts-threads" as const,
     ...(tool.followsState !== false ? ["follows-state" as const] : []),
     ...(tool.listsThreads ? ["finds-threads" as const] : []),
     ...(tool.hooks ? ["updates-within-seconds" as const] : []),
+    ...(tool.closesThreads === "archive" ? ["closes-threads" as const] : []),
+    ...(tool.closesThreads === "delete" ? ["deletes-threads" as const] : []),
   ];
 }
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
@@ -310,6 +369,8 @@ export type ReadHandoffStatesResult = z.infer<
 export type HandoffUpdate = z.infer<typeof handoffUpdateSchema>;
 export type ListThreadsRequest = z.infer<typeof listThreadsRequestSchema>;
 export type ListThreadsResult = z.infer<typeof listThreadsResultSchema>;
+export type CloseThreadRequest = z.infer<typeof closeThreadRequestSchema>;
+export type CloseThreadResult = z.infer<typeof closeThreadResultSchema>;
 export type HandoffStartRoute = z.infer<typeof handoffStartRouteSchema>;
 
 /** A handoff tool's id, as its plugin's manifest declares it. */
@@ -391,6 +452,13 @@ export function handoffCapabilitySchema<
                * and the tool follows state.
                */
               hooks: z.boolean().default(false),
+              /**
+               * The plugin answers `closeThread` for this tool (#850).
+               * `archive`: the tool keeps the conversation where the user
+               * can reopen it. `delete`: the tool deletes it for good, so
+               * Ajour asks first. Absent, Ajour only forgets its record.
+               */
+              closesThreads: handoffCloseKindSchema.optional(),
             })
             .strict(),
         )

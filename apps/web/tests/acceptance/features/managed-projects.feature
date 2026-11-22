@@ -78,19 +78,44 @@ Feature: Managed projects from a project source
     When I reload the page
     Then no merge suggestion shows
 
-  Scenario: The budget card counts what the source can't have yet, and finds an hour it lacks after a commit
+  Scenario: The budget card and the task rows count what the source can't have yet, a task adds my adjustment, and the card finds an hour it lacks after a commit
     Given I have a local project "Support (mine)" with the code "ACME-SUP"
     And I logged 2 hours on its task "Ticket #101 - Login" on 2026-11-02
     And the example project source is connected
     When I sync the example project source now
     And I open project "Support (mine)"
     Then the budget card reads "2:00" Not counted yet and "6:30" Remaining
+    And the task "Ticket #101 - Login" reads "7:45 of 8:00"
+    When I open the task row "Ticket #101 - Login"
+    Then the task editor says "Example planner counts 5:45 for everyone · Not counted yet 2:00"
+    When I type "0:30" in the task's adjustment
+    And I press "Save" in the task editor
+    Then the task "Ticket #101 - Login" reads "8:15 of 8:00"
     When I open the Commit page for the week of 2026-11-02
     And I press "Mark as committed"
     And the source counts the commit, but only 1 hour of it for me
     And I sync the example project source now
     And I open project "Support (mine)"
     Then the budget card reads "0:00" Not counted yet and "6:30" Remaining
+    And the task "Ticket #101 - Login" reads "8:15 of 8:00"
     And the budget card says "Example planner has 1h for you. You committed 2h before"
     When I press "See the 1h"
     Then the committed entries show "Ticket #101 - Login" with "You 2:00"
+
+  Scenario: A managed task's budget can be my own until I revert it to the source's
+    Given I have a local project "Support (mine)" with the code "ACME-SUP"
+    And the example project source is connected
+    When I sync the example project source now
+    And I open project "Support (mine)"
+    Then the task "Ticket #101 - Login" reads "5:45 of 8:00"
+    When I open the task row "Ticket #101 - Login"
+    And I type "12" in the task's budget
+    And I press "Save" in the task editor
+    Then the task "Ticket #101 - Login" reads "5:45 of 12:00"
+    When I sync the example project source now
+    And I open project "Support (mine)"
+    Then the task "Ticket #101 - Login" reads "5:45 of 12:00"
+    When I open the task row "Ticket #101 - Login"
+    And I press "Changed here. Example planner has 8h. Revert to it." in the task editor
+    And I press "Save" in the task editor
+    Then the task "Ticket #101 - Login" reads "5:45 of 8:00"

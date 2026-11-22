@@ -7,6 +7,9 @@ import {
   readHandoffStatesResultSchema,
   listThreadsRequestSchema,
   listThreadsResultSchema,
+  closeThreadRequestSchema,
+  closeThreadResultSchema,
+  type CloseThreadRequest,
   type ListThreadsRequest,
   type StartHandoffRequest,
   type ReadHandoffStatesRequest,
@@ -74,6 +77,8 @@ import {
   pluginFieldValuesSchema,
   backlogPluginSyncResultSchema,
   pluginValidationResultSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -91,6 +96,8 @@ import {
   type PluginSandboxStatus,
   type BacklogPluginSyncResult,
   type PluginValidationResult,
+  type BacklogItemTypesRequest,
+  type BacklogItemTypesResult,
   type BacklogSettleStatesRequest,
   type BacklogSettleStatesResult,
   type BacklogSettleWriteRequest,
@@ -122,10 +129,11 @@ import {
   type ProjectSourceSyncResult,
 } from "../../../packages/shared/project-source.ts";
 import {
-  parseTimeSyncResult,
+  isUnchangedTimeSyncAnswer,
+  parseTimeSyncAnswer,
   timeSyncRequestSchema,
+  type TimeSyncAnswer,
   type TimeSyncRequest,
-  type TimeSyncResult,
 } from "../../../packages/shared/time-sync.ts";
 import {
   codeHostOperations,
@@ -303,6 +311,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   startHandoff: "handoff.start",
   readHandoffStates: "handoff.refresh",
   listThreads: "handoff.threads",
+  closeThread: "handoff.close",
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
@@ -310,6 +319,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   searchAssignees: "assignee.search",
   readDescription: "description.read",
   writeDescription: "description.write",
+  describeItemTypes: "item_type.describe",
   ...CODE_HOST_EVENTS,
   ...CALENDAR_EVENTS,
   ...COMMENT_EVENTS,
@@ -342,6 +352,7 @@ export function capabilityOfMethod(
     method === "searchAssignees" ||
     method === "readDescription" ||
     method === "writeDescription" ||
+    method === "describeItemTypes" ||
     method in backlogCommentOperations
   ) {
     return "connector";
@@ -356,6 +367,7 @@ export function capabilityOfMethod(
       "startHandoff",
       "readHandoffStates",
       "listThreads",
+      "closeThread",
     ].includes(method)
   )
     return "handoff";
@@ -406,6 +418,11 @@ const requireSettle = requireFeature(
 const requireAssign = requireFeature(
   (manifest) => manifest.capabilities.connector?.assign,
   "does not support assignees",
+);
+
+const requireItemTypes = requireFeature(
+  (manifest) => manifest.capabilities.connector?.itemTypes,
+  "does not describe item types",
 );
 
 function comparePlugins(left: PluginManifest, right: PluginManifest) {
@@ -1017,15 +1034,15 @@ export class PluginManager {
 
   /**
    * Runs one time sync round: the plugin applies the changes in order, then
-   * lists the remote entries in the window. See
-   * packages/shared/time-sync.ts.
+   * lists the remote entries in the window, or answers a check round
+   * unchanged. See packages/shared/time-sync.ts.
    */
   async syncTimeEntries(
     pluginId: string,
     connection: PluginInvocationConnection,
     request: TimeSyncRequest,
     admit?: PluginAdmission,
-  ): Promise<TimeSyncResult> {
+  ): Promise<TimeSyncAnswer> {
     const round = timeSyncRequestSchema.parse(request);
     return await this.invokePlugin(
       pluginId,
@@ -1034,7 +1051,11 @@ export class PluginManager {
         connection: pluginInvocationConnectionSchema.parse(connection),
         request: round,
       },
-      { parse: (value: unknown) => parseTimeSyncResult(value, round) },
+      {
+        parse: (value: unknown) => parseTimeSyncAnswer(value, round),
+        // A check the plugin found unchanged: its events are quiet (#844).
+        quiet: isUnchangedTimeSyncAnswer,
+      },
       admit,
       requireCapability("timeSync"),
     );
@@ -1321,6 +1342,42 @@ export class PluginManager {
     );
   }
 
+  /**
+   * Closes one handoff's thread in its tool, for a tool that declares
+   * `closesThreads` (#850). The plugin stops the thread's work first when
+   * it runs, and answers nothing once the thread is closed or gone.
+   */
+  async closeThread(
+    pluginId: string,
+    request: CloseThreadRequest,
+    projectId: string,
+    connection?: PluginInvocationConnection,
+  ) {
+    const parsed = closeThreadRequestSchema.parse(request);
+    return this.invokePlugin(
+      pluginId,
+      "closeThread",
+      {
+        request: parsed,
+        projectId,
+        ...handoffConnectionParams(pluginId, connection),
+      },
+      { parse: (value: unknown) => closeThreadResultSchema.parse(value) },
+      undefined,
+      (manifest) => {
+        requireHandoffTool(manifest, request.tool, connection);
+        const tool = manifest.capabilities.handoff?.tools.find(
+          (t) => t.id === request.tool,
+        );
+        if (!tool?.closesThreads)
+          throw new PluginOperationRefused(
+            `${tool?.label ?? request.tool} can't close its threads.`,
+            "not_supported",
+          );
+      },
+    );
+  }
+
   async listSettleStates(
     pluginId: string,
     connection: PluginInvocationConnection,
@@ -1337,6 +1394,26 @@ export class PluginManager {
       backlogSettleStatesResultSchema,
       admit,
       requireSettle,
+    );
+  }
+
+  /** The item types the connection form shows, from a plugin with `connector.itemTypes`. */
+  async describeItemTypes(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: BacklogItemTypesRequest,
+    admit?: PluginAdmission,
+  ): Promise<BacklogItemTypesResult> {
+    return await this.invokePlugin(
+      pluginId,
+      "describeItemTypes",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: backlogItemTypesRequestSchema.parse(request),
+      },
+      backlogItemTypesResultSchema,
+      admit,
+      requireItemTypes,
     );
   }
 
@@ -1408,7 +1485,11 @@ export class PluginManager {
     pluginId: string,
     method: PluginMethod,
     params: Record<string, unknown>,
-    schema: { parse: (value: unknown) => T },
+    schema: {
+      parse: (value: unknown) => T;
+      /** The method's "nothing changed" answer: see `PluginInvocation.quiet`. */
+      quiet?: (value: unknown) => boolean;
+    },
     admit?: PluginAdmission,
     requirement?: Requirement,
   ): Promise<T> {
@@ -1541,6 +1622,7 @@ export class PluginManager {
               ...(broker ? { broker } : {}),
               ...(processBroker ? { processBroker } : {}),
               ...(lifecycle ? { lifecycle } : {}),
+              ...(schema.quiet ? { quiet: schema.quiet } : {}),
             },
             parse: (result: unknown) => schema.parse(result),
           };

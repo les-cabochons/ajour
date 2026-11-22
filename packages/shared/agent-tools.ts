@@ -964,6 +964,98 @@ export type SessionToolOutput<Name extends SessionToolName> = z.infer<
   (typeof sessionToolOutputSchemas)[Name]
 >;
 
+/**
+ * The local log tools: reads of the local log file (ADR 0014), the events
+ * Settings › Diagnostics shows. They run in the API, which asks main's query
+ * service, and only a client the user created has them: an agent task's
+ * client never does. Values keep the log's own formats, so an invalid one is
+ * refused with the query service's reason.
+ */
+export const logToolInputSchemas = {
+  find_log_events: z.object({
+    from: z
+      .string()
+      .describe("The earliest start, in UTC, such as 2026-11-18T19:55:00Z.")
+      .optional(),
+    to: z
+      .string()
+      .describe("The latest start, in UTC, such as 2026-11-18T20:55:00Z.")
+      .optional(),
+    outcome: z
+      .enum([
+        "problems",
+        "ok",
+        "noop",
+        "refused",
+        "cancelled",
+        "timeout",
+        "error",
+      ])
+      .describe("`problems` keeps every event that didn't end ok or noop.")
+      .optional(),
+    name: z
+      .string()
+      .describe("An event name, such as handoff.start.")
+      .optional(),
+    namePrefix: z
+      .string()
+      .describe("The start of event names, such as handoff.")
+      .optional(),
+    outcomeReason: z
+      .string()
+      .describe("An outcome_reason, such as plugin_error.")
+      .optional(),
+    pluginId: z.string().optional(),
+    traceId: z.string().optional(),
+    runtime: z.enum(["renderer", "api", "main"]).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    cursor: z
+      .string()
+      .describe("The nextCursor of the previous page.")
+      .optional(),
+  }),
+  get_log_trace: z.object({
+    traceId: z.string().describe("An event's trace_id, 32 hex characters."),
+  }),
+} as const;
+export type LogToolName = keyof typeof logToolInputSchemas;
+
+/** One event of the local log file, exactly as it is stored. */
+const logEventSchema = z.record(z.unknown());
+
+/** Output schemas of the local log tools. */
+export const logToolOutputSchemas = {
+  find_log_events: z.object({
+    /** Whether Ajour writes the file now. When off, only older events show. */
+    logging: z.enum(["on", "off"]),
+    /** Newest first. */
+    events: z.array(logEventSchema),
+    matchCount: z.number(),
+    nextCursor: z.string().nullable(),
+  }),
+  get_log_trace: z.object({
+    traceId: z.string(),
+    eventCount: z.number(),
+    /** The deepest span that didn't end ok or noop: usually the cause. */
+    deepestFailureSpanId: z.string().nullable(),
+    /** The trace's tree, depth first, oldest root first. */
+    spans: z.array(
+      z.object({
+        depth: z.number(),
+        deepestFailure: z.boolean(),
+        /** Its parent span is not in the file, such as one a quit cut off. */
+        missingParent: z.boolean(),
+        event: logEventSchema,
+      }),
+    ),
+    /** True when the trace has more spans than the tool returns. */
+    truncated: z.boolean(),
+  }),
+} as const satisfies Record<LogToolName, z.AnyZodObject>;
+export type LogToolOutput<Name extends LogToolName> = z.infer<
+  (typeof logToolOutputSchemas)[Name]
+>;
+
 export const agentAnswerRequestSchema = z.object({
   text: z.string().trim().min(1).max(4000),
 });

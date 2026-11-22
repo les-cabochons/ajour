@@ -45,6 +45,7 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   openHandoff: vi.fn(),
   refreshHandoffs: vi.fn(),
   removeHandoff: vi.fn(),
+  closeHandoff: vi.fn(),
   startHandoff: vi.fn(),
   useRepositoryFolder: vi.fn(),
 }));
@@ -85,6 +86,8 @@ beforeEach(() => {
     branch: "{{item.key|slug}}-{{item.title|slug}}",
   });
   vi.mocked(api.useRepositoryFolder).mockResolvedValue([]);
+  // The sheet asks for the project's folders each time it opens.
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([]);
   // The store outlives each test, so every test names its own project.
   projectName = `Payments ${++run}`;
   act(() => {
@@ -130,6 +133,7 @@ function Page() {
       {item ? <HandoffButton item={item} /> : null}
       <HandoffsCard
         itemId={itemId}
+        item={item}
         handoffs={handoffs}
         tools={tools}
         now={10 * 60_000}
@@ -166,7 +170,15 @@ function AllToolsPage() {
 
 async function renderPage() {
   await renderRoutes({ routes: { "/": Page } });
-  return screen.findByRole("button", { name: /Hand off to T3 Code/ });
+  return screen.findByRole("button", { name: "Hand off" });
+}
+
+/** Opens the Hand off sheet and chooses a tool's row. */
+async function handOffTo(tool = "T3 Code") {
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: `Hand off to ${tool}` }),
+  );
 }
 
 function acceptNotice() {
@@ -175,18 +187,18 @@ function acceptNotice() {
   fireEvent.click(within(dialog).getByRole("button", { name: "Hand off" }));
 }
 
-it("hands off to the first available tool in one click, with the item's fields, and remembers the tool", async () => {
+it("hands off to a tool chosen in the sheet, with the item's fields, and remembers the tool", async () => {
   vi.mocked(api.listRepositoryFolders).mockResolvedValue([
     { ...folder, projectId },
   ]);
-  const button = await renderPage();
+  await renderPage();
   await waitFor(() =>
     expect(api.detectHandoffTools).toHaveBeenCalledWith(
       "agent-handoff",
       projectId,
     ),
   );
-  fireEvent.click(button);
+  await handOffTo("T3 Code");
   acceptNotice();
   await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
   expect(api.startHandoff).toHaveBeenCalledWith({
@@ -233,16 +245,16 @@ it("shows the provider notice once per tool on this device", async () => {
     { ...folder, projectId },
   ]);
   const button = await renderPage();
-  fireEvent.click(button);
+  await handOffTo();
   acceptNotice();
   await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  fireEvent.click(button);
+  await handOffTo();
   await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(2));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   // Cancel keeps the notice for next time and hands off nothing.
   window.localStorage.removeItem("ajour.handoff-notices");
-  fireEvent.click(button);
+  await handOffTo();
   fireEvent.click(
     within(screen.getByRole("alertdialog")).getByRole("button", {
       name: "Cancel",
@@ -261,12 +273,15 @@ it("asks for the folder when the project has several, then starts there", async 
     { ...folder, projectId },
     { ...folder, id: "folder-2", name: "web", projectId, lastUsedAt: 9 },
   ]);
-  fireEvent.click(await renderPage());
+  await renderPage();
+  await handOffTo();
   const picker = await screen.findByRole("dialog", {
     name: "Choose repository folder",
   });
   const web = await within(picker).findByRole("radio", { name: /web/ });
-  expect((web as HTMLInputElement).checked).toBe(true);
+  // The picker selects the last used folder in an effect, after the radios
+  // first render, so a slow runner can find the radio before it's checked.
+  await waitFor(() => expect((web as HTMLInputElement).checked).toBe(true));
   const use = within(picker).getByRole("button", { name: "Use folder" });
   await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
   fireEvent.click(use);
@@ -285,7 +300,8 @@ it("opens the folder picker with Add folder… when the project has none", async
     JSON.stringify(["agent-handoff:t3"]),
   );
   vi.mocked(api.listRepositoryFolders).mockResolvedValue([]);
-  fireEvent.click(await renderPage());
+  await renderPage();
+  await handOffTo();
   const picker = await screen.findByRole("dialog", {
     name: "Choose repository folder",
   });
@@ -295,27 +311,92 @@ it("opens the folder picker with Add folder… when the project has none", async
   expect(api.startHandoff).not.toHaveBeenCalled();
 });
 
-it("lists the other tools in the menu, a missing one disabled with why, then Review prompt…", async () => {
+it("lists every tool that is on in the sheet, a missing one disabled with why, then Review prompt…", async () => {
   await renderPage();
   await waitFor(() => expect(api.detectHandoffTools).toHaveBeenCalled());
-  fireEvent.click(
-    screen.getByRole("button", { name: "Other ways to hand off" }),
-  );
-  const claude = await screen.findByRole("menuitem", {
-    name: /Hand off to Claude Code/,
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
+  const t3 = await screen.findByRole("menuitem", {
+    name: "Hand off to T3 Code",
+  });
+  expect(t3.textContent).toContain("Follows progress");
+  const claude = screen.getByRole("menuitem", {
+    name: "Hand off to Claude Code",
   });
   expect(claude.getAttribute("aria-disabled")).toBe("true");
   expect(claude.textContent).toContain("claude isn't on PATH.");
   expect(screen.getByRole("menuitem", { name: /Review prompt…/ })).toBeTruthy();
 });
 
-it("says why the main half is disabled in a focusable tooltip", async () => {
+it.each([
+  { folders: ["payments"], says: "Starts in payments" },
+  { folders: ["payments", "web"], says: "Asks which folder to start in" },
+  { folders: [], says: "Asks for a repository folder first" },
+])(
+  "says in the sheet where the thread starts: $says",
+  async ({ folders, says }) => {
+    vi.mocked(api.listRepositoryFolders).mockResolvedValue(
+      folders.map((name) => ({ ...folder, id: name, name, projectId })),
+    );
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => expect(menu.textContent).toContain(says));
+    // The tools' group carries it, so a screen reader hears it with them.
+    expect(
+      within(menu).getByRole("group", { name: new RegExp(says) }),
+    ).toBeTruthy();
+  },
+);
+
+it("opens the sheet on the tool last used, marked as such, so Enter hands off to it", async () => {
+  seeNoticeFor("claude");
+  window.localStorage.setItem(
+    "ajour.handoff-last-tool",
+    "agent-handoff:claude",
+  );
+  resetLastHandoffTool();
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  vi.mocked(api.detectHandoffTools).mockResolvedValue({
+    tools: [
+      { id: "t3", available: true },
+      { id: "claude", available: true },
+    ],
+  });
+  await renderPage();
+  await waitFor(() => expect(api.detectHandoffTools).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
+  const claude = await screen.findByRole("menuitem", {
+    name: "Hand off to Claude Code",
+  });
+  expect(claude.textContent).toContain("last used");
+  expect(
+    screen.getByRole("menuitem", { name: "Hand off to T3 Code" }).textContent,
+  ).not.toContain("last used");
+  await waitFor(() => expect(document.activeElement).toBe(claude));
+});
+
+it("opens the tools' switches from the sheet's Choose tools…", async () => {
+  const { router } = await renderRoutes({ routes: { "/": Page } });
+  fireEvent.click(await screen.findByRole("button", { name: "Hand off" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: /Choose tools…/ }),
+  );
+  await waitFor(() =>
+    expect(
+      (router.state.location.search as Record<string, unknown>).settings,
+    ).toBe("plugins/agent-handoff?section=handoff-tools"),
+  );
+});
+
+it("says why the button is disabled in a focusable tooltip", async () => {
   act(() => {
     localStore.updateWorkItem(itemId, { projectId: undefined });
   });
-  await renderPage();
+  await renderRoutes({ routes: { "/": Page } });
   const wrapper = await screen.findByLabelText(
-    "Hand off to T3 Code: Add the item to a project first",
+    "Hand off: Add the item to a project first",
   );
   expect(wrapper.getAttribute("tabindex")).toBe("0");
   expect(within(wrapper).getByRole("button").hasAttribute("disabled")).toBe(
@@ -333,9 +414,7 @@ it("reviews the filled prompt, folder and branch, and sends the edits as overrid
     { ...folder, projectId },
   ]);
   await renderPage();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Other ways to hand off" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
   fireEvent.click(
     await screen.findByRole("menuitem", { name: /Review prompt…/ }),
   );
@@ -386,9 +465,7 @@ it("keeps the review dialog open with the tool's refusal", async () => {
     new Error("t3 is not signed in."),
   );
   await renderPage();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Other ways to hand off" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
   fireEvent.click(
     await screen.findByRole("menuitem", { name: /Review prompt…/ }),
   );
@@ -415,7 +492,8 @@ it("shows a one-click refusal as an error toast in the tool's words", async () =
   vi.mocked(api.startHandoff).mockRejectedValue(
     new Error("t3 is not signed in."),
   );
-  fireEvent.click(await renderPage());
+  await renderPage();
+  await handOffTo();
   expect(
     (await screen.findAllByText("Couldn't hand off to T3 Code")).length,
   ).toBeGreaterThan(0);
@@ -448,10 +526,19 @@ it("runs a row menu's Hand off to <tool> through the same flow", async () => {
       expect.objectContaining({ toolId: "claude", workItemId: itemId }),
     ),
   );
-  // The split button now names the tool last handed off to.
+  // The sheet now lists the tool last handed off to first.
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Hand off" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
+  await screen.findByRole("menuitem", { name: "Hand off to Claude Code" });
   expect(
-    await screen.findByRole("button", { name: /Hand off to Claude Code/ }),
-  ).toBeTruthy();
+    screen
+      .getAllByRole("menuitem", { name: /^Hand off to/ })
+      .map((row) => row.getAttribute("aria-label")),
+  ).toEqual(["Hand off to Claude Code", "Hand off to T3 Code"]);
 });
 
 it("starts one hand off when the item is asked twice before the first answers", async () => {
@@ -497,7 +584,7 @@ it("lets the item be handed off again after the notice is cancelled", async () =
     { ...folder, projectId },
   ]);
   const button = await renderPage();
-  fireEvent.click(button);
+  await handOffTo();
   fireEvent.click(
     within(await screen.findByRole("alertdialog")).getByRole("button", {
       name: "Cancel",
@@ -505,7 +592,7 @@ it("lets the item be handed off again after the notice is cancelled", async () =
   );
   await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   expect(button.hasAttribute("disabled")).toBe(false);
-  fireEvent.click(button);
+  await handOffTo();
   acceptNotice();
   await waitFor(() => expect(api.startHandoff).toHaveBeenCalledTimes(1));
 });
@@ -685,7 +772,7 @@ it("reads Choose your tools while no tool is on, and leads to the plugin's tool 
   const choose = await screen.findByRole("button", {
     name: "Choose your tools",
   });
-  expect(screen.queryByRole("button", { name: /Hand off to/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Hand off" })).toBeNull();
   // A tool that is off is never detected.
   expect(api.detectHandoffTools).not.toHaveBeenCalled();
 
@@ -741,12 +828,14 @@ it("keeps naming the threads of a tool turned off on the card, and offers only t
     tools: [{ id: "claude", available: true }],
   });
   await renderRoutes({ routes: { "/": AllToolsPage } });
+  fireEvent.click(await screen.findByRole("button", { name: "Hand off" }));
   expect(
-    await screen.findByRole("button", { name: /Hand off to Claude Code/ }),
+    await screen.findByRole("menuitem", { name: "Hand off to Claude Code" }),
   ).toBeTruthy();
   expect(
-    screen.queryByRole("button", { name: /Hand off to T3 Code/ }),
+    screen.queryByRole("menuitem", { name: "Hand off to T3 Code" }),
   ).toBeNull();
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   act(() => setHandoffs([handoffRecord({ workItemId: itemId })]));
   const row = await cardRow("[PAY-12] Fix login redirect");
   // The tool's name and icon still come from its plugin while it is off.
@@ -759,6 +848,63 @@ it("renders nothing in the web build, where no tool can run", async () => {
   await renderRoutes({ routes: { "/": Page } });
   expect(screen.queryByRole("button", { name: /Hand off/ })).toBeNull();
   expect(api.detectHandoffTools).not.toHaveBeenCalled();
+});
+
+it("hands off from the Handoffs card, one button per tool that is on, a missing one disabled with why", async () => {
+  seeNoticeFor("t3");
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  await renderPage();
+  await waitFor(() => expect(api.detectHandoffTools).toHaveBeenCalled());
+  const card = screen.getByRole("region", { name: "Handoffs" });
+  expect(card.textContent).toContain(
+    "Hand this item off to a coding tool and follow its work here.",
+  );
+  const claude = await within(card).findByLabelText(
+    "Hand off to Claude Code: claude isn't on PATH.",
+  );
+  expect(within(claude).getByRole("button").hasAttribute("disabled")).toBe(
+    true,
+  );
+  fireEvent.click(
+    within(card).getByRole("button", { name: "Hand off to T3 Code" }),
+  );
+  await waitFor(() =>
+    expect(api.startHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({ toolId: "t3", workItemId: itemId }),
+    ),
+  );
+  // With a thread, the same buttons hand the item off again.
+  await cardRow("[PAY-12] Fix login redirect");
+  expect(card.textContent).toContain("Hand off again");
+  expect(card.textContent).not.toContain("Hand this item off");
+  expect(
+    within(card).getByRole("button", { name: "Hand off to T3 Code" }),
+  ).toBeTruthy();
+});
+
+it("shows the thread that is starting on the card, only while the tool starts it", async () => {
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  const starts = holdStarts();
+  await renderPage();
+  await handOffTo();
+  // The notice waits for an answer, so nothing starts yet.
+  expect(screen.queryByText("Starting in T3 Code…")).toBeNull();
+  acceptNotice();
+  const starting = await screen.findByText("Starting in T3 Code…");
+  expect(starting.closest("[role=status]")).toBeTruthy();
+  // The card's buttons wait with the sheet's.
+  expect(
+    screen
+      .getByRole("button", { name: "Hand off to T3 Code" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await act(async () => starts[0]!());
+  await screen.findByText("Handed off to T3 Code");
+  expect(screen.queryByText("Starting in T3 Code…")).toBeNull();
 });
 
 function cardRow(title: string) {
@@ -878,6 +1024,96 @@ it("opens, refreshes and removes a thread from the card", async () => {
   ).toBeTruthy();
 });
 
+it("closes a thread in its tool, or deletes it after asking, and keeps it when the tool refuses (#850)", async () => {
+  cachePluginsOverview(
+    handoffOverview({ closes: { claude: "archive", t3: "delete" } }),
+  );
+  const claude = handoffRecord({
+    id: "h-claude",
+    toolId: "claude",
+    workItemId: itemId,
+    title: "[PAY-12] Claude thread",
+  });
+  const t3 = handoffRecord({
+    id: "h-t3",
+    workItemId: itemId,
+    title: "[PAY-12] T3 thread",
+  });
+  vi.mocked(api.closeHandoff)
+    .mockResolvedValueOnce([t3])
+    .mockRejectedValueOnce(new Error("The worktree has unpushed work."));
+  await renderPage();
+  act(() => setHandoffs([claude, t3]));
+
+  // A tool that keeps the conversation closes it at once.
+  const claudeRow = await cardRow(claude.title);
+  fireEvent.click(
+    within(claudeRow).getByRole("button", { name: "Handoff actions" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Close in Claude Code" }),
+  );
+  await waitFor(() =>
+    expect(api.closeHandoff).toHaveBeenCalledWith("h-claude"),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("listitem", { name: claude.title })).toBeNull(),
+  );
+  expect(
+    await screen.findByText("Closed in Claude Code and removed from the item."),
+  ).toBeTruthy();
+
+  // A tool that deletes it asks first, and Cancel sends nothing.
+  const t3Row = await cardRow(t3.title);
+  const deleteInT3 = async () => {
+    fireEvent.click(
+      within(t3Row).getByRole("button", { name: "Handoff actions" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete in T3 Code" }),
+    );
+    return screen.findByRole("alertdialog");
+  };
+  let dialog = await deleteInT3();
+  expect(
+    within(dialog).getByText("Delete this thread in T3 Code?"),
+  ).toBeTruthy();
+  expect(
+    within(dialog).getByText(
+      "T3 Code deletes its conversation for good, and Ajour removes it from this item.",
+    ),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(api.closeHandoff).toHaveBeenCalledTimes(1);
+
+  // The tool's refusal keeps the row and says why.
+  dialog = await deleteInT3();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+  await waitFor(() => expect(api.closeHandoff).toHaveBeenCalledWith("h-t3"));
+  expect(
+    (await screen.findAllByText("Couldn't delete the thread")).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getAllByText("The worktree has unpushed work.").length,
+  ).toBeGreaterThan(0);
+  await waitFor(() =>
+    expect(screen.queryByText("Delete this thread in T3 Code?")).toBeNull(),
+  );
+  expect(await cardRow(t3.title)).toBeTruthy();
+});
+
+it("offers no close for a tool that can't close its threads", async () => {
+  await renderPage();
+  act(() => setHandoffs([handoffRecord({ workItemId: itemId })]));
+  const row = await cardRow("[PAY-12] Fix login redirect");
+  fireEvent.click(within(row).getByRole("button", { name: "Handoff actions" }));
+  await screen.findByRole("menuitem", { name: "Remove from item" });
+  expect(
+    screen.queryByRole("menuitem", { name: /^(Close|Delete) in / }),
+  ).toBeNull();
+});
+
 it("says why a thread didn't open, in the setting's words", async () => {
   vi.mocked(api.openHandoff).mockRejectedValue(
     new Error("The tool isn't installed on this computer."),
@@ -914,7 +1150,7 @@ it("hands an item off again while it has a live and a finished thread", async ()
   await cardRow("[PAY-12] Earlier attempt");
   // Nothing about the existing threads holds the button back.
   expect(button.hasAttribute("disabled")).toBe(false);
-  fireEvent.click(button);
+  await handOffTo();
   await waitFor(() =>
     expect(api.startHandoff).toHaveBeenCalledWith(
       expect.objectContaining({ toolId: "t3", workItemId: itemId }),
@@ -933,9 +1169,7 @@ it("says in both hand-off menus that a tool doesn't report progress", async () =
   });
   await renderPage();
   await waitFor(() => expect(api.detectHandoffTools).toHaveBeenCalled());
-  fireEvent.click(
-    screen.getByRole("button", { name: "Other ways to hand off" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
   const copilot = await screen.findByRole("menuitem", {
     name: /Hand off to Copilot CLI/,
   });

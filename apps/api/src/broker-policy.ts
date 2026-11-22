@@ -91,8 +91,18 @@ export function secretAddressHoldsUserinfo(text: string): boolean {
   }
 }
 
-/** The base address without a trailing slash, query or fragment. */
-function parseBaseAddress(value: unknown, onPremises: boolean): URL {
+/**
+ * The base address without a trailing slash, query or fragment. `onPremises`
+ * is the connection's mark where the manifest allows it, and
+ * `allowsOnPremises` says whether the refusal can point to that setting.
+ */
+function parseBaseAddress(
+  value: unknown,
+  {
+    onPremises,
+    allowsOnPremises,
+  }: { onPremises: boolean; allowsOnPremises: boolean },
+): URL {
   const text = stringValue(value)?.trim();
   let url: URL;
   try {
@@ -114,7 +124,9 @@ function parseBaseAddress(value: unknown, onPremises: boolean): URL {
       "invalid_address",
       onPremises
         ? "The connection's address must start with https:// or http://."
-        : "The connection's address must start with https://. Only an on-premises connection may use http://.",
+        : allowsOnPremises
+          ? "The connection's address must start with https://. To use http://, turn on On-premises in the connection's settings."
+          : "The connection's address must start with https://.",
     );
   }
   url.search = "";
@@ -139,11 +151,12 @@ export function connectionBaseAddress(
       "not_allowed",
       "The plugin's manifest declares no address its connections reach.",
     );
-  const url = parseBaseAddress(
-    connection.values[field],
-    connection.onPremises &&
-      manifest.network?.baseAddress?.allowOnPremises === true,
-  );
+  const allowsOnPremises =
+    manifest.network?.baseAddress?.allowOnPremises === true;
+  const url = parseBaseAddress(connection.values[field], {
+    onPremises: connection.onPremises && allowsOnPremises,
+    allowsOnPremises,
+  });
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
@@ -352,10 +365,11 @@ export function targetOf(
       "A request path is relative to the connection's address and starts with /.",
     );
   }
-  const base = parseBaseAddress(
-    connection.values[network.baseAddress.field],
-    connection.onPremises,
-  );
+  const base = parseBaseAddress(connection.values[network.baseAddress.field], {
+    // The broker hands over the mark only where the manifest allows it.
+    onPremises: connection.onPremises,
+    allowsOnPremises: network.baseAddress.allowOnPremises,
+  });
   let address = base;
   let hostKind: HostKind = "base";
   let endpoints = network.endpoints;

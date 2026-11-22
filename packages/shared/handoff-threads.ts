@@ -135,7 +135,8 @@ export function threadTitleNamesKey(
   });
 }
 
-type ThreadIdentity = {
+/** What tells one tool's thread from another: `sameThread` compares it. */
+export type ThreadIdentity = {
   pluginId: string;
   toolId: string;
   threadId: string;

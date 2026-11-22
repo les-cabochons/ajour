@@ -34,6 +34,7 @@ Set an expiry date on the token. When it expires, the connection shows an error,
 | **Original estimate field**                      | The field for the original estimate, such as `Microsoft.VSTS.Scheduling.OriginalEstimate`.                                                 |
 | **Remaining field**                              | The field for remaining work, such as `Microsoft.VSTS.Scheduling.RemainingWork`.                                                           |
 | **Completed field**                              | The field for completed work, such as `Microsoft.VSTS.Scheduling.CompletedWork`.                                                           |
+| **By work item type**                            | The fields a type uses instead of the three above, such as Original Estimate for Task. See below.                                          |
 | **Auto sync to backlog**                         | Sync on a timer while Ajour is open, and add items straight to the backlog.                                                                |
 | **Sync pull requests automatically**             | Pull requests only. Sync them on the interval while Ajour is open. On by default.                                                          |
 | **Only these projects or repositories**          | Pull requests only. Optional, comma-separated. `Fabrikam` is a project, `Fabrikam/api` a repository.                                       |
@@ -45,6 +46,14 @@ Set an expiry date on the token. When it expires, the connection shows an error,
 | **Allow lossy conversion**                       | Ajour's own. Off by default. Lets you edit descriptions with formatting Markdown cannot hold; each save names the loss and asks first.     |
 
 Leave an estimate field empty to never sync that estimate.
+
+### Estimate fields by work item type
+
+A process can keep estimates in different fields by type. On Scrum, Product Backlog Items and Bugs use **Effort**, and Tasks use **Original Estimate**. Under **By work item type**, the form lists the types of the connection's synced items, with how many items each has. For a type, fill in only the field that differs: for example, name **Effort** as the **Original estimate field** of the connection, then **Original Estimate** under **Task**. An empty one reads "same" and uses the connection's field.
+
+**Add a type** names a type that hasn't synced yet. Saving checks every field a type names against the organization, and refuses one it can't find, naming the type. Needs Azure DevOps plugin 2.1.0.
+
+From plugin 2.2.0, each row shows the type's Azure DevOps icon, and the inputs suggest the type's own fields. When a type lacks the connection's field, the row says so, such as "Task has no Effort field.", and proposes one the type has: Original Estimate, Effort, Story Points or Size for the original estimate, Remaining Work and Completed Work for the others. **Use it** fills the input; nothing is saved until you do. **Add a type** lists the project's other types, without test and disabled ones. The plugin reads the types and icons once per project while Ajour runs. 2.2.0 adds the two addresses it reads them from, so Ajour asks you to allow it again after the update.
 
 ## What it syncs
 
@@ -78,7 +87,7 @@ An item whose value is in no range, or has no priority, gets no priority in Ajou
 
 ## What it writes
 
-- **Estimates**: when you change an estimate in Ajour, the next sync writes it to the field you mapped. If the estimate also changed in Azure DevOps, Ajour asks you which to keep in [Sync review](/plugins/sync-review).
+- **Estimates**: when you change an estimate in Ajour, the next sync writes it to the field you mapped, or to the one its work item type uses. If the estimate also changed in Azure DevOps, Ajour asks you which to keep in [Sync review](/plugins/sync-review).
 - **State, priority and assignee**: when you settle an item, Ajour writes the state, priority and assignee in one update. When you move an item to another workflow state, it writes the state only, and when you change its priority, the priority only. These writes go after the Undo toast closes, or at once when you save the item editor. See [Settle and snooze](/backlog/settle-and-snooze).
 - **Comments**: a comment you post or edit goes at once. A delete goes when its Undo toast closes.
 
@@ -86,7 +95,7 @@ Work item URLs must belong to the organization of the connection. The plugin ref
 
 ## Pull requests
 
-Pull requests sync on the connection's interval while **Sync pull requests automatically** is on, and when you press **Sync** on the Pull requests page. The plugin lists active pull requests across the organization that you created, or where you or one of your teams is a reviewer. See [Pull requests](/pull-requests/).
+Pull requests sync on the connection's interval while **Sync pull requests automatically** is on, and when you press **Sync** in Deck. The plugin lists active pull requests across the organization that you created, or where you or one of your teams is a reviewer. See [Deck](/deck/).
 
 - A reviewer who has not voted yet is asked to review. An approval, with or without suggestions, is an approval. **Waiting for author** and **Rejected** ask for changes.
 - Ajour counts comments and `@` mentions of you, but does not store their text.

@@ -48,6 +48,10 @@ user can turn on a local log file (ADR 0014); otherwise they go nowhere.
 - **Runtimes** are `renderer`, `api` and `main`. On desktop the local API runs
   inside the main process, but it stays its own runtime. A plugin operation's
   event reports its host's runtime.
+- **A quiet noop** is routine work that found nothing to do, such as a time
+  sync check that found nothing changed. Its event is built as any other,
+  and the local log file leaves it out, unless it failed or was slow. See
+  [Quiet noops](#quiet-noops).
 
 ## Names
 
@@ -134,6 +138,7 @@ type WideEvent = {
     message?: string;
     retriable?: boolean;
   };
+  quiet?: true; // added by #844: a quiet noop, which the local log file leaves out
   // plus the event's own nested objects, typed per name in the catalog
 };
 ```
@@ -209,10 +214,10 @@ sink:
   allows for the name), `trigger` and `surface`, and `detached` or a `parent`
   span.
 - A unit has `set(fields)`, `count(counter, n)`, `fail(error, options)`,
-  `refuse(reason)`, `cancel(reason)` and `end(outcome?)`. The outcome
-  defaults to the one recorded, or `ok`. `end` emits once; anything after it
-  changes nothing. A unit also has `enter(fn)`, `rename(name)` and
-  `traceparent()`.
+  `refuse(reason)`, `cancel(reason)`, `quiet(options?)` and `end(outcome?)`.
+  The outcome defaults to the one recorded, or `ok`. `end` emits once;
+  anything after it changes nothing. A unit also has `enter(fn)`,
+  `rename(name)` and `traceparent()`.
 - `run(name, init, fn)` runs a sync or async function as a unit, active while
   it runs, and ends it in every path. A thrown error ends it as an `error`,
   unless the work recorded its outcome first. A sync function stays sync.
@@ -233,7 +238,7 @@ user turned off costs nothing.
 - `nowhere` is the default, and drops everything. With it an event is never
   built: it costs object writes only, with no serialization, no I/O and no
   timers.
-- `recording` is for tests.
+- `recording` is for tests. It keeps quiet noops, with `quiet: true`.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
@@ -396,7 +401,11 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     cursor for the next. The filter takes a time range (`from` inclusive,
     `to` exclusive, ISO 8601 UTC), `launch_id`, `runtime`, `kind`,
     `outcome` (or `problems`: anything not `ok` or `noop`), `name` or
-    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`. A day file
+    `name_prefix`, `trace_id`, `connection_id` and `plugin_id`; and, for
+    the Overview's links, `outcome_reason` (one or several, at most 16, each
+    a string in its format; `null` for the events without one) and
+    `plugin_version`, which `logs.query` and `logs.tail` take and
+    `logs.actions` refuses. A day file
     holds what was written that day, and an event is written when it ends,
     so a range also reads the day after its end, for an event that started
     in the range and ended after midnight; that day isn't counted missing.
@@ -417,7 +426,16 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
     slow).
   - `ajour:aggregate-logs` (`logs.aggregate`): the Overview, over this
     launch, 24 hours or 7 days: counts by name, outcome and
-    `outcome_reason`; problems per hour by outcome, one bucket per hour of
+    `outcome_reason`; the problems among them, the 50 largest groups, each
+    with when its last one started and the 3 places it happened most (its
+    connection, else its plugin); each connection's backlog syncs, a trace's
+    hops of one connection counted as one sync, failed when a hop didn't end
+    `ok` or `noop`, with its last sync and last failure (the reason of the
+    failed hop that started last); the plugin operations that timed out,
+    crashed or were refused at `capacity`, by plugin, `plugin.version`,
+    outcome and reason (a refusal at capacity, which comes before the
+    operation reads its package, carries the version the plugin's last
+    operation recorded); problems per hour by outcome, one bucket per hour of
     the range; p50 and p95 `duration_ms` per name; the latest `app.launch`,
     whose `launch` fields are its phases; and the crash events, the first
     100 of them, newest first.
@@ -461,6 +479,67 @@ once the user turns it on. Settings › Diagnostics shows it (#441).
 
 Remote exporters, such as Grafana and Application Insights, will be more
 sinks behind the same contract, each with its own sensitive fields setting.
+
+## Quiet noops
+
+A time sync check runs every 5 seconds while the window shows (#843). One
+that found nothing changed wrote up to 7 lines across the runtimes it
+crosses: the window's job, the local API's request and plugin operation,
+the broker's request when the plugin reads its change marker through
+`ajour.publicFetch`, and the main process's calls of the plugin's page
+(`next`, the fetch and `settled`). That is about 17,000 traces and 75 to 90
+MB a day, where a whole day of everything else wrote about 34 MB. Since #844
+it writes none.
+
+- **`unit.quiet(options?)`** (`packages/wide-events`) records `noop`,
+  unless a worse outcome is already recorded, and marks the unit quiet. The
+  emitter sets `quiet: true` on its event only when the unit ended `noop`,
+  with no error, no failed step in `step_failures`, and in under
+  `QUIET_LIMIT_MS` (2 seconds). A quiet unit that ends refused, cancelled,
+  timed out or failed, on which an error lands, or that took 2 seconds or
+  more is written as usual, without the mark. `{ waited: true }` says the
+  unit's time was a wait, such as a long poll's, so it stays quiet however
+  long it took.
+- **Which sinks drop it.** The local log file leaves out an event with
+  `quiet: true`, and the renderer's forwarding sink never sends one, so it
+  costs no IPC. The console and recording sinks keep it. Main's batch reader
+  takes `quiet` only as `true` or absent. Settings › Diagnostics and the MCP
+  log tools (`find_log_events`, `get_log_trace`) read the file, so they show
+  every other event as before and no quiet noop. The Overview's counts and
+  percentiles of `time_sync.round` cover the rounds written: full rounds,
+  and checks that failed or were slow.
+- **Where each runtime marks it.** Each marks what it knows; nothing in core
+  names a product.
+  - The window's `time_sync.round` job, when the plugin answers unchanged.
+  - The local API's `time_sync.round` request, when the plugin answers
+    `{ unchanged: true }`. The request seam still ends it `cancelled` when
+    its client left, and by its status for a 4xx or a 5xx: a recorded
+    `noop` gives way to them, as no outcome does.
+  - The plugin operation, from the method's own test of its "nothing
+    changed" answer: the host hands it to the runtime as
+    `PluginInvocation.quiet`, and the lifetime asks it once the result
+    parsed. `syncTimeEntries` has one (`isUnchangedTimeSyncAnswer`); no
+    other method does yet.
+  - The broker's `plugin.request` answered 304, through a connection or a
+    public fetch, for any plugin and any host: a 304 is the "nothing
+    changed" answer of a conditional request, such as a `HEAD` with
+    `If-None-Match` to a change marker.
+  - The main process's `plugin_renderer.call` for `http` or `publicFetch`
+    answered 304; for `settled` with the method's "nothing changed" answer,
+    read with the invocation's `quiet` test; and for `next` when it hands
+    the page the start of a run that has such a test, as a wait. Main can't
+    know then whether the run will find something, so a full time sync
+    round's `next` is left out too. That call is its own trace root and
+    holds only the page's wait; the run's other events are written.
+- **A slow check stays whole.** A parent lasts at least as long as its
+  child, so when a check's broker request takes 2 seconds, its plugin
+  operation, request and job are written with it, in one trace. Main's
+  `publicFetch` call is written as its own root, its `settled` and `next`
+  calls are not.
+- **Known gap.** A failed unit is always written, but its quiet parent in
+  another runtime is not: a plugin that swallows a failed request and still
+  answers unchanged leaves that `plugin.request` without its parent, which
+  the viewer shows as a root marked `missing_parent`.
 
 ## Traces
 
@@ -549,7 +628,10 @@ The local API emits these (#305, #306):
   typed against the catalog, so a route's event that lacks one of these
   reasons fails to compile.
 - **The event ends once**, by the seam, when the handler has settled and the
-  response has flushed or closed: `end()` only starts the flush. A handler
+  response has flushed or closed: `end()` only starts the flush. A route
+  that marks its request a quiet noop (`unit.quiet()`, see
+  [Quiet noops](#quiet-noops)) records `noop`, which still gives way to the
+  client leaving and to a 4xx or 5xx status. A handler
   that weighs outcomes itself, such as MCP's for a batch, returns how the
   request ends instead of ending it, so the status and sizes still land.
 - **A client that leaves** before its response flushed, while its body still
@@ -629,7 +711,9 @@ connection (`secret_unavailable`), an inactive plugin or capability,
 `response_too_large`, `unchecked_response` for an answer the redaction
 couldn't check within its budgets, `rate_limited`, `too_many_queued`);
 cancelled for `aborted` or `operation_ended`; `timeout`; or an error for
-`network`, whose message is the broker's own.
+`network`, whose message is the broker's own. A request answered 304, the
+"nothing changed" answer of a conditional request, ends as a quiet noop,
+whatever its plugin or host ([Quiet noops](#quiet-noops)).
 
 Plugin discovery skips an invalid package without a log line: the active
 event counts it in `counts.invalid_plugin`, as it counts a bundled archive
@@ -793,8 +877,14 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     The scheduler's 30-second tick records nothing.
   - `time_sync.round`, each round of a time sync (#692), in
     `lib/time-sync.ts`, always `schedule`: `time_sync_round.trigger` says
-    whether a store write, the 60-second poll, changes left over or a retry
-    started it. A store write that leaves nothing to send starts no round,
+    whether a store write, the check every 5 seconds (60 while the window
+    is hidden), changes left over or a retry started it. Since #843,
+    `has_cursor` says whether the round was a check, which sent the
+    plugin's cursor and no changes, and `unchanged` whether the plugin
+    answered that nothing changed there; such a check ends as a quiet
+    noop (#844), which the local log file leaves out unless it took 2
+    seconds or more, keeps nothing and never carries the cursor. A check whose full answer comes
+    back after Ajour changed is dropped, with `discarded: inputs_changed`. A store write that leaves nothing to send starts no round,
     so the runner's own writes record nothing. The counts are those of the
     route's event, plus `waiting_count`, and since #694 `received_count`,
     the entries Ajour took from the listing, and `held_count`, the listed
@@ -900,7 +990,7 @@ item's.
 | `plugin_renderer.sweep`                                                                                                            | `plugin-renderer-sweep.cjs`, right after the single-instance lock, only when the last session left a record of plugin renderers: how many it ended, found gone, or left alone because another program holds the id                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `app.error`                                                                                                                        | an uncaught exception (`uncaughtExceptionMonitor`), an unhandled rejection, which keeps Node's warning, or a startup that failed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `window.navigate`                                                                                                                  | `will-navigate` and the window open handler: the scheme only, never the URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `catalog.refresh`                                                                                                                  | each refresh, at launch, on its interval or asked for. The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it: counts of the plugin sources read, cached, unreachable, signed, unsigned and blocked, never a source\'s address                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `catalog.refresh`                                                                                                                  | each refresh, at launch, on its interval, asked for, or with a check for Ajour's own update (trigger `update_check`). The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it: counts of the plugin sources read, cached, unreachable, signed, unsigned and blocked, never a source\'s address                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `update.check`, `update.install`                                                                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was. After the handoff it stays open until the app quits for the installer (`will-quit`), or for the quit's 10 seconds, since electron-updater reports an installer that fails to start later. `update.handoff` says which: `app_quit`, `installer_failed`, or `timed_out`, which ends the event as a `timeout`. It records only the offered release's version                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure`                                                 | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, the catalog marks `not_available`, an unsigned install while unsigned installs are off is `unsigned_not_allowed` (`confirmUnsignedInstall` in main.cjs, which also records `plugin.signed`), and the plugin host marks an install it refuses while plugin operations run `busy` (`PLUGIN_HOST_BUSY` in `apps/api/src/plugin-host.ts`). A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
 | `context_menu.show`                                                                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -920,7 +1010,9 @@ renderer's trace. The listener adds its own fields through
 `events.current()`. One channel, `ajour:forward-wide-events`, records only
 its failures (`record: "failures"`): a call it accepts and that succeeds
 emits nothing, so forwarding the renderer's events never adds an event per
-batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A channel missing from
+batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A plugin page's call
+(`ajour:plugin-renderer`) can end as a quiet noop instead, which the file
+leaves out: see [Quiet noops](#quiet-noops). A channel missing from
 `IPC_CHANNELS`, or registered the wrong way, fails `just typecheck`: the
 wrapper's methods take only the table's channels of their mode, and the
 desktop typecheck checks main.cjs. It also throws when it registers.
@@ -1054,6 +1146,7 @@ channel to read the event each emits.
 | `event_rule.forget`                  | command                                 | store command                                    |
 | `event_rule.hide`                    | command                                 | store command                                    |
 | `handoff.adopt`                      | request, command                        | route, client call                               |
+| `handoff.close`                      | request, plugin_operation, command      | route, plugin method, client call                |
 | `handoff.connections_read`           | request, job                            | route, client call                               |
 | `handoff.connections_update`         | request, command                        | route, client call                               |
 | `handoff.detect`                     | request, plugin_operation, job, command | route, plugin method, client call                |
@@ -1070,6 +1163,7 @@ channel to read the event each emits.
 | `handoff.tools_read`                 | request, job                            | route, client call                               |
 | `handoff.tools_update`               | request, command                        | route, client call                               |
 | `handoff.visibility`                 | request, job                            | route, client call                               |
+| `item_type.describe`                 | command, request, plugin_operation      | route, plugin method, client call                |
 | `local_state.recover`                | ipc                                     | IPC channel                                      |
 | `local_state.reload`                 | job                                     | renderer                                         |
 | `logs.actions`                       | ipc                                     | IPC channel                                      |
@@ -1248,6 +1342,11 @@ A handoff whose tool doesn't follow state (`started`) is never read: the tick,
 Refresh all and hooks skip it and open no `handoff.refresh` event, and a
 refresh of that one handoff is a `handoff.refresh` request refused with
 `handoff_refused`.
+Close (#850) is one `handoff.close` request, which records the plugin, the
+handoff's id and tool, and, once the tool closed the thread, `handoff.closes`:
+`archive` or `delete`. It refuses with `handoff_refused` a tool that doesn't
+close threads, a plugin that can't run, and the tool's own refusal, which its
+`handoff.close` plugin operation holds as `plugin_error`.
 `handoff.adopt` records the plugin, tool and new handoff id, and refuses with
 `handoff_refused`, or `tool_off` for a tool turned off; `handoff.dismiss_thread` records the plugin and tool. None
 records a thread's title or id, the item's keys, or a folder. The privacy canary
@@ -1308,7 +1407,8 @@ Two tests hold the whole app to the model (#311):
 `plugin.process` is a detached child event per broker call. Its operational fields
 are `plugin.id`, `process.command_id`, `process.exit_code`,
 `process.decided_by`, `process.rule_id`, `process.reviewer_label` and
-`process.reviewer_score`. The envelope records outcome, reason and duration.
+`process.reviewer_score`, and for a terminal command `process.terminal`, the
+terminal app from Settings › General › Terminal, such as `iTerm`. The envelope records outcome, reason and duration.
 Unknown command ids become `undeclared`; raw caller text never becomes an event
 identifier. `process.rule_id` is the id of the rule-table rule that matched an
 undeclared command (`apps/api/src/process-rules.ts`), a fixed name such as

@@ -682,6 +682,94 @@ describe("the API 4 manifest", () => {
       );
     });
   });
+
+  describe("a typeOverrides connection field", () => {
+    /** Azure DevOps with an estimate field that each item type may replace. */
+    function withOverrides(byType: Record<string, unknown>) {
+      const manifest = azureDevOpsManifest();
+      manifest.connectionFields.push(
+        { id: "estimateField", label: "Estimate field", type: "text" },
+        {
+          id: "byType",
+          label: "By work item type",
+          type: "typeOverrides",
+          overrides: ["estimateField"],
+          ...byType,
+        },
+      );
+      return manifest;
+    }
+
+    it("names the text fields an item type can replace", () => {
+      expect(issuesOf(withOverrides({}))).toEqual([]);
+      expect(
+        parsed(withOverrides({})).connectionFields.at(-1)?.overrides,
+      ).toEqual(["estimateField"]);
+    });
+
+    it.each([
+      [
+        "a secret one",
+        { secret: true },
+        'The typeOverrides field "byType" can\'t be secret or required.',
+      ],
+      [
+        "a required one",
+        { required: true },
+        'The typeOverrides field "byType" can\'t be secret or required.',
+      ],
+      [
+        "one without overrides",
+        { overrides: undefined },
+        'The typeOverrides field "byType" needs overrides: the ids of the text fields an item type can replace.',
+      ],
+      [
+        "one naming a missing field",
+        { overrides: ["missing"] },
+        'The typeOverrides field "byType" can only override a text connection field that isn\'t secret, and "missing" isn\'t one.',
+      ],
+      [
+        "one naming a url field",
+        { overrides: ["organizationUrl"] },
+        'The typeOverrides field "byType" can only override a text connection field that isn\'t secret, and "organizationUrl" isn\'t one.',
+      ],
+      [
+        "one naming a secret field",
+        { overrides: ["personalAccessToken"] },
+        'The typeOverrides field "byType" can only override a text connection field that isn\'t secret, and "personalAccessToken" isn\'t one.',
+      ],
+    ])("refuses %s", (_case, byType, message) => {
+      expect(issuesOf(withOverrides(byType))).toContain(message);
+    });
+
+    it("refuses overrides on any other field type", () => {
+      const manifest = azureDevOpsManifest();
+      manifest.connectionFields.push({
+        id: "estimateField",
+        label: "Estimate field",
+        type: "text",
+        overrides: ["project"],
+      });
+
+      expect(issuesOf(manifest)).toContain(
+        'Only a typeOverrides field takes overrides, and "estimateField" is a text field.',
+      );
+    });
+
+    it("refuses one among an agent task's settings", () => {
+      const manifest = workdayAgentManifest();
+      manifest.capabilities.agentTask.tasks[0].settings.push({
+        id: "byType",
+        label: "By type",
+        type: "typeOverrides",
+        overrides: ["url"],
+      });
+
+      expect(issuesOf(manifest)).toContain(
+        'The typeOverrides field "byType" belongs in connectionFields.',
+      );
+    });
+  });
 });
 
 describe("the plugins overview", () => {

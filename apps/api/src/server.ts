@@ -78,6 +78,8 @@ import {
   type SwitchableCapability,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -212,6 +214,7 @@ import {
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
+import type { LocalLogReader } from "./local-log-reader.ts";
 import { claudeCodeAdapter } from "./agent-runner/adapters/claude-code.ts";
 import { codexAdapter } from "./agent-runner/adapters/codex.ts";
 import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
@@ -348,6 +351,12 @@ interface AppApiServerOptions {
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
   /**
+   * The local log file's reads, for the MCP log tools. The desktop app passes
+   * main's query service; without one, as in the standalone API, MCP lists
+   * no log tool.
+   */
+  localLogs?: LocalLogReader;
+  /**
    * The PATH the agent runner finds the agent CLIs on. Defaults to the login
    * shell's PATH. Tests point it at a fake CLI.
    */
@@ -380,7 +389,9 @@ interface AppApiServerOptions {
    */
   brokerTransport?: BrokerTransport;
   openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
-  terminal?: () => Promise<import("./process-launch.ts").TerminalApp>;
+  terminal?: () => Promise<
+    import("./process-launch.ts").TerminalChoice | undefined
+  >;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
   /** The clock of the plugins' crash budget. Tests move it. */
@@ -1864,6 +1875,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ),
     events,
     readBody: readJsonBody,
+    localLogs: options.localLogs,
   };
 
   /**
@@ -2108,6 +2120,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.refuse(
           error instanceof HandoffToolOff ? "tool_off" : "handoff_refused",
         );
+        if (error.refusal?.branchExists)
+          unit.set({ handoff: { refusal: "branch_exists" } });
+        if (error.refusal?.setting)
+          unit.set({
+            handoff: {
+              refusal: "setting",
+              refused_setting: error.refusal.setting.id,
+            },
+          });
         writeJson(
           response,
           error instanceof HandoffTemplateRefused ? 400 : 409,
@@ -2116,6 +2137,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               error instanceof Error
                 ? error.message
                 : "The tool refused the handoff.",
+            // What the window can offer instead (#819).
+            ...error.refusal,
           },
         );
       }
@@ -2167,6 +2190,30 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             : {}),
         },
       );
+    },
+    // Closes the thread in its tool, then forgets the handoff (#850).
+    handoffClose: async ({ response, params, unit }) => {
+      unit.set({ handoff: { id: params.handoffId } });
+      const record = (await storage.listHandoffs()).find(
+        (h) => h.id === params.handoffId,
+      );
+      if (!record) {
+        writeJson(response, 404, { error: "This handoff no longer exists." });
+        return;
+      }
+      unit.set({
+        plugin: { id: record.pluginId },
+        handoff: { tool: record.toolId },
+      });
+      try {
+        const closed = await handoffs.close(record.id);
+        unit.set({ handoff: { closes: closed.closesThreads } });
+        writeJson(response, 200, await storage.listHandoffs());
+      } catch (error) {
+        if (!(error instanceof HandoffRefused)) throw error;
+        unit.refuse("handoff_refused");
+        writeJson(response, 409, { error: error.message });
+      }
     },
     handoffRemove: async ({ response, params, unit }) => {
       unit.set({ handoff: { id: params.handoffId } });
@@ -3492,6 +3539,44 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
+    // A read for the connection form: no access choice gates it.
+    itemTypeDescribe: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "describing item types",
+        (plugin) => Boolean(plugin.capabilities.connector?.itemTypes),
+        "This plugin does not describe item types.",
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const typesRequest = await readRequest(
+        request,
+        backlogItemTypesRequestSchema,
+      );
+      unit.set({ item_type: { requested_count: typesRequest.types.length } });
+      try {
+        const result = backlogItemTypesResultSchema.parse(
+          await pluginManager.describeItemTypes(
+            target.pluginId,
+            pluginConnection(target.connection),
+            typesRequest,
+            target.call.admit,
+          ),
+        );
+        unit.set({ item_type: { result_count: result.types.length } });
+        writeJson(response, 200, result);
+      } catch (error) {
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
+      }
+    },
+
     settleWrite: async (context) => {
       const target = await backlogTarget(
         context,
@@ -4603,7 +4688,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
       const round = await readRequest(request, timeSyncRequestSchema);
-      unit.set({ time_sync_round: { change_count: round.changes.length } });
+      unit.set({
+        time_sync_round: {
+          change_count: round.changes.length,
+          has_cursor: round.cursor !== undefined,
+        },
+      });
       const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.syncTimeEntries(
@@ -4612,10 +4702,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           round,
           call.admit,
         );
+        // A check round the plugin found unchanged (#843): nothing to count,
+        // and the window keeps the connection it already has, so no overview
+        // is built every few seconds. It is a quiet noop, which the local
+        // log file leaves out (#844).
+        if ("unchanged" in result) {
+          unit.set({ time_sync_round: { unchanged: true } }).quiet();
+          writeJson(response, 200, timeSyncRouteResponseSchema.parse(result));
+          return;
+        }
         const count = (status: string) =>
           result.results.filter((answer) => answer.status === status).length;
         unit.set({
           time_sync_round: {
+            unchanged: false,
             synced_count: count("synced"),
             refused_count: count("refused"),
             failed_count: count("failed"),
@@ -4624,7 +4724,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         // The round's time and outcome are the window's to keep (#685). The
         // connection's last sync and error stay the project source's, which
-        // a round every minute would otherwise hide.
+        // a round every few seconds would otherwise hide.
         const { summary } = await findConnectionSummary(
           storage,
           pluginManager,
@@ -4751,6 +4851,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit,
     }: RouteContext<
       | "settleStateList"
+      | "itemTypeDescribe"
       | "settleWrite"
       | "assigneeSearch"
       | "descriptionRead"

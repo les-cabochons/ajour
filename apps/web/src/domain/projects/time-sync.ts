@@ -105,8 +105,9 @@ export interface TimeSyncContext {
 }
 
 /**
- * An entry shorter than this stays local, so a mis-click never leaves Ajour.
- * A running entry waits until it has run this long.
+ * A saved entry shorter than this stays local, so a mis-click never leaves
+ * Ajour, and one already sent is deleted there. A running entry goes at
+ * once, whatever it has run (#840).
  */
 export const TIME_SYNC_MIN_DURATION_MS = 30_000;
 
@@ -279,13 +280,12 @@ function runningSourceOf(
 
 /**
  * Reads what entries send for one connection's time sync, against the
- * projects and the running entries. Built again once a round adds a task.
+ * projects. Built again once a round adds a task.
  */
 function createValuesReader(
   projectList: readonly LocalProject[],
-  timers: readonly LocalTimer[],
   connection: TimeSyncConnectionRef,
-  record: Pick<LocalTimeSync, "startWeek" | "copies">,
+  record: Pick<LocalTimeSync, "startWeek">,
   context: TimeSyncContext,
 ) {
   const projects = new Map(
@@ -300,18 +300,6 @@ function createValuesReader(
   const isManagedHere = (project: LocalProject) =>
     project.source?.pluginId === connection.pluginId &&
     project.source.connectionId === connection.connectionId;
-
-  /** The sync keys of the running entries. */
-  const runningKeys = new Set(timers.map(entrySyncKey));
-  /**
-   * Whether the other system shows a running entry that no longer runs in
-   * Ajour, such as the first entry of a switch. A running entry then takes
-   * over from it at once, in the same round as its stop, instead of after
-   * 30 seconds.
-   */
-  const takesOver = Object.entries(record.copies).some(
-    ([syncKey, copy]) => copy.agreed.running && !runningKeys.has(syncKey),
-  );
 
   /**
    * The name the task goes under: the commit name the Commit page uses, or
@@ -333,15 +321,11 @@ function createValuesReader(
    * What the entry sends, or undefined when it doesn't take part: its
    * project is managed by this connection, neither the project nor the task
    * is Local only, its day is from the start week and not after today, and
-   * it lasts at least 30 seconds. A running entry the other system doesn't
-   * show yet waits until it has run 30 seconds, unless it takes over from
-   * one shown running there; once shown, it stays until it stops. The note
-   * never leaves Ajour.
+   * a saved entry lasts at least 30 seconds. A running entry takes part
+   * from its Start, so the other system shows it in the next round (#840).
+   * The note never leaves Ajour.
    */
-  const valuesOf = (
-    entry: SyncSource,
-    shown: boolean,
-  ): TimeSyncEntryValues | undefined => {
+  const valuesOf = (entry: SyncSource): TimeSyncEntryValues | undefined => {
     const project = entry.projectId ? projects.get(entry.projectId) : undefined;
     if (!project?.source || !isManagedHere(project)) return undefined;
     const task = entry.taskId
@@ -353,10 +337,7 @@ function createValuesReader(
       return undefined;
     }
     const running = entry.countingSince !== undefined;
-    if (
-      entry.durationMs < TIME_SYNC_MIN_DURATION_MS &&
-      !(running && (shown || takesOver))
-    ) {
+    if (!running && entry.durationMs < TIME_SYNC_MIN_DURATION_MS) {
       return undefined;
     }
     const taskName = sentTaskName(project, task);
@@ -392,13 +373,12 @@ function wholeMinutes(durationMs: number) {
 function createReader(
   state: Pick<TimeSyncState, "projects" | "timers" | "timesheetEntries">,
   connection: TimeSyncConnectionRef,
-  record: Pick<LocalTimeSync, "startWeek" | "copies">,
+  record: Pick<LocalTimeSync, "startWeek" | "copies" | "unconfirmed">,
   context: TimeSyncContext,
   now: number,
 ) {
   const { valuesOf } = createValuesReader(
     state.projects,
-    state.timers,
     connection,
     record,
     context,
@@ -431,14 +411,15 @@ function createReader(
   /**
    * The change one sync key needs against its synced copy, refused or not:
    * an upsert when the entry takes part and differs from the copy, a delete
-   * when a copy exists and the entry is gone or no longer takes part.
+   * when a copy exists, or a create whose answer never came, and the entry
+   * is gone or no longer takes part.
    */
   const changeFor = (syncKey: string): TimeSyncChange | undefined => {
     const entry = entries.get(syncKey);
     const copy = Object.hasOwn(record.copies, syncKey)
       ? record.copies[syncKey]
       : undefined;
-    const values = entry ? valuesOf(entry, copy !== undefined) : undefined;
+    const values = entry ? valuesOf(entry) : undefined;
     const known = copy ? { remoteId: copy.remoteId, agreed: copy.agreed } : {};
     if (values) {
       // An entry taken from there, whose copy went with Time entries off,
@@ -452,18 +433,53 @@ function createReader(
         !copy && entry?.timeSyncRemoteId
           ? { remoteId: entry.timeSyncRemoteId }
           : {};
-      return copy && sameEntryValues(copy.agreed, values)
+      return copy && !copy.droppedThere && sameEntryValues(copy.agreed, values)
         ? undefined
         : { kind: "upsert", syncKey, ...known, ...remote, values };
     }
-    return copy ? { kind: "delete", syncKey, ...known } : undefined;
+    if (copy) return { kind: "delete", syncKey, ...known };
+    // A create the other system may have made: deleted there by the client
+    // reference it was sent with (#838).
+    return record.unconfirmed && Object.hasOwn(record.unconfirmed, syncKey)
+      ? { kind: "delete", syncKey }
+      : undefined;
   };
 
-  /** Every sync key a change may be for: the entries, and the copies of entries now gone. */
+  /**
+   * Every sync key a change may be for: the entries, the copies of entries
+   * now gone, and the creates whose answer never came.
+   */
   const syncKeys = () =>
-    new Set([...entries.keys(), ...Object.keys(record.copies)]);
+    new Set([
+      ...entries.keys(),
+      ...Object.keys(record.copies),
+      ...Object.keys(record.unconfirmed ?? {}),
+    ]);
 
   return { changeFor, syncKeys };
+}
+
+/**
+ * Whether this change is the one Ajour holds back, having lost to a later
+ * change there that Ajour holds (#835).
+ */
+function isHeldBack(copy: LocalSyncedCopy | undefined, change: TimeSyncChange) {
+  return (
+    copy?.heldBack !== undefined &&
+    change.kind === "upsert" &&
+    sameEntryValues(copy.heldBack, change.values)
+  );
+}
+
+/**
+ * Whether Ajour's entry changed since Ajour held its change back (#835): the
+ * copy holds values back, and the entry's change now, if any, is another.
+ */
+function changedSinceHeldBack(
+  copy: LocalSyncedCopy,
+  change: TimeSyncChange | undefined,
+) {
+  return copy.heldBack !== undefined && !(change && isHeldBack(copy, change));
 }
 
 /** Whether the other system already refused this very change. */
@@ -522,8 +538,8 @@ export interface TimeSyncPlan {
  * The next round of a connection at `now`, or undefined when it has no time
  * sync. It sends what differs from the synced copies, at most 20 changes in
  * day order with the running entry last, skipping a change the other system
- * already refused. The window is the current week and the 4 before it,
- * never before the start week.
+ * already refused and one Ajour holds back. The window is the current week
+ * and the 4 before it, never before the start week.
  */
 export function planTimeSyncRound(
   state: TimeSyncState,
@@ -544,6 +560,12 @@ export function planTimeSyncRound(
         !isRefused(
           Object.hasOwn(record.refusals, change.syncKey)
             ? record.refusals[change.syncKey]
+            : undefined,
+          change,
+        ) &&
+        !isHeldBack(
+          Object.hasOwn(record.copies, change.syncKey)
+            ? record.copies[change.syncKey]
             : undefined,
           change,
         ),
@@ -619,10 +641,11 @@ function firstSeenAt(
 
 /**
  * Notes when Ajour first saw each copied entry differ from its copy, as
- * `firstSeenAt` says, and clears that time once they agree. Drops a refusal
- * whose entry changed since, so the next round sends the new values, and a
- * put-back that has no upsert left to send, such as one the other system
- * already refused.
+ * `firstSeenAt` says, and clears that time once they agree. Drops the
+ * values held back of an entry that changed since, and dates its new change
+ * from the round that first sees it. Drops a refusal whose entry changed
+ * since, so the next round sends the new values, and a put-back that has no
+ * upsert left to send, such as one the other system already refused.
  */
 function noteLocalChanges(
   state: TimeSyncState,
@@ -641,8 +664,22 @@ function noteLocalChanges(
   );
   let copies = record.copies;
   for (const [syncKey, copy] of Object.entries(record.copies)) {
-    const changed = reader.changeFor(syncKey) !== undefined;
-    if (changed && copy.changedAt === undefined) {
+    const change = reader.changeFor(syncKey);
+    const changed = change !== undefined;
+    if (changedSinceHeldBack(copy, change)) {
+      // The new change is first seen by this round, so it is later than the
+      // change there that won over the one held back (#835).
+      const { heldBack: _lost, changedAt: _old, ...rest } = copy;
+      copies = {
+        ...copies,
+        [syncKey]: changed
+          ? {
+              ...rest,
+              changedAt: firstSeenAt(plan, syncKey, copy.agreed, now),
+            }
+          : rest,
+      };
+    } else if (changed && copy.changedAt === undefined) {
       copies = {
         ...copies,
         [syncKey]: {
@@ -840,16 +877,21 @@ interface TakenListing {
  * - A copy whose remote entry changed since the last round, and holds other
  *   values than agreed, was edited there. When Ajour changed it too, the
  *   later of `changedAt` and the remote `updatedAt` wins, and a delete in
- *   Ajour wins over the edit.
+ *   Ajour wins over the edit. When the edit there wins but lands where
+ *   Ajour holds it, the entry stays as it is, and Ajour holds back its own
+ *   change, so it never goes over the edit there (#835).
  * - The copy of Ajour's running entry, agreed running, whose remote entry
  *   shows stopped, was stopped there: Ajour stops it with the minutes there,
  *   under the same rules when Ajour changed it too (#695).
- * - A listed entry with neither a copy nor a client reference was logged
- *   elsewhere: Ajour adds it. One with a client reference is Ajour's own,
- *   such as one a send whose answer was lost made, and the next send
- *   adopts it.
- * - Such an entry still running there was started in another tool: it
- *   becomes the running entry, as `takeRunning` says (#695).
+ * - A listed entry with neither a copy nor one of this Ajour's sync keys as
+ *   its client reference was logged elsewhere, in another tool or by
+ *   another Ajour, such as one on the user's other machine (#853): Ajour
+ *   adds it. One with such a key is Ajour's own, such as one a send whose
+ *   answer was lost made, and the next send adopts it, or deletes it once
+ *   its entry is gone (#838).
+ * - Such an entry still running there was started in another tool or
+ *   another Ajour: it becomes the running entry, as `takeRunning` says
+ *   (#695).
  *
  * A submitted week stays as the user committed it (#696). An edit there
  * to one of its entries, or one that moves an entry into it, is put back:
@@ -860,8 +902,10 @@ interface TakenListing {
  * takes it.
  *
  * A copy whose change this round failed or was refused is left as it is,
- * since the change is sent again, and a copy whose refusal stands is never
- * read as deleted there. The copy of the running entry while it runs on
+ * since the change is sent again. When this listing misses its remote
+ * entry, the plugin dropped it on the way, such as Continue's restart: the
+ * copy is marked dropped there, so the entry goes again, and is never read
+ * as deleted there. The copy of the running entry while it runs on
  * both sides or while a Continue shares today's entry's copy (#693), a
  * saved entry that runs again there, and a remote entry that can't take
  * part yet, such as one dated after today, are left for a later round. A
@@ -905,13 +949,7 @@ function takeListing(
     answer.entries.map((entry) => [entry.remoteId, entry]),
   );
   let current = state;
-  let values = createValuesReader(
-    state.projects,
-    state.timers,
-    connection,
-    record,
-    context,
-  );
+  let values = createValuesReader(state.projects, connection, record, context);
   const copies = { ...record.copies };
   const held: LocalTimeSyncHold[] = [];
   const puttingBack = new Set(record.puttingBack);
@@ -925,7 +963,7 @@ function takeListing(
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
     return {
       remoteId: remote.remoteId,
-      agreed: (entry && values.valuesOf(entry, true)) ?? remoteValuesOf(remote),
+      agreed: (entry && values.valuesOf(entry)) ?? remoteValuesOf(remote),
       remoteUpdatedAt: remote.updatedAt,
     };
   };
@@ -936,7 +974,6 @@ function takeListing(
       current = { ...current, projects: placement.projects };
       values = createValuesReader(
         current.projects,
-        current.timers,
         connection,
         record,
         context,
@@ -970,6 +1007,37 @@ function takeListing(
   };
 
   /**
+   * When Ajour first saw its change of a copied entry. A change other than
+   * the one it holds back came after the hold, so this round first sees it
+   * (#835).
+   */
+  const localChangedAt = (
+    syncKey: string,
+    copy: LocalSyncedCopy,
+    local: TimeSyncChange | undefined,
+  ) =>
+    copy.changedAt !== undefined && !changedSinceHeldBack(copy, local)
+      ? copy.changedAt
+      : firstSeenAt(plan, syncKey, copy.agreed, now);
+
+  /**
+   * Holds a change there that Ajour can't take. Ajour's own change, which
+   * lost to it, is held back, so it never goes over the change there (#835).
+   */
+  const hold = (
+    syncKey: string,
+    copy: LocalSyncedCopy,
+    remote: TimeSyncRemoteEntry,
+    reason: TimeSyncHoldReason,
+    local: TimeSyncChange | undefined,
+  ) => {
+    held.push(holdOf(remote, reason));
+    if (local?.kind === "upsert") {
+      copies[syncKey] = { ...copy, heldBack: local.values };
+    }
+  };
+
+  /**
    * Takes the values there into a copied saved entry: its project and task,
    * kept when neither side moved them, its day and its whole minutes, which
    * keep the entry's seconds when they agree. A project or task Ajour holds
@@ -984,7 +1052,7 @@ function takeListing(
   ) => {
     const placement = placementOf(copy, entry, remote, local);
     if (placement.kind === "held") {
-      held.push(holdOf(remote, placement.reason));
+      hold(syncKey, copy, remote, placement.reason, local);
       return false;
     }
     placeIn(placement);
@@ -1031,8 +1099,7 @@ function takeListing(
   ) => {
     const local = reader.changeFor(syncKey);
     if (local?.kind === "delete") return;
-    const localAt =
-      copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
+    const localAt = localChangedAt(syncKey, copy, local);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       return;
@@ -1049,7 +1116,7 @@ function takeListing(
     // entry as it is, so its stop never goes back over the move there.
     const placement = placementOf(copy, timer, remote, local);
     if (placement.kind === "held") {
-      held.push(holdOf(remote, placement.reason));
+      hold(syncKey, copy, remote, placement.reason, local);
       return;
     }
     // Never before it started, nor after now.
@@ -1069,9 +1136,21 @@ function takeListing(
     received += 1;
   };
 
-  for (const [syncKey, copy] of Object.entries(record.copies)) {
+  for (const [syncKey, kept] of Object.entries(record.copies)) {
+    // Listed there, it wasn't dropped on the way after all, as a failed
+    // round may only have feared.
+    let copy = kept;
+    if (copy.droppedThere && listed.has(copy.remoteId)) {
+      const { droppedThere: _listed, ...rest } = copy;
+      copy = copies[syncKey] = rest;
+    }
     const outcome = outcomes.get(syncKey);
     if (outcome?.status === "failed" || outcome?.status === "refused") {
+      // Missing from this round's listing, the plugin dropped it on the way,
+      // such as Continue's restart before a start that failed: it goes again.
+      if (!listed.has(copy.remoteId) && inWindow(copy.agreed.localDate)) {
+        copies[syncKey] = { ...copy, droppedThere: true };
+      }
       continue;
     }
     const remote = listed.get(copy.remoteId);
@@ -1098,9 +1177,10 @@ function takeListing(
         delete copies[syncKey];
         continue;
       }
-      // A refused change keeps the entry, as the refusal stands: the other
-      // system may have dropped it on the way, such as Continue's restart.
-      if (Object.hasOwn(record.refusals, syncKey)) continue;
+      // Dropped on the way, it isn't deleted there: it goes again. An entry
+      // still listed after its refusal, then missing, was deleted there,
+      // and that delete wins over the refused change as over any edit.
+      if (copy.droppedThere) continue;
       if (locked(entry.localDate)) {
         // The next round creates it again. Not when this round just sent
         // it: an entry the other system took but doesn't list yet is not a
@@ -1142,14 +1222,27 @@ function takeListing(
       continue;
     }
     // Both changed: Ajour's change wins when it is the later one.
-    const localAt =
-      copy.changedAt ?? firstSeenAt(plan, syncKey, copy.agreed, now);
+    const localAt = localChangedAt(syncKey, copy, local);
     if (local && localAt >= Date.parse(remote.updatedAt)) {
       copies[syncKey] = { ...copy, remoteUpdatedAt: remote.updatedAt };
       continue;
     }
     if (!canTake(remote)) continue;
     if (takeValues(syncKey, copy, entry, remote, local)) received += 1;
+  }
+
+  // A change held back goes again once the entry there is listed and no
+  // longer held, such as one moved back to the values agreed (#835).
+  const stillHeld = new Set(held.map((hold) => hold.remoteId));
+  for (const [syncKey, copy] of Object.entries(copies)) {
+    if (
+      copy.heldBack &&
+      listed.has(copy.remoteId) &&
+      !stillHeld.has(copy.remoteId)
+    ) {
+      const { heldBack: _free, ...rest } = copy;
+      copies[syncKey] = rest;
+    }
   }
 
   // Remote ids are this connection's: another system may use the same.
@@ -1173,16 +1266,33 @@ function takeListing(
   }
 
   /**
-   * The running entry started in another tool that Ajour may take. The
-   * other system keeps one running entry per person: should it list more,
-   * the one that started last.
+   * The sync keys this Ajour sends as client references: of its entries and
+   * running entries, of its copies, of the creates whose answer never came
+   * (#838), and of this round's changes, such as a create whose entry the
+   * user deleted while it was on the way. An entry there with one of them is
+   * Ajour's own, never a new one. Any other client reference is another
+   * Ajour's, such as one on the user's other machine, so its entry was
+   * logged elsewhere (#853).
+   */
+  const ownKeys = new Set([
+    ...saved.keys(),
+    ...timers.keys(),
+    ...Object.keys(record.copies),
+    ...Object.keys(record.unconfirmed ?? {}),
+    ...plan.request.changes.map((change) => change.syncKey),
+  ]);
+  const sentHere = (remote: TimeSyncRemoteEntry) =>
+    remote.clientRef !== undefined && ownKeys.has(remote.clientRef);
+
+  /**
+   * The running entry started in another tool or another Ajour that Ajour
+   * may take. The other system keeps one running entry per person: should
+   * it list more, the one that started last.
    */
   const startedElsewhere = answer.entries
     .filter(
       (remote) =>
-        remote.running &&
-        !known.has(remote.remoteId) &&
-        remote.clientRef === undefined,
+        remote.running && !known.has(remote.remoteId) && !sentHere(remote),
     )
     .reduce<TimeSyncRemoteEntry | undefined>(
       (latest, remote) =>
@@ -1247,7 +1357,7 @@ function takeListing(
     copies[entrySyncKey(timer)] = {
       remoteId: remote.remoteId,
       agreed:
-        values.valuesOf(runningSourceOf(timer, now, undefined), true) ??
+        values.valuesOf(runningSourceOf(timer, now, undefined)) ??
         remoteValuesOf(remote),
       remoteUpdatedAt: remote.updatedAt,
     };
@@ -1257,7 +1367,7 @@ function takeListing(
   for (const remote of answer.entries) {
     if (
       known.has(remote.remoteId) ||
-      remote.clientRef !== undefined ||
+      sentHere(remote) ||
       !inWindow(remote.localDate)
     ) {
       continue;
@@ -1323,11 +1433,75 @@ function takeListing(
 }
 
 /**
+ * The creates whose answer never came, after a round (#838). A create the
+ * round sent joins them when its change failed, or when the round failed
+ * as a whole and `outcomes` is undefined, since the other system may have
+ * made it first. A change the round synced leaves them, and so does a
+ * create whose day left the window, where the plugin no longer finds it.
+ */
+function unconfirmedAfter(
+  record: LocalTimeSync,
+  plan: TimeSyncPlan,
+  outcomes: ReadonlyMap<string, TimeSyncChangeResult> | undefined,
+): Pick<LocalTimeSync, "unconfirmed"> {
+  const unconfirmed: Record<string, string> = { ...record.unconfirmed };
+  for (const change of plan.request.changes) {
+    const status = outcomes
+      ? outcomes.get(change.syncKey)?.status
+      : ("failed" as const);
+    if (status === "synced") {
+      delete unconfirmed[change.syncKey];
+    } else if (
+      status === "failed" &&
+      change.kind === "upsert" &&
+      !Object.hasOwn(record.copies, change.syncKey)
+    ) {
+      // The latest day sent, so an earlier try still in the window counts.
+      const sent = change.values.localDate;
+      const before = unconfirmed[change.syncKey];
+      unconfirmed[change.syncKey] = before && before > sent ? before : sent;
+    }
+  }
+  for (const [syncKey, localDate] of Object.entries(unconfirmed)) {
+    if (localDate < plan.request.from) delete unconfirmed[syncKey];
+  }
+  return Object.keys(unconfirmed).length > 0 ? { unconfirmed } : {};
+}
+
+/**
+ * The copies after a round that failed as a whole (#834). A Continue it sent
+ * may have gone halfway: a plugin may run a saved entry again by deleting
+ * it there, then starting a new one. Its copy is marked dropped there, so
+ * the entry goes again and is never read as deleted.
+ */
+function copiesAfterFailedRound(
+  copies: Record<string, LocalSyncedCopy>,
+  plan: TimeSyncPlan,
+): Record<string, LocalSyncedCopy> {
+  let next = copies;
+  for (const change of plan.request.changes) {
+    const copy = Object.hasOwn(copies, change.syncKey)
+      ? copies[change.syncKey]
+      : undefined;
+    if (
+      copy &&
+      change.kind === "upsert" &&
+      change.values.running &&
+      !copy.agreed.running
+    ) {
+      next = { ...next, [change.syncKey]: { ...copy, droppedThere: true } };
+    }
+  }
+  return next;
+}
+
+/**
  * Applies a round's answer. A synced change updates its copy, or drops it
  * for a delete, and an upsert that puts an entry back counts as put back,
  * not sent. A refused one keeps its message and is not sent again until
- * the entry changes. A failed one changes nothing and is sent again next
- * round. Then Ajour takes what changed in the listing, as `takeListing`
+ * the entry changes. A failed one is sent again next round, and a failed
+ * create counts as unconfirmed, since the other system may have made it
+ * (#838). Then Ajour takes what changed in the listing, as `takeListing`
  * says, and holds what it can't take. It returns the state the round leaves.
  */
 export function applyTimeSyncRound(
@@ -1404,12 +1578,13 @@ export function applyTimeSyncRound(
     context,
     factories,
   );
-  const { error: _cleared, ...rest } = record;
+  const { error: _cleared, unconfirmed: _before, ...rest } = record;
   const next = noteLocalChanges(
     taken.state,
     plan.connection,
     {
       ...rest,
+      ...unconfirmedAfter(record, plan, outcomes),
       copies: taken.copies,
       refusals,
       held: taken.held,
@@ -1460,10 +1635,13 @@ export interface PlannedTimeSyncRound {
 }
 
 /**
- * A round that failed as a whole changes nothing: its changes wait for the
- * next one. The connection keeps the error until a round goes through. A
- * round that got as far as its plan notes the local changes it saw, unless
- * Time entries went off and on since, and then it keeps nothing.
+ * A round that failed as a whole leaves the entries as they are: its changes
+ * wait for the next one, and the creates it sent count as unconfirmed, since
+ * the other system may have made them first (#838), and a Continue it sent
+ * marks its entry dropped there (#834). The connection keeps
+ * the error until a round goes through. A round that got as far as its plan
+ * notes the local changes it saw, unless Time entries went off and on since,
+ * and then it keeps nothing.
  */
 export function failTimeSyncRound(
   state: TimeSyncState,
@@ -1477,7 +1655,17 @@ export function failTimeSyncRound(
   if (!record || (planned && planned.plan.startedAt !== record.startedAt)) {
     return state.timeSyncs;
   }
-  const failed = { ...record, error: { at: now, message } };
+  const { unconfirmed: _before, ...rest } = record;
+  const failed = {
+    ...(planned ? rest : record),
+    ...(planned
+      ? {
+          ...unconfirmedAfter(record, planned.plan, undefined),
+          copies: copiesAfterFailedRound(record.copies, planned.plan),
+        }
+      : {}),
+    error: { at: now, message },
+  };
   return {
     ...state.timeSyncs,
     [connection.connectionId]: planned
@@ -1585,6 +1773,7 @@ function normalizeValues(value: unknown): TimeSyncEntryValues | undefined {
 function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
   const copy = asRecord(value);
   const agreed = normalizeValues(copy?.agreed);
+  const heldBack = normalizeValues(copy?.heldBack);
   if (
     !copy ||
     !agreed ||
@@ -1598,6 +1787,8 @@ function normalizeCopy(value: unknown): LocalSyncedCopy | undefined {
     agreed,
     remoteUpdatedAt: copy.remoteUpdatedAt,
     ...(finiteNumber(copy.changedAt) ? { changedAt: copy.changedAt } : {}),
+    ...(heldBack ? { heldBack } : {}),
+    ...(copy.droppedThere === true ? { droppedThere: true as const } : {}),
   };
 }
 
@@ -1638,6 +1829,16 @@ function normalizeRefusal(value: unknown): LocalTimeSyncRefusal | undefined {
     return undefined;
   }
   return { message: refusal.message, change, at: refusal.at };
+}
+
+/** The creates whose answer never came, as stored: a day each (#838). */
+function normalizeUnconfirmed(
+  value: unknown,
+): Pick<LocalTimeSync, "unconfirmed"> {
+  const unconfirmed = normalizeRecords(value, (day) =>
+    typeof day === "string" && isValidLocalDate(day) ? day : undefined,
+  );
+  return Object.keys(unconfirmed).length > 0 ? { unconfirmed } : {};
 }
 
 /** The records of `value` that `normalize` keeps, by key. */
@@ -1688,6 +1889,7 @@ export function normalizeTimeSyncs(
       puttingBack: Array.isArray(record.puttingBack)
         ? [...new Set(record.puttingBack.filter(nonEmptyString))].sort()
         : [],
+      ...normalizeUnconfirmed(record.unconfirmed),
       ...(lastRound &&
       finiteNumber(lastRound.at) &&
       finiteNumber(lastRound.synced) &&

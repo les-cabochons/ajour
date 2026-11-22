@@ -974,14 +974,20 @@ describe("AppApiStorage", () => {
       await storage.recordBrokerActivity("jira", connectionId, "request", 20);
       await storage.recordBrokerActivity("jira", connectionId, "blocked", 25);
 
-      await vi.waitFor(async () => {
-        expect((await onDisk()).connections[connectionId]).toEqual({
-          lastRequestAt: 25,
-          blockedCount: 1,
-          lastBlockedAt: 25,
-        });
-      });
-    });
+      await vi.waitFor(
+        async () => {
+          expect((await onDisk()).connections[connectionId]).toEqual({
+            lastRequestAt: 25,
+            blockedCount: 1,
+            lastBlockedAt: 25,
+          });
+        },
+        // The window's write is a full atomic write, which a slow Windows
+        // runner can take seconds to finish (main's run for ef7f766c read
+        // the file after one second and saw only the request at 20).
+        { timeout: 15_000, interval: 100 },
+      );
+    }, 20_000);
 
     it("writes the kept records again after a failed write, without waiting for another request", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(30);
@@ -1143,6 +1149,8 @@ describe("state files from earlier versions", () => {
     handoffTemplates: {},
     handoffToolConnections: {},
     handoffEnabledTools: {},
+    // Added for #819 without a new version: no folder remembered settings.
+    handoffFolderSettings: {},
     repositoryFolders: [],
     version: 13,
     connections: [],

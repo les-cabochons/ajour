@@ -130,7 +130,7 @@ async function runtime(
     }),
     internalAppApiEntryPath: "fixture/server.ts",
     internalAppApiRuntimeRoot: "/fixture",
-    readTerminalApp: () => "windows-terminal",
+    resolveTerminalApp: async () => ({ app: "wt" }),
     os: { homedir: () => "/fixture-home" },
     internalAppApiVault: () => undefined,
     internalAppApiBrokerNetwork: () => ({

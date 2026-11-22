@@ -57,6 +57,7 @@ import {
   type PluginDisplayEntry,
 } from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
+import { countSourceItemTypes } from "@/domain/backlog/source-item-types";
 import type {
   PluginConnectionSummary,
   PluginFieldValues,
@@ -513,7 +514,7 @@ function PluginsHeader({
                 )
               }
               options={[
-                { value: "0", label: "At launch only" },
+                { value: "0", label: "At launch" },
                 { value: "15", label: "Every 15 min" },
                 { value: "30", label: "Every 30 min" },
                 { value: "60", label: "Every hour" },
@@ -672,6 +673,19 @@ export function SettingsPluginsPage({
         return counts;
       }, {}),
     [state.workItems],
+  );
+
+  // The item types of the edited connection's items, for its fields by type.
+  const formItemTypes = useMemo(
+    () =>
+      formState?.editingConnectionId
+        ? countSourceItemTypes(
+            state.workItems,
+            formState.pluginId,
+            formState.editingConnectionId,
+          )
+        : [],
+    [state.workItems, formState?.pluginId, formState?.editingConnectionId],
   );
 
   const pluginGroups = overview?.connectionGroups ?? [];
@@ -932,6 +946,7 @@ export function SettingsPluginsPage({
       <PluginConnectionForm
         group={group}
         form={groupFormState}
+        itemTypes={formItemTypes}
         setForm={setFormState}
         connection={editedConnection}
         vault={overview?.vault}

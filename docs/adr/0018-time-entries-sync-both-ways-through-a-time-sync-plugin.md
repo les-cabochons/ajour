@@ -1,5 +1,7 @@
 # Time entries sync both ways through a time sync plugin
 
+Amended by [ADR 0021](0021-time-sync-checks-send-a-cursor-that-stays-in-the-windows-memory.md): a round can be a check that sends the plugin's cursor and lists nothing when nothing changed. Everything else here stands.
+
 A user's time stays on one machine until they commit the week, so their team sees it days late, and time they log in other tools, such as a timer on a work item, never reaches Ajour. A plugin with the time sync capability keeps a live copy of the user's time entries in another system, both ways, on the projects its project source manages. This amends [ADR 0016](0016-managed-projects-follow-their-source-and-each-budget-number-has-one-writer.md)'s "Ajour never writes to a project source" for time entries only: Ajour writes the user's own time entries there, and nothing else. Budgets keep one writer each: the other system's budgets count the timesheet tool's report only, and Ajour's Not counted yet line is unchanged.
 
 A time sync is not a commit. The timesheet tool still gets a week only through Commit and Submit week, a round never marks an entry committed, and a synced copy is not the committed copy. Because the user's time leaves Ajour, the capability's switch, Time entries, is the one switch that starts off, and turning it on lets the plugin refuse each connection first, such as one whose token can only read. Ajour names the other system only by its plugin. Notes never leave Ajour.

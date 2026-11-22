@@ -358,15 +358,18 @@ async function stubDescriptionSource(page: Page, source: DescriptionSource) {
     }
     return route.fulfill({ json: overview, headers: cors });
   });
-  await page.route(`${connection}/sync`, (route) =>
-    route.fulfill({
-      json: syncWithParentDescription({
-        text: source.synced,
-        ...(source.lost ? { lost: source.lost } : {}),
-      }),
-      headers: cors,
-    }),
-  );
+  await page.route(`${connection}/sync`, (route) => {
+    const json = syncWithParentDescription({
+      text: source.synced,
+      ...(source.lost ? { lost: source.lost } : {}),
+    });
+    // A sync answers with the connection as the overview lists it, and the
+    // app takes it over: opening the item page refreshes the item.
+    if (source.allowLossy) {
+      json.connection = { ...json.connection, allowLossyConversion: true };
+    }
+    return route.fulfill({ json, headers: cors });
+  });
   await page.route(`${connection}/description`, (route) =>
     route.fulfill({
       json: {

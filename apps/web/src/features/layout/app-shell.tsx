@@ -100,6 +100,7 @@ import {
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
 import { watchSettleEnds } from "@/features/backlog/backlog-source-writes";
+import { watchEstimateChanges } from "@/features/backlog/estimate-pushes";
 import { flushPendingWrites } from "@/features/layout/pending-writes-flush";
 import { BacklogAutoSyncScheduler } from "@/features/layout/backlog-auto-sync-scheduler";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
@@ -149,7 +150,7 @@ const SECTION_TITLES: Record<
 > = {
   time: "Time",
   backlog: "Backlog",
-  "pull-requests": "Pull requests",
+  deck: "Deck",
   projects: "Projects",
   settings: "Settings",
 };
@@ -180,8 +181,8 @@ function DefaultPageHeader({
     ? "Backlog"
     : pathname.startsWith("/projects")
       ? "Projects"
-      : pathname.startsWith("/pull-requests")
-        ? "Pull requests"
+      : pathname.startsWith("/deck")
+        ? "Deck"
         : "Ajour";
   return <PageTitle as="div">{title}</PageTitle>;
 }
@@ -219,7 +220,8 @@ function PageHeaderSlot({
 
 /**
  * Sends the settle writes and comments left from a session that quit
- * during their Undo window, once at launch (`flushPendingWrites`).
+ * during their Undo window, once at launch (`flushPendingWrites`), and each
+ * synced item's estimate change once its Undo window ends.
  */
 function PendingSourceWritesFlush() {
   useEffect(() => {
@@ -227,6 +229,7 @@ function PendingSourceWritesFlush() {
   }, []);
   // A settle that ends turns its waiting comments into drafts.
   useEffect(() => watchSettleEnds(), []);
+  useEffect(() => watchEstimateChanges(), []);
   return null;
 }
 
@@ -595,7 +598,7 @@ export function AppShell() {
   const narrowSettingsPage =
     isNarrowView && isSettingsActive
       ? [
-          ...getSettingsPages("wide", false, true, true),
+          ...getSettingsPages("wide", true, true),
           ...unlistedSettingsPages,
         ].find((page) => pathname.startsWith(page.to))
       : undefined;

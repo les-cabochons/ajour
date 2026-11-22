@@ -18,6 +18,8 @@ import type {
   declaredCommandSchema,
 } from "../../shared/plugin-api-4.ts";
 import type {
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogPluginSyncResultSchema,
   backlogReadDescriptionRequestSchema,
   backlogReadDescriptionResultSchema,
@@ -51,12 +53,14 @@ import type {
   projectSourceTaskSchema,
 } from "../../shared/project-source.ts";
 import type {
+  timeSyncAnswerSchema,
   timeSyncChangeResultSchema,
   timeSyncChangeSchema,
   timeSyncEntryValuesSchema,
   timeSyncRemoteEntrySchema,
   timeSyncRequestSchema,
   timeSyncResultSchema,
+  timeSyncUnchangedResultSchema,
 } from "../../shared/time-sync.ts";
 
 type Input<Schema extends { _input: unknown }> = Schema["_input"];
@@ -123,6 +127,13 @@ export type WriteDescriptionRequest = Output<
 export type WriteDescriptionResult = Input<
   typeof backlogWriteDescriptionResultSchema
 >;
+/** Needs `connector.itemTypes`. A request type without `sourceId` has no synced item yet. */
+export type DescribeItemTypesRequest = Output<
+  typeof backlogItemTypesRequestSchema
+>;
+export type DescribeItemTypesResult = Input<
+  typeof backlogItemTypesResultSchema
+>;
 
 /** Each code host operation's request and result, by the function name it exports. */
 export type CodeHostOperations = Operations<typeof codeHostOperations>;
@@ -168,7 +179,9 @@ export type ProjectSourceBudget = Input<typeof projectSourceBudgetSchema>;
 
 /**
  * What `syncTimeEntries` receives: the window to list, as local dates in the
- * user's time zone, and at most 20 changes to apply first, in order.
+ * user's time zone, at most 20 changes to apply first, in order, and the
+ * cursor of your last answer, when Ajour holds one. An older Ajour sends
+ * no cursor.
  */
 export type TimeSyncRequest = Output<typeof timeSyncRequestSchema>;
 /**
@@ -182,8 +195,22 @@ export type TimeSyncChange = Output<typeof timeSyncChangeSchema>;
  * its count started, its project and its task. Never a note.
  */
 export type TimeSyncEntryValues = Output<typeof timeSyncEntryValuesSchema>;
-/** What `syncTimeEntries` answers: one result per change, and the remote entries in the window. */
+/** What `syncTimeEntries` answers: the full answer, or unchanged to a check round. */
+export type TimeSyncAnswer = Input<typeof timeSyncAnswerSchema>;
+/**
+ * The full answer: one result per change, the remote entries in the window,
+ * and, when your system keeps a change marker, the cursor Ajour sends back
+ * in its next check round. Without a cursor, every round lists.
+ */
 export type TimeSyncResult = Input<typeof timeSyncResultSchema>;
+/**
+ * The answer to a check round, a request with a cursor and no changes, when
+ * nothing changed in your system since that cursor: the cursor for the next
+ * check, without listing. Ajour refuses it to any other request.
+ */
+export type TimeSyncUnchangedResult = Input<
+  typeof timeSyncUnchangedResultSchema
+>;
 /**
  * How one change went: `synced` with the entry as stored (none for a
  * delete), `refused` for good with a sentence the user reads, or `failed`
@@ -207,3 +234,7 @@ export type ListThreadsRequest =
   import("../../shared/handoffs.ts").ListThreadsRequest;
 export type ListThreadsResult =
   import("../../shared/handoffs.ts").ListThreadsResult;
+export type CloseThreadRequest =
+  import("../../shared/handoffs.ts").CloseThreadRequest;
+export type CloseThreadResult =
+  import("../../shared/handoffs.ts").CloseThreadResult;

@@ -8,6 +8,7 @@ import {
 import {
   durationHoursValueToMs,
   durationMsToHoursValue,
+  getTaskBudgetMs,
 } from "@/domain/projects/task-budget";
 import type { LocalProject } from "@/domain/local-state";
 import type {
@@ -243,7 +244,7 @@ export function buildProjectTransferRows({
         task: task.name,
         taskStatus: task.status,
         billable: task.billable === false ? "non_billable" : "billable",
-        budgetHours: durationMsToHoursValue(task.budgetMs) ?? "",
+        budgetHours: durationMsToHoursValue(getTaskBudgetMs(task)) ?? "",
         adjustmentHours: durationMsToHoursValue(task.adjustmentMs) ?? "",
       }));
     });
@@ -260,15 +261,18 @@ export function buildProjectDataShapeExportProjects({
       ...(project.code ? { code: project.code } : {}),
       color: project.color,
       status: project.status,
-      tasks: project.tasks.map((task) => ({
-        name: task.name,
-        status: task.status,
-        billable: task.billable ?? true,
-        ...(task.budgetMs === undefined ? {} : { budgetMs: task.budgetMs }),
-        ...(task.adjustmentMs === undefined
-          ? {}
-          : { adjustmentMs: task.adjustmentMs }),
-      })),
+      tasks: project.tasks.map((task) => {
+        const budgetMs = getTaskBudgetMs(task);
+        return {
+          name: task.name,
+          status: task.status,
+          billable: task.billable ?? true,
+          ...(budgetMs === undefined ? {} : { budgetMs }),
+          ...(task.adjustmentMs === undefined
+            ? {}
+            : { adjustmentMs: task.adjustmentMs }),
+        };
+      }),
     }));
 }
 

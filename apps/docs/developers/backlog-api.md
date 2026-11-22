@@ -21,6 +21,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
 | `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
 | `searchItemPeople`       | `capabilities.connector.comments.mentions`  | The user types `@` in a comment, and each name after it.                                                                               |
+| `describeItemTypes`      | `capabilities.connector.itemTypes`          | The user opens a saved connection's form, when it has a `typeOverrides` field.                                                         |
 
 ```ts
 export async function validateConnection(
@@ -57,6 +58,11 @@ export async function writeDescription(
   connection: PluginConnection,
   request: BacklogWriteDescriptionRequest,
 ): Promise<BacklogWriteDescriptionResult>;
+
+export async function describeItemTypes(
+  connection: PluginConnection,
+  request: BacklogItemTypesRequest,
+): Promise<BacklogItemTypesResult>;
 
 export async function listItemComments(
   connection: PluginConnection,
@@ -193,6 +199,22 @@ Declare `capabilities.connector.assign` when your tool lets the user reassign an
 The ids are yours, and Ajour only hands them back. Use the id your write takes, which may not be your mention id: Azure DevOps mentions use the identity id, while its assigned-to field takes the unique name.
 
 When a connection declares access choices, a typed `query` needs the one that lists `searchAssignees`, as people search does. Without it, Ajour lists the empty query's people and filters them by the typed name itself.
+
+## describeItemTypes
+
+Declare `capabilities.connector.itemTypes` to tell the connection form about your item types, for its [fields by item type](/developers/manifest#fields-by-item-type). Ajour calls it once each time the user opens the form of a saved connection, while its backlog capability is on. A new connection makes no call.
+
+The request lists the types the form shows: those of the connection's synced items, each with the `sourceId` of one of its items so you can find its project, then the types the saved value names, without one. Return, for each type you know:
+
+- `iconSvg`: the type's icon, as SVG markup of at most 20,000 characters. Ajour draws it at 16px, as an image, so scripts and links in it do nothing. Leave it out and the row shows none.
+- `fields`: the type's fields, each with its `name` and, if your tool has one, its `id`.
+- `suggestions`: by the id of a field the `typeOverrides` field replaces, the names of the type's fields to use instead, best first.
+
+When a type's chip is empty and the connection's field for it is not among the type's `fields`, by name or id in any case, the row says "Task has no Effort field.". With a suggestion, the chip shows your first one, dashed, and **Use it** fills the chip. Without one, the chip reads "none on this type". Nothing is saved until the user saves the form. Without `fields`, Ajour can't tell what a type lacks and says nothing. The chips also suggest the type's field names as the user types.
+
+Add the types the request didn't name, such as those no synced item has yet: **Add a type** offers them. Return at most 200 types.
+
+If you throw, the form works as it does without this function, and says under its heading that it couldn't read the item types. No access choice gates the call: it only reads.
 
 ## readDescription
 
@@ -434,6 +456,23 @@ export interface BacklogSettleStatesRequest {
 
 export interface BacklogSettleStatesResult {
   states: BacklogSettleState[];
+}
+
+export interface BacklogItemTypesRequest {
+  /** At most 200. `sourceId` is one synced item of the type. */
+  types: Array<{ name: string; sourceId?: string }>;
+}
+export interface BacklogItemType {
+  name: string;
+  /** At most 20,000 characters. */
+  iconSvg?: string;
+  fields?: Array<{ name: string; id?: string }>;
+  /** By overridden field id, the type's field names to propose, best first. */
+  suggestions?: Record<string, string[]>;
+}
+export interface BacklogItemTypesResult {
+  /** At most 200. */
+  types: BacklogItemType[];
 }
 
 /** Only the fields the settle changed. At least one is set. */

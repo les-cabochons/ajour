@@ -22,6 +22,7 @@ import {
   describeTimeSyncHoldReason,
   describeTimeSyncStatus,
   failTimeSyncRound,
+  listingRoundOf,
   normalizeTimeSyncs,
   planTimeSyncRound,
   reconcileTimeSyncs,
@@ -503,6 +504,151 @@ describe("applying a round", () => {
     ]);
   });
 
+  describe("a create whose answer never came", () => {
+    const fail = (round: TimeSyncPlan): TimeSyncResult => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "failed",
+        message: "The planner timed out.",
+      })),
+      entries: [],
+    });
+
+    it("sends a delete without a remote id once the entry is gone from Ajour, then forgets it", () => {
+      // The planner may have made e1 before its answer was lost.
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      const deleted = { ...failed, timesheetEntries: [] };
+
+      expect(plan(deleted).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+
+      const { state } = runRound(deleted);
+      expect(plan(state).request.changes).toEqual([]);
+    });
+
+    it("never takes the entry back while its delete is owed, though the planner lists it", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      const deleted = { ...failed, timesheetEntries: [] };
+
+      // The planner had made e1, and the delete times out too.
+      const { state } = runRound(deleted, (round) => ({
+        ...fail(round),
+        entries: [remoteEntry("remote-1", { clientRef: "e1", minutes: 90 })],
+      }));
+
+      expect(entriesOf(state)).toEqual([]);
+      expect(plan(state).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
+    it("never takes back an entry deleted while its create was on the way, though the planner lists it", () => {
+      const before = stateWith([entry("e1")]);
+      const round = plan(before);
+      const deleted = { ...before, timesheetEntries: [] };
+
+      // The planner made e1, but its answer was lost.
+      const { state } = applyTimeSyncRound(
+        deleted,
+        round,
+        {
+          ...fail(round),
+          entries: [remoteEntry("remote-1", { clientRef: "e1", minutes: 90 })],
+        },
+        CONTEXT,
+        factoriesAt(300),
+      );
+
+      expect(entriesOf(state)).toEqual([]);
+      expect(plan(state).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
+    it("sends the create again while the entry stays, and forgets it once that syncs", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      expect(plan(failed).request.changes).toEqual([
+        expect.objectContaining({ kind: "upsert", syncKey: "e1" }),
+      ]);
+
+      const { state } = runRound(failed);
+
+      expect(recordIn(state)).not.toHaveProperty("unconfirmed");
+      // Deleted now, it goes by its remote id, as any synced entry does.
+      expect(plan({ ...state, timesheetEntries: [] }).request.changes).toEqual([
+        expect.objectContaining({
+          kind: "delete",
+          syncKey: "e1",
+          remoteId: "remote-1",
+        }),
+      ]);
+    });
+
+    it("counts each create of a round that failed as a whole, since the plugin may have made it first", () => {
+      const before = stateWith([entry("e1")]);
+      const failed = {
+        ...before,
+        timeSyncs: failTimeSyncRound(
+          before,
+          CONNECTION,
+          "The planner is down.",
+          300,
+          { plan: plan(before), context: CONTEXT },
+        ),
+      };
+
+      expect(plan({ ...failed, timesheetEntries: [] }).request.changes).toEqual(
+        [{ kind: "delete", syncKey: "e1" }],
+      );
+    });
+
+    it("keeps the latest day a create went for, so a retry dated before the window doesn't forget it", () => {
+      const since = {
+        ...stateWith([entry("e1")]),
+        timeSyncs: startTimeSync({}, CONNECTION, "2026-09-07", 100),
+      };
+      const failed = runRound(since, fail).state;
+      // Moved to a day before the window, it fails again there.
+      const moved = runRound(
+        {
+          ...failed,
+          timesheetEntries: [entry("e1", { localDate: "2026-10-05" })],
+        },
+        fail,
+      ).state;
+
+      expect(plan({ ...moved, timesheetEntries: [] }).request.changes).toEqual([
+        { kind: "delete", syncKey: "e1" },
+      ]);
+    });
+
+    it("forgets a create once its day leaves the window, where the plugin no longer finds it", () => {
+      const failed = runRound(stateWith([entry("e1")]), fail).state;
+      // Five weeks later, the window starts on 2026-11-16, and the create
+      // fails again.
+      const later = { ...CONTEXT, today: "2026-12-17" };
+      const round = planTimeSyncRound(failed, CONNECTION, later, 400)!;
+      const { state } = applyTimeSyncRound(
+        failed,
+        round,
+        fail(round),
+        later,
+        factoriesAt(500),
+      );
+
+      expect(recordIn(state)).not.toHaveProperty("unconfirmed");
+      expect(
+        planTimeSyncRound(
+          { ...state, timesheetEntries: [] },
+          CONNECTION,
+          later,
+          600,
+        )!.request.changes,
+      ).toEqual([]);
+    });
+  });
+
   it("notes when it first saw a local change, until both sides agree again", () => {
     const synced = runRound(stateWith([entry("e1")])).state;
     const edited = {
@@ -680,6 +826,16 @@ describe("the running entry", () => {
     return { round, state: applied.state };
   }
 
+  /** A round whose listing goes first, at `now`, where the other system lists nothing. */
+  const listedFirst = (state: TimeSyncState, now: number) =>
+    applyTimeSyncRound(
+      state,
+      listingRoundOf(planTimeSyncRound(state, CONNECTION, CONTEXT, now)!)!,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(now),
+    ).state;
+
   it("sends the running entry as running, counting since its count would have started from zero", () => {
     expect(changesAt(running(), NOW + 10 * MINUTE)).toEqual([
       {
@@ -698,20 +854,38 @@ describe("the running entry", () => {
     ]);
   });
 
-  it("keeps a running entry local until it has run 30 seconds, and a Stop before then too", () => {
-    const state = running();
-
-    expect(changesAt(state, NOW + 29_999)).toEqual([]);
-    expect(changesAt(state, NOW + 30_000)).toEqual([
+  it("sends a running entry in the round right after Start, before it has run 30 seconds (#840)", () => {
+    expect(changesAt(running(), NOW + 2_000)).toEqual([
       expect.objectContaining({
+        kind: "upsert",
         syncKey: "t1",
-        values: expect.objectContaining({ running: true, minutes: 1 }),
+        values: expect.objectContaining({
+          running: true,
+          countingSince: at(0),
+          minutes: 1,
+        }),
       }),
     ]);
-    const stopped = act(state, NOW + 20_000, (app, factories) =>
+  });
+
+  it("deletes there a sent running entry saved under 30 seconds, and keeps an unsent one local", () => {
+    const sent = roundAt(running(), NOW + 2_000).state;
+    const stopped = act(sent, NOW + 20_000, (app, factories) =>
       saveTimer(app, "t1", factories),
     );
-    expect(changesAt(stopped, NOW + 22_000)).toEqual([]);
+    expect(changesAt(stopped, NOW + 22_000)).toEqual([
+      {
+        kind: "delete",
+        syncKey: "t1",
+        remoteId: "remote-1",
+        agreed: expect.objectContaining({ running: true }),
+      },
+    ]);
+
+    const neverSent = act(running(), NOW + 1_000, (app, factories) =>
+      saveTimer(app, "t1", factories),
+    );
+    expect(changesAt(neverSent, NOW + 3_000)).toEqual([]);
   });
 
   it("sends Stop as the same entry stopped: the saved entry keeps the running entry's key", () => {
@@ -759,8 +933,8 @@ describe("the running entry", () => {
       ),
     );
 
-    // Two seconds later: the second entry takes over from the first at once,
-    // and stays there in the next round, though it hasn't run 30 seconds.
+    // Two seconds later: the first entry goes stopped and the second running,
+    // and the second stays there in the next round.
     const { round, state } = roundAt(switched, NOW + 45 * MINUTE + 2_000);
     expect(changesAt(state, NOW + 45 * MINUTE + 4_000)).toEqual([]);
     expect(round.request.changes).toEqual([
@@ -817,6 +991,182 @@ describe("the running entry", () => {
         }),
       },
     ]);
+  });
+
+  it("keeps an entry a refused Continue dropped there, and sends it again once stopped or discarded", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    // Continue made the planner delete e1 there, then it refused the start.
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const refused = applyTimeSyncRound(
+      continued,
+      round,
+      {
+        results: round.request.changes.map((change) => ({
+          syncKey: change.syncKey,
+          status: "refused" as const,
+          message: "The planner refuses this start.",
+        })),
+        entries: [],
+      },
+      CONTEXT,
+      factoriesAt(NOW + 2 * MINUTE),
+    ).state;
+    const stopped = listedFirst(
+      act(refused, NOW + 30 * MINUTE, (app, factories) =>
+        saveTimer(app, app.timers[0]!._id, factories),
+      ),
+      NOW + 31 * MINUTE,
+    );
+    expect(entriesOf(stopped)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 119 * MINUTE }),
+    ]);
+    expect(changesAt(stopped, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 119 }),
+      }),
+    ]);
+
+    // Discard puts back the saved time both sides agreed on: it goes again.
+    const discarded = listedFirst(
+      act(refused, NOW + 30 * MINUTE, (app) =>
+        cancelTimer(app, app.timers[0]!._id),
+      ),
+      NOW + 31 * MINUTE,
+    );
+    expect(entriesOf(discarded)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 90 * MINUTE }),
+    ]);
+    expect(changesAt(discarded, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 90 }),
+      }),
+    ]);
+  });
+
+  it("keeps an entry a Continue may have dropped there when its whole round failed, and sends it again once discarded", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    // The planner may have deleted e1 there before the round failed.
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const failed = {
+      ...continued,
+      timeSyncs: failTimeSyncRound(
+        continued,
+        CONNECTION,
+        "The planner is down.",
+        NOW + 2 * MINUTE,
+        { plan: round, context: CONTEXT },
+      ),
+    };
+
+    const discarded = listedFirst(
+      act(failed, NOW + 30 * MINUTE, (app) =>
+        cancelTimer(app, app.timers[0]!._id),
+      ),
+      NOW + 31 * MINUTE,
+    );
+
+    expect(entriesOf(discarded)).toEqual([
+      expect.objectContaining({ _id: "e1", durationMs: 90 * MINUTE }),
+    ]);
+    expect(changesAt(discarded, NOW + 32 * MINUTE)).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        syncKey: "e1",
+        values: expect.objectContaining({ running: false, minutes: 90 }),
+      }),
+    ]);
+  });
+
+  it("reads a delete there again once the entry a failed Continue may have dropped is listed after all", () => {
+    const saved = roundAt(stateWith([entry("e1")]), NOW).state;
+    const copy = recordIn(saved).copies.e1!;
+    const continued = act(saved, NOW + MINUTE, (app, factories) =>
+      continueTimesheetEntry(app, "e1", TODAY, factories),
+    );
+    const round = planTimeSyncRound(
+      continued,
+      CONNECTION,
+      CONTEXT,
+      NOW + 2 * MINUTE,
+    )!;
+    const failed = {
+      ...continued,
+      timeSyncs: failTimeSyncRound(
+        continued,
+        CONNECTION,
+        "The planner is down.",
+        NOW + 2 * MINUTE,
+        { plan: round, context: CONTEXT },
+      ),
+    };
+    // The retry is refused, and the planner still lists e1 as it was.
+    const retry = planTimeSyncRound(
+      failed,
+      CONNECTION,
+      CONTEXT,
+      NOW + 3 * MINUTE,
+    )!;
+    const refused = applyTimeSyncRound(
+      failed,
+      retry,
+      {
+        results: retry.request.changes.map((change) => ({
+          syncKey: change.syncKey,
+          status: "refused" as const,
+          message: "The planner refuses this start.",
+        })),
+        entries: [
+          {
+            remoteId: copy.remoteId,
+            clientRef: "e1",
+            ...copy.agreed,
+            updatedAt: copy.remoteUpdatedAt,
+          },
+        ],
+      },
+      CONTEXT,
+      factoriesAt(NOW + 3 * MINUTE),
+    ).state;
+    const discarded = act(refused, NOW + 30 * MINUTE, (app) =>
+      cancelTimer(app, app.timers[0]!._id),
+    );
+
+    // Someone deletes it there.
+    const poll = planTimeSyncRound(
+      discarded,
+      CONNECTION,
+      CONTEXT,
+      NOW + 31 * MINUTE,
+    )!;
+    expect(poll.request.changes).toEqual([]);
+    const { state } = applyTimeSyncRound(
+      discarded,
+      poll,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(NOW + 31 * MINUTE),
+    );
+    expect(entriesOf(state)).toEqual([]);
   });
 
   it("sends Discard as a delete, and on a continued entry puts back its saved time, stopped", () => {
@@ -978,6 +1328,27 @@ describe("taking the other system's changes", () => {
     expect(describeTimeSyncStatus(recordIn(state))?.summary).toBe(
       "Time entries · 1 received",
     );
+  });
+
+  it("adds an entry another Ajour sent, since its client reference is none of this Ajour's sync keys (#853)", () => {
+    const { state, result } = runRound(
+      stateWith([]),
+      listing(
+        remoteEntry("other", {
+          clientRef: "timesheet_entry_from-the-other-machine",
+        }),
+      ),
+    );
+
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({
+        taskId: "login",
+        durationMs: 45 * MINUTE,
+        timeSyncRemoteId: "other",
+      }),
+    ]);
+    expect(result).toMatchObject({ received: 1, held: 0 });
+    expect(plan(state).request.changes).toEqual([]);
   });
 
   it("keeps the remote id of an entry it took, so Time entries off and on updates that entry instead of adding one", () => {
@@ -1288,6 +1659,118 @@ describe("taking the other system's changes", () => {
     });
   });
 
+  describe("when the later change there moves the entry where Ajour holds it", () => {
+    /** e1 moved there at 15:00 to a project the connection doesn't manage. */
+    const moved = () =>
+      remoteE1({
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        taskRemoteId: undefined,
+      });
+
+    /** e1 synced, edited to 2:00 in Ajour first seen at 14:30, then moved there. */
+    function heldOverEdit() {
+      const synced = runRound(stateWith([entry("e1")])).state;
+      const record = recordIn(synced);
+      const edited: TimeSyncState = {
+        ...synced,
+        timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+        timeSyncs: {
+          [CONNECTION.connectionId]: {
+            ...record,
+            copies: {
+              e1: {
+                ...record.copies.e1!,
+                changedAt: Date.parse("2026-11-12T14:30:00.000Z"),
+              },
+            },
+          },
+        },
+      };
+      const round = listingRoundOf(plan(edited))!;
+      return applyTimeSyncRound(
+        edited,
+        round,
+        { results: [], entries: [moved()] },
+        CONTEXT,
+        factoriesAt(Date.parse("2026-11-12T17:00:00.000Z")),
+      );
+    }
+
+    it("holds the move, keeps the entry, and doesn't send Ajour's older change over it", () => {
+      const { state, result } = heldOverEdit();
+
+      expect(entriesOf(state)).toEqual([
+        expect.objectContaining({
+          projectId: "acme",
+          durationMs: 2 * 60 * MINUTE,
+        }),
+      ]);
+      expect(recordIn(state).held).toEqual([
+        expect.objectContaining({
+          remoteId: "remote-1",
+          reason: "unmanagedProject",
+        }),
+      ]);
+      expect(result).toMatchObject({ received: 0, held: 1 });
+      expect(plan(state).request.changes).toEqual([]);
+    });
+
+    it("sends Ajour's change once the entry there moves back, so nothing is held any more", () => {
+      const { state } = heldOverEdit();
+      // At 18:00 someone moves it back there, to the values both sides agreed on.
+      const at = Date.parse("2026-11-12T18:30:00.000Z");
+      const poll = planTimeSyncRound(state, CONNECTION, CONTEXT, at)!;
+      const { state: back } = applyTimeSyncRound(
+        state,
+        poll,
+        {
+          results: [],
+          entries: [remoteE1({ updatedAt: "2026-11-12T18:00:00.000Z" })],
+        },
+        CONTEXT,
+        factoriesAt(at),
+      );
+
+      expect(recordIn(back).held).toEqual([]);
+      expect(plan(back).request.changes).toEqual([
+        expect.objectContaining({
+          syncKey: "e1",
+          values: expect.objectContaining({ minutes: 120 }),
+        }),
+      ]);
+    });
+
+    it("sends a change made in Ajour after the hold, which wins over the move there", () => {
+      const changedAgain = {
+        ...heldOverEdit().state,
+        timesheetEntries: [entry("e1", { durationMs: 3 * 60 * MINUTE })],
+      };
+      const at = Date.parse("2026-11-12T17:30:00.000Z");
+      const sends = [
+        expect.objectContaining({
+          syncKey: "e1",
+          values: expect.objectContaining({ minutes: 180 }),
+        }),
+      ];
+      const round = planTimeSyncRound(changedAgain, CONNECTION, CONTEXT, at)!;
+      expect(round.request.changes).toEqual(sends);
+
+      // Its listing goes first, and the move there no longer wins.
+      const { state } = applyTimeSyncRound(
+        changedAgain,
+        listingRoundOf(round)!,
+        { results: [], entries: [moved()] },
+        CONTEXT,
+        factoriesAt(at),
+      );
+
+      expect(recordIn(state).held).toEqual([]);
+      expect(recordIn(state).copies.e1).not.toHaveProperty("heldBack");
+      expect(plan(state).request.changes).toEqual(sends);
+    });
+  });
+
   it("dates a waiting change from the round that first saw it, so a later edit there wins", () => {
     const keys = Array.from(
       { length: 21 },
@@ -1467,6 +1950,41 @@ describe("taking the other system's changes", () => {
 
     expect(entriesOf(state).map((item) => item._id)).toEqual(["e1"]);
     expect(Object.keys(recordIn(state).copies)).toEqual(["e1"]);
+  });
+
+  it("takes a delete there once the entry changed since its refusal, instead of creating it again", () => {
+    const synced = runRound(stateWith([entry("e1")])).state;
+    const tooLong = {
+      ...synced,
+      timesheetEntries: [entry("e1", { durationMs: 25 * 60 * MINUTE })],
+    };
+    const refused = runRound(tooLong, (round) => ({
+      results: round.request.changes.map((change) => ({
+        syncKey: change.syncKey,
+        status: "refused" as const,
+        message: "The planner refuses an entry over 24 hours.",
+      })),
+      entries: [remoteE1({ updatedAt: "2026-11-12T14:00:00.000Z" })],
+    })).state;
+    // The user corrects it in Ajour, and someone deletes it there before the
+    // next round, whose listing goes first.
+    const corrected = {
+      ...refused,
+      timesheetEntries: [entry("e1", { durationMs: 2 * 60 * MINUTE })],
+    };
+    const round = listingRoundOf(plan(corrected))!;
+
+    const { state } = applyTimeSyncRound(
+      corrected,
+      round,
+      { results: [], entries: [] },
+      CONTEXT,
+      factoriesAt(300),
+    );
+
+    expect(entriesOf(state)).toEqual([]);
+    expect(recordIn(state).copies).toEqual({});
+    expect(plan(state).request.changes).toEqual([]);
   });
 
   it("keeps Ajour's values on the first round: an entry it made is its own, not a new one", () => {
@@ -2063,27 +2581,18 @@ describe("a running entry from the other system", () => {
     remote.start(0);
     const later = running(t1({ startedAt: NOW + 10 * MINUTE }));
 
-    // Ten seconds in, Ajour's entry hasn't gone there yet.
-    const first = roundAt(
+    // Ten seconds in, Ajour's entry goes there (#840): the other system stops
+    // its own, and Ajour takes that one as a saved entry in the same round.
+    const { state, result } = roundAt(
       later,
       NOW + 10 * MINUTE + 10_000,
       remote.answer(NOW + 10 * MINUTE + 10_000),
     );
-    expect(first.state.timers).toEqual(later.timers);
-    expect(entriesOf(first.state)).toEqual([]);
-    expect(first.result).toMatchObject({ received: 0, held: 0 });
-
-    // Once it goes, the other system stops its own, and Ajour takes that one
-    // as a saved entry.
-    const second = roundAt(
-      first.state,
-      NOW + 10 * MINUTE + 40_000,
-      remote.answer(NOW + 10 * MINUTE + 40_000),
-    );
-    expect(second.state.timers).toEqual(later.timers);
-    expect(entriesOf(second.state)).toEqual([
-      expect.objectContaining({ taskId: "ad-hoc", durationMs: 11 * MINUTE }),
+    expect(state.timers).toEqual(later.timers);
+    expect(entriesOf(state)).toEqual([
+      expect.objectContaining({ taskId: "ad-hoc", durationMs: 10 * MINUTE }),
     ]);
+    expect(result).toMatchObject({ received: 1, held: 0 });
     expect(remote.running()).toEqual([
       expect.objectContaining({ clientRef: "t1" }),
     ]);
@@ -2140,9 +2649,120 @@ describe("a running entry from the other system", () => {
     expect(changesAt(state, NOW + 27 * MINUTE)).toEqual([]);
   });
 
+  /*
+   * Another Ajour on the same planner, such as one on the user's other
+   * machine (#853). It sends its own sync keys as client references, so its
+   * entries are logged elsewhere for this Ajour, and the planner keeps both
+   * in line.
+   */
+  describe("with another Ajour on the same planner", () => {
+    /** Saves the running entry `timerId` at `now`, as Stop does. */
+    function stop(state: TimeSyncState, timerId: string, now: number) {
+      const next = saveTimer(
+        { ...state, workItems: [] } as unknown as LocalAppState,
+        timerId,
+        { createId: (prefix) => `${prefix}-stopped`, now: () => now },
+      );
+      return {
+        ...state,
+        timers: next.timers,
+        timesheetEntries: next.timesheetEntries,
+      };
+    }
+
+    it("runs the timer the other Ajour started, and stops it when that Ajour stops it", () => {
+      const remote = oneRunningEntryRemote();
+      // The other Ajour starts t1 at 15:00, and its round sends it.
+      const other = roundAt(
+        running(),
+        NOW + 2_000,
+        remote.answer(NOW + 2_000),
+      ).state;
+
+      const here = roundAt(
+        stateWith([]),
+        NOW + 5_000,
+        remote.answer(NOW + 5_000),
+      ).state;
+      expect(here.timers).toEqual([
+        expect.objectContaining({
+          startedAt: NOW,
+          taskId: "login",
+          timeSyncRemoteId: "remote-1",
+        }),
+      ]);
+      expect(changesAt(here, NOW + 7_000)).toEqual([]);
+
+      // The other Ajour stops it at 15:25.
+      roundAt(
+        stop(other, "t1", NOW + 25 * MINUTE),
+        NOW + 25 * MINUTE + 2_000,
+        remote.answer(NOW + 25 * MINUTE + 2_000),
+      );
+
+      const after = roundAt(
+        here,
+        NOW + 25 * MINUTE + 5_000,
+        remote.answer(NOW + 25 * MINUTE + 5_000),
+      ).state;
+      expect(after.timers).toEqual([]);
+      expect(entriesOf(after)).toEqual([
+        expect.objectContaining({ taskId: "login", durationMs: 25 * MINUTE }),
+      ]);
+      expect(changesAt(after, NOW + 26 * MINUTE)).toEqual([]);
+    });
+
+    it("leaves both Ajours with the same entries and running timer when this one starts a timer", () => {
+      const remote = oneRunningEntryRemote();
+      const other = roundAt(
+        running(),
+        NOW + 2_000,
+        remote.answer(NOW + 2_000),
+      ).state;
+
+      // This Ajour starts t2 on Ad hoc support at 15:10: the planner stops t1.
+      const t2 = t1({
+        _id: "t2",
+        taskId: "ad-hoc",
+        startedAt: NOW + 10 * MINUTE,
+        note: undefined,
+      });
+      const here = roundAt(
+        { ...stateWith([]), timers: [t2] },
+        NOW + 10 * MINUTE + 2_000,
+        remote.answer(NOW + 10 * MINUTE + 2_000),
+      ).state;
+      const there = roundAt(
+        other,
+        NOW + 10 * MINUTE + 5_000,
+        remote.answer(NOW + 10 * MINUTE + 5_000),
+      ).state;
+
+      for (const state of [here, there]) {
+        expect(entriesOf(state)).toEqual([
+          expect.objectContaining({
+            taskId: "login",
+            durationMs: 10 * MINUTE,
+          }),
+        ]);
+        expect(state.timers).toEqual([
+          expect.objectContaining({
+            taskId: "ad-hoc",
+            startedAt: NOW + 10 * MINUTE,
+          }),
+        ]);
+      }
+      expect(changesAt(here, NOW + 11 * MINUTE)).toEqual([]);
+      expect(changesAt(there, NOW + 11 * MINUTE)).toEqual([]);
+    });
+  });
+
   describe("when Ajour changed its running entry too", () => {
     /** t1 moved to Ad hoc support in Ajour, first seen at `changedAt`, and stopped there at 15:25. */
-    function stoppedThereAfterEdit(changedAt: number) {
+    function stoppedThereAfterEdit(
+      changedAt: number,
+      stopped: TimeSyncRemoteEntry = t1StoppedThere(),
+    ) {
       const synced = sent();
       const record = recordIn(synced);
       const edited: TimeSyncState = {
@@ -2165,7 +2785,7 @@ describe("a running entry from the other system", () => {
       return applyTimeSyncRound(
         edited,
         round,
-        listing(t1StoppedThere())(round),
+        listing(stopped)(round),
         CONTEXT,
         factoriesFor(NOW + 31 * MINUTE),
       );
@@ -2185,6 +2805,24 @@ describe("a running entry from the other system", () => {
           }),
         }),
       ]);
+    });
+
+    it("keeps it running without sending Ajour's older change when the later stop there moved it to a project Ajour doesn't manage", () => {
+      const { state } = stoppedThereAfterEdit(NOW + 20 * MINUTE, {
+        ...t1StoppedThere(),
+        projectRemoteId: "GLOBEX-INT",
+        taskName: "Design review",
+        taskRemoteId: undefined,
+      });
+
+      expect(state.timers).toEqual([t1({ taskId: "ad-hoc" })]);
+      expect(recordIn(state).held).toEqual([
+        expect.objectContaining({
+          remoteId: "remote-1",
+          reason: "unmanagedProject",
+        }),
+      ]);
+      expect(changesAt(state, NOW + 32 * MINUTE)).toEqual([]);
     });
 
     it("stops it with the other system's values when the stop there is the later one", () => {
@@ -2509,6 +3147,31 @@ describe("reading stored time syncs back", () => {
       stored,
     );
     expect(normalizeTimeSyncs(undefined)).toEqual({});
+
+    // A change Ajour holds back stays held back after a restart (#835), and
+    // an entry dropped there is still sent again (#834).
+    const record = stored.c1!;
+    const heldBack = {
+      c1: {
+        ...record,
+        copies: {
+          e1: {
+            ...record.copies.e1!,
+            changedAt: 250,
+            heldBack: { ...record.copies.e1!.agreed, minutes: 120 },
+            droppedThere: true as const,
+          },
+        },
+      },
+    };
+    expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(heldBack)))).toEqual(
+      heldBack,
+    );
+    // So does a create whose answer never came (#838).
+    const unconfirmed = { c1: { ...record, unconfirmed: { e2: TODAY } } };
+    expect(normalizeTimeSyncs(JSON.parse(JSON.stringify(unconfirmed)))).toEqual(
+      unconfirmed,
+    );
 
     const broken = structuredClone(stored) as Record<string, unknown>;
     (broken.c1 as LocalTimeSync).copies.e2 = {

@@ -3,6 +3,7 @@ import {
   commitProjectTaskDraft,
   createProjectTaskEditorFields,
   evaluateProjectTaskEditor,
+  isBudgetChangedFromSource,
 } from "./project-task-editor";
 
 const HOUR = 3_600_000;
@@ -286,5 +287,34 @@ describe("project task editor", () => {
         error: "Enter hours, such as 1:30, 1.5 or 1h30",
       });
     });
+  });
+});
+
+describe("a budget its project source sets", () => {
+  it("seeds the budget the task reads, the user's override included", () => {
+    expect(
+      createProjectTaskEditorFields({
+        name: "Login",
+        budgetMs: 8 * HOUR,
+        budgetOverrideMs: 12 * HOUR,
+      }).budget,
+    ).toBe("12:00");
+    // An override of 0 is no budget.
+    expect(
+      createProjectTaskEditorFields({
+        name: "Login",
+        budgetMs: 8 * HOUR,
+        budgetOverrideMs: 0,
+      }).budget,
+    ).toBe("");
+  });
+
+  it("tells a typed budget apart from the source's, to the minute", () => {
+    expect(isBudgetChangedFromSource("8", 8 * HOUR)).toBe(false);
+    expect(isBudgetChangedFromSource("8:00", 8 * HOUR + 20_000)).toBe(false);
+    expect(isBudgetChangedFromSource("12", 8 * HOUR)).toBe(true);
+    expect(isBudgetChangedFromSource("", 8 * HOUR)).toBe(true);
+    expect(isBudgetChangedFromSource("", undefined)).toBe(false);
+    expect(isBudgetChangedFromSource("abc", 8 * HOUR)).toBe(true);
   });
 });

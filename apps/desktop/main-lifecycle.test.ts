@@ -106,6 +106,22 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toContain("isAllowedReleaseUrl(releaseUrl)");
   });
 
+  it("refreshes the plugin catalog when Ajour checks for its own update", async () => {
+    const source = await readFile(
+      new URL("./electron/main.cjs", import.meta.url),
+      "utf8",
+    );
+    const handlerStart = source.search(ipcHandler("ajour:check-for-updates"));
+    const handlerEnd = source.indexOf("\n});", handlerStart);
+    const handler = source.slice(handlerStart, handlerEnd);
+
+    expect(handlerStart).toBeGreaterThan(-1);
+    // The plugins' versions come from the catalog. The refresh is not
+    // awaited, so a slow plugin source never holds up Ajour's own check.
+    expect(handler).toContain('void refreshPluginCatalog("update_check")');
+    expect(handler).toContain("automaticUpdateController.checkNow(track");
+  });
+
   it("refreshes the parent-owned plugin catalog on a configurable interval", async () => {
     const [mainSource, preloadSource] = await Promise.all([
       readFile(new URL("./electron/main.cjs", import.meta.url), "utf8"),

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { pluginApi4ManifestSchema } from "../../shared/plugin-api-4.ts";
 import { manifest } from "./sample-plugin/plugin.ts";
+import { parseTypeOverrides, typeOverrideFor } from "../index.ts";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -75,5 +76,15 @@ describe("the SDK's contract", () => {
 
   it("types a manifest Ajour's schema accepts", () => {
     expect(pluginApi4ManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  it("reads a typeOverrides value as Ajour stores it", () => {
+    const overrides = parseTypeOverrides(
+      '{"Task":{"estimateField":"Original Estimate"}}',
+    );
+
+    expect(typeOverrideFor(overrides, "task", "estimateField")).toBe(
+      "Original Estimate",
+    );
   });
 });

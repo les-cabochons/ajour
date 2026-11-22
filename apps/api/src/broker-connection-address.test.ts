@@ -73,3 +73,14 @@ it.each([
     connectionBaseAddress(manifest(allow), connection(url, onPremises)),
   ).toThrow();
 });
+
+it("names the On-premises setting for an http address, only on a plugin that allows it", () => {
+  const http = connection("http://127.0.0.1:4096", false);
+
+  expect(() => connectionBaseAddress(manifest(true), http)).toThrow(
+    "The connection's address must start with https://. To use http://, turn on On-premises in the connection's settings.",
+  );
+  expect(() => connectionBaseAddress(manifest(false), http)).toThrow(
+    /^The connection's address must start with https:\/\/\.$/,
+  );
+});

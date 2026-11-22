@@ -62,10 +62,10 @@ const BacklogPage = lazy(
     return { default: module.BacklogPage };
   }),
 );
-const PullRequestsPage = lazy(
+const DeckPage = lazy(
   trackPageChunk(async () => {
-    const module = await import("@/features/pull-requests/pull-requests-page");
-    return { default: module.PullRequestsPage };
+    const module = await import("@/features/deck/deck-page");
+    return { default: module.DeckPage };
   }),
 );
 const BacklogItemPage = lazy(
@@ -178,21 +178,21 @@ const projectsRoute = createRoute({
   ),
 });
 
-const pullRequestsRoute = createRoute({
+const deckRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/pull-requests",
+  path: "/deck",
   component: () => (
     <RouteSuspense>
-      <PullRequestsPage />
+      <DeckPage />
     </RouteSuspense>
   ),
 });
-const pullRequestDetailRoute = createRoute({
+const deckItemRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/pull-requests/$itemId",
+  path: "/deck/$itemId",
   component: () => (
     <RouteSuspense>
-      <PullRequestsPage itemId={pullRequestDetailRoute.useParams().itemId} />
+      <DeckPage itemId={deckItemRoute.useParams().itemId} />
     </RouteSuspense>
   ),
 });
@@ -463,8 +463,8 @@ const routeTree = rootRoute.addChildren([
     commitRoute,
     backlogRoute,
     backlogItemRoute,
-    pullRequestsRoute,
-    pullRequestDetailRoute,
+    deckRoute,
+    deckItemRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,

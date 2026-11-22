@@ -4,20 +4,13 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiCornerDownRightLine,
   RiAddLine as AddIcon,
-  RiArchiveLine as ArchiveIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
-  RiExternalLinkLine as ExternalIcon,
   RiPlayFill as PlayIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { PageHeader, type PageBreadcrumbItem } from "@/components/page-header";
-import {
-  PropertyAction,
-  PropertyActions,
-  PropertyRow,
-} from "@/components/property-list";
 import { ObjectActionItems } from "@/components/object-actions-menu";
 import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
@@ -48,6 +41,7 @@ import {
   InlineTitle,
   DescriptionSection,
 } from "@/features/backlog/backlog-item-inline-edit";
+import { BacklogItemLifecycleLine } from "@/features/backlog/backlog-item-lifecycle-line";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
 import { ESTIMATE_FIGURES } from "@/features/backlog/backlog-estimates";
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
@@ -63,7 +57,6 @@ import {
   resolveWorkItemIcon,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
-import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { pickNextItemId } from "@/domain/backlog/next-item";
 import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
@@ -85,6 +78,7 @@ import {
 } from "@/features/backlog/backlog-item-side-cards";
 import { HandoffButton } from "@/features/backlog/handoff-button";
 import { useItemHandoffs } from "@/features/backlog/use-item-handoffs";
+import { useBacklogItemRefreshOnOpen } from "@/features/backlog/use-backlog-refresh-on-open";
 import { getHandoffItemKeys } from "@/domain/handoffs/handoffs";
 import {
   updateBacklogItemCards,
@@ -95,9 +89,9 @@ import {
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
  * docs/agents/ux-spec.md. The top bar holds the breadcrumb and the item's
- * actions; the page holds the back link, title, estimate figures and progress,
- * then the description beside the properties card and the folding Subitems
- * and Time entries cards.
+ * actions; the page holds the back link, the title with its type and parent,
+ * the estimate figures and progress, then the description beside the
+ * properties card and the folding Subitems and Time entries cards.
  * Every field edits in place, so the page has no editor panel and no "…" menu.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
@@ -165,6 +159,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     setAddingSubitem(false);
     focusRef.current?.focus({ preventScroll: true });
   }, [itemId]);
+  // Each visit syncs a synced item both ways, so the page shows the
+  // source's values and the item's estimate changes go out.
+  useBacklogItemRefreshOnOpen(itemId);
 
   // The sidebar and the command palette ask for Edit and Add subitem with
   // `?action=`. Only enabled actions of the item run: Edit renames the item,
@@ -247,8 +244,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             ? "Stop the clock on this item"
             : "Start the clock on this item now",
     }));
-  // Listed only for synced items: Archive leaves the source as it is.
-  const archiveAction = actions.find((action) => action.id === "archive");
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
     ? state.workItems.find((candidate) =>
@@ -275,10 +270,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       : { label: "Backlog", to: "/backlog" },
     { label: item.title },
   ];
-  const reference =
-    item.source === "azure_devops"
-      ? parseWorkItemReference(item.sourceId)
-      : item.sourceId;
   const loggedMs = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
   const progress = getCompletedEstimateShare(item);
   const notice = getVisitNotice(item, now, returnNotice);
@@ -346,19 +337,29 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     );
   }
 
+  // The header keeps the ways to work on the item. The moves that change
+  // its lifecycle head the properties card (`BacklogItemLifecycleLine`,
+  // #827). In the narrow view that card sits under the description and the
+  // comments, so the header keeps them too, under the title.
   const headerButtons =
     item.status === "archived" ? (
-      <Button variant="outline" onClick={() => runAction("restore")}>
-        Restore
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("restore")}>
+          Restore
+        </Button>
+      </span>
     ) : item.status === "settled" ? (
-      <Button variant="outline" onClick={() => runAction("unsettle")}>
-        <UnsettleIcon data-icon="inline-start" /> Unsettle
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("unsettle")}>
+          <UnsettleIcon data-icon="inline-start" /> Unsettle
+        </Button>
+      </span>
     ) : isSnoozed ? (
-      <Button variant="outline" onClick={() => runAction("unsnooze")}>
-        Unsnooze
-      </Button>
+      <span className="hidden narrow:contents">
+        <Button variant="outline" onClick={() => runAction("unsnooze")}>
+          Unsnooze
+        </Button>
+      </span>
     ) : (
       <>
         {/* Start entry (Stop while the item's entry runs) is split: its arrow
@@ -398,17 +399,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         </SplitButton>
         {/* Absent without a handoff tool, as in the web build. */}
         <HandoffButton item={item} />
-        <Button variant="ghost" onClick={() => runAction("snooze")}>
-          <SnoozeIcon data-icon="inline-start" /> Snooze
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={(event) =>
-            runAction("settle", { askToSettle: event.shiftKey })
-          }
-        >
-          <SettleIcon data-icon="inline-start" /> Settle
-        </Button>
+        <span className="hidden narrow:contents">
+          <Button variant="ghost" onClick={() => runAction("snooze")}>
+            <SnoozeIcon data-icon="inline-start" /> Snooze
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={(event) =>
+              runAction("settle", { askToSettle: event.shiftKey })
+            }
+          >
+            <SettleIcon data-icon="inline-start" /> Settle
+          </Button>
+        </span>
       </>
     );
 
@@ -449,38 +452,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               />
               <div className="backlog-item-page-meta">
                 {/* Plain text: the breadcrumb and the properties already name
-                    the project, and a chip here only tagged (council round 9). */}
+                    the project, and a chip here only tagged (council round 9).
+                    The source state, project and link sit in the properties'
+                    source section. */}
                 {item.sourceWorkItemType ? (
-                  <>
-                    <span>{item.sourceWorkItemType}</span>
-                    <span aria-hidden className="text-[var(--text-tertiary)]">
-                      ·
-                    </span>
-                  </>
-                ) : null}
-                {reference ? (
-                  item.sourceUrl ? (
-                    <a
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1"
-                    >
-                      {item.sourceStatusLabel
-                        ? `${item.sourceStatusLabel} in ${item.sourceProjectName ?? item.sourceConnectionLabel ?? "the source"}`
-                        : "Open in source"}
-                      <ExternalIcon className="size-3" />
-                    </a>
-                  ) : (
-                    <span>
-                      {[item.sourceProjectName, item.sourceStatusLabel]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  )
-                ) : (
+                  <span>{item.sourceWorkItemType}</span>
+                ) : item.source === "manual" ? (
                   <span>Manual item</span>
-                )}
+                ) : null}
                 {parent ? (
                   <Link
                     to="/backlog/$itemId"
@@ -592,17 +571,21 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 className="backlog-item-card backlog-item-properties-card"
                 aria-label="Properties"
               >
+                {/* The item's lifecycle and the moves that change it, then
+                    the properties, which leave the Lifecycle row to it. */}
+                <BacklogItemLifecycleLine
+                  item={item}
+                  isSnoozed={isSnoozed}
+                  actions={actions}
+                  onAction={runAction}
+                />
                 {/* A synced item's source rows and its refresh are the
                     properties' source section (#653). */}
-                <BacklogItemProperties item={item} state={state} />
-                {archiveAction && !archiveAction.disabledReason ? (
-                  <PropertyActions>
-                    <PropertyAction onClick={() => runAction("archive")}>
-                      <ArchiveIcon aria-hidden="true" />
-                      {archiveAction.label}
-                    </PropertyAction>
-                  </PropertyActions>
-                ) : null}
+                <BacklogItemProperties
+                  item={item}
+                  state={state}
+                  lifecycleRow={false}
+                />
               </section>
               {!isSubitem ? (
                 <SubitemsCard
@@ -632,6 +615,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               {handoffs.shown ? (
                 <HandoffsCard
                   itemId={itemId}
+                  item={item}
                   handoffs={handoffs.records}
                   tools={handoffs.tools}
                   offers={handoffs.offers}

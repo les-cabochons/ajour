@@ -80,7 +80,7 @@ export function useWorkItemIconData(
     () => ({
       projectsById,
       pluginIconsBySource,
-      pluginIconCurrentColor: resolvedTheme === "dark" ? "#fafafa" : "#171717",
+      pluginIconCurrentColor: pluginIconColor(resolvedTheme),
       backlogTaskIconModesByConnectionId,
     }),
     [
@@ -89,6 +89,32 @@ export function useWorkItemIconData(
       resolvedTheme,
       backlogTaskIconModesByConnectionId,
     ],
+  );
+}
+
+/** The text color a plugin icon drawn in `currentColor` takes. */
+function pluginIconColor(theme: "dark" | "light") {
+  return theme === "dark" ? "#fafafa" : "#171717";
+}
+
+/** A plugin's own icon, such as its logo beside a synced item's number. */
+export function PluginIcon({
+  svg,
+  className,
+}: {
+  svg: string;
+  className?: string;
+}) {
+  const resolvedTheme = useResolvedTheme();
+  return (
+    <WorkItemIcon
+      icon={{
+        kind: "plugin",
+        svg,
+        currentColor: pluginIconColor(resolvedTheme),
+      }}
+      className={className}
+    />
   );
 }
 
@@ -167,14 +193,15 @@ export function WorkItemIcon({
     return (
       <span
         className={cn(
-          "backlog-task-source-icon inline-flex size-4 items-center justify-center [&>img]:size-4",
+          // The icon fills the box, so a className such as size-3 resizes it.
+          "backlog-task-source-icon inline-flex size-4 items-center justify-center [&>img]:size-full",
           className,
         )}
         aria-hidden="true"
       >
         {paint.usesMask ? (
           <span
-            className="size-4 bg-current"
+            className="size-full bg-current"
             style={{
               maskImage: `url("${iconSource}")`,
               maskPosition: "center",

@@ -407,7 +407,10 @@ export const catalog = defineCatalog({
         agent_tool: {
           /** One of Ajour's tools, or `other` for a name it doesn't have. */
           name: operational(),
-          /** Read and write tools run in the renderer; session tools in the API. */
+          /**
+           * Read and write data tools run in the renderer. Session tools, and
+           * the local log tools (`read`), run in the API.
+           */
           access: operational<"read" | "write" | "session">(),
           /** How long the renderer took to answer over the bridge. */
           bridge_ms: operational<number>(),
@@ -841,6 +844,16 @@ export const catalog = defineCatalog({
             | "terminal"
             | "session"
           >(),
+          /** The terminal app a terminal command opened in (Settings › General › Terminal). */
+          terminal: operational<
+            | "wt"
+            | "WezTerm"
+            | "Alacritty"
+            | "Terminal"
+            | "iTerm"
+            | "Ghostty"
+            | "kitty"
+          >(),
           /** A session's open or its end: one event each, never per line. */
           session: operational<"open" | "close">(),
           /** Why a session ended: the plugin closed it, idle, a gate, quit, or the program exited. */
@@ -1074,6 +1087,8 @@ export const catalog = defineCatalog({
           /** In the renderer: the items the answer added straight to the backlog. */
           imported_count: operational<number>(),
         },
+        /** In the renderer: the item a one-item sync, such as a refresh, was scoped to. */
+        backlog_item: { id: operational() },
       },
     },
     /**
@@ -1131,6 +1146,22 @@ export const catalog = defineCatalog({
         assignee: {
           /** Whether a name was typed, which may search the organisation. */
           queried: operational<boolean>(),
+          result_count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * The item types a connection form shows, as its plugin describes them.
+     * Counts only, never a type's or a field's name.
+     */
+    "item_type.describe": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        item_type: {
+          requested_count: operational<number>(),
           result_count: operational<number>(),
         },
       },
@@ -1607,7 +1638,10 @@ export const catalog = defineCatalog({
       kinds: ["job"],
       fields: {
         catalog: {
-          trigger: operational<"launch" | "interval" | "request">(),
+          /** `update_check`: a check for Ajour's own update, which checks plugins too. */
+          trigger: operational<
+            "launch" | "interval" | "request" | "update_check"
+          >(),
           source: operational<"network" | "cache" | "built_in">(),
           entry_count: operational<number>(),
           sources_total: operational<number>(),
@@ -2010,6 +2044,13 @@ export const catalog = defineCatalog({
           id: operational(),
           tool: operational(),
           count: operational<number>(),
+          /**
+           * What the window offers for a refused start (#819): the item's
+           * thread when the branch exists, or the tool's setting to ask for.
+           */
+          refusal: operational<"branch_exists" | "setting">(),
+          /** The id of the tool's setting it refused, such as `base`. */
+          refused_setting: operational(),
         },
       },
     },
@@ -2046,6 +2087,28 @@ export const catalog = defineCatalog({
           id: operational(),
           tool: operational(),
           count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * Close a handoff's thread in its tool, then forget the handoff (#850).
+     * `closes` is what the tool does to the conversation.
+     */
+    "handoff.close": {
+      kinds: ["request", "plugin_operation", "command"],
+      reasons: [
+        ...requestReasons,
+        ...pluginOperationReasons,
+        // Ajour's or the tool's refusal: the handoff stays.
+        "handoff_refused",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        handoff: {
+          id: operational(),
+          tool: operational(),
+          closes: operational<"archive" | "delete">(),
         },
       },
     },
@@ -2718,12 +2781,23 @@ export const catalog = defineCatalog({
           failed_count: operational<number>(),
           /** The remote entries the plugin listed in the window. */
           entry_count: operational<number>(),
+          /**
+           * Ajour sent the cursor of the last answer: a check round, with no
+           * changes (#843). The cursor itself never reaches an event.
+           */
+          has_cursor: operational<boolean>(),
+          /**
+           * The plugin answered that nothing changed there since the
+           * cursor, so the round listed nothing and kept nothing.
+           */
+          unchanged: operational<boolean>(),
           // In the renderer, for the whole round.
           /**
-           * What started it: a store write, the 60-second poll, changes
-           * left over from the last round, or a retry after a failure.
+           * What started it: a store write, the check every 5 seconds (60
+           * while the window is hidden), changes left over from the last
+           * round, or a retry after a failure.
            */
-          trigger: operational<"change" | "poll" | "more" | "retry">(),
+          trigger: operational<"change" | "check" | "more" | "retry">(),
           /** Changes beyond this round's 20, for the next one. */
           waiting_count: operational<number>(),
           /** Entries Ajour took from the listing: added, edited or deleted (#694). */
@@ -2743,10 +2817,13 @@ export const catalog = defineCatalog({
            */
           listed_first: operational<boolean>(),
           /**
-           * Why the answer was not kept: the connection was saved again, or
-           * Time entries went off while the round ran.
+           * Why the answer was not kept: the connection was saved again,
+           * Time entries went off, or, for a check, the entries or the time
+           * sync changed while the round ran.
            */
-          discarded: operational<"connection_changed" | "time_sync_stopped">(),
+          discarded: operational<
+            "connection_changed" | "time_sync_stopped" | "inputs_changed"
+          >(),
         },
       },
     },

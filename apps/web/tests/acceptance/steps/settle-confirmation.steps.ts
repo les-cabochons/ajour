@@ -131,10 +131,10 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
     await getPluginsOverview();
   });
 });
-/** The item page's Settle button sits beside its title. */
+/** The item page's Settle sits on the first line of its properties card. */
 async function clickSettleParentSettle(page: Page) {
   await page
-    .getByRole("group", { name: "Item actions" })
+    .getByRole("group", { name: /^Lifecycle:/ })
     .getByRole("button", { name: "Settle", exact: true })
     .click();
 }
@@ -410,9 +410,9 @@ Then(
     );
   },
 );
-/** The item page's Settle, Snooze and Start entry buttons. */
+/** The item page's Settle and Snooze, on its properties card's first line. */
 const itemActions = (page: Page) =>
-  page.getByRole("group", { name: "Item actions" });
+  page.getByRole("group", { name: /^Lifecycle:/ });
 
 When("I reopen Settle after the parent gets a long title", async ({ page }) => {
   await page

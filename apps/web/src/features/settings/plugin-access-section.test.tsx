@@ -166,3 +166,68 @@ it.each([true, false])(
     expect(screen.getByText(/outside G1/)).toBeTruthy();
   },
 );
+
+it("lists a plugin's commands by program, closed, and opens the program an update adds a command to (#821)", async () => {
+  const command = (id: string, executable: string, argv: string) => ({
+    id,
+    argv,
+    policy: JSON.stringify({
+      command: { id, executable },
+      names: [executable],
+    }),
+    description: `Executable names: ${executable}. Captures output.`,
+  });
+  const before = [
+    command("thread-show", "t3", "t3 thread show <thread> --json"),
+    command("claude-version", "claude", "claude --version"),
+  ];
+  const added = command("thread-list", "t3", "t3 thread list --json");
+  const summary = { ...NO_PLUGIN_ACCESS, commands: [...before, added] };
+  const { pluginAccessDifference } = await import("@ajour/shared");
+  await renderRoutes({
+    routes: {
+      "/": () => (
+        <PluginAccessSection
+          now={1}
+          group={{
+            enabled: false,
+            connections: [],
+            plugin: {
+              id: "handoff",
+              version: "2",
+              apiVersion: 4,
+              displayName: "Handoff",
+              iconSvg: "<svg />",
+              connectionFields: [],
+              capabilities: {},
+            },
+            access: { summary, hostLabels: {}, choices: [] },
+            pendingAccess: {
+              version: "2",
+              difference: pluginAccessDifference(
+                { ...NO_PLUGIN_ACCESS, commands: before },
+                summary,
+              ),
+            },
+          }}
+        />
+      ),
+    },
+  });
+  const row = (id: string) =>
+    document.querySelector(`[data-access-item="program:${id}"]`)!;
+  const t3 = row("t3");
+  expect(t3.textContent).toContain("Executable names: t3.");
+  expect(t3.textContent).toContain("New commands");
+  expect(t3.querySelector("details")?.open).toBe(true);
+  expect(t3.querySelector("summary")?.textContent).toBe("2 commands");
+  const claude = row("claude");
+  expect(claude.textContent).not.toContain("New");
+  expect(claude.querySelector("details")?.open).toBe(false);
+  expect(claude.querySelector("summary")?.textContent).toBe("1 command");
+  // Each command keeps what it does, without repeating the program's names.
+  expect(claude.textContent).toContain("claude --versionCaptures output.");
+  expect(
+    document.querySelectorAll('[data-access-item^="command:"]').length,
+  ).toBe(0);
+});

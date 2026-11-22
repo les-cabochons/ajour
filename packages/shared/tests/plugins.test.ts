@@ -15,10 +15,13 @@ import {
   pluginHasBacklog,
   pluginRunsCode,
   pluginConnectionFormFields,
+  pluginOverviewGroupSchema,
   connectionAgentAccess,
   backlogImportCandidateInputSchema,
   backlogSearchAssigneesRequestSchema,
   backlogSearchAssigneesResultSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
 } from "../plugins";
 import { pluginApi4ManifestSchema } from "../plugin-api-4";
 import { azureDevOpsManifest } from "./fixtures/api-4-manifests";
@@ -335,6 +338,51 @@ describe("assignees", () => {
   });
 });
 
+describe("item types", () => {
+  it("lets a backlog plugin declare that it describes item types on plugin API 4", () => {
+    const api4 = azureDevOpsManifest();
+    expect(
+      pluginApi4ManifestSchema.parse({
+        ...api4,
+        capabilities: {
+          ...api4.capabilities,
+          connector: { ...api4.capabilities.connector, itemTypes: true },
+        },
+      }).capabilities.connector?.itemTypes,
+    ).toBe(true);
+  });
+
+  it("asks about each type with one synced item, and reads an icon, fields and proposals", () => {
+    expect(
+      backlogItemTypesRequestSchema.parse({
+        types: [{ name: " Task ", sourceId: "42" }, { name: "Defect" }],
+      }),
+    ).toEqual({
+      types: [{ name: "Task", sourceId: "42" }, { name: "Defect" }],
+    });
+    const task = {
+      name: "Task",
+      iconSvg: "<svg viewBox='0 0 16 16'/>",
+      fields: [
+        { name: "Original Estimate", id: "Scheduling.OriginalEstimate" },
+        { name: "Remaining Work" },
+      ],
+      suggestions: { originalEstimateFieldName: ["Original Estimate"] },
+    };
+    expect(
+      backlogItemTypesResultSchema.parse({ types: [task, { name: "Epic" }] }),
+    ).toEqual({ types: [task, { name: "Epic" }] });
+  });
+
+  it("refuses an icon over 20,000 characters, as the manifest's", () => {
+    expect(() =>
+      backlogItemTypesResultSchema.parse({
+        types: [{ name: "Task", iconSvg: `<svg>${"x".repeat(20_000)}</svg>` }],
+      }),
+    ).toThrow();
+  });
+});
+
 const agentTaskBase = {
   id: "ajp-workday",
   version: "1.0.0",
@@ -569,5 +617,71 @@ describe("agent access to comments", () => {
   it("reads None from a connection saved before the setting", () => {
     expect(connectionAgentAccess({})).toBe("none");
     expect(connectionAgentAccess({ agentAccess: "read" })).toBe("read");
+  });
+});
+
+describe("on-premises", () => {
+  /**
+   * A plugin as the overview sends it to the web app, which parses it with
+   * the overview schema before the connection form reads it.
+   */
+  function overviewPlugin(baseAddress?: {
+    field: string;
+    allowOnPremises?: boolean;
+  }) {
+    return pluginOverviewGroupSchema.parse({
+      plugin: {
+        ...validManifest,
+        apiVersion: 4,
+        connectionFields: [
+          { id: "label", label: "Connection label", type: "text" },
+          { id: "serverUrl", label: "Server address", type: "url" },
+          { id: "token", label: "Token", type: "password", secret: true },
+        ],
+        ...(baseAddress
+          ? {
+              network: {
+                baseAddress,
+                endpoints: [{ method: "GET", path: "/global/health" }],
+              },
+            }
+          : {}),
+      },
+      enabled: true,
+      connections: [],
+    }).plugin;
+  }
+
+  const fieldIds = (plugin: ReturnType<typeof overviewPlugin>) =>
+    pluginConnectionFormFields(plugin).map((field) => field.id);
+
+  it("is Ajour's checkbox right after the address, for a plugin whose manifest allows it", () => {
+    const plugin = overviewPlugin({
+      field: "serverUrl",
+      allowOnPremises: true,
+    });
+
+    expect(fieldIds(plugin)).toEqual([
+      "label",
+      "serverUrl",
+      "onPremises",
+      "token",
+    ]);
+    expect(
+      pluginConnectionFormFields(plugin).find(
+        (field) => field.id === "onPremises",
+      ),
+    ).toMatchObject({
+      label: "On-premises",
+      type: "checkbox",
+      defaultValue: false,
+    });
+  });
+
+  it("is absent when the manifest doesn't allow it", () => {
+    expect(fieldIds(overviewPlugin({ field: "serverUrl" }))).not.toContain(
+      "onPremises",
+    );
+    expect(fieldIds(overviewPlugin())).not.toContain("onPremises");
   });
 });

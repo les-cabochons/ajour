@@ -12,6 +12,7 @@ import type {
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
+import type { LocalLogReader } from "./local-log-reader.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 import { fakeCliAdapter } from "./test-support/fake-cli-adapter.ts";
 import {
@@ -1557,6 +1558,229 @@ describe("agent sessions over MCP", () => {
   });
 });
 
+/**
+ * A fake of main's local log query service: it records each read and answers
+ * with `events` and `trace`, or throws `refusal` as the service refuses a
+ * filter outside its formats.
+ */
+function fakeLocalLogs(
+  options: {
+    writing?: boolean;
+    events?: Record<string, unknown>[];
+    trace?: Awaited<ReturnType<LocalLogReader["trace"]>>;
+    refusal?: string;
+  } = {},
+) {
+  const queries: Parameters<LocalLogReader["query"]>[] = [];
+  const traces: string[] = [];
+  const refuse = () => {
+    if (options.refusal)
+      throw Object.assign(new Error(options.refusal), {
+        code: "invalid_log_query",
+      });
+  };
+  const reader: LocalLogReader = {
+    writing: () => options.writing ?? true,
+    query: async (...args) => {
+      queries.push(args);
+      refuse();
+      const events = options.events ?? [];
+      return { events, next_cursor: "1~2026-11-18~3", match_count: 7 };
+    },
+    trace: async (traceId) => {
+      traces.push(traceId);
+      refuse();
+      return options.trace!;
+    },
+  };
+  return { reader, queries, traces };
+}
+
+/** One local log event, as the file stores it. */
+const logEvent = (name: string, span: string, outcome = "ok") => ({
+  schema: 1,
+  name,
+  runtime: "api",
+  outcome,
+  trace_id: "cbe30512b1ccfa3e8ad29a62c9022bde",
+  span_id: span,
+});
+
+describe("local log tools over MCP", () => {
+  it("finds log events with the log's own filter, and says logging is on", async () => {
+    const failed = {
+      ...logEvent("handoff.start", "7c9921149472f5b1", "error"),
+      error: {
+        type: "Error",
+        message: "T3 Code returned output Ajour can't read.",
+      },
+    };
+    const logs = fakeLocalLogs({ events: [failed] });
+    const { baseUrl, logged } = await startTestApi({ localLogs: logs.reader });
+    const { token, client } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "find_log_events",
+      arguments: {
+        from: "2026-11-18T19:00:00Z",
+        outcome: "problems",
+        namePrefix: "handoff.",
+        pluginId: "agent-handoff",
+        limit: 2,
+      },
+    });
+
+    expect(logs.queries).toEqual([
+      [
+        {
+          from: "2026-11-18T19:00:00Z",
+          outcome: "problems",
+          name_prefix: "handoff.",
+          plugin_id: "agent-handoff",
+        },
+        { limit: 2 },
+      ],
+    ]);
+    expect(result.structuredContent).toEqual({
+      logging: "on",
+      events: [failed],
+      matchCount: 7,
+      nextCursor: "1~2026-11-18~3",
+    });
+    expect(logged.filter((event) => event.name === "agent_tool.call")).toEqual([
+      expect.objectContaining({
+        outcome: "ok",
+        agent: { client_id: client.id },
+        agent_tool: { name: "find_log_events", access: "read" },
+      }),
+    ]);
+    // What the log holds never enters the call's own event.
+    expect(JSON.stringify(logged)).not.toContain("can't read");
+  });
+
+  it("asks for 50 events when the agent names no limit, and says logging is off", async () => {
+    const logs = fakeLocalLogs({ writing: false });
+    const { baseUrl } = await startTestApi({ localLogs: logs.reader });
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "find_log_events",
+      arguments: { cursor: "1~2026-11-18~3" },
+    });
+
+    expect(logs.queries).toEqual([
+      [{}, { limit: 50, cursor: "1~2026-11-18~3" }],
+    ]);
+    expect(result.structuredContent).toMatchObject({ logging: "off" });
+  });
+
+  it("answers a filter the query service refuses with its reason, as the agent's invalid call", async () => {
+    const logs = fakeLocalLogs({
+      refusal: "Invalid log query: from is not in its format.",
+    });
+    const { baseUrl, logged } = await startTestApi({ localLogs: logs.reader });
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "find_log_events",
+      arguments: { from: "yesterday" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe(
+      "Invalid log query: from is not in its format.",
+    );
+    expect(
+      logged.find((event) => event.name === "agent_tool.call"),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "invalid_call" });
+  });
+
+  it("returns a trace depth first, oldest root first, with its deepest failure", async () => {
+    type TraceNode = Awaited<ReturnType<LocalLogReader["trace"]>>["roots"][0];
+    const node = (
+      name: string,
+      span: string,
+      depth: number,
+      children: TraceNode[] = [],
+      outcome = "ok",
+    ): TraceNode => ({
+      event: logEvent(name, span, outcome),
+      depth,
+      deepest_failure: outcome !== "ok",
+      missing_parent: false,
+      children,
+    });
+    const logs = fakeLocalLogs({
+      trace: {
+        trace_id: "cbe30512b1ccfa3e8ad29a62c9022bde",
+        event_count: 5,
+        deepest_failure_span_id: "fe782f5c5878842e",
+        roots: [
+          node("handoff.threads", "58f50a20cd3dfb3d", 0, [
+            node("handoff.threads", "f55cb29dc865b5a5", 1, [
+              node("handoff.threads", "fe782f5c5878842e", 2, [], "error"),
+            ]),
+            node("plugin.process", "09a74673ddeafc0a", 1),
+          ]),
+          node("route.change", "a1b2c3d4e5f60718", 0),
+        ],
+      },
+    });
+    const { baseUrl } = await startTestApi({ localLogs: logs.reader });
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "get_log_trace",
+      arguments: { traceId: "cbe30512b1ccfa3e8ad29a62c9022bde" },
+    });
+
+    expect(logs.traces).toEqual(["cbe30512b1ccfa3e8ad29a62c9022bde"]);
+    const trace = result.structuredContent as {
+      spans: {
+        depth: number;
+        deepestFailure: boolean;
+        event: { span_id: string };
+      }[];
+    };
+    expect(trace).toMatchObject({
+      traceId: "cbe30512b1ccfa3e8ad29a62c9022bde",
+      eventCount: 5,
+      deepestFailureSpanId: "fe782f5c5878842e",
+      truncated: false,
+    });
+    expect(
+      trace.spans.map(({ depth, deepestFailure, event }) => [
+        event.span_id,
+        depth,
+        deepestFailure,
+      ]),
+    ).toEqual([
+      ["58f50a20cd3dfb3d", 0, false],
+      ["f55cb29dc865b5a5", 1, false],
+      ["fe782f5c5878842e", 2, true],
+      ["09a74673ddeafc0a", 1, false],
+      ["a1b2c3d4e5f60718", 0, false],
+    ]);
+  });
+
+  it("lists no log tool without the local log, as in the standalone API", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+
+    const names = tools.map((tool) => tool.name);
+    expect(names).toContain("begin_session");
+    expect(names).not.toContain("find_log_events");
+    expect(names).not.toContain("get_log_trace");
+  });
+});
+
 describe("agent runner routes", () => {
   it("answers 404 to a run for an unknown task", async () => {
     const { baseUrl } = await startTestApi();
@@ -1741,6 +1965,9 @@ describe("an agent task's declared tools", () => {
     });
     let mcpUrl = "";
     const { baseUrl, logged } = await startTestApi({
+      // The local log is there, so a task's tools/list shows it never gets
+      // the log tools: they are only for clients the user created.
+      localLogs: fakeLocalLogs().reader,
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
       agentCliPath: bin,

@@ -22,7 +22,7 @@ The official plugins come from [les-cabochons/ajour-plugins](https://github.com/
 | Capability  | What it adds                                                                                                |
 | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | Backlog     | Syncs items into your [backlog](/backlog/) and writes settles back.                                         |
-| Code host   | Lists your [pull requests](/pull-requests/).                                                                |
+| Code host   | Lists your pull requests in [Deck](/deck/).                                                                 |
 | Calendar    | Suggests your calendar's meetings as time entries. See [Calendar suggestions](/time/calendar-suggestions).  |
 | Agent tasks | Has a coding agent run a task, such as committing your week. See [Agents and MCP](/app/agents#agent-tasks). |
 | Schema      | Maps projects and tasks to another tool's file layout. See [Import and export](/projects/import-export).    |
@@ -71,7 +71,7 @@ Each connection shows its status, **Connected** or **Error** with the last error
 
 - **Stage for review**: press **Sync** to fetch backlog items. They wait in [Sync review](/plugins/sync-review) until you pick the ones you want.
 - **Auto every N min**: Ajour syncs on its own while it is open, and adds new backlog items straight to your backlog.
-- **Manual sync**: pull requests sync only when you press **Sync** on the [Pull requests](/pull-requests/) page.
+- **Manual sync**: pull requests sync only when you press **Sync** in [Deck](/deck/).
 
 A plugin with backlog items and pull requests that sync differently shows both, such as **Backlog items: Stage for review · Pull requests: Auto every 5 min**.
 
@@ -109,4 +109,4 @@ A plugin is **signed** when it comes from a source signed with a key you approve
 - **Allow installing unsigned plugins** is off at first. While it is off, Ajour installs only signed plugins. When it is on, Ajour warns you before every unsigned install or update.
 - **Deactivate unsigned plugins** pauses every unsigned plugin you already have.
 
-Ajour reads your plugin sources at launch and every 15 minutes. Change this under **Refresh catalog**.
+Ajour reads your plugin sources at launch and every 15 minutes. Change this under **Refresh catalog**. Checking for an Ajour update reads them again too, so the Plugins page shows the latest version of each plugin.

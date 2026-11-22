@@ -24,6 +24,32 @@ export function normalizeProjectTaskBudgetMs(value: number | undefined) {
   return roundedValue > 0 ? roundedValue : undefined;
 }
 
+/**
+ * The budget a task reads: the user's override on a task its project source
+ * knows, else its own budget. An override of 0 means no budget.
+ */
+export function getTaskBudgetMs(task: {
+  budgetMs?: number;
+  budgetOverrideMs?: number;
+}) {
+  return normalizeProjectTaskBudgetMs(task.budgetOverrideMs ?? task.budgetMs);
+}
+
+/**
+ * Whether two budgets read the same to the minute, the precision the editor
+ * shows. No budget and a budget of 0 are the same.
+ */
+export function sameBudgetMs(
+  left: number | undefined,
+  right: number | undefined,
+) {
+  const minutes = (value: number | undefined) => {
+    const budgetMs = normalizeProjectTaskBudgetMs(value);
+    return budgetMs === undefined ? undefined : Math.round(budgetMs / 60_000);
+  };
+  return minutes(left) === minutes(right);
+}
+
 export function normalizeProjectTaskAdjustmentMs(value: number | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return undefined;

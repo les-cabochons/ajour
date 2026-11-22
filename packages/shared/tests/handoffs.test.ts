@@ -378,3 +378,75 @@ it("tells whether a plugin declares a command that receives a hook URL", () => {
     false,
   );
 });
+
+import {
+  closeThreadRequestSchema,
+  closeThreadResultSchema,
+} from "../handoffs.ts";
+it("lets a tool say it closes threads by archiving or deleting them, none by default (#850)", () => {
+  const manifest = (tool: Record<string, unknown>) => ({
+    ...jiraManifest(),
+    capabilities: {
+      handoff: {
+        tools: [
+          { id: "t3", label: "T3", iconSvg: "<svg/>", settings: [], ...tool },
+        ],
+      },
+    },
+  });
+  const plain = pluginApi4ManifestSchema.parse(manifest({}));
+  expect(plain.capabilities.handoff?.tools[0]?.closesThreads).toBeUndefined();
+  for (const closes of ["archive", "delete"] as const)
+    expect(
+      pluginApi4ManifestSchema.parse(manifest({ closesThreads: closes }))
+        .capabilities.handoff?.tools[0]?.closesThreads,
+    ).toBe(closes);
+  for (const bad of [true, "stop", ""])
+    expect(
+      pluginApi4ManifestSchema.safeParse(manifest({ closesThreads: bad }))
+        .success,
+    ).toBe(false);
+});
+
+it("bounds a close's request as one handoff of a state read, and its answer as empty", () => {
+  const request = {
+    tool: "codex",
+    handoff: { id: "h1", threadId: "thread-1", folderId: "f1", native: {} },
+  };
+  expect(closeThreadRequestSchema.safeParse(request).success).toBe(true);
+  for (const bad of [
+    { ...request, extra: true },
+    { ...request, handoff: { ...request.handoff, threadId: "" } },
+    { ...request, handoff: { ...request.handoff, path: "C:\\repo" } },
+    {
+      ...request,
+      handoff: { ...request.handoff, native: { x: "a".repeat(4089) } },
+    },
+    { tool: "codex" },
+  ])
+    expect(closeThreadRequestSchema.safeParse(bad).success).toBe(false);
+  expect(closeThreadResultSchema.safeParse({}).success).toBe(true);
+  expect(closeThreadResultSchema.safeParse({ closed: true }).success).toBe(
+    false,
+  );
+});
+
+it("lists closing as a feature, naming a close that deletes as such", () => {
+  expect(
+    handoffToolFeatures({ followsState: true, closesThreads: "archive" }),
+  ).toEqual(["starts-threads", "follows-state", "closes-threads"]);
+  expect(
+    handoffToolFeatures({
+      followsState: true,
+      listsThreads: true,
+      hooks: true,
+      closesThreads: "delete",
+    }),
+  ).toEqual([
+    "starts-threads",
+    "follows-state",
+    "finds-threads",
+    "updates-within-seconds",
+    "deletes-threads",
+  ]);
+});

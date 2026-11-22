@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react";
 import { SettingRow } from "@/components/app-surface";
 import { OptionSelect } from "@/components/ui/option-select";
+import type { DesktopTerminalApps } from "@/lib/desktop-bridge";
+
+/**
+ * Settings › General › Terminal: which installed terminal app opens plugin
+ * commands, each shown with its own icon.
+ */
 export function TerminalAppSetting() {
   const desktop = window.ajourDesktop;
   const [value, setValue] = useState<string | null>(null);
+  const [choices, setChoices] = useState<DesktopTerminalApps["choices"]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let active = true;
     if (!["win32", "darwin"].includes(desktop?.runtime?.platform ?? "")) return;
     void desktop?.getTerminalApp?.().then(
-      (v) => {
-        if (active) setValue(v);
+      (apps) => {
+        if (!active) return;
+        setChoices(apps.choices);
+        setValue(apps.value ?? null);
       },
       () => {
         if (active) setError("Couldn't read the terminal app.");
@@ -27,10 +36,6 @@ export function TerminalAppSetting() {
     !["win32", "darwin"].includes(desktop.runtime?.platform ?? "")
   )
     return null;
-  const choices =
-    desktop.runtime?.platform === "win32"
-      ? [{ value: "wt", label: "Windows Terminal" }]
-      : [{ value: "Terminal", label: "Terminal" }];
   return (
     <SettingRow
       label="Terminal app"
@@ -52,7 +57,19 @@ export function TerminalAppSetting() {
       <OptionSelect
         label="Terminal app"
         value={value ?? ""}
-        options={choices}
+        options={choices.map((choice) => ({
+          value: choice.value,
+          label: choice.label,
+          icon: choice.icon && (
+            <img
+              alt=""
+              aria-hidden="true"
+              className="size-4 shrink-0"
+              src={choice.icon}
+            />
+          ),
+        }))}
+        iconLabel
         disabled={saving || value === null}
         onChange={(next) => {
           if (next === value) return;

@@ -5,6 +5,8 @@ import type {
   ReadHandoffStatesResult,
   ListThreadsRequest,
   ListThreadsResult,
+  CloseThreadRequest,
+  CloseThreadResult,
   DetectToolsResult,
   BacklogCommentOperations,
   BacklogSyncResult,
@@ -15,6 +17,8 @@ import type {
   DataShapeExportResult,
   DataShapeImportResult,
   DataShapeSheet,
+  DescribeItemTypesRequest,
+  DescribeItemTypesResult,
   PluginConnection,
   PluginHttpMethod,
   ProjectSourceSyncRequest,
@@ -27,8 +31,8 @@ import type {
   SettleStatesResult,
   SettleWriteRequest,
   SettleWriteResult,
+  TimeSyncAnswer,
   TimeSyncRequest,
-  TimeSyncResult,
   ValidationContext,
   ValidationResult,
   WriteDescriptionRequest,
@@ -250,6 +254,15 @@ export type PluginModule = {
     connection: PluginConnection,
     request: WriteDescriptionRequest,
   ) => Awaitable<WriteDescriptionResult>;
+  /**
+   * The item types the connection form shows, for `connector.itemTypes`:
+   * each type's icon, its fields, and the fields it would use for a
+   * `typeOverrides` field's columns. Answer other types too, for Add a type.
+   */
+  describeItemTypes?: (
+    connection: PluginConnection,
+    request: DescribeItemTypesRequest,
+  ) => Awaitable<DescribeItemTypesResult>;
   syncProjects?: (
     connection: PluginConnection,
     request: ProjectSourceSyncRequest,
@@ -282,10 +295,19 @@ export type PluginModule = {
   listThreads?(
     ...args: HandoffArguments<ListThreadsRequest>
   ): Awaitable<ListThreadsResult>;
+  /**
+   * Closes one handoff's thread in its tool, for a tool that declares
+   * `closesThreads`: stop its work when it runs, then archive or delete it,
+   * as the manifest says. Answer `{}` once it is closed, or when the tool no
+   * longer has it; throw to refuse, in words the user reads.
+   */
+  closeThread?(
+    ...args: HandoffArguments<CloseThreadRequest>
+  ): Awaitable<CloseThreadResult>;
   syncTimeEntries?: (
     connection: PluginConnection,
     request: TimeSyncRequest,
-  ) => Awaitable<TimeSyncResult>;
+  ) => Awaitable<TimeSyncAnswer>;
 } & OperationHandlers<CodeHostOperations> &
   OperationHandlers<CalendarOperations> &
   OperationHandlers<BacklogCommentOperations>;

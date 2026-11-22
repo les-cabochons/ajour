@@ -1,10 +1,11 @@
 import {
   isCapabilityActive,
   type PluginsOverview,
-  type TimeSyncRouteResponse,
+  type TimeSyncResult,
 } from "@ajour/shared";
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
+import type { LocalAppState, LocalTimeSync } from "@/domain/local-state";
 import {
   listingRoundOf,
   planTimeSyncRound,
@@ -39,28 +40,49 @@ import { wideEvents } from "@/lib/wide-events";
  * from what that took, since the plugin applies changes before it lists.
  * The rules live in
  * domain/projects/time-sync.ts. The runner sends a round 2 s after a store
- * write and every 60 s while Time entries is on and the plugin is active,
- * one round at a time per connection, and backs off after a failure.
+ * write and checks every 5 s while the window shows, every 60 s while it is
+ * hidden, while Time entries is on and the plugin is active, one round at a
+ * time per connection, and backs off after a failure.
+ *
+ * A check (#843) is a round with the cursor of the last full answer and no
+ * changes, sent while nothing the rules read changed in Ajour since that
+ * answer was kept. A plugin with a change marker answers it unchanged
+ * without listing, and the check keeps nothing. Any other round is full and
+ * sends no cursor, unless it has changes to send: the plugin then gets the
+ * cursor too, to reuse what it keeps there. A plugin that answers without a cursor has nothing to
+ * check against, so its checks list at most once a minute, as the 60-second
+ * poll did before #843.
  */
 
 /** How long after a store write the runner sends its round. */
 export const TIME_SYNC_DEBOUNCE_MS = 2_000;
-/** How often the runner sends a round, to list the other system's window. */
-export const TIME_SYNC_POLL_INTERVAL_MS = 60_000;
+/** How often the runner checks the other system while the window shows. */
+export const TIME_SYNC_CHECK_INTERVAL_MS = 5_000;
+/** How often it checks while the window is hidden, such as closed to the tray. */
+export const TIME_SYNC_HIDDEN_CHECK_INTERVAL_MS = 60_000;
+/**
+ * How long a connection without a cursor waits after its last listing
+ * before a check lists again: the 60-second poll of before #843.
+ */
+export const TIME_SYNC_LISTING_INTERVAL_MS = 60_000;
 /** The waits before each retry after a failed round; the last one repeats. */
 export const TIME_SYNC_RETRY_DELAYS_MS = [
   5_000, 15_000, 30_000, 60_000, 120_000, 300_000,
 ] as const;
 
 /**
- * What started a round: a store write, the 60-second poll, changes left
- * over from the last round, or a retry after a failure.
+ * What started a round: a store write, the check every 5 or 60 seconds,
+ * changes left over from the last round, or a retry after a failure. Only a
+ * check may send the cursor.
  */
-export type TimeSyncTrigger = "change" | "poll" | "more" | "retry";
+export type TimeSyncTrigger = "change" | "check" | "more" | "retry";
 
 export type TimeSyncRoundOutcome =
   /** No round ran: nothing to send, or Time entries is off. */
-  { kind: "idle" } | TimeSyncRoundResult;
+  | { kind: "idle" }
+  /** A check the plugin answered unchanged: the round kept nothing. */
+  | { kind: "unchanged" }
+  | TimeSyncRoundResult;
 
 /** A connection whose rounds may run now. */
 export interface ActiveTimeSyncConnection extends TimeSyncConnectionRef {
@@ -126,16 +148,130 @@ function planFor(
 const keyOf = (ref: TimeSyncConnectionRef) =>
   JSON.stringify([ref.pluginId, ref.connectionId]);
 
+/**
+ * The local API refuses an unchanged answer to a request without a cursor,
+ * so a full round never gets one; this names it if it ever does.
+ */
+const UNCHANGED_TO_FULL_ROUND =
+  "The plugin answered unchanged to a round without a cursor.";
+
 /** The round of each connection running in this window. */
 const runningRounds = new Map<string, Promise<TimeSyncRoundOutcome>>();
+
+/**
+ * What the time sync rules read from the local state for one connection.
+ * The store replaces each of these it changes, so the same objects mean
+ * nothing the rules read changed. Only time passing can then change a plan,
+ * which a check plans again for.
+ */
+interface TimeSyncInputs {
+  projects: LocalAppState["projects"];
+  timers: LocalAppState["timers"];
+  timesheetEntries: LocalAppState["timesheetEntries"];
+  lockedWeeks: LocalAppState["lockedWeeks"];
+  /** The connection's time sync record. */
+  record: LocalTimeSync | undefined;
+}
+
+function inputsOf(
+  state: LocalAppState,
+  ref: TimeSyncConnectionRef,
+): TimeSyncInputs {
+  const timeSyncs = state.timeSyncs ?? {};
+  return {
+    projects: state.projects,
+    timers: state.timers,
+    timesheetEntries: state.timesheetEntries,
+    lockedWeeks: state.lockedWeeks,
+    record: Object.hasOwn(timeSyncs, ref.connectionId)
+      ? timeSyncs[ref.connectionId]
+      : undefined,
+  };
+}
+
+const sameInputs = (left: TimeSyncInputs, right: TimeSyncInputs) =>
+  left.projects === right.projects &&
+  left.timers === right.timers &&
+  left.timesheetEntries === right.timesheetEntries &&
+  left.lockedWeeks === right.lockedWeeks &&
+  left.record === right.record;
+
+/**
+ * Where the last full answer of a connection left it: the plugin's cursor,
+ * the connection's save count in this window, and Ajour's inputs as that
+ * answer left them. Kept in this window's memory only, never in the state,
+ * since a cursor may hold a read link.
+ */
+interface CheckPoint {
+  cursor: string;
+  generation: number;
+  inputs: TimeSyncInputs;
+  /**
+   * The day that answer was taken on. The rules take a remote entry by its
+   * day, such as one dated after today that waits for it, so a new day
+   * makes the next round full.
+   */
+  today: string;
+}
+
+/** Each connection's check point, while its last full answer gave a cursor. */
+const checkPoints = new Map<string, CheckPoint>();
+
+/** Whether the connection's last full answer gave a cursor to check against. */
+function hasCursor(ref: TimeSyncConnectionRef) {
+  return checkPoints.has(keyOf(ref));
+}
+
+/** A check ready to send: its cursor, its plan, the inputs it planned from, and the check point's day. */
+interface PlannedCheck {
+  cursor: string;
+  planned: PlannedTimeSyncRound;
+  inputs: TimeSyncInputs;
+  today: string;
+}
+
+/**
+ * The check a connection may send now, or undefined when its round must be
+ * full: no cursor, the connection saved again since, something the rules
+ * read changed, a new day, the cached overview doesn't show it active, or time passing
+ * left changes to send.
+ */
+function planCheck(ref: TimeSyncConnectionRef): PlannedCheck | undefined {
+  const key = keyOf(ref);
+  const point = checkPoints.get(key);
+  if (!point) return undefined;
+  if (
+    point.generation !== connectionGeneration(ref.pluginId, ref.connectionId)
+  ) {
+    checkPoints.delete(key);
+    return undefined;
+  }
+  const inputs = inputsOf(localStore.snapshot(), ref);
+  if (!sameInputs(inputs, point.inputs)) return undefined;
+  const overview = getCachedPluginsOverview();
+  if (
+    !overview ||
+    !activeTimeSyncConnections(overview).some((active) => keyOf(active) === key)
+  ) {
+    return undefined;
+  }
+  const planned = planFor(ref, overview);
+  if (!planned || planned.plan.request.changes.length > 0) return undefined;
+  if (planned.context.today !== point.today) return undefined;
+  return { cursor: point.cursor, planned, inputs, today: point.today };
+}
 
 /**
  * Runs one round of a connection as one `time_sync.round` job: its local
  * API calls and the store commands that keep its answer fold into it. In
  * this window a call shares the connection's round in progress, and another
  * window's round runs first. A store write starts a round only when it
- * leaves something to send, so the runner's own writes start none. A round
- * that fails keeps its error on the connection and throws.
+ * leaves something to send, so the runner's own writes start none. A check
+ * that finds nothing changed in Ajour sends the cursor without the lock or
+ * a fresh overview, and keeps nothing when the plugin answers unchanged: its
+ * job is then a quiet noop, which the local log file leaves out. A
+ * round that fails keeps its error on the connection, drops the cursor and
+ * throws.
  */
 export function runTimeSyncRound(
   pluginId: string,
@@ -144,6 +280,7 @@ export function runTimeSyncRound(
 ): Promise<TimeSyncRoundOutcome> {
   const ref = { pluginId, connectionId };
   const key = keyOf(ref);
+  const lock = `ajour-time-sync:${key}`;
   const running = runningRounds.get(key);
   if (running) return running;
   if (trigger === "change") {
@@ -155,56 +292,147 @@ export function runTimeSyncRound(
     }
   }
 
-  const run = async (
+  /**
+   * Keeps one answer of the round, unless the connection was saved again
+   * or Time entries went off while it ran, and counts it on the job. Its
+   * cursor, if any, becomes the connection's check point.
+   */
+  const keep = (
     job: Unit<AjourCatalog, "time_sync.round">,
+    generation: number,
+    { plan, context }: PlannedTimeSyncRound,
+    answer: TimeSyncResult,
+  ): TimeSyncRoundOutcome => {
+    job.set({
+      time_sync_round: { unchanged: false, entry_count: answer.entries.length },
+    });
+    // Saved again in this window while the round ran: the answer may be
+    // for another account.
+    if (connectionGeneration(pluginId, connectionId) !== generation) {
+      checkPoints.delete(key);
+      job
+        .set({ time_sync_round: { discarded: "connection_changed" } })
+        .end("noop");
+      return { kind: "discarded" };
+    }
+    const result = job.enter(() =>
+      localStore.applyTimeSyncRound(plan, answer, context),
+    );
+    if (result.kind === "discarded") {
+      checkPoints.delete(key);
+      job
+        .set({ time_sync_round: { discarded: "time_sync_stopped" } })
+        .end("noop");
+      return result;
+    }
+    if (answer.cursor === undefined) {
+      checkPoints.delete(key);
+    } else {
+      checkPoints.set(key, {
+        cursor: answer.cursor,
+        generation,
+        inputs: inputsOf(localStore.snapshot(), ref),
+        today: context.today,
+      });
+    }
+    job.set({
+      time_sync_round: {
+        synced_count: result.synced,
+        put_back_count: result.putBack,
+        refused_count: result.refused,
+        failed_count: result.failed,
+        received_count: result.received,
+        held_count: result.held,
+      },
+    });
+    return result;
+  };
+
+  /** Keeps why the round failed on the connection, and drops the cursor. */
+  const fail = (
+    job: Unit<AjourCatalog, "time_sync.round">,
+    error: unknown,
+    sent: PlannedTimeSyncRound | undefined,
+  ) => {
+    checkPoints.delete(key);
+    // The changes wait for the next round; the connection shows why. Only
+    // the creates of a request that went out may be there (#838).
+    const message =
+      error instanceof Error ? error.message : "The round failed.";
+    job.enter(() => localStore.failTimeSyncRound(ref, message, sent));
+  };
+
+  /**
+   * A check: the cursor and no changes, outside the lock. An unchanged
+   * answer only moves the cursor. A full one is kept in the lock, as a full
+   * round's is, unless Ajour changed while it ran: the plan would no longer
+   * hold, so it is dropped and the next round is full.
+   */
+  const check = async (
+    job: Unit<AjourCatalog, "time_sync.round">,
+    { cursor, planned, inputs, today }: PlannedCheck,
   ): Promise<TimeSyncRoundOutcome> => {
     const generation = connectionGeneration(pluginId, connectionId);
-    job.set({
-      plugin: { id: pluginId },
-      connection: { id: connectionId },
-      time_sync_round: { trigger },
-    });
-    /**
-     * Keeps one answer of the round, unless the connection was saved again
-     * or Time entries went off while it ran, and counts it on the job.
-     */
-    const keep = (
-      { plan, context }: PlannedTimeSyncRound,
-      answer: TimeSyncRouteResponse,
-    ): TimeSyncRoundOutcome => {
-      job.set({ time_sync_round: { entry_count: answer.entries.length } });
-      // Saved again in this window while the round ran: the answer may be
-      // for another account.
+    job.set({ time_sync_round: { has_cursor: true, change_count: 0 } });
+    const request = { ...planned.plan.request, cursor };
+    let answer: Awaited<ReturnType<typeof syncTimeEntries>>;
+    try {
+      answer = await job.enter(() =>
+        syncTimeEntries(pluginId, connectionId, request),
+      );
+    } catch (error) {
+      fail(job, error, planned);
+      throw error;
+    }
+    if ("unchanged" in answer) {
+      job.set({ time_sync_round: { unchanged: true } });
       if (connectionGeneration(pluginId, connectionId) !== generation) {
+        checkPoints.delete(key);
         job
           .set({ time_sync_round: { discarded: "connection_changed" } })
           .end("noop");
         return { kind: "discarded" };
       }
-      const result = job.enter(() =>
-        localStore.applyTimeSyncRound(plan, answer, context),
-      );
-      if (result.kind === "discarded") {
-        job
-          .set({ time_sync_round: { discarded: "time_sync_stopped" } })
-          .end("noop");
-        return result;
-      }
-      job.set({
-        time_sync_round: {
-          synced_count: result.synced,
-          put_back_count: result.putBack,
-          refused_count: result.refused,
-          failed_count: result.failed,
-          received_count: result.received,
-          held_count: result.held,
-        },
+      checkPoints.set(key, {
+        cursor: answer.cursor,
+        generation,
+        inputs,
+        today,
       });
-      return result;
-    };
+      // A check every few seconds that found nothing: the local log file
+      // leaves it out, unless it was slow (#844).
+      job.quiet().end();
+      return { kind: "unchanged" };
+    }
+    const full = answer;
+    return exclusively(lock, async () => {
+      if (!sameInputs(inputsOf(localStore.snapshot(), ref), inputs)) {
+        checkPoints.delete(key);
+        job
+          .set({
+            time_sync_round: {
+              unchanged: false,
+              entry_count: full.entries.length,
+              discarded: "inputs_changed",
+            },
+          })
+          .end("noop");
+        return { kind: "discarded" };
+      }
+      return keep(job, generation, planned, full);
+    });
+  };
 
+  /** A full round, in the lock, from a fresh overview, without the cursor. */
+  const run = async (
+    job: Unit<AjourCatalog, "time_sync.round">,
+  ): Promise<TimeSyncRoundOutcome> => {
+    const generation = connectionGeneration(pluginId, connectionId);
+    job.set({ time_sync_round: { has_cursor: false } });
     let planned: PlannedTimeSyncRound | undefined;
-    let answer: TimeSyncRouteResponse;
+    /** The round whose request went to the plugin last, for a failure. */
+    let sending: PlannedTimeSyncRound | undefined;
+    let answer: TimeSyncResult;
     try {
       const overview = await job.enter(() => getPluginsOverview());
       if (
@@ -212,6 +440,7 @@ export function runTimeSyncRound(
           (active) => keyOf(active) === key,
         )
       ) {
+        checkPoints.delete(key);
         job.refuse("capability_off");
         return { kind: "idle" };
       }
@@ -238,10 +467,18 @@ export function runTimeSyncRound(
         // Takes what changed there first, so a change Ajour should lose
         // never goes over it, then plans again from what that left.
         job.set({ time_sync_round: { listed_first: true } });
+        sending = { plan: listing, context: planned.context };
         const listed = await job.enter(() =>
           syncTimeEntries(pluginId, connectionId, listing.request),
         );
-        const kept = keep({ plan: listing, context: planned.context }, listed);
+        // A plugin answers unchanged only to a request with a cursor.
+        if ("unchanged" in listed) throw new Error(UNCHANGED_TO_FULL_ROUND);
+        const kept = keep(
+          job,
+          generation,
+          { plan: listing, context: planned.context },
+          listed,
+        );
         if (kept.kind !== "applied") return kept;
         const next = planFor(ref, overview);
         if (!next || next.plan.request.changes.length === 0) {
@@ -259,18 +496,28 @@ export function runTimeSyncRound(
           },
         });
       }
-      const { request: sent } = planned.plan;
-      answer = await job.enter(() =>
+      // A round with changes also carries the plugin's cursor, when this
+      // window holds one, so the plugin can reuse what it keeps there. It
+      // can't answer unchanged to it: the round has changes.
+      const point = checkPoints.get(key);
+      const withCursor =
+        point?.generation === generation &&
+        planned.plan.request.changes.length > 0;
+      const sent = withCursor
+        ? { ...planned.plan.request, cursor: point.cursor }
+        : planned.plan.request;
+      if (withCursor) job.set({ time_sync_round: { has_cursor: true } });
+      sending = planned;
+      const sentAnswer = await job.enter(() =>
         syncTimeEntries(pluginId, connectionId, sent),
       );
+      if ("unchanged" in sentAnswer) throw new Error(UNCHANGED_TO_FULL_ROUND);
+      answer = sentAnswer;
     } catch (error) {
-      // The changes wait for the next round; the connection shows why.
-      const message =
-        error instanceof Error ? error.message : "The round failed.";
-      job.enter(() => localStore.failTimeSyncRound(ref, message, planned));
+      fail(job, error, sending ?? planned);
       throw error;
     }
-    return keep(planned, answer);
+    return keep(job, generation, planned, answer);
   };
 
   // The job opens now, so the time another window holds the lock counts too.
@@ -278,7 +525,17 @@ export function runTimeSyncRound(
     .run(
       "time_sync.round",
       { kind: "job", trigger: "schedule", detached: true },
-      (job) => exclusively(`ajour-time-sync:${key}`, () => run(job)),
+      (job) => {
+        job.set({
+          plugin: { id: pluginId },
+          connection: { id: connectionId },
+          time_sync_round: { trigger },
+        });
+        const planned = trigger === "check" ? planCheck(ref) : undefined;
+        return planned
+          ? check(job, planned)
+          : exclusively(lock, () => run(job));
+      },
     )
     .finally(() => {
       if (runningRounds.get(key) === promise) runningRounds.delete(key);
@@ -305,15 +562,25 @@ interface ConnectionSlot {
   /** Until when rounds wait for the retry, after a failure. */
   retryAt?: number;
   retryTimer?: ReturnType<typeof setTimeout>;
+  /** When the connection's last round listed the other system. */
+  listedAt?: number;
+}
+
+/** Whether this window is hidden, such as closed to the tray or minimized. */
+function windowHidden() {
+  return (
+    typeof document !== "undefined" && document.visibilityState === "hidden"
+  );
 }
 
 /**
  * Starts the rounds of every connection with Time entries on, and returns
  * the function that stops them. It follows the switches as the plugins
  * overview changes, sends a round 2 s after a store write from any window,
- * polls every 60 s, runs the next round at once while changes wait, and
- * after a failure waits 5 s, then longer, up to 5 minutes, before it tries
- * again. The tick records nothing; each round is its own job.
+ * checks every 5 s while the window shows, every 60 s while it is hidden
+ * and once when it shows again, runs the next round at once while changes
+ * wait, and after a failure waits 5 s, then longer, up to 5 minutes, before
+ * it tries again. The tick records nothing; each round is its own job.
  */
 export function startTimeSyncRunner(
   listener: TimeSyncRunnerListener,
@@ -321,7 +588,7 @@ export function startTimeSyncRunner(
   let stopped = false;
   let overview: PluginsOverview | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let checkTimer: ReturnType<typeof setTimeout> | undefined;
   const slots = new Map<string, ConnectionSlot>();
 
   const active = () => (overview ? activeTimeSyncConnections(overview) : []);
@@ -346,7 +613,8 @@ export function startTimeSyncRunner(
       return;
     }
     if (slot.running) {
-      slot.queued ??= trigger;
+      // A check waits for the next tick: the round running lists already.
+      if (trigger !== "check") slot.queued ??= trigger;
       return;
     }
     slot.running = true;
@@ -366,6 +634,7 @@ export function startTimeSyncRunner(
       .then(
         (outcome) => {
           if (outcome.kind === "idle") return;
+          if (outcome.kind !== "unchanged") slot.listedAt = Date.now();
           listener.succeeded(connection);
           // Changes that failed are sent again after a wait, as after a
           // failed round, never at once, or the same ones would loop.
@@ -395,19 +664,46 @@ export function startTimeSyncRunner(
       });
   };
 
-  /** Sends each active connection's poll round, then waits for the next. */
-  const poll = () => {
+  const scheduleCheck = () => {
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(
+      check,
+      windowHidden()
+        ? TIME_SYNC_HIDDEN_CHECK_INTERVAL_MS
+        : TIME_SYNC_CHECK_INTERVAL_MS,
+    );
+  };
+
+  /**
+   * Sends each active connection's check, then waits for the next. A
+   * connection without a cursor lists at most once a minute.
+   */
+  const check = () => {
     if (stopped) return;
-    clearTimeout(pollTimer);
-    for (const connection of active()) run(connection, "poll");
-    pollTimer = setTimeout(poll, TIME_SYNC_POLL_INTERVAL_MS);
+    for (const connection of active()) {
+      const { listedAt } = slotOf(keyOf(connection));
+      if (
+        !hasCursor(connection) &&
+        listedAt !== undefined &&
+        Date.now() - listedAt < TIME_SYNC_LISTING_INTERVAL_MS
+      ) {
+        continue;
+      }
+      run(connection, "check");
+    }
+    scheduleCheck();
+  };
+
+  /** Checks at once when the window shows again. */
+  const onVisibilityChange = () => {
+    if (overview && !windowHidden()) check();
   };
 
   /**
    * Follows the switches, forgets the connections that stopped, and starts
-   * the 60-second poll with the first overview. The runner reads no overview of its
-   * own: the sync scheduler refreshes it every 30 seconds, and each round
-   * reads a fresh one before it sends.
+   * the checks with the first overview. The runner reads no overview of its
+   * own: the sync scheduler refreshes it every 30 seconds, and each full
+   * round reads a fresh one before it sends.
    */
   const receive = (next: PluginsOverview) => {
     const first = overview === undefined;
@@ -425,7 +721,7 @@ export function startTimeSyncRunner(
         slots.delete(key);
       }
     }
-    if (first) pollTimer = setTimeout(poll, TIME_SYNC_POLL_INTERVAL_MS);
+    if (first) scheduleCheck();
   };
 
   const unsubscribeOverview = subscribePluginsOverview(receive);
@@ -435,6 +731,9 @@ export function startTimeSyncRunner(
       for (const connection of active()) run(connection, "change");
     }, TIME_SYNC_DEBOUNCE_MS);
   });
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
   const cached = getCachedPluginsOverview();
   if (cached) receive(cached);
 
@@ -442,8 +741,11 @@ export function startTimeSyncRunner(
     stopped = true;
     unsubscribeOverview();
     unsubscribeStore();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
     clearTimeout(debounceTimer);
-    clearTimeout(pollTimer);
+    clearTimeout(checkTimer);
     for (const slot of slots.values()) clearTimeout(slot.retryTimer);
   };
 }

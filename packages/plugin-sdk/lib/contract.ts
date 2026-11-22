@@ -9,6 +9,53 @@ export type PluginManifest = {
   apiVersion: 4;
   displayName: string;
   capabilities: {
+    handoff?:
+      | {
+          tools: {
+            id: string;
+            settings: {
+              type:
+                | "number"
+                | "url"
+                | "text"
+                | "password"
+                | "select"
+                | "checkbox"
+                | "typeOverrides";
+              id: string;
+              label: string;
+              options?: { value: string; label: string }[] | undefined;
+              helpText?: string | undefined;
+              min?: number | undefined;
+              max?: number | undefined;
+              required?: boolean | undefined;
+              placeholder?: string | undefined;
+              secret?: boolean | undefined;
+              defaultValue?: string | number | boolean | undefined;
+              step?: number | undefined;
+              overrides?: string[] | undefined;
+              capability?:
+                | "handoff"
+                | "connector"
+                | "codeHost"
+                | "calendar"
+                | "team"
+                | "projectSource"
+                | "timeSync"
+                | undefined;
+              passToPlugin?: boolean | undefined;
+            }[];
+            label: string;
+            iconSvg: string;
+            connection?: "required" | "none" | undefined;
+            listsThreads?: boolean | undefined;
+            followsState?: boolean | undefined;
+            hooks?: boolean | undefined;
+            closesThreads?: "archive" | "delete" | undefined;
+          }[];
+          promptTemplate?: string | undefined;
+        }
+      | undefined;
     projectDataShape?:
       | {
           apiVersion: 1;
@@ -34,9 +81,9 @@ export type PluginManifest = {
             | undefined;
           comments?:
             | {
+                delete?: boolean | undefined;
                 maxLength?: number | undefined;
                 edit?: boolean | undefined;
-                delete?: boolean | undefined;
                 reactions?:
                   | (
                       | "like"
@@ -54,6 +101,7 @@ export type PluginManifest = {
             | undefined;
           settle?: boolean | undefined;
           assign?: boolean | undefined;
+          itemTypes?: boolean | undefined;
         }
       | undefined;
     codeHost?: {} | undefined;
@@ -61,45 +109,6 @@ export type PluginManifest = {
     team?: { apiVersion: 1 } | undefined;
     projectSource?: {} | undefined;
     timeSync?: {} | undefined;
-    handoff?:
-      | {
-          tools: {
-            id: string;
-            settings: {
-              type:
-                "number" | "url" | "text" | "password" | "select" | "checkbox";
-              id: string;
-              label: string;
-              options?: { value: string; label: string }[] | undefined;
-              min?: number | undefined;
-              max?: number | undefined;
-              required?: boolean | undefined;
-              placeholder?: string | undefined;
-              helpText?: string | undefined;
-              secret?: boolean | undefined;
-              defaultValue?: string | number | boolean | undefined;
-              step?: number | undefined;
-              capability?:
-                | "connector"
-                | "codeHost"
-                | "calendar"
-                | "team"
-                | "projectSource"
-                | "timeSync"
-                | "handoff"
-                | undefined;
-              passToPlugin?: boolean | undefined;
-            }[];
-            label: string;
-            iconSvg: string;
-            connection?: "required" | "none" | undefined;
-            listsThreads?: boolean | undefined;
-            followsState?: boolean | undefined;
-            hooks?: boolean | undefined;
-          }[];
-          promptTemplate?: string | undefined;
-        }
-      | undefined;
     agentTask?:
       | {
           tasks: {
@@ -152,26 +161,28 @@ export type PluginManifest = {
                     | "text"
                     | "password"
                     | "select"
-                    | "checkbox";
+                    | "checkbox"
+                    | "typeOverrides";
                   id: string;
                   label: string;
                   options?: { value: string; label: string }[] | undefined;
+                  helpText?: string | undefined;
                   min?: number | undefined;
                   max?: number | undefined;
                   required?: boolean | undefined;
                   placeholder?: string | undefined;
-                  helpText?: string | undefined;
                   secret?: boolean | undefined;
                   defaultValue?: string | number | boolean | undefined;
                   step?: number | undefined;
+                  overrides?: string[] | undefined;
                   capability?:
+                    | "handoff"
                     | "connector"
                     | "codeHost"
                     | "calendar"
                     | "team"
                     | "projectSource"
                     | "timeSync"
-                    | "handoff"
                     | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
@@ -206,45 +217,37 @@ export type PluginManifest = {
   entrypoint?: string | undefined;
   connectionFields?:
     | {
-        type: "number" | "url" | "text" | "password" | "select" | "checkbox";
+        type:
+          | "number"
+          | "url"
+          | "text"
+          | "password"
+          | "select"
+          | "checkbox"
+          | "typeOverrides";
         id: string;
         label: string;
         options?: { value: string; label: string }[] | undefined;
+        helpText?: string | undefined;
         min?: number | undefined;
         max?: number | undefined;
         required?: boolean | undefined;
         placeholder?: string | undefined;
-        helpText?: string | undefined;
         secret?: boolean | undefined;
         defaultValue?: string | number | boolean | undefined;
         step?: number | undefined;
+        overrides?: string[] | undefined;
         capability?:
+          | "handoff"
           | "connector"
           | "codeHost"
           | "calendar"
           | "team"
           | "projectSource"
           | "timeSync"
-          | "handoff"
           | undefined;
         passToPlugin?: boolean | undefined;
       }[]
-    | undefined;
-  connectionAccess?:
-    | {
-        id: string;
-        label: string;
-        description?: string | undefined;
-        tokenScope?: string | undefined;
-        always?: boolean | undefined;
-        operations?: string[] | undefined;
-      }[]
-    | undefined;
-  runtime?:
-    | {
-        start?: "whenNeeded" | "alwaysReady" | undefined;
-        memoryCeilingMb?: number | undefined;
-      }
     | undefined;
   network?:
     | {
@@ -293,6 +296,22 @@ export type PluginManifest = {
           | undefined;
       }
     | undefined;
+  connectionAccess?:
+    | {
+        id: string;
+        label: string;
+        description?: string | undefined;
+        tokenScope?: string | undefined;
+        always?: boolean | undefined;
+        operations?: string[] | undefined;
+      }[]
+    | undefined;
+  runtime?:
+    | {
+        start?: "whenNeeded" | "alwaysReady" | undefined;
+        memoryCeilingMb?: number | undefined;
+      }
+    | undefined;
   $schema?: string | undefined;
   processes?:
     | {
@@ -339,26 +358,34 @@ export type PluginManifest = {
 
 /** A connection field or agent task setting. Secret fields never reach the plugin. */
 export type PluginField = {
-  type: "number" | "url" | "text" | "password" | "select" | "checkbox";
+  type:
+    | "number"
+    | "url"
+    | "text"
+    | "password"
+    | "select"
+    | "checkbox"
+    | "typeOverrides";
   id: string;
   label: string;
   options?: { value: string; label: string }[] | undefined;
+  helpText?: string | undefined;
   min?: number | undefined;
   max?: number | undefined;
   required?: boolean | undefined;
   placeholder?: string | undefined;
-  helpText?: string | undefined;
   secret?: boolean | undefined;
   defaultValue?: string | number | boolean | undefined;
   step?: number | undefined;
+  overrides?: string[] | undefined;
   capability?:
+    | "handoff"
     | "connector"
     | "codeHost"
     | "calendar"
     | "team"
     | "projectSource"
     | "timeSync"
-    | "handoff"
     | undefined;
   passToPlugin?: boolean | undefined;
 };
@@ -556,13 +583,13 @@ export type PluginConnection = {
 
 export type ValidationContext = {
   capabilities: (
+    | "handoff"
     | "connector"
     | "codeHost"
     | "calendar"
     | "team"
     | "projectSource"
     | "timeSync"
-    | "handoff"
   )[];
 };
 
@@ -648,7 +675,7 @@ export type BacklogSyncResult = {
         fields: {
           originalEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;
@@ -658,7 +685,7 @@ export type BacklogSyncResult = {
             | undefined;
           remainingEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;
@@ -668,7 +695,7 @@ export type BacklogSyncResult = {
             | undefined;
           completedEstimateHours?:
             | {
-                status: "conflict" | "noop" | "pushed" | "pulled" | "error";
+                status: "error" | "conflict" | "noop" | "pushed" | "pulled";
                 message?: string | undefined;
                 baselineValue?: number | undefined;
                 remoteValue?: number | undefined;
@@ -753,6 +780,20 @@ export type WriteDescriptionResult = {
     cut?: boolean | undefined;
   };
   outcome: "written" | "conflict";
+};
+
+/** Needs `connector.itemTypes`. A request type without `sourceId` has no synced item yet. */
+export type DescribeItemTypesRequest = {
+  types: { name: string; sourceId?: string | undefined }[];
+};
+
+export type DescribeItemTypesResult = {
+  types: {
+    name: string;
+    fields?: { name: string; id?: string | undefined }[] | undefined;
+    iconSvg?: string | undefined;
+    suggestions?: Record<string, string[]> | undefined;
+  }[];
 };
 
 /** Each code host operation's request and result, by the function name it exports. */
@@ -1281,6 +1322,7 @@ export type ProjectSourceSyncResult =
             group?: string | undefined;
             estimateHours?: number | undefined;
             myHours?: number | undefined;
+            workedHours?: number | undefined;
           }[];
           complete: boolean;
           url?: string | undefined;
@@ -1326,6 +1368,7 @@ export type ProjectSourceSnapshot = {
       group?: string | undefined;
       estimateHours?: number | undefined;
       myHours?: number | undefined;
+      workedHours?: number | undefined;
     }[];
     complete: boolean;
     url?: string | undefined;
@@ -1367,6 +1410,7 @@ export type ProjectSourceProject = {
     group?: string | undefined;
     estimateHours?: number | undefined;
     myHours?: number | undefined;
+    workedHours?: number | undefined;
   }[];
   complete: boolean;
   url?: string | undefined;
@@ -1394,6 +1438,7 @@ export type ProjectSourceTask = {
   group?: string | undefined;
   estimateHours?: number | undefined;
   myHours?: number | undefined;
+  workedHours?: number | undefined;
 };
 
 /** A project's budget. The source writes every figure; `remaining` may be negative. */
@@ -1407,7 +1452,9 @@ export type ProjectSourceBudget = {
 };
 
 /** What `syncTimeEntries` receives: the window to list, as local dates in the
-user's time zone, and at most 20 changes to apply first, in order. */
+user's time zone, at most 20 changes to apply first, in order, and the
+cursor of your last answer, when Ajour holds one. An older Ajour sends
+no cursor. */
 export type TimeSyncRequest = {
   changes: (
     | {
@@ -1455,6 +1502,7 @@ export type TimeSyncRequest = {
   timeZone: string;
   from: string;
   to: string;
+  cursor?: string | undefined;
 };
 
 /** One change: an entry to create or update, or one to delete. Send its
@@ -1515,7 +1563,50 @@ export type TimeSyncEntryValues = {
   taskRemoteId?: string | undefined;
 };
 
-/** What `syncTimeEntries` answers: one result per change, and the remote entries in the window. */
+/** What `syncTimeEntries` answers: the full answer, or unchanged to a check round. */
+export type TimeSyncAnswer =
+  | {
+      entries: {
+        updatedAt: string;
+        remoteId: string;
+        localDate: string;
+        minutes: number;
+        running: boolean;
+        projectRemoteId: string;
+        taskName: string;
+        countingSince?: string | undefined;
+        taskRemoteId?: string | undefined;
+        clientRef?: string | undefined;
+      }[];
+      results: (
+        | {
+            status: "synced";
+            syncKey: string;
+            entry?:
+              | {
+                  updatedAt: string;
+                  remoteId: string;
+                  localDate: string;
+                  minutes: number;
+                  running: boolean;
+                  projectRemoteId: string;
+                  taskName: string;
+                  countingSince?: string | undefined;
+                  taskRemoteId?: string | undefined;
+                  clientRef?: string | undefined;
+                }
+              | undefined;
+          }
+        | { message: string; status: "refused"; syncKey: string }
+        | { message: string; status: "failed"; syncKey: string }
+      )[];
+      cursor?: string | undefined;
+    }
+  | { cursor: string; unchanged: true };
+
+/** The full answer: one result per change, the remote entries in the window,
+and, when your system keeps a change marker, the cursor Ajour sends back
+in its next check round. Without a cursor, every round lists. */
 export type TimeSyncResult = {
   entries: {
     updatedAt: string;
@@ -1551,7 +1642,13 @@ export type TimeSyncResult = {
     | { message: string; status: "refused"; syncKey: string }
     | { message: string; status: "failed"; syncKey: string }
   )[];
+  cursor?: string | undefined;
 };
+
+/** The answer to a check round, a request with a cursor and no changes, when
+nothing changed in your system since that cursor: the cursor for the next
+check, without listing. Ajour refuses it to any other request. */
+export type TimeSyncUnchangedResult = { cursor: string; unchanged: true };
 
 /** How one change went: `synced` with the entry as stored (none for a
 delete), `refused` for good with a sentence the user reads, or `failed`
@@ -1659,3 +1756,15 @@ export type ListThreadsResult = {
     updatedAt?: number | undefined;
   }[];
 };
+
+export type CloseThreadRequest = {
+  tool: string;
+  handoff: {
+    id: string;
+    threadId: string;
+    native: Record<string, unknown>;
+    folderId: string;
+  };
+};
+
+export type CloseThreadResult = {};

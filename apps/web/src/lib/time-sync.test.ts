@@ -147,6 +147,8 @@ describe("a time sync round", () => {
         connection: { id: connectionId },
         time_sync_round: {
           trigger: "change",
+          has_cursor: false,
+          unchanged: false,
           change_count: 1,
           synced_count: 1,
           put_back_count: 0,
@@ -163,16 +165,16 @@ describe("a time sync round", () => {
     expect(JSON.stringify(jobs()[0])).not.toMatch(/Acme|Ticket|redirect/);
   });
 
-  it("starts no round for a store write that leaves nothing to send, while the poll still lists the window", async () => {
+  it("starts no round for a store write that leaves nothing to send, while the check still asks the other system", async () => {
     const { round, jobs } = await load();
     await round("change");
 
     expect(await round("change")).toEqual({ kind: "idle" });
     expect(jobs()).toHaveLength(1);
 
-    expect(await round("poll")).toMatchObject({ kind: "applied", synced: 0 });
+    expect(await round("check")).toEqual({ kind: "unchanged" });
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { trigger: "poll", change_count: 0 },
+      time_sync_round: { trigger: "check", change_count: 0 },
     });
   });
 
@@ -229,6 +231,74 @@ describe("a time sync round", () => {
     ).toMatchObject({ agreed: { minutes: 90 } });
   });
 
+  it("deletes there an entry whose create answer was lost, once it is deleted in Ajour", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    /** The client references of the planner's entries, as each round listed them. */
+    const listed: (string | undefined)[][] = [];
+    let loseAnswer = true;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const response = await fetchAsTheApp(url, init);
+      if (!String(url).endsWith("/sync-time-entries")) return response;
+      const answer = (await response.clone().json()) as {
+        entries?: { clientRef?: string }[];
+      };
+      if (answer.entries) {
+        listed.push(answer.entries.map((entry) => entry.clientRef));
+      }
+      if (loseAnswer) {
+        loseAnswer = false;
+        throw new TypeError("The connection dropped.");
+      }
+      return response;
+    });
+
+    // The planner makes the entry, but its answer never reaches Ajour.
+    await expect(round("change")).rejects.toThrow();
+    expect(listed).toEqual([[entryId]]);
+    expect(localStore.snapshot().timeSyncs?.[connectionId]?.copies).toEqual({});
+
+    localStore.deleteTimesheetEntry(entryId);
+    expect(await round("change")).toMatchObject({ synced: 1 });
+    // The delete was the last write there.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
+
+    expect(listed.at(-1)).toEqual([]);
+    expect(localStore.snapshot().timeSyncs?.[connectionId]).not.toHaveProperty(
+      "unconfirmed",
+    );
+  });
+
+  it("counts no create as unconfirmed when the listing that goes first fails, since none left Ajour", async () => {
+    const { localStore, connectionId, entryId, round } = await load();
+    await round("change");
+    // An edit lists first; the new entry's create waits behind it.
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+    const synced = localStore
+      .snapshot()
+      .timesheetEntries.find((item) => item._id === entryId)!;
+    localStore.saveManualTimeEntry({
+      localDate: synced.localDate,
+      projectId: synced.projectId!,
+      taskId: synced.taskId!,
+      note: "",
+      durationMs: HOUR,
+    });
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+      String(url).endsWith("/sync-time-entries")
+        ? new Response(JSON.stringify({ error: "The planner is down." }), {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          })
+        : fetchAsTheApp(url, init),
+    );
+
+    await expect(round("change")).rejects.toThrow("The planner is down.");
+
+    expect(localStore.snapshot().timeSyncs?.[connectionId]).not.toHaveProperty(
+      "unconfirmed",
+    );
+  });
+
   it("takes an entry logged in the other system, and an edit there makes an older Undo of it refuse", async () => {
     const { localStore, connectionId, entryId, round, jobs } = await load();
     await round("change");
@@ -246,7 +316,7 @@ describe("a time sync round", () => {
       taskName: "Design review",
     });
 
-    expect(await round("poll")).toMatchObject({ received: 1, held: 1 });
+    expect(await round("check")).toMatchObject({ received: 1, held: 1 });
     const taken = localStore
       .snapshot()
       .timesheetEntries.find((entry) => entry._id !== entryId)!;
@@ -258,7 +328,7 @@ describe("a time sync round", () => {
       }),
     ]);
     expect(jobs().at(-1)).toMatchObject({
-      time_sync_round: { trigger: "poll", received_count: 1, held_count: 1 },
+      time_sync_round: { trigger: "check", received_count: 1, held_count: 1 },
     });
     // A round adds no Undo toast, and nothing it took goes back.
     expect(await round("change")).toEqual({ kind: "idle" });
@@ -273,7 +343,7 @@ describe("a time sync round", () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     editExampleRemoteEntry(connectionId, copy!.remoteId, { minutes: 20 });
 
-    expect(await round("poll")).toMatchObject({ received: 1 });
+    expect(await round("check")).toMatchObject({ received: 1 });
     expect(
       localStore
         .snapshot()
@@ -296,7 +366,7 @@ describe("a time sync round", () => {
 
     // The store refuses a write to the submitted week, so neither round
     // would go through if it made one.
-    expect(await round("poll")).toMatchObject({ received: 0, putBack: 0 });
+    expect(await round("check")).toMatchObject({ received: 0, putBack: 0 });
     expect(await round("change")).toMatchObject({ synced: 0, putBack: 1 });
 
     expect(
@@ -306,7 +376,8 @@ describe("a time sync round", () => {
       outcome: "ok",
       time_sync_round: { trigger: "change", put_back_count: 1 },
     });
-    expect(await round("poll")).toMatchObject({ putBack: 0 });
+    // Nothing went back again, so nothing changed there since.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
     expect(
       localStore.snapshot().timeSyncs?.[connectionId]?.copies[entryId],
     ).toMatchObject({ remoteId, agreed: { minutes: 90 } });
@@ -338,8 +409,8 @@ describe("a time sync round", () => {
       outcome: "ok",
       time_sync_round: { trigger: "change", listed_first: true },
     });
-    // Nothing was created there again for the next round to list.
-    expect(await round("poll")).toMatchObject({ received: 0 });
+    // Nothing was created there again since the round.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
   });
 
   it("counts what the listing took with what the round then sent, on the job and in Settings", async () => {
@@ -446,6 +517,135 @@ describe("a time sync round", () => {
 
     expect(rounds).toBe(1);
   }, 15_000);
+
+  // Check rounds (#843): the example planner keeps a change marker, and
+  // its cursor comes back with each full answer.
+  it("sends a check with the last cursor, and an unchanged answer writes nothing, reads no plugins overview and ends quiet", async () => {
+    const { localStore, round, jobs } = await load();
+    await round("change");
+    const before = localStore.snapshot();
+    const reads: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      reads.push(new URL(url).pathname);
+      return fetchAsTheApp(url, init);
+    });
+
+    expect(await round("check")).toEqual({ kind: "unchanged" });
+
+    expect(localStore.snapshot()).toBe(before);
+    expect(reads).toEqual([
+      `/api/plugins/${PLUGIN}/connections/${jobs()[0]!.connection!.id}/sync-time-entries`,
+    ]);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "noop",
+      // The local log file leaves it out (#844).
+      quiet: true,
+      time_sync_round: {
+        trigger: "check",
+        has_cursor: true,
+        change_count: 0,
+        unchanged: true,
+      },
+    });
+  });
+
+  it("makes the first round of a new day a full one, since the rules take entries by their day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const lateEvening = new Date();
+      lateEvening.setHours(23, 59, 0, 0);
+      vi.setSystemTime(lateEvening);
+      const { round, jobs } = await load();
+      await round("change");
+      expect(await round("check")).toEqual({ kind: "unchanged" });
+
+      // An entry there dated today was skipped yesterday: only a listing takes it.
+      vi.setSystemTime(lateEvening.getTime() + 2 * 60_000);
+      await round("check");
+      expect(jobs().at(-1)).toMatchObject({
+        time_sync_round: { trigger: "check", has_cursor: false },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes in a check what changed in the other system since the cursor", async () => {
+    const { localStore, connectionId, round, jobs } = await load();
+    await round("change");
+    logExampleRemoteEntry(connectionId, {
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+
+    expect(await round("check")).toMatchObject({
+      kind: "applied",
+      received: 1,
+    });
+
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "ok",
+      time_sync_round: { trigger: "check", has_cursor: true, unchanged: false },
+    });
+    expect(jobs().at(-1)).not.toHaveProperty("quiet");
+    // The marker moved with what the round took: the next check is unchanged.
+    expect(await round("check")).toEqual({ kind: "unchanged" });
+  });
+
+  it("sends a full round once Ajour changed since the last one, with its changes and the cursor", async () => {
+    const { localStore, entryId, round, jobs } = await load();
+    await round("change");
+    localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+
+    expect(await round("check")).toMatchObject({ kind: "applied", synced: 1 });
+
+    // The plugin may reuse what it keeps in the cursor; it can't answer
+    // unchanged to a round with changes.
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: { trigger: "check", has_cursor: true, change_count: 1 },
+    });
+  });
+
+  it("drops what a check took when Ajour changed while it ran, and sends a full round next", async () => {
+    const { localStore, connectionId, entryId, round, jobs } = await load();
+    await round("change");
+    logExampleRemoteEntry(connectionId, {
+      localDate: formatLocalDateFromTimestamp(Date.now()),
+      minutes: 45,
+      projectRemoteId: "ACME-SUP",
+      taskName: "Ticket #101 - Login",
+    });
+    // The user edits the entry while the check is on its way.
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const response = await fetchAsTheApp(url, init);
+      if (String(url).endsWith("/sync-time-entries")) {
+        localStore.updateTimesheetEntry(entryId, { durationMs: 2 * HOUR });
+        vi.stubGlobal("fetch", fetchAsTheApp);
+      }
+      return response;
+    });
+
+    expect(await round("check")).toEqual({ kind: "discarded" });
+
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+    expect(jobs().at(-1)).toMatchObject({
+      outcome: "noop",
+      time_sync_round: { trigger: "check", discarded: "inputs_changed" },
+    });
+    expect(await round("check")).toMatchObject({
+      kind: "applied",
+      synced: 1,
+      received: 1,
+    });
+    // The full round lists first, with no changes and no cursor, then sends
+    // the edit with the cursor that listing gave.
+    expect(jobs().at(-1)).toMatchObject({
+      time_sync_round: { listed_first: true, has_cursor: true },
+    });
+  });
 
   it("drops the synced copies when Time entries goes off", async () => {
     const { appApi, localStore, connectionId, round } = await load();

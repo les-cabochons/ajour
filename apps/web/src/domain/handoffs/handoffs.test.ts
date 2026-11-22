@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
+  getHandoffCloseAction,
   getHandoffChip,
   getHandoffItem,
   getHandoffItemKeys,
@@ -151,6 +152,34 @@ describe("handoff tools", () => {
         reason: "copilot isn't on PATH.",
       }),
     ).toBe("copilot isn't on PATH.");
+  });
+
+  it("names the close each tool offers, and asks first only before a delete (#850)", () => {
+    const [t3, claude] = listHandoffTools(
+      handoffOverview({ closes: { t3: "delete", claude: "archive" } }),
+      new Map(),
+    );
+    expect(getHandoffCloseAction(claude)).toEqual({
+      kind: "archive",
+      label: "Close in Claude Code",
+      done: "Closed in Claude Code and removed from the item.",
+      failure: "Couldn't close the thread",
+    });
+    expect(getHandoffCloseAction(t3)).toEqual({
+      kind: "delete",
+      label: "Delete in T3 Code",
+      done: "Deleted in T3 Code and removed from the item.",
+      failure: "Couldn't delete the thread",
+      confirm: {
+        title: "Delete this thread in T3 Code?",
+        body: "T3 Code deletes its conversation for good, and Ajour removes it from this item.",
+        action: "Delete",
+      },
+    });
+    // A tool that can't close threads, or one no plugin names now, has none.
+    const [plain] = listHandoffTools(handoffOverview(), new Map());
+    expect(getHandoffCloseAction(plain)).toBeUndefined();
+    expect(getHandoffCloseAction(undefined)).toBeUndefined();
   });
 
   it("splits a key at its last colon", () => {

@@ -1,8 +1,8 @@
 # GitHub
 
-The GitHub plugin brings your open pull requests into Ajour: the ones you wrote, and the ones you were asked to review. Ajour then tracks which ones need you. See [Pull requests](/pull-requests/). It also syncs the issues assigned to you into your backlog. See [Issues](#issues).
+The GitHub plugin brings your open pull requests into Ajour: the ones you wrote, and the ones you were asked to review. Ajour then tracks which ones need you. See [Deck](/deck/). It also syncs the issues assigned to you into your backlog. See [Issues](#issues).
 
-<Shot name="pull-requests" alt="Pull requests from GitHub in Ajour" />
+<Shot name="deck" alt="Pull requests from GitHub in Deck" />
 
 ## Set up
 
@@ -12,7 +12,7 @@ The GitHub plugin brings your open pull requests into Ajour: the ones you wrote,
    - **Classic token**: the `repo` and `read:org` scopes.
 3. In Ajour, open the plugin, turn it on if it is off, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 
-**Pull requests** then shows in the sidebar's views. Pull requests sync every 5 minutes while Ajour is open. Change it with **Sync interval (minutes)**, or turn off **Sync pull requests automatically**.
+**Deck** then shows in the sidebar's views. Pull requests sync every 5 minutes while Ajour is open. Change it with **Sync interval (minutes)**, or turn off **Sync pull requests automatically**.
 
 ## Connection fields
 

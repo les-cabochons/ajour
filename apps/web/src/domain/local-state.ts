@@ -90,6 +90,11 @@ export interface LocalTaskSourceLink {
   assigned: boolean;
   /** The user's hours on the task as the source counts them, when it can. */
   myHours?: number;
+  /**
+   * The hours everyone used on the task as the source counts them, as of the
+   * connection's `asOf`. See `sourceTaskUsage` in domain/projects/project-budget.ts.
+   */
+  workedHours?: number;
 }
 
 /**
@@ -150,6 +155,16 @@ export interface LocalTimeSync {
    * and counts as put back instead of sent.
    */
   puttingBack: string[];
+  /**
+   * Creates Ajour sent without getting the entry back, by sync key, with the
+   * day sent (#838): the change failed, or the whole round did, so the other
+   * system may hold the entry. While the entry takes part, its next create
+   * finds it there by its client reference. Once it no longer does, Ajour
+   * sends a delete without a remote id, which finds it the same way. Ajour
+   * forgets a create once a change for it syncs, or its day leaves the
+   * window.
+   */
+  unconfirmed?: Record<string, string>;
   /** What the last round that reached the plugin did. */
   lastRound?: LocalTimeSyncRound;
   /** Why the last round failed, until a round goes through. */
@@ -173,6 +188,23 @@ export interface LocalSyncedCopy {
    * sides agree again. The later of it and `remoteUpdatedAt` wins a conflict.
    */
   changedAt?: number;
+  /**
+   * Ajour's values that lost to a later change there which Ajour holds, such
+   * as a move to a project the connection doesn't manage (#835). Ajour
+   * doesn't send them, since they would overwrite that change, while the
+   * entry keeps them. A new change in Ajour, or taking the change there,
+   * drops them.
+   */
+  heldBack?: TimeSyncEntryValues;
+  /**
+   * The other system stopped listing the entry in the round whose change for
+   * it failed or was refused, as when Continue's restart deleted it there
+   * before the start failed, or a round that sent a Continue failed as a
+   * whole. Ajour sends the entry again, even with the agreed values, and
+   * never reads it missing there as deleted. A listing that shows the entry
+   * drops it, and so does a change that syncs, which replaces the copy.
+   */
+  droppedThere?: true;
 }
 
 /** A change the other system refused, with its message for the user. */
@@ -213,8 +245,8 @@ export interface LocalTimeSyncHold {
 /** What one round did, in counts, for the connection's status line. */
 export interface LocalTimeSyncRound {
   /**
-   * When the round ran. A later round that changes nothing keeps it, so the
-   * 60-second poll writes nothing.
+   * When the round ran. A later round that changes nothing keeps it, so a
+   * full round that finds nothing writes nothing, as a check does.
    */
   at: number;
   /** Changes the other system took, besides the put-backs. */
@@ -282,7 +314,14 @@ export interface LocalProjectTask {
   createdAt: number;
   archivedAt?: number;
   billable?: boolean;
+  /** The task's budget. On a task its project source knows, the source writes it. */
   budgetMs?: number;
+  /**
+   * The user's own budget for a task its project source knows, which wins
+   * over the source's `budgetMs` (#816). 0 means no budget. Personal, like
+   * the adjustment. Read a task's budget through `getTaskBudgetMs`.
+   */
+  budgetOverrideMs?: number;
   adjustmentMs?: number;
   /** The number key that opens or starts this pinned task. One task holds a slot at most. */
   pinnedSlot?: PinnedTaskSlot;

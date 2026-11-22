@@ -38,6 +38,8 @@ export const fixtureSnapshot: ProjectSourceSnapshot = {
           estimateHours: 8,
           assigned: true,
           myHours: 5.25,
+          // The user's 5.25 hours and a colleague's half hour.
+          workedHours: 5.75,
         },
         {
           remoteId: "1002",
@@ -47,6 +49,7 @@ export const fixtureSnapshot: ProjectSourceSnapshot = {
           billable: true,
           estimateHours: 4,
           assigned: false,
+          workedHours: 1.5,
         },
         {
           remoteId: "1003",
@@ -57,6 +60,7 @@ export const fixtureSnapshot: ProjectSourceSnapshot = {
           estimateHours: 2,
           assigned: true,
           myHours: 2,
+          workedHours: 2,
         },
       ],
     },

@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type {
+  CloseThreadRequest,
   ListThreadsRequest,
   PluginConnection,
   PluginModule,
@@ -34,6 +35,7 @@ const withoutConnection = {
       },
     ],
   }),
+  closeThread: (_request: CloseThreadRequest) => ({}),
 } satisfies PluginModule;
 
 const withConnection = {
@@ -63,6 +65,10 @@ const withConnection = {
       native: {},
     })),
   }),
+  closeThread: async (
+    _connection: PluginConnection,
+    _request: CloseThreadRequest,
+  ) => ({}),
 } satisfies PluginModule;
 
 const both: PluginModule = {
@@ -73,7 +79,7 @@ const both: PluginModule = {
 };
 
 it("types handoff exports with and without a connection", () => {
-  expect(Object.keys(withoutConnection)).toHaveLength(4);
-  expect(Object.keys(withConnection)).toHaveLength(4);
+  expect(Object.keys(withoutConnection)).toHaveLength(5);
+  expect(Object.keys(withConnection)).toHaveLength(5);
   expect(typeof both.startHandoff).toBe("function");
 });

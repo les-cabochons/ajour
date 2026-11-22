@@ -38,6 +38,16 @@ export interface DevelopmentPluginSettings {
   directories: string[];
 }
 
+/**
+ * Settings › General › Terminal: the terminal app that opens plugin commands,
+ * and the ones main found installed on this computer. Linux has none.
+ */
+export interface DesktopTerminalApps {
+  value: string | undefined;
+  /** The installed terminals, each with its own icon as a data URL when main could read it. */
+  choices: { value: string; label: string; icon?: string }[];
+}
+
 export interface DesktopUpdateCheckResult {
   track: UpdateTrack;
   currentVersion: string;
@@ -281,6 +291,13 @@ export interface DesktopLogFilter {
   trace_id?: string;
   connection_id?: string;
   plugin_id?: string;
+  /**
+   * One `outcome_reason`, or several; null for the events without one.
+   * logs.query and logs.tail only, as `plugin_version`.
+   */
+  outcome_reason?: string | string[] | null;
+  /** The plugin's `version`. */
+  plugin_version?: string;
 }
 
 /** A page of results: at most `limit` (1 to 500, 100 by default), after `cursor`. */
@@ -334,6 +351,12 @@ export interface DesktopLogTrace extends DesktopLogReadStats {
  */
 export type DesktopLogActionView = "all" | "failed" | "slow";
 
+/** logs.actions filters on the common fields only: main refuses the others. */
+export type DesktopLogActionsFilter = Omit<
+  DesktopLogFilter,
+  "outcome_reason" | "plugin_version"
+> & { show?: DesktopLogActionView };
+
 /** One action: a trace root, with what its trace holds. */
 export interface DesktopLogAction {
   event: LoggedEvent;
@@ -353,6 +376,16 @@ export interface DesktopLogActions extends DesktopLogReadStats {
   match_count: number;
 }
 
+/** An outcome main counts as a problem: anything not `ok` or `noop`. */
+export type ProblemOutcome = Exclude<Outcome, "ok" | "noop">;
+
+/** A sync's start and how it ended: a failed one's, its innermost failed hop's. */
+export interface DesktopLogSyncEnd {
+  started_at: string;
+  outcome: Outcome;
+  outcome_reason?: string;
+}
+
 /** The Overview's range: this launch, 24 hours or 7 days. */
 export type DesktopLogRange = "launch" | "24h" | "7d";
 
@@ -368,10 +401,43 @@ export interface DesktopLogOverview extends DesktopLogReadStats {
     outcome_reason?: string;
     count: number;
   }[];
+  /**
+   * The problems among the counts, most first, then the latest: at most 50,
+   * each with when its last one started and where they happened (its
+   * connection, else its plugin), at most 3 places, most first.
+   */
+  problems: {
+    name: string;
+    outcome: ProblemOutcome;
+    outcome_reason?: string;
+    count: number;
+    last_at: string;
+    places: { connection_id?: string; plugin_id?: string; count: number }[];
+  }[];
+  /**
+   * Each connection's backlog syncs, one per trace. Connections with a
+   * failed sync first, the latest failure first.
+   */
+  syncs: {
+    connection_id: string;
+    sync_count: number;
+    failed_count: number;
+    last: DesktopLogSyncEnd;
+    last_failure?: DesktopLogSyncEnd;
+  }[];
+  /** Plugin operations' timeouts, crashes and capacity refusals, by plugin and version. */
+  plugin_problems: {
+    plugin_id: string;
+    plugin_version?: string;
+    outcome: ProblemOutcome;
+    outcome_reason?: string;
+    count: number;
+    last_at: string;
+  }[];
   /** One per hour of the range, oldest first, with each problem outcome's count. */
   problems_per_hour: {
     hour: string;
-    counts: Partial<Record<Exclude<Outcome, "ok" | "noop">, number>>;
+    counts: Partial<Record<ProblemOutcome, number>>;
   }[];
   durations: { name: string; count: number; p50_ms: number; p95_ms: number }[];
   latest_launch: LoggedEvent | null;
@@ -458,7 +524,9 @@ declare global {
       onTrayAction?: (
         callback: (action: DesktopTrayAction) => void,
       ) => () => void;
-      getTerminalApp?: () => Promise<string>;
+      /** The terminal app that opens plugin commands, and the installed ones to pick from. */
+      getTerminalApp?: () => Promise<DesktopTerminalApps>;
+      /** Saves an installed terminal app as the choice, and resolves with it. */
       setTerminalApp?: (value: string) => Promise<string>;
       getCliCommand?: (trace?: TraceCarrier) => Promise<DesktopCliCommandState>;
       /** Installs the ajour command of the app's own version, and resolves with how it ended. */
@@ -574,7 +642,7 @@ declare global {
         trace?: TraceCarrier,
       ) => Promise<DesktopLogTrace>;
       listLogActions?: (
-        filter: DesktopLogFilter & { show?: DesktopLogActionView },
+        filter: DesktopLogActionsFilter,
         page?: DesktopLogPage,
         trace?: TraceCarrier,
       ) => Promise<DesktopLogActions>;
@@ -637,7 +705,7 @@ export function getLogTrace(traceId: string) {
 
 /** The actions, one row per trace root, newest first. */
 export function listLogActions(
-  filter: DesktopLogFilter & { show?: DesktopLogActionView } = {},
+  filter: DesktopLogActionsFilter = {},
   page?: DesktopLogPage,
 ) {
   return logsBridge("listLogActions")(filter, page, traceCarrier());

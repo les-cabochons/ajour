@@ -839,6 +839,11 @@
     color: var(--text);
   }
 
+  /* A synced item without a type or a parent has nothing to say here. */
+  .backlog-item-page-meta:empty {
+    display: none;
+  }
+
   .backlog-item-page-columns {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 18rem;
@@ -867,6 +872,27 @@
     flex-direction: column;
     gap: 0.875rem;
     padding: 0.875rem 1rem 1rem;
+  }
+
+  /* The properties card's first line: the item's lifecycle, then the moves
+     that change it, the last one's icon on the card's right edge. A rule
+     sets the line apart from the properties. */
+  .backlog-item-lifecycle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: var(--control-height);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .backlog-item-lifecycle-moves {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.125rem;
+    margin-right: -0.5rem;
   }
 
   .backlog-item-card-header {
@@ -1005,6 +1031,62 @@
 
   .handoff-row-meta a:hover {
     color: var(--text);
+  }
+
+  /* The thread a tool is starting: laid out as a thread's head, above them,
+     and ruled as they are. */
+  .handoff-starting {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--control-height);
+    padding: 0.375rem 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--border-row);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  /* The card's own way to hand off: a line of text over one button per tool. */
+  .handoff-start {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.25rem 0.25rem 0.375rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  /* Under the threads it is their footer, ruled as they are. */
+  .handoff-rows + .handoff-start {
+    padding-top: 0.625rem;
+    border-top: 1px solid var(--border-row);
+  }
+
+  .handoff-starters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  /* The Hand off button's logos, at most three, overlap with the first on
+     top. */
+  .handoff-logos {
+    display: flex;
+    isolation: isolate;
+  }
+
+  .handoff-logos > * {
+    position: relative;
+    z-index: 3;
+  }
+
+  .handoff-logos > * + * {
+    z-index: 2;
+    margin-left: -0.3125rem;
+  }
+
+  .handoff-logos > * + * + * {
+    z-index: 1;
   }
 
   /* A backlog row's handoff mark: green while the thread works, amber while

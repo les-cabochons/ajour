@@ -532,6 +532,17 @@ export async function syncConnection(connection, workItems) {
     });
   });
 
+  it("reads a connection saved on-premises back as on-premises, so its form opens with the box on", async () => {
+    const { server, service } = await setup();
+
+    const saved = await saveConnection(server, service.baseUrl);
+
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({
+      connection: { editableValues: { onPremises: true } },
+    });
+  });
+
   it("saves the address and user the user entered, whatever the plugin's validation answers, and keeps Ajour's fields out of its answer", async () => {
     const { server, service, statePath } = await setup();
     const attacker = await startFixtureService();

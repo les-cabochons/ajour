@@ -73,6 +73,7 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 | `connector.assign`      | Optional. `true` if the plugin sends each item's `assignee`, exports `searchAssignees`, and writes an `assignee` on settle. The settle dialog then offers an Assignee field. See [Backlog API](/developers/backlog-api#assignees).                                                             |
 | `connector.comments`    | Optional. The plugin lists and posts comments on its items, with the features it declares. See [Backlog API](/developers/backlog-api#listitemcomments).                                                                                                                                        |
 | `connector.description` | Optional. `{ "write": true, "maxLength": 1000000 }`. The plugin's sync sends each item's full `description`, and with `write` it writes the user's edits back. `maxLength` is the source's limit, measured as the source measures it. See [Backlog API](/developers/backlog-api#descriptions). |
+| `connector.itemTypes`   | Optional. `true` if the plugin exports `describeItemTypes`: each item type's icon and fields, for the rows of a [`typeOverrides` field](#fields-by-item-type). An older Ajour ignores it. See [Backlog API](/developers/backlog-api#describeitemtypes).                                        |
 | `codeHost`              | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                                                                                                                                         |
 | `calendar`              | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                                                                                                                                              |
 | `team`                  | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).                                                                                                                               |
@@ -222,7 +223,7 @@ Ajour draws the connection form from `connectionFields`, in order. The values re
 | -------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                 | string                      | 1 to 120 characters. Keep it unique: values are keyed by it.                                                                                                                                                               |
 | `label`              | string                      | The form label. 1 to 120 characters.                                                                                                                                                                                       |
-| `type`               | string                      | `text`, `password`, `url`, `select`, `number` or `checkbox`.                                                                                                                                                               |
+| `type`               | string                      | `text`, `password`, `url`, `select`, `number`, `checkbox` or `typeOverrides`. See [Fields by item type](#fields-by-item-type).                                                                                             |
 | `placeholder`        | string                      | Optional. Up to 240 characters. Says what to type, such as "Name this connection", never an example value or a default. Ajour shows it in italics in an empty field.                                                       |
 | `helpText`           | string                      | Optional. Shown under the field. Up to 500 characters.                                                                                                                                                                     |
 | `required`           | boolean                     | Defaults to `false`.                                                                                                                                                                                                       |
@@ -230,9 +231,32 @@ Ajour draws the connection form from `connectionFields`, in order. The values re
 | `defaultValue`       | string, number or boolean   | Optional.                                                                                                                                                                                                                  |
 | `options`            | array of `{ value, label }` | For `select`. Up to 50.                                                                                                                                                                                                    |
 | `min`, `max`, `step` | number                      | Optional, for `number`.                                                                                                                                                                                                    |
+| `overrides`          | array of field IDs          | For `typeOverrides` only. 1 to 4 IDs of `text` connection fields that aren't secret.                                                                                                                                       |
 | `capability`         | string                      | Optional. `connector`, `codeHost`, `calendar`, `team`, `projectSource` or `timeSync`: the capability the field configures. The form hides the field, and skips its required check, while the user has that capability off. |
 
 Values are strings, numbers or booleans. Strings are at most 4,000 characters. Without a `defaultValue`, a checkbox starts unchecked, a number at `min` or 0, and other fields empty.
+
+### Fields by item type
+
+A `typeOverrides` field lets each item type use other text fields than the connection's own. For example, a connection names Effort as its original estimate field, and Tasks use Original Estimate instead. `overrides` lists the text fields a type can replace.
+
+```json
+{
+  "id": "estimateFieldsByType",
+  "label": "By work item type",
+  "type": "typeOverrides",
+  "capability": "connector",
+  "overrides": ["originalEstimateFieldName", "remainingEstimateFieldName"]
+}
+```
+
+The form shows the field under Field mapping, with its label as a heading and its `helpText` under it. It lists one row per item type in the connection's synced items, with the item count, and one input per overridden field. An empty input means the type uses the connection's field. The user can add a type by name, and remove a type that has no synced items. A new connection shows no types until its first sync.
+
+Your plugin receives a JSON text, `{ "<type name>": { "<field id>": "<text>" } }`, with only the filled inputs, or `""` for none. Read it with `parseTypeOverrides` from the SDK, and look up a type's text with `typeOverrideFor`, which matches type names in any case. Check the texts in `validateConnection` and return the value in `normalizedConfig`.
+
+With `connector.itemTypes`, each row also shows the type's icon, its inputs suggest the type's fields, and a type that lacks the connection's field says so and proposes one. **Add a type** then offers your other types. See [describeItemTypes](/developers/backlog-api#describeitemtypes).
+
+A `typeOverrides` field can't be `secret` or `required`, and it belongs in `connectionFields` only. An Ajour that doesn't know this field type refuses to install the plugin.
 
 ### Secret fields
 

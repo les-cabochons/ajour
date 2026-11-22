@@ -1,0 +1,25 @@
+{
+  "//": "noUncheckedIndexedAccess is off because the vendored code was written without it (VENDORED.md).",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noUncheckedIndexedAccess": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "*.ts",
+    "analyze",
+    "cluster",
+    "core",
+    "diff",
+    "order",
+    "parse",
+    "review",
+    "score",
+    "stack",
+    "title",
+    "tests"
+  ]
+}

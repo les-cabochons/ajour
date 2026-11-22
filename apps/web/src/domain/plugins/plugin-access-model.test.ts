@@ -556,3 +556,116 @@ describe("the Access section's handoff connection lines", () => {
     ).toBe(false);
   });
 });
+
+describe("a plugin's declared commands (#821)", () => {
+  /** A command as the API summarizes it, for the executable `executable`. */
+  const command = (
+    id: string,
+    executable: string,
+    names: string[],
+    argv: string,
+    description: string,
+  ) => ({
+    id,
+    argv,
+    policy: JSON.stringify({ command: { id, executable }, names }),
+    description: `Executable names: ${names.join(", ")}. ${description}`,
+  });
+  const commands = [
+    command(
+      "thread-show",
+      "t3",
+      ["t3"],
+      "t3 thread show <thread> --json",
+      "Captures output. No stdin.",
+    ),
+    command(
+      "claude-start",
+      "claude",
+      ["claude", "claude.exe"],
+      "claude -p --cwd <folder>",
+      "Opens in your terminal.",
+    ),
+    command(
+      "thread-start",
+      "t3",
+      ["t3"],
+      "t3 thread start <folder> - --json",
+      "Captures output. Takes text on stdin.",
+    ),
+  ];
+  const withCommands = (extra: Partial<PluginAccessView["summary"]> = {}) => ({
+    ...view,
+    summary: { ...view.summary, commands, ...extra },
+  });
+  const programs = (items: ReturnType<typeof describeAccess>) =>
+    items.filter((item) => item.id.startsWith("program:"));
+
+  it("lists one line per program, by name, with its commands and what each does", () => {
+    const lines = programs(describeAccess(withCommands(), labels));
+    expect(lines.map((line) => [line.title, line.detail, line.isNew])).toEqual([
+      ["claude", "Executable names: claude, claude.exe.", false],
+      ["t3", "Executable names: t3.", false],
+    ]);
+    expect(lines[1]!.commands).toEqual([
+      {
+        text: "t3 thread show <thread> --json",
+        detail: "Captures output. No stdin.",
+        isNew: false,
+      },
+      {
+        text: "t3 thread start <folder> - --json",
+        detail: "Captures output. Takes text on stdin.",
+        isNew: false,
+      },
+    ]);
+  });
+
+  it("marks a program with a new command, and an update lists only that command", () => {
+    const difference: PluginAccessDifference = {
+      ...NOTHING,
+      commands: [commands[2]!],
+    };
+    const all = programs(
+      describeAccess(withCommands(), labels, { difference }),
+    );
+    const t3 = all.find((line) => line.title === "t3")!;
+    expect([t3.isNew, t3.hasNewCommands]).toEqual([false, true]);
+    expect(t3.commands?.map((line) => line.isNew)).toEqual([false, true]);
+    expect(all.find((line) => line.title === "claude")?.hasNewCommands).toBe(
+      false,
+    );
+
+    const update = programs(
+      describeAccess(withCommands(), labels, { difference, onlyNew: true }),
+    );
+    expect(update.map((line) => line.title)).toEqual(["t3"]);
+    expect(update[0]!.commands?.map((line) => line.text)).toEqual([
+      "t3 thread start <folder> - --json",
+    ]);
+  });
+
+  it("marks a program whose commands are all new as new, and keeps an interpreter's warning in sight", () => {
+    const node = command(
+      "run",
+      "node",
+      ["node"],
+      "node <file>",
+      "This command runs code it is given: as wide as Accept everything. Captures output.",
+    );
+    const [line] = programs(
+      describeAccess(
+        { ...view, summary: { ...view.summary, commands: [node] } },
+        labels,
+        { difference: { ...NOTHING, commands: [node] } },
+      ),
+    );
+    expect(line).toMatchObject({
+      title: "node",
+      isNew: true,
+      hasNewCommands: false,
+      detail:
+        "Executable names: node. It runs code it is given: as wide as Accept everything.",
+    });
+  });
+});

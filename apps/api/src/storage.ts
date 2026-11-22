@@ -8,12 +8,14 @@ import {
 } from "../../../packages/shared/command-modes.ts";
 import { z } from "zod";
 import {
+  handoffFolderSettingsSchema,
   handoffRecordSchema,
   handoffToolConnectionsSchema,
   enabledHandoffToolsOf,
   handoffToolIdSchema,
   normalizeEnabledHandoffTools,
   type Handoff,
+  type HandoffFolderSettings,
   type HandoffToolConnections,
 } from "../../../packages/shared/handoffs.ts";
 import {
@@ -49,6 +51,8 @@ import {
   AGENT_ACCESS_FIELD_ID,
   AJOUR_CONNECTION_FIELD_IDS,
   ALLOW_LOSSY_FIELD_ID,
+  ON_PREMISES_FIELD_ID,
+  pluginAllowsOnPremises,
   agentAccessSchema,
   connectionAgentAccess,
   pluginOriginSchema,
@@ -531,6 +535,15 @@ interface AppApiStateV8 {
    * plugin update adds is added off. Never synced.
    */
   handoffEnabledTools: Record<string, string[]>;
+  /**
+   * The tool settings each repository folder's starts use, by plugin id,
+   * tool id and folder id (#819): what the user answered when a tool
+   * refused a setting, kept once a start with it succeeded.
+   */
+  handoffFolderSettings: Record<
+    string,
+    Record<string, Record<string, HandoffFolderSettings>>
+  >;
   handoffs: Handoff[];
   /**
    * The SHA-256 hash of each handoff's hook token, by handoff id (#726).
@@ -708,11 +721,61 @@ function withCapabilityChoice(
   return next.length ? { ...others, [pluginId]: next } : others;
 }
 
+/**
+ * The stored folder settings, plugin by tool by folder, without a malformed
+ * level or an unsafe key.
+ */
+function normalizeHandoffFolderSettings(
+  raw: unknown,
+): AppApiState["handoffFolderSettings"] {
+  const entries = (value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.entries(value).filter(([key]) => !UNSAFE_KEYS.has(key))
+      : [];
+  return Object.fromEntries(
+    entries(raw).map(([pluginId, tools]) => [
+      pluginId,
+      Object.fromEntries(
+        entries(tools).map(([toolId, folders]) => [
+          toolId,
+          Object.fromEntries(
+            entries(folders).flatMap(([folderId, settings]) => {
+              const parsed = handoffFolderSettingsSchema.safeParse(settings);
+              return parsed.success ? [[folderId, parsed.data]] : [];
+            }),
+          ),
+        ]),
+      ),
+    ]),
+  );
+}
+
+/** The folder settings without any of `folderId`'s, every tool's. */
+function withoutFolderSettings(
+  settings: AppApiState["handoffFolderSettings"],
+  folderId: string,
+): AppApiState["handoffFolderSettings"] {
+  return Object.fromEntries(
+    Object.entries(settings).map(([pluginId, tools]) => [
+      pluginId,
+      Object.fromEntries(
+        Object.entries(tools).map(([toolId, folders]) => [
+          toolId,
+          Object.fromEntries(
+            Object.entries(folders).filter(([id]) => id !== folderId),
+          ),
+        ]),
+      ),
+    ]),
+  );
+}
+
 function createDefaultState(): AppApiState {
   return {
     handoffTemplates: {},
     handoffToolConnections: {},
     handoffEnabledTools: {},
+    handoffFolderSettings: {},
     handoffs: [],
     handoffHooks: {},
     handoffThreadDismissals: [],
@@ -909,7 +972,7 @@ function createMissingPluginManifest(pluginId: string): PluginOverviewItem {
 
 function toEditableValues(
   connection: StoredConnection,
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
 ): PluginFieldValues {
   const editableValues: PluginFieldValues = {
     label: connection.label,
@@ -933,6 +996,12 @@ function toEditableValues(
       connection.allowLossyConversion === true;
   } else {
     delete editableValues[ALLOW_LOSSY_FIELD_ID];
+  }
+  // So the form opens with it on, and an update doesn't turn it off.
+  if (pluginAllowsOnPremises(plugin)) {
+    editableValues[ON_PREMISES_FIELD_ID] = connection.onPremises === true;
+  } else {
+    delete editableValues[ON_PREMISES_FIELD_ID];
   }
 
   return editableValues;
@@ -1048,7 +1117,7 @@ function connectionSecretState(
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
-  plugin: PluginManifest,
+  plugin: PluginOverviewItem,
   installed: boolean,
   vault: VaultView,
 ): PluginConnectionSummary {
@@ -1156,6 +1225,9 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           ? [[key, normalizeEnabledHandoffTools(value)]]
           : [],
       ),
+    ),
+    handoffFolderSettings: normalizeHandoffFolderSettings(
+      raw.handoffFolderSettings,
     ),
     handoffs: (Array.isArray(raw.handoffs) ? raw.handoffs : []).flatMap(
       (value) => {
@@ -1687,15 +1759,24 @@ export class AppApiStorage {
   }
 
   async removeRepositoryFolder(projectId: string, id: string): Promise<void> {
-    return this.mutate((state) => ({
-      nextState: {
-        ...state,
-        repositoryFolders: state.repositoryFolders.filter(
-          (folder) => folder.projectId !== projectId || folder.id !== id,
-        ),
-      },
-      result: undefined,
-    }));
+    return this.mutate((state) => {
+      const removed = state.repositoryFolders.some(
+        (folder) => folder.projectId === projectId && folder.id === id,
+      );
+      return {
+        nextState: {
+          ...state,
+          repositoryFolders: state.repositoryFolders.filter(
+            (folder) => folder.projectId !== projectId || folder.id !== id,
+          ),
+          // The folder's remembered tool settings go with it.
+          handoffFolderSettings: removed
+            ? withoutFolderSettings(state.handoffFolderSettings, id)
+            : state.handoffFolderSettings,
+        },
+        result: undefined,
+      };
+    });
   }
 
   async useRepositoryFolder(projectId: string, id: string): Promise<void> {
@@ -2632,6 +2713,54 @@ export class AppApiStorage {
     });
   }
   /**
+   * The settings a tool's starts in a repository folder use (#819), as a
+   * start that succeeded with them left them. Empty for none.
+   */
+  async getHandoffFolderSettings(
+    pluginId: string,
+    toolId: string,
+    folderId: string,
+  ): Promise<HandoffFolderSettings> {
+    if ([pluginId, toolId, folderId].some((key) => UNSAFE_KEYS.has(key)))
+      return {};
+    return structuredClone(
+      (await this.readState()).handoffFolderSettings[pluginId]?.[toolId]?.[
+        folderId
+      ] ?? {},
+    );
+  }
+  /** Keeps `settings` for the tool's starts in the folder, over what it had. */
+  async rememberHandoffFolderSettings(
+    pluginId: string,
+    toolId: string,
+    folderId: string,
+    settings: HandoffFolderSettings,
+  ): Promise<void> {
+    if ([pluginId, toolId, folderId].some((key) => UNSAFE_KEYS.has(key)))
+      throw new Error("Invalid handoff folder.");
+    await this.mutate((state) => {
+      const tools = state.handoffFolderSettings[pluginId] ?? {};
+      const folders = tools[toolId] ?? {};
+      const merged = handoffFolderSettingsSchema.parse({
+        ...folders[folderId],
+        ...settings,
+      });
+      return {
+        nextState: {
+          ...state,
+          handoffFolderSettings: {
+            ...state.handoffFolderSettings,
+            [pluginId]: {
+              ...tools,
+              [toolId]: { ...folders, [folderId]: merged },
+            },
+          },
+        },
+        result: undefined,
+      };
+    });
+  }
+  /**
    * The ids of the plugin's handoff tools the user turned on on this
    * device, in the order they were turned on. Every other tool is off.
    */
@@ -3220,6 +3349,11 @@ export class AppApiStorage {
         ),
         handoffEnabledTools: Object.fromEntries(
           Object.entries(state.handoffEnabledTools).filter(
+            ([id]) => id !== pluginId,
+          ),
+        ),
+        handoffFolderSettings: Object.fromEntries(
+          Object.entries(state.handoffFolderSettings).filter(
             ([id]) => id !== pluginId,
           ),
         ),

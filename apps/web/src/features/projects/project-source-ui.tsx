@@ -1,10 +1,13 @@
 import { useId, type ReactNode } from "react";
 import {
+  RiArrowGoBackLine as RevertIcon,
   RiExternalLinkLine as ExternalIcon,
   RiLinksLine as SourceIcon,
   RiLockLine as LockIcon,
 } from "@remixicon/react";
 import { propertyActionClassName } from "@/components/property-list";
+import { TooltipButton } from "@/components/tooltip-button";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
@@ -16,7 +19,8 @@ import { sourceNameOf } from "@/domain/projects/source-link";
 /*
  * What a managed project shows of its project source (#506): the "From
  * <source>" mark by its title and on its list row, the lock on the fields
- * the source sets, and Open in <source>. The label is the one the plugin's
+ * the source sets, the link or revert on a value the user may change (#816),
+ * and Open in <source>. The label is the one the plugin's
  * snapshot gave, never a product name Ajour knows (ADR 0016).
  */
 
@@ -150,6 +154,79 @@ export function LockHint({
         </TooltipTrigger>
         <TooltipContent>{hint}</TooltipContent>
       </Tooltip>
+    </>
+  );
+}
+
+/**
+ * After a value the project source sets and the user may change, such as a
+ * task's budget (#816). While the typed value is the source's, a link icon
+ * says where it comes from; it is a hover tooltip only, with no tab stop.
+ * Once the value differs, a button takes its place: its tooltip says the
+ * value changed and gives the source's, and pressing it puts the source's
+ * value back. The field points `aria-describedby` at `id`, where the same
+ * words sit hidden.
+ */
+export function SourceValueControl({
+  label,
+  id,
+  sourceValue,
+  changed,
+  onRevert,
+}: {
+  label: string | undefined;
+  id: string;
+  /** The source's value as the field shows it, such as "8h" or "no budget". */
+  sourceValue: string;
+  changed: boolean;
+  onRevert: () => void;
+}) {
+  if (!changed) {
+    const hint = `From ${sourceNameOf(label)}. Type to use your own.`;
+    return (
+      <>
+        <span id={id} hidden>
+          {hint}
+        </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                aria-hidden="true"
+                className="ml-auto inline-flex shrink-0 text-muted-foreground"
+              />
+            }
+          >
+            <SourceIcon className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent>{hint}</TooltipContent>
+        </Tooltip>
+      </>
+    );
+  }
+  const changedText = `Changed here. ${sourceNameOf(label, true)} has ${sourceValue}.`;
+  return (
+    <>
+      <span id={id} hidden>
+        {changedText}
+      </span>
+      <TooltipButton
+        label={`${changedText} Revert to it.`}
+        // The field keeps the focus: a blur would reformat it, "12:00" to
+        // "12h", and move this button from under the pointer before the
+        // click lands.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onRevert}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="ml-auto shrink-0 text-muted-foreground"
+          />
+        }
+      >
+        <RevertIcon aria-hidden="true" />
+      </TooltipButton>
     </>
   );
 }

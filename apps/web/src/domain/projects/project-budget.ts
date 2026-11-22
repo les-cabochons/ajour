@@ -2,7 +2,6 @@ import type { ProjectSourceMe } from "@ajour/shared";
 import type {
   LocalProject,
   LocalProjectSourceBudget,
-  LocalProjectTask,
   LocalTimesheetEntry,
   LocalTimesheetEntryCommit,
   LocalTimesheetTombstone,
@@ -66,6 +65,37 @@ function inPeriod(localDate: string, since: string | undefined) {
   return !since || localDate >= since;
 }
 
+/** Where a time sits: an entry now, or its committed copy. */
+type TimePlace = Pick<
+  LocalTimesheetEntry,
+  "projectId" | "taskId" | "localDate"
+>;
+
+/**
+ * Not counted yet, summed by place: each entry adds its time where it is now,
+ * and subtracts its committed copy where the source could have it by
+ * `asOfMs`. `placeOf` names the sum a time belongs to, or undefined to leave
+ * it out. The project's figure and each task's use this one rule.
+ */
+function notCountedByPlace(
+  entries: readonly LocalTimesheetEntry[],
+  asOfMs: number,
+  placeOf: (time: TimePlace) => string | undefined,
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  const add = (place: string | undefined, durationMs: number) => {
+    if (place !== undefined) {
+      totals.set(place, (totals.get(place) ?? 0) + durationMs);
+    }
+  };
+  for (const entry of entries) {
+    add(placeOf(entry), entry.durationMs);
+    const { commit } = entry;
+    if (reachedSource(commit, asOfMs)) add(placeOf(commit), -commit.durationMs);
+  }
+  return totals;
+}
+
 /**
  * Not counted yet: the user's time on the project the source can't have by
  * `asOf`. An entry counts what it holds on the project now, less what its
@@ -86,22 +116,55 @@ export function notCountedMs(
   asOf: string,
   since?: string,
 ): number {
-  const asOfMs = Date.parse(asOf);
-  let total = 0;
-  for (const entry of entries) {
-    if (entry.projectId === project._id && inPeriod(entry.localDate, since)) {
-      total += entry.durationMs;
-    }
-    const { commit } = entry;
-    if (
-      reachedSource(commit, asOfMs) &&
-      commit.projectId === project._id &&
-      inPeriod(commit.localDate, since)
-    ) {
-      total -= commit.durationMs;
-    }
+  return (
+    notCountedByPlace(entries, Date.parse(asOf), (time) =>
+      time.projectId === project._id && inPeriod(time.localDate, since)
+        ? project._id
+        : undefined,
+    ).get(project._id) ?? 0
+  );
+}
+
+/** How a source task's used hours add up. */
+export interface SourceTaskUsage {
+  /** The hours everyone used on the task as the source counts them, as of `asOf`. */
+  sourceMs: number;
+  /** The user's time on the task the source can't have yet, as `notCountedMs` counts it. */
+  notCountedMs: number;
+}
+
+/**
+ * The hours used on each task of a managed project that the source gives
+ * worked hours for, by task ID: the source's figure for everyone, plus the
+ * user's time on the task it can't have by `asOf`. The task budget covers the
+ * task's whole life, so all of it counts, with no first day. The user's
+ * adjustment comes on top, as on any task. A task that left the source keeps
+ * the hours of the report before, so it is left out, like a task the source
+ * gives none for: those read the time logged in Ajour.
+ *
+ * `entries` are the project's `budgetEntries`, so an entry moved to another
+ * task subtracts its committed hours from the task it left.
+ */
+export function sourceTaskUsage(
+  project: Pick<LocalProject, "_id" | "tasks">,
+  entries: readonly LocalTimesheetEntry[],
+  asOf: string,
+): Map<string, SourceTaskUsage> {
+  const notCounted = notCountedByPlace(entries, Date.parse(asOf), (time) =>
+    time.projectId === project._id ? time.taskId : undefined,
+  );
+  const usage = new Map<string, SourceTaskUsage>();
+  for (const task of project.tasks) {
+    const workedHours = task.archivedByMissingSync
+      ? undefined
+      : task.source?.workedHours;
+    if (workedHours === undefined) continue;
+    usage.set(task._id, {
+      sourceMs: Math.round(workedHours * HOUR_MS),
+      notCountedMs: notCounted.get(task._id) ?? 0,
+    });
   }
-  return total;
+  return usage;
 }
 
 /**
@@ -262,21 +325,5 @@ export function reconciliation(
         Math.abs(task.committedMs - task.sourceMs) >=
         RECONCILIATION_TOLERANCE_MS,
     ),
-  };
-}
-
-/**
- * What a source task's row reads: the user's hours on it as the source
- * counts them, against its estimate. Undefined when the source gives no
- * hours for the user on it, so the row reads Ajour's own time.
- */
-export function sourceTaskConsumed(
-  task: Pick<LocalProjectTask, "budgetMs" | "source">,
-): { budgetMs?: number; consumedMs: number } | undefined {
-  const myHours = task.source?.myHours;
-  if (myHours === undefined) return undefined;
-  return {
-    ...(task.budgetMs === undefined ? {} : { budgetMs: task.budgetMs }),
-    consumedMs: Math.round(myHours * HOUR_MS),
   };
 }

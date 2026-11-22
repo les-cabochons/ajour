@@ -104,8 +104,49 @@ function EndpointDisclosure({ item }: { item: AccessItem }) {
 }
 
 /**
+ * A program's declared commands behind a disclosure (#821), as a host's
+ * endpoints are: each argv shape, what it does and how it runs. It starts
+ * open when the program has a new or changed command, so an update shows
+ * what it asks for.
+ */
+function CommandDisclosure({ item }: { item: AccessItem }) {
+  const commands = item.commands ?? [];
+  if (commands.length === 0) return null;
+  return (
+    <details
+      className="group mt-1 text-xs text-[var(--text-tertiary)]"
+      open={item.isNew || item.hasNewCommands}
+    >
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--control-radius)] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden="true"
+          className="size-3.5 group-open:rotate-90"
+        />
+        {commands.length} command{commands.length === 1 ? "" : "s"}
+      </summary>
+      <ul className="mt-1 flex flex-col gap-2 pl-4">
+        {commands.map((command) => (
+          <li key={command.text} className="[overflow-wrap:anywhere]">
+            <p className="flex flex-wrap items-center gap-x-2 font-mono">
+              <span>{command.text}</span>
+              {command.isNew ? (
+                <Chip tone="accent" className="font-sans">
+                  New
+                </Chip>
+              ) : null}
+            </p>
+            <p>{command.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * The access list, as the prototype's variant A drew it (#222): an icon, a
- * plain title and detail, and the endpoints of a host behind a disclosure.
+ * plain title and detail, and the endpoints of a host or the commands of a
+ * program behind a disclosure.
  * `label` names the list for assistive technology.
  */
 function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
@@ -130,11 +171,15 @@ function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
                 {item.hasNewEndpoints ? (
                   <Chip tone="accent">New endpoints</Chip>
                 ) : null}
+                {item.hasNewCommands ? (
+                  <Chip tone="accent">New commands</Chip>
+                ) : null}
               </p>
               <p className="text-sm text-[var(--text-secondary)]">
                 {item.detail}
               </p>
               <EndpointDisclosure item={item} />
+              <CommandDisclosure item={item} />
             </div>
           </li>
         );

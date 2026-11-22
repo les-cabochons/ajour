@@ -8,11 +8,14 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   dataToolOutputSchemas,
+  logToolInputSchemas,
+  logToolOutputSchemas,
   readToolInputSchemas,
   sessionToolInputSchemas,
   sessionToolOutputSchemas,
   writeToolInputSchemas,
   type AgentClientRef,
+  type LogToolName,
   type ReadToolName,
   type SessionToolName,
   type SessionToolOutput,
@@ -30,6 +33,12 @@ import {
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
 import type { Settlement } from "./routes.ts";
+import {
+  findLogEvents,
+  getLogTrace,
+  INVALID_LOG_QUERY,
+  type LocalLogReader,
+} from "./local-log-reader.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
@@ -37,7 +46,8 @@ import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
 /**
  * Ajour's MCP endpoint, /mcp/ajour, over Streamable HTTP. Each request gets
  * its own server and transport (stateless mode), bound to the client its
- * token names. Data tools run in the renderer through the bridge.
+ * token names. Data tools run in the renderer through the bridge; session
+ * and local log tools run here.
  */
 
 export interface McpRequestContext {
@@ -49,6 +59,11 @@ export interface McpRequestContext {
   waitForAnswerMs: number;
   events: ApiEvents;
   readBody: (request: IncomingMessage) => Promise<unknown>;
+  /**
+   * The local log file's reads, from main. Without it, as in the standalone
+   * API, no client gets the log tools.
+   */
+  localLogs?: LocalLogReader;
   /**
    * The request's event, which the request seam opened. MCP names it
    * `mcp.request`, or `agent_tool.call` once the body is a tool call.
@@ -373,7 +388,10 @@ const PULL_REQUEST_INSTRUCTIONS = [
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
-const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
+const TOOL_DESCRIPTIONS: Record<
+  AgentTaskMcpTool | SessionToolName | LogToolName,
+  string
+> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -447,6 +465,10 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   ask: "Asks the user a question and returns its id at once. Ask only when you cannot go on otherwise. Offer choices when there are a few clear options. Then call wait_for_answer.",
   wait_for_answer:
     "Waits up to 50 seconds for the answer. Returns `waiting` if there is none yet: call it again. Returns `withdrawn` if the session ended.",
+  find_log_events:
+    "Events of Ajour's local log file, the ones Settings › Diagnostics shows, newest first, to find out why something in Ajour failed or was slow. Each event is one action or step as Ajour stored it: its name, outcome and outcome_reason, error, duration, trace_id, and its own fields, such as a plugin operation's method or a request's route. Filter by time, outcome (`problems` for anything that didn't end ok or noop), event name or its start, outcome_reason, plugin, trace or runtime. 50 events by default, at most 200: pass `nextCursor` back as `cursor` for the next page. `logging` is off when the user hasn't turned on Write events to a local file in Settings › Diagnostics; then ask them to, and to repeat what failed. Use get_log_trace with an event's trace_id to see the whole action.",
+  get_log_trace:
+    "Every event of one action, from the window, the local API and the desktop app, as a tree read top to bottom: each span with its depth, oldest root first. `deepestFailureSpanId` is the deepest span that didn't end ok or noop, usually where it failed. At most 500 spans; `truncated` says when there are more.",
 };
 
 /** The text copy of `value` is for clients that ignore structured content. */
@@ -560,6 +582,33 @@ function forwardToRenderer(
   });
 }
 
+type LogInput<Name extends LogToolName> = z.infer<
+  (typeof logToolInputSchemas)[Name]
+>;
+
+/**
+ * Runs a local log tool in the API. A filter the query service refuses is
+ * the agent's invalid call, answered with the service's reason.
+ */
+function runLogTool(
+  tool: LogToolName,
+  client: AgentClientRef,
+  context: McpRequestContext,
+  call: ToolCall | undefined,
+  run: () => Promise<Record<string, unknown>>,
+): Promise<ToolResult> {
+  return withToolEvent(tool, "read", client, context, call, async () => {
+    try {
+      return structuredResult(await run());
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code !== INVALID_LOG_QUERY)
+        throw error;
+      call?.unit.refuse("invalid_call");
+      return errorResult((error as Error).message);
+    }
+  });
+}
+
 /** Runs a session tool in the API. */
 function runSessionTool<Name extends SessionToolName>(
   tool: Name,
@@ -587,6 +636,7 @@ function registerTools(
   server: McpServer,
   client: AgentClientRef,
   scope: ToolScope,
+  userClient: boolean,
   context: McpRequestContext,
   exchange: McpExchange,
 ) {
@@ -708,6 +758,32 @@ function registerTools(
           input.questionId,
           Math.min(context.waitForAnswerMs, MAX_WAIT_FOR_ANSWER_MS),
         ),
+      ),
+  );
+
+  // The local log holds every plugin's and connection's events, so only a
+  // client the user created reads it, never an agent task's.
+  const { localLogs } = context;
+  if (!userClient || !localLogs) return;
+  const logToolConfig = (name: LogToolName) => ({
+    description: TOOL_DESCRIPTIONS[name],
+    inputSchema: logToolInputSchemas[name].shape,
+    outputSchema: logToolOutputSchemas[name].shape,
+  });
+  server.registerTool(
+    "find_log_events",
+    logToolConfig("find_log_events"),
+    async (input: LogInput<"find_log_events">, extra: { requestId: unknown }) =>
+      runLogTool("find_log_events", client, context, callOf(extra), () =>
+        findLogEvents(localLogs, input),
+      ),
+  );
+  server.registerTool(
+    "get_log_trace",
+    logToolConfig("get_log_trace"),
+    async (input: LogInput<"get_log_trace">, extra: { requestId: unknown }) =>
+      runLogTool("get_log_trace", client, context, callOf(extra), () =>
+        getLogTrace(localLogs, input.traceId),
       ),
   );
 }
@@ -838,7 +914,14 @@ export async function handleMcpRequest(
       .add(call, messageId(message), undeclared(message))
       .unit.set({ agent_tool: { name: calledTool(message) } });
   }
-  registerTools(server, client, scope, context, exchange);
+  registerTools(
+    server,
+    client,
+    scope,
+    authentication.client.tools === undefined,
+    context,
+    exchange,
+  );
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

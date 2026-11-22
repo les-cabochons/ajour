@@ -1,5 +1,6 @@
 import type {
   PluginAccessActivity,
+  PluginAccessCommand,
   PluginAccessDerivedHost,
   PluginAccessDifference,
   PluginAccessEndpoint,
@@ -27,16 +28,58 @@ export interface AccessEndpointLine {
   isNew: boolean;
 }
 
+export interface AccessCommandLine {
+  /** The command's argv shape, such as `t3 thread show <thread> --json`. */
+  text: string;
+  /** What it does and how it runs, without the program's names. */
+  detail: string;
+  isNew: boolean;
+}
+
 export interface AccessItem {
   id: string;
   kind: AccessItemKind;
   title: string;
   detail: string;
   endpoints?: AccessEndpointLine[];
+  /** A program's declared commands (#821). */
+  commands?: AccessCommandLine[];
   /** The whole line is new. */
   isNew: boolean;
   /** The line is old but some of its endpoints are new. */
   hasNewEndpoints: boolean;
+  /** The line is old but some of its commands are new or changed. */
+  hasNewCommands: boolean;
+}
+
+/** The interpreter warning a command's description carries. */
+const RUNS_GIVEN_CODE =
+  "This command runs code it is given: as wide as Accept everything.";
+
+/**
+ * The program a declared command runs: the manifest's executable id and the
+ * names Ajour finds it by, which the command's policy records. A policy that
+ * doesn't name them falls back to the argv's first word.
+ */
+function programOf(command: PluginAccessCommand): {
+  id: string;
+  names: string[];
+} {
+  try {
+    const policy = JSON.parse(command.policy) as {
+      command?: { executable?: unknown };
+      names?: unknown;
+    };
+    const id = policy.command?.executable;
+    const names = Array.isArray(policy.names)
+      ? policy.names.filter((name): name is string => typeof name === "string")
+      : [];
+    if (typeof id === "string" && id) return { id, names };
+  } catch {
+    // Falls back below.
+  }
+  const first = command.argv.split(" ")[0] || command.argv;
+  return { id: first, names: [first] };
 }
 
 export interface AccessLabels {
@@ -72,6 +115,7 @@ const OPERATION_LABELS: Record<string, string> = {
   validateConnection: "check its settings",
   syncConnection: "sync backlog items",
   listSettleStates: "list the states it can settle to",
+  describeItemTypes: "describe its item types",
   writeSettle: "settle backlog items in the source",
   readDescription: "read descriptions",
   writeDescription: "edit descriptions",
@@ -175,18 +219,24 @@ export function describeAccess(
 
   const items: AccessItem[] = [];
   const add = (
-    item: Omit<AccessItem, "isNew" | "hasNewEndpoints"> & { isNew?: boolean },
+    item: Omit<AccessItem, "isNew" | "hasNewEndpoints" | "hasNewCommands"> & {
+      isNew?: boolean;
+    },
   ) => {
-    const endpoints = item.endpoints;
+    const { endpoints, commands } = item;
     const hasNewEndpoints = endpoints?.some((endpoint) => endpoint.isNew);
+    const hasNewCommands = commands?.some((command) => command.isNew);
     const isNew = item.isNew ?? false;
-    if (onlyNew && !isNew && !hasNewEndpoints) return;
+    if (onlyNew && !isNew && !hasNewEndpoints && !hasNewCommands) return;
     items.push({
       ...item,
       endpoints:
         onlyNew && endpoints ? endpoints.filter((e) => e.isNew) : endpoints,
+      commands:
+        onlyNew && commands ? commands.filter((c) => c.isNew) : commands,
       isNew,
       hasNewEndpoints: Boolean(hasNewEndpoints) && !isNew,
+      hasNewCommands: Boolean(hasNewCommands) && !isNew,
     });
   };
 
@@ -339,17 +389,50 @@ export function describeAccess(
         "This plugin may run commands it doesn't declare; under Auto, only commands Ajour knows are read-only run without asking; under Accept everything, any command runs.",
       isNew: difference?.undeclaredCommands === true,
     });
+  // One line per program, its commands behind a disclosure (#821): a
+  // handoff plugin declares a dozen or more.
+  const programs = new Map<
+    string,
+    { names: string[]; commands: PluginAccessCommand[] }
+  >();
   for (const command of summary.commands ?? []) {
-    add({
-      id: `command:${command.id}`,
-      kind: "runtime",
-      title: command.argv,
-      detail: command.description ?? "Declared command.",
-      isNew: (difference?.commands ?? []).some(
-        (entry) => entry.id === command.id,
-      ),
-    });
+    const { id, names } = programOf(command);
+    const program = programs.get(id) ?? { names, commands: [] };
+    program.commands.push(command);
+    programs.set(id, program);
   }
+  const programLines = [...programs].map(([id, program]) => {
+    const names = program.names.length ? program.names : [id];
+    const namesSentence = `Executable names: ${names.join(", ")}.`;
+    const commands = program.commands.map((command) => {
+      const description = command.description ?? "Declared command.";
+      return {
+        text: command.argv,
+        detail: description.startsWith(namesSentence)
+          ? description.slice(namesSentence.length).trim()
+          : description,
+        isNew: (difference?.commands ?? []).some(
+          (entry) => entry.id === command.id,
+        ),
+      };
+    });
+    return {
+      id: `program:${id}`,
+      kind: "runtime" as const,
+      title: names[0]!,
+      // The interpreter warning stays in sight with the commands closed.
+      detail: program.commands.some((command) =>
+        command.description?.includes(RUNS_GIVEN_CODE),
+      )
+        ? `${namesSentence} ${RUNS_GIVEN_CODE.replace("This command", "It")}`
+        : namesSentence,
+      commands,
+      // A program all of whose commands are new is new itself.
+      isNew: commands.every((command) => command.isNew),
+    };
+  });
+  programLines.sort((a, b) => a.title.localeCompare(b.title));
+  for (const line of programLines) add(line);
   for (const scheme of summary.openSchemes ?? []) {
     add({
       id: `scheme:${scheme}`,

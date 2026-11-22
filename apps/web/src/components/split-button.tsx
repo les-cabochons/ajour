@@ -1,7 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { RiArrowDownSLine as MenuIcon } from "@remixicon/react";
 
-import { DisabledReason } from "@/components/disabled-reason";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +13,7 @@ import { cn } from "@/lib/utils";
 /**
  * A button with a menu of related actions: the main half runs the button's
  * action, and the arrow half, 1px apart, opens `menu`. The comment editor's
- * send button and the backlog item page's Start entry and Hand off use it. Callers own
+ * send button and the backlog item page's Start entry use it. Callers own
  * the menu's items and decide what the main half runs.
  */
 export function SplitButton({
@@ -24,14 +23,12 @@ export function SplitButton({
   onClick,
   disabled,
   title,
-  disabledReason,
   children,
   menuLabel,
   menuDisabled,
   side = "bottom",
   menuClassName,
   menu,
-  onMenuOpenChange,
 }: {
   /** The pair's wrapper, for popovers anchored to the whole button. */
   ref?: Ref<HTMLSpanElement>;
@@ -40,11 +37,6 @@ export function SplitButton({
   onClick: () => void;
   disabled?: boolean;
   title?: string;
-  /**
-   * Why the main half is disabled, in a tooltip that takes focus, with the
-   * main half's name for its accessible label.
-   */
-  disabledReason?: { label: string; reason?: string };
   children: ReactNode;
   /** The arrow's tooltip and accessible name. */
   menuLabel: string;
@@ -52,36 +44,20 @@ export function SplitButton({
   side?: "top" | "bottom";
   menuClassName?: string;
   menu: ReactNode;
-  onMenuOpenChange?: (open: boolean) => void;
 }) {
-  const main = (
-    <Button
-      variant={variant}
-      size={size}
-      className="rounded-r-none"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </Button>
-  );
   return (
     <span ref={ref} className="flex">
-      {/* Always under DisabledReason when given, so the button keeps its
-          place, and its focus, when it is disabled without a reason. */}
-      {disabledReason ? (
-        <DisabledReason
-          label={disabledReason.label}
-          reason={disabled ? disabledReason.reason : undefined}
-          className="flex"
-        >
-          {main}
-        </DisabledReason>
-      ) : (
-        main
-      )}
-      <DropdownMenu onOpenChange={onMenuOpenChange}>
+      <Button
+        variant={variant}
+        size={size}
+        className="rounded-r-none"
+        onClick={onClick}
+        disabled={disabled}
+        title={title}
+      >
+        {children}
+      </Button>
+      <DropdownMenu>
         <TooltipButton
           label={menuLabel}
           side={side}

@@ -42,6 +42,8 @@ import {
   unsignedPluginsActivationUpdateSchema,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
+  backlogItemTypesRequestSchema,
+  backlogItemTypesResultSchema,
   backlogSettleStatesRequestSchema,
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
@@ -62,6 +64,7 @@ import {
   timeSyncRouteResponseSchema,
   type TimeSyncRequest,
   type TimeSyncRouteResponse,
+  type BacklogItemTypesRequest,
   type BacklogSettleWriteRequest,
   type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
@@ -343,13 +346,24 @@ export class AppApiError extends Error {
   readonly status: number;
   /** The access choice a refusal names, when the connection's access is off. */
   readonly accessOff?: string;
+  /**
+   * The refusal's JSON body, for a route that says more than its `error`,
+   * such as a refused hand off (#819). The caller parses what it expects.
+   */
+  readonly payload?: Readonly<Record<string, unknown>>;
 
-  constructor(message: string, status: number, accessOff?: string) {
+  constructor(
+    message: string,
+    status: number,
+    accessOff?: string,
+    payload?: Readonly<Record<string, unknown>>,
+  ) {
     super(message);
     // `name` stays "Error": it is the `error.type` of the events a failed
     // call records, which a status doesn't change.
     this.status = status;
     if (accessOff) this.accessOff = accessOff;
+    if (payload) this.payload = payload;
   }
 }
 
@@ -564,12 +578,15 @@ async function requestAppApi<T>(
   if (!response.ok) {
     let detail = response.statusText || "Request failed";
     let accessOff: string | undefined;
+    let body: Record<string, unknown> | undefined;
     try {
       const payload = (await response.json()) as {
         error?: string;
         reason?: unknown;
         access?: unknown;
       };
+      if (payload && typeof payload === "object" && !Array.isArray(payload))
+        body = payload;
       if (
         typeof payload.error === "string" &&
         payload.error.trim().length > 0
@@ -582,7 +599,7 @@ async function requestAppApi<T>(
       // Ignore non-JSON error responses.
     }
 
-    throw new AppApiError(detail, response.status, accessOff);
+    throw new AppApiError(detail, response.status, accessOff, body);
   }
 
   return parseJsonResponse(response, schema);
@@ -1341,7 +1358,7 @@ function replaceCachedConnection(
   });
 }
 
-/** Who starts each kind of backlog sync: the user, the scheduler, or a time entry saved on a synced item. */
+/** Who starts each kind of backlog sync: the user, the scheduler, or a change on a synced item to upload. */
 const BACKLOG_SYNC_TRIGGERS = {
   manual: "user",
   auto: "schedule",
@@ -1358,8 +1375,10 @@ export function syncBacklogConnection(
   input?: Partial<Pick<BacklogSyncRequest, "trigger" | "refresh" | "sourceId">>,
 ): Promise<SyncBacklogConnectionResult> {
   const trigger = input?.trigger ?? "manual";
+  // An upload of one item's changes shows as that item's running sync, so
+  // other syncs wait for it instead of sending its change a second time.
   const finish =
-    trigger === "source_write"
+    trigger === "source_write" && !input?.sourceId
       ? () => {}
       : startBacklogSync({
           pluginId,
@@ -1456,6 +1475,10 @@ async function runBacklogSync(
     connection: { id: connectionId },
     backlog_sync: { trigger, items_sent: payload.workItems.length },
   });
+  // A one-item sync names its item, so an item's refresh or estimate upload
+  // can be found among its events.
+  const scopedItem = input?.sourceId ? payload.workItems[0] : undefined;
+  if (scopedItem) job.set({ backlog_item: { id: scopedItem.localWorkItemId } });
   const result = await appApiRequest(
     "syncBacklogConnection",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
@@ -1591,6 +1614,28 @@ export function listBacklogSettleStates(
       ),
     },
     backlogSettleStatesResultSchema,
+  );
+}
+
+/**
+ * What a connection's plugin says about its item types, for the connection
+ * form's fields by item type. Only for a plugin with `connector.itemTypes`.
+ * Async, so a request the schema refuses, such as a saved type name over
+ * 120 characters, rejects like a failed call instead of throwing.
+ */
+export async function describeBacklogItemTypes(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogItemTypesRequest,
+) {
+  return await appApiRequest(
+    "describeBacklogItemTypes",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/item-types`,
+    {
+      method: "POST",
+      body: JSON.stringify(backlogItemTypesRequestSchema.parse(request)),
+    },
+    backlogItemTypesResultSchema,
   );
 }
 
@@ -1973,6 +2018,18 @@ export function removeHandoff(id: string) {
     "removeHandoff",
     `/api/handoffs/${encodeURIComponent(id)}`,
     { method: "DELETE" },
+    handoffsSnapshotSchema,
+  );
+}
+/**
+ * Closes the handoff's thread in its tool, then forgets the handoff (#850).
+ * Answers the handoffs left; a refusal keeps it, in the API's words.
+ */
+export function closeHandoff(id: string) {
+  return appApiRequest(
+    "closeHandoff",
+    `/api/handoffs/${encodeURIComponent(id)}/close`,
+    { method: "POST", body: "{}" },
     handoffsSnapshotSchema,
   );
 }

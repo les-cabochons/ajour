@@ -787,6 +787,18 @@ function applySourceFieldUpdateToWorkItem(
 
   switch (update.status) {
     case "pulled":
+      // The user changed the field while the sync ran: both sides changed,
+      // so the local value stays for the next upload to find the conflict.
+      if (
+        update.localValue !== undefined &&
+        workItem[fieldKey] !== update.localValue
+      ) {
+        fieldState.remoteValue = update.remoteValue;
+        return {
+          ...workItem,
+          estimateSync: { ...estimateSync, [fieldKey]: fieldState },
+        };
+      }
       fieldState.baselineValue = update.nextBaselineValue ?? update.remoteValue;
       fieldState.remoteValue = update.remoteValue;
       fieldState.resolution = undefined;

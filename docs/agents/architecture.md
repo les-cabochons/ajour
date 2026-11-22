@@ -55,6 +55,7 @@ It does not edit managed policy files. Path references checked on
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - `packages/plugin-sdk`: `@ajour/plugin-sdk`, the SDK plugin authors build plugin API 4 plugins with, published separately from the app. It imports nothing from the app or other packages at runtime; its contract types are generated from `packages/shared`.
 - `packages/wide-events`: the wide-event model every runtime emits through: the envelope, the catalog of event names with a privacy class on every field, the emitter, W3C trace context, the error scrubber and the sinks. It runs in the browser and in Node. See `docs/logging-strategy.md`.
+- `packages/review-deck`: Review Deck's grouping pipeline, copied in its upstream layout (#595, `VENDORED.md`). It builds a pull request's diff from both versions of each file, with Review Deck's hunk ids, groups the hunks into a guide, reads and writes the `saved-reviews` format, and finds stacks. No app imports it yet; the Deck service in the local API will run it.
 - MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Every write tool's output carries the write's `undoToken`, or null. `delete_entries` (1 to 500 ids, through `localStore.deleteTimesheetEntries` in one action) and `discard_timer` (`localStore.cancelTimer` on the running entry) do what Delete and Discard do in the window, and refuse with the action sets' reasons; `undo` presses the Undo of the agent's last write through `localStore.undo` (`features/agents/agent-undo.ts`), as long as no later action replaced it and its toast is open (#531). `continue_entry` (`{ entryId }`) runs `localStore.continueTimesheetEntry` in one undoable action after the entry's action set allows Continue: today's entry resumes with its saved time, another day's starts a new running entry today with its task and note, and the running entry is refused ("Already running"). `start_timer` with no backlog item or project starts an empty entry, as S does, and takes `countedMinutes` for a late start; `start_timer` and `continue_entry` return the entry a Switch saved in `saved`, and `stop_timer` the saved entry in `entry`, so the terminal prints their rows without a second read (#536). `get_week_lines` (`{ weekOf, groupBy }`, `day-task` by default) returns the Commit page's lines from `buildCommitLines` in `domain/time/timesheet-submission.ts`, the same function the page calls: per line the project's full name and code, the name the task commits as (`getLineCommitTaskName`: what the Names choice's task plugin names it, its own name included; with no task plugin chosen, the first that maps it, else its own name), hours as a number rounded as the page copies them (`toDecimalHours`), comments merged with " | " and entry ids. Local time per task or per Local only project (`notSent`), Not known yet time (`waiting`) and the running entry's time not saved yet (`running.unsavedMinutes`, so a continued entry's saved time counts once) come beside the lines, never in them, and `locked` says whether the week is submitted (#533). The reads carry what the terminal prints and resolves (#532): `list_time_entries` gives each saved and running entry an optional `commitsAs: { kind }` classification (`own`, `task`, `not-known-yet`, `local-only` or `unknown`), including archived projects and tasks, from `domain/projects/commit-target.ts`; without plugin names it uses the same `unknown` rule as `list_projects`. Older Ajour versions omit the field. It gives `targets`, each day's target in hours from `weeklyCapacityTargets` (`getDayTargetMs` in `domain/time/week-pace.ts`); `list_projects` gives each project's `fullName`, `displayName` and `localOnly`, and each task's `pinnedSlot` (1 to 10, key 0 is 10) and `commitsAs` (`local-only` and `not-known-yet` from `domain/projects/commit-target.ts`; otherwise `task` with the name `resolveCommitTaskName` gives under the Commit page's Names choice, as `get_week_lines` and the page name it, or `own`). `list_projects` waits at most `PLUGIN_NAMES_DEADLINE_MS` (2 s) for the plugins overview, since discovery can wait behind a plugin install; on a failure or past it, a task holding a plugin value that may rename it reads `unknown`, never its own name and never a name from the window's cached overview, which can be stale; every entry and the running entry carry a `shortId`; and `find_entries` (`{ idPrefix }`, 4 to 32 lowercase hex characters) returns every entry on any day whose short id starts with it, plus the running entry when its short id or its timer's does (a running entry that continues a saved one shows the saved one's short id); and `get_last_saved_entry` (no input) returns in `entry` the saved entry with the newest `usedAt ?? committedAt` on any day, never the running entry, or null, for the terminal's `last` and its idle status line (`getLastSavedEntryForAgent` in `domain/agents/agent-read-model.ts`). The short id is the UUID in the `_id` without dashes, or the whole `_id` when it has none; `packages/shared/entry-short-id.ts` derives it for Ajour and the CLI alike. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 `get_week_lines` accepts optional inclusive `from` and `to` bounds. The renderer filters the week's entries and running time before building sections and exclusion summaries, so partial-week task totals never include days outside the CLI range. The output's `weekOf` and lock state still refer to the week's Monday. The CLI requests every touched week before printing any lines.
@@ -247,7 +248,8 @@ serve all of them. A project source (`projectSource`, plugin API 4) is read-only
 reports it unchanged, and Ajour never writes back (ADR 0016). A time sync
 (`timeSync`, plugin API 4, only beside `projectSource`) is the one exception,
 for time entries only: `syncTimeEntries` applies up to 20 changes in order and
-lists the remote entries of a window (ADR 0018). Its Time entries switch starts
+lists the remote entries of a window (ADR 0018), or answers a check, a cursor
+and no changes, unchanged (ADR 0021). Its Time entries switch starts
 off, and turning it on validates each connection with `timeSync` on. A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
@@ -1030,7 +1032,7 @@ Primary surfaces:
 
 - `/time/$date`
 - `/backlog`
-- `/pull-requests` and `/pull-requests/$itemId`, visible while a code host plugin is enabled
+- `/deck` and `/deck/$itemId` (Deck, the pull request view), visible while a code host plugin is enabled
 - `/projects`
 - `/projects/$projectId`
 - `/settings/*`
@@ -1194,17 +1196,32 @@ input. The `plugin.process` event carries only the reason, never the text or
 argv. Terminal commands refuse stdin, in the manifest and at run time, because
 the terminal app owns the process.
 
-`process-launch.ts` supports Windows Terminal on Windows and Terminal on macOS.
-Windows Terminal re-joins argv, so executable paths, resolved launcher prefixes,
+`process-launch.ts` opens a terminal command in the app chosen in Settings ›
+General › Terminal (`TerminalChoice`: the app, and where main found it). On
+Windows: Windows Terminal (`wt -d <folder> -- <command>`, looked up on PATH at
+launch), WezTerm (`wezterm-gui start --cwd <folder> -- <command>`) and
+Alacritty (`alacritty --working-directory <folder> -e <command>`). Alacritty
+joins what follows `-e` with plain spaces, so Ajour quotes each value that has a
+space itself. Each re-joins argv, so
+executable paths, the terminal's own path, resolved launcher prefixes,
 arguments and cwd must use the strict terminal allowlist: non-empty ASCII letters,
 digits, spaces and `. _ - : / \ @ + = , ~ ( )`, with no trailing backslash.
 Only manifest literals may start with a dash. Invalid values return `invalid_request`
 with a terminal-mode reason. Missing Windows Terminal asks the user to install it.
-On macOS, private executable `.command` files use POSIX single-quoted arguments.
-Each is deleted after five minutes, never at broker shutdown; the next launch
-sweeps script directories older than an hour. Main persists the terminal choice
-on this computer through restricted IPC and migrates retired choices to the
-supported app. Linux has no terminal choice.
+On macOS, private executable `.command` files use POSIX single-quoted arguments,
+and the chosen app gets only the script's path, so no value reaches its command
+line: `open -a <app> <script>` for Terminal, iTerm2 and Ghostty, which run the
+`.command` scripts they declare, and `open -n -a <app> --args <script>` for kitty,
+WezTerm (`start --`) and Alacritty (`-e`), which run it as a program in a new
+instance. Through `open -a` kitty asks to confirm every script, WezTerm runs one
+only while it already runs, and Alacritty declares no document types. Each script is deleted after five minutes, never at broker
+shutdown; the next launch sweeps script directories older than an hour.
+`apps/desktop/electron/terminal-settings.cjs` lists the installed apps (macOS
+bundles in `/Applications` and `~/Applications`, Windows executables on PATH or
+under Program Files), persists the choice on this computer through restricted
+IPC, migrates retired choices, and hands the API the default while the chosen
+app is missing. The `plugin.process` event of a terminal command carries
+`process.terminal`. Linux has no terminal choice.
 
 `OperationProcessBroker.open` checks activation and consent for HTTPS and the
 process gates for declared custom schemes. It calls an injected main-process
@@ -1311,7 +1328,7 @@ removes it from the picks and refreshes its handoffs, which pause as unknown
 with a reason through the same path as a removed tool; an older record whose
 tool now needs a connection pauses too. The connection reaches the plugin
 without secrets, and its requests go through the credential broker, so an
-on-premises loopback server such as OpenCode's stays inside G1. The API's 15 second tick checks which records are due:
+on-premises loopback server stays inside G1. The API's 15 second tick checks which records are due:
 30 seconds while visible, 120 seconds while hidden. Done and gone stop automatic
 refresh after 24 hours since their last common-state change. Manual refresh still
 checks them. A failed read preserves state and retries at the normal cadence.
@@ -1354,11 +1371,12 @@ start's hook URL. `checkHandoffConnections` refuses it unless the plugin
 declares a command with a `hook-url` slot (`declaresHookUrl`) and the tool
 follows state. `handoffToolFeatures` in `packages/shared/handoffs.ts`
 derives each tool's features for the plugin's page from `followsState`,
-`listsThreads` and `hooks` alone.
+`listsThreads`, `hooks` and `closesThreads` alone.
 
 The authenticated window routes are GET and POST `/api/handoffs`, POST
-`/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, DELETE
-`/api/handoffs/:handoffId`, POST `/api/handoffs/visibility`, and POST
+`/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, POST
+`/api/handoffs/:handoffId/close`, DELETE `/api/handoffs/:handoffId`, POST
+`/api/handoffs/visibility`, and POST
 `/api/plugins/:pluginId/handoffs/detect`. Detection carries a project id too.
 The start request carries item identity, prompt, title and optional branch;
 template filling belongs to #720.
@@ -1383,7 +1401,7 @@ every tool's threads.
 (409, `tool_off`), `detect` asks the plugin only when a tool is on and
 keeps only the answers for tools that are on, `findThreads` lists only tools
 that are on, and `adopt` refuses a thread of a tool turned off since its
-listing (409, `tool_off`). Refreshes, hooks, Open and Remove ignore the switches: turning a tool
+listing (409, `tool_off`). Refreshes, hooks, Open, Close and Remove ignore the switches: turning a tool
 off keeps its handoffs, which are the user's records. Tools that run each
 other, such as T3 Code running Codex and Claude Code threads, are not
 filtered against each other: each tool that is on shows its own listing.
@@ -1460,6 +1478,27 @@ not enable the MCP endpoint. `AgentBridgeHost` keeps it connected and reports
 visibility changes. `apps/web/src/lib/handoffs.ts` exposes stable snapshots by
 work item through `useSyncExternalStore`. Wide events hold ids, tool and counts,
 never prompts, titles, paths, links or native state.
+
+### Closing threads
+
+A tool that declares `closesThreads` (ticket #850) answers the optional
+`closeThread({ tool, handoff: { id, threadId, folderId, native } })`,
+connection first for a tool that uses one, with `{}`. `archive` means the tool
+keeps the conversation where the user can reopen it, `delete` that it deletes
+it for good. The plugin stops the thread's work first when it runs, and
+answers `{}` for a thread the tool no longer has; it throws to refuse, and its
+message reaches the user. POST `/api/handoffs/:handoffId/close` runs
+`Handoffs.close`, which refuses (409) a tool that doesn't declare
+`closesThreads`, a plugin that can't run, a tool whose connection is gone, and
+the tool's own refusal, and keeps the handoff for each. Once the plugin
+answers, it forgets the handoff as `remove` does, hook state included, and
+answers the handoffs left. A close runs inside `runBatch`, so no refresh batch
+reads the thread while the tool closes it. The closed thread also leaves every
+thread listing taken before the close, cached or under way
+(`forgetListedThread`), so the item page doesn't offer it again and Link
+refuses it; a listing taken after the close shows what the tool lists then. The plugin host refuses the
+operation too for a tool that doesn't declare it (`not_supported`). The
+window asks before a `delete` close, never before an `archive` one.
 
 ## Handoff hooks
 

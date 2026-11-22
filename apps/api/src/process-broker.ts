@@ -16,7 +16,7 @@ import {
   launchProcess,
   startUnowned,
   ProcessLaunchRefused,
-  type TerminalApp,
+  type TerminalChoice,
 } from "./process-launch.ts";
 import { pluginProcessesSchema } from "../../../packages/shared/plugin-api-4.ts";
 
@@ -126,7 +126,8 @@ export interface ProcessBrokerOptions {
    * argument. Undefined, or a throw, refuses the argument.
    */
   connectionAddress?(caller: BrokerCaller): Promise<string | undefined>;
-  terminal?: () => Promise<TerminalApp>;
+  /** The terminal app chosen on this computer, for terminal commands. */
+  terminal?: () => Promise<TerminalChoice | undefined>;
   openExternal?: (url: string, declaredSchemes: string[]) => Promise<void>;
   enabledGate?: ProcessBrokerOptions["gate"];
 
@@ -172,6 +173,7 @@ const CONNECTION_URL_METHODS = new Set([
   "startHandoff",
   "readHandoffStates",
   "listThreads",
+  "closeThread",
   "openHandoff",
 ]);
 const refuse = (reason: ProcessReason): never => {
@@ -813,6 +815,11 @@ export class ProcessBroker implements ProcessBrokerPort {
         }
       }
       cwd ??= osCwd();
+      // Some programs, such as `opencode run`, read PWD as their folder before
+      // the working directory. A child would inherit Ajour's own PWD when
+      // Ajour starts from a terminal, so it gets its working folder (#836).
+      if (process.platform !== "win32")
+        plan = { ...plan, env: { ...plan.env, PWD: cwd } };
       const finalGate = await this.options.gate(caller);
       if (finalGate) {
         decidedBy = "gate";
@@ -869,9 +876,11 @@ export class ProcessBroker implements ProcessBrokerPort {
         if (!cwd) return refuse("folder_refused");
         const terminal =
           command.mode === "terminal"
-            ? ((await this.options.terminal?.()) ??
-              (process.platform === "win32" ? "wt" : "Terminal"))
+            ? ((await this.options.terminal?.()) ?? {
+                app: process.platform === "win32" ? "wt" : "Terminal",
+              })
             : undefined;
+        if (terminal) unit?.set({ process: { terminal: terminal.app } });
         const lastGate = await this.options.gate(caller);
         if (lastGate) return refuse(lastGate);
         if (signal.aborted) return refuse("operation_ended");

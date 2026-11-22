@@ -4,6 +4,7 @@ import {
   isCapabilityActive,
   pluginConnectionFormFields,
   pluginHasTeam,
+  type BacklogItemTypesRequest,
   type PluginConnectionSummary,
   type PluginField,
   type PluginOverviewGroup,
@@ -12,6 +13,8 @@ import {
 import { AppPanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
+import type { SourceItemTypeCount } from "@/domain/backlog/source-item-types";
+import { describeBacklogItemTypes } from "@/lib/app-api";
 import {
   areExpiryDraftsValid,
   canSubmitPluginForm,
@@ -26,6 +29,9 @@ import {
 import { ConnectionAccessGroup } from "./connection-access-ui";
 import { PluginFieldInput } from "./plugin-settings-ui";
 import { TeamCreateField } from "./team-connection-ui";
+import { TypeOverridesField } from "./type-overrides-field";
+
+const NO_ITEM_TYPES: readonly SourceItemTypeCount[] = [];
 
 /** Why a secret can't be saved on this computer, or undefined while it can. */
 export function vaultBlockedReason(status: VaultStatusSummary | undefined) {
@@ -53,6 +59,7 @@ export function PluginConnectionForm({
   onSave,
   onRemoveSecret,
   status,
+  itemTypes = NO_ITEM_TYPES,
 }: {
   group: PluginOverviewGroup;
   form: PluginFormState;
@@ -71,6 +78,8 @@ export function PluginConnectionForm({
   onRemoveSecret: (fieldId: string) => void;
   /** The edited connection's status chip and note: the form stands in for its row. */
   status?: ReactNode;
+  /** The item types of the edited connection's synced items, for a typeOverrides field. */
+  itemTypes?: readonly SourceItemTypeCount[];
 }) {
   const { plugin } = group;
   const editing = form.editingConnectionId !== null;
@@ -126,6 +135,17 @@ export function PluginConnectionForm({
     />
   );
 
+  // The plugin is asked about the item types only for a saved connection,
+  // while its backlog capability runs.
+  const editingConnectionId = form.editingConnectionId;
+  const describeItemTypes =
+    editingConnectionId !== null &&
+    plugin.capabilities.connector?.itemTypes &&
+    isCapabilityActive(group, "connector")
+      ? (request: BacklogItemTypesRequest) =>
+          describeBacklogItemTypes(plugin.id, editingConnectionId, request)
+      : undefined;
+
   const shownFields = pluginConnectionFormFields(plugin).filter((field) =>
     isPluginFieldShown(plugin, field, form.values, group.inactiveCapabilities),
   );
@@ -133,6 +153,29 @@ export function PluginConnectionForm({
   const renderBlock = (block: ConnectionFormBlock) =>
     block.kind === "field" ? (
       renderField(block.field)
+    ) : block.kind === "typeOverrides" ? (
+      <TypeOverridesField
+        // A form opened anew starts its rows over.
+        key={`${form.instance}/${block.field.id}`}
+        field={block.field}
+        columns={block.columns}
+        found={itemTypes}
+        value={form.values[block.field.id]}
+        connectionValues={Object.fromEntries(
+          block.columns.map(({ field }) => [
+            field.id,
+            String(form.values[field.id] ?? ""),
+          ]),
+        )}
+        pluginName={plugin.displayName}
+        describe={describeItemTypes}
+        onChange={(text) =>
+          update((current) => ({
+            ...current,
+            values: { ...current.values, [block.field.id]: text },
+          }))
+        }
+      />
     ) : (
       <fieldset
         key={`${form.instance}/${block.fields[0]!.field.id}`}

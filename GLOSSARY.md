@@ -31,11 +31,11 @@ A project that belongs to no team and no project source.
 _Avoid_: Private project, unshared project
 
 **Managed project**:
-A project that a project source brought. Its full name, code, client, dates, tasks and budget follow the source and are locked; its display name, color, icon, favorites, pins and plugin properties stay personal. A project is managed or shared, never both. See ADR 0016.
+A project that a project source brought. Its full name, code, client, dates, tasks and budget follow the source and are locked, except that the user may type their own budget over a task's; its display name, color, icon, favorites, pins and plugin properties stay personal. A project is managed or shared, never both. See ADR 0016.
 _Avoid_: Synced project, imported project, source project (that is a backlog item's project in its source tool)
 
 **Not counted yet**:
-The user's time on a managed project that the project source cannot have yet: entries not committed, or committed after the time the source's hours are from. For a stale entry, only the difference from its committed copy counts, which can be negative when time moved off the project. Ajour computes it and never stores it.
+The user's time on a managed project, or on one of its tasks, that the project source cannot have yet: entries not committed, or committed after the time the source's hours are from. For a stale entry, only the difference from its committed copy counts, which can be negative when time moved off the project. Ajour computes it and never stores it.
 _Avoid_: Pending hours, uncommitted (alone), lag, conflict
 
 **Merge into**:
@@ -106,6 +106,10 @@ _Avoid_: Completed, closed column, final state
 The state a synced backlog item has in its source tool. Each source state maps to one workflow state.
 _Avoid_: Remote status, source status
 
+**Item type**:
+The kind a synced backlog item has in its source tool, such as Task or Bug. A connection can let an item type use other source fields than its own, and its plugin can describe each type's icon and fields.
+_Avoid_: Work item type, source type
+
 **Settle**:
 To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state, priority or assignee in its source tool at the same time.
 _Avoid_: Complete, close, finish, resolve
@@ -148,6 +152,38 @@ _Avoid_: Unread, new, woken
 A proposed code change in a code host, such as GitHub or Azure DevOps, that the user authored or was asked to review. It is separate from a backlog item.
 _Avoid_: PR (in user-facing text), merge request, code review, review item
 
+**Deck**:
+The view that lists the user's pull requests and opens each one for review. The name is shared with Review Deck, the Azure DevOps extension.
+_Avoid_: Pull requests page, PR hub, inbox
+
+**Guide**:
+A pull request's changes split into concerns, in reading order, each with a title and a one-line rationale.
+_Avoid_: AI review, walkthrough, guided view
+
+**Concern**:
+One group of hunks in a guide that change the same thing.
+_Avoid_: Group, cluster, section
+
+**Summary**:
+What Deck shows in place of a pull request's description: the problem it fixes, written from its linked ticket, the kinds of change, breaking changes, risky areas, test coverage and leftovers.
+_Avoid_: Description, overview, AI summary
+
+**Ask**:
+A question to the agent asked in place, anchored to selected lines, a concern or a summary line. Its answer streams in below the anchor.
+_Avoid_: Prompt, chat message, query
+
+**Version**:
+One push of a pull request on GitHub, or one iteration on Azure DevOps, with its commits.
+_Avoid_: Iteration (outside Azure DevOps), revision, update
+
+**Stack**:
+Pull requests that build on each other: each one targets the branch of the one below it, down to a trunk branch.
+_Avoid_: Chain, series, train
+
+**Layer**:
+One pull request in a stack.
+_Avoid_: Level, step, child pull request
+
 **Repository rule**:
 The project and task that time on pull requests from one repository is recorded against.
 _Avoid_: Repo mapping, review rule
@@ -179,7 +215,7 @@ The values of a time entry as it was last committed: its day, project, task, not
 _Avoid_: Snapshot, fingerprint, synced copy (that is a time sync's)
 
 **Synced copy**:
-The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. See ADR 0018.
+The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. When a later change there can't be taken, such as a move to a project the connection doesn't manage, the synced copy holds back Ajour's older values, which aren't sent while the entry keeps them. See ADR 0018.
 _Avoid_: Committed copy, remote copy, mirror
 
 **Submitted week**:
@@ -258,6 +294,10 @@ _Avoid_: The product's name (such as Chronops) in Ajour, project sync, project c
 A plugin capability that keeps a live copy of the user's time entries in another system, both ways, on the projects its project source manages. It is not a commit: the timesheet tool gets a week only through Commit. Its switch, Time entries, starts off. See ADR 0018.
 _Avoid_: The product's name in Ajour, time push, live commit, sync (alone)
 
+**Check** (time sync):
+A time sync round that sends the cursor of the plugin's last full answer and no changes, while nothing the rules read changed in Ajour since. A plugin whose other system keeps a change marker, a version that moves on every time entry write there, answers it unchanged without listing. Ajour asks every 5 seconds while its window shows. See ADR 0021.
+_Avoid_: Poll, ping, heartbeat
+
 **Backlog** (capability):
 A plugin capability that syncs backlog items, with their descriptions, estimates and comments, between Ajour and a source tool such as Azure DevOps, Jira or GitHub issues. Say "backlog capability" wherever the user's backlog could be meant.
 _Avoid_: Connector, integration, sync plugin
@@ -306,12 +346,16 @@ _Avoid_: Permission, scope, toggle, feature flag
 A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool. A thread the user started on their own becomes a handoff when its title names the item's key in brackets and the user links it from the item's Handoffs card; until then it is a found thread.
 _Avoid_: Agent run, agent session, job
 
+**Close** (handoff):
+Ask a handoff's tool to stop the thread's work and close the thread, then remove the handoff from the item. A tool that closes threads either keeps the conversation, where the user can reopen it (Close in <tool>), or deletes it for good (Delete in <tool>, which asks first). Remove from item, by contrast, leaves the thread in the tool.
+_Avoid_: Archive (one tool's way to close), settle (that is a backlog item's), kill
+
 **Started** (handoff state):
 The state of a handoff whose tool can start a thread but doesn't report its state, such as Copilot CLI. Ajour never checks it again; the user opens the thread in the tool to follow it. The other common states are Working, Needs you, Ready, Done, Failed, Gone and Unknown, which the tool reports.
 _Avoid_: Running, launched, sent
 
 **Tool feature**:
-What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`) and Updates within seconds (`hooks`, only for a tool that follows state). Ajour uses only a tool's features, as the tool declares them now.
+What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`), Updates within seconds (`hooks`, only for a tool that follows state), and Closes threads or Deletes threads (`closesThreads`). Ajour uses only a tool's features, as the tool declares them now.
 _Avoid_: Capability (that is the plugin's), ability
 
 **Tool switch**:
