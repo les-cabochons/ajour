@@ -95,7 +95,7 @@ Work item URLs must belong to the organization of the connection. The plugin ref
 
 ## Pull requests
 
-Pull requests sync on the connection's interval while **Sync pull requests automatically** is on, and when you press **Sync** on the Pull requests page. The plugin lists active pull requests across the organization that you created, or where you or one of your teams is a reviewer. See [Pull requests](/pull-requests/).
+Pull requests sync on the connection's interval while **Sync pull requests automatically** is on, and when you press **Sync** in Deck. The plugin lists active pull requests across the organization that you created, or where you or one of your teams is a reviewer. See [Deck](/deck/).
 
 - A reviewer who has not voted yet is asked to review. An approval, with or without suggestions, is an approval. **Waiting for author** and **Rejected** ask for changes.
 - Ajour counts comments and `@` mentions of you, but does not store their text.

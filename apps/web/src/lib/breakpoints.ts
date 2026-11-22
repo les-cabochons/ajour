@@ -14,8 +14,9 @@ export const DESKTOP_MIN_WIDTH = 768;
 
 /**
  * Below this width the narrow view's bottom toggle no longer fits its four
- * sections side by side next to the agents dot, so it puts each name under
- * its icon.
+ * items side by side next to the agents dot, so it puts each name under its
+ * icon. With Deck, its five items stack below 480px, a rule of their own in
+ * styles.css.
  */
 export const PHONE_MAX_WIDTH = 400;
 

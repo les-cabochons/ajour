@@ -1030,7 +1030,7 @@ Primary surfaces:
 
 - `/time/$date`
 - `/backlog`
-- `/pull-requests` and `/pull-requests/$itemId`, visible while a code host plugin is enabled
+- `/deck` and `/deck/$itemId` (Deck, the pull request view), visible while a code host plugin is enabled
 - `/projects`
 - `/projects/$projectId`
 - `/settings/*`

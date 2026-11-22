@@ -4,7 +4,7 @@ function primaryNavigation(page: Page) {
   return page.getByRole("navigation", { name: "Primary navigation" });
 }
 
-/** The nav row's `data-view` for a view's name, such as "Pull requests". */
+/** The nav row's `data-view` for a view's name, such as "Deck". */
 export function viewSlug(view: string) {
   return view.toLowerCase().replace(/\s+/g, "-");
 }
@@ -12,7 +12,7 @@ export function viewSlug(view: string) {
 const VIEW_LABELS: Record<string, string> = {
   time: "Time",
   backlog: "Backlog",
-  "pull-requests": "Pull requests",
+  deck: "Deck",
   projects: "Projects",
 };
 

@@ -21,7 +21,6 @@ import {
 import { SettingsWindowPage } from "@/features/settings/settings-pages";
 import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
-import { useCodeHostConnections } from "@/lib/code-host-connections";
 
 /** The settings page a navigation entry opens: its route without `/settings/`. */
 function pageOf(to: string) {
@@ -45,11 +44,9 @@ function isOpen(page: string, entry: string) {
  */
 export function SettingsWindow({ location }: { location: SettingsLocation }) {
   const close = useCloseSettings();
-  const { groups: codeHosts } = useCodeHostConnections();
   const calendars = useCalendarSources();
   const groups = getSettingsGroups(
     "wide",
-    codeHosts.length > 0,
     calendars.length > 0,
     hasLocalLogsBridge(),
   );

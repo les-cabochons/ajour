@@ -2,17 +2,22 @@ import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiCalendarCheckLine as CommitIcon,
+  RiGitPullRequestLine as DeckIcon,
   RiListCheck3 as ListTodo,
   RiSettings3Line as Settings,
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { buttonVariants } from "@/components/ui/button";
-import { getAppSection } from "@/features/layout/app-section";
+import {
+  getAppSection,
+  isSectionEntryShown,
+} from "@/features/layout/app-section";
 import {
   getNarrowBackLink,
   isNarrowSettingsSection,
 } from "@/features/layout/narrow-navigation";
 import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
+import { useCodeHostConnections } from "@/lib/code-host-connections";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -29,6 +34,13 @@ const sections = [
     isActive: (pathname: string) => getAppSection(pathname) === "backlog",
   },
   {
+    to: "/deck",
+    label: "Deck",
+    icon: DeckIcon,
+    requiresCodeHost: true,
+    isActive: (pathname: string) => getAppSection(pathname) === "deck",
+  },
+  {
     to: "/settings",
     label: "Settings",
     icon: Settings,
@@ -38,11 +50,14 @@ const sections = [
 ] as const;
 
 /**
- * The narrow view's primary navigation: a segmented toggle for Time, Backlog
- * and Settings that floats at the bottom left. Every item shows its icon and
- * name; the active one is filled. After a hairline, Commit opens the Commit
- * page for the week on screen. It is an action, not a section, so it is
- * never active.
+ * The narrow view's primary navigation: a segmented toggle for Time, Backlog,
+ * Deck and Settings that floats at the bottom left. Deck shows only while a
+ * code host plugin is enabled, as its sidebar row does. Every item shows its
+ * icon and name; the active one is filled. After a hairline, Commit opens the
+ * Commit page for the week on screen. It is an action, not a section, so it
+ * is never active. `data-items` counts the items with Commit: five no longer
+ * fit side by side below 480px, so styles.css stacks each name under its icon
+ * there.
  */
 export function NarrowSectionSwitcher({
   pathname,
@@ -52,9 +67,17 @@ export function NarrowSectionSwitcher({
   selectedTimeDate: string;
 }) {
   const openCommitPage = useOpenCommitPage(selectedTimeDate);
+  const hasCodeHost = useCodeHostConnections().enabled;
+  const shown = sections.filter((section) =>
+    isSectionEntryShown(section, hasCodeHost),
+  );
   return (
-    <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
-      {sections.map((section) => {
+    <nav
+      className="ajour-narrow-switcher"
+      aria-label="Primary navigation"
+      data-items={shown.length + 1}
+    >
+      {shown.map((section) => {
         const Icon = section.icon;
         const isActive = section.isActive(pathname);
         const linkProps = {

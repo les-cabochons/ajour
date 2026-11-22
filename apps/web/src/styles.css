@@ -2173,9 +2173,9 @@
   }
 }
 
-/* A phone in portrait: the toggle's sections side by side need about 400px
+/* A phone in portrait: the toggle's four items side by side need about 400px
    with the indicator beside them. Below that the toggle spans the row up to
-   the indicator, and each section puts its name under its icon, so all four
+   the indicator, and each item puts its name under its icon, so all four
    names show down to a 320px window. */
 @variant phone {
   .ajour-narrow-switcher {
@@ -2195,6 +2195,34 @@
   }
 
   .ajour-narrow-switcher-item > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* With Deck the toggle has five items, which side by side need about 462px,
+   so it stacks the same way below 480px. Four items keep the phone width
+   above. The width is the five items' own, not a layout breakpoint. */
+@media (max-width: 479px) {
+  .ajour-narrow-switcher[data-items="5"] {
+    right: calc(
+      max(1rem, env(safe-area-inset-right, 0px)) +
+        var(--agent-indicator-clearance, 0px)
+    );
+  }
+
+  .ajour-narrow-switcher[data-items="5"] .ajour-narrow-switcher-item {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding-inline: 2px;
+    font-size: var(--text-2xs);
+  }
+
+  .ajour-narrow-switcher[data-items="5"] .ajour-narrow-switcher-item > span {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;

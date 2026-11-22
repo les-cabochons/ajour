@@ -2886,6 +2886,7 @@ function narrowPrimaryNavigation(page: Page) {
 }
 
 When("I open today's time workspace in a narrow window", async ({ page }) => {
+  // Above the 400px phone width, where four items sit side by side.
   await page.setViewportSize({ width: 420, height: 844 });
   await page.goto("/time/today");
 });
@@ -2932,6 +2933,13 @@ Then(
     expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
     // Every item is labelled, and it still leaves the agent indicator room.
     expect(box.x + box.width).toBeLessThan(viewport.width - 64);
+    // Without a code host, its four items keep their names beside the icons.
+    await expect(navigation).toHaveAttribute("data-items", "4");
+    for (const item of await navigation
+      .locator(".ajour-narrow-switcher-item")
+      .all()) {
+      await expect(item).toHaveCSS("flex-direction", "row");
+    }
   },
 );
 
