@@ -5,6 +5,7 @@ import {
   type BacklogDoneWorkItem,
   type BacklogImportCandidate,
   type BacklogSyncFieldUpdate,
+  type BacklogSyncRequestWorkItem,
   type BacklogSyncWorkItemUpdate,
 } from "@ajour/shared";
 import type {
@@ -771,11 +772,18 @@ export function archiveDoneSyncedWorkItems(
   return { state: nextState, archivedCount };
 }
 
+/** The estimates a sync request sent for one item; blank ones absent. */
+type SentEstimates = Pick<
+  BacklogSyncRequestWorkItem,
+  LocalWorkItemEstimateFieldKey
+>;
+
 function applySourceFieldUpdateToWorkItem(
   workItem: LocalWorkItem,
   fieldKey: LocalWorkItemEstimateFieldKey,
   update: BacklogSyncFieldUpdate,
   now: () => number,
+  sent: SentEstimates | undefined,
 ): LocalWorkItem {
   const estimateSync: LocalWorkItemEstimateSyncState = {
     ...workItem.estimateSync,
@@ -789,9 +797,13 @@ function applySourceFieldUpdateToWorkItem(
     case "pulled":
       // The user changed the field while the sync ran: both sides changed,
       // so the local value stays for the next upload to find the conflict.
+      // The value sent is the request's own when known, a blank one
+      // included; else the plugin's echo, which it may leave out.
       if (
-        update.localValue !== undefined &&
-        workItem[fieldKey] !== update.localValue
+        sent
+          ? workItem[fieldKey] !== sent[fieldKey]
+          : update.localValue !== undefined &&
+            workItem[fieldKey] !== update.localValue
       ) {
         fieldState.remoteValue = update.remoteValue;
         return {
@@ -869,14 +881,20 @@ function applySourceFieldUpdateToWorkItem(
   }
 }
 
+/**
+ * Applies a sync answer's estimate updates. `sent` is the request's items,
+ * so a field the user changed while the sync ran keeps their value.
+ */
 export function applyBacklogSyncWorkItemUpdates(
   state: LocalAppState,
   updates: BacklogSyncWorkItemUpdate[],
   now: () => number,
+  sent: readonly BacklogSyncRequestWorkItem[] = [],
 ): LocalAppState {
   if (updates.length === 0) {
     return state;
   }
+  const sentById = new Map(sent.map((item) => [item.localWorkItemId, item]));
 
   const updatesByWorkItemId = new Map<string, BacklogSyncWorkItemUpdate[]>();
   for (const update of updates) {
@@ -904,6 +922,7 @@ export function applyBacklogSyncWorkItemUpdates(
             "originalEstimateHours",
             update.fields.originalEstimateHours,
             now,
+            sentById.get(workItem._id),
           );
         }
         if (update.fields.remainingEstimateHours) {
@@ -912,6 +931,7 @@ export function applyBacklogSyncWorkItemUpdates(
             "remainingEstimateHours",
             update.fields.remainingEstimateHours,
             now,
+            sentById.get(workItem._id),
           );
         }
         if (update.fields.completedEstimateHours) {
@@ -920,6 +940,7 @@ export function applyBacklogSyncWorkItemUpdates(
             "completedEstimateHours",
             update.fields.completedEstimateHours,
             now,
+            sentById.get(workItem._id),
           );
         }
       }

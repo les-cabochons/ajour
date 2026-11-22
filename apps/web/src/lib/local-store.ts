@@ -78,6 +78,7 @@ import type {
   BacklogDoneWorkItem,
   BacklogItemCommentFacts,
   BacklogPerson,
+  BacklogSyncRequestWorkItem,
   BacklogSyncWorkItemUpdate,
   ProjectDataShapeImportProject,
 } from "@ajour/shared";
@@ -2825,13 +2826,17 @@ const store = {
       applyReturnItemsWithNewComments(state, facts, viewer, sync, Date.now),
     );
   },
-  applyBacklogSyncWorkItemUpdates(updates: BacklogSyncWorkItemUpdate[]) {
+  /** Applies a sync answer's estimate updates; `sent` is the request's items. */
+  applyBacklogSyncWorkItemUpdates(
+    updates: BacklogSyncWorkItemUpdate[],
+    sent?: readonly BacklogSyncRequestWorkItem[],
+  ) {
     if (updates.length === 0) {
       return;
     }
 
     updateState((state) =>
-      applySyncedWorkItemUpdates(state, updates, Date.now),
+      applySyncedWorkItemUpdates(state, updates, Date.now, sent),
     );
   },
   keepLocalEstimateConflict(
