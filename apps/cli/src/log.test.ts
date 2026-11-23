@@ -407,6 +407,7 @@ describe("Workday through the MCP endpoint", () => {
           ],
           notSent: { hours: 0, items: [] },
           waiting: { hours: 0, tasks: [] },
+          nonWorkingDays: { hours: 0, days: [] },
           running: null,
         },
       }),

@@ -9,6 +9,7 @@ import {
   countTimesheetChanges,
   describeTimesheetCommitValues,
   getTimesheetEntryChange,
+  isChangeCommittable,
   isTimesheetEntryCommitted,
   listWeekChanges,
   normalizeTimesheetTombstones,
@@ -16,6 +17,17 @@ import {
 } from "@/domain/time/timesheet-commit";
 
 const HOUR = 3_600_000;
+
+/** Every day has capacity, so no day is a non-working day. */
+const EVERY_DAY = {
+  monday: 8 * HOUR,
+  tuesday: 8 * HOUR,
+  wednesday: 8 * HOUR,
+  thursday: 8 * HOUR,
+  friday: 8 * HOUR,
+  saturday: 8 * HOUR,
+  sunday: 8 * HOUR,
+};
 const WEEK = [
   "2026-10-05",
   "2026-10-06",
@@ -173,6 +185,7 @@ describe("week changes", () => {
         tombstone("last-week", "2026-09-28"),
       ],
       projects: [],
+      capacityTargets: EVERY_DAY,
       weekDates: WEEK,
     });
 
@@ -196,6 +209,7 @@ describe("week changes", () => {
           entries: [moved],
           tombstones: [],
           projects: [],
+          capacityTargets: EVERY_DAY,
           weekDates,
         }),
       ).toEqual([
@@ -214,9 +228,55 @@ describe("week changes", () => {
         entries: [committed(entry({ _id: "a" }))],
         tombstones: [],
         projects: [],
+        capacityTargets: EVERY_DAY,
         weekDates: WEEK,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("week changes on non-working days", () => {
+  const weekdaysOnly = { ...EVERY_DAY, saturday: 0, sunday: 0 };
+  const changesOf = (
+    entries: LocalTimesheetEntry[],
+    tombstones: LocalTimesheetTombstone[] = [],
+  ) =>
+    listWeekChanges({
+      entries,
+      tombstones,
+      projects: [],
+      capacityTargets: weekdaysOnly,
+      weekDates: WEEK,
+    });
+
+  it("holds an added or updated entry on a day with no capacity", () => {
+    // 2026-10-10 is a Saturday.
+    const added = entry({ _id: "added", localDate: "2026-10-10" });
+    const moved = {
+      ...committed(entry({ _id: "moved", localDate: "2026-10-09" })),
+      localDate: "2026-10-10",
+    };
+    const changes = changesOf([added, moved]);
+
+    expect(changes).toMatchObject([
+      { kind: "added", entryId: "added", nonWorkingDay: true },
+      { kind: "updated", entryId: "moved", nonWorkingDay: true },
+    ]);
+    expect(changes.filter(isChangeCommittable)).toEqual([]);
+  });
+
+  it("lets a deletion and a move to a working day through", () => {
+    const movedOff = {
+      ...committed(entry({ _id: "moved-off", localDate: "2026-10-10" })),
+      localDate: "2026-10-09",
+    };
+    const changes = changesOf([movedOff], [tombstone("deleted", "2026-10-11")]);
+
+    expect(changes.map((change) => change.entryId)).toEqual([
+      "moved-off",
+      "deleted",
+    ]);
+    expect(changes.every(isChangeCommittable)).toBe(true);
   });
 });
 
@@ -263,13 +323,17 @@ describe("week changes and what tasks commit as", () => {
     entries: LocalTimesheetEntry[],
     tombstones: LocalTimesheetTombstone[] = [],
   ) =>
-    listWeekChanges({ entries, tombstones, projects, weekDates: WEEK }).map(
-      (change) => ({
-        kind: change.kind,
-        entryId: change.entryId,
-        waiting: change.kind === "deleted" ? undefined : change.waiting,
-      }),
-    );
+    listWeekChanges({
+      entries,
+      tombstones,
+      projects,
+      capacityTargets: EVERY_DAY,
+      weekDates: WEEK,
+    }).map((change) => ({
+      kind: change.kind,
+      entryId: change.entryId,
+      waiting: change.kind === "deleted" ? undefined : change.waiting,
+    }));
 
   /** The entry with a copy of local time, as a commit of a local entry saves. */
   const committedLocal = (value: LocalTimesheetEntry): LocalTimesheetEntry => ({
@@ -333,6 +397,7 @@ describe("week changes and what tasks commit as", () => {
         entries: [moved],
         tombstones: [],
         projects,
+        capacityTargets: EVERY_DAY,
         weekDates,
       });
     expect(changes(WEEK)).toEqual([
@@ -360,6 +425,7 @@ describe("week changes and what tasks commit as", () => {
       entries: [toLocal, fromLocal],
       tombstones: [],
       projects,
+      capacityTargets: EVERY_DAY,
       weekDates: WEEK,
     });
     expect(changes).toEqual([
@@ -454,6 +520,7 @@ describe("stored tombstones", () => {
 describe("counting changes by kind", () => {
   it("counts each kind, with zero for a kind the week lacks", () => {
     const changes = listWeekChanges({
+      capacityTargets: EVERY_DAY,
       weekDates: WEEK,
       entries: [
         entry({ _id: "mon-added" }),

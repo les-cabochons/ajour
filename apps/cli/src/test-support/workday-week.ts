@@ -91,6 +91,10 @@ export const week: DataToolOutput<"get_week_lines"> = {
       },
     ],
   },
+  nonWorkingDays: {
+    hours: 0.25,
+    days: [{ date: "2026-11-07", hours: 0.25 }],
+  },
   running: {
     timerId: "timer",
     date: "2026-11-04",

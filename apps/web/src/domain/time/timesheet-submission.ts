@@ -6,6 +6,7 @@ import {
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
 import { findCommitTarget } from "@/domain/projects/commit-target";
+import { isNonWorkingDay } from "@/domain/time/working-days";
 import {
   getMappedTaskName,
   resolvePluginProperties,
@@ -211,15 +212,18 @@ export function buildCommitLines({
   entries,
   groupBy,
   projects,
+  capacityTargets,
   weekDates,
 }: {
   entries: LocalTimesheetEntry[];
   groupBy: SubmitGroupBy;
   projects: LocalProject[];
+  /** Settings › General's Time capacity, for which days are non-working days. */
+  capacityTargets: WeeklyCapacityTargets;
   weekDates: string[];
 }): SubmitSection[] {
   return groupSubmitLines({
-    entries: listSentEntries(entries, projects),
+    entries: listSentEntries(entries, projects, capacityTargets),
     groupBy,
     projects,
     weekDates,
@@ -403,15 +407,17 @@ export function describeLineNames(
 
 /**
  * The entries whose time goes to the timesheet tool, the ones the lines
- * show: not local, and not on a Not known yet task.
+ * show: not local, not on a Not known yet task, and not on a non-working day.
  */
 export function listSentEntries(
   entries: readonly LocalTimesheetEntry[],
   projects: readonly LocalProject[],
+  capacityTargets: WeeklyCapacityTargets,
 ): LocalTimesheetEntry[] {
   return entries.filter(
     (entry) =>
-      findCommitTarget(projects, entry.projectId, entry.taskId) === "sent",
+      findCommitTarget(projects, entry.projectId, entry.taskId) === "sent" &&
+      !isNonWorkingDay(capacityTargets, entry.localDate),
   );
 }
 
@@ -439,6 +445,16 @@ export type SubmitWarning =
       projectId: string;
       taskId: string;
       taskName: string;
+      durationMs: number;
+    }
+  | {
+      /**
+       * Time on a non-working day, which stays out of the commit until the
+       * user moves it to a working day or deletes it. Local time is left out:
+       * it never goes anyway.
+       */
+      kind: "non-working-day";
+      localDate: string;
       durationMs: number;
     };
 
@@ -518,6 +534,26 @@ export function summarizeWeek({
     target: findCommitTarget(projects, entry.projectId, entry.taskId),
   }));
   // Local time needs no task: nothing goes to the timesheet tool.
+  const nonWorkingDays = weekDates.flatMap((localDate) => {
+    if (!isNonWorkingDay(capacityTargets, localDate)) return [];
+    // An empty entry counts too: it would still be a line of 0:00.
+    const held = targets.filter(
+      ({ entry, target }) =>
+        entry.localDate === localDate && target !== "local",
+    );
+    return held.length > 0
+      ? [
+          {
+            kind: "non-working-day" as const,
+            localDate,
+            durationMs: held.reduce(
+              (sum, { entry }) => sum + entry.durationMs,
+              0,
+            ),
+          },
+        ]
+      : [];
+  });
   const missingTaskCount = targets.filter(
     ({ entry, target }) => !entry.taskId && target !== "local",
   ).length;
@@ -585,6 +621,7 @@ export function summarizeWeek({
     waiting.set(key, warning);
   }
   warnings.push(...waiting.values());
+  warnings.push(...nonWorkingDays);
   local.items = [...localItems.values()];
 
   return {
