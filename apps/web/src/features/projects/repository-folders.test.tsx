@@ -1,17 +1,24 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import { RepositoryFoldersSection } from "./repository-folders-section";
 import { RepositoryPicker } from "@/components/repository-picker";
 import * as api from "@/lib/app-api";
 
 vi.mock("@/lib/app-api", () => ({
+  getProjectStartIn: vi.fn(),
   listRepositoryFolders: vi.fn(),
+  listWorktreeStatuses: vi.fn(),
   removeRepositoryFolder: vi.fn(),
   useRepositoryFolder: vi.fn(),
 }));
 beforeAll(installDomShims);
+beforeEach(() => {
+  // The section also reads the project's Start in and its worktrees (#864).
+  vi.mocked(api.getProjectStartIn).mockResolvedValue({ settings: "worktree" });
+  vi.mocked(api.listWorktreeStatuses).mockResolvedValue([]);
+});
 afterEach(() => {
   cleanup();
   delete window.ajourDesktop;

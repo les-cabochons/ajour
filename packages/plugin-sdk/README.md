@@ -477,7 +477,7 @@ end idle sessions.
 
 An API 4 plugin declares `capabilities.handoff.tools`, each with `id`, `label`,
 `iconSvg`, `settings` and optional `connection`, `listsThreads`,
-`followsState`, `hooks` and `closesThreads`. The host treats handoff like the other switchable
+`followsState`, `hooks`, `closesThreads` and `ownWorktree`. The host treats handoff like the other switchable
 capabilities. Each tool id is unique. Settings cannot contain secrets.
 
 The plugin exports `detectTools()`, `startHandoff(request)` and
@@ -494,8 +494,9 @@ plugin's page lists them for each tool:
 | Updates within seconds | A hook tells Ajour the thread changed.                | `hooks: true`, `false` by default |
 | Closes threads         | Calls `closeThread`; the tool keeps the conversation. | `closesThreads: "archive"`        |
 | Deletes threads        | Calls `closeThread` after asking the user.            | `closesThreads: "delete"`         |
+| Makes its own worktree | Makes none itself. Sends `branch` and `source`.       | `ownWorktree: true`               |
 
-A start the tool refuses throws an `Error` with the tool's reason. Two
+A start the tool refuses throws an `Error` with the tool's reason. Three
 properties of that error let Ajour help the user instead of only showing the
 reason:
 
@@ -507,10 +508,18 @@ reason:
   user for it and calls `startHandoff` again with the answer in
   `request.settings`. Once a start with it succeeds, Ajour sends it with
   every later start of that tool from the same repository folder.
+- `mayHaveStarted: true`: the tool can't tell whether its thread started,
+  such as when its program started but never said which thread it made.
+  Ajour then keeps the worktree it made for this start, with its branch,
+  since the tool may be working in it, and records no handoff. Without it,
+  a refused start loses its new worktree at once. Ajour keeps it too when
+  `startHandoff` times out, its process ends before it answers, or the
+  user turns the plugin off while it runs.
 
 Ajour ignores a `setting` the tool doesn't declare, or that isn't a `text`
-setting, and a `branchExists` on a start without a branch. An older Ajour
-only shows the reason.
+setting, and a `branchExists` on a start without a branch. An error with
+`mayHaveStarted` gets none of the other two's help. An older Ajour only shows
+the reason.
 
 ```ts
 throw Object.assign(new Error('Neither "main" nor "master" exists.'), {
@@ -561,7 +570,9 @@ session id in `resume.args`. Access review lists each tool that uses a
 connection, and an update that makes a tool use one needs approval again. Detection returns
 `{ tools: [{ id, available, version?, reason? }] }`. A start receives the tool,
 folder id and name, prompt, title, optional branch, item key and URL, and
-settings, plus `hook: { url }` for a `hook-url` slot. It returns `{ threadId, link?, resume?, native }`. Throw an error to
+settings, plus `hook: { url }` for a `hook-url` slot, and, for a tool that
+makes its own worktree, an optional `source` (see below). A start in a
+worktree Ajour made also carries `repositoryFolder` (see below). It returns `{ threadId, link?, resume?, native }`. Throw an error to
 refuse a start; Ajour returns the reason and records no handoff.
 
 `native` is an opaque JSON object, up to 4 KB serialized as UTF-8, for the tool's own status and
@@ -583,8 +594,16 @@ A tool that sets `listsThreads: true` also answers `listThreads(request)`
 the user started on their own. The request is
 `{ tool, folder: { id }, since?, limit }`: one repository folder, threads
 changed after `since` (milliseconds) when the tool can tell, and at most
-`limit`. Return `{ threads: [{ threadId, title, link?, resume?, native, updatedAt? }] }`,
-newest first, each thread once. The item page lists a folder at most once
+`limit`. Return `{ threads: [{ threadId, title, link?, resume?, native, updatedAt?, state? }] }`,
+newest first, each thread once. `state` is the thread's state as the
+listing saw it, one a state read reports, read without side effects. Leave
+it out when the tool doesn't know it while it lists. Clean up reads it for a
+thread in a worktree that no handoff links, and never calls
+`readHandoffStates` for one, so a read that acts on a thread, such as
+stopping a finished job, never runs on a thread the user started by hand
+(#857). Without it, or with `unknown`, clean up keeps the worktree. A
+listing that holds `limit` threads keeps it too, since it may have left an
+older thread out. The item page lists a folder at most once
 every five minutes per tool, and offers a thread whose title names an item's
 key in brackets, exactly, as `[PAY-12] Fix login redirect`. Link turns it
 into a handoff whose state is `unknown` until its first `readHandoffStates`,
@@ -611,6 +630,110 @@ export async function closeThread(request: CloseThreadRequest) {
   return {};
 }
 ```
+
+`request.branch` is the branch for the thread. In a worktree Ajour made, it
+is the branch checked out there. A tool with `ownWorktree` creates it (see
+below). A tool without `ownWorktree` still gets `branch` in the main folder,
+as before worktrees: under **Main folder**, in a folder that is not a git
+repository, and on a computer without git. Nobody created that branch, so
+it is only a name: a tool that makes no worktree works on what is checked
+out and ignores it. Ajour shows that name for the thread until a state read
+reports a `branch`, so report the one your thread works on. A branch
+template that fills to a name git wouldn't take is left out there, so
+`branch` can be absent.
+
+When Ajour starts a tool in a worktree it made, `request.folder` is that
+worktree, and the request also names the repository folder the worktree is
+in:
+
+```ts
+repositoryFolder?: { id: string; name: string }
+```
+
+- It is present only when `folder` is a worktree Ajour made: a new one, or
+  one the item already has. It is absent when `folder` is the repository
+  folder already, which is Main folder and every start of a tool with
+  `ownWorktree`. An Ajour released before this field never sends it.
+- `id` is the repository folder's own id. Pass it to a declared command's
+  `folder` slot, or as `cwdFolder`, as you pass `folder.id`.
+- Use it for a step the user must take in a folder that outlives a failed
+  start, such as trusting the folder in the tool. When a tool refuses a
+  start in a new worktree, Ajour removes that worktree at once. A terminal
+  opened in `folder` then has no folder, and the next try gets a new
+  worktree that asks again. A terminal opened in `repositoryFolder` stays,
+  and what the user accepts there is still accepted at the next try, for a
+  tool whose trust of a repository folder covers the worktrees under it.
+
+```ts
+export async function startHandoff(request: StartHandoffRequest) {
+  if (!(await isTrusted(request.folder.id))) {
+    const lasting = request.repositoryFolder ?? request.folder;
+    await ajour.process.run({ command: "trust", args: { folder: lasting.id } });
+    throw new Error("Trust the folder in the terminal, then hand off again.");
+  }
+  // ...
+}
+```
+
+A tool that makes a git worktree itself for the thread it starts sets
+`ownWorktree: true`. The value is a boolean, and a manifest with another
+kind of value is refused. An Ajour released before this value refuses a
+manifest that has it, as it refuses every key it doesn't know.
+
+Ajour makes a worktree for every other tool and starts it there. For a tool
+with `ownWorktree` it makes none: the tool always starts from the repository
+folder, `request.folder` is that folder, and the user's **Start in** choice
+reaches the tool through two optional fields of the start request.
+
+| Start in                        | `request.branch`     | `request.source`    |
+| ------------------------------- | -------------------- | ------------------- |
+| New worktree                    | the branch to create | what it starts from |
+| A worktree the item already has | the branch to create | what it starts from |
+| Main folder                     | absent               | absent              |
+
+- `branch` is the name for the new branch: the one the user typed, else the
+  branch template's, else `aj-<item key>` when the template fills empty, or
+  `aj-` and the start of the item's own id for an item without a key.
+  Create it in a new worktree. Ajour sends the first name the repository
+  has no local branch for, adding `-2`, then `-3`, to a taken one. It reads
+  the name and reserves nothing: when another program takes it meanwhile,
+  refuse with `branchExists: true`.
+- `source` is what the new branch starts from, as git names it in that
+  repository: a remote's branch such as `origin/main`, a local branch such
+  as `develop`, or `HEAD` when the repository has no remote to ask and its
+  folder is on no branch. It is the source the user chose, else the one
+  they last chose for that repository folder, else the remote's default
+  branch, else the branch checked out in the repository folder. It is never
+  a path or an id.
+- Ajour fetches a remote's branch before it calls the tool, so `source`
+  resolves in the repository and is current, also in a clone that never had
+  that branch. Your tool needs no fetch of its own. When the fetch fails,
+  as without a network, the start still comes, `source` is the last fetched
+  copy, and Ajour tells the user so. When the repository has no copy at
+  all, Ajour refuses the hand off and doesn't call the tool.
+- `source` comes only with `branch`, and only to a tool with `ownWorktree`.
+  Without `branch`, make no worktree and work in the folder as it is. That
+  is Main folder, and also a folder that is not a git repository or a
+  computer without git.
+- Such a tool can't join a worktree Ajour made, so a start in a worktree the
+  item already has is the same request as New worktree.
+
+Start in decides, so a tool with `ownWorktree` needs no setting of its own
+for whether to make a worktree or what to base it on. Ajour doesn't read
+such settings. It lists the worktrees it made itself and never lists,
+deletes or cleans one a tool made.
+
+```ts
+export async function startHandoff(request: StartHandoffRequest) {
+  const worktree = request.branch
+    ? { branch: request.branch, base: request.source ?? "HEAD" }
+    : undefined; // Main folder: work on what is checked out
+  // ...
+}
+```
+
+A declared command takes both as `ref` slots, such as `{base:ref}` for the
+source and `{branch:ref}` for the branch, under `{"if": "branch"}`.
 
 ## License
 

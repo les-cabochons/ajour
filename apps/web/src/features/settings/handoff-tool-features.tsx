@@ -23,6 +23,7 @@ interface Tool {
   listsThreads?: boolean;
   hooks?: boolean;
   closesThreads?: HandoffCloseKind;
+  ownWorktree?: boolean;
 }
 
 function errorMessage(reason: unknown, fallback: string) {

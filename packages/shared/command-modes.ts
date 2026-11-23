@@ -50,6 +50,13 @@ export const commandAskSchema = undeclaredCommandSchema.extend({
   resolvedExecutable: z.string().optional(),
   folderPath: z.string().optional(),
   folderName: z.string(),
+  /**
+   * The repository folder an Always answer is kept for, when the command
+   * runs in one of its worktrees (#860). Absent, `folderName` is that
+   * repository folder. Either way the approval covers the repository folder
+   * and all its worktrees.
+   */
+  scopeFolderName: z.string().optional(),
   risky: z.boolean(),
   reason: z.string().optional(),
   expiresAt: z.number(),

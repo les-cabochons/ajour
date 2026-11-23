@@ -163,13 +163,15 @@ function outcomeFromPage(outcome) {
 
 /**
  * Why a hand-off tool refused a start, as the page reported it (#819): the
- * branch exists, or one of the tool's settings, by its id of 1 to 120
- * characters. Anything else is dropped.
+ * tool may have started anyway (#857), the branch exists, or one of the
+ * tool's settings, by its id of 1 to 120 characters. Anything else is
+ * dropped.
  *
  * @param {unknown} value
  */
 function handoffRefusalOf(value) {
   if (!isRecord(value)) return undefined;
+  if (value.mayHaveStarted === true) return { mayHaveStarted: true };
   if (value.branchExists === true) return { branchExists: true };
   const setting = value.setting;
   return typeof setting === "string" && setting.trim() && setting.length <= 120

@@ -103,9 +103,10 @@ const calendarGroup = () => ({
 
 /**
  * The plugin overview with Azure DevOps, Jira and GitHub connected. With
- * `calendar`, the ICS calendar plugin is connected too.
+ * `calendar`, the ICS calendar plugin is connected too. With `handoff`, the
+ * Agent handoff plugin is on, with two of its tools.
  */
-export function pluginsOverview({ calendar = false } = {}) {
+export function pluginsOverview({ calendar = false, handoff = false } = {}) {
   const plugins = [manifests.azure_devops, manifests.jira, manifests.github];
   const overview = {
     pluginsEnabled: true,
@@ -184,7 +185,198 @@ export function pluginsOverview({ calendar = false } = {}) {
     overview.plugins.push(manifests.ics);
     overview.connectionGroups.push(calendarGroup());
   }
+  if (handoff) {
+    // The plugin uses no connection, so its copy declares no field.
+    const plugin = { connectionFields: [], ...manifests.agent_handoff };
+    overview.plugins.push(plugin);
+    overview.connectionGroups.push({
+      plugin,
+      enabled: true,
+      enabledHandoffTools: ["claude", "codex"],
+      connections: [],
+    });
+  }
   return overview;
+}
+
+const DAY = 24 * HOUR;
+
+/** The repository folders of the seeded projects, on this computer. */
+const repositoryFolders = {
+  "p-atlas": [
+    {
+      id: "f-atlas-web",
+      projectId: "p-atlas",
+      name: "atlas-web",
+      path: "/Users/sam/Repos/atlas-web",
+    },
+    {
+      id: "f-atlas-api",
+      projectId: "p-atlas",
+      name: "atlas-api",
+      path: "/Users/sam/Repos/atlas-api",
+    },
+  ],
+  "p-harbor": [
+    {
+      id: "f-harbor-app",
+      projectId: "p-harbor",
+      name: "harbor-app",
+      path: "/Users/sam/Repos/harbor-app",
+    },
+  ],
+};
+
+/** A worktree as a list shows it. `item` is a seeded backlog item's id. */
+function listedWorktree(name, folder, item, key, branch, extra = {}) {
+  return {
+    worktree: {
+      id: `wt-${name}`,
+      repositoryFolderId: folder.id,
+      projectId: folder.projectId,
+      workItemId: item,
+      itemKey: key,
+      name,
+      branch,
+      source: "origin/main",
+      createdAt: NOW - 5 * DAY,
+    },
+    status: { state: "clean" },
+    path: `${folder.path}/.ajour/worktrees/${name}`,
+    ...extra,
+  };
+}
+
+/**
+ * What the hand-off worktree shots mock of the local API: the Agent
+ * handoff plugin with two tools on, the repository folders of two
+ * projects, three worktrees, and the threads of the first one. The rounds
+ * of automatic clean up the app starts by itself remove nothing.
+ */
+export function worktreeApi() {
+  const [atlasWeb] = repositoryFolders["p-atlas"];
+  const [harborApp] = repositoryFolders["p-harbor"];
+  const branch = "48213-fix-export-rounding-on-half-hour-entries";
+  const working = listedWorktree("aj-48213", atlasWeb, "w1", "48213", branch, {
+    status: { state: "changed", changes: 3 },
+    running: "working",
+  });
+  // Its item was settled two days ago: the rule's three days end tomorrow.
+  const going = listedWorktree(
+    "aj-48102",
+    atlasWeb,
+    "w9",
+    "48102",
+    "48102-waiting-on-design-settings-icons",
+    { cleanUp: { kind: "goes", at: NOW + DAY } },
+  );
+  const kept = listedWorktree(
+    "aj-hrb-412",
+    harborApp,
+    "w4",
+    "HRB-412",
+    "hrb-412-harbor-offline-sync-conflict-dialog",
+    {
+      status: { state: "changed", changes: 2 },
+      cleanUp: { kind: "kept", reason: "changes" },
+    },
+  );
+  const listed = [working, going, kept];
+  const thread = (id, toolId, state, startedAt) => ({
+    id,
+    pluginId: "agent-handoff",
+    toolId,
+    workItemId: "w1",
+    projectId: "p-atlas",
+    folderId: atlasWeb.id,
+    worktreeId: working.worktree.id,
+    threadId: `thread-${id}`,
+    title: "[48213] Fix export rounding on half-hour entries",
+    branch,
+    native: {},
+    startedAt,
+    state,
+    checkedAt: NOW - 60_000,
+    changedAt: NOW - 4 * 60_000,
+    history: [],
+  });
+  const handoffs = [
+    thread("h-claude", "claude", "working", NOW - 50 * 60_000),
+    thread("h-codex", "codex", "ready", NOW - 3 * HOUR),
+  ];
+  const refreshed = () => ({ handoffs, failures: [] });
+  const startIn = () => ({ settings: "worktree" });
+  const branches = () => ({
+    current: "main",
+    source: "origin/main",
+    branches: [
+      { name: "origin/main", remote: true, default: true },
+      { name: "main", remote: false, current: true },
+      { name: "origin/release/1.4", remote: true },
+    ],
+  });
+  return {
+    "/api/plugins": () => pluginsOverview({ handoff: true }),
+    "/api/plugins/agent-handoff/handoffs/detect": () => ({
+      tools: manifests.agent_handoff.capabilities.handoff.tools.map(
+        ({ id }) => ({ id, available: true }),
+      ),
+    }),
+    "/api/plugins/agent-handoff/handoffs/templates": () => ({
+      prompt: "{{item.title}}",
+      title: "[{{item.key}}] {{item.title}}",
+      branch: "{{item.key|slug}}-{{item.title|slug}}",
+    }),
+    "/api/handoffs": () => handoffs,
+    "/api/handoffs/refresh": refreshed,
+    "/api/handoffs/h-claude/refresh": refreshed,
+    "/api/handoffs/h-codex/refresh": refreshed,
+    "/api/handoffs/threads": () => ({ offers: [] }),
+    "/api/projects/p-atlas/repository-folders": () =>
+      repositoryFolders["p-atlas"],
+    "/api/projects/p-harbor/repository-folders": () =>
+      repositoryFolders["p-harbor"],
+    "/api/projects/p-atlas/repository-folders/f-atlas-web/branches": branches,
+    "/api/projects/p-atlas/repository-folders/f-atlas-api/branches": branches,
+    "/api/projects/p-atlas/start-in": startIn,
+    "/api/projects/p-harbor/start-in": startIn,
+    "/api/worktrees": () => listed.map((one) => one.worktree),
+    // The item pages of these shots ask for item w1's, or for an item
+    // without a worktree: the shot that needs another list replaces this.
+    "/api/worktrees/item": () => [],
+    "/api/worktrees/status": () => listed,
+    "/api/worktrees/settings": () => ({
+      startIn: "worktree",
+      cleanUp: {
+        finished: { enabled: true, days: 3 },
+        unused: { enabled: false, days: 30 },
+      },
+    }),
+    "/api/worktrees/clean-up": () => ({ removed: [], kept: [], handoffs }),
+    "/api/worktrees/wt-aj-48213/delete-preview": () => ({
+      listed: working,
+      fingerprint: "docs",
+      files: [
+        { code: " M", path: "src/export/rounding.ts" },
+        { code: " M", path: "src/export/rounding.test.ts" },
+        { code: "??", path: "notes.md" },
+      ],
+      moreFiles: 0,
+      running: [
+        { pluginId: "agent-handoff", toolId: "claude", state: "working" },
+      ],
+      branch: { name: branch, unpushedCommits: 2 },
+    }),
+  };
+}
+
+/**
+ * Turns the stand-in bridge into the desktop app that maps repository
+ * folders, which is where hand offs and their worktrees show. Runs after
+ * `desktopBridgeScript`.
+ */
+export function repositoryFoldersBridgeScript() {
+  return `window.ajourDesktop.chooseFolder = async () => null;`;
 }
 
 /** Azure DevOps items waiting in Sync review. */

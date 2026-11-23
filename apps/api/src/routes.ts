@@ -130,10 +130,80 @@ export const ROUTES = {
     path: "/api/handoffs/:handoffId",
     name: "handoff.remove",
   },
+  worktreeList: {
+    method: "GET",
+    path: "/api/worktrees",
+    name: "worktree.list",
+  },
+  // An item's worktrees whose folder is still on disk (#861).
+  worktreeItemList: {
+    method: "POST",
+    path: "/api/worktrees/item",
+    name: "worktree.list_for_item",
+  },
+  // An item's, a project's or every worktree, with its status (#862).
+  worktreeStatus: {
+    method: "POST",
+    path: "/api/worktrees/status",
+    name: "worktree.status",
+  },
+  // One round of automatic clean up, which the window starts (#864).
+  worktreeCleanUp: {
+    method: "POST",
+    path: "/api/worktrees/clean-up",
+    name: "worktree.clean_up",
+  },
+  worktreeDeletePreview: {
+    method: "GET",
+    path: "/api/worktrees/:worktreeId/delete-preview",
+    name: "worktree.delete_preview",
+  },
+  worktreeDelete: {
+    method: "POST",
+    path: "/api/worktrees/:worktreeId/delete",
+    name: "worktree.delete",
+  },
+  worktreeForget: {
+    method: "POST",
+    path: "/api/worktrees/:worktreeId/forget",
+    name: "worktree.forget",
+  },
+  worktreeOpen: {
+    method: "POST",
+    path: "/api/worktrees/:worktreeId/open",
+    name: "worktree.open",
+  },
+  worktreeSettingsGet: {
+    method: "GET",
+    path: "/api/worktrees/settings",
+    name: "worktree.settings_read",
+  },
+  worktreeSettingsSave: {
+    method: "POST",
+    path: "/api/worktrees/settings",
+    name: "worktree.settings_update",
+  },
+  // A project's own Start in, over the Settings default (#864).
+  projectStartInGet: {
+    method: "GET",
+    path: "/api/projects/:projectId/start-in",
+    name: "worktree.project_settings_read",
+  },
+  projectStartInSave: {
+    method: "POST",
+    path: "/api/projects/:projectId/start-in",
+    name: "worktree.project_settings_update",
+  },
   repositoryFolderList: {
     method: "GET",
     path: "/api/projects/:projectId/repository-folders",
     name: "repository_folder.list",
+  },
+  // The branches a new worktree can start from in the folder (#861).
+  repositoryBranchList: {
+    method: "GET",
+    path: "/api/projects/:projectId/repository-folders/:folderId/branches",
+    name: "worktree.list_branches",
   },
   repositoryFolderAdd: {
     method: "POST",

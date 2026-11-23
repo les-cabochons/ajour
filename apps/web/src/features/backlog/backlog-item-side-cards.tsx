@@ -3,13 +3,17 @@ import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArrowRightSLine as ChevronIcon,
+  RiFolderLine as MainFolderIcon,
   RiGitBranchLine as BranchIcon,
   RiGitPullRequestLine as PullRequestIcon,
   RiLoader4Line as SpinnerIcon,
   RiMoreLine as MoreIcon,
+  RiNodeTree as WorktreeIcon,
 } from "@remixicon/react";
 import { isHttpsUrl, type Handoff } from "@ajour/shared/handoffs";
 import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
+import type { RepositoryFolder } from "@ajour/shared/repository-folders";
+import type { ListedWorktree } from "@ajour/shared/worktrees";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -32,12 +36,20 @@ import {
   sortHandoffs,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
+import {
+  describeThreadCount,
+  describeWorktreeStatus,
+  groupHandoffsByPlace,
+  type HandoffGroup,
+} from "@/domain/handoffs/worktrees";
 import { syncAge } from "@/domain/backlog/sync-freshness";
 import {
   HandoffStartButtons,
   HandoffToolIcon,
 } from "@/features/backlog/handoff-button";
 import { useHandoffLaunching } from "@/features/backlog/handoff-request";
+import { WorktreeMenu } from "@/features/worktrees/worktree-menu";
+import { useWorktree } from "@/lib/worktrees";
 import { useHandoffTools } from "@/lib/handoff-tools";
 import {
   closeHandoffThread,
@@ -425,8 +437,16 @@ function pullRequestLabel(pullRequest: { url: string; title?: string }) {
 /**
  * The threads the item was handed off to, newest change first. Each shows
  * its tool, title and state chip (the tool's own words in its tooltip), its
- * branch, pull requests and last change, Open, and a menu with Refresh and
- * Remove from item. Closed, it counts the threads and says which wait.
+ * branch, after its worktree's name when it runs in one, pull requests and
+ * last change, Open, and a menu with Refresh and Remove from item. Closed,
+ * it counts the threads and says which wait.
+ * Once the item has a worktree (#862), a quiet line above each group of
+ * threads names where they run: the worktree, with its status, its thread
+ * count and its menu, or the repository folder for the main folder. The
+ * threads a tool runs in worktrees it made itself sit under "<tool
+ * label>'s own worktree" (#863), with no status and no menu, and such a
+ * thread alone gives the card its lines. The rows stay as they are,
+ * unindented. An item without a worktree shows no line.
  * Under them, the threads a tool listed whose title names the item's key,
  * each with Link and Not this one. Once one leaves the list, focus moves to
  * the Link of the offer that took its place, else the last one, else the
@@ -442,6 +462,9 @@ export function HandoffsCard({
   onLink,
   onDismiss,
   pending = NO_OFFERS,
+  worktrees,
+  folders,
+  onWorktreesChanged,
   now,
   open,
   onOpenChange,
@@ -463,11 +486,26 @@ export function HandoffsCard({
   onDismiss?: (offer: HandoffThreadOffer) => Promise<boolean>;
   /** Offers whose Link or Not this one is under way. */
   pending?: readonly HandoffThreadOffer[];
+  /** The item's worktrees with their status, newest first, once read. */
+  worktrees?: readonly ListedWorktree[];
+  /** The project's repository folders, which name the main folder's threads. */
+  folders?: readonly RepositoryFolder[];
+  /** A worktree was deleted or forgotten: read them again. */
+  onWorktreesChanged?: () => void;
   now: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const sorted = sortHandoffs(handoffs);
+  const toolOf = (pluginId: string, toolId: string) =>
+    tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
+  // Undefined for an item without a worktree: the card then is as before.
+  const groups = groupHandoffsByPlace(
+    sorted,
+    worktrees,
+    folders,
+    (pluginId, toolId) => toolOf(pluginId, toolId)?.label ?? toolId,
+  );
   const waiting = handoffs.filter(
     (handoff) => !handoff.paused && handoff.state === "needs-you",
   ).length;
@@ -479,8 +517,6 @@ export function HandoffsCard({
       Not handed off yet.{found ? ` ${found}.` : ""}
     </p>
   );
-  const toolOf = (pluginId: string, toolId: string) =>
-    tools.find((tool) => tool.pluginId === pluginId && tool.toolId === toolId);
   // The tools that are on can take the item; the web build has none.
   const starters = useHandoffTools(item?.projectId);
   const launchingKey = useHandoffLaunching(itemId);
@@ -556,7 +592,27 @@ export function HandoffsCard({
           />
         </div>
       ) : null}
-      {sorted.length ? (
+      {groups ? (
+        <div className="handoff-groups">
+          {groups.map((group) => (
+            <HandoffGroupRows
+              key={group.key}
+              group={group}
+              onWorktreesChanged={onWorktreesChanged}
+            >
+              {group.handoffs.map((handoff) => (
+                <HandoffRow
+                  key={handoff.id}
+                  handoff={handoff}
+                  tool={toolOf(handoff.pluginId, handoff.toolId)}
+                  now={now}
+                  placed
+                />
+              ))}
+            </HandoffGroupRows>
+          ))}
+        </div>
+      ) : sorted.length ? (
         <ul className="handoff-rows" aria-label="Handoffs">
           {sorted.map((handoff) => (
             <HandoffRow
@@ -564,6 +620,8 @@ export function HandoffsCard({
               handoff={handoff}
               tool={toolOf(handoff.pluginId, handoff.toolId)}
               now={now}
+              // Once read, the item has no worktree: none to name.
+              placed={worktrees !== undefined}
             />
           ))}
         </ul>
@@ -699,14 +757,77 @@ function ThreadOfferRow({
   );
 }
 
+/**
+ * The threads that run in one place, under the quiet line that names it
+ * (#862): "aj-4821 · Clean · 2 threads" with the worktree's menu, or the
+ * repository folder's name and its count for the main folder. A tool's own
+ * worktree (#863) gets its name alone, "<tool label>'s own worktree":
+ * Ajour reads no status of it and offers no menu. The line keeps its
+ * height with or without a menu.
+ */
+function HandoffGroupRows({
+  group,
+  onWorktreesChanged,
+  children,
+}: {
+  group: HandoffGroup;
+  onWorktreesChanged?: () => void;
+  children: ReactNode;
+}) {
+  const facts = group.ownWorktree
+    ? []
+    : [
+        ...(group.listed ? [describeWorktreeStatus(group.listed.status)] : []),
+        describeThreadCount(group.handoffs.length),
+      ];
+  const Icon =
+    group.listed || group.ownWorktree ? WorktreeIcon : MainFolderIcon;
+  return (
+    <div
+      role="group"
+      className="handoff-group"
+      aria-label={[group.name, ...facts].join(", ")}
+    >
+      <div className="handoff-group-line">
+        <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+        <span
+          className={cn("truncate", group.listed && "font-mono")}
+          title={group.listed?.path ?? group.name}
+        >
+          {group.name}
+        </span>
+        {facts.length ? (
+          <span className="handoff-group-facts">
+            {facts.map((fact) => `· ${fact}`).join(" ")}
+          </span>
+        ) : null}
+        {group.listed && onWorktreesChanged ? (
+          <WorktreeMenu listed={group.listed} onChanged={onWorktreesChanged} />
+        ) : null}
+      </div>
+      {group.handoffs.length ? (
+        <ul className="handoff-rows" aria-label={`Threads in ${group.name}`}>
+          {children}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function HandoffRow({
   handoff,
   tool,
   now,
+  placed = false,
 }: {
   handoff: Handoff;
   tool: HandoffTool | undefined;
   now: number;
+  /**
+   * The item's worktrees are read: a line above the row names its
+   * worktree, or it has none. Its branch line then names no worktree.
+   */
+  placed?: boolean;
 }) {
   const toolLabel = tool?.label ?? handoff.toolId;
   const followed = isHandoffFollowed(handoff, tool);
@@ -718,6 +839,9 @@ function HandoffRow({
   // A started thread's tool reports nothing, so its time is when it started.
   const started = handoff.state === "started" && !followed;
   const close = getHandoffCloseAction(tool);
+  // The worktree the thread runs in, when Ajour started it in one (#860),
+  // named on its branch line until the item's worktrees are read.
+  const worktree = useWorktree(placed ? undefined : handoff.worktreeId);
   // The question before a delete mounts only while it is asked.
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -836,6 +960,17 @@ function HandoffRow({
       {handoff.branch ? (
         <div className="handoff-row-meta">
           <BranchIcon aria-label="Branch" className="size-3 shrink-0" />
+          {worktree ? (
+            <>
+              <span
+                className="shrink-0 font-mono"
+                title={`Worktree ${worktree.name}`}
+              >
+                {worktree.name}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
           <span className="truncate font-mono" title={handoff.branch}>
             {handoff.branch}
           </span>

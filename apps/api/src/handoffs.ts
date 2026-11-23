@@ -10,6 +10,7 @@ import type {
   DetectToolsResult,
   Handoff,
   HandoffFolderSettings,
+  HandoffStartAnswer,
   HandoffStartRefusal,
   HandoffStartRoute,
   StartHandoffRequest,
@@ -31,11 +32,31 @@ import {
   type ListedHandoffThread,
   type ThreadIdentity,
 } from "../../../packages/shared/handoff-threads.ts";
+import {
+  startInOf,
+  worktreeBaseName,
+  type Worktree,
+  type WorktreeStartIn,
+} from "../../../packages/shared/worktrees.ts";
 import type { AppApiStorage } from "./storage.ts";
 import type { ApiEvents } from "./events.ts";
-import { adoptHandoff, shouldRefresh, startHandoff } from "./handoff-state.ts";
+import {
+  adoptHandoff,
+  handoffWorkFolder,
+  shouldRefresh,
+  startHandoff,
+} from "./handoff-state.ts";
+import {
+  WorktreeRefused,
+  type CreatedWorktree,
+  type Worktrees,
+} from "./worktrees.ts";
 import { createHookToken } from "./handoff-hooks.ts";
-import { PluginOperationFailure } from "./plugin-operation-lifetime.ts";
+import {
+  PluginOperationCancelled,
+  PluginOperationFailure,
+} from "./plugin-operation-lifetime.ts";
+import { InvalidPluginResultError } from "./event-errors.ts";
 
 /** A saved connection as a handoff operation receives it: no secrets. */
 export interface HandoffConnection {
@@ -68,6 +89,8 @@ interface HandoffTool {
   followsState?: boolean;
   /** How the tool closes a thread (#850). Absent, it can't. */
   closesThreads?: HandoffCloseKind;
+  /** The tool makes its own git worktree (#859): Ajour makes none for it. */
+  ownWorktree?: boolean;
 }
 
 interface Options {
@@ -142,6 +165,14 @@ interface Options {
   hookUrl?(id: string, token: string): string;
   /** Runs when a handoff is removed, so its hook state goes with it. */
   onRemove?(id: string): void;
+  /**
+   * Hand-off worktrees (#860). Without them every start runs in the
+   * repository folder.
+   */
+  worktrees?: Pick<
+    Worktrees,
+    "create" | "newestLive" | "liveOf" | "sourceFor" | "hold"
+  >;
   events?: ApiEvents;
   now?: () => number;
   /** Handoffs per `readHandoffStates` call. Tests make it small. */
@@ -184,6 +215,11 @@ export class HandoffRefused extends Error {
   }
 }
 export class HandoffTemplateRefused extends HandoffRefused {}
+/**
+ * A start whose outcome is unknown (#857): the tool may run in the worktree
+ * this start made, so Ajour kept it and recorded no handoff.
+ */
+export class HandoffMayHaveStarted extends HandoffRefused {}
 /** A start or link with a tool switched off (#760): `tool_off`. */
 export class HandoffToolOff extends HandoffRefused {}
 
@@ -211,7 +247,7 @@ function startRefusal(
 ): Omit<HandoffStartRefusal, "error"> | undefined {
   const hint =
     error instanceof PluginOperationFailure ? error.handoffRefusal : undefined;
-  if (!hint) return undefined;
+  if (!hint || "mayHaveStarted" in hint) return undefined;
   if ("branchExists" in hint)
     return request.branch ? { branchExists: true } : undefined;
   const field = tool.settings?.find(
@@ -227,6 +263,85 @@ function startRefusal(
       ...(typeof value === "string" && value.length <= 500 ? { value } : {}),
     },
   };
+}
+
+/**
+ * How a plugin operation can fail after the tool may have started its
+ * thread (#857): it ran past its time, its process ended under it, or its
+ * answer was too large to read. An answer that fails validation
+ * (`InvalidPluginResultError`) counts too: the tool did answer. So does a
+ * cancelled operation (`PluginOperationCancelled`), as when the user turns
+ * the plugin off while the tool reads back what it launched. A thrown
+ * error says so itself with `mayHaveStarted`.
+ */
+const UNKNOWN_OUTCOMES: ReadonlySet<string> = new Set([
+  "timeout",
+  "crashed",
+  "exited_early",
+  "result_too_large",
+]);
+
+/** Whether a failed start may have left the tool running (see `UNKNOWN_OUTCOMES`). */
+const mayHaveStarted = (error: unknown) =>
+  error instanceof InvalidPluginResultError ||
+  error instanceof PluginOperationCancelled ||
+  (error instanceof PluginOperationFailure &&
+    (UNKNOWN_OUTCOMES.has(error.reason) ||
+      (error.handoffRefusal !== undefined &&
+        "mayHaveStarted" in error.handoffRefusal)));
+
+/** Whether a filled branch is a name git takes, and fits a start request. */
+const isUsableBranch = (branch: string) =>
+  branch.length <= 500 && isValidHandoffBranch(branch);
+
+/**
+ * Refuses a branch a start is about to create that git wouldn't take: the
+ * branch template's, since the route's schema already checked a typed one.
+ * An empty branch is none, and passes.
+ */
+function checkBranch(branch: string) {
+  if (branch && !isUsableBranch(branch))
+    throw new HandoffTemplateRefused(
+      "The branch template produces an invalid git branch. Edit the branch template.",
+    );
+}
+
+/**
+ * Answers what the worktrees module refused, in the start's words. The
+ * module checks the branch only once it knows the folder takes a worktree
+ * (`Worktrees.create`, `Worktrees.sourceFor`), and before it makes
+ * anything. So the branch is judged here, after that answer, and never
+ * before: a folder that is no git checkout, or a computer without git,
+ * starts in the main folder whatever the branch template fills to. A name
+ * the template made is refused with the template named.
+ */
+function refusePlace(error: unknown, branch: string): never {
+  if (!(error instanceof WorktreeRefused)) throw error;
+  if (error.reason === "invalid_branch") checkBranch(branch);
+  throw new HandoffRefused(error.message);
+}
+
+/**
+ * Where one start runs, and what the tool is told of it. With no worktree
+ * it is the main folder, which is the repository folder itself.
+ */
+interface StartPlace {
+  /** The worktree the tool starts in: a new one, or one the item has. */
+  worktree?: Worktree;
+  /** The worktree this start made, to keep once the tool answered, or take back. */
+  created?: CreatedWorktree;
+  /**
+   * The branch the tool is told, which the handoff records. Absent, the
+   * start names none and the record has none.
+   */
+  branch?: string;
+  /**
+   * The tool makes the worktree itself (#863), on `branch`, from this
+   * source, such as `origin/main`. Ajour made nothing.
+   */
+  ownSource?: string;
+  /** The fetch of `ownSource` failed: the tool starts from the last fetched copy. */
+  ownSourceStale?: boolean;
 }
 
 /** Why a tool that uses a connection has none to run with. */
@@ -251,6 +366,8 @@ export class Handoffs {
   private visible = false;
   private ticking = false;
   private refreshing?: Promise<unknown>;
+  /** The last start of each item in each repository folder (`inTurn`). */
+  private readonly startTurns = new Map<string, Promise<unknown>>();
   private lastPublished?: string;
   /**
    * Each tool's last listing per folder and connection, by `listingKey`,
@@ -284,7 +401,11 @@ export class Handoffs {
       this.options.onChange(records);
     }
   }
-  async start(input: HandoffStartRoute): Promise<Handoff> {
+  /**
+   * Starts a thread for an item. The answer is the new handoff, with the
+   * worktree it runs in when Ajour started it in one (`startPlace`).
+   */
+  async start(input: HandoffStartRoute): Promise<HandoffStartAnswer> {
     const folder = (
       await this.options.storage.listRepositoryFolders(input.projectId)
     ).find((f) => f.id === input.folderId);
@@ -310,11 +431,18 @@ export class Handoffs {
       ...input,
       repoName: folder.name,
     });
-    const branch = input.branchOverride ?? filled.branch;
-    if (branch && (branch.length > 500 || !isValidHandoffBranch(branch)))
-      throw new HandoffTemplateRefused(
-        "The branch template produces an invalid git branch. Edit the branch template or leave it empty for no worktree.",
-      );
+    // The branch a new worktree gets, and the one a tool is told where
+    // Ajour makes none: the name the start gave, else the template's. An
+    // empty one is no longer a choice of place (#861): a new worktree then
+    // gets its folder's name as its branch.
+    // It is checked where the start creates it, once the folder is known
+    // to take a worktree (`refusePlace`): a start in a worktree the item
+    // has works on that worktree's branch instead, a start in the main
+    // folder creates none, and a tool that makes its own worktree gets
+    // none in the main folder (#863).
+    const branch =
+      (input.startIn?.kind === "new" ? input.startIn.branch : undefined) ??
+      filled.branch;
     // An empty title (an empty template, or a slot the item doesn't have)
     // falls back to the item's own title; an empty prompt can't be sent.
     const title =
@@ -334,7 +462,8 @@ export class Handoffs {
     const hook =
       this.options.hookUrl && follows ? createHookToken() : undefined;
     // The folder's remembered settings, then the route's own (#819). Only
-    // settings the tool still declares count.
+    // settings the tool still declares count. They are kept per repository
+    // folder, so its worktrees share them.
     const declared = new Set((tool.settings ?? []).map((field) => field.id));
     const named = declaredSettings(input.settings, declared);
     const settings = {
@@ -348,53 +477,149 @@ export class Handoffs {
       ),
       ...named,
     };
-    const request = startHandoffRequestSchema.parse({
-      tool: input.toolId,
-      folder: { id: folder.id, name: folder.name },
-      title,
-      ...(branch ? { branch } : {}),
-      prompt,
-      item: { key: input.item.key, url: input.item.url },
-      settings,
-      ...(hook ? { hook: { url: this.options.hookUrl!(id, hook.token) } } : {}),
-    });
-    let result: StartHandoffResult;
-    try {
-      result = await this.options.plugins.startHandoff(
-        input.pluginId,
-        request,
-        input.projectId,
-        ...(connection ? [connection] : []),
-      );
-    } catch (error) {
-      throw new HandoffRefused(
-        error instanceof Error
-          ? error.message
-          : "The tool refused the handoff.",
-        startRefusal(error, tool, request),
-      );
-    }
-    const { pluginId, toolId, workItemId, projectId, folderId } = input;
-    const record = startHandoff(
-      {
-        id,
-        pluginId,
-        toolId,
-        workItemId,
-        projectId,
-        folderId,
-        ...(connection ? { connectionId: connection.id } : {}),
-        title: request.title,
-        branch: request.branch,
+    // Last before the tool is asked: a new worktree is made only for a
+    // start nothing above refused. One start of an item in a repository
+    // folder picks its place and runs at a time, until its worktree is kept
+    // or taken back. So a second start sees how the first ended: it never
+    // joins a worktree the first is about to remove, and two never make two.
+    // A worktree the item already has is held from here until its handoff
+    // is kept: automatic clean up must not remove a worktree whose tool is
+    // being started, and Ajour holds no thread for it yet (#864). A new
+    // worktree needs no hold: git keeps it locked until its tool answered.
+    const held: { release?: () => void } = {};
+    const { place, record } = await this.inTurn(
+      JSON.stringify([input.projectId, input.folderId, input.workItemId]),
+      async () => {
+        const place = await this.startPlace(input, tool, branch);
+        if (place.worktree && !place.created) {
+          // Taken under the repository's lock: a removal under way ends
+          // first, and its worktree is then gone.
+          const hold = await this.options.worktrees
+            ?.hold(place.worktree.id)
+            .catch((error: unknown) => {
+              if (error instanceof WorktreeRefused)
+                throw new HandoffRefused(
+                  "This worktree is no longer available. Choose another place to start.",
+                );
+              throw error;
+            });
+          held.release = hold?.release;
+          // The tool works on what is checked out there now, which a tool
+          // may have switched (#857): it is told that branch, or none when
+          // the worktree is detached, and the handoff records it.
+          if (hold) {
+            if (hold.branch) place.branch = hold.branch;
+            else delete place.branch;
+          }
+        }
+        let record: Handoff;
+        try {
+          const request = startHandoffRequestSchema.parse({
+            tool: input.toolId,
+            // In a worktree the tool gets the worktree's own folder id, and the
+            // branch Ajour checked out there.
+            folder: place.worktree
+              ? { id: place.worktree.id, name: place.worktree.name }
+              : { id: folder.id, name: folder.name },
+            // A worktree made for this start goes when the tool refuses it.
+            // The repository folder stays, so the tool can send the user
+            // there for a step that must last, such as trusting the folder.
+            ...(place.worktree
+              ? { repositoryFolder: { id: folder.id, name: folder.name } }
+              : {}),
+            title,
+            ...(place.branch ? { branch: place.branch } : {}),
+            // Only a tool that makes its own worktree gets a source, with
+            // the branch to create from it (#863).
+            ...(place.ownSource ? { source: place.ownSource } : {}),
+            prompt,
+            item: { key: input.item.key, url: input.item.url },
+            settings,
+            ...(hook
+              ? { hook: { url: this.options.hookUrl!(id, hook.token) } }
+              : {}),
+          });
+          let result: StartHandoffResult;
+          try {
+            result = await this.options.plugins.startHandoff(
+              input.pluginId,
+              request,
+              input.projectId,
+              ...(connection ? [connection] : []),
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "The tool refused the handoff.";
+            // The tool may run in the worktree this start made: it stays,
+            // and so does its branch, for the user to look at (#857).
+            if (place.created && mayHaveStarted(error))
+              throw new HandoffMayHaveStarted(
+                `${message} Ajour kept the worktree ${place.created.worktree.name} because the tool may have started there.`,
+              );
+            throw new HandoffRefused(
+              message,
+              startRefusal(error, tool, request),
+            );
+          }
+          const { pluginId, toolId, workItemId, projectId, folderId } = input;
+          record = startHandoff(
+            {
+              id,
+              pluginId,
+              toolId,
+              workItemId,
+              projectId,
+              folderId,
+              ...(place.worktree ? { worktreeId: place.worktree.id } : {}),
+              ...(place.ownSource ? { ownWorktree: true as const } : {}),
+              ...(connection ? { connectionId: connection.id } : {}),
+              title: request.title,
+              // What the tool was told, also in the main folder, as before
+              // worktrees. A state read replaces it with the tool's own.
+              branch: request.branch,
+            },
+            result,
+            this.now(),
+            follows,
+          );
+        } catch (error) {
+          if (error instanceof HandoffMayHaveStarted) {
+            await place.created?.keep();
+            throw error;
+          }
+          // Nothing started: a worktree made for this start goes, with its branch.
+          await place.created?.discard();
+          throw error;
+        }
+        // The tool works in the worktree from here on, so it stays whatever
+        // happens next.
+        await place.created?.keep();
+        return { place, record };
       },
-      result,
-      this.now(),
-      follows,
-    );
-    await this.options.storage.addHandoff(record, hook?.tokenHash);
+    ).catch((error: unknown) => {
+      held.release?.();
+      throw error;
+    });
+    // Once kept, the handoff itself says the worktree was just used.
+    await this.options.storage
+      .addHandoff(record, hook?.tokenHash)
+      .finally(() => held.release?.());
     await this.options.storage
       .useRepositoryFolder(input.projectId, input.folderId)
       .catch(() => undefined);
+    // The source the user picked made this worktree: the folder's next new
+    // worktree starts from it too, until they pick another (#861). So does
+    // the source they picked for a tool that made its own (#863).
+    const pickedSource =
+      input.startIn?.kind === "new" && input.startIn.source
+        ? (place.created?.worktree.source ?? place.ownSource)
+        : undefined;
+    if (pickedSource)
+      await this.options.storage
+        .rememberWorktreeSource(input.projectId, input.folderId, pickedSource)
+        .catch(() => undefined);
     // The tool took the settings the route named, such as the base branch
     // the user gave when it refused another: later starts here use them.
     if (Object.keys(named).length)
@@ -407,7 +632,189 @@ export class Handoffs {
         )
         .catch(() => undefined);
     await this.publish();
-    return record;
+    return {
+      ...record,
+      ...(place.worktree ? { worktree: place.worktree } : {}),
+      // A tool that made its own worktree has none to name its source.
+      ...(place.ownSource ? { source: place.ownSource } : {}),
+      ...(place.created?.sourceStale || place.ownSourceStale
+        ? { sourceStale: true as const }
+        : {}),
+    };
+  }
+  /** Runs the work of one key one at a time, in the order asked. */
+  private async inTurn<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.startTurns.get(key);
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.startTurns.set(key, turn);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+      if (this.startTurns.get(key) === turn) this.startTurns.delete(key);
+    }
+  }
+  /**
+   * Where a start runs. The request's Start in says it (#861): the main
+   * folder, a new worktree, or a worktree the item already has in the
+   * repository folder. Without one (#860) it is the item's newest worktree
+   * there that is still on disk, else what the project chose for itself
+   * (#864), else what Settings › Worktrees says. Under
+   * Ask each time the window always names the place, so a start that
+   * doesn't gets a new worktree, as a fresh install does. The main folder
+   * is the repository folder itself, so its place names no worktree. The
+   * tool is still told the branch there, and the handoff records it, as
+   * before worktrees (`mainFolder`). A folder Ajour
+   * can't make a worktree in (no git, or not a git checkout) always starts
+   * there, whatever the branch template fills to. A worktree Ajour can't
+   * make, or one that is gone, refuses the start, in words the user reads.
+   * So does a branch that is no valid git branch, but only where the start
+   * creates it, in a new worktree, and so only once the folder is known to
+   * take one (`refusePlace`). A tool that makes its own worktree never
+   * gets one of Ajour's (`ownWorktreePlace`).
+   */
+  private async startPlace(
+    input: HandoffStartRoute,
+    tool: HandoffTool,
+    branch: string,
+  ): Promise<StartPlace> {
+    /**
+     * The main folder. A tool that doesn't make its own worktree is told
+     * the branch, and the handoff records it, as before worktrees: a
+     * plugin released before `ownWorktree` may make its worktree from it,
+     * and refuse a start without one. A tool that ignores it works on what
+     * is checked out, and its card then shows a branch it isn't on until a
+     * state read says another: that is how it was before worktrees, left
+     * for a follow-up. Ajour creates no branch here, so a name git
+     * wouldn't take refuses nothing: it is left out, never sent, and so
+     * never recorded.
+     */
+    const mainFolder = (): StartPlace =>
+      branch && isUsableBranch(branch) ? { branch } : {};
+    const worktrees = this.options.worktrees;
+    if (tool.ownWorktree)
+      return worktrees ? this.ownWorktreePlace(input, branch, worktrees) : {};
+    if (!worktrees) return mainFolder();
+    const choice = input.startIn;
+    if (choice?.kind === "main") return mainFolder();
+    if (choice?.kind === "worktree") {
+      const named = (
+        await worktrees.liveOf(input.projectId, input.workItemId)
+      ).find(
+        (worktree) =>
+          worktree.id === choice.worktreeId &&
+          worktree.repositoryFolderId === input.folderId,
+      );
+      if (!named)
+        throw new HandoffRefused(
+          "This worktree is no longer available. Choose another place to start.",
+        );
+      return { worktree: named, branch: named.branch };
+    }
+    if (!choice) {
+      const earlier = await worktrees.newestLive(
+        input.projectId,
+        input.folderId,
+        input.workItemId,
+      );
+      if (earlier) return { worktree: earlier, branch: earlier.branch };
+      if ((await this.defaultStartIn(input.projectId)) === "main")
+        return mainFolder();
+    }
+    try {
+      const created = await worktrees.create({
+        projectId: input.projectId,
+        repositoryFolderId: input.folderId,
+        workItemId: input.workItemId,
+        itemKey: input.item.key,
+        ...(branch ? { branch } : {}),
+        ...(choice?.source ? { source: choice.source } : {}),
+      });
+      // Where Ajour can make no worktree, the start runs in the main folder.
+      if (created.kind !== "created") return mainFolder();
+      return {
+        worktree: created.worktree,
+        created,
+        branch: created.worktree.branch,
+      };
+    } catch (error) {
+      return refusePlace(error, branch);
+    }
+  }
+  /**
+   * Where a project's hand offs start when a start names no place: the
+   * project's own choice on this computer (#864), else what Settings ›
+   * Worktrees says.
+   */
+  private async defaultStartIn(projectId: string): Promise<WorktreeStartIn> {
+    return startInOf(await this.options.storage.getProjectStartIn(projectId));
+  }
+  /**
+   * Where a tool that makes its own worktree starts (#863): always in the
+   * repository folder, and Ajour makes nothing. Start in still decides
+   * what the tool does there, by what its request carries.
+   *
+   * - Main folder, chosen for this hand off, by the project or in Settings: no branch and
+   *   no source, so the tool works on what is checked out.
+   * - New worktree: the branch to create and the source it starts from,
+   *   the one the user chose, else the folder's default one, as for a
+   *   worktree Ajour makes. A remote's branch is fetched first, as for
+   *   such a worktree, and a fetch that fails is said in the answer. An
+   *   empty branch template gives the name such a worktree's folder would
+   *   get, `aj-<item key>`, or `aj-<start of the item's id>` for an item
+   *   without a key: an empty branch never means the main folder. A name
+   *   the repository has, typed or the template's, gets `-2`, then `-3`,
+   *   as a worktree of Ajour's would.
+   * - A worktree the item has, chosen or its newest by default: the tool
+   *   can't join a worktree of Ajour's, so this is New worktree. The
+   *   template's name is then that worktree's branch, so the free name
+   *   matters most here: the tool gets `<name>-2`.
+   *
+   * A folder that gets no worktree (no git, or not a git checkout) is the
+   * main folder, whatever the branch: it is judged only once the folder is
+   * known to take a worktree (`refusePlace`). A source the repository
+   * doesn't have refuses the start, and so does a branch git can't create.
+   */
+  private async ownWorktreePlace(
+    input: HandoffStartRoute,
+    branch: string,
+    worktrees: NonNullable<Options["worktrees"]>,
+  ): Promise<StartPlace> {
+    const choice = input.startIn;
+    if (choice?.kind === "main") return {};
+    if (!choice) {
+      const earlier = await worktrees.newestLive(
+        input.projectId,
+        input.folderId,
+        input.workItemId,
+      );
+      // The default counts only for an item without a worktree, as for any tool.
+      if (!earlier && (await this.defaultStartIn(input.projectId)) === "main")
+        return {};
+    }
+    let source: Awaited<ReturnType<typeof worktrees.sourceFor>>;
+    try {
+      source = await worktrees.sourceFor({
+        projectId: input.projectId,
+        repositoryFolderId: input.folderId,
+        branch: branch || worktreeBaseName(input.item.key, input.workItemId),
+        ...(choice?.kind === "new" && choice.source
+          ? { source: choice.source }
+          : {}),
+      });
+    } catch (error) {
+      return refusePlace(error, branch);
+    }
+    if (source.kind === "unavailable") return {};
+    return {
+      branch: source.branch,
+      ownSource: source.name,
+      ownSourceStale: source.stale,
+    };
   }
   /**
    * The connection a start runs through: the one the route names, else the
@@ -535,8 +942,13 @@ export class Handoffs {
     return { tools: found };
   }
   /**
-   * The threads of the project's repository folders whose title names one
-   * of the item's keys, from each tool that is on and lists its threads.
+   * The threads of the project's repository folders, and of the item's
+   * worktrees still on disk (#862), whose title names one of the item's
+   * keys, from each tool that is on and lists its threads. A tool is asked
+   * once per folder and once per worktree, because some tools list threads
+   * by exact folder. The worktrees come first: a thread a tool lists in a
+   * worktree and in its repository folder is offered in the worktree, the
+   * more exact of the two.
    * Tools that run each other, such as T3 Code running Codex threads, may
    * each offer the same work: no tool's threads are filtered out. A tool lists
    * a folder at most once every `THREAD_LISTING_INTERVAL_MS`, so opening
@@ -554,6 +966,13 @@ export class Handoffs {
       return { offers: [], listed: 0, failed: 0 };
     const folders = await this.options.storage.listRepositoryFolders(projectId);
     if (!folders.length) return { offers: [], listed: 0, failed: 0 };
+    // A worktree's id is a folder id: the tool lists it like any folder.
+    const places = [
+      ...(
+        (await this.options.worktrees?.liveOf(projectId, workItemId)) ?? []
+      ).map((worktree) => worktree.id),
+      ...folders.map((folder) => folder.id),
+    ];
     const threads: ListedHandoffThread[] = [];
     let listed = 0;
     let failed = 0;
@@ -576,11 +995,11 @@ export class Handoffs {
           if (!connection) continue;
         }
         // One folder at a time: a plugin runs few commands at once.
-        for (const folder of folders) {
+        for (const folderId of places) {
           const listing = await this.listing(
             plugin.id,
             tool.id,
-            folder.id,
+            folderId,
             projectId,
             connection,
           );
@@ -602,6 +1021,109 @@ export class Handoffs {
       }),
       listed,
       failed,
+    };
+  }
+  /**
+   * Whether a thread no handoff links still works in each of these
+   * worktrees, for clean up (#857): one the user took off its item with
+   * Remove from item, or one started by hand in the worktree. Each tool
+   * that is on and lists its threads is asked now, past the listing cache,
+   * for the threads in each worktree, by the worktree's id, a folder id as
+   * `findThreads` sends it. The threads a handoff links are left out, since
+   * `refresh` reads those. The others' state is the one the listing gives:
+   * `readHandoffStates` is never asked, since a tool's read may act on the
+   * thread, as Claude Code's stops a finished background job. A tool that
+   * doesn't follow state is left out (#873). Answers the worktrees where
+   * such a thread is `working` or `needs-you` (`running`), those where a
+   * listing failed, gave such a thread no state or Unknown, or returned as
+   * many threads as its limit, so it may have cut one (`unconfirmed`), and
+   * how many listings it asked for.
+   */
+  async unlinkedThreadsIn(
+    worktrees: readonly Pick<Worktree, "id" | "projectId">[],
+  ): Promise<{ running: string[]; unconfirmed: string[]; listings: number }> {
+    const running = new Set<string>();
+    const unconfirmed = new Set<string>();
+    let listings = 0;
+    if (!worktrees.length || !this.options.plugins.listThreads)
+      return { running: [], unconfirmed: [], listings };
+    const handoffs = await this.options.storage.listHandoffs();
+    const now = this.now();
+    for (const plugin of await this.options.plugins.listPlugins()) {
+      const tools = plugin.capabilities.handoff?.tools ?? [];
+      const enabled = tools.length
+        ? await this.enabledTools(plugin.id)
+        : new Set<string>();
+      for (const tool of tools) {
+        // The guards of `findThreads`: a tool it wouldn't ask is not asked.
+        if (!tool.listsThreads || tool.followsState === false) continue;
+        if (!enabled.has(tool.id)) continue;
+        if (await this.options.unavailableReason?.(plugin.id, tool.id))
+          continue;
+        let connection: HandoffConnection | undefined;
+        if (tool.connection === "required") {
+          const connectionId = await this.pickedConnection(plugin.id, tool.id);
+          if (!connectionId) continue;
+          connection = await this.options
+            .connection?.(plugin.id, connectionId)
+            .catch(() => undefined);
+          if (!connection) continue;
+        }
+        const through = connection ? [connection] : [];
+        // One worktree at a time: a plugin runs few commands at once.
+        for (const worktree of worktrees) {
+          if (running.has(worktree.id)) continue;
+          listings++;
+          try {
+            const { threads } = await this.options.plugins.listThreads(
+              plugin.id,
+              {
+                tool: tool.id,
+                folder: { id: worktree.id },
+                since: now - THREAD_LISTING_WINDOW_MS,
+                limit: THREAD_LISTING_LIMIT,
+              },
+              worktree.projectId,
+              ...through,
+            );
+            const unlinked = threads.filter(
+              (thread) =>
+                !handoffs.some((handoff) =>
+                  sameThread(handoff, {
+                    pluginId: plugin.id,
+                    toolId: tool.id,
+                    threadId: thread.threadId,
+                    ...(connection ? { connectionId: connection.id } : {}),
+                  }),
+                ),
+            );
+            if (
+              unlinked.some(
+                (thread) =>
+                  thread.state === "working" || thread.state === "needs-you",
+              )
+            )
+              running.add(worktree.id);
+            else if (
+              // A full listing may have left out an older thread that works.
+              threads.length >= THREAD_LISTING_LIMIT ||
+              unlinked.some(
+                (thread) => !thread.state || thread.state === "unknown",
+              )
+            )
+              unconfirmed.add(worktree.id);
+          } catch {
+            // The plugin operation's event holds why. Nothing says the
+            // threads there are idle.
+            unconfirmed.add(worktree.id);
+          }
+        }
+      }
+    }
+    return {
+      running: [...running],
+      unconfirmed: [...unconfirmed].filter((id) => !running.has(id)),
+      listings,
     };
   }
   /** The tool's listing of one folder: the last one while recent, else a new one. */
@@ -657,14 +1179,25 @@ export class Handoffs {
    * last listing of that folder, so the window names only a thread a tool
    * listed, and only while the tool can still list threads and the listing
    * is at most `THREAD_LINK_MAX_AGE_MS` old, and never into a project other
-   * than the item's handoffs' (`checkItemProject`).
+   * than the item's handoffs' (`checkItemProject`). A thread found in one
+   * of the item's worktrees (#862) links like any other: its handoff keeps
+   * the repository folder and names the worktree, so it sits under it.
    */
   async adopt(input: HandoffAdoptRoute): Promise<Handoff> {
     await this.checkItemProject(input.workItemId, input.projectId);
     const folder = (
       await this.options.storage.listRepositoryFolders(input.projectId)
     ).find((f) => f.id === input.folderId);
-    if (!folder)
+    // Else the folder is one of the item's worktrees still on disk.
+    const worktree = folder
+      ? undefined
+      : (
+          await this.options.worktrees?.liveOf(
+            input.projectId,
+            input.workItemId,
+          )
+        )?.find((candidate) => candidate.id === input.folderId);
+    if (!folder && !worktree)
       throw new HandoffRefused(
         "This repository folder is no longer available.",
       );
@@ -714,6 +1247,7 @@ export class Handoffs {
       thread,
       this.now(),
       follows,
+      worktree,
     );
     await this.options.storage.addHandoff(record);
     await this.publish();
@@ -823,7 +1357,9 @@ export class Handoffs {
         );
         if (!connection) throw new HandoffRefused(DELETED_CONNECTION);
       }
-      const { threadId, folderId, native } = record;
+      const { threadId, native } = record;
+      // The tool gets the folder the thread works in: its worktree's id.
+      const folderId = handoffWorkFolder(record);
       try {
         await this.options.plugins.closeThread(
           record.pluginId,
@@ -1058,11 +1594,12 @@ export class Handoffs {
             first.pluginId,
             {
               tool: first.toolId,
-              handoffs: batch.map(({ id, threadId, folderId, native }) => ({
-                id,
-                threadId,
-                folderId,
-                native,
+              // Each with the folder its thread works in: its worktree's id.
+              handoffs: batch.map((handoff) => ({
+                id: handoff.id,
+                threadId: handoff.threadId,
+                folderId: handoffWorkFolder(handoff),
+                native: handoff.native,
               })),
             },
             first.projectId,

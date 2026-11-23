@@ -37,6 +37,7 @@ Click a project to open its page.
 - **The figures** show time this week and all time. For budgeted tasks, they add the budget, the time used and what remains. Without a budget, they show the number of active tasks.
 - **Tasks** lists the project's tasks. See [Tasks](/projects/tasks).
 - **Time entries** lists every entry on the project, by day. Click one to open its day.
+- **Repositories**, in the desktop app, lists the folders on this computer that hold the project's code, for hand offs to a coding tool. **Hand offs start in** sets where they start for this project, and each folder lists its worktrees. See [Worktrees for hand offs](/backlog/worktrees).
 - **The Budget card**, on a project that comes from a project source, shows the source's budget. See [The Budget card](#the-budget-card).
 - **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place. Each change saves on <kbd>Enter</kbd> or when you leave the field, with Undo. <kbd>Esc</kbd> cancels. A shared project also shows its **Team**. See [Shared projects](/projects/shared-projects).
 

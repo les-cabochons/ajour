@@ -1,9 +1,18 @@
 import fs from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
+import { WORKTREES_FOLDER } from "../../../packages/shared/worktrees.ts";
 import type { AppApiStorage } from "./storage.ts";
 
-/** Host-owned folder ids are the only paths the process broker accepts. */
+/** Where a repository folder holds the worktree of that name (#857). */
+export function worktreePathIn(repositoryPath: string, name: string): string {
+  return path.join(repositoryPath, ...WORKTREES_FOLDER, name);
+}
+
+/**
+ * Host-owned folder ids are the only paths the process broker accepts: a
+ * repository folder's, or the id of a worktree Ajour made inside one.
+ */
 export class FolderResolver {
   private readonly storage: AppApiStorage;
   private readonly protectedFolders: Readonly<Record<string, string>>;
@@ -135,9 +144,44 @@ export class FolderResolver {
     const folder = (await this.storage.listRepositoryFolders(projectId)).find(
       (folder) => folder.id === id,
     );
-    if (!folder)
-      throw new Error("This repository folder is no longer available.");
+    if (!folder) return this.resolveWorktree(id, projectId);
     // Recheck junctions and symlinks at use, not just when the user chooses.
     return this.checked(folder.path);
+  }
+
+  /**
+   * A worktree's own id resolves to its folder (#860), for its project
+   * only: a caller without a project gets none. The folder must be a real
+   * directory under its repository folder's `.ajour/worktrees`, so a link
+   * put in its place leads nowhere else.
+   */
+  private async resolveWorktree(
+    id: string,
+    projectId?: string,
+  ): Promise<string> {
+    const gone = () =>
+      new Error("This repository folder is no longer available.");
+    const worktree =
+      projectId === undefined
+        ? undefined
+        : (await this.storage.listWorktrees()).find(
+            (worktree) =>
+              worktree.id === id && worktree.projectId === projectId,
+          );
+    if (!worktree) throw gone();
+    const repository = (
+      await this.storage.listRepositoryFolders(worktree.projectId)
+    ).find((folder) => folder.id === worktree.repositoryFolderId);
+    if (!repository) throw gone();
+    const root = await this.checked(repository.path);
+    const expected = worktreePathIn(root, worktree.name);
+    const real = await fs.realpath(expected).catch(() => undefined);
+    if (
+      !real ||
+      path.relative(expected, real) !== "" ||
+      !(await fs.stat(real)).isDirectory()
+    )
+      throw Object.assign(gone(), { code: "folder_unavailable" });
+    return real;
   }
 }

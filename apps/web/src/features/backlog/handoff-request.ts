@@ -1,15 +1,30 @@
 import { useSyncExternalStore } from "react";
+import type { HandoffStartIn } from "@ajour/shared/worktrees";
 
 /**
  * How every surface asks for a hand off, kept apart from the workflow's
  * dialogs so the action runner and row menus import nothing heavy. The one
  * `HandoffHost` in `handoff-workflow.tsx` listens.
  */
+/**
+ * Where the user chose to start one hand off (#861): a repository folder,
+ * and the main folder, a new worktree or one of the item's worktrees in it.
+ */
+export interface HandoffPlace {
+  folderId: string;
+  startIn: HandoffStartIn;
+}
+
 export interface HandoffRequest {
   itemId: string;
   toolKey: string;
   /** Opens the Review prompt dialog instead of starting at once. */
   review?: boolean;
+  /**
+   * The place chosen in the hand-off sheet's Start in row. Without one the
+   * local API decides, or, under Ask each time, the Start in dialog asks.
+   */
+  place?: HandoffPlace;
 }
 
 let requestListener: ((request: HandoffRequest) => void) | null = null;

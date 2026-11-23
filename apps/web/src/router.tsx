@@ -33,8 +33,10 @@ import {
   SettingsVaultPage,
   SettingsWhatsNewPage,
   SettingsWorkflowPage,
+  SettingsWorktreesPage,
 } from "@/features/settings/settings-pages";
 import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
+import { hasWorktrees } from "@/lib/worktrees";
 import { isNarrowView } from "@/lib/use-narrow-view";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
@@ -398,6 +400,22 @@ const settingsWorkflowRoute = createRoute({
   ),
 });
 
+const settingsWorktreesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/worktrees",
+  // Desktop only: the web build hands nothing off (#860).
+  beforeLoad: () => {
+    if (!hasWorktrees()) {
+      throw redirect({ to: "/settings/general", replace: true });
+    }
+  },
+  component: () => (
+    <RouteSuspense>
+      <SettingsWorktreesPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsTimeEntriesRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/time-entries",
@@ -481,6 +499,7 @@ const routeTree = rootRoute.addChildren([
       settingsWorkflowRoute,
       settingsCalendarRoute,
       settingsProjectsRoute,
+      settingsWorktreesRoute,
       settingsTimeEntriesRoute,
       settingsSyncReviewRoute,
       settingsWhatsNewRoute,

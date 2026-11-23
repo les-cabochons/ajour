@@ -1,12 +1,20 @@
 {
   "id": "agent-handoff",
   "name": "Agent handoff",
-  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode or Codex and follow their work.",
-  "version": "0.9.0",
+  "description": "Hand off backlog items to T3 Code, Claude Code, Copilot CLI, OpenCode, Codex or VS Code, follow their work, and close their threads where the tool can.",
+  "version": "0.16.0",
   "pluginApiVersion": 4,
   "capabilities": ["handoff"],
   "features": ["agent-handoff"],
-  "tags": ["agents", "t3", "claude-code", "copilot", "opencode", "codex"],
+  "tags": [
+    "agents",
+    "t3",
+    "claude-code",
+    "copilot",
+    "opencode",
+    "codex",
+    "vscode"
+  ],
   "author": {
     "name": "Alex Trépanier",
     "url": "https://github.com/alextrepa"
@@ -17,7 +25,7 @@
   },
   "website": "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/agent-handoff#readme",
   "status": "available",
-  "commit": "ef963f0135a2660e3e6f0be68a460b646f755ddf",
+  "commit": "07f28f2496769cb48f6bd189ec275e9e6b08779f",
   "path": "plugins/agent-handoff",
   "files": [
     {
@@ -27,23 +35,23 @@
     },
     {
       "path": "package.json",
-      "sha256": "c2e269a523ee764a7fd15564bad79b129a8ab1d0624a202bffc1da486da1487e",
-      "size": 1199
+      "sha256": "18c84b31af2038024f937f931c2d968a8c7bb5ef674f00d076c70d0b8d403e2e",
+      "size": 1266
     },
     {
       "path": "plugin.json",
-      "sha256": "46594deb979a476832dd26de2b654083b495be290f9db214664090c025a4121f",
-      "size": 14767
+      "sha256": "a3ffd4658d6b9f265b7fc9bc74311e268c939e392cb69bd369504d805d016074",
+      "size": 25603
     },
     {
       "path": "src/claude.ts",
-      "sha256": "4bdb87c6e0624ec9a335b862a56c5d84bd1f8b92e84cec3c488b2a988ba27072",
-      "size": 14383
+      "sha256": "2ef4070ed8348f30ed3f19b270c3e302f86b4b408c8b12461d35a668bf5761cc",
+      "size": 23892
     },
     {
       "path": "src/codex.ts",
-      "sha256": "fc959aa0dd409c8c5df33c1da5b9d557f49c45ab7a4c4a7d15beac4e335a4c24",
-      "size": 35395
+      "sha256": "ae0f65cb6796a5c9ac0503df2d6c21c5e9c8969bc64f3e051bbd1be5757f79a5",
+      "size": 41298
     },
     {
       "path": "src/copilot.ts",
@@ -52,23 +60,28 @@
     },
     {
       "path": "src/opencode.ts",
-      "sha256": "7c77e2110d89054bec52226a0d0f3d310847dc964bef5f5368082e660f5fe7da",
-      "size": 27821
+      "sha256": "419284ff0da901719b0083153554303161dd5da7945e9bbe537db4d4764d1c3c",
+      "size": 18639
     },
     {
       "path": "src/plugin.ts",
-      "sha256": "6a9b7515b09e22838d3f1cd3b3aedf070efe5b822e351705106e1397e828b64f",
-      "size": 4786
+      "sha256": "3bcf5f6551841a338cd5378456513270231f3a6ffe77f7fa9bf582627735988a",
+      "size": 6329
     },
     {
       "path": "src/shared.ts",
-      "sha256": "bb2d437083a9bd687e0537ea08dfe9685c3448620c15e8ec3c379760f3b659f6",
-      "size": 12087
+      "sha256": "293b479bff5c5172375fec8dd05a689e8ed0f0128c65689ed508bc65773576a0",
+      "size": 17413
     },
     {
       "path": "src/t3.ts",
-      "sha256": "debe7f16948cad5df962139a45dd89da9ea8c4e7dc32ba6bee8ee7bddf4ccb79",
-      "size": 14291
+      "sha256": "3fb4bd500d8c2785518b95e567c0cc8a49ca97970db15db973d8ab52da3f4d75",
+      "size": 17924
+    },
+    {
+      "path": "src/vscode.ts",
+      "sha256": "bf3f0dae2d5403ff53b3bd1d59397598bcab055f235e89cbfe79f9db22eb5997",
+      "size": 3907
     }
   ]
 }

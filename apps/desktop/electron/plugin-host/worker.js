@@ -141,9 +141,11 @@ function statusOf(error) {
 
 /**
  * Why a hand-off tool refused a start, when the plugin's error says (#819):
- * its `branchExists` or its `setting`. Main checks the value again.
+ * its `mayHaveStarted`, its `branchExists` or its `setting`. Main checks the
+ * value again.
  */
 function handoffRefusalOf(error) {
+  if (error?.mayHaveStarted === true) return { mayHaveStarted: true };
   if (error?.branchExists === true) return { branchExists: true };
   if (typeof error?.setting === "string") return { setting: error.setting };
   return undefined;

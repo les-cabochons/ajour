@@ -47,6 +47,7 @@ export type PluginManifest = {
             }[];
             label: string;
             iconSvg: string;
+            ownWorktree?: boolean | undefined;
             connection?: "required" | "none" | undefined;
             listsThreads?: boolean | undefined;
             followsState?: boolean | undefined;
@@ -267,7 +268,7 @@ export type PluginManifest = {
                 | {
                     path: string;
                     method:
-                      "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+                      "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
                     access?: string | undefined;
                   }[]
                 | undefined;
@@ -276,7 +277,7 @@ export type PluginManifest = {
         endpoints?:
           | {
               path: string;
-              method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+              method: "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
               access?: string | undefined;
             }[]
           | undefined;
@@ -341,7 +342,7 @@ export type PluginManifest = {
                     if: string;
                   }
               )[];
-              mode: "capture" | "detached" | "terminal" | "session";
+              mode: "terminal" | "capture" | "detached" | "session";
               executable: string;
               cwd?: string | undefined;
               stdin?: "text" | undefined;
@@ -420,7 +421,7 @@ export type PluginNetwork = {
         endpoints?:
           | {
               path: string;
-              method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+              method: "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
               access?: string | undefined;
             }[]
           | undefined;
@@ -429,7 +430,7 @@ export type PluginNetwork = {
   endpoints?:
     | {
         path: string;
-        method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+        method: "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
         access?: string | undefined;
       }[]
     | undefined;
@@ -473,7 +474,7 @@ export type PluginProcesses = {
               if: string;
             }
         )[];
-        mode: "capture" | "detached" | "terminal" | "session";
+        mode: "terminal" | "capture" | "detached" | "session";
         executable: string;
         cwd?: string | undefined;
         stdin?: "text" | undefined;
@@ -530,7 +531,7 @@ export type DeclaredCommand = {
         if: string;
       }
   )[];
-  mode: "capture" | "detached" | "terminal" | "session";
+  mode: "terminal" | "capture" | "detached" | "session";
   executable: string;
   cwd?: { kind: "folder"; name: string } | undefined;
   stdin?: "text" | undefined;
@@ -551,7 +552,7 @@ export type PluginDerivedHost = {
   endpoints?:
     | {
         path: string;
-        method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+        method: "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
         access?: string | undefined;
       }[]
     | undefined;
@@ -560,12 +561,12 @@ export type PluginDerivedHost = {
 /** A method and path pattern: `*` matches one segment, `**` the rest. */
 export type PluginEndpoint = {
   path: string;
-  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method: "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   access?: string | undefined;
 };
 
 export type PluginHttpMethod =
-  "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+  "HEAD" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** The connection each operation receives, without its secret fields. */
 export type PluginConnection = {
@@ -635,9 +636,9 @@ export type BacklogSyncWorkItem = {
 export type BacklogSyncResult = {
   items: {
     title: string;
+    source: string;
     connectionId: string;
     sourceId: string;
-    source: string;
     tenantLabel: string;
     connectionLabel: string;
     externalId: string;
@@ -713,12 +714,12 @@ export type BacklogSyncResult = {
         localWorkItemId: string;
         comments: {
           id: string;
+          createdAt: string;
           author: {
             id: string;
             displayName: string;
             email?: string | undefined;
           };
-          createdAt: string;
           mentionsViewer?: boolean | undefined;
         }[];
       }[]
@@ -728,7 +729,7 @@ export type BacklogSyncResult = {
 export type SettleStatesRequest = { sourceId: string };
 
 export type SettleStatesResult = {
-  states: { done: boolean; name: string; category: string }[];
+  states: { name: string; done: boolean; category: string }[];
 };
 
 export type SettleWriteRequest = {
@@ -804,26 +805,26 @@ export type CodeHostOperations = {
       pullRequests: {
         number: number;
         title: string;
-        url: string;
         id: string;
-        updatedAt: number;
+        createdAt: number;
         state: "closed" | "merged" | "open";
+        url: string;
+        updatedAt: number;
         author: {
           login: string;
           isBot: boolean;
           displayName?: string | undefined;
           avatarUrl?: string | undefined;
         };
-        createdAt: number;
         comments: {
           id: string;
+          createdAt: number;
           author: {
             login: string;
             isBot: boolean;
             displayName?: string | undefined;
             avatarUrl?: string | undefined;
           };
-          createdAt: number;
           mentionsViewer: boolean;
           threadId?: string | undefined;
         }[];
@@ -863,13 +864,13 @@ export type CodeHostOperations = {
         reviewRequestEvents?:
           | {
               id: string;
+              createdAt: number;
               author: {
                 login: string;
                 isBot: boolean;
                 displayName?: string | undefined;
                 avatarUrl?: string | undefined;
               };
-              createdAt: number;
               includesViewer: boolean;
             }[]
           | undefined;
@@ -886,17 +887,17 @@ export type CodeHostOperations = {
   readonly getPullRequestContent: {
     request: { number: number; repository: string };
     result: {
-      headSha: string;
-      baseSha: string;
       files: {
         path: string;
-        status: "added" | "modified" | "removed" | "renamed" | "copied";
+        status: "removed" | "added" | "modified" | "renamed" | "copied";
         additions: number;
         deletions: number;
         binary: boolean;
         previousPath?: string | undefined;
         patch?: string | undefined;
       }[];
+      headSha: string;
+      baseSha: string;
     };
   };
   readonly getFileContent: {
@@ -914,6 +915,7 @@ export type CodeHostOperations = {
         id: string;
         comments: {
           id: string;
+          createdAt: number;
           author: {
             login: string;
             isBot: boolean;
@@ -921,7 +923,6 @@ export type CodeHostOperations = {
             avatarUrl?: string | undefined;
           };
           body: string;
-          createdAt: number;
           updatedAt?: number | undefined;
         }[];
         side: "base" | "head";
@@ -934,6 +935,7 @@ export type CodeHostOperations = {
       timeline: (
         | {
             id: string;
+            createdAt: number;
             kind: "comment";
             author: {
               login: string;
@@ -942,10 +944,10 @@ export type CodeHostOperations = {
               avatarUrl?: string | undefined;
             };
             body: string;
-            createdAt: number;
           }
         | {
             id: string;
+            createdAt: number;
             kind: "review";
             author: {
               login: string;
@@ -954,21 +956,20 @@ export type CodeHostOperations = {
               avatarUrl?: string | undefined;
             };
             body: string;
-            createdAt: number;
             verdict:
               "approved" | "changes_requested" | "commented" | "dismissed";
           }
         | {
-            kind: "commit";
             createdAt: number;
+            kind: "commit";
             sha: string;
             headline: string;
             authorName: string;
           }
         | {
             id: string;
-            kind: "event";
             createdAt: number;
+            kind: "event";
             text: string;
             actor?:
               | {
@@ -996,17 +997,17 @@ export type CodeHostOperations = {
       items: {
         number: number;
         title: string;
-        url: string;
         id: string;
-        updatedAt: number;
+        createdAt: number;
         state: "closed" | "merged" | "open";
+        url: string;
+        updatedAt: number;
         author: {
           login: string;
           isBot: boolean;
           displayName?: string | undefined;
           avatarUrl?: string | undefined;
         };
-        createdAt: number;
         repository: string;
         draft: boolean;
         closedAt?: number | undefined;
@@ -1100,7 +1101,7 @@ export type CodeHostOperations = {
 /** Each calendar operation's request and result, by the function name it exports. */
 export type CalendarOperations = {
   readonly listCalendarEvents: {
-    request: { timeZone: string; from: string; to: string };
+    request: { from: string; timeZone: string; to: string };
     result: {
       events: {
         title: string;
@@ -1126,9 +1127,9 @@ export type BacklogCommentOperations = {
     result: {
       comments: {
         id: string;
+        createdAt: string;
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
-        createdAt: string;
         updatedAt?: string | undefined;
         reactions?:
           | {
@@ -1157,9 +1158,9 @@ export type BacklogCommentOperations = {
     result: {
       comment: {
         id: string;
+        createdAt: string;
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
-        createdAt: string;
         updatedAt?: string | undefined;
         reactions?:
           | {
@@ -1185,9 +1186,9 @@ export type BacklogCommentOperations = {
     result: {
       comment: {
         id: string;
+        createdAt: string;
         author: { id: string; displayName: string; email?: string | undefined };
         body: string;
-        createdAt: string;
         updatedAt?: string | undefined;
         reactions?:
           | {
@@ -1300,8 +1301,8 @@ absent on the first, and what started the sync. `manual` is a sync the user
 asked for, such as Sync now: a plugin that answers from a cache should read
 the source. `auto` is the scheduler's. Older Ajour versions send no trigger. */
 export type ProjectSourceSyncRequest = {
-  cursor?: string | undefined;
   trigger?: "manual" | "auto" | undefined;
+  cursor?: string | undefined;
 };
 
 /** What `syncProjects` answers: the snapshot and the next cursor, or that nothing changed. */
@@ -1309,6 +1310,7 @@ export type ProjectSourceSyncResult =
   | { unchanged: true }
   | {
       snapshot: {
+        source: { label: string; url?: string | undefined };
         projects: {
           code: string;
           name: string;
@@ -1340,7 +1342,6 @@ export type ProjectSourceSyncResult =
               }
             | undefined;
         }[];
-        source: { label: string; url?: string | undefined };
         asOf: string;
         me?:
           | {
@@ -1355,6 +1356,7 @@ export type ProjectSourceSyncResult =
 
 /** The user's projects, tasks and budgets as the source knows them, as of `asOf`. */
 export type ProjectSourceSnapshot = {
+  source: { label: string; url?: string | undefined };
   projects: {
     code: string;
     name: string;
@@ -1386,7 +1388,6 @@ export type ProjectSourceSnapshot = {
         }
       | undefined;
   }[];
-  source: { label: string; url?: string | undefined };
   asOf: string;
   me?:
     | {
@@ -1459,9 +1460,9 @@ export type TimeSyncRequest = {
   changes: (
     | {
         values: {
+          running: boolean;
           localDate: string;
           minutes: number;
-          running: boolean;
           projectRemoteId: string;
           taskName: string;
           countingSince?: string | undefined;
@@ -1472,9 +1473,9 @@ export type TimeSyncRequest = {
         remoteId?: string | undefined;
         agreed?:
           | {
+              running: boolean;
               localDate: string;
               minutes: number;
-              running: boolean;
               projectRemoteId: string;
               taskName: string;
               countingSince?: string | undefined;
@@ -1488,9 +1489,9 @@ export type TimeSyncRequest = {
         remoteId?: string | undefined;
         agreed?:
           | {
+              running: boolean;
               localDate: string;
               minutes: number;
-              running: boolean;
               projectRemoteId: string;
               taskName: string;
               countingSince?: string | undefined;
@@ -1499,8 +1500,8 @@ export type TimeSyncRequest = {
           | undefined;
       }
   )[];
-  timeZone: string;
   from: string;
+  timeZone: string;
   to: string;
   cursor?: string | undefined;
 };
@@ -1511,9 +1512,9 @@ holds the values both sides last agreed on, when there are some. */
 export type TimeSyncChange =
   | {
       values: {
+        running: boolean;
         localDate: string;
         minutes: number;
-        running: boolean;
         projectRemoteId: string;
         taskName: string;
         countingSince?: string | undefined;
@@ -1524,9 +1525,9 @@ export type TimeSyncChange =
       remoteId?: string | undefined;
       agreed?:
         | {
+            running: boolean;
             localDate: string;
             minutes: number;
-            running: boolean;
             projectRemoteId: string;
             taskName: string;
             countingSince?: string | undefined;
@@ -1540,9 +1541,9 @@ export type TimeSyncChange =
       remoteId?: string | undefined;
       agreed?:
         | {
+            running: boolean;
             localDate: string;
             minutes: number;
-            running: boolean;
             projectRemoteId: string;
             taskName: string;
             countingSince?: string | undefined;
@@ -1554,9 +1555,9 @@ export type TimeSyncChange =
 /** An entry's values: its day, whole minutes, whether it runs and since when
 its count started, its project and its task. Never a note. */
 export type TimeSyncEntryValues = {
+  running: boolean;
   localDate: string;
   minutes: number;
-  running: boolean;
   projectRemoteId: string;
   taskName: string;
   countingSince?: string | undefined;
@@ -1567,11 +1568,11 @@ export type TimeSyncEntryValues = {
 export type TimeSyncAnswer =
   | {
       entries: {
+        running: boolean;
         updatedAt: string;
         remoteId: string;
         localDate: string;
         minutes: number;
-        running: boolean;
         projectRemoteId: string;
         taskName: string;
         countingSince?: string | undefined;
@@ -1584,11 +1585,11 @@ export type TimeSyncAnswer =
             syncKey: string;
             entry?:
               | {
+                  running: boolean;
                   updatedAt: string;
                   remoteId: string;
                   localDate: string;
                   minutes: number;
-                  running: boolean;
                   projectRemoteId: string;
                   taskName: string;
                   countingSince?: string | undefined;
@@ -1609,11 +1610,11 @@ and, when your system keeps a change marker, the cursor Ajour sends back
 in its next check round. Without a cursor, every round lists. */
 export type TimeSyncResult = {
   entries: {
+    running: boolean;
     updatedAt: string;
     remoteId: string;
     localDate: string;
     minutes: number;
-    running: boolean;
     projectRemoteId: string;
     taskName: string;
     countingSince?: string | undefined;
@@ -1626,11 +1627,11 @@ export type TimeSyncResult = {
         syncKey: string;
         entry?:
           | {
+              running: boolean;
               updatedAt: string;
               remoteId: string;
               localDate: string;
               minutes: number;
-              running: boolean;
               projectRemoteId: string;
               taskName: string;
               countingSince?: string | undefined;
@@ -1659,11 +1660,11 @@ export type TimeSyncChangeResult =
       syncKey: string;
       entry?:
         | {
+            running: boolean;
             updatedAt: string;
             remoteId: string;
             localDate: string;
             minutes: number;
-            running: boolean;
             projectRemoteId: string;
             taskName: string;
             countingSince?: string | undefined;
@@ -1677,11 +1678,11 @@ export type TimeSyncChangeResult =
 
 /** An entry as your system stores it, with `clientRef` when Ajour created it. */
 export type TimeSyncRemoteEntry = {
+  running: boolean;
   updatedAt: string;
   remoteId: string;
   localDate: string;
   minutes: number;
-  running: boolean;
   projectRemoteId: string;
   taskName: string;
   countingSince?: string | undefined;
@@ -1693,10 +1694,12 @@ export type StartHandoffRequest = {
   item: { key: string; url: string };
   prompt: string;
   title: string;
+  settings: Record<string, string | number | boolean>;
   tool: string;
   folder: { id: string; name: string };
-  settings: Record<string, string | number | boolean>;
   branch?: string | undefined;
+  source?: string | undefined;
+  repositoryFolder?: { id: string; name: string } | undefined;
   hook?: { url: string } | undefined;
 };
 
@@ -1720,9 +1723,9 @@ export type ReadHandoffStatesRequest = {
 
 export type ReadHandoffStatesResult = {
   id: string;
-  native: Record<string, unknown>;
   state:
-    "working" | "needs-you" | "ready" | "done" | "failed" | "gone" | "unknown";
+    "unknown" | "working" | "needs-you" | "failed" | "ready" | "done" | "gone";
+  native: Record<string, unknown>;
   title?: string | undefined;
   branch?: string | undefined;
   link?: string | undefined;
@@ -1733,8 +1736,8 @@ export type DetectToolsResult = {
   tools: {
     id: string;
     available: boolean;
-    version?: string | undefined;
     reason?: string | undefined;
+    version?: string | undefined;
   }[];
 };
 
@@ -1750,6 +1753,15 @@ export type ListThreadsResult = {
     title: string;
     threadId: string;
     native: Record<string, unknown>;
+    state?:
+      | "unknown"
+      | "working"
+      | "needs-you"
+      | "failed"
+      | "ready"
+      | "done"
+      | "gone"
+      | undefined;
     link?: string | undefined;
     resume?:
       { command: string; args: Record<string, string | number> } | undefined;

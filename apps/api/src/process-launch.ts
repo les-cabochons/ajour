@@ -183,6 +183,115 @@ interface LaunchPorts {
   start?: typeof startUnowned;
   later?: (cleanup: () => Promise<void>, delayMs: number) => void;
 }
+/**
+ * How a terminal app starts on Windows in `cwd`: running `run`, or, without
+ * one, the shell of its own default profile. Every value passes the same
+ * allowlist, since these apps join their arguments into one line again.
+ */
+async function windowsTerminalLaunch(
+  run: Pick<Plan, "command" | "args"> | undefined,
+  cwd: string,
+  env: Plan["env"],
+  terminal: TerminalChoice,
+  ports: LaunchPorts,
+): Promise<Plan> {
+  if (
+    terminal.app !== "wt" &&
+    !(
+      (terminal.app === "WezTerm" || terminal.app === "Alacritty") &&
+      terminal.path
+    )
+  )
+    throw new ProcessLaunchRefused("Unsupported terminal");
+  const check = (value: string, literal = false) => {
+    if (
+      !/^[A-Za-z0-9 ._:\\/@+=,~()\-]+$/.test(value) ||
+      value.endsWith("\\") ||
+      (!literal && value.startsWith("-"))
+    )
+      throw new ProcessLaunchRefused(
+        "Value cannot be passed safely in terminal mode",
+        "invalid_request",
+      );
+  };
+  check(cwd);
+  if (run) {
+    check(run.command);
+    run.args.forEach((value, index) =>
+      check(value, ports.literalArgIndices?.includes(index)),
+    );
+  }
+  const command = run ? [run.command, ...run.args] : [];
+  /** The command after the flag that introduces it, or nothing without one. */
+  const after = (flag: string, values: readonly string[]) =>
+    values.length ? [flag, ...values] : [];
+  let launch: SpawnResolution;
+  if (terminal.app === "wt") {
+    const wt = await (ports.find ?? findExecutable)("wt.exe", env.PATH ?? "");
+    if (!wt)
+      throw new ProcessLaunchRefused(
+        "Install Windows Terminal to open commands in a terminal",
+      );
+    check(wt);
+    launch = resolveSpawn(wt, ["-d", cwd, ...after("--", command)], env);
+  } else {
+    // Main found it where the user installed it. These re-join argv like
+    // Windows Terminal, so their path takes the same allowlist.
+    const exe = terminal.path!;
+    check(exe);
+    launch = resolveSpawn(
+      exe,
+      terminal.app === "WezTerm"
+        ? ["start", "--cwd", cwd, ...after("--", command)]
+        : // Alacritty joins what follows -e with plain spaces, unquoted, and
+          // Windows splits that line again. The allowlist leaves no quote
+          // and no trailing backslash, so quoting a value with a space
+          // keeps it one argument.
+          [
+            "--working-directory",
+            cwd,
+            ...after(
+              "-e",
+              command.map((value) =>
+                value.includes(" ") ? `"${value}"` : value,
+              ),
+            ),
+          ],
+      env,
+    );
+  }
+  if ("refused" in launch)
+    throw new ProcessLaunchRefused("Terminal spawn refused");
+  return launch;
+}
+
+/**
+ * Opens the chosen terminal app in a folder, with the user's own shell and
+ * no command (#862): a worktree's Open in terminal. On Windows the app
+ * starts its default profile there. On macOS it runs the script a terminal
+ * command gets, whose command is the user's login shell.
+ */
+export async function launchTerminalIn(
+  cwd: string,
+  env: Plan["env"],
+  terminal: TerminalChoice,
+  ports: LaunchPorts = {},
+) {
+  if ((ports.platform ?? process.platform) === "win32")
+    return (ports.start ?? startUnowned)(
+      await windowsTerminalLaunch(undefined, cwd, env, terminal, ports),
+      cwd,
+      false,
+    );
+  const shell = env.SHELL && path.posix.isAbsolute(env.SHELL) ? env.SHELL : "";
+  return launchProcess(
+    { command: shell || "/bin/zsh", args: ["-l"], env },
+    cwd,
+    terminal,
+    ports,
+  );
+}
+
 export async function launchProcess(
   plan: Plan,
   cwd: string,
@@ -192,72 +301,12 @@ export async function launchProcess(
   const platform = ports.platform ?? process.platform;
   const start = ports.start ?? startUnowned;
   if (!terminal) return start(plan, cwd, true);
-  if (platform === "win32") {
-    if (
-      terminal.app !== "wt" &&
-      !(
-        (terminal.app === "WezTerm" || terminal.app === "Alacritty") &&
-        terminal.path
-      )
-    )
-      throw new ProcessLaunchRefused("Unsupported terminal");
-    const check = (value: string, literal = false) => {
-      if (
-        !/^[A-Za-z0-9 ._:\\/@+=,~()\-]+$/.test(value) ||
-        value.endsWith("\\") ||
-        (!literal && value.startsWith("-"))
-      )
-        throw new ProcessLaunchRefused(
-          "Value cannot be passed safely in terminal mode",
-          "invalid_request",
-        );
-    };
-    check(cwd);
-    check(plan.command);
-    plan.args.forEach((value, index) =>
-      check(value, ports.literalArgIndices?.includes(index)),
+  if (platform === "win32")
+    return start(
+      await windowsTerminalLaunch(plan, cwd, plan.env, terminal, ports),
+      cwd,
+      false,
     );
-    const command = [plan.command, ...plan.args];
-    let launch: SpawnResolution;
-    if (terminal.app === "wt") {
-      const wt = await (ports.find ?? findExecutable)(
-        "wt.exe",
-        plan.env.PATH ?? "",
-      );
-      if (!wt)
-        throw new ProcessLaunchRefused(
-          "Install Windows Terminal to open commands in a terminal",
-        );
-      check(wt);
-      launch = resolveSpawn(wt, ["-d", cwd, "--", ...command], plan.env);
-    } else {
-      // Main found it where the user installed it. These re-join argv like
-      // Windows Terminal, so their path takes the same allowlist.
-      const exe = terminal.path!;
-      check(exe);
-      launch = resolveSpawn(
-        exe,
-        terminal.app === "WezTerm"
-          ? ["start", "--cwd", cwd, "--", ...command]
-          : // Alacritty joins what follows -e with plain spaces, unquoted, and
-            // Windows splits that line again. The allowlist leaves no quote
-            // and no trailing backslash, so quoting a value with a space
-            // keeps it one argument.
-            [
-              "--working-directory",
-              cwd,
-              "-e",
-              ...command.map((value) =>
-                value.includes(" ") ? `"${value}"` : value,
-              ),
-            ],
-        plan.env,
-      );
-    }
-    if ("refused" in launch)
-      throw new ProcessLaunchRefused("Terminal spawn refused");
-    return start(launch, cwd, false);
-  }
   const program = terminal.path ? PROGRAM_TERMINALS[terminal.app] : undefined;
   if (
     platform !== "darwin" ||

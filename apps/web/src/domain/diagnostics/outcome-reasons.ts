@@ -36,6 +36,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   ask_timeout: "Nobody answered whether the command may run in time.",
   blocked: "The agent task can't run now, so the run didn't start.",
   body_too_large: "The handoff tool's status post was too large to read.",
+  branch_in_use:
+    "Another worktree has the branch checked out, so the worktree wasn't deleted with its branch.",
   bridge_timeout:
     "The Ajour window didn't answer the agent's tool call in time.",
   bridge_unavailable:
@@ -78,12 +80,19 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   expired: "Undo is no longer available for this action.",
   files_in_use:
     "An ajour command running in Linux holds its files, so the old version stays until it ends.",
+  folder_unavailable:
+    "The repository folder or the worktree's folder is gone or can't be read, or its .ajour/worktrees is a link or a file, so nothing was made, listed, opened or deleted there.",
+  folder_changed:
+    "Something else than the worktree Ajour made is at its folder, such as another program's worktree or a worktree switched to another branch, so Ajour removed nothing there and left it in place.",
   folder_refused: "The plugin may not run commands in that folder.",
   follow_failed: "Updating the ajour command to this version of Ajour failed.",
   foreign_command:
     "Another ajour command that Ajour didn't install is already there. Remove it, then try again.",
   foreign_sender:
     "The call came from a window or page that may not make it, so it was refused.",
+  git_failed: "A git command Ajour ran for a worktree failed.",
+  git_missing:
+    "This computer has no git, so the hand off started in the main folder, or the worktree wasn't deleted.",
   handoff_refused: "The handoff was refused: nothing it names could take it.",
   has_dependents:
     "Later changes depend on this one, so it can't be undone alone.",
@@ -98,6 +107,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   installed: "The plugin is still installed. Uninstall it to remove its data.",
   invalid_address: "The connection's saved address can't be used.",
   invalid_archive: "The downloaded archive couldn't be read.",
+  invalid_branch:
+    "The branch for the new worktree isn't a valid git branch name.",
   invalid_call:
     "The agent called a tool that doesn't exist, or gave it arguments it doesn't take.",
   invalid_query:
@@ -127,6 +138,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The release published no checksum for its download, so it wasn't used.",
   missing_release:
     "The ajour command's release for this version of Ajour couldn't be found.",
+  name_unavailable:
+    "Every folder or branch name Ajour tried for the worktree was taken.",
   needs_consent: "The plugin's access needs your review and approval first.",
   network:
     "The service couldn't be reached: no network, a name that didn't resolve, or a refused connection.",
@@ -140,11 +153,15 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The plugin's manifest doesn't allow that endpoint, host or address.",
   not_installed: "The plugin isn't installed.",
   not_managed: "The task isn't in a project its source manages.",
+  not_repository:
+    "The repository folder isn't the top folder of a git checkout, so the hand off started in the main folder, or the worktree wasn't deleted.",
   not_running: "No agent run was going, so there was nothing to stop.",
   not_sandboxed:
     "A plugin's process didn't report Ajour's sandbox, so every plugin was turned off.",
   not_secret: "That field isn't one the plugin marks as secret.",
   not_supported: "The plugin doesn't offer that capability or feature.",
+  open_failed:
+    "The file manager didn't open the worktree's folder, or Ajour runs without the desktop app.",
   operation_ended:
     "The plugin operation it belonged to ended first, so it was cancelled.",
   origin_refused:
@@ -204,6 +221,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   shared_process:
     "Plugins are off because a plugin's page shared its process with another page.",
   shutdown: "Ajour was quitting.",
+  source_unresolved:
+    "The branch or commit the worktree should start from doesn't exist in the repository.",
   spawn_failed: "The command's program couldn't be started.",
   spawn_refused: "Ajour refused to start the command.",
   stale_window:
@@ -261,6 +280,11 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   version_changed:
     "The plugin was updated after you reviewed its access, so it needs a new review.",
   window_closed: "The window closed before it finished loading.",
+  worktree_changed:
+    "The worktree changed since the delete dialog showed what it holds, so nothing was deleted.",
+  worktree_not_found: "Ajour no longer keeps that worktree in its list.",
+  worktree_present:
+    "The worktree's folder is still on disk, so it can be deleted, not forgotten.",
   would_lock_week: "Undoing it would change a submitted week.",
   wrong_version:
     "The downloaded ajour command reported another version than expected.",

@@ -6,8 +6,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPluginArchive } from "../api/src/plugin-package.ts";
 import { pluginCatalogCapabilitySchema } from "../../packages/shared/plugin-catalog.ts";
-// The agent-handoff entry the official source published at commit 024e51c.
+// The agent-handoff entry the official source published at commit abfa8ad,
+// and the plugin.json that entry lists, from its commit 07f28f2.
 import agentHandoffEntry from "./fixtures/ajour-plugins-agent-handoff-entry.json";
+import agentHandoffManifest from "./fixtures/ajour-plugins-agent-handoff-plugin.json";
 
 const require = createRequire(import.meta.url);
 const sources = require("./electron/plugin-sources.cjs") as {
@@ -196,10 +198,52 @@ describe("ajour.json", () => {
     expect(parsed.plugins).toEqual([
       expect.objectContaining({
         id: "agent-handoff",
-        version: "0.9.0",
+        version: "0.16.0",
         capabilities: ["handoff"],
       }),
     ]);
+  });
+
+  it("installs the agent-handoff plugin when one of its tools makes its own worktree (#859)", async () => {
+    // ajour.json names no tool, so the test above already covers the entry.
+    // A tool's values are in plugin.json, which the installer reads.
+    expect(agentHandoffManifest).toMatchObject({
+      id: agentHandoffEntry.id,
+      version: agentHandoffEntry.version,
+    });
+    const tools = agentHandoffManifest.capabilities.handoff.tools;
+    const manifestBytes = bytesOf({
+      ...agentHandoffManifest,
+      capabilities: {
+        handoff: {
+          ...agentHandoffManifest.capabilities.handoff,
+          tools: tools.map((tool, index) =>
+            index === 0 ? { ...tool, ownWorktree: true } : tool,
+          ),
+        },
+      },
+    });
+
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-own-worktree-"));
+    temporaryDirectories.push(root);
+    const installed = await installPluginArchive({
+      archiveBytes: sources.createPluginArchive([
+        { path: "plugin.json", bytes: manifestBytes },
+        // A stand-in: the installer only checks that the entrypoint is there.
+        {
+          path: agentHandoffManifest.entrypoint,
+          bytes: Buffer.from("export {};\n"),
+        },
+      ]),
+      archiveFilename: `agent-handoff-${agentHandoffEntry.version}.ajour-connector`,
+      installRoot: path.join(root, "plugins"),
+    });
+    // Only the tool that declared the value has it.
+    expect(
+      installed.manifest.capabilities.handoff?.tools
+        .filter((tool) => tool.ownWorktree)
+        .map((tool) => tool.id),
+    ).toEqual([tools[0]!.id]);
   });
 
   it.each([

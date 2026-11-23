@@ -1913,6 +1913,12 @@ async function ensureInternalAppApiRunning() {
           shell.openExternal(href),
         ),
       terminal: resolveTerminalApp,
+      // A worktree's "Show in Finder" or "Show in File Explorer": the API
+      // resolves the folder from the worktree's id, never from the page.
+      openFolder: async (folder) => {
+        const failure = await shell.openPath(folder);
+        if (failure) throw new Error(failure);
+      },
       brokerResolver: internalAppApiBrokerNetwork().resolver,
       pluginRuntime: internalAppApiPluginRuntime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),

@@ -7,6 +7,7 @@ import {
 import { SettingsSearchProvider } from "@/features/settings/settings-link";
 import type { SettingsLocation } from "@/features/settings/settings-location";
 import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
+import { hasWorktrees } from "@/lib/worktrees";
 import { trackPageChunk } from "@/lib/route-events";
 
 /**
@@ -77,6 +78,12 @@ export const SettingsProjectsPage = lazy(
     return { default: module.SettingsProjectsPage };
   }),
 );
+export const SettingsWorktreesPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-worktrees-page");
+    return { default: module.SettingsWorktreesPage };
+  }),
+);
 export const SettingsTimeEntriesPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-export-page");
@@ -113,12 +120,14 @@ export function SettingsPageSuspense({ children }: { children: ReactNode }) {
 
 /**
  * The location the Settings window opens for `location`: General in place
- * of Diagnostics when this window has no log file (the web build, #438).
+ * of a page this window doesn't have. The web build has no log file, so no
+ * Diagnostics (#438), and hands nothing off, so no Worktrees (#860).
  */
 export function shownSettingsLocation(
   location: SettingsLocation,
 ): SettingsLocation {
-  return location.page === "diagnostics" && !hasLocalLogsBridge()
+  return (location.page === "diagnostics" && !hasLocalLogsBridge()) ||
+    (location.page === "worktrees" && !hasWorktrees())
     ? { page: "general", search: {} }
     : location;
 }
@@ -148,6 +157,9 @@ export function settingsPageElement(location: SettingsLocation) {
       return <SettingsWorkflowPage />;
     case "projects":
       return <SettingsProjectsPage />;
+    case "worktrees":
+      // Desktop only: the web build hands nothing off (#860).
+      return hasWorktrees() ? <SettingsWorktreesPage /> : null;
     case "time-entries":
       return <SettingsTimeEntriesPage />;
     case "sync-review":

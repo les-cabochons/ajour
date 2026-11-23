@@ -196,6 +196,12 @@ it("bounds a thread listing's request and answer as a state read's", () => {
   expect(listThreadsResultSchema.safeParse({ threads: [thread] }).success).toBe(
     true,
   );
+  // The state the listing saw (#857), one a state read reports.
+  expect(
+    listThreadsResultSchema.safeParse({
+      threads: [{ ...thread, state: "needs-you" }],
+    }).success,
+  ).toBe(true);
   for (const bad of [
     { threads: Array.from({ length: 201 }, () => thread) },
     { threads: [{ ...thread, title: "" }] },
@@ -204,6 +210,7 @@ it("bounds a thread listing's request and answer as a state read's", () => {
     { threads: [{ ...thread, link: "x".repeat(2001) }] },
     { threads: [{ ...thread, native: { x: "a".repeat(4089) } }] },
     { threads: [{ ...thread, updatedAt: Number.NaN }] },
+    { threads: [{ ...thread, state: "started" }] },
     { threads: [{ ...thread, extra: true }] },
     [thread],
   ])
@@ -212,6 +219,7 @@ it("bounds a thread listing's request and answer as a state read's", () => {
 
 import {
   handoffStateSchema,
+  handoffToolFeatureLabels,
   handoffToolFeatures,
   readHandoffStatesResultSchema,
 } from "../handoffs.ts";
@@ -448,5 +456,70 @@ it("lists closing as a feature, naming a close that deletes as such", () => {
     "finds-threads",
     "updates-within-seconds",
     "deletes-threads",
+  ]);
+});
+
+it("lets a tool say it makes its own worktree, and names the field when the value is not a boolean (#859)", () => {
+  const manifest = (tool: Record<string, unknown>) => ({
+    ...jiraManifest(),
+    capabilities: {
+      handoff: {
+        tools: [
+          {
+            id: "tool",
+            label: "Tool",
+            iconSvg: "<svg/>",
+            settings: [],
+            ...tool,
+          },
+        ],
+      },
+    },
+  });
+  const tool = (declared: Record<string, unknown>) =>
+    pluginApi4ManifestSchema.parse(manifest(declared)).capabilities.handoff
+      ?.tools[0];
+  expect(tool({})?.ownWorktree).toBeUndefined();
+  expect(tool({ ownWorktree: true })?.ownWorktree).toBe(true);
+  expect(tool({ ownWorktree: false })?.ownWorktree).toBe(false);
+  for (const bad of ["yes", 1, null]) {
+    const refused = pluginApi4ManifestSchema.safeParse(
+      manifest({ ownWorktree: bad }),
+    );
+    expect(refused.success).toBe(false);
+    // The one problem is the field itself, so the message names it.
+    expect(refused.error?.issues.map((issue) => issue.path.at(-1))).toEqual([
+      "ownWorktree",
+    ]);
+    expect(refused.error?.message).toContain("ownWorktree");
+  }
+});
+
+it("lists making its own worktree last among a tool's features (#859)", () => {
+  expect(handoffToolFeatures({ ownWorktree: true })).toEqual([
+    "starts-threads",
+    "follows-state",
+    "makes-own-worktree",
+  ]);
+  expect(
+    handoffToolFeatures({
+      followsState: true,
+      listsThreads: true,
+      hooks: true,
+      closesThreads: "archive",
+      ownWorktree: true,
+    }).map((feature) => handoffToolFeatureLabels[feature]),
+  ).toEqual([
+    "Starts threads",
+    "Follows state",
+    "Finds threads",
+    "Updates within seconds",
+    "Closes threads",
+    "Makes its own worktree",
+  ]);
+  // A tool that says false, or nothing, lists what it listed before.
+  expect(handoffToolFeatures({ ownWorktree: false })).toEqual([
+    "starts-threads",
+    "follows-state",
   ]);
 });

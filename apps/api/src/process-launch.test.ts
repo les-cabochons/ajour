@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { launchProcess } from "./process-launch.ts";
+import { launchProcess, launchTerminalIn } from "./process-launch.ts";
 import { mkdtemp, readFile, stat, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -398,3 +398,79 @@ it("Given stale macOS scripts, sweeps only directories older than one hour", asy
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/*
+ * A worktree's Open in terminal (#862): the terminal app opens in a folder
+ * with the user's shell and no command.
+ */
+it.each([
+  [{ app: "wt" as const }, "C:\\tools\\wt.exe", ["-d", "C:\\My repo"]],
+  [
+    { app: "WezTerm" as const, path: "C:\\tools\\wezterm-gui.exe" },
+    "C:\\tools\\wezterm-gui.exe",
+    ["start", "--cwd", "C:\\My repo"],
+  ],
+  [
+    { app: "Alacritty" as const, path: "C:\\tools\\alacritty.exe" },
+    "C:\\tools\\alacritty.exe",
+    ["--working-directory", "C:\\My repo"],
+  ],
+])(
+  "Given %o on Windows and no command, opens its default shell in the folder",
+  async (terminal, command, args) => {
+    const started: { command: string; args: string[]; hidden: boolean }[] = [];
+    await launchTerminalIn("C:\\My repo", {}, terminal, {
+      ...ports,
+      start: async (plan, _cwd, hidden) => {
+        started.push({ command: plan.command, args: plan.args, hidden });
+      },
+    });
+    expect(started).toEqual([{ command, args, hidden: false }]);
+  },
+);
+
+it("Given a folder Windows can't take in one argument and no command, refuses before spawning", async () => {
+  const start = vi.fn(async () => undefined);
+  await expect(
+    launchTerminalIn("C:\\R&D\\repo", {}, { app: "wt" }, { ...ports, start }),
+  ).rejects.toMatchObject({ reason: "invalid_request" });
+  expect(start).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["/opt/homebrew/bin/fish", "/opt/homebrew/bin/fish"],
+  // No shell the script could run by its path: the system's default one.
+  ["fish", "/bin/zsh"],
+  [undefined, "/bin/zsh"],
+])(
+  "Given SHELL %j on macOS and no command, starts that login shell in the folder: %s",
+  async (shell, expected) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-shell-"));
+    let cleanup: (() => Promise<void>) | undefined;
+    try {
+      let script = "";
+      await launchTerminalIn(
+        "/repo/.ajour/worktrees/aj-1",
+        { SHELL: shell },
+        { app: "Terminal" },
+        {
+          platform: "darwin",
+          temp: root,
+          start: async (plan) => {
+            expect(plan.args.slice(0, 2)).toEqual(["-a", "Terminal"]);
+            script = plan.args[2]!;
+          },
+          later: (callback) => {
+            cleanup = callback;
+          },
+        },
+      );
+      expect(await readFile(script, "utf8")).toContain(
+        `cd '/repo/.ajour/worktrees/aj-1' || exit 1\nexec '${expected}' '-l'\n`,
+      );
+    } finally {
+      await cleanup?.();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
