@@ -153,8 +153,9 @@ function CommitChangeRow({
   const label = CHANGE_KIND_LABELS[change.kind];
   const title = `${shown.project} · ${shown.task}, ${shown.day}`;
   const Icon = CHANGE_KIND_ICONS[change.kind];
-  // A Not known yet task has no name to commit as yet, and a non-working day
-  // takes no time, so their changes stay out until the user fixes the entry.
+  // A Not known yet task has no name to commit as yet, and time on a
+  // non-working day never goes to the timesheet, so their changes stay out
+  // until the user fixes the entry.
   const waiting = change.kind !== "deleted" && change.waiting === true;
   const nonWorkingDay =
     change.kind !== "deleted" && change.nonWorkingDay === true;
