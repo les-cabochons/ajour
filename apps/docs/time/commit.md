@@ -21,9 +21,7 @@ The top of the page shows the week total against your target, with a progress ba
 
 ## Non-working days
 
-A day with 0 hours of **Time capacity** in [Settings](/app/settings#general), such as Saturday and Sunday by default, is a non-working day. Ajour doesn't let you log new time on it: **Start**, **Continue**, a new entry, a copy, a move or a paste onto it shows a message instead, and so does adding hours to an entry already there.
-
-Time that is already on a non-working day stays out of the commit. Its change shows a **Non-working day** label, its checkbox stays unchecked and greyed out, and it has no line under **Lines**. Move the entry to a working day or delete it, and **Submit week** can go ahead. If you did work that day, give the day some hours in **Time capacity** first.
+A day with 0 hours of **Time capacity** in [Settings](/app/settings#general), such as Saturday and Sunday by default, is a non-working day. Time on a non-working day stays out of the commit. Its change shows a **Non-working day** label, its checkbox stays unchecked and greyed out, and it has no line under **Lines**. Move the entry to a working day or delete it, and **Submit week** can go ahead. If you did work that day and it belongs in your timesheet, give the day some hours in **Time capacity**.
 
 ## Local time
 

@@ -219,7 +219,7 @@ The values of a time entry that Ajour and the other system of a time sync last a
 _Avoid_: Committed copy, remote copy, mirror
 
 **Non-working day**:
-A weekday whose Time capacity is zero, Saturday and Sunday by default. Ajour records no new time on it, and its time stays out of the commit until the user moves it to a working day. When no weekday has capacity, no day is non-working.
+A weekday whose Time capacity is zero, Saturday and Sunday by default. Its time stays out of the commit until the user moves it to a working day. When no weekday has capacity, no day is non-working.
 _Avoid_: Weekend (for the rule), day off, holiday
 
 **Submitted week**:

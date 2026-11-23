@@ -412,10 +412,7 @@ Buttons read Start, Continue and Stop, and the titlebar pill reads Running. User
 
 A non-working day is a weekday whose Time capacity in Settings › General is 0:00: Saturday and Sunday by default. When no weekday has any capacity, no day is a non-working day. Hide non-working days uses the same days.
 
-- Ajour records no new time on a non-working day. It refuses Start and Continue while today is one, a new entry on one, and Duplicate, Duplicate to…, Move to…, paste and drag and drop onto one, more hours on an entry already there, and adding a calendar suggestion for one. Agent tools get the same refusals. The refusal writes nothing and shows as a toast, "Saturday is a non-working day. Give it hours in Settings › General › Time capacity to log time on it." A menu that ran the action closes first. The store event records `reason: non_working_day`.
-- Time already on a non-working day, from before the rule, a capacity change or a time sync, stays editable: its note, project and task, fewer hours, Stop, Delete, Undo and Move to… a working day all work.
-- Calendar suggestions skip non-working days, as they skip submitted weeks.
-- The Commit page keeps their time out of the commit until the user moves or deletes it (see [Submit timesheet](#submit-timesheet)).
+- The Commit page keeps their time out of the commit until the user moves it to a working day or deletes it (see [Submit timesheet](#submit-timesheet)). Ajour still records time on them.
 
 ## Week view
 
