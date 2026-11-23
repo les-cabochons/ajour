@@ -523,6 +523,63 @@ Given(
   },
 );
 
+Given("Saturday has a new {string} entry", async ({ page }, note: string) => {
+  // Runs after the committed week's seed, on the first load only.
+  await page.addInitScript((entryNote) => {
+    if (sessionStorage.getItem("commit-week-saturday-ready")) return;
+    sessionStorage.setItem("commit-week-saturday-ready", "true");
+    const key = "ajour.local-state.v2";
+    const state = JSON.parse(localStorage.getItem(key)!) as {
+      timesheetEntries: unknown[];
+    };
+    // 2026-10-10 is a Saturday, which has no capacity by default.
+    state.timesheetEntries.push({
+      _id: "sat-fix",
+      localDate: "2026-10-10",
+      projectId: "project-atlas",
+      taskId: "task-dev",
+      label: "",
+      note: entryNote,
+      durationMs: 60 * 60 * 1000,
+      sourceBlockIds: [],
+      committedAt: 10,
+    });
+    localStorage.setItem(key, JSON.stringify(state));
+  }, note);
+});
+
+Then(
+  "the {string} change of {string} is held for its non-working day",
+  async ({ page }, kind: string, note: string) => {
+    const row = changeRow(page, kind).filter({ hasText: note });
+    await expect(row.getByRole("checkbox")).toBeDisabled();
+    await expect(row.getByRole("checkbox")).not.toBeChecked();
+    await expect(row.getByText("Non-working day")).toBeVisible();
+    await expect(
+      row.getByLabel(
+        /: The day is a non-working day\. Move the entry to a working day to include this change\.$/,
+      ),
+    ).toHaveAttribute("tabindex", "0");
+  },
+);
+
+Then("the Commit page has no lines for Saturday", async ({ page }) => {
+  await expect(
+    page.getByRole("region", { name: "Monday, Oct 5" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Saturday, Oct 10" }),
+  ).toHaveCount(0);
+});
+
+When("I follow Open day in the warning", async ({ page }) => {
+  await page
+    .locator(".submit-warnings")
+    .getByRole("link", { name: "Open day" })
+    .click();
+  await expect(page).toHaveURL(/\/time\/2026-10-10/);
+});
+
 Then("the Commit page warns {string}", async ({ page }, text: string) => {
   await expect(
     page.locator(".submit-warnings li").filter({ hasText: text }),
