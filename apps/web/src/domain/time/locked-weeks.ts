@@ -242,6 +242,7 @@ export function getSubmitWeekRefusal(
     | "timesheetTombstones"
     | "timers"
     | "projects"
+    | "userPreferences"
   >,
   weekOf: string,
 ): SubmitWeekRefusal | undefined {
@@ -258,6 +259,7 @@ export function getSubmitWeekRefusal(
     entries: state.timesheetEntries,
     tombstones: state.timesheetTombstones,
     projects: state.projects,
+    capacityTargets: state.userPreferences.weeklyCapacityTargets,
     weekDates,
   }).length;
   if (count > 0) {

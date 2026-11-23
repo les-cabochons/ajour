@@ -84,6 +84,18 @@ Feature: Commit the week
     When I follow Edit task in the warning
     Then the task editor opens on "Temp migration"
 
+  Scenario: Keep time on a non-working day out of the commit
+    Given I have a committed week of entries
+    And Saturday has a new "Weekend fix" entry
+    When I open the Commit page for the week of 2026-10-05
+    Then the Commit page warns "1:00 on Sat 10, a non-working day, stays out of the commit. Move it to a working day or delete it."
+    And the "Added" change of "Weekend fix" is held for its non-working day
+    And the Commit page has no lines for Saturday
+    When I follow Open day in the warning
+    And I choose "Delete" from the "Weekend fix" entry's menu
+    And I open the Commit page for the week of 2026-10-05
+    Then the Commit page says everything is committed
+
   Scenario: Open the Commit page from the top bar beside the sidebar
     Given I have a committed week of entries
     When I open Monday's Day list

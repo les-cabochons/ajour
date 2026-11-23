@@ -97,6 +97,12 @@ export function formatWorkday(
           `Waiting      ${formatClock(Math.round(task.hours * 60))} on ${cell(task.taskName)} has no Workday task yet.`,
         ),
       );
+    for (const held of week.nonWorkingDays.days)
+      notes.push(
+        paint.warning(
+          `Held         ${formatClock(Math.round(held.hours * 60))} on ${day(held.date)}, a non-working day. Move it to a working day.`,
+        ),
+      );
     if (week.running)
       notes.push(
         paint.success(

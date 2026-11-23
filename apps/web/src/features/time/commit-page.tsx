@@ -35,7 +35,10 @@ import {
   getSubmitWeekRefusal,
   type SubmitWeekRefusal,
 } from "@/domain/time/locked-weeks";
-import { listWeekChanges } from "@/domain/time/timesheet-commit";
+import {
+  isChangeCommittable,
+  listWeekChanges,
+} from "@/domain/time/timesheet-commit";
 import {
   buildCommitLines,
   describeLineNames,
@@ -149,6 +152,8 @@ function countLabel(count: number, singular: string, plural: string) {
 function warningKey(warning: SubmitWarning) {
   if (warning.kind === "day-under-target") return warning.localDate;
   if (warning.kind === "waiting-task") return `waiting:${warning.taskId}`;
+  if (warning.kind === "non-working-day")
+    return `non-working:${warning.localDate}`;
   if (warning.kind === "days-ahead") return "days-ahead";
   return warning.kind;
 }
@@ -221,6 +226,15 @@ function formatWarning(warning: SubmitWarning) {
       <>
         <WarningDuration ms={warning.durationMs} /> on {warning.taskName} waits
         for a task to commit as.
+      </>
+    );
+  }
+  if (warning.kind === "non-working-day") {
+    return (
+      <>
+        <WarningDuration ms={warning.durationMs} /> on{" "}
+        {formatShortDay(warning.localDate)}, a non-working day, stays out of the
+        commit. Move it to a working day or delete it.
       </>
     );
   }
@@ -454,16 +468,23 @@ export function CommitPage({
         entries: state.timesheetEntries,
         tombstones: state.timesheetTombstones,
         projects,
+        capacityTargets: state.userPreferences.weeklyCapacityTargets,
         weekDates,
       }),
-    [state.timesheetEntries, state.timesheetTombstones, projects, weekDates],
+    [
+      state.timesheetEntries,
+      state.timesheetTombstones,
+      state.userPreferences.weeklyCapacityTargets,
+      projects,
+      weekDates,
+    ],
   );
-  // A change on a Not known yet task is never checked: nobody commits it
-  // under a temporary name.
+  // A change on a Not known yet task or a non-working day is never checked:
+  // nobody commits it until the user fixes its entry.
   const checkedIds = useMemo(
     () =>
       changes
-        .filter((change) => change.kind === "deleted" || !change.waiting)
+        .filter(isChangeCommittable)
         .map((change) => change.entryId)
         .filter((entryId) => !uncheckedIds.has(entryId)),
     [changes, uncheckedIds],
@@ -474,9 +495,16 @@ export function CommitPage({
         entries: weekEntries,
         groupBy,
         projects,
+        capacityTargets: state.userPreferences.weeklyCapacityTargets,
         weekDates,
       }),
-    [groupBy, projects, weekDates, weekEntries],
+    [
+      groupBy,
+      projects,
+      state.userPreferences.weeklyCapacityTargets,
+      weekDates,
+      weekEntries,
+    ],
   );
   const lineCount = sections.reduce(
     (count, section) => count + section.lines.length,
@@ -727,6 +755,16 @@ export function CommitPage({
                       className="submit-warning-action"
                     >
                       Edit task
+                    </Link>
+                  ) : null}
+                  {warning.kind === "non-working-day" ? (
+                    <Link
+                      to="/time/$date"
+                      params={{ date: warning.localDate }}
+                      search={{ view: "day" } as never}
+                      className="submit-warning-action"
+                    >
+                      Open day
                     </Link>
                   ) : null}
                 </li>

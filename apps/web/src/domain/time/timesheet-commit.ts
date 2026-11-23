@@ -4,14 +4,17 @@ import {
   type LocalTimesheetEntry,
   type LocalTimesheetEntryCommit,
   type LocalTimesheetTombstone,
+  type WeeklyCapacityTargets,
 } from "@/domain/local-state";
 import { findCommitTarget } from "@/domain/projects/commit-target";
+import { isNonWorkingDay } from "@/domain/time/working-days";
 
 /**
  * Committed copies: what changed in a week since its last commit. An entry
  * with no committed copy is added, one whose copy differs or is stale is
  * updated, and a tombstone is a deleted entry. Agents and the Commit page read the same
- * list, which leaves local time out (applyCommitTarget). See docs/specs/2026-10-15-commit-week-design.md.
+ * list, which leaves local time out (applyCommitTarget) and holds time on a
+ * non-working day (holdNonWorkingDay). See docs/specs/2026-10-15-commit-week-design.md.
  */
 
 /** The values a commit compares. Other fields, such as the order, never make a change. */
@@ -37,6 +40,8 @@ export type TimesheetChange =
       current: TimesheetCommitValues;
       /** Its task is Not known yet, so it can't be committed. See applyCommitTarget. */
       waiting?: true;
+      /** Its day is a non-working day, so it can't be committed. See holdNonWorkingDay. */
+      nonWorkingDay?: true;
     }
   | {
       kind: "updated";
@@ -50,10 +55,23 @@ export type TimesheetChange =
       changedFields: TimesheetCommitField[];
       /** Its task is Not known yet, so it can't be committed. See applyCommitTarget. */
       waiting?: true;
+      /** Its day is a non-working day, so it can't be committed. See holdNonWorkingDay. */
+      nonWorkingDay?: true;
     }
   | { kind: "deleted"; entryId: string; committed: LocalTimesheetEntryCommit };
 
 export type TimesheetChangeKind = TimesheetChange["kind"];
+
+/**
+ * Whether the change can be committed now. A change held as `waiting` or
+ * `nonWorkingDay` stays listed, unchecked, until the user fixes its entry.
+ * A deletion always can: the timesheet tool holds the entry it removes.
+ */
+export function isChangeCommittable(change: TimesheetChange) {
+  return (
+    change.kind === "deleted" || (!change.waiting && !change.nonWorkingDay)
+  );
+}
 
 /** How many of the week's changes are of each kind, for the Changes heading. */
 export function countTimesheetChanges(
@@ -185,6 +203,23 @@ export function applyCommitTarget(
     : { ...change, ...waiting };
 }
 
+/**
+ * Holds an added or updated change whose entry is now on a non-working day,
+ * as `waiting` holds one on a Not known yet task: it stays a change, so the
+ * week can't be submitted, but nobody can commit it until the user moves the
+ * entry to a working day or deletes it. A deletion passes, and so does an
+ * entry moved off a non-working day: the tool already holds that time.
+ */
+export function holdNonWorkingDay(
+  change: TimesheetChange,
+  capacityTargets: WeeklyCapacityTargets,
+): TimesheetChange {
+  if (change.kind === "deleted") return change;
+  return isNonWorkingDay(capacityTargets, change.current.localDate)
+    ? { ...change, nonWorkingDay: true }
+    : change;
+}
+
 const KIND_ORDER: Record<TimesheetChangeKind, number> = {
   added: 0,
   updated: 1,
@@ -202,12 +237,15 @@ export function listWeekChanges({
   entries,
   tombstones,
   projects,
+  capacityTargets,
   weekDates,
 }: {
   entries: readonly LocalTimesheetEntry[];
   tombstones: readonly LocalTimesheetTombstone[];
   /** Every project, archived ones too, for what each task commits as. */
   projects: readonly LocalProject[];
+  /** Settings › General's Time capacity, for which days are non-working days. */
+  capacityTargets: WeeklyCapacityTargets;
   weekDates: readonly string[];
 }): TimesheetChange[] {
   const week = new Set(weekDates);
@@ -215,8 +253,9 @@ export function listWeekChanges({
 
   for (const entry of entries) {
     const entryChange = getTimesheetEntryChange(entry);
-    const change = entryChange && applyCommitTarget(entryChange, projects);
-    if (!change) continue;
+    const committable = entryChange && applyCommitTarget(entryChange, projects);
+    if (!committable) continue;
+    const change = holdNonWorkingDay(committable, capacityTargets);
     // A deletion from the tool, such as an entry moved to a local task,
     // belongs to the week the tool holds it in.
     const day =

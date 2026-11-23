@@ -418,6 +418,7 @@ describe("the Commit page's lines as a read tool", () => {
         ],
         notSent: { hours: 0, items: [] },
         waiting: { hours: 0, tasks: [] },
+        nonWorkingDays: { hours: 0, days: [] },
         running: null,
       },
     });
@@ -3220,6 +3221,7 @@ it("bounds task totals and exclusions to selected days before grouping", async (
       sections: [{ lines: [{ hours: 1.5, comments: "2026-11-03" }] }],
       notSent: { hours: 1, items: [{ taskName: "Admin", hours: 1 }] },
       waiting: { hours: 1, tasks: [{ taskName: "Discovery", hours: 1 }] },
+      nonWorkingDays: { hours: 0, days: [] },
       running: null,
     },
   });

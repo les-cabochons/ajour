@@ -218,6 +218,10 @@ _Avoid_: Snapshot, fingerprint, synced copy (that is a time sync's)
 The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. When a later change there can't be taken, such as a move to a project the connection doesn't manage, the synced copy holds back Ajour's older values, which aren't sent while the entry keeps them. See ADR 0018.
 _Avoid_: Committed copy, remote copy, mirror
 
+**Non-working day**:
+A weekday whose Time capacity is zero, Saturday and Sunday by default. Its time stays out of the commit until the user moves it to a working day. When no weekday has capacity, no day is non-working.
+_Avoid_: Weekend (for the rule), day off, holiday
+
 **Submitted week**:
 A week the user locked after committing every change: its entries are read-only, for agents too, until the user reopens it. The code calls it a locked week.
 _Avoid_: Closed week, finalized week, frozen week
