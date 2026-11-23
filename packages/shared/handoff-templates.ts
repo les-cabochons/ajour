@@ -108,6 +108,13 @@ export function isValidHandoffBranch(value: string): boolean {
     !value.split("/").some((p) => p.startsWith(".") || p.endsWith(".lock"))
   );
 }
+/**
+ * Whether git takes the name for a branch it creates: a valid ref that is
+ * not `HEAD`, which `git check-ref-format --branch` refuses.
+ */
+export function isValidNewBranchName(value: string): boolean {
+  return value !== "HEAD" && isValidHandoffBranch(value);
+}
 export function handoffTitle(value: string): string {
   const line = value.replace(/(?:\r\n|[\r\n\u2028\u2029])+/g, " ");
   let result = "";

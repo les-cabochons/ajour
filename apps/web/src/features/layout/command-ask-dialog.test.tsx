@@ -115,3 +115,43 @@ it("Given a folder name with a joiner and soft hyphen, escapes them", () => {
   );
   expect(screen.getByText("Folder: 👨\\u{200D}👩 re\\u{AD}port")).toBeTruthy();
 });
+
+it("Given a command in a folder, says Always covers the repository folder and its worktrees, in the folder itself and in a worktree (#860)", () => {
+  const ask = {
+    id: "ask",
+    pluginId: "p",
+    pluginName: "Tool",
+    executable: "git",
+    argv: ["status"],
+    cwdFolder: "repository",
+    folderName: "atlas-web",
+    folderPath: "/repos/atlas-web",
+    signed: true,
+    risky: false,
+    expiresAt: Date.now() + 120000,
+  };
+  const note =
+    "Always remembers this executable and every argument for atlas-web and its worktrees. An updated package or lost signature clears it.";
+  const { rerender } = render(
+    <CommandAskDialog ask={ask} disabled={false} onAnswer={() => {}} />,
+  );
+  expect(screen.getByText("Folder: atlas-web")).toBeTruthy();
+  expect(screen.getByText(note)).toBeTruthy();
+
+  // In a worktree the dialog shows the worktree's folder, and the same note
+  // names its repository folder.
+  rerender(
+    <CommandAskDialog
+      ask={{
+        ...ask,
+        folderName: "aj-4821",
+        folderPath: "/repos/atlas-web/.ajour/worktrees/aj-4821",
+        scopeFolderName: "atlas-web",
+      }}
+      disabled={false}
+      onAnswer={() => {}}
+    />,
+  );
+  expect(screen.getByText("Folder: aj-4821")).toBeTruthy();
+  expect(screen.getByText(note)).toBeTruthy();
+});

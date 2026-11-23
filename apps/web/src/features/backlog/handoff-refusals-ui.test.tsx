@@ -38,6 +38,7 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   detectHandoffTools: vi.fn(),
   findHandoffThreads: vi.fn(),
   getHandoffTemplates: vi.fn(),
+  getProjectStartIn: vi.fn(),
   listHandoffs: vi.fn(),
   listRepositoryFolders: vi.fn(),
   startHandoff: vi.fn(),
@@ -79,6 +80,8 @@ beforeEach(() => {
   cachePluginsOverview(handoffOverview());
   setHandoffs([]);
   vi.mocked(api.listHandoffs).mockResolvedValue([]);
+  // A hand off reads where it starts first, and stops when it can't (#861).
+  vi.mocked(api.getProjectStartIn).mockResolvedValue({ settings: "worktree" });
   vi.mocked(api.detectHandoffTools).mockResolvedValue({
     tools: [{ id: "t3", available: true }],
   });

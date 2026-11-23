@@ -4,6 +4,17 @@ import type {
   StartHandoffResult,
 } from "../../../packages/shared/handoffs.ts";
 import type { ListedHandoffThread } from "../../../packages/shared/handoff-threads.ts";
+import type { Worktree } from "../../../packages/shared/worktrees.ts";
+
+/**
+ * The id of the folder a handoff's thread works in, as its tool receives
+ * it: its worktree's own id (#860), else its repository folder's.
+ */
+export function handoffWorkFolder(
+  record: Pick<Handoff, "folderId" | "worktreeId">,
+): string {
+  return record.worktreeId ?? record.folderId;
+}
 
 export function startHandoff(
   input: Pick<
@@ -14,6 +25,8 @@ export function startHandoff(
     | "workItemId"
     | "projectId"
     | "folderId"
+    | "worktreeId"
+    | "ownWorktree"
     | "title"
     | "branch"
   >,
@@ -35,20 +48,24 @@ export function startHandoff(
 /**
  * A handoff for a thread the tool listed and the user linked to an item.
  * Ajour didn't start it, so its state is unknown until its first refresh,
- * or `started` for good when its tool doesn't report state.
+ * or `started` for good when its tool doesn't report state. A thread listed
+ * in a worktree (#862) names it: `worktree` is then the folder the tool
+ * listed, and the handoff's folder stays the worktree's repository folder.
  */
 export function adoptHandoff(
   input: Pick<Handoff, "id" | "workItemId" | "projectId">,
   thread: ListedHandoffThread,
   now: number,
   followsState = true,
+  worktree?: Pick<Worktree, "id" | "repositoryFolderId">,
 ): Handoff {
   return {
     ...input,
     pluginId: thread.pluginId,
     toolId: thread.toolId,
     ...(thread.connectionId ? { connectionId: thread.connectionId } : {}),
-    folderId: thread.folderId,
+    folderId: worktree?.repositoryFolderId ?? thread.folderId,
+    ...(worktree ? { worktreeId: worktree.id } : {}),
     threadId: thread.threadId,
     title: thread.title,
     ...(thread.link ? { link: thread.link } : {}),

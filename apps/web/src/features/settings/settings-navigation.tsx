@@ -15,8 +15,10 @@ import {
   RiTerminalBoxLine as Terminal,
   RiPulseLine as Diagnostics,
   RiFlowChart as Workflow,
+  RiGitForkLine as Worktree,
 } from "@remixicon/react";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
+import { hasWorktrees } from "@/lib/worktrees";
 import { hasLocalLogsBridge } from "./use-local-logs";
 
 /**
@@ -33,11 +35,13 @@ export type SettingsNavigationView = "wide" | "narrow";
  * windows keep the separate import and export page. Deck is not a settings
  * page: the narrow view reaches it from the bottom switcher. Diagnostics is
  * listed only where the local log file is reachable: the desktop app's bridge.
+ * Worktrees is listed only where hand offs run: the desktop app too.
  */
 export function getSettingsGroups(
   view: SettingsNavigationView,
   hasCalendar = false,
   hasDiagnostics = false,
+  hasWorktreesPage = false,
 ) {
   return [
     {
@@ -71,6 +75,15 @@ export function getSettingsGroups(
         view === "narrow"
           ? { to: "/projects", label: "Projects", icon: FolderKanban }
           : { to: "/settings/projects", label: "Projects", icon: FolderKanban },
+        ...(hasWorktreesPage
+          ? [
+              {
+                to: "/settings/worktrees",
+                label: "Worktrees",
+                icon: Worktree,
+              } as const,
+            ]
+          : []),
         ...(hasCalendar
           ? [
               {
@@ -106,10 +119,14 @@ export function getSettingsPages(
   view: SettingsNavigationView,
   hasCalendar = false,
   hasDiagnostics = false,
+  hasWorktreesPage = false,
 ) {
-  return getSettingsGroups(view, hasCalendar, hasDiagnostics).flatMap(
-    (group) => group.pages,
-  );
+  return getSettingsGroups(
+    view,
+    hasCalendar,
+    hasDiagnostics,
+    hasWorktreesPage,
+  ).flatMap((group) => group.pages);
 }
 
 /**
@@ -122,6 +139,7 @@ export function SettingsNavigation() {
     "narrow",
     calendars.length > 0,
     hasLocalLogsBridge(),
+    hasWorktrees(),
   );
 
   return (

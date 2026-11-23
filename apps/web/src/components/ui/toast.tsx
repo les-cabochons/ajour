@@ -109,11 +109,14 @@ export function showToast(title: string) {
  */
 export function showActionToast({
   title,
+  description,
   actionLabel,
   onAction,
   timeout = 0,
 }: {
   title: string;
+  /** A muted line under the title. Line breaks show as separate lines. */
+  description?: string;
   actionLabel: string;
   onAction: () => void;
   /** How long it shows, in milliseconds. 0, the default, keeps it until dismissed. */
@@ -121,6 +124,7 @@ export function showActionToast({
 }) {
   const id = toastManager.add({
     title,
+    description,
     timeout,
     data: {
       action: {

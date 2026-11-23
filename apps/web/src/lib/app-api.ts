@@ -6,7 +6,11 @@ import { z } from "zod";
 import {
   detectToolsResultSchema,
   handoffRecordSchema,
+  handoffStartAnswerSchema,
   handoffRefreshResultSchema,
+  worktreeCleanUpAnswerSchema,
+  worktreeDeleteAnswerSchema,
+  worktreeForgetAnswerSchema,
   handoffsSnapshotSchema,
   handoffEnabledToolsSchema,
   handoffToolConnectionsSchema,
@@ -25,6 +29,26 @@ import {
   type CommandMode,
 } from "@ajour/shared/command-modes";
 import { repositoryFoldersSchema } from "@ajour/shared/repository-folders";
+import {
+  itemWorktreesRouteSchema,
+  repositoryBranchesSchema,
+  listedWorktreesSchema,
+  projectStartInSchema,
+  projectStartInUpdateSchema,
+  worktreeDeletePreviewSchema,
+  worktreeDeleteRouteSchema,
+  worktreeOpenRouteSchema,
+  worktreeCleanUpRouteSchema,
+  worktreeSettingsSchema,
+  worktreeSettingsUpdateSchema,
+  worktreeStatusRouteSchema,
+  worktreesSchema,
+  type WorktreeCleanUpRequest,
+  type WorktreeOpenIn,
+  type WorktreeSettingsUpdate,
+  type WorktreeStartIn,
+  type WorktreeStatusRequest,
+} from "@ajour/shared/worktrees";
 import {
   startBacklogSync,
   setBacklogSyncAvailability,
@@ -1998,12 +2022,198 @@ export function listHandoffs() {
     handoffsSnapshotSchema,
   );
 }
+/**
+ * Starts a thread for an item. Answers the new handoff, with the worktree
+ * it runs in beside its fields when Ajour started it in one (#860).
+ */
 export function startHandoff(input: HandoffStartRoute) {
   return appApiRequest(
     "startHandoff",
     "/api/handoffs",
     { method: "POST", body: JSON.stringify(input) },
-    handoffRecordSchema,
+    handoffStartAnswerSchema,
+  );
+}
+/** The worktrees Ajour made for backlog items on this computer (#860). */
+export function listWorktrees() {
+  return appApiRequest(
+    "listWorktrees",
+    "/api/worktrees",
+    undefined,
+    worktreesSchema,
+  );
+}
+/**
+ * The item's worktrees whose folder is still on disk, newest first (#861):
+ * the places a hand off of the item can start in again.
+ */
+export function listItemWorktrees(projectId: string, workItemId: string) {
+  return appApiRequest(
+    "listItemWorktrees",
+    "/api/worktrees/item",
+    {
+      method: "POST",
+      body: JSON.stringify(
+        itemWorktreesRouteSchema.parse({ projectId, workItemId }),
+      ),
+    },
+    worktreesSchema,
+  );
+}
+/**
+ * The worktrees of an item, of a project, or of this computer when the
+ * scope names neither (#862), newest first, each with its status read from
+ * git now and the path of its folder. With `finished`, each also says what
+ * automatic clean up will do with it (#864).
+ */
+export function listWorktreeStatuses(scope: WorktreeStatusRequest) {
+  return appApiRequest(
+    "listWorktreeStatuses",
+    "/api/worktrees/status",
+    {
+      method: "POST",
+      body: JSON.stringify(worktreeStatusRouteSchema.parse(scope)),
+    },
+    listedWorktreesSchema,
+  );
+}
+/**
+ * Runs one round of automatic clean up (#864). `finished` holds, for each
+ * finished item that has a worktree, when it became done, settled or
+ * archived: the local API applies the rules and every safety check, and
+ * answers what it removed and what it kept, with why.
+ */
+export function cleanUpWorktrees(request: WorktreeCleanUpRequest) {
+  return appApiRequest(
+    "cleanUpWorktrees",
+    "/api/worktrees/clean-up",
+    {
+      method: "POST",
+      body: JSON.stringify(worktreeCleanUpRouteSchema.parse(request)),
+    },
+    worktreeCleanUpAnswerSchema,
+  );
+}
+/**
+ * What deleting a worktree would lose (#862): its uncommitted files, the
+ * threads still running in it, and its branch's commits on no remote.
+ */
+export function previewWorktreeDelete(id: string) {
+  return appApiRequest(
+    "previewWorktreeDelete",
+    `/api/worktrees/${encodeURIComponent(id)}/delete-preview`,
+    undefined,
+    worktreeDeletePreviewSchema,
+  );
+}
+/**
+ * Deletes a worktree's folder, with its branch too when asked. Answers
+ * every handoff as it is now: the worktree's stay, without it.
+ * `fingerprint` is the preview's the user confirmed: the local API refuses
+ * with `changed` when the worktree's git status no longer matches it (#857).
+ */
+export function deleteWorktree(
+  id: string,
+  deleteBranch: boolean,
+  fingerprint: string,
+) {
+  return appApiRequest(
+    "deleteWorktree",
+    `/api/worktrees/${encodeURIComponent(id)}/delete`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        worktreeDeleteRouteSchema.parse({ deleteBranch, fingerprint }),
+      ),
+    },
+    worktreeDeleteAnswerSchema,
+  );
+}
+/** Drops the record of a worktree whose folder is gone. */
+export function forgetWorktree(id: string) {
+  return appApiRequest(
+    "forgetWorktree",
+    `/api/worktrees/${encodeURIComponent(id)}/forget`,
+    { method: "POST", body: "{}" },
+    worktreeForgetAnswerSchema,
+  );
+}
+/**
+ * Opens a worktree's folder in the terminal app or in the file manager.
+ * The window names the worktree: the local API finds its folder.
+ */
+export function openWorktree(id: string, where: WorktreeOpenIn) {
+  return appApiRequest(
+    "openWorktree",
+    `/api/worktrees/${encodeURIComponent(id)}/open`,
+    {
+      method: "POST",
+      body: JSON.stringify(worktreeOpenRouteSchema.parse({ in: where })),
+    },
+    z.object({ ok: z.literal(true) }),
+  );
+}
+/**
+ * The branches a new worktree can start from in a repository folder
+ * (#861), with the default source and the main folder's branch.
+ */
+export function listRepositoryBranches(projectId: string, folderId: string) {
+  return appApiRequest(
+    "listRepositoryBranches",
+    `/api/projects/${encodeURIComponent(projectId)}/repository-folders/${encodeURIComponent(folderId)}/branches`,
+    undefined,
+    repositoryBranchesSchema,
+  );
+}
+/** Settings › Worktrees, kept on this computer. */
+export function getWorktreeSettings() {
+  return appApiRequest(
+    "getWorktreeSettings",
+    "/api/worktrees/settings",
+    undefined,
+    worktreeSettingsSchema,
+  );
+}
+/**
+ * Changes Settings › Worktrees: only what `update` names, Start in or a
+ * clean-up rule. Answers the settings as they are now.
+ */
+export function saveWorktreeSettings(update: WorktreeSettingsUpdate) {
+  return appApiRequest(
+    "saveWorktreeSettings",
+    "/api/worktrees/settings",
+    {
+      method: "POST",
+      body: JSON.stringify(worktreeSettingsUpdateSchema.parse(update)),
+    },
+    worktreeSettingsSchema,
+  );
+}
+/**
+ * Where a project's hand offs start on this computer (#864): its own
+ * choice, when it has one, and the default of Settings › Worktrees.
+ */
+export function getProjectStartIn(projectId: string) {
+  return appApiRequest(
+    "getProjectStartIn",
+    `/api/projects/${encodeURIComponent(projectId)}/start-in`,
+    undefined,
+    projectStartInSchema,
+  );
+}
+/** Keeps a project's own Start in, or with null lets it follow Settings again. */
+export function saveProjectStartIn(
+  projectId: string,
+  startIn: WorktreeStartIn | null,
+) {
+  return appApiRequest(
+    "saveProjectStartIn",
+    `/api/projects/${encodeURIComponent(projectId)}/start-in`,
+    {
+      method: "POST",
+      body: JSON.stringify(projectStartInUpdateSchema.parse({ startIn })),
+    },
+    projectStartInSchema,
   );
 }
 export function refreshHandoffs(id?: string) {

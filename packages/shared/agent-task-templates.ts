@@ -57,16 +57,22 @@ export function allowedTaskSlots(settingIds: readonly string[]): Set<string> {
   ]);
 }
 
-/** A bounded ASCII branch segment. */
+/**
+ * `slug` without its fallback: empty when the value holds no letter or
+ * digit, so a caller can tell and name the thing another way.
+ */
+export function slugOrEmpty(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+}
+
+/** A bounded ASCII branch segment, `item` for a value with nothing to keep. */
 export function slug(value: string): string {
-  return (
-    value
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60)
-      .replace(/-+$/g, "") || "item"
-  );
+  return slugOrEmpty(value) || "item";
 }

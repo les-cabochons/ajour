@@ -15,6 +15,7 @@ import * as api from "@/lib/app-api";
 import { cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { setHandoffs, useHandoffs } from "@/lib/handoffs";
+import { resetWorktrees } from "@/lib/worktrees";
 import {
   resetHandoffToolDetections,
   resetLastHandoffTool,
@@ -40,8 +41,12 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-api")>()),
   detectHandoffTools: vi.fn(),
   getHandoffTemplates: vi.fn(),
+  getProjectStartIn: vi.fn(),
   listHandoffs: vi.fn(),
+  listItemWorktrees: vi.fn(),
+  listRepositoryBranches: vi.fn(),
   listRepositoryFolders: vi.fn(),
+  listWorktrees: vi.fn(),
   openHandoff: vi.fn(),
   refreshHandoffs: vi.fn(),
   removeHandoff: vi.fn(),
@@ -59,6 +64,17 @@ const folder = {
   path: "C:\\work\\payments",
 };
 
+/** The branches of the repository folder, as the local API lists them. */
+const branches = {
+  current: "develop",
+  source: "origin/main",
+  branches: [
+    { name: "origin/main", remote: true, default: true as const },
+    { name: "develop", remote: false, current: true as const },
+    { name: "origin/release/1.4", remote: true },
+  ],
+};
+
 let itemId = "";
 let projectId = "";
 let projectName = "";
@@ -73,7 +89,14 @@ beforeEach(() => {
   window.ajourDesktop = { chooseFolder: vi.fn() };
   cachePluginsOverview(handoffOverview());
   setHandoffs([]);
+  resetWorktrees();
   vi.mocked(api.listHandoffs).mockResolvedValue([]);
+  vi.mocked(api.listWorktrees).mockResolvedValue([]);
+  // Where a hand off starts: a fresh install's setting, an item without a
+  // worktree, and a repository with a remote and a second local branch.
+  vi.mocked(api.getProjectStartIn).mockResolvedValue({ settings: "worktree" });
+  vi.mocked(api.listItemWorktrees).mockResolvedValue([]);
+  vi.mocked(api.listRepositoryBranches).mockResolvedValue(branches);
   vi.mocked(api.detectHandoffTools).mockResolvedValue({
     tools: [
       { id: "t3", available: true },
@@ -240,6 +263,109 @@ it("hands off to a tool chosen in the sheet, with the item's fields, and remembe
   ).toBeTruthy();
 });
 
+/** The worktree Ajour made for the item of key 4821, as the API answers it. */
+const worktree = {
+  id: "worktree-1",
+  repositoryFolderId: "folder-1",
+  projectId: "project-1",
+  workItemId: "item-1",
+  itemKey: "4821",
+  name: "aj-4821",
+  branch: "4821-week-grid",
+  source: "origin/main",
+  createdAt: 1_000,
+};
+
+it("says in the toast which worktree the hand off started in, and names it on the thread's branch line (#860)", async () => {
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  vi.mocked(api.startHandoff).mockImplementation(async (input) => ({
+    ...handoffRecord({
+      id: "started-in-worktree",
+      workItemId: input.workItemId,
+      projectId: input.projectId,
+      worktreeId: worktree.id,
+      branch: worktree.branch,
+    }),
+    worktree,
+  }));
+  await renderPage();
+  await handOffTo("T3 Code");
+  acceptNotice();
+
+  const toast = await screen.findByText("Handed off to T3 Code in aj-4821");
+  // The fetch worked, so the toast says nothing about the source.
+  expect(toast.closest("[data-slot=toast]")?.textContent ?? "").not.toContain(
+    "fetch",
+  );
+  const row = await screen.findByRole("listitem", {
+    name: "[PAY-12] Fix login redirect",
+  });
+  expect(within(row).getByTitle("Worktree aj-4821").textContent).toBe(
+    "aj-4821",
+  );
+  expect(within(row).getByTitle("4821-week-grid")).toBeTruthy();
+});
+
+it("says in the toast that the worktree starts from the last fetched copy when the fetch failed (#860)", async () => {
+  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
+    { ...folder, projectId },
+  ]);
+  vi.mocked(api.startHandoff).mockImplementation(async (input) => ({
+    ...handoffRecord({
+      workItemId: input.workItemId,
+      projectId: input.projectId,
+      worktreeId: worktree.id,
+    }),
+    worktree,
+    sourceStale: true,
+  }));
+  await renderPage();
+  await handOffTo("T3 Code");
+  acceptNotice();
+
+  await screen.findByText("Handed off to T3 Code in aj-4821");
+  expect(
+    screen.getByText(
+      "Couldn't fetch origin/main. The worktree starts from the last fetched copy.",
+    ),
+  ).toBeTruthy();
+});
+
+it("names the worktree of a thread started earlier, from the API's list, and shows the branch alone for a thread in the main folder (#860)", async () => {
+  vi.mocked(api.listWorktrees).mockResolvedValue([worktree]);
+  await renderPage();
+  act(() =>
+    setHandoffs([
+      handoffRecord({
+        id: "in-worktree",
+        workItemId: itemId,
+        title: "In a worktree",
+        worktreeId: worktree.id,
+        branch: worktree.branch,
+      }),
+      handoffRecord({
+        id: "in-main",
+        workItemId: itemId,
+        title: "In the main folder",
+        threadId: "thread-2",
+      }),
+    ]),
+  );
+
+  const inWorktree = await screen.findByRole("listitem", {
+    name: "In a worktree",
+  });
+  expect(
+    (await within(inWorktree).findByTitle("Worktree aj-4821")).textContent,
+  ).toBe("aj-4821");
+  const inMain = screen.getByRole("listitem", { name: "In the main folder" });
+  expect(within(inMain).getByTitle("pay-12-fix-login-redirect")).toBeTruthy();
+  expect(within(inMain).queryByTitle(/^Worktree /)).toBeNull();
+  expect(api.listWorktrees).toHaveBeenCalledTimes(1);
+});
+
 it("shows the provider notice once per tool on this device", async () => {
   vi.mocked(api.listRepositoryFolders).mockResolvedValue([
     { ...folder, projectId },
@@ -327,27 +453,6 @@ it("lists every tool that is on in the sheet, a missing one disabled with why, t
   expect(screen.getByRole("menuitem", { name: /Review prompt…/ })).toBeTruthy();
 });
 
-it.each([
-  { folders: ["payments"], says: "Starts in payments" },
-  { folders: ["payments", "web"], says: "Asks which folder to start in" },
-  { folders: [], says: "Asks for a repository folder first" },
-])(
-  "says in the sheet where the thread starts: $says",
-  async ({ folders, says }) => {
-    vi.mocked(api.listRepositoryFolders).mockResolvedValue(
-      folders.map((name) => ({ ...folder, id: name, name, projectId })),
-    );
-    await renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
-    const menu = await screen.findByRole("menu");
-    await waitFor(() => expect(menu.textContent).toContain(says));
-    // The tools' group carries it, so a screen reader hears it with them.
-    expect(
-      within(menu).getByRole("group", { name: new RegExp(says) }),
-    ).toBeTruthy();
-  },
-);
-
 it("opens the sheet on the tool last used, marked as such, so Enter hands off to it", async () => {
   seeNoticeFor("claude");
   window.localStorage.setItem(
@@ -403,82 +508,6 @@ it("says why the button is disabled in a focusable tooltip", async () => {
     true,
   );
   expect(within(wrapper).getByRole("button").getAttribute("title")).toBeNull();
-});
-
-it("reviews the filled prompt, folder and branch, and sends the edits as overrides", async () => {
-  window.localStorage.setItem(
-    "ajour.handoff-notices",
-    JSON.stringify(["agent-handoff:t3"]),
-  );
-  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
-    { ...folder, projectId },
-  ]);
-  await renderPage();
-  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
-  fireEvent.click(
-    await screen.findByRole("menuitem", { name: /Review prompt…/ }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Hand off to T3 Code",
-  });
-  const prompt = within(dialog).getByLabelText("Prompt") as HTMLTextAreaElement;
-  await waitFor(() =>
-    expect(prompt.value).toBe(" Fix login redirect in payments"),
-  );
-  const branch = within(dialog).getByLabelText("Branch") as HTMLInputElement;
-  expect(branch.value).toBe("item-fix-login-redirect");
-  // An invalid branch blocks Start and says why.
-  fireEvent.change(branch, { target: { value: "bad branch" } });
-  const start = within(dialog).getByRole("button", { name: "Start" });
-  expect(start.hasAttribute("disabled")).toBe(true);
-  expect(within(dialog).getByRole("alert").textContent).toContain(
-    "valid git branch",
-  );
-  fireEvent.change(branch, { target: { value: "" } });
-  fireEvent.change(prompt, { target: { value: "Fix it, carefully." } });
-  fireEvent.click(start);
-  await waitFor(() =>
-    expect(api.startHandoff).toHaveBeenCalledWith(
-      expect.objectContaining({
-        folderId: "folder-1",
-        promptOverride: "Fix it, carefully.",
-        branchOverride: "",
-      }),
-    ),
-  );
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("dialog", { name: "Hand off to T3 Code" }),
-    ).toBeNull(),
-  );
-});
-
-it("keeps the review dialog open with the tool's refusal", async () => {
-  window.localStorage.setItem(
-    "ajour.handoff-notices",
-    JSON.stringify(["agent-handoff:t3"]),
-  );
-  vi.mocked(api.listRepositoryFolders).mockResolvedValue([
-    { ...folder, projectId },
-  ]);
-  vi.mocked(api.startHandoff).mockRejectedValue(
-    new Error("t3 is not signed in."),
-  );
-  await renderPage();
-  fireEvent.click(screen.getByRole("button", { name: "Hand off" }));
-  fireEvent.click(
-    await screen.findByRole("menuitem", { name: /Review prompt…/ }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Hand off to T3 Code",
-  });
-  const branch = within(dialog).getByLabelText("Branch");
-  await waitFor(() => expect((branch as HTMLInputElement).value).not.toBe(""));
-  fireEvent.change(branch, { target: { value: "fix-login" } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
-  expect((await within(dialog).findByRole("alert")).textContent).toBe(
-    "t3 is not signed in.",
-  );
 });
 
 it("shows a one-click refusal as an error toast in the tool's words", async () => {

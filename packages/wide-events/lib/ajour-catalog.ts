@@ -151,6 +151,29 @@ const requestReasons = [
 ] as const;
 
 /**
+ * Why a request about one worktree did nothing (#862): a delete, its
+ * preview, a forget or an open of its folder.
+ */
+const worktreeReasons = [
+  /** Ajour keeps no worktree of that id. */
+  "worktree_not_found",
+  /** Its folder or its repository folder can't be reached. */
+  "folder_unavailable",
+  /** Something else than the worktree Ajour made is at its path: it stays. */
+  "folder_changed",
+  "git_missing",
+  "not_repository",
+  /** Another worktree has the branch a delete was asked to delete. */
+  "branch_in_use",
+  /** A forget of a worktree whose folder is still on disk. */
+  "worktree_present",
+  /** A delete of a worktree whose git status changed since its preview (#857). */
+  "worktree_changed",
+  "git_failed",
+  "timeout",
+] as const;
+
+/**
  * Why a plugin activation or capability check refuses work. They double as
  * plugin operation reasons, so a request and its operation say the same.
  */
@@ -1963,6 +1986,21 @@ export const catalog = defineCatalog({
           refusal: operational<"branch_exists" | "setting">(),
           /** The id of the tool's setting it refused, such as `base`. */
           refused_setting: operational(),
+          /**
+           * Where the start asked to run (#861): the main folder, a new
+           * worktree or one the item has. `default`: it named no place.
+           */
+          start_in: operational<"main" | "new" | "worktree" | "default">(),
+          /**
+           * The tool makes its own worktree and this start told it to
+           * (#863): it got a branch and a source, and Ajour made none.
+           */
+          own_worktree: operational<boolean>(),
+          /**
+           * The start failed but the tool may have started (#857), so Ajour
+           * kept the worktree it made and recorded no handoff.
+           */
+          may_have_started: operational<boolean>(),
         },
       },
     },
@@ -2130,6 +2168,352 @@ export const catalog = defineCatalog({
         ...requestFields,
         plugin: { id: operational() },
         handoff: { tool: operational() },
+      },
+    },
+    /**
+     * Ajour made a git worktree for a hand off (#860): the folder check,
+     * the fetch, the new branch and the checkout. Never a branch name, a
+     * path or a file name.
+     */
+    "worktree.create": {
+      kinds: ["job"],
+      reasons: [
+        /** This computer has no git: the hand off starts in the main folder. */
+        "git_missing",
+        /** The folder isn't the top of a git checkout: main folder too. */
+        "not_repository",
+        "folder_unavailable",
+        "invalid_branch",
+        /** The source names no branch or commit of the repository. */
+        "source_unresolved",
+        /** No free folder or branch name after the `-50` one. */
+        "name_unavailable",
+        /** Something else took the folder the create made: it stays. */
+        "folder_changed",
+        "git_failed",
+        "timeout",
+      ],
+      fields: {
+        worktree: {
+          /** What the branch started from: a remote's branch, or a local one. */
+          source: operational<"remote" | "local">(),
+          /**
+           * Why that source (#861): the start named it, the folder's last
+           * pick, or the remote's default branch or the main folder's.
+           */
+          source_choice: operational<"picked" | "remembered" | "default">(),
+          /**
+           * The fetch before it. `failed`: the branch started from the last
+           * fetched copy. `none`: the source is no remote branch.
+           */
+          fetch: operational<"ok" | "failed" | "none">(),
+          /** The number a taken folder name got: 2 for `-2`. */
+          name_suffix: operational<number>(),
+          /** The number a taken branch name got. */
+          branch_suffix: operational<number>(),
+          /**
+           * The create failed after it made something: true when it took
+           * everything back, false when something stays on disk.
+           */
+          rolled_back: operational<boolean>(),
+        },
+      },
+    },
+    /**
+     * Ajour read the source a tool that makes its own worktree is told
+     * (#863): the one the start named, or the folder's default one, and
+     * the first free name for the branch the tool creates. It fetches a
+     * remote's branch first and makes nothing else. Never a branch or
+     * source name.
+     */
+    "worktree.resolve_source": {
+      kinds: ["job"],
+      reasons: [
+        /** This computer has no git: the hand off starts in the main folder. */
+        "git_missing",
+        /** The folder isn't the top of a git checkout: main folder too. */
+        "not_repository",
+        "folder_unavailable",
+        /** The source the start named is no branch of the repository. */
+        "source_unresolved",
+        /** The branch the tool was to create is one git can't create. */
+        "invalid_branch",
+        /** No free branch name after the `-50` one. */
+        "name_unavailable",
+        "git_failed",
+        "timeout",
+      ],
+      fields: {
+        worktree: {
+          /** The number a taken branch name got: 2 for `-2`. */
+          branch_suffix: operational<number>(),
+          /**
+           * The fetch of the source. `failed`: the tool starts from the
+           * last fetched copy. `none`: the source is no remote branch.
+           */
+          fetch: operational<"ok" | "failed" | "none">(),
+          /** What the source is: a remote's branch, or a local one. */
+          source: operational<"remote" | "local">(),
+          /**
+           * Why that source: the start named it, the folder's last pick,
+           * or the remote's default branch or the main folder's.
+           */
+          source_choice: operational<"picked" | "remembered" | "default">(),
+        },
+      },
+    },
+    /** The tool answered a start in a new worktree: git's lock on it is lifted. */
+    "worktree.keep": {
+      kinds: ["job"],
+      reasons: ["git_failed", "timeout"],
+      fields: {},
+    },
+    /**
+     * A start in a new worktree failed, or its tool refused it: the worktree
+     * and the branch that start created are removed, and nothing else.
+     */
+    "worktree.discard": {
+      kinds: ["job"],
+      reasons: [
+        /**
+         * Something else holds the folder now, a link, another folder or
+         * another program's worktree: nothing there was removed.
+         */
+        "folder_changed",
+        "git_failed",
+        "timeout",
+      ],
+      fields: {
+        worktree: {
+          /** False for a branch that moved since: it holds work, and stays. */
+          branch_deleted: operational<boolean>(),
+        },
+      },
+    },
+    /** The worktrees Ajour keeps on this computer, for the window. Counts only. */
+    "worktree.list": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields, worktree: { count: operational<number>() } },
+    },
+    /** An item's worktrees whose folder is still on disk (#861). Counts only. */
+    "worktree.list_for_item": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields, worktree: { count: operational<number>() } },
+    },
+    /**
+     * The branches a new worktree can start from in a repository folder
+     * (#861). Counts only, never a branch name.
+     */
+    "worktree.list_branches": {
+      kinds: ["request", "job"],
+      reasons: [
+        ...requestReasons,
+        "folder_unavailable",
+        "git_failed",
+        "timeout",
+      ],
+      fields: {
+        ...requestFields,
+        worktree: {
+          count: operational<number>(),
+          /** Why the folder gets no worktree, and so lists no branch. */
+          unavailable: operational<"git_missing" | "not_repository">(),
+        },
+      },
+    },
+    "worktree.settings_read": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    /**
+     * Settings › Worktrees: where a hand off starts by default, or a
+     * clean-up rule (#864). Only what the save changed is recorded.
+     */
+    "worktree.settings_update": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          start_in: operational<"worktree" | "main" | "ask">(),
+          /** Whether worktrees of finished items are removed, and after how many days. */
+          finished_rule: operational<boolean>(),
+          finished_days: operational<number>(),
+          /** Whether unused worktrees are removed, and after how many days. */
+          unused_rule: operational<boolean>(),
+          unused_days: operational<number>(),
+        },
+      },
+    },
+    /**
+     * One round of automatic clean up (#864), which the window starts at
+     * launch, once an hour and from Clean up now. Counts and outcomes
+     * only: never a worktree's name, a branch, a path, a file name or an
+     * item's title. A worktree git couldn't remove is counted as kept, and
+     * nothing git wrote is recorded.
+     */
+    "worktree.clean_up": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          /** What started the round. */
+          trigger: operational<"launch" | "timer" | "manual">(),
+          /** Whether each rule was on. */
+          finished_rule: operational<boolean>(),
+          unused_rule: operational<boolean>(),
+          /** The worktrees the round looked at. */
+          count: operational<number>(),
+          /** Those a rule would remove now. */
+          due: operational<number>(),
+          removed: operational<number>(),
+          /** Removed because their item was finished for the rule's delay. */
+          removed_finished: operational<number>(),
+          /** Removed because nobody used them for the rule's delay. */
+          removed_unused: operational<number>(),
+          /** Those a rule would remove that stayed, then by reason. */
+          kept: operational<number>(),
+          /** Uncommitted or untracked files. */
+          kept_changes: operational<number>(),
+          /** A thread that is Working or Needs you. */
+          kept_running: operational<number>(),
+          /** A hand off or a thread change in the last hour. */
+          kept_recent: operational<number>(),
+          /** Another branch checked out than the one Ajour recorded. */
+          kept_branch: operational<number>(),
+          /** Not the worktree Ajour made inside `.ajour/worktrees`. */
+          kept_not_ours: operational<number>(),
+          /** The folder is gone: the user forgets it. */
+          kept_missing: operational<number>(),
+          /** The state of its threads couldn't be read from their tool. */
+          kept_unconfirmed: operational<number>(),
+          /** Git couldn't say, or couldn't remove it. */
+          kept_failed: operational<number>(),
+          /**
+           * Kept, running or unconfirmed, for a thread no handoff links
+           * that its tool lists in the worktree (#857).
+           */
+          kept_unlinked: operational<number>(),
+          /** The thread listings asked of the tools in the round. */
+          thread_listings: operational<number>(),
+        },
+      },
+    },
+    "worktree.project_settings_read": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: { ...requestFields },
+    },
+    /**
+     * A project's own Start in (#864), which overrides the default of
+     * Settings › Worktrees for its hand offs. Never the project.
+     */
+    "worktree.project_settings_update": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          /** The project's choice. `settings`: it follows the default again. */
+          start_in: operational<"worktree" | "main" | "ask" | "settings">(),
+        },
+      },
+    },
+    /**
+     * The worktrees of an item, a project or this computer with their
+     * status, read from git (#862). Counts only, never a name or a path.
+     */
+    "worktree.status": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          /** Whose worktrees were asked for. */
+          scope: operational<"item" | "project" | "all">(),
+          count: operational<number>(),
+          /** Those with uncommitted or untracked files. */
+          changed: operational<number>(),
+          /** Those whose folder is gone. */
+          missing: operational<number>(),
+          /** The git registrations dropped for folders that are gone. */
+          pruned: operational<number>(),
+        },
+      },
+    },
+    /**
+     * What deleting a worktree would lose, for the dialog that asks first
+     * (#862). Counts only: the file list goes to the window and nowhere else.
+     */
+    "worktree.delete_preview": {
+      kinds: ["request", "job"],
+      reasons: [...requestReasons, ...worktreeReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          state: operational<"clean" | "changed" | "missing" | "unknown">(),
+          /** The files git status reports in it. */
+          files: operational<number>(),
+          /** Its threads that are Working or Needs you. */
+          running: operational<number>(),
+          /** The commits of its branch that are on no remote. */
+          unpushed_commits: operational<number>(),
+        },
+      },
+    },
+    /**
+     * The user deleted a worktree (#862): its folder, git's registration of
+     * it and its record, and its branch too when asked. Never a branch
+     * name, a path or a file name.
+     */
+    "worktree.delete": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons, ...worktreeReasons],
+      fields: {
+        ...requestFields,
+        worktree: {
+          /** The user ticked "Also delete the branch". */
+          delete_branch: operational<boolean>(),
+          /** False when it wasn't asked for, was gone, or git kept it. */
+          branch_deleted: operational<boolean>(),
+          /** The folder was already gone: only its registration and record went. */
+          missing: operational<boolean>(),
+        },
+      },
+    },
+    /** The user forgot a worktree whose folder is gone (#862): its record goes. */
+    "worktree.forget": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons, ...worktreeReasons],
+      fields: { ...requestFields },
+    },
+    /**
+     * A worktree's folder opened in a terminal or in the file manager
+     * (#862). Never its path.
+     */
+    "worktree.open": {
+      kinds: ["request", "command"],
+      reasons: [
+        ...requestReasons,
+        ...worktreeReasons,
+        /** Ajour refused to start the terminal app in the folder. */
+        "spawn_refused",
+        /** Starting the terminal app failed, such as writing its launch script. */
+        "spawn_failed",
+        /** The file manager didn't open it, or this is not the desktop app. */
+        "open_failed",
+      ],
+      fields: {
+        ...requestFields,
+        worktree: {
+          in: operational<"terminal" | "files">(),
+          /** The terminal app it opened in. */
+          terminal: operational(),
+        },
       },
     },
     "repository_folder.list": {

@@ -620,6 +620,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   tools={handoffs.tools}
                   offers={handoffs.offers}
                   pending={handoffs.pending}
+                  worktrees={handoffs.worktrees}
+                  folders={handoffs.folders}
+                  onWorktreesChanged={handoffs.reloadWorktrees}
                   onLink={handoffs.link}
                   onDismiss={handoffs.dismiss}
                   now={now}

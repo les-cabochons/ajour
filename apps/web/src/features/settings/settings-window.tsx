@@ -20,6 +20,7 @@ import {
 } from "@/features/settings/settings-navigation";
 import { SettingsWindowPage } from "@/features/settings/settings-pages";
 import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
+import { hasWorktrees } from "@/lib/worktrees";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 
 /** The settings page a navigation entry opens: its route without `/settings/`. */
@@ -49,6 +50,7 @@ export function SettingsWindow({ location }: { location: SettingsLocation }) {
     "wide",
     calendars.length > 0,
     hasLocalLogsBridge(),
+    hasWorktrees(),
   );
   const openEntry = [
     ...groups.flatMap((group) => group.pages),

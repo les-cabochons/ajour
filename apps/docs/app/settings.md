@@ -55,6 +55,10 @@ Your workflow states, and how source states map to them. See [Workflow states](/
 
 Import and export projects and tasks. See [Import and export](/projects/import-export).
 
+## Worktrees
+
+**Worktrees** shows in the desktop app. It sets where a hand off to a coding tool starts, **Main folder**, **New worktree** or **Ask each time**, and the two rules by which Ajour removes worktrees by itself. It also lists every worktree on this computer. See [Worktrees for hand offs](/backlog/worktrees).
+
 ## Calendar
 
 **Calendar** shows while a calendar plugin, such as [Calendar address (ICS)](/plugins/ics), is on and has a connection. It sets which events the Time page suggests as entries. See [Calendar suggestions](/time/calendar-suggestions).

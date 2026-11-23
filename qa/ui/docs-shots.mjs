@@ -22,9 +22,11 @@ import {
   pullRequestsScript,
   quietEventSourceScript,
   rememberedScript,
+  repositoryFoldersBridgeScript,
   settleStates,
   sourceStatuses,
   stagedImports,
+  worktreeApi,
 } from "./docs-fixtures.mjs";
 import { seedScript } from "./seed.mjs";
 
@@ -82,6 +84,7 @@ async function scrollToTop(locator) {
  * then cropped to it, with `margin` around it and `marginBottom` below it.
  * `seed` passes options to seed.mjs, and `api` replaces mocked API responses.
  * `keepPointer` leaves the mouse where `run` put it, for hover states.
+ * `init` is a script that runs in the page after the stand-in desktop bridge.
  */
 /**
  * The entry editor's form in the Time page's side panel. The panel runs the
@@ -91,6 +94,35 @@ function entryEditor(page) {
   return page
     .getByRole("complementary", { name: "Time entry editor" })
     .locator(".time-entry-editor");
+}
+
+/**
+ * What a hand-off worktree shot adds: the mocked worktree routes, with the
+ * `item` list an item page asks for, and a desktop app that maps folders.
+ */
+function withWorktrees(itemWorktrees = false) {
+  const api = worktreeApi();
+  return {
+    api: {
+      ...api,
+      "/api/worktrees/item": () =>
+        itemWorktrees ? [api["/api/worktrees"]()[0]] : [],
+      // An item page lists its own worktrees: the first one is item w1's.
+      ...(itemWorktrees
+        ? { "/api/worktrees/status": () => [api["/api/worktrees/status"]()[0]] }
+        : {}),
+    },
+    init: repositoryFoldersBridgeScript(),
+  };
+}
+
+/** The Handoffs card of the item page, once it listed its worktree. */
+async function handoffsCard(page) {
+  await go(page, "/backlog/w1");
+  const card = page.getByRole("region", { name: "Handoffs" });
+  await card.getByRole("group", { name: /^aj-48213, / }).waitFor();
+  await card.scrollIntoViewIfNeeded();
+  return card;
 }
 
 const shots = [
@@ -276,6 +308,80 @@ const shots = [
         .first()
         .click();
       return page.getByRole("dialog");
+    },
+  },
+  // Hand-off worktrees
+  {
+    name: "handoff-start-in",
+    ...withWorktrees(),
+    api: {
+      ...withWorktrees().api,
+      // One repository folder, so the sheet names the place at once: with
+      // several it asks which folder first.
+      "/api/projects/p-atlas/repository-folders": () => [
+        worktreeApi()["/api/projects/p-atlas/repository-folders"]()[0],
+      ],
+    },
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      // The item page's own button: the Handoffs card has one per tool.
+      await page
+        .getByRole("button", { name: "Hand off", exact: true })
+        .first()
+        .click();
+      const sheet = page.getByRole("menu");
+      await sheet
+        .getByRole("menuitem", { name: "Source: From origin/main" })
+        .waitFor();
+      return sheet;
+    },
+  },
+  {
+    name: "handoff-card-worktree",
+    ...withWorktrees(true),
+    run: handoffsCard,
+  },
+  {
+    name: "worktree-delete",
+    ...withWorktrees(true),
+    run: async (page) => {
+      const card = await handoffsCard(page);
+      await card
+        .getByRole("button", { name: "Actions for aj-48213", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Delete worktree…" }).click();
+      const dialog = page.getByRole("alertdialog");
+      await dialog.getByRole("checkbox").waitFor();
+      return dialog;
+    },
+  },
+  {
+    name: "project-repositories",
+    ...withWorktrees(),
+    api: {
+      ...withWorktrees().api,
+      // The project page lists its own project's worktrees, and doesn't
+      // ask what clean up will do with them.
+      "/api/worktrees/status": () =>
+        worktreeApi()
+          ["/api/worktrees/status"]()
+          .filter((one) => one.worktree.projectId === "p-atlas")
+          .map(({ cleanUp: _cleanUp, ...listed }) => listed),
+    },
+    run: async (page) => {
+      await go(page, "/projects/p-atlas");
+      const section = page.getByRole("region", { name: "Repositories" });
+      await section.getByRole("button", { name: "Delete aj-48213" }).waitFor();
+      await section.scrollIntoViewIfNeeded();
+      return section;
+    },
+  },
+  {
+    name: "settings-worktrees",
+    ...withWorktrees(),
+    run: async (page) => {
+      await go(page, "/settings/worktrees");
+      await page.getByRole("button", { name: "Delete aj-48213" }).waitFor();
     },
   },
   // Sidebar
@@ -511,6 +617,7 @@ async function capture(browser, encoder, shot, theme) {
       pullRequestsScript(),
       rememberedScript(),
       desktopBridgeScript(),
+      ...(shot.init ? [shot.init] : []),
       quietEventSourceScript(),
     ].join("\n;\n"),
   );

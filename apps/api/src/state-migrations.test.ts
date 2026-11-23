@@ -1,4 +1,8 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { AppApiStorage } from "./storage.ts";
 import {
   holdVersion,
   runStateMigrations,
@@ -17,9 +21,11 @@ describe("state migrations", () => {
     };
     expect(await runStateMigrations(state, 11)).toEqual({
       ...state,
-      version: 13,
+      version: 14,
       handoffs: [],
       handoffEnabledTools: {},
+      worktrees: [],
+      worktreeSettings: { startIn: "worktree" },
     });
   });
 
@@ -38,18 +44,200 @@ describe("state migrations", () => {
     };
     expect(await runStateMigrations(state, 12)).toEqual({
       ...state,
-      version: 13,
+      version: 14,
       handoffEnabledTools: {
         "agent-handoff": ["t3", "codex"],
         other: ["cli"],
       },
+      worktrees: [],
+      worktreeSettings: { startIn: "worktree" },
     });
   });
 
   it("starts every tool off at version 13 on a device that never handed off", async () => {
     expect(await runStateMigrations({ version: 12, handoffs: [] }, 12)).toEqual(
-      { version: 13, handoffs: [], handoffEnabledTools: {} },
+      {
+        version: 14,
+        handoffs: [],
+        handoffEnabledTools: {},
+        worktrees: [],
+        worktreeSettings: { startIn: "worktree" },
+      },
     );
+  });
+
+  it("opens a version 13 file at version 14 with no worktrees and hand offs starting in a new worktree", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "state-v13-"));
+    try {
+      const file = path.join(root, "state.json");
+      const folder = { id: "folder", projectId: "p", name: "repo", path: root };
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 13,
+          connections: [],
+          handoffs: [],
+          handoffEnabledTools: { "agent-handoff": ["codex"] },
+          repositoryFolders: [folder],
+        }),
+      );
+      const storage = new AppApiStorage(file);
+      expect(await storage.listWorktrees()).toEqual([]);
+      // With the clean-up rules of a fresh install (#864).
+      expect(await storage.getWorktreeSettings()).toEqual({
+        startIn: "worktree",
+        cleanUp: {
+          finished: { enabled: true, days: 3 },
+          unused: { enabled: false, days: 30 },
+        },
+      });
+      // What the file held stays, and the file is saved at the new version.
+      expect(await storage.listRepositoryFolders()).toEqual([folder]);
+      expect(await storage.getEnabledHandoffTools("agent-handoff")).toEqual([
+        "codex",
+      ]);
+      await storage.setWorktreeSettings({ startIn: "main" });
+      expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+        version: 14,
+        worktrees: [],
+        worktreeSettings: { startIn: "main" },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a version 14 file written before #861 with no source picked, keeps Ask each time, and forgets a removed folder's source", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "state-v14-"));
+    try {
+      const file = path.join(root, "state.json");
+      const folder = { id: "folder", projectId: "p", name: "repo", path: root };
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 14,
+          connections: [],
+          handoffs: [],
+          repositoryFolders: [folder],
+          worktrees: [],
+          worktreeSettings: { startIn: "worktree" },
+        }),
+      );
+      const storage = new AppApiStorage(file);
+      expect(await storage.getWorktreeSource("folder")).toBeUndefined();
+
+      await storage.setWorktreeSettings({ startIn: "ask" });
+      await storage.rememberWorktreeSource("p", "folder", "develop");
+      // A folder the project doesn't have keeps nothing.
+      await storage.rememberWorktreeSource("p", "gone", "develop");
+      const reopened = new AppApiStorage(file);
+      expect(await reopened.getWorktreeSettings()).toMatchObject({
+        startIn: "ask",
+      });
+      expect(await reopened.getWorktreeSource("folder")).toBe("develop");
+      expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+        version: 14,
+        worktreeSources: { folder: "develop" },
+      });
+
+      await reopened.removeRepositoryFolder("p", "folder");
+      expect(await reopened.getWorktreeSource("folder")).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a version 14 file written before #864 with its Start in, the two clean-up rules at their defaults and no project choice", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "state-v14-clean-up-"));
+    try {
+      const file = path.join(root, "state.json");
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 14,
+          connections: [],
+          handoffs: [],
+          repositoryFolders: [],
+          worktrees: [],
+          // As #860 wrote it: Start in alone.
+          worktreeSettings: { startIn: "main" },
+          worktreeSources: {},
+        }),
+      );
+      const storage = new AppApiStorage(file);
+      expect(await storage.getWorktreeSettings()).toEqual({
+        startIn: "main",
+        cleanUp: {
+          finished: { enabled: true, days: 3 },
+          unused: { enabled: false, days: 30 },
+        },
+      });
+      expect(await storage.getProjectStartIn("p")).toEqual({
+        settings: "main",
+      });
+
+      // A change names what it changes, and the rest stays.
+      await storage.setWorktreeSettings({
+        cleanUp: { unused: { enabled: true, days: 14 } },
+      });
+      await storage.setProjectStartIn("p", "ask");
+      const reopened = new AppApiStorage(file);
+      expect(await reopened.getWorktreeSettings()).toEqual({
+        startIn: "main",
+        cleanUp: {
+          finished: { enabled: true, days: 3 },
+          unused: { enabled: true, days: 14 },
+        },
+      });
+      expect(await reopened.getProjectStartIn("p")).toEqual({
+        override: "ask",
+        settings: "main",
+      });
+      expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+        version: 14,
+        worktreeProjectStartIn: { p: "ask" },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a rule Ajour can read and gives the other its default when the state file holds one malformed rule", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "state-v14-rules-"));
+    try {
+      const file = path.join(root, "state.json");
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 14,
+          connections: [],
+          handoffs: [],
+          repositoryFolders: [],
+          worktreeSettings: {
+            startIn: "ask",
+            cleanUp: {
+              finished: { enabled: false, days: 7 },
+              unused: { enabled: "yes", days: -1 },
+            },
+          },
+          worktreeProjectStartIn: { p: "main", q: "nowhere" },
+        }),
+      );
+      const storage = new AppApiStorage(file);
+      expect(await storage.getWorktreeSettings()).toEqual({
+        startIn: "ask",
+        cleanUp: {
+          finished: { enabled: false, days: 7 },
+          unused: { enabled: false, days: 30 },
+        },
+      });
+      expect(await storage.getProjectStartIn("p")).toMatchObject({
+        override: "main",
+      });
+      expect(await storage.getProjectStartIn("q")).toEqual({ settings: "ask" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
   const trail = (version: number): StateMigration => ({
     version,
@@ -116,7 +304,7 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(13);
+    expect(STATE_VERSION).toBe(14);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));

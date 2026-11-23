@@ -85,3 +85,23 @@ describe("Diagnostics", () => {
     );
   });
 });
+
+describe("Worktrees", () => {
+  const work = (hasWorktrees: boolean, view: "wide" | "narrow" = "wide") =>
+    getSettingsGroups(view, false, false, hasWorktrees)
+      .find((group) => group.label === "Work")!
+      .pages.map((page) => page.to as string);
+
+  it("is listed under Work after Projects in the desktop app", () => {
+    expect(work(true).slice(-2)).toEqual([
+      "/settings/projects",
+      "/settings/worktrees",
+    ]);
+    expect(work(true, "narrow")).toContain("/settings/worktrees");
+  });
+
+  it("is left out of the web build, which hands nothing off", () => {
+    expect(work(false)).not.toContain("/settings/worktrees");
+    expect(work(false, "narrow")).not.toContain("/settings/worktrees");
+  });
+});

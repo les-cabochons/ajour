@@ -121,6 +121,16 @@ export interface ProcessBrokerOptions {
   }>;
   folderName?(id: string): Promise<string | undefined>;
   /**
+   * The repository folder a folder id counts as for access, when it isn't
+   * one itself: a worktree's is the repository folder it sits in (#860).
+   * A saved approval is looked up and kept with that folder's id, so what
+   * the user approved for a repository folder runs in its worktrees too.
+   */
+  accessFolder?(
+    id: string,
+    projectId?: string,
+  ): Promise<{ id: string; name: string; path: string } | undefined>;
+  /**
    * The base address of the caller's connection (`caller.connectionId`),
    * as the credential broker would reach it, for a `connection-url`
    * argument. Undefined, or a throw, refuses the argument.
@@ -594,28 +604,35 @@ export class ProcessBroker implements ProcessBrokerPort {
       ) {
         const parsed = undeclaredCommandSchema.safeParse(given);
         if (!parsed.success) refuse("invalid_request");
-        const request = parsed.data!;
+        const asked = parsed.data!;
         undeclared = true;
         if (!caller.manifest.processes?.undeclaredCommands)
           refuse("undeclared");
         if ((this.active.get(caller.pluginId) ?? 0) >= 4) refuse("concurrency");
         cwd = osCwd();
-        cwdFolder = request.cwdFolder;
-        if (request.cwdFolder) {
+        cwdFolder = asked.cwdFolder;
+        if (asked.cwdFolder) {
           try {
             cwd =
               (await this.options.folders.resolve(
-                request.cwdFolder,
+                asked.cwdFolder,
                 caller.projectId,
               )) ?? refuse("folder_refused");
           } catch {
             refuse("folder_refused");
           }
         }
-        const folderName = request.cwdFolder
-          ? ((await this.options.folderName?.(request.cwdFolder)) ??
+        const folderName = asked.cwdFolder
+          ? ((await this.options.folderName?.(asked.cwdFolder)) ??
             "Repository folder")
           : "System root";
+        // The command runs where the plugin asked, in `cwd`. Its access is
+        // its repository folder's: approvals are matched, asked and kept
+        // with that folder's id, also for a command in one of its worktrees.
+        const access = asked.cwdFolder
+          ? await this.options.accessFolder?.(asked.cwdFolder, caller.projectId)
+          : undefined;
+        const request = access ? { ...asked, cwdFolder: access.id } : asked;
         const userPath = await resolveLoginShellPath();
         resolvedExecutable =
           (await findExecutable(request.executable, userPath)) ?? undefined;
@@ -648,6 +665,8 @@ export class ProcessBroker implements ProcessBrokerPort {
                 pluginName: caller.manifest.displayName,
                 folderName,
                 folderPath: cwd,
+                // What Always would cover, when wider than the folder shown.
+                ...(access ? { scopeFolderName: access.name } : {}),
                 resolvedExecutable,
                 signed: policy.signed,
                 risky: review.verdict === "risky",
@@ -676,7 +695,13 @@ export class ProcessBroker implements ProcessBrokerPort {
             remember = async () => {
               await this.options.remember?.(
                 caller,
-                { ...request, folderName, folderPath: cwd },
+                access
+                  ? {
+                      ...request,
+                      folderName: access.name,
+                      folderPath: access.path,
+                    }
+                  : { ...request, folderName, folderPath: cwd },
                 policy,
               );
             };
@@ -790,11 +815,7 @@ export class ProcessBroker implements ProcessBrokerPort {
         executable = (await findExecutable(name, userPath)) ?? undefined;
       }
       if (!executable) return refuse("executable_missing");
-      const env = Object.fromEntries(
-        Object.entries({ ...process.env, PATH: userPath }).filter(
-          ([key]) => !/^AJOUR_/i.test(key),
-        ),
-      );
+      const env = childEnvironment(userPath);
       let plan = resolveSpawn(
         executable,
         argv,
@@ -1081,6 +1102,21 @@ export class ProcessBroker implements ProcessBrokerPort {
 // Never inherit Ajour's installation or data directory as the child's working directory.
 function osCwd() {
   return path.parse(process.execPath).root;
+}
+
+/**
+ * The environment of a child Ajour starts (ADR 0019): the user's, with the
+ * login shell's PATH and without any `AJOUR_` variable. The broker's
+ * children get it, and so does the git Ajour runs for hand-off worktrees.
+ */
+export function childEnvironment(
+  userPath: string,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries({ ...process.env, PATH: userPath }).filter(
+      ([key]) => !/^AJOUR_/i.test(key),
+    ),
+  );
 }
 
 /** `git`, `git.exe`, or a path to either. */

@@ -31,6 +31,7 @@ import {
 } from "@/features/settings/settings-navigation";
 import { useOpenSettings } from "@/features/settings/settings-link";
 import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
+import { hasWorktrees } from "@/lib/worktrees";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { requestNewBacklogItem } from "@/features/backlog/new-backlog-item-dialog";
@@ -454,6 +455,7 @@ export function CommandPalette({
             isNarrowView ? "narrow" : "wide",
             hasCalendar,
             hasLocalLogsBridge(),
+            hasWorktrees(),
           ),
           ...unlistedSettingsPages,
         ].filter((page) => page.to.startsWith("/settings/")),

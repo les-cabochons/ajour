@@ -136,21 +136,18 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
         })
       ).status,
     ).toBe(400);
-    for (const branch of [
-      "bad name",
-      "@",
-      "a..b",
-      "-option",
-      "a.lock",
-      "a/.hidden",
-      "a/",
-      "a\\b",
-    ]) {
-      await call("POST", templatesPath, { ...templates, branch });
-      const refused = await call("POST", "/api/handoffs", input);
-      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
-      expect(JSON.stringify(refused.body)).toContain("branch template");
-    }
+    // The folder is no git checkout, so no branch is created there: a
+    // branch template that fills to a name git wouldn't take stops nothing.
+    // The name is not sent, so none is recorded. Where the branch would be
+    // created, the start is refused: see handoff-worktree-routes.test.ts.
+    await call("POST", templatesPath, { ...templates, branch: "bad name" });
+    const badBranch = await call("POST", "/api/handoffs", input);
+    expect(badBranch.status, JSON.stringify(badBranch.body)).toBe(200);
+    expect(badBranch.body).not.toHaveProperty("branch");
+    await call(
+      "DELETE",
+      `/api/handoffs/${(badBranch.body as { id: string }).id}`,
+    );
     await call("POST", templatesPath, { ...templates, branch: "" });
     const noBranch = await call("POST", "/api/handoffs", input);
     expect(noBranch.status).toBe(200);
@@ -162,11 +159,10 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
     await call("POST", templatesPath, {
       ...templates,
       title: "{{item.title}}😀suffix",
-      branch: "valid",
+      branch: "",
     });
     const bounded = await call("POST", "/api/handoffs", {
       ...input,
-      branchOverride: "",
       item: { ...input.item, title: "a".repeat(499) },
     });
     expect(bounded.status, JSON.stringify(bounded.body)).toBe(200);
@@ -179,7 +175,7 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
     await call("POST", templatesPath, templates);
     const multiline = await call("POST", "/api/handoffs", {
       ...input,
-      branchOverride: "feature/override",
+      startIn: { kind: "new", branch: "feature/override" },
       item: { ...input.item, title: "first\r\nsecond\nthird" },
     });
     expect(multiline.body).toMatchObject({
@@ -194,7 +190,7 @@ export function readHandoffStates(request) { if (request.handoffs.some(h => h.th
       (
         await call("POST", "/api/handoffs", {
           ...input,
-          branchOverride: "bad branch",
+          startIn: { kind: "new", branch: "bad branch" },
         })
       ).status,
     ).toBe(400);
@@ -371,7 +367,6 @@ export function readHandoffStates(request) { return request.handoffs.map(h => ({
       folderId: folder.id,
       projectName: "Project",
       item: { key: "K-1", title: "link", type: "Bug", url: "" },
-      branchOverride: "",
       settings: {},
     };
     await call("POST", "/api/plugins/handoff/handoffs/templates", {

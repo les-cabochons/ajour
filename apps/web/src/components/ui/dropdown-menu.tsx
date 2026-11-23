@@ -240,10 +240,16 @@ function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
 function DropdownMenuSubTrigger({
   className,
   inset,
+  chevron = true,
   children,
   ...props
 }: MenuPrimitive.SubmenuTrigger.Props & {
   inset?: boolean;
+  /**
+   * False for a trigger that reads as a line of text, such as the hand-off
+   * sheet's Start in row, whose design has no arrow.
+   */
+  chevron?: boolean;
 }) {
   return (
     <MenuPrimitive.SubmenuTrigger
@@ -256,7 +262,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <RiArrowRightSLine className="ml-auto" />
+      {chevron ? <RiArrowRightSLine className="ml-auto" /> : null}
     </MenuPrimitive.SubmenuTrigger>
   );
 }

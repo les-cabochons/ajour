@@ -1152,7 +1152,18 @@ describe("state files from earlier versions", () => {
     // Added for #819 without a new version: no folder remembered settings.
     handoffFolderSettings: {},
     repositoryFolders: [],
-    version: 13,
+    worktrees: [],
+    worktreeSettings: {
+      startIn: "worktree",
+      cleanUp: {
+        finished: { enabled: true, days: 3 },
+        unused: { enabled: false, days: 30 },
+      },
+    },
+    // Added for #861 without a new version: no source picked for a folder.
+    worktreeSources: {},
+    worktreeProjectStartIn: {},
+    version: 14,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],

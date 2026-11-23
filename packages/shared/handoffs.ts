@@ -1,8 +1,11 @@
 import { z } from "zod";
+import { handoffTemplateSchema } from "./handoff-templates.ts";
 import {
-  handoffTemplateSchema,
-  isValidHandoffBranch,
-} from "./handoff-templates.ts";
+  handoffStartInSchema,
+  worktreeCleanUpResultSchema,
+  worktreeDeleteResultSchema,
+  worktreeSchema,
+} from "./worktrees.ts";
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(20_000);
@@ -51,9 +54,37 @@ export const startHandoffRequestSchema = z
   .object({
     tool: id,
     folder: z.object({ id, name: z.string().min(1).max(500) }).strict(),
+    /**
+     * The repository folder `folder` is a worktree of (#857). Present only
+     * when the tool starts in a worktree Ajour made, so absent in the main
+     * folder and for a tool that makes its own worktree, whose `folder` is
+     * the repository folder already. Its id resolves like any folder id, and
+     * the folder outlives a start the tool refuses, when Ajour takes a new
+     * worktree back. So it is where a tool sends the user for a step that
+     * must last, such as trusting the folder.
+     */
+    repositoryFolder: z
+      .object({ id, name: z.string().min(1).max(500) })
+      .strict()
+      .optional(),
     prompt: z.string().min(1).max(1_048_576),
     title: z.string().min(1).max(500),
+    /**
+     * The branch the thread works on. In a worktree Ajour made, it is
+     * checked out there. A tool that makes its own worktree (`ownWorktree`)
+     * creates it, and a start without one runs in the folder as it is. In
+     * the main folder a tool without `ownWorktree` is still told the name,
+     * as before worktrees, though Ajour creates no branch there.
+     */
     branch: z.string().max(500).optional(),
+    /**
+     * What the new branch starts from, as git names it, such as
+     * `origin/main` (#863). Only a tool that makes its own worktree
+     * receives it, and always with `branch`: Start in said New worktree,
+     * and this is the source the user chose, else the repository folder's
+     * default one. Never a path or an id.
+     */
+    source: z.string().min(1).max(500).optional(),
     item: z
       .object({ key: z.string().max(500), url: z.string().max(2000) })
       .strict(),
@@ -137,6 +168,13 @@ export const listedThreadSchema = startHandoffResultSchema
   .extend({
     title: z.string().min(1).max(500),
     updatedAt: z.number().finite().optional(),
+    /**
+     * The thread's state as the listing saw it, read without side effects
+     * (#857). Clean up reads it for a thread no handoff links, and never
+     * asks `readHandoffStates`, which may act on the thread. Absent when the
+     * tool doesn't know it while it lists.
+     */
+    state: handoffReportedStateSchema.optional(),
   })
   .strict();
 export const listThreadsResultSchema = z
@@ -187,7 +225,21 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
   connectionId: id.optional(),
   workItemId: id,
   projectId: id,
+  /** The repository folder, also for a handoff that runs in a worktree. */
   folderId: id,
+  /**
+   * The worktree the handoff runs in (#860), when Ajour started it in one.
+   * The tool then receives this id as the handoff's folder. Absent, the
+   * handoff runs in the repository folder.
+   */
+  worktreeId: id.optional(),
+  /**
+   * The thread runs in a worktree its tool made for it (#863): the start
+   * gave the tool a branch and a source, and Ajour made none. Ajour
+   * doesn't list, delete or clean that worktree. Absent for a thread the
+   * tool started in the main folder, and for one Ajour didn't start.
+   */
+  ownWorktree: z.literal(true).optional(),
   title: z.string().min(1).max(500),
   branch: z.string().max(500).optional(),
   pullRequests: z
@@ -223,6 +275,41 @@ export const handoffRecordSchema = startHandoffResultSchema.extend({
     .max(50),
 });
 export const handoffsSnapshotSchema = z.array(handoffRecordSchema);
+/**
+ * What the start route answers (#860): the new handoff, with where Ajour
+ * started it beside its fields. `worktree` is the worktree it runs in, new
+ * or the item's earlier one. `sourceStale` says the fetch failed, so a new
+ * worktree's branch starts from the last fetched copy of its source.
+ * `source` is the source a tool that made its own worktree was told (#863),
+ * which has no `worktree` to name it.
+ */
+export const handoffStartAnswerSchema = handoffRecordSchema.extend({
+  worktree: worktreeSchema.optional(),
+  source: z.string().min(1).max(500).optional(),
+  sourceStale: z.literal(true).optional(),
+});
+export type HandoffStartAnswer = z.infer<typeof handoffStartAnswerSchema>;
+/**
+ * What deleting a worktree answers (#862): what it did, and every handoff
+ * as it is now. The worktree's handoffs stay and no longer name it.
+ */
+export const worktreeDeleteAnswerSchema = worktreeDeleteResultSchema.extend({
+  handoffs: handoffsSnapshotSchema,
+});
+export type WorktreeDeleteAnswer = z.infer<typeof worktreeDeleteAnswerSchema>;
+/**
+ * What a clean-up round answers (#864): what it removed and what it kept,
+ * and every handoff as it is now. A removed worktree's handoffs stay and
+ * no longer name it.
+ */
+export const worktreeCleanUpAnswerSchema = worktreeCleanUpResultSchema.extend({
+  handoffs: handoffsSnapshotSchema,
+});
+export type WorktreeCleanUpAnswer = z.infer<typeof worktreeCleanUpAnswerSchema>;
+/** What forgetting a worktree answers: every handoff as it is now. */
+export const worktreeForgetAnswerSchema = z
+  .object({ handoffs: handoffsSnapshotSchema })
+  .strict();
 export const handoffRefreshResultSchema = z.object({
   handoffs: handoffsSnapshotSchema,
   failures: z.array(
@@ -261,14 +348,12 @@ export const handoffStartRouteSchema = z
           .optional(),
       })
       .strict(),
-    branchOverride: z
-      .string()
-      .max(500)
-      .refine(
-        (value) => value === "" || isValidHandoffBranch(value),
-        "The branch template override must be a valid git branch, or empty for no worktree.",
-      )
-      .optional(),
+    /**
+     * Where this hand off starts (#861), with the source and the branch of
+     * a new worktree. Absent, the API decides: the item's newest worktree
+     * in the folder, else what Settings › Worktrees says.
+     */
+    startIn: handoffStartInSchema.optional(),
     promptOverride: z.string().min(1).max(1_048_576).optional(),
     settings: startHandoffRequestSchema.shape.settings,
   })
@@ -329,7 +414,8 @@ export type HandoffState = z.infer<typeof handoffStateSchema>;
  * What a handoff tool can do, in the order the plugin's page lists them:
  * every tool starts threads; `followsState` reads their state; `listsThreads`
  * finds the user's own; `hooks` makes state change within seconds;
- * `closesThreads` closes them in the tool, keeping or deleting them.
+ * `closesThreads` closes them in the tool, keeping or deleting them;
+ * `ownWorktree` says the tool makes its own git worktree.
  */
 export const handoffToolFeatureLabels = {
   "starts-threads": "Starts threads",
@@ -338,6 +424,7 @@ export const handoffToolFeatureLabels = {
   "updates-within-seconds": "Updates within seconds",
   "closes-threads": "Closes threads",
   "deletes-threads": "Deletes threads",
+  "makes-own-worktree": "Makes its own worktree",
 } as const;
 export type HandoffToolFeature = keyof typeof handoffToolFeatureLabels;
 export type HandoffCloseKind = z.infer<typeof handoffCloseKindSchema>;
@@ -347,6 +434,7 @@ export function handoffToolFeatures(tool: {
   listsThreads?: boolean;
   hooks?: boolean;
   closesThreads?: HandoffCloseKind;
+  ownWorktree?: boolean;
 }): HandoffToolFeature[] {
   return [
     "starts-threads" as const,
@@ -355,6 +443,7 @@ export function handoffToolFeatures(tool: {
     ...(tool.hooks ? ["updates-within-seconds" as const] : []),
     ...(tool.closesThreads === "archive" ? ["closes-threads" as const] : []),
     ...(tool.closesThreads === "delete" ? ["deletes-threads" as const] : []),
+    ...(tool.ownWorktree ? ["makes-own-worktree" as const] : []),
   ];
 }
 export type StartHandoffRequest = z.infer<typeof startHandoffRequestSchema>;
@@ -459,6 +548,12 @@ export function handoffCapabilitySchema<
                * Ajour asks first. Absent, Ajour only forgets its record.
                */
               closesThreads: handoffCloseKindSchema.optional(),
+              /**
+               * The tool makes its own git worktree for a thread (#859).
+               * Ajour makes no worktree for it (#860): a hand off to it
+               * starts in the repository folder, with the branch.
+               */
+              ownWorktree: z.boolean().optional(),
             })
             .strict(),
         )

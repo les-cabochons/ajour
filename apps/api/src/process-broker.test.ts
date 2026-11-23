@@ -1670,6 +1670,47 @@ it("Given no process access, a refusal reads no policy and writes no activity", 
   expect(policy).not.toHaveBeenCalled();
   expect(record).not.toHaveBeenCalled();
 });
+it("Given a command in a worktree, asks with the worktree's folder and names its repository folder as what Always covers (#860)", async () => {
+  const { manifest, root } = await fixture();
+  manifest.processes!.undeclaredCommands = true;
+  const ask = vi.fn(async (_ask: unknown) => ({
+    answer: "deny" as const,
+    reason: "user_denied" as const,
+  }));
+  const broker = new ProcessBroker({
+    folders: { resolve: async () => root },
+    folderName: async (id) => (id === "worktree" ? "aj-4821" : "atlas-web"),
+    // Only the worktree counts as another folder for access.
+    accessFolder: async (id) =>
+      id === "worktree"
+        ? { id: "repository", name: "atlas-web", path: "/repos/atlas-web" }
+        : undefined,
+    gate: async () => undefined,
+    ask,
+  });
+  for (const cwdFolder of ["worktree", "repository"])
+    await expect(
+      broker
+        .forOperation({
+          pluginId: manifest.id,
+          manifest,
+          method: "startHandoff",
+        })
+        .run({ executable: "node", argv: [], cwdFolder }),
+    ).rejects.toMatchObject({ reason: "user_denied" });
+  const [inWorktree, inRepository] = ask.mock.calls.map(([asked]) => asked);
+  expect(inWorktree).toMatchObject({
+    folderName: "aj-4821",
+    folderPath: root,
+    cwdFolder: "repository",
+    scopeFolderName: "atlas-web",
+  });
+  expect(inRepository).toMatchObject({
+    folderName: "atlas-web",
+    cwdFolder: "repository",
+  });
+  expect(inRepository).not.toHaveProperty("scopeFolderName");
+});
 it("Given an undeclared executable with a declared key, ignores the override and shows its resolved path", async () => {
   const { manifest } = await fixture();
   manifest.processes!.undeclaredCommands = true;
