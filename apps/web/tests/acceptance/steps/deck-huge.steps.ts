@@ -5,7 +5,9 @@ import { createBdd } from "playwright-bdd";
  * A huge pull request in Deck (#790): over 1,000 hunks, so the local API,
  * mocked here, builds no guide and says why, and the review page mounts
  * only the rows near the screen, and the guide tree only the ticks in its
- * view. 240 files of 5 hunks each: 1,200 hunks.
+ * view. 240 files of 5 hunks each: 1,200 hunks. A pull request of 600
+ * hunks gets its guide, and its page mounts only what's near the screen
+ * too.
  */
 
 const { Given, When, Then } = createBdd();
@@ -50,10 +52,8 @@ function hunk(path: string, index: number) {
   };
 }
 
-const OPENED = {
-  headSha: "head",
-  baseSha: "base",
-  files: Array.from({ length: FILE_COUNT }, (_, index) => {
+const filesOf = (count: number) =>
+  Array.from({ length: count }, (_, index) => {
     const path = pathOf(index);
     return {
       path,
@@ -61,10 +61,108 @@ const OPENED = {
       binary: false,
       hunks: Array.from({ length: HUNKS_PER_FILE }, (_, at) => hunk(path, at)),
     };
-  }),
+  });
+
+const OPENED = {
+  headSha: "head",
+  baseSha: "base",
+  files: filesOf(FILE_COUNT),
   guide: null,
   guideSkipped: { reason: "too_many_hunks", hunkLimit: 1_000 },
 };
+
+/** 120 files, 600 hunks, in a guide of three concerns of 40 files each. */
+const GUIDED_FILES = filesOf(120);
+const CONCERNS = [
+  "Read the settings",
+  "Write the settings",
+  "Test the settings",
+];
+const GUIDED = {
+  headSha: "head",
+  baseSha: "base",
+  files: GUIDED_FILES,
+  guide: {
+    madeWith: "code",
+    concerns: CONCERNS.map((title, at) => ({
+      id: `g${at + 1}`,
+      title,
+      rationale: "",
+      hunkIds: GUIDED_FILES.slice(at * 40, at * 40 + 40).flatMap((file) =>
+        file.hunks.map((entry) => entry.id),
+      ),
+    })),
+  },
+};
+
+Given(
+  "the local API built the guide of a pull request with 600 hunks",
+  async ({ page }) => {
+    await page.route(
+      `${apiUrl}/api/deck/github/connections/work/open`,
+      async (route) =>
+        route.fulfill({
+          json: GUIDED,
+          headers: { "access-control-allow-origin": "*" },
+        }),
+    );
+  },
+);
+
+Then(
+  "concern {int} is focused at the top of the changes",
+  async ({ page }, number: number) => {
+    await expect(page.locator(":focus")).toHaveText(
+      `Concern ${number}: ${CONCERNS[number - 1]}`,
+    );
+    await expect
+      .poll(async () => Math.abs((await focusedOffset(page)) - 16) <= 2)
+      .toBe(true);
+  },
+);
+
+Then(
+  "concern {int}'s title keeps the focus off screen",
+  async ({ page }, number: number) => {
+    await expect(page.locator(":focus")).toHaveText(
+      `Concern ${number}: ${CONCERNS[number - 1]}`,
+    );
+    expect(await focusedOffset(page)).toBeLessThan(-1000);
+  },
+);
+
+When(
+  "I scroll the changes down by {int} pixels",
+  async ({ page }, by: number) => {
+    await changes(page)
+      .locator(".deck-review-sections")
+      .evaluate((list, distance) => {
+        let box = list.parentElement;
+        while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) {
+          box = box.parentElement;
+        }
+        box!.scrollTop += distance;
+      }, by);
+  },
+);
+
+Then(
+  "the guide tree's ticks run in one row within the narrow viewport",
+  async ({ page }) => {
+    const tree = page.getByRole("navigation", { name: "Guide tree" });
+    const ticks = tree.locator(".deck-tick");
+    expect(await ticks.count()).toBeGreaterThan(0);
+    expect(await ticks.count()).toBeLessThan(FILE_COUNT);
+    const tops = await ticks.evaluateAll((all) =>
+      all.map((tick) => Math.round(tick.getBoundingClientRect().top)),
+    );
+    expect(new Set(tops).size).toBe(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: "test-results/deck-huge-narrow.png" });
+  },
+);
 
 Given(
   "the local API answers a pull request with too many hunks for a guide",
@@ -115,6 +213,7 @@ Then(
 );
 
 Then("only the rows near the screen are mounted", async ({ page }) => {
+  await expect(changes(page).locator(".deck-hunk").first()).toBeVisible();
   const hunks = await changes(page).locator(".deck-hunk").count();
   expect(hunks).toBeGreaterThan(0);
   expect(hunks).toBeLessThan(40);

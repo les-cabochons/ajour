@@ -1,5 +1,7 @@
 import {
   memo,
+  useCallback,
+  useEffect,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -8,7 +10,11 @@ import {
   useState,
   type Ref,
 } from "react";
-import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from "@tanstack/react-virtual";
 import {
   reviewRows,
   viewedCount,
@@ -28,8 +34,9 @@ import { ReviewHunkView, ReviewSectionHeader } from "./review-sections";
  * section header and per hunk, of which only the rows near the screen are
  * mounted, through `@tanstack/react-virtual`. Each row is measured once it
  * mounts, and again as its hunk draws or folds, so the rows above the
- * screen never move what is read. The rows on screen sit in a `section`
- * per concern or file, named for assistive technology.
+ * screen never move what is read. Each row is placed at its own offset,
+ * and the row holding the focus stays mounted however far it scrolls away,
+ * so Tab goes on from where the reader was.
  */
 
 /** Rows mounted beyond each edge of the screen. */
@@ -68,25 +75,6 @@ function estimateRow(
     ? HUNK_GAP + HUNK_FRAME + hunkRowCount(hunk) * lineHeight
     : HUNK_GAP + NOTE_HEIGHT;
   return { folded, open: folded + body };
-}
-
-/** What a section's rows on screen are named: its title, as its heading reads. */
-function sectionName(section: ReviewSection) {
-  return section.number
-    ? `Concern ${section.number}: ${section.title}`
-    : section.title;
-}
-
-/** The rows on screen, grouped by the section they belong to. */
-function bySection(items: VirtualItem[], rows: readonly ReviewRow[]) {
-  const groups: { section: number; items: VirtualItem[] }[] = [];
-  for (const item of items) {
-    const section = rows[item.index]!.section;
-    const last = groups.at(-1);
-    if (last?.section === section) last.items.push(item);
-    else groups.push({ section, items: [item] });
-  }
-  return groups;
 }
 
 export const VirtualReviewSections = memo(function VirtualReviewSections({
@@ -156,6 +144,20 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     };
   }, []);
 
+  /** The row holding the focus, kept mounted off screen. */
+  const [focusedRow, setFocusedRow] = useState<number>();
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range);
+      if (focusedRow === undefined || indexes.includes(focusedRow)) {
+        return indexes;
+      }
+      return [...indexes, focusedRow].sort((a, b) => a - b);
+    },
+    [focusedRow],
+  );
+  const getItemKey = useCallback((index: number) => rows[index]!.key, [rows]);
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scroller,
@@ -166,7 +168,8 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
         ? estimate.folded
         : estimate.open;
     },
-    getItemKey: (index) => rows[index]!.key,
+    getItemKey,
+    rangeExtractor,
     overscan: OVERSCAN,
     scrollMargin: margin,
     // Rows measured a frame later, so their new heights never loop the observer.
@@ -181,6 +184,13 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
    * frames, or when another reach starts.
    */
   const reaching = useRef(0);
+  // An unmounted page stops a reach still holding its title.
+  useEffect(
+    () => () => {
+      reaching.current += 1;
+    },
+    [],
+  );
   const settle = (index: number) => {
     const run = (reaching.current += 1);
     let frames = 0;
@@ -233,65 +243,60 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     },
   }));
 
-  const items = virtualizer.getVirtualItems();
-  const shift = (items[0]?.start ?? margin) - margin;
   return (
     <div
       ref={list}
       className="deck-review-sections"
       data-virtual=""
       style={{ height: virtualizer.getTotalSize() }}
+      onFocus={(event) => {
+        const row = (event.target as Element).closest<HTMLElement>(
+          "[data-index]",
+        );
+        if (row) setFocusedRow(Number(row.dataset.index));
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocusedRow(undefined);
+        }
+      }}
     >
-      <div
-        className="deck-review-window"
-        style={{ transform: `translateY(${shift}px)` }}
-      >
-        {bySection(items, rows).map((group) => {
-          const section = sections[group.section]!;
-          return (
-            <section
-              key={section.key}
-              className="deck-review-group"
-              aria-label={sectionName(section)}
-            >
-              {group.items.map((item) => {
-                const row = rows[item.index]!;
-                return (
-                  <div
-                    key={item.key}
-                    ref={virtualizer.measureElement}
-                    data-index={item.index}
-                    data-row={row.kind}
-                    data-before-section={
-                      row.kind === "hunk" && row.beforeSection ? "" : undefined
-                    }
-                    data-section-index={
-                      row.kind === "section" ? row.section : undefined
-                    }
-                    className="deck-review-row"
-                  >
-                    {row.kind === "section" ? (
-                      <ReviewSectionHeader
-                        section={section}
-                        seen={viewedCount(section, viewed)}
-                        headingId={`${baseId}-${row.section}`}
-                      />
-                    ) : (
-                      <ReviewHunkView
-                        entry={row.entry}
-                        inConcern={!section.file}
-                        viewed={viewed.has(row.entry.hunk.id)}
-                        theme={theme}
-                        onToggleViewed={onToggleViewed}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          );
-        })}
-      </div>
+      {virtualizer.getVirtualItems().map((item) => {
+        const row = rows[item.index]!;
+        const section = sections[row.section]!;
+        return (
+          <div
+            key={item.key}
+            ref={virtualizer.measureElement}
+            data-index={item.index}
+            data-row={row.kind}
+            data-before-section={
+              row.kind === "hunk" && row.beforeSection ? "" : undefined
+            }
+            data-section-index={
+              row.kind === "section" ? row.section : undefined
+            }
+            className="deck-review-row"
+            style={{ transform: `translateY(${item.start - margin}px)` }}
+          >
+            {row.kind === "section" ? (
+              <ReviewSectionHeader
+                section={section}
+                seen={viewedCount(section, viewed)}
+                headingId={`${baseId}-${row.section}`}
+              />
+            ) : (
+              <ReviewHunkView
+                entry={row.entry}
+                inConcern={!section.file}
+                viewed={viewed.has(row.entry.hunk.id)}
+                theme={theme}
+                onToggleViewed={onToggleViewed}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 });

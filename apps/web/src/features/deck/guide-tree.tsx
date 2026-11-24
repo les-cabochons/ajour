@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   RiLayoutRight2Line as ShowTree,
@@ -99,43 +99,56 @@ const TreeItem = memo(function TreeItem({
 const TICK_PADDING = 6;
 const ROW_HEIGHT = 27;
 const ITEM_GAP = 2;
+/** In the narrow view a tick lies across, with 2px either side. */
+const NARROW_TICK_PADDING = 4;
 
 /** The ticks or titles in the tree's view, of a tree with more sections than it mounts. */
 function VirtualTreeItems({
   sections,
   viewed,
   titles,
+  across,
   scroller,
   onReach,
 }: {
   sections: readonly ReviewSection[];
   viewed: ReadonlySet<string>;
   titles: boolean;
+  /** The narrow view: one row of ticks that scrolls sideways. */
+  across: boolean;
   /** The tree, which scrolls its ticks or titles. */
   scroller: HTMLElement | null;
   onReach: (index: number) => void;
 }) {
   const list = useRef<HTMLOListElement>(null);
-  /** How far below the top of the tree's content the list starts, under its toggle or head. */
+  /** How far into the tree's content the list starts, under its toggle or head. */
   const [margin, setMargin] = useState(0);
   useLayoutEffect(() => {
     const element = list.current;
     const box = scroller;
     if (!element || !box) return;
+    const listBox = element.getBoundingClientRect();
+    const tree = box.getBoundingClientRect();
     setMargin(
-      element.getBoundingClientRect().top -
-        box.getBoundingClientRect().top +
-        box.scrollTop,
+      across
+        ? listBox.left - tree.left + box.scrollLeft
+        : listBox.top - tree.top + box.scrollTop,
     );
-  }, [scroller, titles]);
+  }, [scroller, titles, across]);
+  const getItemKey = useCallback(
+    (index: number) => sections[index]!.key,
+    [sections],
+  );
   const virtualizer = useVirtualizer({
     count: sections.length,
+    horizontal: across,
     getScrollElement: () => scroller,
     estimateSize: (index) =>
       titles
         ? ROW_HEIGHT
-        : TICK_PADDING + tickLength(sections[index]!.hunks.length),
-    getItemKey: (index) => sections[index]!.key,
+        : (across ? NARROW_TICK_PADDING : TICK_PADDING) +
+          tickLength(sections[index]!.hunks.length),
+    getItemKey,
     gap: ITEM_GAP,
     overscan: 8,
     scrollMargin: margin,
@@ -147,7 +160,11 @@ function VirtualTreeItems({
       ref={list}
       className={titles ? "deck-tree-rows" : "deck-tree-ticks"}
       data-virtual=""
-      style={{ height: virtualizer.getTotalSize() }}
+      style={
+        across
+          ? { width: virtualizer.getTotalSize() }
+          : { height: virtualizer.getTotalSize() }
+      }
     >
       {virtualizer.getVirtualItems().map((item) => {
         const section = sections[item.index]!;
@@ -158,7 +175,11 @@ function VirtualTreeItems({
             data-index={item.index}
             aria-setsize={sections.length}
             aria-posinset={item.index + 1}
-            style={{ transform: `translateY(${item.start - margin}px)` }}
+            style={{
+              transform: across
+                ? `translateX(${item.start - margin}px)`
+                : `translateY(${item.start - margin}px)`,
+            }}
           >
             <TreeItem
               section={section}
@@ -196,8 +217,9 @@ export const GuideTree = memo(function GuideTree({
   // The narrow view has no room for the titles, and no keyboard to close them.
   const narrow = useIsNarrowView();
   const showTitles = open && !narrow;
-  // In the narrow view the ticks wrap across the page, and the tree doesn't scroll.
-  const virtual = !narrow && treeVirtualized(sections);
+  // In the narrow view the ticks of a huge tree run in one row that
+  // scrolls sideways, instead of wrapping over the page.
+  const virtual = treeVirtualized(sections);
   const total = sections.reduce(
     (count, section) => count + section.hunks.length,
     0,
@@ -223,6 +245,7 @@ export const GuideTree = memo(function GuideTree({
       sections={sections}
       viewed={viewed}
       titles={showTitles}
+      across={narrow}
       scroller={nav}
       onReach={onReach}
     />
@@ -245,6 +268,7 @@ export const GuideTree = memo(function GuideTree({
     <nav
       ref={setNav}
       className="deck-guide-tree"
+      data-virtual={virtual || undefined}
       aria-label="Guide tree"
       data-open={showTitles || undefined}
     >

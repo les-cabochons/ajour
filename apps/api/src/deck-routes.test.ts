@@ -8,8 +8,8 @@ import {
   type FileContents,
 } from "../../../packages/review-deck/diff.ts";
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
-import { DECK_GUIDE_HUNK_LIMIT } from "../../../packages/shared/deck.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { DECK_GUIDE_HUNK_LIMIT } from "./deck-service.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { apiRequest, startLocalApi } from "./test-support/local-api.ts";

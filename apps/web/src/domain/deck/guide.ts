@@ -176,9 +176,9 @@ export function tickLength(hunkCount: number): number {
  */
 
 /** The most hunks the page mounts at once. */
-export const VIRTUAL_HUNK_THRESHOLD = 500;
+const VIRTUAL_HUNK_THRESHOLD = 500;
 /** The most sections the guide tree mounts at once. */
-export const VIRTUAL_TREE_THRESHOLD = 200;
+const VIRTUAL_TREE_THRESHOLD = 200;
 
 /** Whether the page mounts only the rows near the screen. */
 export function virtualized(sections: readonly ReviewSection[]): boolean {

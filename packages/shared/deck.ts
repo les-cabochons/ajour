@@ -95,19 +95,11 @@ export const deckGuideSchema = z.object({
 });
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 
-/**
- * The most hunks Deck builds a guide for (#790). Above it the pipeline
- * doesn't run: its syntax parsing and pair scoring would take over 10
- * seconds and hundreds of megabytes, growing with the square of the hunks
- * (36 s and 966 MB at 3,090), so the page shows the files A–Z.
- */
-export const DECK_GUIDE_HUNK_LIMIT = 1_000;
-
 /** Why an opened pull request has no guide although nothing failed. */
 export const deckGuideSkippedSchema = z.object({
   /** It has more hunks than a guide is built for. */
   reason: z.literal("too_many_hunks"),
-  /** The most hunks a guide is built for, `DECK_GUIDE_HUNK_LIMIT`. */
+  /** The most hunks a guide is built for (#790). */
   hunkLimit: z.number().int().positive(),
 });
 export type DeckGuideSkipped = z.infer<typeof deckGuideSkippedSchema>;

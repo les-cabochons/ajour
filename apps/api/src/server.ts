@@ -4629,7 +4629,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({
           deck: {
             queued_count: preloaded.queued,
-            guide_skipped_count: preloaded.guideSkipped,
+            guide_skipped_count: preloaded.guideSkippedCount,
             file_read_count: preloaded.fileReadCount,
             failed_count: preloaded.failed,
           },

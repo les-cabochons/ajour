@@ -34,6 +34,10 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-api")>()),
   openDeckPullRequest: vi.fn(),
 }));
+// Highlighting runs in the window here: jsdom has no workers.
+vi.mock("@/components/diff-highlighter", () => ({
+  diffWorkerPool: () => undefined,
+}));
 vi.mock("@pierre/diffs/react", async () => ({
   WorkerPoolContext: (await import("react")).createContext(undefined),
   PatchDiff: ({

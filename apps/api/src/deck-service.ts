@@ -3,14 +3,13 @@ import type {
   CodeHostOperationRequest,
   CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
-import {
-  DECK_GUIDE_HUNK_LIMIT,
-  type DeckFile,
-  type DeckGuide,
-  type DeckGuideSkipped,
-  type DeckOpenedPullRequest,
-  type DeckOpenRequest,
-  type DeckPullRequestDiff,
+import type {
+  DeckFile,
+  DeckGuide,
+  DeckGuideSkipped,
+  DeckOpenedPullRequest,
+  DeckOpenRequest,
+  DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
@@ -60,7 +59,7 @@ export interface DeckPreloaded {
   /** The guide builds queued. A pull request already kept is not read again. */
   queued: number;
   /** The pull requests read and kept with no guide build: they have too many hunks. */
-  guideSkipped: number;
+  guideSkippedCount: number;
   fileReadCount: number;
   /** The pull requests that couldn't be read, and were skipped. */
   failed: number;
@@ -155,6 +154,14 @@ async function runWhenFree<
     }
   }
 }
+
+/**
+ * The most hunks Deck builds a guide for (#790). Above it the pipeline
+ * doesn't run: its syntax parsing and pair scoring would take over 10
+ * seconds and hundreds of megabytes, growing with the square of the hunks
+ * (36 s and 966 MB at 3,090), so the page shows the files A–Z.
+ */
+export const DECK_GUIDE_HUNK_LIMIT = 1_000;
 
 /**
  * Why the diff gets no guide: it has more hunks than a guide is built for,
@@ -488,7 +495,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
   ): Promise<Omit<DeckPreloaded, "failed">> {
-    const none = { queued: 0, guideSkipped: 0 };
+    const none = { queued: 0, guideSkippedCount: 0 };
     await opensDone();
     const content = await runWhenFree(
       codeHost,
@@ -526,8 +533,8 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       evict(old);
     }
     return skipped
-      ? { queued: 0, guideSkipped: 1, fileReadCount }
-      : { queued: 1, guideSkipped: 0, fileReadCount };
+      ? { queued: 0, guideSkippedCount: 1, fileReadCount }
+      : { queued: 1, guideSkippedCount: 0, fileReadCount };
   }
 
   return {
@@ -554,7 +561,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       const run = preloading.then(async () => {
         const total = {
           queued: 0,
-          guideSkipped: 0,
+          guideSkippedCount: 0,
           fileReadCount: 0,
           failed: 0,
         };
@@ -563,7 +570,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
           try {
             const one = await preloadOne(source, request, codeHost);
             total.queued += one.queued;
-            total.guideSkipped += one.guideSkipped;
+            total.guideSkippedCount += one.guideSkippedCount;
             total.fileReadCount += one.fileReadCount;
           } catch (error) {
             total.failed += 1;

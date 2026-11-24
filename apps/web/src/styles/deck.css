@@ -50,24 +50,20 @@
 
   /*
    * A huge pull request's rows (#790): only those near the screen are
-   * mounted, in a window moved down to the first of them, inside a box as
-   * tall as every row. Each row holds its own spacing, so its measured
-   * height is all it takes: the same gaps as the sections' flex gaps.
+   * mounted, each placed at its offset inside a box as tall as every row.
+   * Each row holds its own spacing, so its measured height is all it
+   * takes: the same gaps as the sections' flex gaps.
    */
   .deck-review-sections[data-virtual] {
     position: relative;
     display: block;
   }
 
-  .deck-review-window {
+  .deck-review-sections[data-virtual] > .deck-review-row {
     position: absolute;
     top: 0;
     right: 0;
     left: 0;
-  }
-
-  .deck-review-group {
-    min-width: 0;
   }
 
   .deck-review-row[data-row="hunk"] {
@@ -401,6 +397,21 @@
       inset: 0 auto 0 0;
       width: var(--deck-tick-fill);
       height: auto;
+    }
+
+    /* A huge tree's ticks (#790): one row that scrolls sideways, only those in view mounted. */
+    .deck-guide-tree[data-virtual] {
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    .deck-tree-ticks[data-virtual] {
+      height: 1.25rem;
+    }
+
+    .deck-tree-ticks[data-virtual] > li {
+      right: auto;
+      bottom: 0;
     }
   }
 
