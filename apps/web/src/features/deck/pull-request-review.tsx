@@ -9,10 +9,10 @@ import {
   PullRequestConversation,
 } from "./pull-request-conversation";
 import { PullRequestStatusLine } from "./pull-request-status-line";
-import { usePullRequestDiff } from "./use-pull-request-diff";
 import {
   usePullRequestChecks,
   usePullRequestConversation,
+  usePullRequestDiff,
 } from "./use-pull-request-read";
 
 /**
@@ -40,16 +40,20 @@ export function PullRequestReview({
   const placement = useMemo(
     () =>
       threads && diffState.status === "ready"
-        ? placeThreads(diffState.diff, threads)
+        ? placeThreads(diffState.value, threads)
         : undefined,
     [threads, diffState],
   );
   // Without a diff to show them on, every thread joins the conversation.
-  const elsewhere = placement
-    ? placement.elsewhere
-    : diffState.status === "loading"
-      ? []
-      : (threads ?? []);
+  const elsewhere = useMemo(
+    () =>
+      placement
+        ? placement.elsewhere
+        : diffState.status === "loading"
+          ? []
+          : (threads ?? []),
+    [placement, diffState.status, threads],
+  );
 
   return (
     <>

@@ -87,6 +87,12 @@
     white-space: nowrap;
   }
 
+  .deck-status-item:focus-visible,
+  .deck-drawer-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
   .deck-status-item:hover,
   .deck-status-item[data-popup-open] {
     background: var(--hover-bg);

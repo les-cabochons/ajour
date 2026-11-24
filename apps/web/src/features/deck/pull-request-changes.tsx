@@ -21,7 +21,7 @@ import type {
 import { useResolvedTheme } from "@/lib/use-theme";
 import { ReviewThreadCard } from "./review-thread-card";
 import { ThreadGutter } from "./thread-gutter";
-import type { PullRequestDiffState } from "./use-pull-request-diff";
+import type { PullRequestReadState } from "./use-pull-request-read";
 
 /** The lines a hovered thread highlights, kept inside its hunk. */
 function highlightOf(hunk: DeckHunk, entry: PlacedThread | undefined) {
@@ -69,6 +69,9 @@ const ChangedFile = memo(function ChangedFile({
     () => new Map((threads ?? []).map((entry) => [entry.thread.id, entry])),
     [threads],
   );
+  // In the gutter a line's mark doesn't change with the hover, so the
+  // file's hunks don't draw again as it moves.
+  const hot = floating ? undefined : hovered;
   const renderAnnotation = useCallback(
     (key: string) => {
       if (floating)
@@ -84,13 +87,13 @@ const ChangedFile = memo(function ChangedFile({
         <div className="deck-inline-thread">
           <ReviewThreadCard
             thread={entry.thread}
-            hot={hovered === key}
+            hot={hot === key}
             onHover={onHover}
           />
         </div>
       ) : null;
     },
-    [byId, floating, hovered, onAnchor, onHover],
+    [byId, floating, hot, onAnchor, onHover],
   );
   const hoveredEntry = hovered ? byId.get(hovered) : undefined;
   return (
@@ -218,7 +221,7 @@ export function PullRequestChanges({
   hovered,
   onHover,
 }: {
-  state: PullRequestDiffState;
+  state: PullRequestReadState<DeckPullRequestDiff>;
   retry: () => void;
   placement: ThreadPlacement | undefined;
   floating: boolean;
@@ -230,7 +233,7 @@ export function PullRequestChanges({
     <section className="deck-changes" aria-label="Changes">
       <SectionHeading
         trailing={
-          state.status === "ready" ? state.diff.files.length : undefined
+          state.status === "ready" ? state.value.files.length : undefined
         }
       >
         Changes
@@ -250,7 +253,7 @@ export function PullRequestChanges({
         </MessagePanel>
       ) : (
         <ChangedFiles
-          diff={state.diff}
+          diff={state.value}
           placement={placement}
           floating={floating}
           hovered={hovered}

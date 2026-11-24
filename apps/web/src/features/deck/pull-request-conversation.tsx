@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { RiArrowRightSLine as Chevron } from "@remixicon/react";
 import type {
   CodeHostConversationResult,
@@ -40,7 +40,7 @@ function ReadProblem({
 }
 
 /** The author's description, in a drawer that starts closed. */
-export function DescriptionDrawer({
+export const DescriptionDrawer = memo(function DescriptionDrawer({
   state,
   retry,
 }: {
@@ -55,7 +55,7 @@ export function DescriptionDrawer({
         type="button"
         className="deck-drawer-toggle"
         aria-expanded={open}
-        aria-controls={bodyId}
+        aria-controls={open ? bodyId : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         <Chevron aria-hidden="true" className="deck-drawer-chevron" />
@@ -80,7 +80,7 @@ export function DescriptionDrawer({
       ) : null}
     </section>
   );
-}
+});
 
 const verdicts = {
   approved: "approved",
@@ -122,7 +122,7 @@ function TimelineEvent({ event }: { event: CodeHostTimelineEvent }) {
  * The conversation at the end of the page: the pull request's timeline, with
  * the review threads the diff can't show, in time order.
  */
-export function PullRequestConversation({
+export const PullRequestConversation = memo(function PullRequestConversation({
   state,
   retry,
   elsewhere,
@@ -157,4 +157,4 @@ export function PullRequestConversation({
       )}
     </section>
   );
-}
+});

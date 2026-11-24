@@ -103,9 +103,6 @@ describe("placing review threads on the diff", () => {
       ["range", "src/api.ts#1", "additions", 41, 1],
       ["context", "src/api.ts#1", "additions", 42, 2],
     ]);
-    expect(
-      placement.byHunk.get("src/api.ts#1")?.map((entry) => entry.thread.id),
-    ).toEqual(["range", "context"]);
     expect(placement.elsewhere).toEqual([]);
   });
 

@@ -28,8 +28,6 @@ export interface PlacedThread {
 export interface ThreadPlacement {
   /** Every thread on a line of the diff, in file, hunk and row order. */
   placed: PlacedThread[];
-  /** The same, by hunk id. */
-  byHunk: ReadonlyMap<string, PlacedThread[]>;
   /** Threads with no line on the diff: outdated, on a whole file, or on lines it doesn't show. */
   elsewhere: CodeHostReviewThread[];
 }
@@ -105,13 +103,7 @@ export function placeThreads(
 
   found.sort((a, b) => a.order - b.order || a.row - b.row);
   const placed = found.map(({ order: _order, ...entry }) => entry);
-  const byHunk = new Map<string, PlacedThread[]>();
-  for (const entry of placed) {
-    const list = byHunk.get(entry.hunkId);
-    if (list) list.push(entry);
-    else byHunk.set(entry.hunkId, [entry]);
-  }
-  return { placed, byHunk, elsewhere };
+  return { placed, elsewhere };
 }
 
 /** A card to place in the gutter: the height of its line's middle, and its own height. */

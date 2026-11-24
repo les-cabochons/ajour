@@ -20,6 +20,7 @@ import {
   reasonLabels,
   runPullRequestAction,
 } from "./pull-request-row";
+import { personName } from "@/domain/deck/review-status";
 import { PullRequestReview } from "./pull-request-review";
 
 /**
@@ -113,8 +114,7 @@ export function DeckPage({ itemId }: { itemId?: string }) {
               <h1 className="backlog-item-page-title">{item.facts.title}</h1>
               <p className="backlog-item-page-meta">
                 {item.facts.repository} #{item.facts.number} ·{" "}
-                {item.connectionLabel} ·{" "}
-                {item.facts.author.displayName ?? item.facts.author.login} ·{" "}
+                {item.connectionLabel} · {personName(item.facts.author)} ·{" "}
                 {item.status === "settled"
                   ? "Settled"
                   : isPullRequestSnoozed(item, now)
