@@ -99,6 +99,7 @@ function fakeStorage({
         token: "ajour_test-token",
       };
     },
+    rebindMcpClient: async () => true,
     revokeMcpClient: async (clientId: string) => {
       await whileRevoking?.();
       if (revokeError) throw revokeError;

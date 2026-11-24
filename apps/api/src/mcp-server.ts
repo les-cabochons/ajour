@@ -3,6 +3,10 @@ import type { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import {
   dataToolOutputSchemas,
   logToolInputSchemas,
   logToolOutputSchemas,
@@ -92,8 +96,8 @@ interface ToolCall {
   readonly unit: Unit<AjourCatalog, "agent_tool.call">;
   /** Set when the handler starts, and when it returns a result that isn't an error. */
   handler: "not_reached" | "entered" | "returned_ok";
-  /** The Ajour data tool it names, when the client may not use it. */
-  undeclared?: AgentTaskMcpTool;
+  /** The Ajour tool it names, when the client may not use it. */
+  undeclared?: AgentTaskMcpTool | SessionToolName;
 }
 
 /**
@@ -104,7 +108,11 @@ class McpExchange {
   readonly calls: ToolCall[] = [];
   private readonly byId = new Map<unknown, ToolCall>();
 
-  add(unit: ToolCall["unit"], id: unknown, undeclared?: AgentTaskMcpTool) {
+  add(
+    unit: ToolCall["unit"],
+    id: unknown,
+    undeclared?: AgentTaskMcpTool | SessionToolName,
+  ) {
     const call: ToolCall = {
       unit,
       handler: "not_reached",
@@ -165,15 +173,33 @@ function calledTool(message: unknown): string {
 }
 
 /**
- * The data tools a client may use. A client the user created has them all;
+ * The tools a client may use. A client the user created has every data tool;
  * an agent task run's client has only those its task declares (#396). The
- * session tools are every client's: they act on its own sessions only.
+ * session tools are theirs too: they act on the client's own sessions only.
+ * A conversation's client is bound to one pull request at one head (#778):
+ * it has none of the user's data, and no session tool.
  */
-function toolScope(client: StoredMcpClient) {
+interface ToolScope {
+  mayUse: (tool: AgentTaskMcpTool) => boolean;
+  sessionTools: boolean;
+  /** Set for a conversation's client. */
+  pullRequest?: StoredMcpClient["pullRequest"];
+}
+
+function toolScope(client: StoredMcpClient): ToolScope {
+  if (client.pullRequest) {
+    return {
+      mayUse: () => false,
+      sessionTools: false,
+      pullRequest: client.pullRequest,
+    };
+  }
   const declared =
     client.tools === undefined ? undefined : new Set(client.tools);
-  return (tool: AgentTaskMcpTool) =>
-    declared === undefined || declared.has(tool);
+  return {
+    mayUse: (tool) => declared === undefined || declared.has(tool),
+    sessionTools: true,
+  };
 }
 
 /** The data tool a call names, when it is one of Ajour's. */
@@ -185,6 +211,19 @@ function calledDataTool(message: unknown): AgentTaskMcpTool | undefined {
     : undefined;
 }
 
+/** The Ajour tool a call names that the client's scope leaves out. */
+function outOfScopeTool(
+  message: unknown,
+  scope: ToolScope,
+): AgentTaskMcpTool | SessionToolName | undefined {
+  const tool = calledDataTool(message);
+  if (tool !== undefined) return scope.mayUse(tool) ? undefined : tool;
+  const name = calledTool(message);
+  return !scope.sessionTools && Object.hasOwn(sessionToolInputSchemas, name)
+    ? (name as SessionToolName)
+    : undefined;
+}
+
 /**
  * The answer to a call of a tool the client may not use. The tool is never
  * registered for it, so the SDK would only say it is not found: this says
@@ -193,16 +232,32 @@ function calledDataTool(message: unknown): AgentTaskMcpTool | undefined {
 function refuseUndeclaredCall(
   id: string | number,
   call: ToolCall,
-  tool: AgentTaskMcpTool,
+  tool: AgentTaskMcpTool | SessionToolName,
   client: AgentClientRef,
+  scope: ToolScope,
   context: McpRequestContext,
 ) {
-  const reason = `This agent task doesn't declare the tool ${tool}, so Ajour refuses it. Use only the tools that tools/list returns.`;
   call.unit.set({
     agent_tool: {
-      access: Object.hasOwn(writeToolInputSchemas, tool) ? "write" : "read",
+      access: Object.hasOwn(sessionToolInputSchemas, tool)
+        ? "session"
+        : Object.hasOwn(writeToolInputSchemas, tool)
+          ? "write"
+          : "read",
     },
   });
+  if (scope.pullRequest) {
+    // No session to file it in: a conversation's turn has none.
+    call.unit.refuse("outside_pull_request");
+    return {
+      jsonrpc: "2.0" as const,
+      id,
+      result: errorResult(
+        `This conversation is bound to pull request ${scope.pullRequest.pullRequest} at head ${scope.pullRequest.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
+      ),
+    };
+  }
+  const reason = `This agent task doesn't declare the tool ${tool}, so Ajour refuses it. Use only the tools that tools/list returns.`;
   call.unit.refuse("tool_not_declared");
   context.sessions.recordActivity(client, { outcome: "refused", tool, reason });
   const sessionId = context.sessions.currentSessionId(client);
@@ -324,6 +379,12 @@ const AJOUR_INSTRUCTIONS = [
   "A write refused by Ajour returns an error with the reason. Do not retry it unchanged.",
   "Each write returns an undoToken. Pass it to undo to take the write back while its Undo toast shows.",
   "A submitted week is read-only: Ajour refuses writes to its entries until the user reopens it.",
+].join("\n");
+
+/** What a pull request conversation's agent reads first. */
+const PULL_REQUEST_INSTRUCTIONS = [
+  "Ajour's tools for one pull request at one head commit, which this conversation is bound to.",
+  "Ajour refuses any other tool, and any other pull request or head.",
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
@@ -574,11 +635,12 @@ function runSessionTool<Name extends SessionToolName>(
 function registerTools(
   server: McpServer,
   client: AgentClientRef,
-  mayUse: (tool: AgentTaskMcpTool) => boolean,
+  scope: ToolScope,
   userClient: boolean,
   context: McpRequestContext,
   exchange: McpExchange,
 ) {
+  const { mayUse } = scope;
   // The SDK hands each handler its JSON-RPC request id, which finds its call.
   const callOf = (extra: { requestId: unknown }) =>
     exchange.call(extra.requestId);
@@ -612,6 +674,19 @@ function registerTools(
     );
   }
 
+  if (!scope.sessionTools) {
+    // A conversation's client has no tool of Ajour's yet (Deck's reads come
+    // with #791). It still lists its tools, as an empty list, rather than
+    // finding no tools method at all. A call is refused before it gets here.
+    server.server.registerCapabilities({ tools: {} });
+    server.server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: [],
+    }));
+    server.server.setRequestHandler(CallToolRequestSchema, (request) =>
+      errorResult(`Ajour has no tool named ${request.params.name}.`),
+    );
+    return;
+  }
   // Session tools run in the API: sessions live here, not in the renderer.
   const { sessions } = context;
   // The SDK has already parsed each input against its schema, but it does not
@@ -741,13 +816,9 @@ export async function handleMcpRequest(
   // JSON responses, handleRequest settles once the answer is written.
   const unit = context.unit.rename("mcp.request");
   unit.set({ http: { route: "/mcp/ajour" } });
-  if (!(await context.storage.getMcpSettings()).enabled) {
-    unit.refuse("mcp_off");
-    writeError(response, 404, "Not found.");
-    return;
-  }
+  const mcpEnabled = (await context.storage.getMcpSettings()).enabled;
   // Agents are not browsers. An Origin header means a web page is calling.
-  if (request.headers.origin) {
+  if (mcpEnabled && request.headers.origin) {
     unit.refuse("browser_origin");
     writeError(response, 403, "MCP does not accept browser requests.");
     return;
@@ -756,13 +827,33 @@ export async function handleMcpRequest(
   const authentication = await authenticateMcpRequest(
     context.storage,
     request.headers.authorization,
+    Date.now(),
+    (client) => mcpEnabled || client.pullRequest !== undefined,
   );
+  // While MCP is off, only a pull request conversation's client finds the
+  // endpoint, since it sees none of the user's data (ADR 0021). Anyone
+  // else, a browser included, finds nothing.
+  if (
+    !mcpEnabled &&
+    (request.headers.origin ||
+      authentication.kind === "missing" ||
+      authentication.kind === "unknown" ||
+      !authentication.client.pullRequest)
+  ) {
+    unit.refuse("mcp_off");
+    writeError(response, 404, "Not found.");
+    return;
+  }
   if (authentication.kind !== "ok") {
     if (authentication.kind === "revoked") {
-      context.sessions.recordError(
-        `${authentication.client.name}: its token was revoked.`,
-        { id: authentication.client.id, name: authentication.client.name },
-      );
+      // A closed conversation's client is revoked by design, not an error
+      // the agent panel shows.
+      if (!authentication.client.pullRequest) {
+        context.sessions.recordError(
+          `${authentication.client.name}: its token was revoked.`,
+          { id: authentication.client.id, name: authentication.client.name },
+        );
+      }
       unit.set({ agent: { client_id: authentication.client.id } });
     }
     unit.refuse(`token_${authentication.kind}`);
@@ -777,7 +868,11 @@ export async function handleMcpRequest(
   unit.set({ agent: { client_id: client.id } });
   const server = new McpServer(
     { name: "ajour", version: context.appVersion ?? "unknown" },
-    { instructions: AJOUR_INSTRUCTIONS },
+    {
+      instructions: authentication.client.pullRequest
+        ? PULL_REQUEST_INSTRUCTIONS
+        : AJOUR_INSTRUCTIONS,
+    },
   );
   const body =
     request.method === "POST" ? await context.readBody(request) : undefined;
@@ -801,11 +896,8 @@ export async function handleMcpRequest(
   // Each call is named before the SDK validates it, so a call it
   // refuses still says which tool it was.
   const exchange = new McpExchange();
-  const mayUse = toolScope(authentication.client);
-  const undeclared = (message: unknown) => {
-    const tool = calledDataTool(message);
-    return tool !== undefined && !mayUse(tool) ? tool : undefined;
-  };
+  const scope = toolScope(authentication.client);
+  const undeclared = (message: unknown) => outOfScopeTool(message, scope);
   if (method === "tools/call") {
     exchange
       .add(unit.rename("agent_tool.call"), messageId(body), undeclared(body))
@@ -825,7 +917,7 @@ export async function handleMcpRequest(
   registerTools(
     server,
     client,
-    mayUse,
+    scope,
     authentication.client.tools === undefined,
     context,
     exchange,
@@ -841,7 +933,7 @@ export async function handleMcpRequest(
       // Only a reply with the call's own JSON-RPC id finds it.
       const id = messageId(message) as string | number;
       return send(
-        refuseUndeclaredCall(id, call, call.undeclared, client, context),
+        refuseUndeclaredCall(id, call, call.undeclared, client, scope, context),
         options,
       );
     }

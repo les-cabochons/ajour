@@ -50,6 +50,9 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   capture_incomplete: "The command's output couldn't be captured in full.",
   changed_since:
     "The record changed after this action, so undoing it would overwrite newer work.",
+  cli_exited:
+    "The agent's command-line program exited before the turn finished.",
+  cli_failed: "The agent's command-line program reported an error.",
   client_closed:
     "The caller went away before the answer reached it, such as a closed window or a cancelled request.",
   concurrency: "The plugin already runs as many commands at once as it may.",
@@ -131,6 +134,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The change touches a submitted week, which stays locked, so nothing was written.",
   lossy_not_allowed:
     "Writing the description would lose formatting the source keeps, and that loss wasn't allowed.",
+  mcp_failed:
+    "The agent's MCP server didn't start, so it couldn't reach Ajour.",
   mcp_off: "The MCP server is turned off in Settings.",
   missing: "The task to merge into doesn't exist anymore.",
   missing_asset: "The release has no download for this computer.",
@@ -169,6 +174,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   other_project: "The task to merge into belongs to another project.",
   output_limit: "The command printed more output than the plugin may read.",
   output_mismatch: "The tool's answer didn't match the shape it declares.",
+  outside_pull_request:
+    "The pull request's agent called a tool outside its pull request, so the call was refused.",
   package_change:
     "The plugin's package changed while it ran, such as during an update.",
   package_unverified: "The plugin's package couldn't be verified.",
@@ -227,6 +234,7 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   spawn_refused: "Ajour refused to start the command.",
   stale_window:
     "Another Ajour window changed the data first, so this window's change was refused.",
+  stalled: "The agent stopped answering, so the turn ended.",
   startup_failed: "Ajour failed while it started.",
   stdin_failed: "Sending input to the command failed.",
   still_running: "A plugin process from the last session was still running.",

@@ -141,7 +141,7 @@ import {
   agentRunnerOverviewSchema,
   agentRunSchema,
   type AgentRunnerSettings,
-  type AgentRunStartRequest,
+  type PluginTaskRunRequest,
 } from "@ajour/shared/agent-runs";
 import {
   APP_API_CLIENT,
@@ -1894,7 +1894,7 @@ export async function saveAgentTaskSettings(
   );
 }
 
-export async function startAgentRun(request: AgentRunStartRequest) {
+export async function startAgentRun(request: PluginTaskRunRequest) {
   return appApiRequest(
     "startAgentRun",
     "/api/agent-runs",
