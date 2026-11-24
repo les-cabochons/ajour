@@ -567,6 +567,20 @@ describe("the review findings on the rules (les-cabochons/ajour#919)", () => {
     ]);
   });
 
+  it("doesn't take an escaped interpolation, or debug output quoted inside one, for debug output", () => {
+    const files = diffOf({
+      "src/example.ts": [
+        lines("export const a = 1;"),
+        lines(
+          "export const a = 1;",
+          "const text = `literal \\${console.log(value)}`;",
+          'const other = `value ${render("console.log(value)")}`;',
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([]);
+  });
+
   it("finds commented-out Lua, whose comments start with --", () => {
     const files = diffOf({
       "src/retry.lua": [

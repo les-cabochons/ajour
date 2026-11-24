@@ -551,18 +551,22 @@ function readsAsCode(extension: string, body: string) {
   );
 }
 
+/** Single and double quoted strings. */
+const QUOTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
+
 /**
  * A line with its single, double and backtick quoted strings emptied, so
  * quoted code isn't read as code; a template literal keeps its `${…}`
- * expressions, which run.
+ * expressions, which run, with their own quoted strings emptied too. An
+ * escaped `\${` is text, not an expression.
  */
 const withoutStrings = (text: string) =>
   text.replace(
     /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g,
     (quoted) => {
       if (!quoted.startsWith("`")) return '""';
-      const expressions = [...quoted.matchAll(/\$\{([^}]*)\}/g)].map(
-        (match) => match[1],
+      const expressions = [...quoted.matchAll(/(?<!\\)\$\{([^}]*)\}/g)].map(
+        (match) => match[1]!.replace(QUOTED, '""'),
       );
       return ['""', ...expressions].join(" ");
     },
