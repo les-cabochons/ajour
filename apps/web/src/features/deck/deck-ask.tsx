@@ -441,11 +441,9 @@ function AskQuestion({
           }
         }}
       />
-      <div className="deck-ask-actions">
-        <Button type="submit" variant="ghost" size="sm">
-          Ask
-        </Button>
-      </div>
+      <Button type="submit" variant="ghost" size="sm">
+        Ask
+      </Button>
     </form>
   );
 }

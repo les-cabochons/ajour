@@ -179,6 +179,12 @@
     min-width: 0;
   }
 
+  /* The question an ask opens on: the field, then Ask at its end. */
+  .deck-ask-compose {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
   .deck-concern-progress {
     flex: none;
     margin-top: 0.125rem;
