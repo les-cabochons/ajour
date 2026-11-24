@@ -5768,6 +5768,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
     const { connectionId } = params;
     unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const source = { pluginId, connectionId };
+    // Taken before the first wait: a connection removed from here on opens
+    // and preloads nothing, though this request found it.
+    const generation = deckService.cache.generation(source);
     const found = await codeHostConnection(
       response,
       unit,
@@ -5793,9 +5797,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           operationRequest,
           call.admit,
         ),
+      generation,
     };
     return {
-      source: { pluginId, connectionId },
+      source,
       ref,
       codeHost,
       async failed(error: unknown) {

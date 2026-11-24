@@ -106,4 +106,31 @@ describe("Deck's service when a connection is removed", () => {
     expect(deck.builds).toEqual([]);
     expect(await deck.cache.usage()).toMatchObject({ entryCount: 0 });
   });
+
+  it("opens and preloads nothing through a code host bound before its connection was removed", async () => {
+    const deck = await startService();
+    // The route finds the connection, then reads the request's body: the
+    // connection can go in between.
+    const bound = { ...codeHost, generation: deck.cache.generation(SOURCE) };
+    await deck.service.forgetConnection(SOURCE);
+    deck.releasePuts();
+
+    await expect(
+      deck.service.openPullRequest(
+        SOURCE,
+        { repository: "acme/api", number: 20 },
+        bound,
+      ),
+    ).rejects.toBeInstanceOf(DeckConnectionRemoved);
+    await expect(
+      deck.service.preloadPullRequests(
+        SOURCE,
+        [{ repository: "acme/api", number: 21 }],
+        bound,
+      ),
+    ).rejects.toBeInstanceOf(DeckConnectionRemoved);
+    await deck.cache.flush();
+    expect(deck.builds).toEqual([]);
+    expect(await deck.cache.usage()).toMatchObject({ entryCount: 0 });
+  });
 });

@@ -49,6 +49,12 @@ export interface DeckCodeHost {
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
   ): Promise<CodeHostOperationResult<Operation>>;
+  /**
+   * The connection's generation (`cache.generation`) when the route found
+   * the connection. Work through it stops once the connection is removed
+   * after that moment, not only after the work began.
+   */
+  generation?: number;
 }
 
 /** What opening a pull request did, for its event. Never a path. */
@@ -404,10 +410,13 @@ export function createDeckService(options: {
   let preloading: Promise<unknown> = Promise.resolve();
   /** The opens and preload batches under way, which removing their connection stops. */
   const working = new Set<ConnectionWork>();
-  const beginWork = (source: DeckSource): ConnectionWork => {
+  const beginWork = (
+    source: DeckSource,
+    codeHost: DeckCodeHost,
+  ): ConnectionWork => {
     const work = {
       source,
-      generation: cache.generation(source),
+      generation: codeHost.generation ?? cache.generation(source),
       stop: new AbortController(),
     };
     working.add(work);
@@ -516,7 +525,7 @@ export function createDeckService(options: {
       doneReading = resolve;
     });
     opening.add(reading);
-    const work = beginWork(source);
+    const work = beginWork(source, codeHost);
     try {
       return await openNow(work, request, codeHost, () => {
         opening.delete(reading);
@@ -738,7 +747,7 @@ export function createDeckService(options: {
       requests: DeckOpenRequest[],
       codeHost: DeckCodeHost,
     ): Promise<DeckPreloaded> {
-      const work = beginWork(source);
+      const work = beginWork(source, codeHost);
       const run = preloading.then(async () => {
         const total = { queued: 0, fileReadCount: 0, failed: 0 };
         let firstError: unknown;
