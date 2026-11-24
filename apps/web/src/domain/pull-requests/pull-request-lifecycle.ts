@@ -118,6 +118,35 @@ export function selectSidebarPullRequests(
     .sort((a, b) => a.activeAt - b.activeAt || a._id.localeCompare(b._id));
 }
 
+/** The most pull requests one Deck preload takes. */
+const PRELOADS_PER_SYNC = 20;
+
+/**
+ * The pull requests of a connection Deck preloads after its sync (#781):
+ * those on the user's plate, as the sidebar lists them, at the head the
+ * sync saw, so the content cache can answer without the code host.
+ */
+export function selectPullRequestsToPreload(
+  items: readonly LocalPullRequest[],
+  source: { pluginId: string; connectionId: string },
+  now: number,
+) {
+  return selectSidebarPullRequests(
+    items.filter(
+      (item) =>
+        item.pluginId === source.pluginId &&
+        item.connectionId === source.connectionId,
+    ),
+    now,
+  )
+    .slice(0, PRELOADS_PER_SYNC)
+    .map((item) => ({
+      repository: item.facts.repository,
+      number: item.facts.number,
+      headSha: item.facts.headSha,
+    }));
+}
+
 function unsettlingEvent(
   previous: LocalPullRequest,
   next: CodeHostPullRequestFacts,

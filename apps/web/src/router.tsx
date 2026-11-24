@@ -28,6 +28,7 @@ import {
   SettingsMcpPage,
   SettingsPluginsPage,
   SettingsProjectsPage,
+  SettingsStoragePage,
   SettingsSyncReviewPage,
   SettingsTimeEntriesPage,
   SettingsVaultPage,
@@ -437,6 +438,16 @@ const settingsSyncReviewRoute = createRoute({
   ),
 });
 
+const settingsStorageRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/storage",
+  component: () => (
+    <RouteSuspense>
+      <SettingsStoragePage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsWhatsNewRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/whats-new",
@@ -502,6 +513,7 @@ const routeTree = rootRoute.addChildren([
       settingsWorktreesRoute,
       settingsTimeEntriesRoute,
       settingsSyncReviewRoute,
+      settingsStorageRoute,
       settingsWhatsNewRoute,
       ...settingsDebugRoutes,
     ]),

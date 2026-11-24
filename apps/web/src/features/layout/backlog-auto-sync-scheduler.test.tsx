@@ -51,14 +51,23 @@ function overviewSyncedAt(lastSyncAt: number): PluginsOverview {
   return overview;
 }
 
+/**
+ * The events of the syncs. A sync that finds a pull request on the user's
+ * plate then preloads it in Deck, as a job of its own (#781).
+ */
+const syncEvents = () =>
+  sink.events.filter((event) => event.name !== "deck.preload");
+
 function stubApi(overview: PluginsOverview) {
-  const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
-    init?.method === "POST"
-      ? Response.json({
-          viewer: { login: "alex", isBot: false },
-          pullRequests: [pullRequestFacts],
-        })
-      : Response.json(overview),
+  const fetch = vi.fn(async (url: string, init?: RequestInit) =>
+    url.includes("/api/deck/")
+      ? Response.json({ queued: 1 })
+      : init?.method === "POST"
+        ? Response.json({
+            viewer: { login: "alex", isBot: false },
+            pullRequests: [pullRequestFacts],
+          })
+        : Response.json(overview),
   );
   vi.stubGlobal("fetch", fetch);
   return fetch;
@@ -73,7 +82,7 @@ describe("the automatic sync scheduler", () => {
     // Let the tick finish with what it read.
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(sink.events).toEqual([]);
+    expect(syncEvents()).toEqual([]);
   });
 
   it("leaves a connection paused for its secret alone, as it would only fail, and still syncs the others that are due", async () => {
@@ -93,10 +102,10 @@ describe("the automatic sync scheduler", () => {
     const fetch = stubApi(overview);
 
     render(<BacklogAutoSyncScheduler />);
-    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await waitFor(() => expect(syncEvents()).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(sink.events).toEqual([
+    expect(syncEvents()).toEqual([
       expect.objectContaining({
         name: "pull_request.sync",
         outcome: "ok",
@@ -138,10 +147,10 @@ describe("the automatic sync scheduler", () => {
     const fetch = stubApi(overview);
 
     render(<BacklogAutoSyncScheduler />);
-    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await waitFor(() => expect(syncEvents()).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(sink.events).toEqual([
+    expect(syncEvents()).toEqual([
       expect.objectContaining({
         name: "pull_request.sync",
         outcome: "ok",
@@ -158,9 +167,9 @@ describe("the automatic sync scheduler", () => {
     const fetch = stubApi(overviewSyncedAt(1));
 
     render(<BacklogAutoSyncScheduler />);
-    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await waitFor(() => expect(syncEvents()).toHaveLength(1));
 
-    expect(sink.events).toEqual([
+    expect(syncEvents()).toEqual([
       expect.objectContaining({
         name: "pull_request.sync",
         kind: "job",
@@ -170,12 +179,14 @@ describe("the automatic sync scheduler", () => {
       }),
     ]);
     // The tick's overview read sent no trace; the sync's calls sent its own.
-    const traceparents = fetch.mock.calls.map(
-      ([, init]) => (init?.headers as Record<string, string>).traceparent,
-    );
+    const traceparents = fetch.mock.calls
+      .filter(([url]) => !String(url).includes("/api/deck/"))
+      .map(([, init]) => (init?.headers as Record<string, string>).traceparent);
     expect(traceparents[0]).toBeUndefined();
     expect(new Set(traceparents.slice(1))).toEqual(
-      new Set([`00-${sink.events[0]!.trace_id}-${sink.events[0]!.span_id}-01`]),
+      new Set([
+        `00-${syncEvents()[0]!.trace_id}-${syncEvents()[0]!.span_id}-01`,
+      ]),
     );
   });
 });
@@ -247,9 +258,9 @@ describe("the scheduler and a project source", () => {
     const fetch = stubProjectSourceApi(projectSourceOverview(1));
 
     render(<BacklogAutoSyncScheduler />);
-    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await waitFor(() => expect(syncEvents()).toHaveLength(1));
 
-    expect(sink.events[0]).toMatchObject({
+    expect(syncEvents()[0]).toMatchObject({
       name: "project_source.sync",
       kind: "job",
       trigger: "schedule",
@@ -269,9 +280,9 @@ describe("the scheduler and a project source", () => {
     const fetch = stubProjectSourceApi(projectSourceOverview(1));
 
     render(<BacklogAutoSyncScheduler />);
-    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await waitFor(() => expect(syncEvents()).toHaveLength(1));
 
-    expect(sink.events[0]).toMatchObject({
+    expect(syncEvents()[0]).toMatchObject({
       name: "project_source.sync",
       project_source_sync: { fresh: true },
     });
@@ -287,7 +298,7 @@ describe("the scheduler and a project source", () => {
 
     await tickOnce(fetch);
 
-    expect(sink.events).toEqual([]);
+    expect(syncEvents()).toEqual([]);
   });
 
   it("leaves a project source whose Managed projects switch is off alone", async () => {
@@ -297,7 +308,7 @@ describe("the scheduler and a project source", () => {
 
     await tickOnce(fetch);
 
-    expect(sink.events).toEqual([]);
+    expect(syncEvents()).toEqual([]);
   });
 });
 
