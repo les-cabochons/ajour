@@ -149,15 +149,21 @@ import {
 } from "../../../packages/shared/code-host.ts";
 import {
   deckAskRequestSchema,
+  deckCacheSettingsUpdateSchema,
   deckConsentRequestSchema,
   deckConsentRevokeRequestSchema,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
   parseDeckPullRequestKey,
+  type DeckCacheStorage,
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
 import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import {
+  createDeckContentCache,
+  deckCacheKeyString,
+} from "./deck-content-cache.ts";
 import {
   createGuideBuilds,
   createWorkerGuideRuntime,
@@ -166,6 +172,7 @@ import {
 import {
   createDeckService,
   DeckBuildReplaced,
+  DeckConnectionRemoved,
   type DeckCodeHost,
 } from "./deck-service.ts";
 import {
@@ -489,6 +496,10 @@ interface AppApiRuntime {
   /** The package each plugin with a process session has, kept between checks. */
   sessionPackages: SessionPackageGate;
   stopping: boolean;
+  /** Finishes the content cache's writes under way, so a quit keeps them (#781). */
+  flushDeckCache: () => Promise<void>;
+  /** Removes a plugin's connections and data, and what Deck cached of them. */
+  removePluginData: (pluginId: string) => Promise<void>;
   pluginDrainMs: number;
   /**
    * The requests being handled that run plugin operations: a stop lets
@@ -1834,16 +1845,55 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
   });
   /**
-   * Deck: the pull request on screen and the preloaded ones, their diffs
-   * built from both file versions and their guides by the vendored pipeline.
+   * Deck: the pull request on screen and the content cache on disk (#781),
+   * their diffs built from both file versions and their guides by the
+   * vendored pipeline.
    */
+  const deckGuides = createGuideBuilds({
+    runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
+    events,
+    timeoutMs: options.deckGuideTimeoutMs,
+  });
   const deckService = createDeckService({
-    guides: createGuideBuilds({
-      runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
-      events,
-      timeoutMs: options.deckGuideTimeoutMs,
+    guides: deckGuides,
+    cache: createDeckContentCache({
+      directory: path.join(storage.dataDirectory, "deck-cache"),
+      capBytes: () => storage.getDeckCacheCapBytes(),
+      // A preload whose entry left the cache needn't build its guide.
+      onRemoved: (key) => deckGuides.evict(deckCacheKeyString(key)),
     }),
   });
+  /**
+   * Every path that removes connections goes through these, so Deck's
+   * cached pull requests of them go too, with the reads and guide builds
+   * still under way (#781).
+   */
+  const deleteConnection = async (pluginId: string, connectionId: string) => {
+    const deleted = await storage.deleteConnection(pluginId, connectionId);
+    if (deleted) void deckService.forgetConnection({ pluginId, connectionId });
+    return deleted;
+  };
+  const removePluginData = async (pluginId: string) => {
+    await storage.removePluginData(pluginId);
+    void deckService.forgetConnection({ pluginId });
+  };
+  /** What Settings › Storage shows, and its event's fields. */
+  const deckCacheStorage = async (unit: {
+    set(fields: object): unknown;
+  }): Promise<DeckCacheStorage> => {
+    const [usage, capBytes] = await Promise.all([
+      deckService.cache.usage(),
+      storage.getDeckCacheCapBytes(),
+    ]);
+    unit.set({
+      deck: {
+        size_bytes: usage.sizeBytes,
+        cap_bytes: capBytes,
+        entry_count: usage.entryCount,
+      },
+    });
+    return { ...usage, capBytes };
+  };
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
@@ -2059,6 +2109,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   });
 
   const runtime: AppApiRuntime = {
+    flushDeckCache: () => deckService.cache.flush(),
+    removePluginData,
     folderResolver,
     events,
     openSockets: new Set(),
@@ -3958,7 +4010,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const deleted = await storage.deleteConnection(pluginId, connectionId);
+      const deleted = await deleteConnection(pluginId, connectionId);
       if (!deleted) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, {
@@ -4044,7 +4096,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // Refused before anything goes: a vault that can't drop the secrets
       // would leave them behind a connection that is already gone.
       await storage.assertSecretsChangeable();
-      await storage.removePluginData(pluginId);
+      await removePluginData(pluginId);
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
@@ -4651,6 +4703,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             connectionId,
             Date.now(),
           );
+          // Merged and closed pull requests leave the content cache first.
+          const { pullRequests } =
+            result as CodeHostOperationResult<"syncPullRequests">;
+          void deckService.cache.markClosed(
+            { pluginId, connectionId },
+            pullRequests,
+          );
         }
         writeJson(response, 200, result);
       } catch (error) {
@@ -4700,7 +4759,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             ),
             file_read_count: facts.fileReadCount,
             kept: facts.kept,
-            preloaded: facts.preloaded,
+            cached: facts.cached,
+            listed: facts.listed,
             concern_count: opened.guide?.concerns.length,
             guide_built: opened.guide !== null,
           },
@@ -4829,6 +4889,28 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       } catch (error) {
         await deck.failed(error);
       }
+    },
+
+    deckStorageGet: async ({ response, unit }) => {
+      writeJson(response, 200, await deckCacheStorage(unit));
+    },
+    // A lower cap evicts at once, closed pull requests first.
+    deckStorageSave: async ({ request, response, unit }) => {
+      const update = await readRequest(request, deckCacheSettingsUpdateSchema);
+      await storage.setDeckCacheCapBytes(update.capBytes);
+      await deckService.cache.evict();
+      writeJson(response, 200, await deckCacheStorage(unit));
+    },
+    // A file Windows holds stays, counted as a pending removal, and goes
+    // at a later pass.
+    deckStorageClear: async ({ response, unit }) => {
+      const before = await deckService.cache.usage();
+      await deckService.cache.clear();
+      const cleared = await deckCacheStorage(unit);
+      unit.set({
+        deck: { removed_count: before.entryCount - cleared.entryCount },
+      });
+      writeJson(response, 200, cleared);
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {
@@ -5701,6 +5783,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
     const { connectionId } = params;
     unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const source = { pluginId, connectionId };
+    // Taken before the first wait: a connection removed from here on opens
+    // and preloads nothing, though this request found it.
+    const generation = deckService.cache.generation(source);
     const found = await codeHostConnection(
       response,
       unit,
@@ -5726,9 +5812,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           operationRequest,
           call.admit,
         ),
+      generation,
     };
     return {
-      source: { pluginId, connectionId },
+      source,
       ref,
       codeHost,
       async failed(error: unknown) {
@@ -5737,8 +5824,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(response, 409, { error: error.message });
           return;
         }
+        if (error instanceof DeckConnectionRemoved) {
+          unit.refuse("connection_removed");
+          writeJson(response, 409, {
+            error: error.message,
+            reason: "connection_removed",
+          });
+          return;
+        }
         if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host Deck doesn't read yet (#780).
+          // An older plugin, or a code host Deck doesn't read.
           unit.refuse("not_supported");
           writeJson(response, 404, {
             error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
@@ -6342,7 +6437,7 @@ export async function uninstallPluginForServer(
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   runtime.sessionPackages.invalidate(removedPlugin.id);
   await runtime.processBroker.endSessions(removedPlugin.id);
-  await runtime.storage.removePluginData(removedPlugin.id);
+  await runtime.removePluginData(removedPlugin.id);
   await runtime.pluginManager.syncReadiness();
   return pluginUninstallResponseSchema.parse({
     pluginId: removedPlugin.id,
@@ -6497,6 +6592,18 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     // No plugin sends a request now: write what the broker gathered for
     // Access review since its last write, so a quit loses none.
     await runtime?.storage.flushBrokerActivity().catch(() => undefined);
+    // The content cache's writes under way finish, within the drain: a
+    // write cut short leaves only a temp file, which the next start drops.
+    if (runtime) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        runtime.flushDeckCache(),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, runtime.pluginDrainMs);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     phaseStartedAt = Date.now();
     // The connections still open are cut off by the stop, not by their
     // clients: their requests end `cancelled` with `stopping`.

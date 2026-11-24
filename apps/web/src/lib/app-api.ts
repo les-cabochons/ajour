@@ -196,14 +196,18 @@ import {
 } from "@ajour/shared";
 import {
   deckAskResponseSchema,
+  deckCacheSettingsUpdateSchema,
+  deckCacheStorageSchema,
   deckConsentsSchema,
   deckOpenedPullRequestSchema,
+  deckPreloadResultSchema,
   type DeckAskRequest,
   type DeckConsentRevokeRequest,
   type DeckOpenRequest,
 } from "@ajour/shared/deck";
 import {
   findRetainedConnection,
+  selectPullRequestsToPreload,
   trackedPullRequestRefs,
 } from "@/domain/pull-requests/pull-request-lifecycle";
 
@@ -434,6 +438,105 @@ export function postPullRequestComment(
 }
 
 /**
+ * Reads pull requests into Deck's content cache ahead of their opening, and
+ * builds their guides at low priority (#781). One cached at the head named
+ * isn't asked of the code host again.
+ */
+export function preloadDeckPullRequests(
+  pluginId: string,
+  connectionId: string,
+  pullRequests: DeckOpenRequest[],
+) {
+  return appApiRequest(
+    "preloadDeckPullRequests",
+    `/api/deck/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/preload`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pullRequests }),
+    },
+    deckPreloadResultSchema,
+  );
+}
+
+/**
+ * Preloads the connection's pull requests on the user's plate, after its
+ * sync applied, as a `deck.preload` job of its own. A failure only leaves
+ * them to load when they open.
+ */
+function preloadAfterSync(pluginId: string, connectionId: string) {
+  const pullRequests = selectPullRequestsToPreload(
+    localStore.snapshot().pullRequests ?? [],
+    { pluginId, connectionId },
+    Date.now(),
+  );
+  if (!pullRequests.length) return;
+  void wideEvents
+    .run(
+      "deck.preload",
+      { kind: "job", trigger: "system", detached: true },
+      async (job) => {
+        job.set({
+          plugin: { id: pluginId },
+          connection: { id: connectionId },
+          deck: { pull_request_count: pullRequests.length },
+        });
+        try {
+          const { queued } = await job.enter(() =>
+            preloadDeckPullRequests(pluginId, connectionId, pullRequests),
+          );
+          job.set({ deck: { queued_count: queued } });
+        } catch (error) {
+          // A plugin that doesn't read changes yet has nothing to preload.
+          if (
+            error instanceof AppApiError &&
+            error.payload?.reason === "not_supported"
+          ) {
+            job.refuse("not_supported").end();
+            return;
+          }
+          throw error;
+        }
+      },
+    )
+    .catch(() => undefined);
+}
+
+/** Settings › Storage: the size of Deck's content cache, and its cap. */
+export function getDeckCacheStorage() {
+  return appApiRequest(
+    "getDeckCacheStorage",
+    "/api/deck/storage",
+    undefined,
+    deckCacheStorageSchema,
+  );
+}
+
+/** Sets the content cache's cap. A lower one evicts at once. */
+export function saveDeckCacheCap(capBytes: number) {
+  return appApiRequest(
+    "saveDeckCacheCap",
+    "/api/deck/storage",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(deckCacheSettingsUpdateSchema.parse({ capBytes })),
+    },
+    deckCacheStorageSchema,
+  );
+}
+
+/** Clear cache: removes every pull request Deck kept on this computer. */
+export function clearDeckCache() {
+  return appApiRequest(
+    "clearDeckCache",
+    "/api/deck/storage/clear",
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+    deckCacheStorageSchema,
+  );
+}
+
+/**
  * Syncs a connection's pull requests as one `pull_request.sync` job. A
  * manual and a scheduled call share one run, and its event. An answer for a
  * connection removed, turned off or saved again meanwhile is not applied.
@@ -536,6 +639,7 @@ export function syncCodeHostConnection(
         reattachFrom ? { reattachFrom } : {},
       ),
     );
+    preloadAfterSync(pluginId, connectionId);
     return result;
   };
   const promise = wideEvents

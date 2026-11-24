@@ -362,7 +362,7 @@ export function createGuideBuilds(options: {
       preempt();
     },
 
-    /** Cancels the build of `key`, waiting or running: its preload was pushed out. */
+    /** Cancels the build of `key`, waiting or running: its pull request left the content cache. */
     evict(key: string) {
       const job = jobs.get(key);
       if (job) cancel(job, "evicted");

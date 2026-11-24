@@ -172,6 +172,10 @@ _Avoid_: Chunk, change block, patch
 What Deck shows in place of a pull request's description: the problem it fixes, written from its linked ticket, the kinds of change, breaking changes, risky areas, test coverage and leftovers.
 _Avoid_: Description, overview, AI summary
 
+**Content cache**:
+What Deck keeps on disk of each pull request it read, at one base and head: both versions of each changed file, the diff and the guide. It lets a pull request open without asking the code host. Draft reviews are never part of it.
+_Avoid_: Offline copy, download, mirror
+
 **Ask**:
 A question to the agent asked in place, anchored to selected lines, a concern or a summary line. Its answer streams in below the anchor.
 _Avoid_: Prompt, chat message, query

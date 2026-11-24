@@ -250,7 +250,9 @@ describe("code host sync persistence", () => {
       trigger: "schedule",
     });
 
-    expect(sink.events).toEqual([
+    expect(
+      sink.events.filter((event) => event.name !== "deck.preload"),
+    ).toEqual([
       expect.objectContaining({
         name: "pull_request.sync",
         kind: "job",
@@ -263,8 +265,9 @@ describe("code host sync persistence", () => {
         counts: expect.objectContaining({ api_call_count: 2 }),
       }),
     ]);
-    // Each call sent the job's span.
-    for (const [, init] of fetch.mock.calls) {
+    // Each of its calls sent the job's span.
+    for (const [url, init] of fetch.mock.calls) {
+      if (url.includes("/api/deck/")) continue;
       expect((init?.headers as Record<string, string>).traceparent).toBe(
         `00-${sink.events[0]!.trace_id}-${sink.events[0]!.span_id}-01`,
       );
@@ -347,5 +350,60 @@ describe("code host sync persistence", () => {
     // A deleted connection takes its drafts with it.
     reloaded.removeConnectionPullRequests("github", "work");
     expect(reloaded.snapshot().deckDraftReviews).toEqual([]);
+  });
+
+  it("preloads the pull requests on the user's plate in Deck once the sync applied, at the head it saw", async () => {
+    const api = await import("./app-api");
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("./wide-events")).replaceEventSink(sink);
+    api.cachePluginsOverview(overview);
+    const settled = { ...facts, id: "pr2", number: 2, viewerIsAuthor: true };
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/api/deck/")) return Response.json({ queued: 1 });
+      return init?.method === "POST"
+        ? Response.json({ ...result, pullRequests: [facts, settled] })
+        : Response.json(overview);
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await api.syncCodeHostConnection("github", "work");
+
+    await vi.waitFor(() =>
+      expect(sink.events.map((event) => event.name)).toContain("deck.preload"),
+    );
+    const preload = fetch.mock.calls.find(([url]) => url.includes("/preload"));
+    expect(preload?.[0]).toContain("/api/deck/github/connections/work/preload");
+    expect(JSON.parse(preload?.[1]?.body as string)).toEqual({
+      pullRequests: [{ repository: "acme/api", number: 1, headSha: "one" }],
+    });
+    expect(
+      sink.events.find((event) => event.name === "deck.preload"),
+    ).toMatchObject({
+      kind: "job",
+      trigger: "system",
+      outcome: "ok",
+      deck: { pull_request_count: 1, queued_count: 1 },
+    });
+  });
+
+  it("preloads nothing when no pull request is on the user's plate", async () => {
+    const api = await import("./app-api");
+    api.cachePluginsOverview(overview);
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? Response.json({
+            ...result,
+            pullRequests: [{ ...facts, viewerIsAuthor: true }],
+          })
+        : Response.json(overview),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await api.syncCodeHostConnection("github", "work");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(
+      fetch.mock.calls.filter(([url]) => url.includes("/api/deck/")),
+    ).toEqual([]);
   });
 });
