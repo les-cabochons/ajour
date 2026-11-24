@@ -78,11 +78,16 @@ export function ThreadGutter({
         getComputedStyle(grid).getPropertyValue("--diff-line-height"),
       ) || 20;
     const cards = [...gutter.querySelectorAll<HTMLElement>("[data-card]")];
+    // The hunks in the page, in one query: a huge pull request mounts only
+    // those near the screen (#790), and a folded hunk has no box.
+    const boxes = new Map<string, Element>();
+    for (const box of grid.querySelectorAll("[data-hunk]")) {
+      const id = box.getAttribute("data-hunk");
+      if (id !== null) boxes.set(id, box);
+    }
     const measured = cards.flatMap((card) => {
       const entry = byKey.get(card.dataset.card ?? "");
-      const box = entry
-        ? grid.querySelector(`[data-hunk=${quoted(entry.hunkId)}]`)
-        : null;
+      const box = entry ? boxes.get(entry.hunkId) : undefined;
       if (!entry || !box) return [];
       const boxRect = box.getBoundingClientRect();
       const anchor = box.querySelector(
@@ -120,21 +125,25 @@ export function ThreadGutter({
     for (const item of measured) {
       const top = tops.get(item.key)!;
       bottom = Math.max(bottom, top + item.height);
-      // An absolute card's top moves only the card.
-      item.card.style.setProperty("top", `${top}px`);
-      item.card.dataset.placed = "";
-      connectors
-        .querySelector(`[data-connector=${quoted(item.key)}]`)
-        ?.setAttribute(
-          "d",
-          connectorPath({
-            fromX: item.fromX,
-            lineY: item.y,
-            elbowX: item.fromX + ELBOW,
-            cardY: top + LIFT,
-            toX,
-          }),
-        );
+      // An absolute card's top moves only the card. What stays put isn't
+      // written again, so a placement that moves nothing costs no layout.
+      if (item.card.style.top !== `${top}px`) {
+        item.card.style.setProperty("top", `${top}px`);
+      }
+      if (!("placed" in item.card.dataset)) item.card.dataset.placed = "";
+      const path = connectorPath({
+        fromX: item.fromX,
+        lineY: item.y,
+        elbowX: item.fromX + ELBOW,
+        cardY: top + LIFT,
+        toX,
+      });
+      const connector = connectors.querySelector(
+        `[data-connector=${quoted(item.key)}]`,
+      );
+      if (connector && connector.getAttribute("d") !== path) {
+        connector.setAttribute("d", path);
+      }
     }
     // A card whose hunk is folded as viewed has no line to sit beside.
     const shown = new Set(measured.map((item) => item.card));
@@ -145,7 +154,9 @@ export function ThreadGutter({
         .querySelector(`[data-connector=${quoted(card.dataset.card ?? "")}]`)
         ?.removeAttribute("d");
     }
-    gutter.style.setProperty("min-height", `${bottom}px`);
+    if (gutter.style.minHeight !== `${bottom}px`) {
+      gutter.style.setProperty("min-height", `${bottom}px`);
+    }
   }, [byKey]);
 
   const frame = useRef(0);

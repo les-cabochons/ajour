@@ -9,16 +9,22 @@ import type { AgentTurnEvent } from "@ajour/shared/agent-runs";
 
 type TurnEvent = Extract<AgentTurnEvent, { turnId: string }>;
 type Listener = (event: TurnEvent) => void;
+type ClosedEvent = Extract<AgentTurnEvent, { type: "conversation-closed" }>;
+type ClosedListener = (event: ClosedEvent) => void;
 
 /** Turns whose events are kept, newest last. */
 const TURNS_KEPT = 50;
 
 const kept = new Map<string, TurnEvent[]>();
 const listeners = new Map<string, Set<Listener>>();
+const closedListeners = new Set<ClosedListener>();
 
 /** Hands an event from the stream to its turn's watchers. */
 export function receiveAgentTurnEvent(event: AgentTurnEvent) {
-  if (!("turnId" in event)) return;
+  if (event.type === "conversation-closed") {
+    for (const listener of [...closedListeners]) listener(event);
+    return;
+  }
   const events = kept.get(event.turnId) ?? [];
   kept.delete(event.turnId);
   kept.set(event.turnId, [...events, event]);
@@ -27,6 +33,14 @@ export function receiveAgentTurnEvent(event: AgentTurnEvent) {
     kept.delete(oldest);
   }
   listeners.get(event.turnId)?.forEach((listener) => listener(event));
+}
+
+/** Calls `listener` each time a conversation closes, from now on. */
+export function watchClosedConversations(listener: ClosedListener) {
+  closedListeners.add(listener);
+  return () => {
+    closedListeners.delete(listener);
+  };
 }
 
 /**
