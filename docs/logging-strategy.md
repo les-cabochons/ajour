@@ -1138,6 +1138,7 @@ channel to read the event each emits.
 | `connection.remove_secrets`          | command, request                        | route, client call                               |
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
+| `deck.open`                          | command, request                        | route, client call                               |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |
 | `description.write`                  | command, request, plugin_operation      | route, plugin method, client call                |
 | `dev_plugins.configure`              | command, ipc                            | IPC channel                                      |

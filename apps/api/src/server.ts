@@ -147,6 +147,8 @@ import {
   type CodeHostOperationRequest,
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
+import { deckOpenRequestSchema } from "../../../packages/shared/deck.ts";
+import { createDeckService } from "./deck-service.ts";
 import {
   calendarOperationSchema,
   calendarOperations,
@@ -1796,6 +1798,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       if (refusal) throw refusal;
     },
   });
+  /** Deck: the pull request on screen, its diff built from both file versions. */
+  const deckService = createDeckService();
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
@@ -4570,6 +4574,94 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           await storage.recordConnectionError(pluginId, connectionId, message);
         }
         writeJson(response, 502, { error: message });
+      }
+    },
+
+    deckOpen: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
+      if (!plugin || !pluginHasCodeHost(plugin)) {
+        unit.refuse("not_supported");
+        writeJson(response, 404, {
+          error: "This plugin does not provide pull requests.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "codeHost",
+        runnable,
+        "using its pull requests",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
+      if (!connection) {
+        unit.refuse("connection_not_found");
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+      const body = await readJsonBody(request);
+      const ref = readInput(() => deckOpenRequestSchema.parse(body));
+      for (const operation of ["getPullRequestContent", "getFileContent"]) {
+        if (refuseAccessOff(response, unit, plugin, connection, operation)) {
+          return;
+        }
+      }
+      const call = admittedCall(plugin, connection.secrets);
+      try {
+        const opened = await deckService.openPullRequest(
+          { pluginId, connectionId },
+          ref,
+          {
+            run: (operation, operationRequest) =>
+              pluginManager.runCodeHostOperation(
+                pluginId,
+                operation,
+                pluginConnection(connection),
+                operationRequest,
+                call.admit,
+              ),
+          },
+        );
+        unit.set({
+          deck: {
+            file_count: opened.diff.files.length,
+            hunk_count: opened.diff.files.reduce(
+              (count, file) => count + file.hunks.length,
+              0,
+            ),
+            file_read_count: opened.fileReadCount,
+            kept: opened.kept,
+          },
+        });
+        writeJson(response, 200, opened.diff);
+      } catch (error) {
+        if (answerAccessOff(response, unit, error)) return;
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
 

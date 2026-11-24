@@ -9,6 +9,7 @@
 @import "./styles/projects.css";
 @import "./styles/settings.css";
 @import "./styles/composer.css";
+@import "./styles/deck.css";
 
 @custom-variant dark (&:is(.dark *));
 

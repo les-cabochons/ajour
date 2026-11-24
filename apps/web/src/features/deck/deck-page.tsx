@@ -21,10 +21,12 @@ import {
   reasonLabels,
   runPullRequestAction,
 } from "./pull-request-row";
+import { PullRequestChanges } from "./pull-request-changes";
 
 /**
  * Deck: the pull requests the user authored or was asked to review, and one
- * pull request's summary at `/deck/$itemId`. The view is called Deck; what
+ * pull request's review page at `/deck/$itemId`: its summary, then every
+ * file's hunks. The view is called Deck; what
  * it lists are pull requests.
  */
 export function DeckPage({ itemId }: { itemId?: string }) {
@@ -148,6 +150,7 @@ export function DeckPage({ itemId }: { itemId?: string }) {
                 {new Date(item.facts.updatedAt).toLocaleString()}
               </PropertyRow>
             </PropertyList>
+            <PullRequestChanges pullRequest={item} />
           </>
         )}
       </div>

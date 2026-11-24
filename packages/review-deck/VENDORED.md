@@ -28,7 +28,7 @@ Not copied: `src/node/` (CLI, embedder, CLI titler), `src/render/`,
 `extension/` and `backend/`. No embedder ships, so the semantic signal stays
 off.
 
-Ajour's own files are the entry points `saved.ts` and `stack.ts`, the block
+Ajour's own files are the entry points `saved.ts`, `stack.ts` and `diff.ts`, the block
 at the end of `pipeline.ts`, `ajour/deps.ts`, and the tests
 `build-diff.test.ts`, `deps-grammar.test.ts`, `deps-init.test.ts`,
 `description.test.ts` and `languages.test.ts`, which Ajour rewrote. The
@@ -38,6 +38,10 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
 
 - `pipeline.ts`: `runPipeline` and `buildDiff`, the config, the result types,
   and `createPipelineDeps`, Ajour's side of `PipelineDeps`.
+- `diff.ts`: `buildDiff` and `parseDiff`, which cut a pull request's hunks
+  with Review Deck's `path#index` ids, and their types. It loads no parser,
+  so Deck's service in the local API builds a diff without the pipeline
+  (#779).
 - `saved.ts`: the `saved-reviews` format 4.
 - `stack.ts`: stack detection among open pull requests, and trunk patterns.
 

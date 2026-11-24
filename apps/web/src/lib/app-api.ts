@@ -188,6 +188,10 @@ import {
   type SwitchableCapability,
 } from "@ajour/shared";
 import {
+  deckPullRequestDiffSchema,
+  type DeckOpenRequest,
+} from "@ajour/shared/deck";
+import {
   findRetainedConnection,
   trackedPullRequestRefs,
 } from "@/domain/pull-requests/pull-request-lifecycle";
@@ -203,6 +207,29 @@ const connectionKey = (pluginId: string, connectionId: string) =>
  */
 export function connectionGeneration(pluginId: string, connectionId: string) {
   return connectionGenerations.get(connectionKey(pluginId, connectionId)) ?? 0;
+}
+
+/**
+ * Opens a pull request in Deck: its diff from the merge base to the head,
+ * which the local API builds from both versions of each changed file.
+ */
+export function openDeckPullRequest(
+  pluginId: string,
+  connectionId: string,
+  pullRequest: DeckOpenRequest,
+) {
+  return appApiRequest(
+    "openDeckPullRequest",
+    `/api/deck/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/open`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pullRequest),
+    },
+    deckPullRequestDiffSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
 }
 
 /**
