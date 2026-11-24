@@ -1141,7 +1141,10 @@ channel to read the event each emits.
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
 | `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
-| `deck.preload`                       | request                                 | route                                            |
+| `deck.preload`                       | request, job                            | route, client call, renderer                     |
+| `deck.storage_clear`                 | request, command                        | route, client call                               |
+| `deck.storage_read`                  | request, command                        | route, client call                               |
+| `deck.storage_update`                | request, command                        | route, client call                               |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |
 | `description.write`                  | command, request, plugin_operation      | route, plugin method, client call                |
 | `dev_plugins.configure`              | command, ipc                            | IPC channel                                      |

@@ -120,6 +120,11 @@ export const deckPreloadRequestSchema = z.object({
 });
 export type DeckPreloadRequest = z.infer<typeof deckPreloadRequestSchema>;
 
+/** A preload's answer: the guide builds it queued. */
+export const deckPreloadResultSchema = z.object({
+  queued: z.number().int().nonnegative(),
+});
+
 /** The content cache's cap until the user sets one in Settings › Storage: 1 GB. */
 export const DECK_CACHE_DEFAULT_CAP_BYTES = 1024 ** 3;
 

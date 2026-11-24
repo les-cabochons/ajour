@@ -227,9 +227,11 @@ it("opens the pull request and shows its title and every hunk, files A–Z, with
     ),
   ).toBeTruthy();
   expect(within(changes).getByText("Added")).toBeTruthy();
+  // At the head the last sync saw, which the content cache may hold (#781).
   expect(api.openDeckPullRequest).toHaveBeenCalledWith("github", "work", {
     repository: "acme/api",
     number: 1,
+    headSha: "one",
   });
 });
 
