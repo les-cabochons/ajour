@@ -168,7 +168,14 @@ async function startCloneApi() {
         [{ exit: 0 }],
         report,
         () => mcpUrl,
-        () => [...answer("It reads ", "the clone."), ...answer("Again.")],
+        // Each process names its session, so a later one resumes it.
+        () => [
+          { readTurn: true },
+          { session: "s-1" },
+          { stream: ["It reads ", "the clone."] },
+          { result: true },
+          ...answer("Again."),
+        ],
       ),
       fakeCodexAdapter(
         report,
@@ -337,10 +344,12 @@ describe("an ask that reads the user's clone", () => {
 
       // The worktree goes with its entry: another pull request replaces it on screen.
       expect((await api.open(18)).status).toBe(200);
-      await until(async () => !(await exists(root)));
-      expect(
-        git(fixture.clone, "for-each-ref", "--format=%(refname)", "refs/ajour"),
-      ).toBe("");
+      // Its ref goes right after the worktree.
+      await until(
+        async () =>
+          !(await exists(root)) &&
+          git(fixture.clone, "for-each-ref", "refs/ajour") === "",
+      );
       expect(await fixture.userState()).toEqual(before);
     },
   );
@@ -354,6 +363,18 @@ describe("an ask that reads the user's clone", () => {
       expect(asked.body.clone).toEqual({ state: "not_chosen" });
       await api.ended(asked.body.turn.id);
       expect((await api.launches())[0]).not.toContain("--add-dir");
+
+      // Once a clone is chosen, the cached answer is asked again, reading it,
+      // in a new process whose file tools are rooted at the worktree.
+      await api.choose((await api.addFolder()).id);
+      const again = await api.ask();
+      expect(again.status).toBe(201);
+      expect(again.body.clone).toEqual({ state: "read" });
+      await api.ended(again.body.turn.id);
+      const launches = await api.launches();
+      expect(launches).toHaveLength(2);
+      expect(launches[1]).toContain("--add-dir");
+      expect(launches[1]).toContain("--resume");
     },
   );
 

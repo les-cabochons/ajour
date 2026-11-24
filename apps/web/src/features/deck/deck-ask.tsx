@@ -14,6 +14,7 @@ import {
   DECK_QUESTION_MAX,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
+  type DeckCloneSource,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -22,12 +23,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   answerAsk,
+  answerFooter,
   applyTurnEvent,
   askGoing,
   askText,
   failAsk,
-  shortHead,
   startAsk,
+  withClone,
   type AskState,
 } from "@/domain/deck/ask";
 import { watchAgentTurn } from "@/lib/agent-turns";
@@ -37,6 +39,7 @@ import {
   cancelAgentTurn,
   grantDeckConsent,
 } from "@/lib/app-api";
+import { DeckClonePicker, type DeckCloneTarget } from "./deck-clone-picker";
 import { DeckConsentDialog } from "./deck-consent-dialog";
 
 /*
@@ -46,6 +49,10 @@ import { DeckConsentDialog } from "./deck-consent-dialog";
  * it is about. The first ask in a repository opens the consent dialog.
  * Nothing names the agent. At rest a concern mounts one button and no
  * listener.
+ *
+ * When the code host says where the repository is cloned from, an ask can
+ * read the user's local clone too (#795): its footer says so, says why it
+ * couldn't, or offers to choose the clone.
  */
 
 /** The pull request the page asks about, at the head it shows. */
@@ -55,10 +62,14 @@ export interface DeckAskTarget {
   repository: string;
   number: number;
   head: string;
+  /** Where the repository is cloned from, from the pull request's facts. */
+  clone?: DeckCloneSource;
 }
 
 interface DeckAskContextValue {
   target: DeckAskTarget;
+  /** Opens the clone picker. Resolves true once a clone is chosen. */
+  pickClone(): Promise<boolean>;
   /**
    * Opens the consent dialog. Resolves true once the repository is allowed,
    * false for Not now, or why recording the consent failed.
@@ -77,12 +88,48 @@ export function DeckAskProvider({
   repository,
   number,
   head,
+  clone,
   children,
 }: DeckAskTarget & { children: ReactNode }) {
   const target = useMemo(
-    () => ({ pluginId, connectionId, repository, number, head }),
-    [pluginId, connectionId, repository, number, head],
+    () => ({
+      pluginId,
+      connectionId,
+      repository,
+      number,
+      head,
+      ...(clone ? { clone } : {}),
+    }),
+    [pluginId, connectionId, repository, number, head, clone],
   );
+  const [picking, setPicking] = useState<{
+    target: DeckCloneTarget;
+    resolve: (chosen: boolean) => void;
+  }>();
+  const pickClone = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        if (!target.clone) {
+          resolve(false);
+          return;
+        }
+        const cloneTarget = {
+          pluginId: target.pluginId,
+          connectionId: target.connectionId,
+          repository: target.repository,
+          clone: target.clone,
+        };
+        setPicking((current) => {
+          current?.resolve(false);
+          return { target: cloneTarget, resolve };
+        });
+      }),
+    [target],
+  );
+  const closePicker = (chosen: boolean) => {
+    picking?.resolve(chosen);
+    setPicking(undefined);
+  };
   const [asking, setAsking] = useState<{
     request: DeckNeedsConsent;
     resolve: (answer: ConsentAnswer) => void;
@@ -134,8 +181,8 @@ export function DeckAskProvider({
     }
   };
   const value = useMemo(
-    () => ({ target, requestConsent }),
-    [target, requestConsent],
+    () => ({ target, requestConsent, pickClone }),
+    [target, requestConsent, pickClone],
   );
   return (
     <DeckAskContext.Provider value={value}>
@@ -143,6 +190,13 @@ export function DeckAskProvider({
       <DeckConsentDialog
         request={asking?.request}
         onAnswer={(allowed) => void answer(allowed)}
+      />
+      <DeckClonePicker
+        target={picking?.target}
+        onOpenChange={(open) => {
+          if (!open) closePicker(false);
+        }}
+        onChosen={() => closePicker(true)}
       />
     </DeckAskContext.Provider>
   );
@@ -219,7 +273,7 @@ function AskAnswer({
   context: DeckAskContextValue;
   onClose: () => void;
 }) {
-  const { target, requestConsent } = context;
+  const { target, requestConsent, pickClone } = context;
   /** Nothing is asked yet: the question shows, to send or edit. */
   const [composing, setComposing] = useState(true);
   const [state, setState] = useState<AskState>(() => startAsk());
@@ -246,12 +300,16 @@ function AskAnswer({
             head: target.head,
             anchor,
             ...(question === undefined ? {} : { question }),
+            ...(target.clone ? { clone: target.clone } : {}),
           });
           if (!current()) return;
           if (asked.kind === "answer") {
-            setState((state) => answerAsk(state, asked.text, asked.head));
+            setState((state) =>
+              answerAsk(withClone(state, asked.clone), asked.text, asked.head),
+            );
             return;
           }
+          setState((state) => withClone(state, asked.clone));
           setTurnId(asked.turn.id);
           return;
         } catch (error) {
@@ -329,9 +387,15 @@ function AskAnswer({
       ) : null}
       {text ? <Markdown className="deck-ask-text">{text}</Markdown> : null}
       {state.kind === "answered" ? (
-        <p className="deck-ask-footer">
-          From the code at {shortHead(state.head)}
-        </p>
+        <AnswerFooter
+          state={state}
+          onChooseClone={() =>
+            void pickClone().then((chosen) => {
+              // Asked again, the answer reads the clone.
+              if (chosen) void ask(state.question);
+            })
+          }
+        />
       ) : state.kind === "stopped" ? (
         <p className="deck-ask-footer">Stopped.</p>
       ) : state.kind === "failed" ? (
@@ -380,6 +444,44 @@ function AskAnswer({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The head the answer read, with `, and your clone` when it read the
+ * user's clone too; why it couldn't, quietly; or the offer to choose one.
+ */
+function AnswerFooter({
+  state,
+  onChooseClone,
+}: {
+  state: Extract<AskState, { kind: "answered" }>;
+  onChooseClone: () => void;
+}) {
+  const footer = answerFooter(state);
+  return (
+    <>
+      <p className="deck-ask-footer">
+        {footer.source}
+        {footer.offersClone ? (
+          <>
+            {" · "}
+            <button
+              type="button"
+              className="deck-ask-clone"
+              onClick={onChooseClone}
+            >
+              Read your clone too
+            </button>
+          </>
+        ) : null}
+      </p>
+      {footer.cloneReason ? (
+        <p className="deck-ask-footer">
+          Your clone wasn't read: {footer.cloneReason}
+        </p>
+      ) : null}
+    </>
   );
 }
 

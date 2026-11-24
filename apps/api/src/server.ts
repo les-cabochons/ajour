@@ -154,6 +154,8 @@ import {
   deckCloneSuggestionsRequestSchema,
   deckConsentRequestSchema,
   deckConsentRevokeRequestSchema,
+  deckCloneSourceSchema,
+  type DeckClone,
   type DeckCloneSource,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
@@ -6653,13 +6655,27 @@ function chooseDeckClone(
 export async function chooseDeckCloneForServer(
   server: Server,
   repository: { pluginId: string; connectionId: string; repository: string },
-  source: DeckCloneSource,
+  source: unknown,
   chosenPath: string,
-) {
+): Promise<{ clone: DeckClone } | { refused: string }> {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime || runtime.stopping)
     throw new Error("Choosing a clone needs the active desktop app.");
-  return chooseDeckClone(runtime.deckClones, repository, source, chosenPath);
+  const parsed = deckCloneSourceSchema.safeParse(source);
+  if (!parsed.success) throw new Error("Choose a repository.");
+  try {
+    return {
+      clone: await chooseDeckClone(
+        runtime.deckClones,
+        repository,
+        parsed.data,
+        chosenPath,
+      ),
+    };
+  } catch (error) {
+    if (error instanceof DeckCloneRefused) return { refused: error.message };
+    throw error;
+  }
 }
 
 export async function addRepositoryFolderForServer(

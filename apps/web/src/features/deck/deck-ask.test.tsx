@@ -38,6 +38,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   askDeck: vi.fn(),
   grantDeckConsent: vi.fn(),
   cancelAgentTurn: vi.fn(),
+  getDeckCloneSuggestions: vi.fn(),
+  chooseDeckCloneFolder: vi.fn(),
 }));
 vi.mock("@pierre/diffs/react", () => ({
   PatchDiff: ({ patch }: { patch: string }) => <pre>{patch}</pre>,
@@ -173,6 +175,8 @@ afterEach(() => {
   vi.mocked(api.askDeck).mockReset();
   vi.mocked(api.grantDeckConsent).mockReset();
   vi.mocked(api.cancelAgentTurn).mockReset();
+  vi.mocked(api.getDeckCloneSuggestions).mockReset();
+  vi.mocked(api.chooseDeckCloneFolder).mockReset();
 });
 
 /** The review page, with its guide shown. */
@@ -544,5 +548,213 @@ it("says why the consent couldn't be recorded", async () => {
       "Settings > Agents now picks Codex. Ask again to allow it.",
     ),
   ).toBeTruthy();
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+/*
+ * The user's local clone (#795): when the code host says where the
+ * repository is cloned from, an ask sends it, and the answer's footer says
+ * whether it read the clone, why it couldn't, or offers to choose one.
+ */
+
+const IDENTITY = {
+  repositoryIdentity: {
+    cloneUrls: ["https://github.com/acme/billing-api.git"],
+  },
+  headRef: "feature/login",
+};
+
+/** The pull request as a sync with its clone addresses stores it. */
+function syncWithIdentity() {
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [
+        { ...pullRequestFacts, repository: "acme/billing-api", ...IDENTITY },
+      ],
+    },
+  );
+}
+
+it("sends where the repository is cloned from, and ends an answer that read the clone with , and your clone", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("c1"),
+    clone: { state: "read" },
+  });
+  const concern = await renderGuide();
+
+  askOn(concern);
+
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
+    repository: "acme/billing-api",
+    number: 1,
+    head: HEAD,
+    anchor: { kind: "concern", id: "g1" },
+    clone: IDENTITY,
+  });
+  started("c1");
+  text("c1", 0, "It reads the whole module.");
+  ended("c1");
+  expect(
+    await within(answer).findByText("From the code at a41c9e2, and your clone"),
+  ).toBeTruthy();
+  expect(answer.textContent).not.toMatch(/Claude|Codex|OpenCode/i);
+});
+
+it("says why the clone wasn't read, quietly, under the answer", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "From the pull request alone.",
+    head: HEAD,
+    clone: {
+      state: "unavailable",
+      reason:
+        "Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
+    },
+  });
+  const concern = await renderGuide();
+
+  askOn(concern);
+
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  await within(answer).findByText("From the pull request alone.");
+  expect(within(answer).getByText("From the code at a41c9e2")).toBeTruthy();
+  expect(
+    within(answer).getByText(
+      "Your clone wasn't read: Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(answer).queryByRole("button", { name: "Read your clone too" }),
+  ).toBeNull();
+});
+
+it("offers to choose the clone, lists the folders Ajour knows, and asks again reading it", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "From the pull request alone.",
+      head: HEAD,
+      clone: { state: "not_chosen" },
+    })
+    .mockResolvedValueOnce({
+      kind: "turn",
+      turn: turn("c2"),
+      clone: { state: "read" },
+    });
+  vi.mocked(api.getDeckCloneSuggestions).mockResolvedValue({
+    suggestions: [
+      { folderId: "f1", name: "billing-api", path: "/src/billing-api" },
+    ],
+  });
+  vi.mocked(api.chooseDeckCloneFolder).mockResolvedValue({
+    clone: {
+      pluginId: "github",
+      connectionId: "work",
+      repository: "acme/billing-api",
+      environment: { kind: "native" },
+      path: "/src/billing-api",
+      remote: "origin",
+      chosenAt: 1,
+    },
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  await within(answer).findByText("From the pull request alone.");
+
+  fireEvent.click(
+    within(answer).getByRole("button", { name: "Read your clone too" }),
+  );
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your clone of billing-api",
+  });
+  expect(api.getDeckCloneSuggestions).toHaveBeenCalledWith(
+    "github",
+    "work",
+    "acme/billing-api",
+    IDENTITY,
+  );
+  const folder = await within(dialog).findByRole("radio", {
+    name: "billing-api /src/billing-api",
+  });
+  expect((folder as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use clone" }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Your clone of billing-api" }),
+    ).toBeNull(),
+  );
+  expect(api.chooseDeckCloneFolder).toHaveBeenCalledWith(
+    "github",
+    "work",
+    "acme/billing-api",
+    IDENTITY,
+    "f1",
+  );
+  await waitFor(() => expect(api.askDeck).toHaveBeenCalledTimes(2));
+  started("c2");
+  text("c2", 0, "Now with the clone.");
+  ended("c2");
+  expect(
+    await within(concern).findByText(
+      "From the code at a41c9e2, and your clone",
+    ),
+  ).toBeTruthy();
+});
+
+it("shows why a folder can't be the clone, and keeps the dialog open", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "From the pull request alone.",
+    head: HEAD,
+    clone: { state: "not_chosen" },
+  });
+  vi.mocked(api.getDeckCloneSuggestions).mockResolvedValue({
+    suggestions: [{ folderId: "f1", name: "web", path: "/src/web" }],
+  });
+  vi.mocked(api.chooseDeckCloneFolder).mockRejectedValue(
+    new AppApiError("Refused", 400, undefined, {
+      reason: "clone_refused",
+      error: "None of this folder's remotes is acme/billing-api.",
+    }),
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  fireEvent.click(
+    await within(answer).findByRole("button", { name: "Read your clone too" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your clone of billing-api",
+  });
+  await within(dialog).findByRole("radio", { name: "web /src/web" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use clone" }));
+
+  expect((await within(dialog).findByRole("alert")).textContent).toBe(
+    "None of this folder's remotes is acme/billing-api.",
+  );
   expect(api.askDeck).toHaveBeenCalledTimes(1);
 });

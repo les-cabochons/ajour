@@ -67,9 +67,9 @@ export function DeckConsentsSetting() {
       <h2 className="settings-section-title">Questions about pull requests</h2>
       <p className="settings-section-desc">
         When you ask for more detail in Deck, Ajour sends the pull request's
-        changed lines, the hunks and files the agent reads, and its review
-        threads to the agent, which sends them to its provider. Each repository
-        asks once.
+        changed lines, the hunks and files the agent reads, its review threads
+        and, when you chose your local clone, the files the agent reads there to
+        the agent, which sends them to its provider. Each repository asks once.
       </p>
       <AppPanel>
         {consents === undefined ? null : consents.length ? (

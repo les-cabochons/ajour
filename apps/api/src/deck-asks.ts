@@ -128,6 +128,26 @@ export function createDeckAsks(options: DeckAsksOptions) {
   >();
 
   /**
+   * Whether a cached answer that didn't read the clone could read it now:
+   * the user chose a clone since, so the ask runs again.
+   */
+  async function couldReadClone(
+    cached: Answer,
+    request: DeckAskRequest,
+    source: DeckPullRequestSource,
+  ) {
+    if (!options.clones || !request.clone) return false;
+    if (cached.clone?.state === "read") return false;
+    const { cli } = await options.storage.getAgentRunnerSettings();
+    if (!cli || (options.readsFiles && !options.readsFiles(cli))) return false;
+    return options.clones.isChosen({
+      pluginId: source.pluginId,
+      connectionId: source.connectionId,
+      repository: source.repository,
+    });
+  }
+
+  /**
    * The user's clone at the pull request's head, when they chose one and
    * the agent can read it: the folder the turn reads, or why it can't.
    */
@@ -276,7 +296,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         request.question,
       );
       const cached = answers.get(key);
-      if (cached !== undefined) {
+      if (cached !== undefined && !(await couldReadClone(cached, request, pullRequestSource))) {
         answers.delete(key);
         answers.set(key, cached);
         return {

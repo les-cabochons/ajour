@@ -164,6 +164,15 @@ export function PullRequestChanges({
   pullRequest: LocalPullRequest;
 }) {
   const { state, retry } = usePullRequestDiff(pullRequest);
+  const { repositoryIdentity, headRef } = pullRequest.facts;
+  // Where the repository is cloned from, so an ask can read the user's clone.
+  const cloneSource = useMemo(
+    () =>
+      repositoryIdentity
+        ? { repositoryIdentity, ...(headRef ? { headRef } : {}) }
+        : undefined,
+    [repositoryIdentity, headRef],
+  );
   return (
     // Named outright: the heading's count would join its name.
     <section className="deck-changes" aria-label="Changes">
@@ -190,6 +199,7 @@ export function PullRequestChanges({
           repository={pullRequest.facts.repository}
           number={pullRequest.facts.number}
           head={state.diff.headSha}
+          clone={cloneSource}
         >
           {/* A new diff, or another head, starts with no hunk marked viewed. */}
           <ReviewChanges
