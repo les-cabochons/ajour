@@ -178,8 +178,16 @@ function ReviewChanges({
   const onAnchor = useCallback((element: HTMLElement | null) => {
     if (element) scheduleRef.current?.();
   }, []);
-  // A huge pull request's hunks mount and unmount as the page scrolls.
-  const onThreadRowsChange = useCallback(() => scheduleRef.current?.(), []);
+  // A huge pull request's hunks mount and unmount as the page scrolls, and
+  // the gutter holds the cards of the mounted ones only: thousands of hidden
+  // cards would cost every style and layout pass.
+  const [mountedThreadHunks, setMountedThreadHunks] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const onThreadRowsChange = useCallback(
+    (hunkIds: ReadonlySet<string>) => setMountedThreadHunks(hunkIds),
+    [],
+  );
   const { bySection, sectionOfHunk } = useMemo(() => {
     const sectionOfHunk = new Map<string, string>();
     for (const section of sections)
@@ -202,8 +210,24 @@ function ReviewChanges({
   const hoveredSection = hoveredHunk
     ? sectionOfHunk.get(hoveredHunk)
     : undefined;
-  const placed = placement?.placed ?? [];
+  const placed = useMemo(() => placement?.placed ?? [], [placement]);
   const gutter = floating && placed.length > 0;
+  const gutterPlaced = useMemo(
+    () =>
+      huge
+        ? placed.filter((entry) => mountedThreadHunks.has(entry.hunkId))
+        : placed,
+    [huge, placed, mountedThreadHunks],
+  );
+  // A hovered card whose hunk scrolled away is no longer under the pointer.
+  useEffect(() => {
+    if (
+      hovered !== undefined &&
+      gutter &&
+      !gutterPlaced.some((entry) => entry.thread.id === hovered)
+    )
+      onHover(undefined);
+  }, [gutter, gutterPlaced, hovered, onHover]);
   // Folding a hunk or changing the order moves the lines, even where the
   // column keeps its height. The gutter places its cards itself as it mounts.
   const laidOut = useRef({ sections, viewed });
@@ -282,7 +306,7 @@ function ReviewChanges({
             )}
             {gutter ? (
               <ThreadGutter
-                placed={placed}
+                placed={gutterPlaced}
                 columnRef={list}
                 hovered={hovered}
                 onHover={onHover}

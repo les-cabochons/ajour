@@ -42,9 +42,8 @@ import {
  * mounts, and again as its hunk draws or folds, so the rows above the
  * screen never move what is read. Each row is placed at its own offset,
  * and the row holding the focus stays mounted however far it scrolls away,
- * so Tab goes on from where the reader was. A thread's card in the gutter
- * shows only while its hunk's row is mounted: the gutter places the cards
- * again each time the mounted rows holding threads change.
+ * so Tab goes on from where the reader was. The gutter holds only the
+ * cards of the threads on mounted hunks, and places them as they change.
  */
 
 /** Rows mounted beyond each edge of the screen. */
@@ -114,8 +113,8 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   onHover: (threadId: string | undefined) => void;
   /** Called with each mark after a thread's line as it's drawn. */
   onAnchor: (element: HTMLElement | null) => void;
-  /** Called once the rows mounted holding threads change, so the gutter places its cards again. */
-  onThreadRowsChange: () => void;
+  /** Called with the mounted hunks holding threads as they change, the first time too: the gutter holds only their cards. */
+  onThreadRowsChange: (hunkIds: ReadonlySet<string>) => void;
 }) {
   const baseId = useId();
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
@@ -258,21 +257,21 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   };
 
   const items = virtualizer.getVirtualItems();
-  // The mounted hunk rows holding threads, compared in a word: a row mounting
+  // The mounted hunks holding threads, compared in a word: a row mounting
   // or unmounting without threads costs the gutter nothing.
   const threadRows = items
     .flatMap((item) => {
       const row = rows[item.index]!;
       return row.kind === "hunk" && byHunk.has(row.entry.hunk.id)
-        ? [row.key]
+        ? [row.entry.hunk.id]
         : [];
     })
     .join("\n");
-  const shownThreadRows = useRef("");
+  const shownThreadRows = useRef<string>(undefined);
   useLayoutEffect(() => {
     if (shownThreadRows.current === threadRows) return;
     shownThreadRows.current = threadRows;
-    onThreadRowsChange();
+    onThreadRowsChange(new Set(threadRows ? threadRows.split("\n") : []));
   }, [threadRows, onThreadRowsChange]);
 
   useImperativeHandle(navigator, () => ({

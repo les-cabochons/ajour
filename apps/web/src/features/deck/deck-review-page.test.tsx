@@ -1180,12 +1180,19 @@ it("shows a huge pull request's threads only while their hunks are mounted, and 
     const gutter = await screen.findByRole("complementary", {
       name: "Review threads",
     });
+    // The gutter holds only the cards of mounted hunks: one off screen
+    // isn't there at all.
     const placed = (id: string) =>
       gutter
-        .querySelector<HTMLElement>(`[data-card="${id}"]`)!
-        .hasAttribute("data-placed");
+        .querySelector<HTMLElement>(`[data-card="${id}"]`)
+        ?.hasAttribute("data-placed") ?? false;
     const connected = (id: string) =>
-      document.querySelector(`[data-connector="${id}"]`)!.hasAttribute("d");
+      document.querySelector(`[data-connector="${id}"]`)?.hasAttribute("d") ??
+      false;
+    const cards = () =>
+      [...gutter.querySelectorAll<HTMLElement>("[data-card]")].map(
+        (card) => card.dataset.card,
+      );
     const mounted = (index: number) =>
       document.querySelector(`[data-hunk="src/big.ts#${index}"]`) !== null;
 
@@ -1196,6 +1203,7 @@ it("shows a huge pull request's threads only while their hunks are mounted, and 
     expect(placed("last")).toBe(false);
     expect(connected("first")).toBe(true);
     expect(connected("last")).toBe(false);
+    expect(cards()).toEqual(["first"]);
 
     // Scrolled to the end, the first hunk unmounts and the last mounts.
     scrollElement(scroller, { top: 61_000 });
@@ -1204,6 +1212,7 @@ it("shows a huge pull request's threads only while their hunks are mounted, and 
     expect(placed("first")).toBe(false);
     expect(connected("first")).toBe(false);
     expect(connected("last")).toBe(true);
+    expect(cards()).toEqual(["last"]);
 
     // Back at the top, the first thread shows again.
     scrollElement(scroller, { top: 0 });
