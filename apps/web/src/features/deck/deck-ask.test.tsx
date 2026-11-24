@@ -841,6 +841,50 @@ it("keeps an answer asked after allowing the repository again, when another wind
   expect(within(concern).getByText("Asked again.")).toBeTruthy();
 });
 
+it("still hides an answer asked after allowing again once its own conversation is revoked, after the old revocation's late signal", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "turn",
+      turn: { ...turn("t13"), conversationId: "c2" },
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  const revokedAt = Date.now() - 1_000;
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  askOn(concern);
+  const fresh = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t13");
+  text("t13", 0, "The fresh answer.");
+  ended("t13");
+  await within(fresh).findByText("The fresh answer.");
+  // The old revocation's signal comes late, and changes nothing.
+  revokeInAnotherWindow(BILLING, revokedAt);
+  expect(within(concern).getByText("The fresh answer.")).toBeTruthy();
+
+  // The new consent is revoked in turn: its conversation closes.
+  send({
+    type: "conversation-closed",
+    conversationId: "c2",
+    reason: "revoked",
+  });
+  expect(within(concern).queryByText("The fresh answer.")).toBeNull();
+});
+
 it("hides a cached answer as its repository is revoked in another window", async () => {
   vi.mocked(api.askDeck).mockResolvedValueOnce({
     kind: "answer",

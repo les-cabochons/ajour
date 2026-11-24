@@ -80,8 +80,10 @@ export class DeckAskSessions {
   readonly #watching = new Map<string, () => void>();
   /** Whether the page shows, so its asks follow their turns. */
   #attached = false;
-  /** The conversations the asks' turns ran in. */
-  readonly #conversations = new Set<string>();
+  /** The conversations the asks' turns ran in, with when each was asked. */
+  readonly #conversations = new Map<string, number>();
+  /** When the latest revocation this page heard was made. */
+  #revokedAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     requestConsent: (request: DeckNeedsConsent) => Promise<ConsentAnswer>,
@@ -175,7 +177,10 @@ export class DeckAskSessions {
           }));
           return;
         }
-        this.#conversations.add(asked.turn.conversationId);
+        this.#conversations.set(
+          asked.turn.conversationId,
+          this.#sessions.get(key)?.askedAt ?? Date.now(),
+        );
         this.#update(key, () => ({ turnId: asked.turn.id }));
         this.#watch(key, asked.turn.id, target.head);
         return;
@@ -234,18 +239,24 @@ export class DeckAskSessions {
    * The repository's consent is taken back: its answers, cached or not, show
    * no more, and an ask still waiting for its answer stops and drops it. A
    * running turn stops on its own, keeping what came; a question being
-   * written stays, and its ask opens the consent dialog again. With `at`,
-   * when the consent was taken back, an ask made after then stays: the
-   * revocation reached this page late, after the repository was allowed
-   * again.
+   * written stays, and its ask opens the consent dialog again. `at` is when
+   * the consent was taken back, now when unknown. A revocation the page
+   * already heard, or one older, changes nothing: it reached this page
+   * late, after the repository was allowed and asked again. Otherwise the
+   * asks and conversations from before it go.
    */
   revoke(at?: number) {
-    // Every conversation so far is the revoked consent's: a close of one that
-    // comes later, after the repository was allowed again, revokes nothing.
-    this.#conversations.clear();
+    const when = at ?? Date.now();
+    if (at !== undefined && at <= this.#revokedAt) return;
+    this.#revokedAt = Math.max(this.#revokedAt, when);
+    // A conversation from before it is the revoked consent's: its close,
+    // coming later, revokes nothing more.
+    for (const [conversationId, askedAt] of [...this.#conversations]) {
+      if (askedAt <= when) this.#conversations.delete(conversationId);
+    }
     for (const [key, session] of [...this.#sessions]) {
       if (session.composing || session.awaitingConsent) continue;
-      if (at !== undefined && (session.askedAt ?? 0) > at) continue;
+      if ((session.askedAt ?? 0) > when) continue;
       if (holdsAnswer(session)) {
         this.close(key);
       } else if (!session.turnId) {
