@@ -367,3 +367,169 @@ describe("what isn't a summary line", () => {
     ]);
   });
 });
+
+describe("the review findings on the rules (les-cabochons/ajour#919)", () => {
+  const leftoverTexts = (files: ReturnType<typeof diffOf>) =>
+    summarizeRules(files, concernsOf(files)).summary.leftovers.map(
+      (leftover) => leftover.text,
+    );
+
+  it("finds code commented out in a block comment, on one line or inside the block", () => {
+    const files = diffOf({
+      "src/legacy.ts": [
+        "export const a = 1;\n",
+        lines(
+          "export const a = 1;",
+          "/* const obsolete = 1; */",
+          "/* The value the server sent. */",
+          "/**",
+          " * Retries stop on 410.",
+          " * @param attempt the attempt",
+          " */",
+          "/*",
+          " * oldCall(attempt);",
+          " */",
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([
+      "Commented-out code in src/legacy.ts:2: /* const obsolete = 1; */",
+      "Commented-out code in src/legacy.ts:9: * oldCall(attempt);",
+    ]);
+  });
+
+  it("finds commented-out Go, Kotlin and Swift, which end without a semicolon", () => {
+    const files = diffOf({
+      "cmd/retry.go": [
+        "package main\n",
+        lines(
+          "package main",
+          "// oldCall()",
+          "",
+          "// x := compute(y)",
+          "",
+          "// Retry stops on 410 (the resource is gone).",
+          "// let me explain the backoff",
+        ),
+      ],
+      "app/Limits.kt": [
+        "package app\n",
+        lines(
+          "package app",
+          "// val oldValue = 1",
+          "",
+          "// fun limit(tenant: Tenant) {",
+          "",
+          "// Limits come from the tenant.",
+        ),
+      ],
+      "app/Limits.swift": [
+        "import Foundation\n",
+        lines(
+          "import Foundation",
+          "// let limit: Int = 3",
+          "",
+          "// var total = limit * 2",
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([
+      "Commented-out code in app/Limits.kt:2: // val oldValue = 1",
+      "Commented-out code in app/Limits.kt:4: // fun limit(tenant: Tenant) {",
+      "Commented-out code in app/Limits.swift:2: // let limit: Int = 3",
+      "Commented-out code in app/Limits.swift:4: // var total = limit * 2",
+      "Commented-out code in cmd/retry.go:2: // oldCall()",
+      "Commented-out code in cmd/retry.go:4: // x := compute(y)",
+    ]);
+  });
+
+  it.each([
+    [
+      "pytest",
+      "tests/test_limits.py",
+      '@pytest.mark.skipif(True, reason="disabled")',
+    ],
+    ["pytest", "tests/test_limits.py", "@pytest.mark.skip"],
+    ["pytest", "tests/test_limits.py", '@pytest.mark.xfail(reason="flaky")'],
+    [
+      "unittest",
+      "tests/test_limits.py",
+      '@unittest.skipIf(sys.platform == "win32", "posix")',
+    ],
+    ["Jest and Vitest", "src/limits.test.ts", 'it.skip("stops", () => {});'],
+    [
+      "Jest and Vitest",
+      "src/limits.test.ts",
+      'describe.skip("limits", () => {});',
+    ],
+    ["Jest and Vitest", "src/limits.test.ts", 'test.skip("stops", () => {});'],
+    ["Jest and Vitest", "src/limits.test.ts", 'xit("stops", () => {});'],
+    ["Jest and Vitest", "src/limits.test.ts", 'xdescribe("limits", () => {});'],
+    [
+      "Vitest",
+      "src/limits.test.ts",
+      'test.skipIf(isWindows)("stops", () => {});',
+    ],
+    [
+      "JUnit",
+      "src/test/java/app/LimitsTest.java",
+      '@Disabled("until the tenant API ships")',
+    ],
+    ["JUnit", "src/test/java/app/LimitsTest.java", "@Ignore"],
+    ["Go", "app/limits_test.go", '  t.Skip("needs a database")'],
+  ])("finds a %s skipped test: %s, %s", (_framework, path, skipped) => {
+    const files = diffOf({ [path]: [lines("a"), lines("a", skipped)] });
+    expect(leftoverTexts(files)).toEqual([
+      `Skipped test in ${path}:2: ${skipped.trim()}`,
+    ]);
+  });
+
+  it("finds deletion and locking in an SQL file", () => {
+    const files = diffOf({
+      "db/cleanup.sql": [null, lines("DELETE FROM users;")],
+      "db/reports.sql": [null, lines("SELECT * FROM jobs FOR UPDATE;")],
+      "db/views.sql": [null, lines("SELECT * FROM users;")],
+    });
+    const { summary } = summarizeRules(files, concernsOf(files));
+    expect(summary.risks).toEqual([
+      {
+        id: "risk:deletion",
+        text: "Deletion: db/cleanup.sql",
+        hunkIds: ["db/cleanup.sql#0"],
+      },
+      {
+        id: "risk:concurrency",
+        text: "Locking and concurrency: db/reports.sql",
+        hunkIds: ["db/reports.sql#0"],
+      },
+    ]);
+  });
+
+  it("doesn't take debug output quoted in a string for debug output", () => {
+    const files = diffOf({
+      "src/example.ts": [
+        lines("export const a = 1;"),
+        lines(
+          "export const a = 1;",
+          'const example = "console.log(value)";',
+          "const other = 'debugger';",
+          "const template = `print_r(${value})`;",
+          'console.log("value");',
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([
+      'Debug output in src/example.ts:5: console.log("value");',
+    ]);
+  });
+
+  it("doesn't take a semicolon-free statement in a comment for code in a language that ends with semicolons", () => {
+    const files = diffOf({
+      "src/retry.ts": [
+        "export const a = 1;\n",
+        lines("export const a = 1;", "// retry()", "", "// val is the value"),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([]);
+  });
+});

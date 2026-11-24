@@ -293,7 +293,8 @@ function hunkKind(
 
 /**
  * Risky areas are in the code and its build: never in tests, docs, lockfiles
- * or assets. A migration may be any file, such as a `.sql` one.
+ * or assets. A migration may be any file, such as a `.sql` one, and an
+ * SQL file's lines may also be about deletion or locking.
  */
 const MAY_BE_RISKY: ReadonlySet<FileClass> = new Set(["code", "build"]);
 
@@ -317,6 +318,8 @@ interface RiskRule {
   lines?: RegExp;
   /** It applies to a file of any kind but tests, docs and lockfiles. */
   anyFile?: boolean;
+  /** It applies to an SQL file, which is no code file. */
+  sql?: boolean;
 }
 
 const RISKS: readonly RiskRule[] = [
@@ -390,6 +393,7 @@ const RISKS: readonly RiskRule[] = [
   {
     id: "deletion",
     label: "Deletion",
+    sql: true,
     words: new Set([
       "delete",
       "deletion",
@@ -410,6 +414,7 @@ const RISKS: readonly RiskRule[] = [
   {
     id: "concurrency",
     label: "Locking and concurrency",
+    sql: true,
     words: new Set([
       "lock",
       "locks",
@@ -440,7 +445,7 @@ const DOC_TODO =
 const DEBUG_LINES =
   /\bconsole\.(?:log|debug|trace|dir|table)\s*\(|^\s*debugger\s*;?\s*$|^\s*(?:breakpoint\(\)|import\s+i?pdb\b|i?pdb\.set_trace\(\))|\bbinding\.(?:pry|irb)\b|^\s*byebug\b|\b(?:var_dump|print_r)\s*\(|^\s*dd\s*\(|\bdbg!\s*\(|\.printStackTrace\s*\(\s*\)|\bSystem\.(?:out|err)\.print(?:ln)?\s*\(|\bDebug\.WriteLine\s*\(/;
 const SKIPPED_LINES =
-  /\b(?:it|test|describe|context|suite)\.(?:skip|todo|fixme)\s*\(|\b(?:xit|xtest|xdescribe|xcontext)\s*\(|@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bpytest\.skip\s*\(|@Disabled\b|@Ignore\b|\[Ignore\b|\[Fact\s*\(\s*Skip\s*=|\bt\.Skip(?:Now|f)?\s*\(|#\[ignore\]|^\s*skip\s*\(?\s*["']/;
+  /\b(?:it|test|describe|context|suite)\.(?:skip(?:If)?|todo|fixme)\s*\(|\b(?:xit|xtest|xdescribe|xcontext)\s*\(|@pytest\.mark\.(?:skip(?:if)?|xfail)\b|@unittest\.skip|\bpytest\.skip\s*\(|@Disabled\b|@Ignore\b|\[Ignore\b|\[Fact\s*\(\s*Skip\s*=|\bt\.Skip(?:Now|f)?\s*\(|#\[ignore\]|^\s*skip\s*\(?\s*["']/;
 /** Comments that are tool directives or prose, never code. */
 const DIRECTIVES =
   /^(?:eslint|@ts-|prettier-|biome-|istanbul|c8\b|type:|noqa|pragma|region|endregion|#|!|-\*-|TODO|FIXME|NOTE|HACK|XXX)/i;
@@ -464,6 +469,46 @@ const HASH_CODE_TEXT = [
   /^[\w.]+\(.*\)$/,
   /^(?:if|elif|else|for|while|with|try|except|def|class)\b.*:$/,
 ];
+
+/**
+ * Languages whose statements end without `;`. Their comment's text reads as
+ * code when it is a call, a declaration or an assignment on its own.
+ */
+const NO_SEMICOLONS = new Set(["go", "kt", "kts", "scala", "swift", "lua"]);
+const NO_SEMICOLON_CODE_TEXT = [
+  /^[\w$]+(?:\.[\w$]+)*\s*\(.*\)$/,
+  /^(?:val|var|let|const|func|fun|def)\s+[\w$]+\s*[:=(<]/,
+  /^[\w$]+(?:\.[\w$]+|\[[^\]]*\])*\s*(?:[+\-*/]?=|:=)\s*[^=\s].*$/,
+];
+
+/**
+ * The text of a comment on its own line: a line comment, a block comment
+ * opened and closed on the line, or a line inside a block that starts with
+ * `*`; in hash languages, a `#` comment.
+ */
+function commentText(extension: string, trimmed: string) {
+  if (HASH_COMMENTS.has(extension)) return /^#\s?(.*)$/.exec(trimmed)?.[1];
+  return (
+    /^\/\/\s?(.*)$/.exec(trimmed)?.[1] ??
+    /^\/\*+\s?(.*?)\s*\*\/$/.exec(trimmed)?.[1] ??
+    /^\*(?!\/)\s?(.*)$/.exec(trimmed)?.[1]
+  );
+}
+
+function readsAsCode(extension: string, body: string) {
+  if (HASH_COMMENTS.has(extension)) {
+    return HASH_CODE_TEXT.some((rule) => rule.test(body));
+  }
+  return (
+    CODE_TEXT.some((rule) => rule.test(body)) ||
+    (NO_SEMICOLONS.has(extension) &&
+      NO_SEMICOLON_CODE_TEXT.some((rule) => rule.test(body)))
+  );
+}
+
+/** A line with its single, double and backtick quoted strings emptied, so quoted code isn't read as code. */
+const withoutStrings = (text: string) =>
+  text.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
 
 /** How a leftover is named; a TODO or FIXME is named by its own word. */
 const LEFTOVER_LABELS: Record<Exclude<LeftoverKind, "todo">, string> = {
@@ -490,15 +535,10 @@ function leftoverOf(
     return undefined;
   }
   const trimmed = text.trim();
-  const comment = HASH_COMMENTS.has(extension)
-    ? /^#\s?(.*)$/.exec(trimmed)
-    : /^\/\/\s?(.*)$/.exec(trimmed);
-  if (comment) {
-    const body = comment[1]!.trim();
-    const looksLikeCode = (
-      HASH_COMMENTS.has(extension) ? HASH_CODE_TEXT : CODE_TEXT
-    ).some((rule) => rule.test(body));
-    if (!DIRECTIVES.test(body) && looksLikeCode) {
+  const comment = commentText(extension, trimmed);
+  if (comment !== undefined) {
+    const body = comment.trim();
+    if (!DIRECTIVES.test(body) && readsAsCode(extension, body)) {
       return { kind: "commented", label: LEFTOVER_LABELS.commented };
     }
     return undefined;
@@ -506,7 +546,7 @@ function leftoverOf(
   if (SKIPPED_LINES.test(text)) {
     return { kind: "skipped", label: LEFTOVER_LABELS.skipped };
   }
-  if (DEBUG_LINES.test(text)) {
+  if (DEBUG_LINES.test(withoutStrings(text))) {
     return { kind: "debug", label: LEFTOVER_LABELS.debug };
   }
   return undefined;
@@ -638,8 +678,11 @@ export function summarizeRules(
     const added = hunk.lines.filter((diffLine) => diffLine.kind === "add");
     const mayBeRisky = MAY_BE_RISKY.has(fileClass);
     const anyFile = fileClass === "other";
+    const sql = anyFile && extensionOf(file.path) === "sql";
     for (const rule of RISKS) {
-      if (!mayBeRisky && !(anyFile && rule.anyFile)) continue;
+      const applies =
+        mayBeRisky || (anyFile && rule.anyFile) || (sql && rule.sql);
+      if (!applies) continue;
       const byPath =
         words.some((word) => rule.words?.has(word)) ||
         (rule.path?.test(lowerPath) ?? false);
