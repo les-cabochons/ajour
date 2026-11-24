@@ -125,6 +125,7 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import type { DeckAgentConsent } from "../../../packages/shared/deck.ts";
 import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
   ConnectionPausedError,
@@ -661,6 +662,18 @@ function signingAllowsPlugin(state: AppApiState, pluginId: string) {
   );
 }
 
+/** Whether two consents are about the same repository of the same connection. */
+function sameDeckRepository(
+  a: Pick<DeckAgentConsent, "pluginId" | "connectionId" | "repository">,
+  b: Pick<DeckAgentConsent, "pluginId" | "connectionId" | "repository">,
+) {
+  return (
+    a.pluginId === b.pluginId &&
+    a.connectionId === b.connectionId &&
+    a.repository === b.repository
+  );
+}
+
 function normalizePluginOrigins(raw: unknown): Record<string, PluginOrigin> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return Object.fromEntries(
@@ -932,6 +945,7 @@ function createDefaultState(): AppApiState {
       settings: defaultAgentRunnerSettings(),
       pluginValues: {},
       pluginSecrets: {},
+      deckConsents: [],
     },
     pluginBrokerActivity: {},
     pluginProcesses: {},
@@ -2959,6 +2973,51 @@ export class AppApiStorage {
 
   async getAgentRunnerSettings(): Promise<AgentRunnerSettings> {
     return (await this.readState()).agentRunner.settings;
+  }
+
+  /** The repositories the user allowed Deck's asks for, oldest first (#791). */
+  async getDeckConsents(): Promise<DeckAgentConsent[]> {
+    return (await this.readState()).agentRunner.deckConsents;
+  }
+
+  /** Records a repository's consent, replacing an earlier one for it. */
+  async addDeckConsent(consent: DeckAgentConsent): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        agentRunner: {
+          ...state.agentRunner,
+          deckConsents: [
+            ...state.agentRunner.deckConsents.filter(
+              (entry) => !sameDeckRepository(entry, consent),
+            ),
+            consent,
+          ],
+        },
+      },
+      result: undefined,
+    }));
+  }
+
+  /** Takes a repository's consent back. False when it had none. */
+  async revokeDeckConsent(
+    repository: Pick<
+      DeckAgentConsent,
+      "pluginId" | "connectionId" | "repository"
+    >,
+  ): Promise<boolean> {
+    return this.mutate((state) => {
+      const kept = state.agentRunner.deckConsents.filter(
+        (entry) => !sameDeckRepository(entry, repository),
+      );
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, deckConsents: kept },
+        },
+        result: kept.length !== state.agentRunner.deckConsents.length,
+      };
+    });
   }
 
   async updateAgentRunnerSettings(

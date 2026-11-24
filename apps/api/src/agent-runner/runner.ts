@@ -302,38 +302,49 @@ export class AgentRunner {
     };
   }
 
-  private async detectClis(): Promise<AgentCliStatus[]> {
+  /** The agent Settings > Agents picks, as Settings shows it, or null for none. */
+  async selectedCli(): Promise<AgentCliStatus | null> {
+    const { cli } = await this.options.storage.getAgentRunnerSettings();
+    if (!cli) return null;
+    return (await this.detectClis([cli])).find(({ id }) => id === cli) ?? null;
+  }
+
+  private async detectClis(
+    only?: AgentCliStatus["id"][],
+  ): Promise<AgentCliStatus[]> {
     const pathValue = await this.options.loginShellPath();
     const readVersion = this.options.readVersion ?? defaultReadVersion;
     return await Promise.all(
-      ALL_CLIS.map(async (cli) => {
-        const adapter = this.options.adapters.find(
-          (candidate) => candidate.id === cli.id,
-        );
-        const executable = await this.options.findExecutable(
-          cli.executableName,
-          pathValue,
-        );
-        const output = executable
-          ? await readVersion(executable, pathValue)
-          : undefined;
-        const refusalReason =
-          output && executable && typeof output !== "string"
-            ? spawnRefusalMessage(output.refused, cli.label, executable)
+      ALL_CLIS.filter((cli) => !only || only.includes(cli.id)).map(
+        async (cli) => {
+          const adapter = this.options.adapters.find(
+            (candidate) => candidate.id === cli.id,
+          );
+          const executable = await this.options.findExecutable(
+            cli.executableName,
+            pathValue,
+          );
+          const output = executable
+            ? await readVersion(executable, pathValue)
             : undefined;
-        const version =
-          typeof output === "string" && output
-            ? (adapter?.parseVersion(output) ?? output.trim())
-            : undefined;
-        return {
-          id: cli.id,
-          label: cli.label,
-          supported: adapter !== undefined,
-          installed: executable !== null,
-          ...(version ? { version } : {}),
-          ...(refusalReason ? { refusalReason } : {}),
-        };
-      }),
+          const refusalReason =
+            output && executable && typeof output !== "string"
+              ? spawnRefusalMessage(output.refused, cli.label, executable)
+              : undefined;
+          const version =
+            typeof output === "string" && output
+              ? (adapter?.parseVersion(output) ?? output.trim())
+              : undefined;
+          return {
+            id: cli.id,
+            label: cli.label,
+            supported: adapter !== undefined,
+            installed: executable !== null,
+            ...(version ? { version } : {}),
+            ...(refusalReason ? { refusalReason } : {}),
+          };
+        },
+      ),
     );
   }
 

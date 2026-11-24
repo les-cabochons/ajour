@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
+import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
 import { createMcpClient } from "./mcp-clients.ts";
@@ -55,8 +56,19 @@ async function killEscapees(report: string) {
   }
 }
 
-const PR = { pullRequest: "pr-482", head: "a41c9e2" };
-const OTHER_PR = { pullRequest: "pr-485", head: "b52d0f3" };
+/** Two Deck pull requests of one repository, which each test allows first (#791). */
+const REPOSITORY = "acme/billing-api";
+const deckKey = (number: number) =>
+  deckPullRequestKey({
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    number,
+  });
+const PR = { pullRequest: deckKey(482), head: "a41c9e2" };
+const OTHER_PR = { pullRequest: deckKey(485), head: "b52d0f3" };
+/** How the agent's refusals name PR. */
+const PR_LABEL = `${REPOSITORY}#482`;
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
 /** One turn the fake CLI answers: it reads it, streams `pieces`, and ends it. */
@@ -165,6 +177,18 @@ async function startConversationApi(
     cli: options.cli ?? "claude-code",
     browserMode: "my-chrome",
   });
+  // The user allowed the repository's pull requests with this agent.
+  expect(
+    (
+      await apiRequest(
+        api.baseUrl,
+        "/api/deck/github/connections/work/consent",
+        {
+          repository: REPOSITORY,
+        },
+      )
+    ).status,
+  ).toBe(200);
   const stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
   running.push(stream.close);
 
@@ -679,7 +703,7 @@ describe("the one agent slot", () => {
 
 describe("a conversation's tools", () => {
   it(
-    "binds the client to the pull request: no data or session tool, even with MCP off",
+    "binds the client to the pull request: Deck's reads, no data or session tool, even with MCP off",
     { timeout: 20_000 },
     async () => {
       const api = await startConversationApi(() => [
@@ -709,14 +733,16 @@ describe("a conversation's tools", () => {
 
       const [list, projects, session] = await api.mcpReplies();
       expect(list).toMatchObject({ status: 200 });
-      expect(list!.reply.result.tools).toEqual([]);
+      expect(
+        list!.reply.result.tools.map((tool: { name: string }) => tool.name),
+      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
       for (const [reply, tool] of [
         [projects, "list_projects"],
         [session, "begin_session"],
       ] as const) {
         expect(reply!.reply.result.isError).toBe(true);
         expect(reply!.reply.result.content[0].text).toBe(
-          `This conversation is bound to pull request ${PR.pullRequest} at head ${PR.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
+          `This conversation is bound to pull request ${PR_LABEL} at head ${PR.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
         );
       }
       expect(
@@ -1441,7 +1467,7 @@ describe("a conversation across heads", () => {
       // The same client, bound to the new head.
       const [refused] = await api.mcpReplies();
       expect(refused!.reply.result.content[0].text).toContain(
-        `bound to pull request ${PR.pullRequest} at head ${NEW_HEAD}.`,
+        `bound to pull request ${PR_LABEL} at head ${NEW_HEAD}.`,
       );
       expect(await api.clients()).toHaveLength(1);
       expect(

@@ -652,6 +652,10 @@ export const catalog = defineCatalog({
         "already_running",
         "no_agent_task",
         "blocked",
+        /** A core turn about a repository the user hasn't allowed with this agent (#791). */
+        "needs_consent",
+        /** A core turn about something that isn't a Deck pull request. */
+        "not_open",
         ...requestReasons,
       ],
       fields: {
@@ -3150,6 +3154,70 @@ export const catalog = defineCatalog({
           build_ms: operational<number>(),
           concern_count: operational<number>(),
         },
+      },
+    },
+
+    /**
+     * An ask in Deck (#791): "more detail" on a concern, answered from the
+     * cache or by a `deck.ask` turn of the pull request's conversation. The
+     * question and the answer are content, so neither is here.
+     */
+    "deck.ask": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "needs_consent",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The guide has no such concern. */
+        "unknown_anchor",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          anchor_kind: operational<"concern">(),
+          /** The user typed a question in place of the default one. */
+          typed_question: operational<boolean>(),
+          /** Answered from the cache, with no turn. */
+          cached: operational<boolean>(),
+        },
+        agent: { turn_id: operational() },
+      },
+    },
+    /** The user allowed Deck's asks about a repository with the agent picked. */
+    "deck.consent": {
+      kinds: ["command", "request"],
+      reasons: ["blocked", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        agent: { cli: operational() },
+      },
+    },
+    /** Settings › Agents reads the repositories the user allowed. */
+    "deck.consents": {
+      kinds: ["request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: { consent_count: operational<number>() },
+      },
+    },
+    /** The user took a repository's consent back. */
+    "deck.consent_revoke": {
+      kinds: ["command", "request"],
+      reasons: ["not_found", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
       },
     },
 
