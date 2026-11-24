@@ -1155,6 +1155,20 @@ Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-ca
 - **Preloads**: after each sync, Deck reads the connection's pull requests on the user's plate, the ones the sidebar lists, up to 20, into the cache, one file at a time and waiting while a pull request opens, and builds their guides at low priority. One already cached at that head isn't read again.
 - Guides are built one at a time, off the window. The guide of the pull request just opened is built before any preloaded one, and stops a preloaded one being built, which is built again after. The changes show once both the diff and the guide are ready. A guide that takes over two minutes, or fails, gives Files A–Z, and opening the pull request again builds it again.
 
+### More detail on a concern
+
+Decided in [More detail on a concern: the first ask](https://github.com/les-cabochons/ajour/issues/791), from [#642](https://github.com/les-cabochons/ajour/issues/642) and [#643](https://github.com/les-cabochons/ajour/issues/643).
+
+- A faint `more ›` ends each concern's rationale, in the tertiary text color, and turns the text color on hover, on focus and while its answer is open. It is one button per concern, named "More detail", and nothing is added per line. Files A–Z and the "Not in the guide" section have none.
+- `more ›` opens, under the rationale, a quiet field holding the concern's default question, focused and selected: "Give more detail on this concern: what it changes, why, and what a reviewer should check." Enter, or the small **Ask** beside it, sends it as is or as edited; typing replaces it. Shift+Enter starts a new line. Escape closes it, sending nothing, and focus goes back to `more ›`. Nothing is sent before Enter or Ask. The answer goes in its place, in a block named "More detail" with a hairline on its left. While nothing came yet it says "Getting more detail…" in tertiary text, then the answer streams in as Markdown and ends with "From the code at a41c9e2", the first 7 characters of the head it is about.
+- **Ask something else…**, a field under the answer, asks another question about the same concern. A question other than the default one shows above its answer in italic secondary text.
+- An answer asked before, for the same concern, question and head, shows at once with no placeholder once its question is sent. The default question sent unedited is the default one's answer. The local API keeps answers in memory until Ajour quits; a stopped or failed answer isn't kept.
+- **Stop** shows while the answer is asked or streams. A stopped answer keeps what came and says "Stopped.". While a timesheet agent task runs, the block says "Waiting for the timesheet task to finish", with Stop. **Dismiss** closes the block; asking again shows the cached answer.
+- A failure says why, in the block, with **Try again**.
+- No answer, placeholder or footer names the agent. The agent is told not to name itself.
+- The first ask in a repository opens a dialog titled "Ajour asks once for billing-api" (the repository's own name). It names the agent and its version from Settings › Agents, and lists what leaves the computer for each question: the changed lines the question is about, any other hunks and changed files the agent reads, the review threads and their comments, and the typed question. **Allow** records the repository's consent and runs the ask. **Not now** sends nothing and closes the ask. The consent is for that agent: picking another agent in Settings › Agents asks again. A conversation keeps the agent it started with: its turns and its reads need the repository's consent for that agent, never the one picked since, and a turn queued for an agent the repository is no longer allowed with fails with "Ajour may no longer send this repository's code. Ask again to allow it.", with Try again, which opens the consent dialog.
+- The agent reads the pull request through four tools bound to it and its head: `read_hunks`, `read_file` (a changed file at the base or the head), `read_threads` and `read_guide`. It sees none of the user's other data, and MCP doesn't need to be on (ADR 0021).
+
 ### On your plate
 
 - A pull request is active or settled, and an active one can be snoozed. Returned marks one that came back on its own and was not opened since. These mean the same as for backlog items.
@@ -1265,6 +1279,8 @@ Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/68
 ## Settings
 
 When a CLI version probe is refused, Settings > Agents shows the selected CLI's plain-English refusal reason beside the Agent control.
+
+Settings > Agents > Questions about pull requests lists the repositories whose pull requests the user allowed Deck to send to an agent (#791): each row is the repository, with the agent and its version and the day it was allowed, and an outline **Revoke**. Revoke takes the consent back at once: the answer being written and the questions waiting behind it stop, keeping what came with "Stopped.", the agent can read nothing more, the repository's next ask opens the consent dialog again, and its cached answers aren't shown. With none, it says "None yet. Deck asks the first time you ask about a repository's pull request."
 
 Settings > Agents > Agent instructions lists the global Codex, OpenCode, Claude Code,
 Gemini CLI and Copilot CLI instruction files. Each shows its resolved path and Missing file,

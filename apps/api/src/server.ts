@@ -148,11 +148,18 @@ import {
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import {
+  deckAskRequestSchema,
   deckCacheSettingsUpdateSchema,
+  deckConsentRequestSchema,
+  deckConsentRevokeRequestSchema,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
+  parseDeckPullRequestKey,
   type DeckCacheStorage,
+  type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
+import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
+import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
 import {
   createDeckContentCache,
   deckCacheKeyString,
@@ -262,6 +269,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
+import { PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import {
   capabilityOfMethod,
   PluginManager,
@@ -2000,7 +2008,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ajourMcpUrl: `http://${host}:${port}/mcp/ajour`,
     events,
     // On the window's stream, which the handoffs bridge opens with MCP off.
-    publishTurnEvent: (event) => mcpBridge.publish("agent-turn", event),
+    // Deck's asks read them too, to cache their answers.
+    publishTurnEvent: (event) => {
+      deckAsks.observe(event);
+      mcpBridge.publish("agent-turn", event);
+    },
+    // Each turn is sent only while its repository is allowed with its agent.
+    admitsTurn: (pullRequest, cli) => deckAsks.allowedWith(pullRequest, cli),
     ...(options.agentConversationIdleMs === undefined
       ? {}
       : { conversationIdleMs: options.agentConversationIdleMs }),
@@ -2014,6 +2028,63 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       ? {}
       : { killGraceMs: options.agentKillGraceMs }),
   });
+  /**
+   * Deck's asks (#791): the consent every core turn needs, and the answers
+   * cached per anchor, question and head.
+   */
+  const deckAsks = createDeckAsks({
+    storage,
+    selectedCli: () => agentRunner.selectedCli(),
+    deck: deckService,
+    startTurn: (request) => agentRunner.startTurn(request),
+  });
+
+  /** A Deck pull request's threads, for the agent's `read_threads`. */
+  async function deckConversation(source: DeckPullRequestSource) {
+    const { plugin } = await findPlugin(pluginManager, source.pluginId);
+    if (!plugin || !pluginHasCodeHost(plugin)) {
+      throw new DeckReadRefused("The pull request's code host is off.");
+    }
+    const connection = await storage.connectionForOperation(
+      source.pluginId,
+      source.connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!connection) {
+      throw new DeckReadRefused("The pull request's connection was removed.");
+    }
+    if (
+      connectionAccessRefusal(plugin, connection, "getPullRequestConversation")
+    ) {
+      throw new DeckReadRefused(
+        "The user's access choices don't let Ajour read this pull request's threads.",
+      );
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    try {
+      return await pluginManager.runCodeHostOperation(
+        source.pluginId,
+        "getPullRequestConversation",
+        pluginConnection(connection),
+        { repository: source.repository, number: source.number },
+        call.admit,
+      );
+    } catch (error) {
+      // The plugin's own words may hold what the agent shouldn't see.
+      throw new DeckReadRefused(
+        error instanceof PluginExportMissing
+          ? "This code host doesn't share a pull request's threads yet."
+          : "Ajour couldn't read the threads from the code host.",
+      );
+    }
+  }
+  const deckReads = createDeckAgentReads({
+    deck: deckService,
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    conversation: deckConversation,
+  });
+
   const runtime: AppApiRuntime = {
     flushDeckCache: () => deckService.cache.flush(),
     folderResolver,
@@ -2049,6 +2120,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
     readBody: readJsonBody,
     localLogs: options.localLogs,
+    deckReads,
   };
 
   /**
@@ -2940,8 +3012,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const payload = await readRequest(request, agentRunStartRequestSchema);
       try {
         if ("task" in payload) {
-          // A core task: a turn of its pull request's conversation.
+          // A core task: a turn of its pull request's conversation, once the
+          // user allowed its repository (#791).
           unit.set({ agent: { task_id: payload.task } });
+          try {
+            await deckAsks.requireTurnConsent(payload.pullRequest);
+          } catch (error) {
+            if (!(error instanceof DeckAskRefused)) throw error;
+            // A turn has no anchor, so only these two refuse it.
+            unit.refuse(
+              error.eventReason === "repository_not_allowed"
+                ? "repository_not_allowed"
+                : "not_open",
+            );
+            writeJson(response, error.status, error.body);
+            return;
+          }
           const turn = await agentRunner.startTurn(payload);
           unit.set({ agent: { turn_id: turn.id } });
           writeJson(response, 201, turn);
@@ -4652,6 +4738,98 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       } catch (error) {
         await deck.failed(error);
       }
+    },
+
+    deckAsk: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckAskRequestSchema);
+      unit.set({
+        deck: {
+          anchor_kind: payload.anchor.kind,
+          typed_question: payload.question !== undefined,
+        },
+      });
+      try {
+        const asked = await deckAsks.ask({ pluginId, connectionId }, payload);
+        unit.set({ deck: { cached: asked.kind === "answer" } });
+        if (asked.kind === "turn") {
+          unit.set({ agent: { turn_id: asked.turn.id } });
+        }
+        writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
+      } catch (error) {
+        if (error instanceof DeckAskRefused) {
+          unit.refuse(error.eventReason);
+          writeJson(response, error.status, error.body);
+          return;
+        }
+        if (!(error instanceof AgentRunError)) throw error;
+        unit.refuse(error.status === 409 ? "already_running" : "blocked");
+        writeJson(response, error.status, { error: error.message });
+      }
+    },
+
+    deckConsent: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckConsentRequestSchema);
+      const cli = await agentRunner.selectedCli();
+      if (!cli?.installed) {
+        unit.refuse("blocked");
+        writeJson(response, 400, {
+          error: cli ? `${cli.label} is not installed.` : PICK_AN_AGENT,
+        });
+        return;
+      }
+      unit.set({ agent: { cli: cli.id } });
+      // Only the agent the dialog named: one picked since asks again.
+      if (cli.id !== payload.cli) {
+        unit.refuse("agent_changed");
+        writeJson(response, 409, {
+          error: `Settings > Agents now picks ${cli.label}. Ask again to allow it.`,
+        });
+        return;
+      }
+      await storage.addDeckConsent({
+        pluginId,
+        connectionId,
+        repository: payload.repository,
+        cli: cli.id,
+        ...(cli.version ? { cliVersion: cli.version } : {}),
+        consentedAt: Date.now(),
+      });
+      writeJson(response, 200, { consents: await storage.getDeckConsents() });
+    },
+
+    deckConsents: async ({ response, unit }) => {
+      const consents = await storage.getDeckConsents();
+      unit.set({ deck: { consent_count: consents.length } });
+      writeJson(response, 200, { consents });
+    },
+
+    deckConsentRevoke: async ({ request, response, unit }) => {
+      const payload = await readRequest(
+        request,
+        deckConsentRevokeRequestSchema,
+      );
+      unit.set({
+        plugin: { id: payload.pluginId },
+        connection: { id: payload.connectionId },
+      });
+      if (!(await storage.revokeDeckConsent(payload))) unit.refuse("not_found");
+      // Its conversation closes: the running turn and those queued stop.
+      const closed = agentRunner.closeConversationWhere((pullRequest) => {
+        const source = parseDeckPullRequestKey(pullRequest);
+        return (
+          source?.pluginId === payload.pluginId &&
+          source.connectionId === payload.connectionId &&
+          source.repository === payload.repository
+        );
+      });
+      unit.set({ deck: { conversation_closed: closed } });
+      writeJson(response, 200, { consents: await storage.getDeckConsents() });
     },
 
     deckPreload: async (context) => {

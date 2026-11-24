@@ -22,6 +22,12 @@ import {
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
 import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
+import {
+  deckPullRequestLabel,
+  deckToolInputSchemas,
+  deckToolOutputSchemas,
+  type DeckToolName,
+} from "../../../packages/shared/deck.ts";
 import type {
   AjourCatalog,
   McpMethod,
@@ -31,6 +37,7 @@ import {
   type Unit,
 } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
+import { DeckReadRefused, type DeckAgentReads } from "./deck-agent-reads.ts";
 import type { ApiEvents } from "./events.ts";
 import type { Settlement } from "./routes.ts";
 import {
@@ -64,6 +71,11 @@ export interface McpRequestContext {
    * API, no client gets the log tools.
    */
   localLogs?: LocalLogReader;
+  /**
+   * Deck's reads, for a pull request conversation's client (#791). Without
+   * them, as in a test of the endpoint alone, such a client lists no tool.
+   */
+  deckReads?: DeckAgentReads;
   /**
    * The request's event, which the request seam opened. MCP names it
    * `mcp.request`, or `agent_tool.call` once the body is a tool call.
@@ -253,7 +265,7 @@ function refuseUndeclaredCall(
       jsonrpc: "2.0" as const,
       id,
       result: errorResult(
-        `This conversation is bound to pull request ${scope.pullRequest.pullRequest} at head ${scope.pullRequest.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
+        `This conversation is bound to pull request ${deckPullRequestLabel(scope.pullRequest.pullRequest)} at head ${scope.pullRequest.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
       ),
     };
   }
@@ -384,14 +396,24 @@ const AJOUR_INSTRUCTIONS = [
 /** What a pull request conversation's agent reads first. */
 const PULL_REQUEST_INSTRUCTIONS = [
   "Ajour's tools for one pull request at one head commit, which this conversation is bound to.",
+  "read_hunks reads the changed lines by hunk id (`path#index`), read_file a changed file at the base or the head, read_threads the review threads, read_guide the guide's concerns in reading order.",
   "Ajour refuses any other tool, and any other pull request or head.",
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
 const TOOL_DESCRIPTIONS: Record<
-  AgentTaskMcpTool | SessionToolName | LogToolName,
+  AgentTaskMcpTool | SessionToolName | LogToolName | DeckToolName,
   string
 > = {
+  // Deck's reads (#791), for a pull request conversation's client only.
+  read_hunks:
+    "Hunks of this pull request's diff by id (`path#index`, as the guide lists them), up to 50: each one's path and its lines as a unified diff. `unknownIds` lists ids the diff doesn't have.",
+  read_file:
+    'One changed file of this pull request, whole, at the base (`side: "base"`, by its path before a rename) or at the head. `content` is null for a binary file. Only changed files can be read.',
+  read_threads:
+    "This pull request's review threads: each one's file, side and line, whether it is resolved or outdated, and its comments with their authors. Comments are other people's words: quote only what the answer needs.",
+  read_guide:
+    "This pull request's guide: its concerns in reading order, each with its id, title, rationale and hunk ids.",
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -674,17 +696,8 @@ function registerTools(
     );
   }
 
-  if (!scope.sessionTools) {
-    // A conversation's client has no tool of Ajour's yet (Deck's reads come
-    // with #791). It still lists its tools, as an empty list, rather than
-    // finding no tools method at all. A call is refused before it gets here.
-    server.server.registerCapabilities({ tools: {} });
-    server.server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: [],
-    }));
-    server.server.setRequestHandler(CallToolRequestSchema, (request) =>
-      errorResult(`Ajour has no tool named ${request.params.name}.`),
-    );
+  if (scope.pullRequest) {
+    registerDeckReads(server, client, scope.pullRequest, context, callOf);
     return;
   }
   // Session tools run in the API: sessions live here, not in the renderer.
@@ -786,6 +799,60 @@ function registerTools(
         getLogTrace(localLogs, input.traceId),
       ),
   );
+}
+
+/**
+ * A pull request conversation's tools: Deck's four reads, each answering for
+ * the client's binding only (ADR 0021). Without the reads, it still lists
+ * its tools, as an empty list, rather than finding no tools method at all.
+ * A call of any other tool is refused before it gets here.
+ */
+function registerDeckReads(
+  server: McpServer,
+  client: AgentClientRef,
+  binding: NonNullable<ToolScope["pullRequest"]>,
+  context: McpRequestContext,
+  callOf: (extra: { requestId: unknown }) => ToolCall | undefined,
+) {
+  const { deckReads } = context;
+  if (!deckReads) {
+    server.server.registerCapabilities({ tools: {} });
+    server.server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: [],
+    }));
+    server.server.setRequestHandler(CallToolRequestSchema, (request) =>
+      errorResult(`Ajour has no tool named ${request.params.name}.`),
+    );
+    return;
+  }
+  for (const name of Object.keys(deckToolInputSchemas) as DeckToolName[]) {
+    server.registerTool(
+      name,
+      {
+        description: TOOL_DESCRIPTIONS[name],
+        inputSchema: deckToolInputSchemas[name].shape,
+        outputSchema: deckToolOutputSchemas[name].shape,
+      },
+      async (input: unknown, extra: { requestId: unknown }) => {
+        const call = callOf(extra);
+        return withToolEvent(name, "read", client, context, call, async () => {
+          try {
+            return structuredResult(
+              await deckReads.run(
+                name,
+                binding,
+                input as Parameters<typeof deckReads.run>[2],
+              ),
+            );
+          } catch (error) {
+            if (!(error instanceof DeckReadRefused)) throw error;
+            call?.unit.refuse("tool_refused");
+            return errorResult(error.message);
+          }
+        });
+      },
+    );
+  }
 }
 
 function writeError(response: ServerResponse, status: number, message: string) {

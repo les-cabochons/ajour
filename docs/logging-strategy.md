@@ -1065,7 +1065,7 @@ channel to read the event each emits.
 | `agent_session.mark_seen`            | command, request                        | route, client call                               |
 | `agent_task.configure`               | command, request                        | route, client call                               |
 | `agent_tool.call`                    | request, job                            | local API, renderer                              |
-| `agent_turn.cancel`                  | command, request                        | route                                            |
+| `agent_turn.cancel`                  | command, request                        | route, client call                               |
 | `api.health`                         | request                                 | route                                            |
 | `api.request`                        | request                                 | local API                                        |
 | `api.start`                          | lifecycle                               | local API                                        |
@@ -1139,6 +1139,10 @@ channel to read the event each emits.
 | `connection.remove_secrets`          | command, request                        | route, client call                               |
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
+| `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.consent`                       | command, request                        | route, client call                               |
+| `deck.consent_revoke`                | command, request                        | route, client call                               |
+| `deck.consents`                      | command, request                        | route, client call                               |
 | `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
 | `deck.preload`                       | request, job                            | route, client call, renderer                     |

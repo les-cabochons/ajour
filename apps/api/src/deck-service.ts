@@ -10,6 +10,7 @@ import type {
   DeckOpenRequest,
   DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
+import { parseDeckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
   hunkToPatch,
@@ -291,11 +292,25 @@ async function buildPullRequestDiff(
   };
 }
 
+/** Both versions of the changed files: the base's by base path, the head's by head path. */
+export interface DeckFileVersions {
+  old: ReadonlyMap<string, string>;
+  new: ReadonlyMap<string, string>;
+}
+
+/** A pull request Deck holds at one head, for an ask and the agent's reads (#791). */
+export interface DeckHeldPullRequest {
+  diff: DeckPullRequestDiff;
+  guide: DeckGuide | null;
+  versions: DeckFileVersions;
+}
+
 /** The pull request on screen at one base and head: its diff and its guide. */
 interface Entry {
   key: DeckCacheKey;
   id: string;
   diff: Promise<DeckPullRequestDiff>;
+  versions: Promise<DeckFileVersions>;
   /** Null when the pipeline failed. It rejects only when the build was cancelled. */
   guide: Promise<DeckGuide | null>;
   stop: AbortController;
@@ -408,6 +423,7 @@ export function createDeckService(options: {
       key: found.key,
       id: deckCacheKeyString(found.key),
       diff: Promise.resolve(found.diff),
+      versions: Promise.resolve(found.guideInput),
       guide: found.guide
         ? Promise.resolve(found.guide)
         : buildGuide(found.key, found.guideInput, "open", stop.signal),
@@ -501,6 +517,7 @@ export function createDeckService(options: {
       key,
       id,
       diff: built.then((result) => result.diff),
+      versions: built.then((result) => result.guideInput),
       guide: built.then((result) => {
         void cache.put(key, result);
         return buildGuide(key, result.guideInput, "open", stop.signal);
@@ -509,6 +526,7 @@ export function createDeckService(options: {
     };
     // A failure reaches this caller below. A second caller awaits it too.
     entry.diff.catch(() => {});
+    entry.versions.catch(() => {});
     entry.guide.catch(() => {});
     show(entry);
     try {
@@ -576,7 +594,38 @@ export function createDeckService(options: {
     return { queued: 1, fileReadCount: result.fileReadCount };
   }
 
+  /**
+   * The pull request Deck holds at `head`, on screen or in the content
+   * cache, or undefined: another head, one that failed or one evicted.
+   */
+  async function held(
+    pullRequest: string,
+    head: string,
+  ): Promise<DeckHeldPullRequest | undefined> {
+    const source = parseDeckPullRequestKey(pullRequest);
+    if (!source) return undefined;
+    const at = { ...source, headSha: head };
+    if (onScreen && sameHead(onScreen.key, at)) {
+      try {
+        const [diff, versions, guide] = await Promise.all([
+          onScreen.diff,
+          onScreen.versions,
+          onScreen.guide,
+        ]);
+        return { diff, guide, versions };
+      } catch {
+        return undefined;
+      }
+    }
+    const found = await cache.find(at);
+    return found
+      ? { diff: found.diff, guide: found.guide, versions: found.guideInput }
+      : undefined;
+  }
+
   return {
+    held,
+
     /**
      * The pull request's diff from the merge base to the head, and its
      * guide. With the head the window's last sync saw, a pull request the

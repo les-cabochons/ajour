@@ -39,6 +39,12 @@ Click a pull request for its state, author, checks and last update, then its cha
 
 Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. Viewed marks last while the pull request stays open. Ajour keeps the pull requests it read on this computer, and after each sync reads the ones waiting on you, so they open at once. New commits show the next time you open the pull request after a sync saw them. **Settings › Storage** shows how much Deck keeps, sets its size limit, and has **Clear cache**. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
+## Ask for more detail
+
+Each concern's reason ends with a faint **more ›**. Click it and the question it asks shows in place, ready: what the concern changes, why, and what to check. Press Enter to ask it as is, or type your own question first; Escape closes it. The answer is written in place under the reason by the agent you picked in **Settings › Agents**. It shows **Getting more detail…** until the answer starts, then the answer comes in as it is written, and ends with the commit it is about. Type in **Ask something else…** under an answer to ask another question about the concern. **Stop** stops an answer, and **Dismiss** closes it. An answer you already got, for the same question and commit, shows at once.
+
+The first time you ask about a repository's pull request, Ajour asks once whether to send its code to that agent, and lists what leaves your computer: the changed lines, any other changed files the agent reads, and the review threads. Nothing is sent before you ask. **Settings › Agents › Questions about pull requests** lists the repositories you allowed, with **Revoke**, which also stops an answer being written for that repository. The agent reads only that pull request, at that commit, and none of your other Ajour data, so MCP doesn't need to be on. While a timesheet agent task runs, the answer waits for it to finish.
+
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Reviews happen in your code host for now

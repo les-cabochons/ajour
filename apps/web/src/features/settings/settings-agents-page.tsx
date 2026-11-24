@@ -4,6 +4,7 @@ import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { AgentInstructionsSetting } from "./agent-instructions-setting";
+import { DeckConsentsSetting } from "./deck-consents-setting";
 import { updateAgentRunnerSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
@@ -13,7 +14,8 @@ import {
 
 /**
  * Settings > Agents: which coding agent Ajour starts for plugin agent tasks
- * and which browser it drives. Each task's own settings sit on its plugin's
+ * and Deck's questions, which browser it drives, and the repositories Deck
+ * may send to it. Each task's own settings sit on its plugin's
  * page, next to the connection settings of other plugins.
  */
 export function SettingsAgentsPage() {
@@ -21,6 +23,7 @@ export function SettingsAgentsPage() {
     <div className="settings-sections settings-measure">
       <AgentInstructionsSetting />
       <AgentRunnerSetting />
+      <DeckConsentsSetting />
     </div>
   );
 }

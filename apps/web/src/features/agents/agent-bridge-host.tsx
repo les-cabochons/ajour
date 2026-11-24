@@ -2,6 +2,7 @@ import { setHandoffVisibility } from "@/lib/app-api";
 import { useEffect } from "react";
 import type { AgentsSnapshot } from "@ajour/shared/agent-tools";
 import { showActionToast } from "@/components/ui/toast";
+import { receiveAgentTurnEvent } from "@/lib/agent-turns";
 import { connectMcpBridge } from "@/lib/mcp-bridge";
 import { useMcpSettings } from "@/lib/mcp-settings";
 import {
@@ -67,6 +68,7 @@ export function AgentBridgeHost() {
             ).catch(() => undefined);
         },
         onAgents: setAgentsSnapshot,
+        onAgentTurn: receiveAgentTurnEvent,
       },
       // Keep the MCP tool route while enabled. The handoff route also accepts
       // subscriptions while MCP is off; both carry handoff snapshots.

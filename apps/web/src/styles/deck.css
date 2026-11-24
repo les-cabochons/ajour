@@ -108,6 +108,83 @@
     font-size: var(--text-xs);
   }
 
+  /*
+   * A concern's quiet ask (#791): faint at the end of its rationale, clear
+   * on hover and focus. It is a word, not an icon, and names no agent.
+   */
+  .deck-more {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-tertiary);
+    font: inherit;
+    white-space: nowrap;
+  }
+
+  .deck-more:hover,
+  .deck-more:focus-visible,
+  .deck-more[aria-expanded="true"] {
+    color: var(--text);
+  }
+
+  .deck-more:focus-visible {
+    border-radius: var(--radius-sm);
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  /* The answer, in place under the rationale, as part of the page's text. */
+  .deck-ask {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--border);
+    max-width: 72ch;
+  }
+
+  .deck-ask-question {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-style: italic;
+  }
+
+  .deck-ask-placeholder {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-ask-footer {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-ask-error {
+    color: var(--destructive);
+  }
+
+  .deck-ask-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .deck-ask-form {
+    flex: 1 1 14rem;
+    min-width: 0;
+  }
+
+  /* The question an ask opens on: the field, then Ask at its end. */
+  .deck-ask-compose {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
   .deck-concern-progress {
     flex: none;
     margin-top: 0.125rem;

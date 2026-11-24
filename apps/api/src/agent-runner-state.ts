@@ -12,6 +12,10 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import {
+  deckAgentConsentSchema,
+  type DeckAgentConsent,
+} from "../../../packages/shared/deck.ts";
 
 /** Which of a holder's values the vault holds. See `connection-credentials.ts`. */
 export interface StoredSecretFields {
@@ -40,6 +44,11 @@ export interface StoredAgentRunnerState {
    * values nobody checked for secrets since the vault came.
    */
   pluginSecrets: Record<string, StoredSecretFields>;
+  /**
+   * The repositories whose pull requests Deck may send to an agent, each
+   * with the agent allowed (#791). Absent from a file saved before: none.
+   */
+  deckConsents: DeckAgentConsent[];
 }
 
 export function defaultAgentRunnerSettings(): AgentRunnerSettings {
@@ -144,9 +153,16 @@ export function normalizeAgentRunnerState(
       }
     }
   }
+  const deckConsents = Array.isArray(record.deckConsents)
+    ? record.deckConsents.flatMap((consent) => {
+        const parsed = deckAgentConsentSchema.safeParse(consent);
+        return parsed.success ? [parsed.data] : [];
+      })
+    : [];
   return {
     settings: settings.success ? settings.data : defaultAgentRunnerSettings(),
     pluginValues,
     pluginSecrets,
+    deckConsents,
   };
 }

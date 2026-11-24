@@ -188,7 +188,7 @@ export const agentTurnEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("conversation-closed"),
     conversationId: z.string(),
-    reason: z.enum(["replaced", "idle", "shutdown", "failed"]),
+    reason: z.enum(["replaced", "idle", "shutdown", "failed", "revoked"]),
   }),
 ]);
 export type AgentTurnEvent = z.infer<typeof agentTurnEventSchema>;
