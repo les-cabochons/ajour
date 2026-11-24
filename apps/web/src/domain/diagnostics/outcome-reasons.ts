@@ -55,6 +55,7 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   cli_failed: "The agent's command-line program reported an error.",
   client_closed:
     "The caller went away before the answer reached it, such as a closed window or a cancelled request.",
+  closed: "The local API stopped before the work ended.",
   concurrency: "The plugin already runs as many commands at once as it may.",
   connection_changed_during_sync:
     "The connection was saved again while the sync ran, so its answer wasn't used.",
@@ -77,6 +78,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "Plugins are off because an environment setting turned them off when Ajour started.",
   escaping_entry:
     "The downloaded archive held a file that would land outside its folder, so nothing was installed.",
+  evicted:
+    "Newer preloads pushed this pull request out of Deck's memory before its guide was built.",
   executable_missing:
     "The command's program isn't installed, or isn't on the PATH.",
   exited_early: "The plugin stopped before it returned a result.",
@@ -184,6 +187,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   plugin_error: "The plugin ran into an error of its own while it worked.",
   plugin_off: "The plugin is turned off.",
   port_in_use: "Another program is using the port the local API listens on.",
+  preempted:
+    "A pull request opened in Deck, so this preloaded guide stopped and will be built again after.",
   private_address:
     "The address resolved to, or answered from, a private network address, which this connection may not reach.",
   process_acceptance_required:
@@ -206,7 +211,7 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   renderer_integrity:
     "Plugins are off because a plugin's page failed Ajour's integrity check.",
   replaced:
-    "Another pull request opened in Deck before this one's changes were read.",
+    "Another pull request opened in Deck before this one's changes or guide were ready.",
   renderer_not_sandboxed:
     "Plugins are off because a plugin's page ran outside the sandbox.",
   renderer_unknown:

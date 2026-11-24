@@ -15,7 +15,11 @@ import {
   resolveShortcut,
   type ShortcutChord,
   type ShortcutKeyEvent,
+  type ShortcutScope,
 } from "./shortcuts";
+
+const sequenceOf = (shortcut: (typeof SHORTCUTS)[number]) =>
+  formatShortcutKeys(shortcut, "other").join(" then ");
 
 /** A number key on the top row. `key` is what the layout types, such as "!" with Shift. */
 function pressDigit(
@@ -84,10 +88,67 @@ describe("shortcut registry", () => {
       "?",
       "1 to 0",
       "⇧1 to ⇧0",
+      "J",
+      "K",
+      "F",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
       SHORTCUTS.length,
     );
+  });
+
+  it("gives no two app keys that work at once the same keys, Deck's review page keys included", () => {
+    // Global keys work with every page's; the Time page and Deck's review
+    // page never show together.
+    const together = (left: ShortcutScope, right: ShortcutScope) =>
+      left === right || left === "global" || right === "global";
+    const sequence = (shortcut: (typeof APP_SHORTCUTS)[number]) =>
+      formatShortcutKeys(shortcut, "other");
+    const startsWith = (long: string[], short: string[]) =>
+      short.every((key, index) => long[index] === key);
+    const collisions = APP_SHORTCUTS.flatMap((left, index) =>
+      APP_SHORTCUTS.slice(index + 1)
+        .filter(
+          (right) =>
+            together(left.scope, right.scope) &&
+            (startsWith(sequence(left), sequence(right)) ||
+              startsWith(sequence(right), sequence(left))),
+        )
+        .map((right) => `${left.id} and ${right.id}`),
+    );
+
+    expect(collisions).toEqual([]);
+    expect(
+      APP_SHORTCUTS.filter((shortcut) => shortcut.scope === "deck").map(
+        (shortcut) => [shortcut.id, sequence(shortcut).join(" then ")],
+      ),
+    ).toEqual([
+      ["deck.next-concern", "J"],
+      ["deck.previous-concern", "K"],
+      ["deck.guide-tree", "F"],
+    ]);
+  });
+
+  it("keeps E, F and S for the app and the focused row outside Deck's review page", () => {
+    const outsideDeck = SHORTCUTS.filter(
+      (shortcut) => shortcut.scope !== "deck",
+    );
+    const meaning = (key: string) =>
+      outsideDeck
+        .filter((shortcut) => sequenceOf(shortcut) === key)
+        .map((shortcut) => shortcut.id);
+
+    expect(meaning("E")).toEqual(["item.settle"]);
+    expect(meaning("F")).toEqual(["item.favorite"]);
+    expect(meaning("S")).toEqual(["entry.stop-or-start"]);
+    // Only the review page's own keys are new there, and S and E aren't.
+    expect(
+      SHORTCUTS.filter(
+        (shortcut) =>
+          shortcut.scope === "deck" &&
+          ["E", "S"].includes(sequenceOf(shortcut)),
+      ),
+    ).toEqual([]);
   });
 
   it("lists the keys of focused rows and cards from the UX spec", () => {

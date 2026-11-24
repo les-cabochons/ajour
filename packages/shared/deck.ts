@@ -69,3 +69,43 @@ export type DeckPullRequestDiff = z.infer<typeof deckPullRequestDiffSchema>;
 /** Opens a pull request of a code host connection in Deck. */
 export const deckOpenRequestSchema = codeHostPullRequestRefSchema;
 export type DeckOpenRequest = z.infer<typeof deckOpenRequestSchema>;
+
+/**
+ * One concern of a guide: hunks that belong together, with a title and a
+ * one-line rationale, as Review Deck's pipeline groups them.
+ */
+export const deckConcernSchema = z.object({
+  /** The pipeline's group id, such as `g1`, `misc` or `mechanical`. */
+  id: z.string().min(1).max(100),
+  title: z.string().max(500),
+  rationale: z.string().max(2_000),
+  /** Hunk ids of the diff, in reading order. */
+  hunkIds: z.array(z.string().min(1).max(1_100)).min(1),
+});
+export type DeckConcern = z.infer<typeof deckConcernSchema>;
+
+/**
+ * A pull request's guide: its concerns in reading order. `madeWith: "code"`
+ * is the guide Deck builds locally, from the code, with the vendored
+ * pipeline.
+ */
+export const deckGuideSchema = z.object({
+  madeWith: z.literal("code"),
+  concerns: z.array(deckConcernSchema).max(3_000),
+});
+export type DeckGuide = z.infer<typeof deckGuideSchema>;
+
+/**
+ * An opened pull request: its diff and its guide. The guide is null when
+ * the pipeline failed, so the page shows the files A–Z.
+ */
+export const deckOpenedPullRequestSchema = deckPullRequestDiffSchema.extend({
+  guide: deckGuideSchema.nullable(),
+});
+export type DeckOpenedPullRequest = z.infer<typeof deckOpenedPullRequestSchema>;
+
+/** Builds the guides of pull requests ahead of their opening, at low priority. */
+export const deckPreloadRequestSchema = z.object({
+  pullRequests: z.array(deckOpenRequestSchema).max(20),
+});
+export type DeckPreloadRequest = z.infer<typeof deckPreloadRequestSchema>;

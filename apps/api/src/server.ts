@@ -147,8 +147,20 @@ import {
   type CodeHostOperationRequest,
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
-import { deckOpenRequestSchema } from "../../../packages/shared/deck.ts";
-import { createDeckService, DeckBuildReplaced } from "./deck-service.ts";
+import {
+  deckOpenRequestSchema,
+  deckPreloadRequestSchema,
+} from "../../../packages/shared/deck.ts";
+import {
+  createGuideBuilds,
+  createWorkerGuideRuntime,
+  type DeckGuideRuntime,
+} from "./deck-guide-builds.ts";
+import {
+  createDeckService,
+  DeckBuildReplaced,
+  type DeckCodeHost,
+} from "./deck-service.ts";
 import {
   calendarOperationSchema,
   calendarOperations,
@@ -369,6 +381,14 @@ interface AppApiServerOptions {
   reportProcessCrashes?: boolean;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
+  /**
+   * What builds Deck's guides: by default a worker thread running Review
+   * Deck's vendored pipeline (#782). Tests pass an in-process fake to hold
+   * a build.
+   */
+  deckGuideRuntime?: DeckGuideRuntime;
+  /** How long one guide build may run. Tests shorten it. */
+  deckGuideTimeoutMs?: number;
   /**
    * The local log file's reads, for the MCP log tools. The desktop app passes
    * main's query service; without one, as in the standalone API, MCP lists
@@ -1799,8 +1819,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       if (refusal) throw refusal;
     },
   });
-  /** Deck: the pull request on screen, its diff built from both file versions. */
-  const deckService = createDeckService();
+  /**
+   * Deck: the pull request on screen and the preloaded ones, their diffs
+   * built from both file versions and their guides by the vendored pipeline.
+   */
+  const deckService = createDeckService({
+    guides: createGuideBuilds({
+      runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
+      events,
+      timeoutMs: options.deckGuideTimeoutMs,
+    }),
+  });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
@@ -4549,77 +4578,63 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
-    deckOpen: async ({ request, response, params, unit }) => {
-      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
-      const { connectionId } = params;
-      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const found = await codeHostConnection(
-        response,
-        unit,
-        pluginId,
-        connectionId,
+    deckOpen: async (context) => {
+      const { response, unit } = context;
+      const deck = await deckRequest(context, (body) =>
+        deckOpenRequestSchema.parse(body),
       );
-      if (!found) return;
-      const { plugin, connection } = found;
-      const body = await readJsonBody(request);
-      const ref = readInput(() => deckOpenRequestSchema.parse(body));
-      for (const operation of ["getPullRequestContent", "getFileContent"]) {
-        if (refuseAccessOff(response, unit, plugin, connection, operation)) {
-          return;
-        }
-      }
-      const call = admittedCall(plugin, connection.secrets);
+      if (!deck) return;
       try {
-        const opened = await deckService.openPullRequest(
-          { pluginId, connectionId },
-          ref,
-          {
-            run: (operation, operationRequest) =>
-              pluginManager.runCodeHostOperation(
-                pluginId,
-                operation,
-                pluginConnection(connection),
-                operationRequest,
-                call.admit,
-              ),
-          },
+        const { opened, ...facts } = await deckService.openPullRequest(
+          deck.source,
+          deck.ref,
+          deck.codeHost,
         );
         unit.set({
           deck: {
-            file_count: opened.diff.files.length,
-            hunk_count: opened.diff.files.reduce(
+            file_count: opened.files.length,
+            hunk_count: opened.files.reduce(
               (count, file) => count + file.hunks.length,
               0,
             ),
-            file_read_count: opened.fileReadCount,
-            kept: opened.kept,
+            file_read_count: facts.fileReadCount,
+            kept: facts.kept,
+            preloaded: facts.preloaded,
+            concern_count: opened.guide?.concerns.length,
+            guide_built: opened.guide !== null,
           },
         });
-        writeJson(response, 200, opened.diff);
+        writeJson(response, 200, opened);
       } catch (error) {
-        if (error instanceof DeckBuildReplaced) {
-          unit.refuse("replaced");
-          writeJson(response, 409, { error: error.message });
-          return;
-        }
-        if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host Deck doesn't read yet (#780).
-          unit.refuse("not_supported");
-          writeJson(response, 404, {
-            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
-            reason: "not_supported",
-          });
-          return;
-        }
-        if (answerAccessOff(response, unit, error)) return;
-        const credentials = await failedCall(
-          storage,
-          unit,
-          error,
-          call,
-          connection,
+        await deck.failed(error);
+      }
+    },
+
+    deckPreload: async (context) => {
+      const { response, unit } = context;
+      const deck = await deckRequest(context, (body) =>
+        deckPreloadRequestSchema.parse(body),
+      );
+      if (!deck) return;
+      unit.set({
+        deck: { pull_request_count: deck.ref.pullRequests.length },
+      });
+      try {
+        const preloaded = await deckService.preloadPullRequests(
+          deck.source,
+          deck.ref.pullRequests,
+          deck.codeHost,
         );
-        writeJson(response, 502, { error: credentials.errorMessage(error) });
+        unit.set({
+          deck: {
+            queued_count: preloaded.queued,
+            file_read_count: preloaded.fileReadCount,
+            failed_count: preloaded.failed,
+          },
+        });
+        writeJson(response, 202, { queued: preloaded.queued });
+      } catch (error) {
+        await deck.failed(error);
       }
     },
 
@@ -5476,10 +5491,81 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }
 
   /**
-   * Refuses an operation the connection's access doesn't allow, before the
-   * plugin runs: a 403 naming the choice it needs, so the web can hold the
-   * edit. True when it refused.
+   * The prelude of Deck's routes: the connection, the body read with
+   * `parse`, the access its reads need, and the code host bound to the
+   * connection. Undefined once it answered. `failed` answers an error the
+   * service threw.
    */
+  async function deckRequest<Ref>(
+    {
+      request,
+      response,
+      params,
+      unit,
+    }: RouteContext<"deckOpen" | "deckPreload">,
+    parse: (body: unknown) => Ref,
+  ) {
+    const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+    const { connectionId } = params;
+    unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const found = await codeHostConnection(
+      response,
+      unit,
+      pluginId,
+      connectionId,
+    );
+    if (!found) return undefined;
+    const { plugin, connection } = found;
+    const body = await readJsonBody(request);
+    const ref = readInput(() => parse(body));
+    for (const operation of ["getPullRequestContent", "getFileContent"]) {
+      if (refuseAccessOff(response, unit, plugin, connection, operation)) {
+        return undefined;
+      }
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    const codeHost: DeckCodeHost = {
+      run: (operation, operationRequest) =>
+        pluginManager.runCodeHostOperation(
+          pluginId,
+          operation,
+          pluginConnection(connection),
+          operationRequest,
+          call.admit,
+        ),
+    };
+    return {
+      source: { pluginId, connectionId },
+      ref,
+      codeHost,
+      async failed(error: unknown) {
+        if (error instanceof DeckBuildReplaced) {
+          unit.refuse("replaced");
+          writeJson(response, 409, { error: error.message });
+          return;
+        }
+        if (error instanceof PluginExportMissing) {
+          // An older plugin, or a code host Deck doesn't read yet (#780).
+          unit.refuse("not_supported");
+          writeJson(response, 404, {
+            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
+            reason: "not_supported",
+          });
+          return;
+        }
+        if (answerAccessOff(response, unit, error)) return;
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
+      },
+    };
+  }
+
   /**
    * The code host plugin and connection a pull request route acts on, or
    * undefined once it answered a refusal: the plugin is unavailable, has no
@@ -5542,6 +5628,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     return { plugin, connection };
   }
 
+  /**
+   * Refuses an operation the connection's access doesn't allow, before the
+   * plugin runs: a 403 naming the choice it needs, so the web can hold the
+   * edit. True when it refused.
+   */
   function refuseAccessOff(
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
@@ -5878,6 +5969,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    void deckService.close();
     handoffHooks.close();
     commandBridge.close();
     mcpBridge.close();
