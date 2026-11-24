@@ -103,6 +103,19 @@ export interface DiffHunkProps {
   renderAnnotation?: (key: string) => ReactNode;
   /** Lines to highlight, such as the line of a hovered comment. */
   highlight?: { side: DiffLineSide; start: number; end: number } | null;
+  /**
+   * Shows a "+" beside the line under the pointer, which comments on that
+   * line, or on the lines dragged over from it. One button per hunk, moved
+   * as the pointer moves: nothing is mounted per line.
+   */
+  onAddComment?: (lines: DiffLineRange) => void;
+}
+
+/** Lines of one side of the hunk, from `start` to `end`. */
+export interface DiffLineRange {
+  side: DiffLineSide;
+  start: number;
+  end: number;
 }
 
 /** One hunk of a diff, mounted when it nears the screen. */
@@ -115,6 +128,7 @@ export const DiffHunk = memo(function DiffHunk({
   annotations,
   renderAnnotation,
   highlight,
+  onAddComment,
 }: DiffHunkProps) {
   const box = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -143,6 +157,28 @@ export const DiffHunk = memo(function DiffHunk({
       endSide: highlight.side,
     };
   }, [annotations, highlight]);
+  const hunkOptions = useMemo(
+    (): FileDiffOptions<AnnotationData, undefined> =>
+      onAddComment
+        ? {
+            ...options[theme],
+            enableGutterUtility: true,
+            onGutterUtilityClick: (range) => {
+              const side = range.endSide ?? range.side ?? "additions";
+              // Lines from both sides keep only the line the drag ended on.
+              if ((range.side ?? side) !== side)
+                onAddComment({ side, start: range.end, end: range.end });
+              else
+                onAddComment({
+                  side,
+                  start: Math.min(range.start, range.end),
+                  end: Math.max(range.start, range.end),
+                });
+            },
+          }
+        : options[theme],
+    [onAddComment, theme],
+  );
   // Until it draws, the box is `--diff-line-height` tall per row (styles/deck.css).
   const rowCount = { "--diff-hunk-rows": rows } as CSSProperties;
   return (
@@ -159,7 +195,7 @@ export const DiffHunk = memo(function DiffHunk({
         <Suspense fallback={<div className="diff-hunk-placeholder" />}>
           <PatchDiff
             patch={patch}
-            options={options[theme]}
+            options={hunkOptions}
             lineAnnotations={lineAnnotations}
             selectedLines={selectedLines}
             renderAnnotation={

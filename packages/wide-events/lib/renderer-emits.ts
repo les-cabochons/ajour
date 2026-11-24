@@ -65,6 +65,8 @@ export const APP_API_CLIENT = {
   openDeckPullRequest: "deck.open",
   readPullRequestConversation: "pull_request.load_conversation",
   readPullRequestChecks: "pull_request.load_checks",
+  submitPullRequestReview: "pull_request.submit_review",
+  postPullRequestComment: "pull_request.comment",
   askDeck: "deck.ask",
   grantDeckConsent: "deck.consent",
   getDeckConsents: "deck.consents",

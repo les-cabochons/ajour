@@ -281,6 +281,21 @@ export function finishReviewRequest(
   };
 }
 
+/**
+ * Each verdict's name on the pull request's code host. Azure DevOps votes,
+ * so a request for changes is its "Wait for author" vote there.
+ */
+export function reviewVerdicts(
+  pluginId: string,
+): Record<CodeHostSubmitReviewRequest["verdict"], string> {
+  return {
+    comment: "Comment",
+    request_changes:
+      pluginId === "azure_devops" ? "Wait for author" : "Request changes",
+    approve: "Approve",
+  };
+}
+
 /** Takes out of the draft the comments the code host accepted; the draft goes once it's empty. */
 export function completeDraftComments(
   reviews: readonly DeckDraftReview[],

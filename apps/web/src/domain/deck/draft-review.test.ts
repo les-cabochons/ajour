@@ -12,6 +12,7 @@ import {
   placeDrafts,
   refreshDraftReview,
   removeDraftComment,
+  reviewVerdicts,
   type DeckDraftReview,
   type DeckReviewRef,
 } from "./draft-review";
@@ -331,6 +332,19 @@ describe("finishing the review", () => {
       { path: "src/api.ts", side: "head", line: 2, body: comment!.body },
     ]);
     expect(completeDraftComments(reviews, REF, [comment!.id])).toEqual([]);
+  });
+});
+
+describe("the verdicts", () => {
+  it("name a request for changes as each code host does", () => {
+    expect(reviewVerdicts("github")).toEqual({
+      comment: "Comment",
+      request_changes: "Request changes",
+      approve: "Approve",
+    });
+    expect(reviewVerdicts("azure_devops").request_changes).toBe(
+      "Wait for author",
+    );
   });
 });
 

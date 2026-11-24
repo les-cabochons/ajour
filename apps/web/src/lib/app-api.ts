@@ -184,7 +184,11 @@ import {
 } from "@ajour/shared";
 import {
   codeHostChecksResultSchema,
+  codeHostCommentResultSchema,
   codeHostConversationResultSchema,
+  codeHostSubmitReviewResultSchema,
+  type CodeHostPostCommentRequest,
+  type CodeHostSubmitReviewRequest,
   codeHostSyncResultSchema,
   isCapabilityActive,
   type CodeHostSyncResult,
@@ -373,6 +377,57 @@ export function readPullRequestChecks(
       body: JSON.stringify(pullRequest),
     },
     codeHostChecksResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Submits a review with its verdict and line comments, at once (ADR 0002).
+ * A connection without Review pull requests answers 403, an `accessOff`
+ * error naming the choice.
+ */
+export function submitPullRequestReview(
+  pluginId: string,
+  connectionId: string,
+  review: CodeHostSubmitReviewRequest,
+) {
+  return appApiRequest(
+    "submitPullRequestReview",
+    codeHostPath(pluginId, connectionId, "submitReview"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(review),
+    },
+    codeHostSubmitReviewResultSchema,
+    (unit) =>
+      unit.set({
+        plugin: { id: pluginId },
+        connection: { id: connectionId },
+        pull_request: {
+          verdict: review.verdict,
+          comment_count: review.comments.length,
+        },
+      }),
+  );
+}
+
+/** Posts one comment, on lines when `anchor` is set, at once (ADR 0002). */
+export function postPullRequestComment(
+  pluginId: string,
+  connectionId: string,
+  comment: CodeHostPostCommentRequest,
+) {
+  return appApiRequest(
+    "postPullRequestComment",
+    codeHostPath(pluginId, connectionId, "postComment"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(comment),
+    },
+    codeHostCommentResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
