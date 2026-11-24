@@ -3120,6 +3120,8 @@ export const catalog = defineCatalog({
           /** The guide builds queued. A pull request already kept is not read again. */
           queued_count: operational<number>(),
           file_read_count: operational<number>(),
+          /** Pull requests that couldn't be read, and were skipped. */
+          failed_count: operational<number>(),
         },
       },
     },
@@ -3130,8 +3132,14 @@ export const catalog = defineCatalog({
     "deck.guide_build": {
       kinds: ["job"],
       reasons: [
-        /** The pull request closed or another one opened before it was built. */
+        /** Another pull request opened before it was built. */
         "replaced",
+        /** A preload pushed out of the ones kept before it was built. */
+        "evicted",
+        /** The local API stopped. */
+        "closed",
+        /** A preload stopped for an opened pull request's build; it runs again after. */
+        "preempted",
       ],
       fields: {
         deck: {

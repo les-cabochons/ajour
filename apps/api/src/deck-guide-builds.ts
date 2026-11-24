@@ -4,7 +4,11 @@ import {
   type GuideJob,
   type GuideJobResult,
 } from "../../../packages/review-deck/guide-job.ts";
-import type { DeckConcern, DeckGuide } from "../../../packages/shared/deck.ts";
+import {
+  deckGuideSchema,
+  type DeckConcern,
+  type DeckGuide,
+} from "../../../packages/shared/deck.ts";
 import type { ApiEvents } from "./events.ts";
 
 /*
@@ -12,8 +16,8 @@ import type { ApiEvents } from "./events.ts";
  * code by Review Deck's vendored pipeline, in a worker thread, so the local
  * API's main thread and the window do no pipeline work. Builds run one at a
  * time, at low priority: a build for the pull request the user just opened
- * runs before every preload still waiting, though never in the middle of
- * one already running.
+ * runs before every preload still waiting, and stops a preload already
+ * running, which waits again at the head of the preloads.
  */
 
 /** What the pipeline reads: the diff `buildDiff` wrote, and both versions of each file. */
@@ -27,8 +31,9 @@ export interface GuideBuildInput {
 
 /**
  * What builds a guide's concerns. The local API runs the worker thread
- * below; tests pass an in-process fake. `signal` aborts once nobody waits
- * for the build anymore.
+ * below; tests pass an in-process fake. `signal` aborts once the build must
+ * stop: nobody waits for it anymore, an open needs the worker, or it took
+ * too long.
  */
 export interface DeckGuideRuntime {
   build(input: GuideBuildInput, signal: AbortSignal): Promise<DeckConcern[]>;
@@ -37,6 +42,8 @@ export interface DeckGuideRuntime {
 
 /** A worker idle this long ends, and gives back the parsers' memory. */
 const WORKER_IDLE_MS = 2 * 60_000;
+/** A build that runs this long stops, and its pull request shows without a guide. */
+const BUILD_TIMEOUT_MS = 2 * 60_000;
 
 /** A build stopped because nobody waits for it anymore. */
 export class GuideBuildCancelled extends Error {
@@ -48,65 +55,66 @@ export class GuideBuildCancelled extends Error {
 /**
  * The worker thread that runs the pipeline. It starts with the first build,
  * stays for the next ones so the parsers load once, and ends after a while
- * idle. A cancelled build ends the worker, since the pipeline can't stop
- * halfway, and the next build starts a new one.
+ * idle. A stopped build ends the worker, since the pipeline can't stop
+ * halfway, and the next build starts a new one. Each worker answers only
+ * its own builds, so an ending worker never fails the next one's.
  */
 export function createWorkerGuideRuntime(
   workerUrl = GUIDE_WORKER_URL,
 ): DeckGuideRuntime {
-  let worker: Worker | undefined;
-  let idle: NodeJS.Timeout | undefined;
-  let nextId = 0;
-  const pending = new Map<
+  type Pending = Map<
     number,
     {
       resolve: (concerns: DeckConcern[]) => void;
       reject: (error: Error) => void;
     }
-  >();
+  >;
+  let current: { worker: Worker; pending: Pending } | undefined;
+  let idle: NodeJS.Timeout | undefined;
+  let nextId = 0;
 
-  const failPending = (error: Error) => {
+  const failAll = (pending: Pending, error: Error) => {
     for (const job of pending.values()) job.reject(error);
     pending.clear();
   };
   const stop = () => {
     clearTimeout(idle);
-    const ending = worker;
-    worker = undefined;
-    return ending?.terminate();
+    const ending = current;
+    current = undefined;
+    return ending?.worker.terminate();
   };
   const start = () => {
-    const started = new Worker(workerUrl);
+    const worker = new Worker(workerUrl);
+    const pending: Pending = new Map();
     // A build never keeps the process alive.
-    started.unref();
-    started.on("message", (result: GuideJobResult) => {
+    worker.unref();
+    worker.on("message", (result: GuideJobResult) => {
       const job = pending.get(result.id);
       if (!job) return;
       pending.delete(result.id);
       if ("error" in result) job.reject(new Error(result.error));
       else job.resolve(result.concerns);
-      if (!pending.size) {
+      if (!pending.size && current?.worker === worker) {
         clearTimeout(idle);
         idle = setTimeout(() => void stop(), WORKER_IDLE_MS);
         idle.unref();
       }
     });
-    started.on("error", (error) => {
-      if (worker === started) worker = undefined;
-      failPending(error);
-    });
-    started.on("exit", () => {
-      if (worker === started) worker = undefined;
-      failPending(new Error("The guide worker stopped."));
-    });
-    return started;
+    const ended = (error: Error) => {
+      if (current?.worker === worker) current = undefined;
+      failAll(pending, error);
+    };
+    worker.on("error", ended);
+    worker.on("exit", () => ended(new Error("The guide worker stopped.")));
+    return { worker, pending };
   };
 
   return {
     build(input, signal) {
       if (signal.aborted) return Promise.reject(new GuideBuildCancelled());
       clearTimeout(idle);
-      worker ??= start();
+      current ??= start();
+      const { worker, pending } = current;
       const id = ++nextId;
       const built = new Promise<DeckConcern[]>((resolve, reject) => {
         pending.set(id, { resolve, reject });
@@ -120,20 +128,40 @@ export function createWorkerGuideRuntime(
           if (!waiting) return;
           pending.delete(id);
           waiting.reject(new GuideBuildCancelled());
-          void stop();
+          if (current?.worker === worker) void stop();
         },
         { once: true },
       );
       return built;
     },
     async close() {
-      failPending(new GuideBuildCancelled());
+      const ending = current;
+      if (ending) failAll(ending.pending, new GuideBuildCancelled());
       await stop();
     },
   };
 }
 
+/**
+ * The guide the pipeline's groups make, within the wire's limits: a title
+ * or rationale too long is cut, so one long heuristic title never loses the
+ * whole guide. Anything else out of bounds fails the build.
+ */
+function guideOf(concerns: DeckConcern[]): DeckGuide {
+  return deckGuideSchema.parse({
+    madeWith: "code",
+    concerns: concerns.map((concern) => ({
+      ...concern,
+      title: concern.title.slice(0, 500),
+      rationale: concern.rationale.slice(0, 2_000),
+    })),
+  });
+}
+
 export type GuidePriority = "open" | "preload";
+
+/** Why a running build stopped. */
+type StopReason = "replaced" | "evicted" | "closed" | "preempted" | "timeout";
 
 interface Job {
   key: string;
@@ -143,8 +171,9 @@ interface Job {
   promise: Promise<DeckGuide>;
   resolve: (guide: DeckGuide) => void;
   reject: (error: Error) => void;
-  /** Set once the job runs. */
+  /** Set while the job runs. */
   stop?: AbortController;
+  stopReason?: StopReason;
 }
 
 /**
@@ -155,21 +184,37 @@ export function createGuideBuilds(options: {
   runtime: DeckGuideRuntime;
   events?: ApiEvents;
   now?: () => number;
+  /** How long a build may run. Tests shorten it. */
+  timeoutMs?: number;
 }) {
   const now = options.now ?? Date.now;
+  const timeoutMs = options.timeoutMs ?? BUILD_TIMEOUT_MS;
   const jobs = new Map<string, Job>();
   const queue: Job[] = [];
   let running: Job | undefined;
 
-  const cancel = (job: Job) => {
+  const cancel = (job: Job, reason: Exclude<StopReason, "preempted">) => {
     if (jobs.get(job.key) !== job) return;
     if (job === running) {
+      job.stopReason ??= reason;
       job.stop?.abort();
       return;
     }
     jobs.delete(job.key);
     queue.splice(queue.indexOf(job), 1);
     job.reject(new GuideBuildCancelled());
+  };
+
+  /** An open waiting stops a preload running, so the open needn't wait for it. */
+  const preempt = () => {
+    if (
+      running?.priority === "preload" &&
+      !running.stopReason &&
+      queue.some((job) => job.priority === "open")
+    ) {
+      running.stopReason = "preempted";
+      running.stop?.abort();
+    }
   };
 
   const pump = () => {
@@ -187,6 +232,12 @@ export function createGuideBuilds(options: {
   const run = async (job: Job) => {
     const stop = new AbortController();
     job.stop = stop;
+    job.stopReason = undefined;
+    const timer = setTimeout(() => {
+      job.stopReason ??= "timeout";
+      stop.abort();
+    }, timeoutMs);
+    timer.unref();
     const startedAt = now();
     const unit = options.events?.start("deck.guide_build", {
       kind: "job",
@@ -196,38 +247,68 @@ export function createGuideBuilds(options: {
     unit?.set({
       deck: { priority: job.priority, wait_ms: startedAt - job.queuedAt },
     });
+    let requeue = false;
     try {
       const concerns = await options.runtime.build(job.input, stop.signal);
+      const guide = guideOf(concerns);
       unit?.set({
         deck: {
-          concern_count: concerns.length,
+          concern_count: guide.concerns.length,
           build_ms: now() - startedAt,
         },
       });
       unit?.end();
-      job.resolve({ madeWith: "code", concerns });
+      job.resolve(guide);
     } catch (error) {
-      if (stop.signal.aborted) {
-        unit?.cancel("replaced").end();
+      const reason = stop.signal.aborted ? job.stopReason : undefined;
+      if (reason === "preempted") {
+        // It waits again at the head of the preloads.
+        unit?.cancel("preempted").end();
+        requeue = true;
+      } else if (reason === "timeout") {
+        unit?.set({ deck: { build_ms: now() - startedAt } });
+        unit?.end("timeout");
+        job.reject(new Error("The guide took too long to build."));
+      } else if (reason) {
+        unit?.cancel(reason).end();
         job.reject(new GuideBuildCancelled());
       } else {
         unit?.fail(error).end();
         job.reject(error instanceof Error ? error : new Error(String(error)));
       }
     } finally {
-      jobs.delete(job.key);
+      clearTimeout(timer);
+      job.stop = undefined;
+      if (requeue) {
+        const firstPreload = queue.findIndex(
+          (queued) => queued.priority === "preload",
+        );
+        queue.splice(firstPreload < 0 ? queue.length : firstPreload, 0, job);
+      } else {
+        jobs.delete(job.key);
+      }
       running = undefined;
       pump();
     }
   };
 
+  const watch = (job: Job, signal: AbortSignal | undefined) => {
+    if (!signal) return;
+    if (signal.aborted) cancel(job, "replaced");
+    else
+      signal.addEventListener("abort", () => cancel(job, "replaced"), {
+        once: true,
+      });
+  };
+
   return {
     /**
      * The guide of the pull request named `key`, built from `input`. An
-     * `open` build runs before every queued preload. A build already queued
-     * for the key is shared, and moves ahead when it is now an open. Once
-     * `signal` aborts, the build stops and its promise rejects with
-     * `GuideBuildCancelled`.
+     * `open` build runs before every queued preload, and stops a preload
+     * running. A build already queued for the key is shared, and moves ahead
+     * when it is now an open. Once `signal` aborts, the build stops and its
+     * promise rejects with `GuideBuildCancelled`. A build that fails or
+     * takes too long rejects with its error.
      */
     build(
       key: string,
@@ -259,34 +340,30 @@ export function createGuideBuilds(options: {
       } else if (priority === "open") {
         job.priority = "open";
       }
-      if (signal) {
-        const owned = job;
-        if (signal.aborted) cancel(owned);
-        else
-          signal.addEventListener("abort", () => cancel(owned), { once: true });
-      }
+      watch(job, signal);
+      preempt();
       pump();
       return job.promise;
     },
 
-    /** Moves a queued build ahead of the preloads, as for a pull request just opened. */
+    /** Moves a waiting build ahead of the preloads, as for a pull request just opened. */
     prioritize(key: string, signal?: AbortSignal) {
       const job = jobs.get(key);
       if (!job) return;
       job.priority = "open";
-      if (signal)
-        signal.addEventListener("abort", () => cancel(job), { once: true });
+      watch(job, signal);
+      preempt();
     },
 
-    /** Cancels the build of `key`, queued or running. */
-    cancel(key: string) {
+    /** Cancels the build of `key`, waiting or running: its preload was pushed out. */
+    evict(key: string) {
       const job = jobs.get(key);
-      if (job) cancel(job);
+      if (job) cancel(job, "evicted");
     },
 
     async close() {
-      for (const job of [...queue]) cancel(job);
-      if (running) cancel(running);
+      for (const job of [...queue]) cancel(job, "closed");
+      if (running) cancel(running, "closed");
       await options.runtime.close();
     },
   };

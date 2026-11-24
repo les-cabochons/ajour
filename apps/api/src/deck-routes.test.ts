@@ -142,7 +142,11 @@ afterEach(async () => {
   for (const stop of stops.splice(0)) await stop();
 });
 
-async function startDeck(source?: string, deckGuideRuntime?: DeckGuideRuntime) {
+async function startDeck(
+  source?: string,
+  deckGuideRuntime?: DeckGuideRuntime,
+  deckGuideTimeoutMs?: number,
+) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-"));
   stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const api = await startLocalApi({
@@ -151,6 +155,7 @@ async function startDeck(source?: string, deckGuideRuntime?: DeckGuideRuntime) {
     allowDevelopmentPlugins: true,
     developmentPluginDirectories: [await createCodeHostPlugin(root, source)],
     deckGuideRuntime,
+    deckGuideTimeoutMs,
   });
   stops.unshift(api.stop);
   const created = await apiRequest(
@@ -273,9 +278,6 @@ type Pipeline = {
 const pipelineEntry = "../../../packages/review-deck/pipeline.ts";
 const loadPipeline = () =>
   import(new URL(pipelineEntry, import.meta.url).href) as Promise<Pipeline>;
-
-/** Lets the open whose file list or reads just ended queue its build. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 /** Holds the file reads of the `slow/` files until `release` runs. */
 function holdSlowReads() {
@@ -813,12 +815,9 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(JSON.stringify(api.events)).not.toContain("api.ts");
   });
 
-  it("builds an opened pull request before the preloads still queued", async () => {
+  it("builds an opened pull request before the preloads, stopping the one running, which runs again after", async () => {
     const guides = heldGuides();
-    const { api, open, preload, fileReads } = await startDeck(
-      undefined,
-      guides.runtime,
-    );
+    const { api, open, preload } = await startDeck(undefined, guides.runtime);
     const releasePreload = guides.hold("pr20");
 
     // Pull request 20's build runs and holds; 21 and 22 wait behind it.
@@ -827,25 +826,30 @@ describe("the guide of a pull request opened in Deck", () => {
       body: { queued: 3 },
     });
     expect(guides.started).toEqual(["pr20"]);
-    const opened = open(23);
-    await expect.poll(fileReads).toBe(4);
-    await settle();
-    releasePreload();
 
-    const answer = await opened;
+    const answer = await open(23);
+
     expect(answer.status).toBe(200);
     expect(answer.body.guide.concerns[0].title).toBe("pr23");
+    expect(guides.built).toEqual(["pr23"]);
+    releasePreload();
     await expect.poll(() => guides.built.length).toBe(4);
-    expect(guides.built).toEqual(["pr20", "pr23", "pr21", "pr22"]);
+    expect(guides.started).toEqual(["pr20", "pr23", "pr20", "pr21", "pr22"]);
+    expect(guides.built).toEqual(["pr23", "pr20", "pr21", "pr22"]);
     expect(
       api.events
         .filter((event) => event.name === "deck.guide_build")
-        .map((event) => (event as { deck?: { priority?: string } }).deck),
+        .map((event) => ({
+          outcome: event.outcome,
+          reason: (event as { outcome_reason?: string }).outcome_reason,
+          priority: (event as { deck?: { priority?: string } }).deck?.priority,
+        })),
     ).toEqual([
-      expect.objectContaining({ priority: "preload" }),
-      expect.objectContaining({ priority: "open" }),
-      expect.objectContaining({ priority: "preload" }),
-      expect.objectContaining({ priority: "preload" }),
+      { outcome: "cancelled", reason: "preempted", priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "open" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
     ]);
     expect(
       api.events.find(
@@ -853,13 +857,18 @@ describe("the guide of a pull request opened in Deck", () => {
       ),
     ).toMatchObject({
       outcome: "ok",
-      deck: { pull_request_count: 3, queued_count: 3, file_read_count: 3 },
+      deck: {
+        pull_request_count: 3,
+        queued_count: 3,
+        file_read_count: 3,
+        failed_count: 0,
+      },
     });
   });
 
-  it("moves a preloaded pull request's queued build ahead when it opens, and reads none of its files again", async () => {
+  it("moves a preloaded pull request's waiting build ahead when it opens, and reads none of its files again", async () => {
     const guides = heldGuides();
-    const { api, open, preload, fileReads, fileLists } = await startDeck(
+    const { api, open, preload, fileReads } = await startDeck(
       undefined,
       guides.runtime,
     );
@@ -867,22 +876,102 @@ describe("the guide of a pull request opened in Deck", () => {
     await preload(20, 21, 22);
     expect(fileReads()).toBe(3);
 
-    const opened = open(22);
-    await expect.poll(fileLists).toBe(4);
-    await settle();
-    releasePreload();
+    const answer = await open(22);
 
-    const answer = await opened;
     expect(answer.status).toBe(200);
     expect(answer.body.guide.concerns[0].title).toBe("pr22");
     expect(fileReads()).toBe(3);
+    releasePreload();
     await expect.poll(() => guides.built.length).toBe(3);
-    expect(guides.built).toEqual(["pr20", "pr22", "pr21"]);
+    expect(guides.built).toEqual(["pr22", "pr20", "pr21"]);
     expect(
       api.events.find(
         (event) => event.name === "deck.open" && event.kind === "request",
       ),
     ).toMatchObject({ deck: { preloaded: true, file_read_count: 0 } });
+  });
+
+  it("skips a pull request a preload can't read, and fails only when none could be read", async () => {
+    const guides = heldGuides();
+    const { api, preload } = await startDeck(undefined, guides.runtime);
+
+    await expect(preload(404, 20)).resolves.toEqual({
+      status: 202,
+      body: { queued: 1 },
+    });
+    await expect(preload(404)).resolves.toEqual({
+      status: 502,
+      body: { error: "GitHub request failed (404): Not Found." },
+    });
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.preload" && event.kind === "request",
+      ),
+    ).toMatchObject({ deck: { queued_count: 1, failed_count: 1 } });
+  });
+
+  it("shows the diff without a guide when the build takes too long, and builds it again on the next open", async () => {
+    let calls = 0;
+    const { api, open, fileReads } = await startDeck(
+      undefined,
+      {
+        build: (input, signal) => {
+          calls += 1;
+          if (calls > 1) {
+            return Promise.resolve([
+              {
+                id: "g1",
+                title: "Built",
+                rationale: "",
+                hunkIds: parseDiff(input.diff).flatMap((file) =>
+                  file.hunks.map((hunk) => hunk.id),
+                ),
+              },
+            ]);
+          }
+          return new Promise((_, reject) =>
+            signal.addEventListener("abort", () =>
+              reject(new Error("Stopped.")),
+            ),
+          );
+        },
+        close: async () => {},
+      },
+      100,
+    );
+
+    const first = await open(20);
+    expect(first.status).toBe(200);
+    expect(first.body.guide).toBeNull();
+    expect(
+      api.events.find((event) => event.name === "deck.guide_build"),
+    ).toMatchObject({ outcome: "timeout" });
+
+    // A failed guide isn't kept: the next open reads and builds it again.
+    const second = await open(20);
+    expect(second.body.guide.concerns[0].title).toBe("Built");
+    expect(fileReads()).toBe(2);
+  });
+
+  it("cuts a title or rationale longer than the guide allows, keeping the guide", async () => {
+    const { open } = await startDeck(undefined, {
+      build: async (input) => [
+        {
+          id: "g1",
+          title: "t".repeat(600),
+          rationale: "r".repeat(2_500),
+          hunkIds: parseDiff(input.diff).flatMap((file) =>
+            file.hunks.map((hunk) => hunk.id),
+          ),
+        },
+      ],
+      close: async () => {},
+    });
+
+    const opened = await open(20);
+
+    expect(opened.body.guide.concerns[0].title).toHaveLength(500);
+    expect(opened.body.guide.concerns[0].rationale).toHaveLength(2_000);
   });
 
   it("doesn't read a pull request kept at its head again, on screen or preloaded", async () => {

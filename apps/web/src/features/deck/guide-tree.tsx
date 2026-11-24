@@ -5,6 +5,7 @@ import {
   RiLayoutRightLine as HideTree,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { Value } from "@/components/ui/value";
 import {
   tickLength,
@@ -17,7 +18,9 @@ import {
  * it is a strip of ticks, one per concern (or file, in Files A–Z), each as
  * long as its hunks and filled as they are marked viewed. Open, with F or
  * its button, it lists their titles. A tick or a title scrolls to its
- * section. In the narrow view the ticks run across, above the changes.
+ * section. In the narrow view the ticks run across, above the changes, and
+ * never open. A tick names itself to assistive technology but mounts no
+ * tooltip: there is one per concern, and the open tree shows the titles.
  */
 
 function Tick({ hunks, viewed }: { hunks: number; viewed: number }) {
@@ -58,6 +61,8 @@ export const GuideTree = memo(function GuideTree({
   onToggle: () => void;
   onReach: (index: number) => void;
 }) {
+  // The narrow view has no room for the titles, and no keyboard to close them.
+  const showTitles = open && !useIsNarrowView();
   const total = sections.reduce(
     (count, section) => count + section.hunks.length,
     0,
@@ -68,23 +73,23 @@ export const GuideTree = memo(function GuideTree({
   );
   const toggle = (
     <TooltipButton
-      label={open ? "Hide the guide tree" : "Show the guide tree"}
+      label={showTitles ? "Hide the guide tree" : "Show the guide tree"}
       shortcut="deck.guide-tree"
       side="left"
       className="deck-tree-toggle"
-      aria-expanded={open}
+      aria-expanded={showTitles}
       onClick={onToggle}
     >
-      {open ? <HideTree aria-hidden /> : <ShowTree aria-hidden />}
+      {showTitles ? <HideTree aria-hidden /> : <ShowTree aria-hidden />}
     </TooltipButton>
   );
   return (
     <nav
       className="deck-guide-tree"
       aria-label="Guide tree"
-      data-open={open || undefined}
+      data-open={showTitles || undefined}
     >
-      {open ? (
+      {showTitles ? (
         <>
           <div className="deck-tree-head">
             <span className="deck-tree-heading">{heading}</span>
@@ -127,14 +132,14 @@ export const GuideTree = memo(function GuideTree({
               const seen = viewedCount(section, viewed);
               return (
                 <li key={section.key}>
-                  <TooltipButton
-                    label={tickLabel(section, seen)}
-                    side="left"
+                  <button
+                    type="button"
+                    aria-label={tickLabel(section, seen)}
                     className="deck-tick"
                     onClick={() => onReach(index)}
                   >
                     <Tick hunks={section.hunks.length} viewed={seen} />
-                  </TooltipButton>
+                  </button>
                 </li>
               );
             })}

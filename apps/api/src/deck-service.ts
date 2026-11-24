@@ -57,6 +57,8 @@ export interface DeckPreloaded {
   /** The guide builds queued. A pull request already kept is not read again. */
   queued: number;
   fileReadCount: number;
+  /** The pull requests that couldn't be read, and were skipped. */
+  failed: number;
 }
 
 /** A build stopped because another pull request opened meanwhile. */
@@ -326,8 +328,8 @@ export function createDeckService(options: { guides: GuideBuilds }) {
   const preloaded = new Map<string, Entry>();
   /** Counts the opens, so the last one wins whatever order their file lists come back in. */
   let lastOpen = 0;
-  /** The opens still reading their files, which preloads wait for. */
-  const opening = new Set<Promise<unknown>>();
+  /** The opens still reading their file lists or files, which preloads wait for. */
+  const opening = new Set<Promise<void>>();
   /** Preload requests run one after the other. */
   let preloading: Promise<unknown> = Promise.resolve();
 
@@ -335,9 +337,10 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     while (opening.size) await Promise.allSettled([...opening]);
   };
 
-  const drop = (entry: Entry) => {
+  /** Stops a preload pushed out of the kept ones: its build, if it still runs or waits. */
+  const evict = (entry: Entry) => {
     entry.stop.abort();
-    guides.cancel(entry.key);
+    guides.evict(entry.key);
   };
 
   /** The entry's diff and guide, once both are ready. */
@@ -354,6 +357,8 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       throw error;
     }
     if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
+    // A failed guide isn't kept: opening it again reads and builds it again.
+    if (guide === null && onScreen === entry) onScreen = undefined;
     return { opened: { ...diff, guide }, ...facts };
   };
 
@@ -361,6 +366,29 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     source: DeckSource,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
+  ): Promise<DeckOpened> {
+    // Preloads wait from the file list to the last file read.
+    let doneReading!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      doneReading = resolve;
+    });
+    opening.add(reading);
+    try {
+      return await openNow(source, request, codeHost, () => {
+        opening.delete(reading);
+        doneReading();
+      });
+    } finally {
+      opening.delete(reading);
+      doneReading();
+    }
+  }
+
+  async function openNow(
+    source: DeckSource,
+    request: DeckOpenRequest,
+    codeHost: DeckCodeHost,
+    doneReading: () => void,
   ): Promise<DeckOpened> {
     const open = ++lastOpen;
     const replaced = () => open !== lastOpen;
@@ -375,9 +403,11 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     const key = keyOf(source, request, content);
     const none = { fileReadCount: 0, kept: false, preloaded: false };
     if (onScreen?.key === key) {
+      doneReading();
       return answer(onScreen, { ...none, kept: true });
     }
-    if (onScreen) drop(onScreen);
+    // Its reads and its guide build stop.
+    onScreen?.stop.abort();
 
     const ready = preloaded.get(key);
     if (ready) {
@@ -386,6 +416,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       onScreen = entry;
       // Its build, if it still waits, runs before the other preloads.
       guides.prioritize(key, entry.stop.signal);
+      doneReading();
       return answer(entry, { ...none, preloaded: true });
     }
 
@@ -408,16 +439,13 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     entry.diff.catch(() => {});
     entry.guide.catch(() => {});
     onScreen = entry;
-    opening.add(built);
     try {
       const { fileReadCount } = await built;
-      opening.delete(built);
+      doneReading();
       return await answer(entry, { ...none, fileReadCount });
     } catch (error) {
       if (onScreen === entry) onScreen = undefined;
       throw error;
-    } finally {
-      opening.delete(built);
     }
   }
 
@@ -425,7 +453,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     source: DeckSource,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
-  ): Promise<DeckPreloaded> {
+  ): Promise<Omit<DeckPreloaded, "failed">> {
     await opensDone();
     const content = await runWhenFree(
       codeHost,
@@ -457,7 +485,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     for (const [oldKey, old] of preloaded) {
       if (preloaded.size <= PRELOADS_KEPT) break;
       preloaded.delete(oldKey);
-      drop(old);
+      evict(old);
     }
     return { queued: 1, fileReadCount };
   }
@@ -474,7 +502,9 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     /**
      * Reads the pull requests and queues their guide builds at low
      * priority, so they open at once. Each read waits while a pull request
-     * opens, and a pull request kept at its head is not read again.
+     * opens, and a pull request kept at its head is not read again. One
+     * that fails is skipped; when every one fails, the first error is
+     * thrown, so a refused token still reaches the caller.
      */
     preloadPullRequests(
       source: DeckSource,
@@ -482,11 +512,20 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       codeHost: DeckCodeHost,
     ): Promise<DeckPreloaded> {
       const run = preloading.then(async () => {
-        const total = { queued: 0, fileReadCount: 0 };
+        const total = { queued: 0, fileReadCount: 0, failed: 0 };
+        let firstError: unknown;
         for (const request of requests) {
-          const one = await preloadOne(source, request, codeHost);
-          total.queued += one.queued;
-          total.fileReadCount += one.fileReadCount;
+          try {
+            const one = await preloadOne(source, request, codeHost);
+            total.queued += one.queued;
+            total.fileReadCount += one.fileReadCount;
+          } catch (error) {
+            total.failed += 1;
+            firstError ??= error;
+          }
+        }
+        if (requests.length && total.failed === requests.length) {
+          throw firstError;
         }
         return total;
       });

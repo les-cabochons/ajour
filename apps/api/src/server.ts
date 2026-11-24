@@ -387,6 +387,8 @@ interface AppApiServerOptions {
    * a build.
    */
   deckGuideRuntime?: DeckGuideRuntime;
+  /** How long one guide build may run. Tests shorten it. */
+  deckGuideTimeoutMs?: number;
   /**
    * The local log file's reads, for the MCP log tools. The desktop app passes
    * main's query service; without one, as in the standalone API, MCP lists
@@ -1825,6 +1827,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     guides: createGuideBuilds({
       runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
       events,
+      timeoutMs: options.deckGuideTimeoutMs,
     }),
   });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
@@ -4626,6 +4629,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           deck: {
             queued_count: preloaded.queued,
             file_read_count: preloaded.fileReadCount,
+            failed_count: preloaded.failed,
           },
         });
         writeJson(response, 202, { queued: preloaded.queued });
@@ -5487,18 +5491,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }
 
   /**
-   * Refuses an operation the connection's access doesn't allow, before the
-   * plugin runs: a 403 naming the choice it needs, so the web can hold the
-   * edit. True when it refused.
-   */
-  /**
-   * The code host plugin and connection a pull request route acts on, or
-   * undefined once it answered a refusal: the plugin is unavailable, has no
-   * pull requests or has its Pull requests switch off, or the connection is
-   * missing. A connection whose secrets can't reach the plugin is paused,
-   * with a 409.
-   */
-  /**
    * The prelude of Deck's routes: the connection, the body read with
    * `parse`, the access its reads need, and the code host bound to the
    * connection. Undefined once it answered. `failed` answers an error the
@@ -5574,6 +5566,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     };
   }
 
+  /**
+   * The code host plugin and connection a pull request route acts on, or
+   * undefined once it answered a refusal: the plugin is unavailable, has no
+   * pull requests or has its Pull requests switch off, or the connection is
+   * missing. A connection whose secrets can't reach the plugin is paused,
+   * with a 409.
+   */
   async function codeHostConnection(
     response: ServerResponse,
     unit: {
@@ -5629,6 +5628,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     return { plugin, connection };
   }
 
+  /**
+   * Refuses an operation the connection's access doesn't allow, before the
+   * plugin runs: a 403 naming the choice it needs, so the web can hold the
+   * edit. True when it refused.
+   */
   function refuseAccessOff(
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
