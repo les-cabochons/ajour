@@ -445,7 +445,7 @@ const DOC_TODO =
 const DEBUG_LINES =
   /\bconsole\.(?:log|debug|trace|dir|table)\s*\(|^\s*debugger\s*;?\s*$|^\s*(?:breakpoint\(\)|import\s+i?pdb\b|i?pdb\.set_trace\(\))|\bbinding\.(?:pry|irb)\b|^\s*byebug\b|\b(?:var_dump|print_r)\s*\(|^\s*dd\s*\(|\bdbg!\s*\(|\.printStackTrace\s*\(\s*\)|\bSystem\.(?:out|err)\.print(?:ln)?\s*\(|\bDebug\.WriteLine\s*\(/;
 const SKIPPED_LINES =
-  /\b(?:it|test|describe|context|suite)\.(?:skip(?:If)?|todo|fixme)\s*\(|\b(?:xit|xtest|xdescribe|xcontext)\s*\(|@pytest\.mark\.(?:skip(?:if)?|xfail)\b|@unittest\.skip|\bpytest\.skip\s*\(|@Disabled\b|@Ignore\b|\[Ignore\b|\[Fact\s*\(\s*Skip\s*=|\bt\.Skip(?:Now|f)?\s*\(|#\[ignore\]|^\s*skip\s*\(?\s*["']/;
+  /\b(?:it|test|describe|context|suite)\.(?:skip(?:If)?|todo|fixme)\s*\(|\b(?:xit|xtest|xdescribe|xcontext)\s*\(|@pytest\.mark\.(?:skip(?:if)?\b|xfail\s*\(.*\brun\s*=\s*False\b)|@unittest\.skip|\bpytest\.skip\s*\(|@Disabled\b|@Ignore\b|\[Ignore\b|\[Fact\s*\(\s*Skip\s*=|\bt\.Skip(?:Now|f)?\s*\(|#\[ignore\]|^\s*skip\s*\(?\s*["']/;
 /** Comments that are tool directives or prose, never code. */
 const DIRECTIVES =
   /^(?:eslint|@ts-|prettier-|biome-|istanbul|c8\b|type:|noqa|pragma|region|endregion|#|!|-\*-|TODO|FIXME|NOTE|HACK|XXX)/i;
@@ -481,17 +481,62 @@ const NO_SEMICOLON_CODE_TEXT = [
   /^[\w$]+(?:\.[\w$]+|\[[^\]]*\])*\s*(?:[+\-*/]?=|:=)\s*[^=\s].*$/,
 ];
 
+/** Languages whose line comments start with `--`. */
+const DASH_COMMENTS = new Set(["lua", "sql"]);
+
+/** How a language marks a line comment, and whether it has `/* … *\/` blocks. */
+function commentMarks(extension: string) {
+  if (HASH_COMMENTS.has(extension)) return { line: "#", blocks: false };
+  if (extension === "lua") return { line: "--", blocks: false };
+  if (extension === "sql") return { line: "--", blocks: true };
+  return { line: "//", blocks: true };
+}
+
+/**
+ * A line's code with its comments taken out, and whether a `/* … *\/` block
+ * is still open after it, given whether one was open before it. A heuristic:
+ * it doesn't read strings, so a comment mark quoted in one counts.
+ */
+function withoutComments(extension: string, text: string, open: boolean) {
+  const marks = commentMarks(extension);
+  let rest = text;
+  let code = "";
+  for (;;) {
+    if (open) {
+      const end = rest.indexOf("*/");
+      if (end < 0) return { code, open };
+      rest = rest.slice(end + 2);
+      open = false;
+    }
+    const start = marks.blocks ? rest.indexOf("/*") : -1;
+    const lineMark = rest.indexOf(marks.line);
+    if (lineMark >= 0 && (start < 0 || lineMark < start)) {
+      return { code: code + rest.slice(0, lineMark), open };
+    }
+    if (start < 0) return { code: code + rest, open };
+    code += `${rest.slice(0, start)} `;
+    rest = rest.slice(start + 2);
+    open = true;
+  }
+}
+
 /**
  * The text of a comment on its own line: a line comment, a block comment
- * opened and closed on the line, or a line inside a block that starts with
- * `*`; in hash languages, a `#` comment.
+ * opened and closed on the line, or a line that starts with `*` inside an
+ * open block; in hash languages a `#` comment, in Lua and SQL a `--` one.
  */
-function commentText(extension: string, trimmed: string) {
+function commentText(extension: string, trimmed: string, inBlock: boolean) {
   if (HASH_COMMENTS.has(extension)) return /^#\s?(.*)$/.exec(trimmed)?.[1];
+  if (DASH_COMMENTS.has(extension)) {
+    const text = /^--\s?(.*)$/.exec(trimmed)?.[1];
+    if (text !== undefined || !commentMarks(extension).blocks) return text;
+  } else {
+    const text = /^\/\/\s?(.*)$/.exec(trimmed)?.[1];
+    if (text !== undefined) return text;
+  }
   return (
-    /^\/\/\s?(.*)$/.exec(trimmed)?.[1] ??
     /^\/\*+\s?(.*?)\s*\*\/$/.exec(trimmed)?.[1] ??
-    /^\*(?!\/)\s?(.*)$/.exec(trimmed)?.[1]
+    (inBlock ? /^\*(?!\/)\s?(.*)$/.exec(trimmed)?.[1] : undefined)
   );
 }
 
@@ -506,9 +551,22 @@ function readsAsCode(extension: string, body: string) {
   );
 }
 
-/** A line with its single, double and backtick quoted strings emptied, so quoted code isn't read as code. */
+/**
+ * A line with its single, double and backtick quoted strings emptied, so
+ * quoted code isn't read as code; a template literal keeps its `${…}`
+ * expressions, which run.
+ */
 const withoutStrings = (text: string) =>
-  text.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
+  text.replace(
+    /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g,
+    (quoted) => {
+      if (!quoted.startsWith("`")) return '""';
+      const expressions = [...quoted.matchAll(/\$\{([^}]*)\}/g)].map(
+        (match) => match[1],
+      );
+      return ['""', ...expressions].join(" ");
+    },
+  );
 
 /** How a leftover is named; a TODO or FIXME is named by its own word. */
 const LEFTOVER_LABELS: Record<Exclude<LeftoverKind, "todo">, string> = {
@@ -521,6 +579,7 @@ function leftoverOf(
   fileClass: FileClass,
   extension: string,
   text: string,
+  inBlock: boolean,
 ): { kind: LeftoverKind; label: string } | undefined {
   const isCode =
     fileClass === "code" ||
@@ -535,7 +594,7 @@ function leftoverOf(
     return undefined;
   }
   const trimmed = text.trim();
-  const comment = commentText(extension, trimmed);
+  const comment = commentText(extension, trimmed, inBlock);
   if (comment !== undefined) {
     const body = comment.trim();
     if (!DIRECTIVES.test(body) && readsAsCode(extension, body)) {
@@ -678,7 +737,20 @@ export function summarizeRules(
     const added = hunk.lines.filter((diffLine) => diffLine.kind === "add");
     const mayBeRisky = MAY_BE_RISKY.has(fileClass);
     const anyFile = fileClass === "other";
-    const sql = anyFile && extensionOf(file.path) === "sql";
+    const extension = extensionOf(file.path);
+    const sql = anyFile && extension === "sql";
+    // Whether a `/* … */` block is open before each line and each line's
+    // code, from the hunk's own lines as the head reads them.
+    const inBlock = new Map<DiffLine, boolean>();
+    const code = new Map<DiffLine, string>();
+    let open = false;
+    for (const diffLine of hunk.lines) {
+      if (diffLine.kind === "del") continue;
+      inBlock.set(diffLine, open);
+      const read = withoutComments(extension, diffLine.text, open);
+      code.set(diffLine, read.code);
+      open = read.open;
+    }
     for (const rule of RISKS) {
       const applies =
         mayBeRisky || (anyFile && rule.anyFile) || (sql && rule.sql);
@@ -689,14 +761,16 @@ export function summarizeRules(
       const byLine =
         !byPath &&
         rule.lines !== undefined &&
-        added.some((diffLine) => rule.lines!.test(diffLine.text));
+        added.some((diffLine) =>
+          // An SQL comment that names a risky statement doesn't run it.
+          rule.lines!.test(sql ? code.get(diffLine)! : diffLine.text),
+        );
       if (byPath || byLine) {
         const list = areas.get(rule.id) ?? [];
         list.push(read);
         areas.set(rule.id, list);
       }
     }
-    const extension = extensionOf(file.path);
     let commenting = false;
     for (const diffLine of hunk.lines) {
       if (diffLine.kind !== "add") {
@@ -705,7 +779,12 @@ export function summarizeRules(
       }
       const found = removed.has(diffLine.text.trim())
         ? undefined
-        : leftoverOf(fileClass, extension, diffLine.text);
+        : leftoverOf(
+            fileClass,
+            extension,
+            diffLine.text,
+            inBlock.get(diffLine)!,
+          );
       // A run of commented-out lines is one leftover, at its first line.
       if (found?.kind === "commented" && commenting) continue;
       commenting = found?.kind === "commented";

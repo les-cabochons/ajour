@@ -450,7 +450,11 @@ describe("the review findings on the rules (les-cabochons/ajour#919)", () => {
       '@pytest.mark.skipif(True, reason="disabled")',
     ],
     ["pytest", "tests/test_limits.py", "@pytest.mark.skip"],
-    ["pytest", "tests/test_limits.py", '@pytest.mark.xfail(reason="flaky")'],
+    [
+      "pytest",
+      "tests/test_limits.py",
+      '@pytest.mark.xfail(run=False, reason="hangs")',
+    ],
     [
       "unittest",
       "tests/test_limits.py",
@@ -528,6 +532,90 @@ describe("the review findings on the rules (les-cabochons/ajour#919)", () => {
       "src/retry.ts": [
         "export const a = 1;\n",
         lines("export const a = 1;", "// retry()", "", "// val is the value"),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([]);
+  });
+
+  it("doesn't take a line that starts with `*` outside a block comment for a comment", () => {
+    const files = diffOf({
+      "src/swap.rs": [
+        lines("fn main() {}"),
+        lines(
+          "fn main() {}",
+          "fn set(value: &mut i32, next: i32) {",
+          "    *value = next;",
+          "}",
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([]);
+  });
+
+  it("finds debug output in a template literal's interpolation", () => {
+    const files = diffOf({
+      "src/example.ts": [
+        lines("export const a = 1;"),
+        lines(
+          "export const a = 1;",
+          "const text = `value: ${console.log(value)}`;",
+        ),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([
+      "Debug output in src/example.ts:2: const text = `value: ${console.log(value)}`;",
+    ]);
+  });
+
+  it("finds commented-out Lua, whose comments start with --", () => {
+    const files = diffOf({
+      "src/retry.lua": [
+        lines("local M = {}"),
+        lines("local M = {}", "-- oldCall()", "", "-- Retries stop on 410."),
+      ],
+    });
+    expect(leftoverTexts(files)).toEqual([
+      "Commented-out code in src/retry.lua:2: -- oldCall()",
+    ]);
+  });
+
+  it("doesn't take an SQL comment for a risky line, but finds a down migration's drop", () => {
+    const files = diffOf({
+      "db/report.sql": [
+        null,
+        lines(
+          "-- DELETE FROM users is intentionally forbidden.",
+          "/*",
+          "  DELETE FROM users is forbidden here too.",
+          "*/",
+          "/* DELETE FROM users; */ SELECT * FROM users;",
+        ),
+      ],
+      "db/migrations/0002_users.down.sql": [
+        null,
+        lines("-- Undo 0002.", "DROP TABLE users;"),
+      ],
+    });
+    const { summary } = summarizeRules(files, concernsOf(files));
+    expect(summary.risks).toEqual([
+      {
+        id: "risk:migrations",
+        text: "Migrations: db/migrations/0002_users.down.sql",
+        hunkIds: ["db/migrations/0002_users.down.sql#0"],
+      },
+      {
+        id: "risk:deletion",
+        text: "Deletion: db/migrations/0002_users.down.sql",
+        hunkIds: ["db/migrations/0002_users.down.sql#0"],
+      },
+    ]);
+  });
+
+  it("doesn't take a pytest xfail that still runs for a skipped test", () => {
+    const files = diffOf({
+      "tests/test_limits.py": [
+        lines("a"),
+        lines("a", '@pytest.mark.xfail(reason="known bug")'),
       ],
     });
     expect(leftoverTexts(files)).toEqual([]);
