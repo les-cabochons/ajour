@@ -1185,6 +1185,7 @@ Decided in [More detail on a concern: the first ask](https://github.com/les-cabo
 ### Removing a connection
 
 - Removing a code host connection asks first and states how many saved pull requests go with it. Confirming deletes them from the local list.
+- Its pull requests leave Deck's content cache too. A pull request of it that is still opening stops and says "This connection was removed.", with no Retry; a preload of it stops, and nothing it read is kept.
 
 ## Projects
 

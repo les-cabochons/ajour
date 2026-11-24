@@ -103,13 +103,17 @@ async function entrySize() {
 }
 
 /**
- * Holds an entry's content file as Windows does while another process has
+ * Holds an entry's content file, or its `part`, as Windows does while another process has
  * it open without delete sharing: a folder in its place can't be deleted as
  * a file. `release` puts the file back, as it was, for a later delete.
  */
-async function holdContent(directory: string, held?: DeckCacheKey) {
+async function holdContent(
+  directory: string,
+  held?: DeckCacheKey,
+  part: "content" | "meta" = "content",
+) {
   const names = (await readdir(directory)).filter((name) =>
-    name.endsWith(".content.json"),
+    name.endsWith(`.${part}.json`),
   );
   let name: string | undefined;
   for (const candidate of names) {
@@ -464,6 +468,31 @@ describe("the Deck content cache", () => {
     });
     expect(await next.get(key(1))).toBeUndefined();
     expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("never gives back after a restart an entry removed while Windows held its contents and its meta", async () => {
+    const directory = await cacheFolder();
+    const cache = start(directory);
+    await cache.put(key(1), content(1), FRESH);
+    const releaseContent = await holdContent(directory, key(1));
+    const releaseMeta = await holdContent(directory, key(1), "meta");
+    await cache.forgetConnection({ pluginId: "github", connectionId: "c1" });
+    await releaseContent();
+    await releaseMeta();
+
+    const next = start(directory);
+
+    expect(await next.get(key(1))).toBeUndefined();
+    expect(await next.usage()).toEqual({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    expect(await readdir(directory)).toEqual([]);
+
+    // The same pull request read again is kept across the next restart.
+    await next.put(key(1), content(1), next.generation(key(1)));
+    expect(await start(directory).get(key(1))).toBeDefined();
   });
 
   it("names entries by a hash, so no path, repository or commit is in a file name", async () => {

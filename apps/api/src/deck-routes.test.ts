@@ -1451,11 +1451,55 @@ describe("the content cache", () => {
 
     expect((await deck.deleteConnection()).status).toBe(200);
     release();
-    await opened;
+    const answer = await opened;
 
+    expect(answer.status).toBe(409);
+    expect(answer.body).toEqual({
+      error: "This connection was removed.",
+      reason: "connection_removed",
+    });
     expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
     // Its reads and its guide build stopped with the connection.
     expect(guides.built).toEqual([]);
+  });
+
+  it("reads and shows nothing of an open whose file list comes back after its connection was deleted", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const listing = holdListing();
+    const opened = deck.open(12);
+    await expect.poll(listing.started).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    listing.release();
+    const answer = await opened;
+
+    expect(answer.status).toBe(409);
+    expect(answer.body).toMatchObject({ reason: "connection_removed" });
+    expect(deck.fileReads()).toBe(0);
+    expect(guides.started).toEqual([]);
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+  });
+
+  it("stops the rest of a preload once its connection is deleted during a read", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const release = holdSlowReads();
+    const preloaded = deck.preload(14, 20);
+    await expect.poll(slowReadsStarted).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    release();
+    const answer = await preloaded;
+
+    expect(answer.status).toBe(409);
+    expect(answer.body).toMatchObject({ reason: "connection_removed" });
+    // Pull request 20 was never read.
+    expect(deck.fileLists()).toBe(1);
+    expect(deck.fileReads()).toBe(1);
+    expect(guides.started).toEqual([]);
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+    expect(await readdir(path.join(deck.root, "deck-cache"))).toEqual([]);
   });
 
   it("caches no guide that finishes building after its connection was deleted", async () => {

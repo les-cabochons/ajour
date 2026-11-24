@@ -172,6 +172,7 @@ import {
 import {
   createDeckService,
   DeckBuildReplaced,
+  DeckConnectionRemoved,
   type DeckCodeHost,
 } from "./deck-service.ts";
 import {
@@ -5801,6 +5802,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         if (error instanceof DeckBuildReplaced) {
           unit.refuse("replaced");
           writeJson(response, 409, { error: error.message });
+          return;
+        }
+        if (error instanceof DeckConnectionRemoved) {
+          unit.refuse("connection_removed");
+          writeJson(response, 409, {
+            error: error.message,
+            reason: "connection_removed",
+          });
           return;
         }
         if (error instanceof PluginExportMissing) {

@@ -6,7 +6,10 @@ import { AppApiError, openDeckPullRequest } from "@/lib/app-api";
 export type PullRequestDiffState =
   | { status: "loading" }
   | { status: "ready"; diff: DeckOpenedPullRequest }
-  /** The code host's plugin doesn't read a pull request's changes. Retrying won't help. */
+  /**
+   * The code host's plugin doesn't read a pull request's changes, or the
+   * connection was removed. Retrying won't help.
+   */
   | { status: "unavailable"; message: string }
   | { status: "error"; message: string };
 
@@ -46,10 +49,11 @@ export function usePullRequestDiff(pullRequest: LocalPullRequest | undefined) {
           error instanceof Error
             ? error.message
             : "Unable to read the pull request's changes.";
+        const reason =
+          error instanceof AppApiError ? error.payload?.reason : undefined;
         setState({
           status:
-            error instanceof AppApiError &&
-            error.payload?.reason === "not_supported"
+            reason === "not_supported" || reason === "connection_removed"
               ? "unavailable"
               : "error",
           message,

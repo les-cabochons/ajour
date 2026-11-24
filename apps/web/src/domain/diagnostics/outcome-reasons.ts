@@ -63,6 +63,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The connection was saved again while the sync ran, so its answer wasn't used.",
   connection_not_found:
     "The connection doesn't exist anymore, or belongs to another plugin.",
+  connection_removed:
+    "The connection was removed while Deck read its pull request, so nothing more was read or kept.",
   connection_refused:
     "Turning the capability on checked a connection, and the plugin refused it, so the capability stays off.",
   crashed:

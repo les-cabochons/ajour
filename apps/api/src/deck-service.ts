@@ -80,6 +80,19 @@ export class DeckBuildReplaced extends Error {
   }
 }
 
+/** An open or a preload stopped because its connection was removed meanwhile. */
+export class DeckConnectionRemoved extends Error {
+  constructor() {
+    super("This connection was removed.");
+  }
+}
+
+/** Why aborted work stopped: its connection was removed, or another pull request opened. */
+const stopped = (signal: AbortSignal) =>
+  signal.reason instanceof DeckConnectionRemoved
+    ? signal.reason
+    : new DeckBuildReplaced();
+
 /**
  * Files read at once. The plugin host runs at most 4 operations of a plugin
  * at a time and refuses the rest, so one slot stays free for a sync. A
@@ -116,7 +129,7 @@ async function withConcurrency<T>(
   const worker = async () => {
     while (!failed && next < tasks.length) {
       if (beforeEach) await beforeEach();
-      if (signal.aborted) throw new DeckBuildReplaced();
+      if (signal.aborted) throw stopped(signal);
       if (failed || next >= tasks.length) return;
       const index = next++;
       try {
@@ -130,15 +143,15 @@ async function withConcurrency<T>(
   await Promise.all(
     Array.from({ length: Math.min(limit, tasks.length) }, worker),
   );
-  // Another pull request may have opened during the last reads.
-  if (signal.aborted) throw new DeckBuildReplaced();
+  // Another pull request may have opened, or the connection gone, during the last reads.
+  if (signal.aborted) throw stopped(signal);
   return results;
 }
 
 /**
  * Runs one code host operation, waiting while the plugin runs as many
- * operations as it may. It stops waiting once `replaced` says another pull
- * request opened.
+ * operations as it may. It stops waiting once `check` throws: another pull
+ * request opened, or the connection was removed.
  */
 async function runWhenFree<
   Operation extends "getPullRequestContent" | "getFileContent",
@@ -146,7 +159,7 @@ async function runWhenFree<
   codeHost: DeckCodeHost,
   operation: Operation,
   request: CodeHostOperationRequest<Operation>,
-  replaced: () => boolean,
+  check: () => void,
 ) {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -156,7 +169,7 @@ async function runWhenFree<
         error instanceof PluginOperationRefused && error.reason === "capacity";
       if (!busy || attempt >= BUSY_RETRIES) throw error;
       await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_MS));
-      if (replaced()) throw new DeckBuildReplaced();
+      check();
     }
   }
 }
@@ -205,7 +218,9 @@ async function buildPullRequestDiff(
         codeHost,
         "getFileContent",
         { repository, sha: version.sha, path: version.path },
-        () => signal.aborted,
+        () => {
+          if (signal.aborted) throw stopped(signal);
+        },
       );
       // The file list says this version exists. Without it the diff would
       // show the whole file added or removed, so the open fails instead.
@@ -322,6 +337,24 @@ interface Entry {
 
 type DeckSource = { pluginId: string; connectionId: string };
 
+/**
+ * Work on one connection: an open, or a preload batch. It holds the
+ * connection's generation from when it began, and a check throws once the
+ * connection was removed since, before each step that reads, writes or
+ * shows anything. Removing the connection also aborts `stop`, which ends
+ * its file reads.
+ */
+interface ConnectionWork {
+  source: DeckSource;
+  generation: number;
+  stop: AbortController;
+}
+
+const ofForgotten = (source: DeckSource, forgotten: DeckCacheForgotten) =>
+  source.pluginId === forgotten.pluginId &&
+  (forgotten.connectionId === undefined ||
+    source.connectionId === forgotten.connectionId);
+
 const keyOf = (
   source: DeckSource,
   request: DeckOpenRequest,
@@ -369,6 +402,22 @@ export function createDeckService(options: {
   const opening = new Set<Promise<void>>();
   /** Preload requests run one after the other. */
   let preloading: Promise<unknown> = Promise.resolve();
+  /** The opens and preload batches under way, which removing their connection stops. */
+  const working = new Set<ConnectionWork>();
+  const beginWork = (source: DeckSource): ConnectionWork => {
+    const work = {
+      source,
+      generation: cache.generation(source),
+      stop: new AbortController(),
+    };
+    working.add(work);
+    return work;
+  };
+  const checkConnection = (work: ConnectionWork) => {
+    if (cache.generation(work.source) !== work.generation) {
+      throw new DeckConnectionRemoved();
+    }
+  };
 
   const opensDone = async () => {
     while (opening.size) await Promise.allSettled([...opening]);
@@ -408,10 +457,11 @@ export function createDeckService(options: {
     try {
       guide = await building;
     } catch (error) {
-      if (error instanceof GuideBuildCancelled) throw new DeckBuildReplaced();
+      if (error instanceof GuideBuildCancelled)
+        throw stopped(entry.stop.signal);
       throw error;
     }
-    if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
+    if (entry.stop.signal.aborted) throw stopped(entry.stop.signal);
     // The pull request stays on screen, and kept from eviction, without a
     // guide; opening it again builds the guide again.
     if (guide === null && entry.guide === building) entry.guideFailed = true;
@@ -437,9 +487,9 @@ export function createDeckService(options: {
   const openCached = (
     found: DeckCachedEntry,
     facts: Omit<DeckOpened, "opened" | "cached">,
+    stop: AbortController,
   ) => {
     onScreen?.stop.abort();
-    const stop = new AbortController();
     const entry: Entry = {
       key: found.key,
       id: deckCacheKeyString(found.key),
@@ -466,27 +516,34 @@ export function createDeckService(options: {
       doneReading = resolve;
     });
     opening.add(reading);
+    const work = beginWork(source);
     try {
-      return await openNow(source, request, codeHost, () => {
+      return await openNow(work, request, codeHost, () => {
         opening.delete(reading);
         doneReading();
       });
     } finally {
+      working.delete(work);
       opening.delete(reading);
       doneReading();
     }
   }
 
   async function openNow(
-    source: DeckSource,
+    work: ConnectionWork,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
     doneReading: () => void,
   ): Promise<DeckOpened> {
+    const { source, generation, stop } = work;
     const open = ++lastOpen;
-    const replaced = () => open !== lastOpen;
-    // A connection removed from here on caches nothing this open read.
-    const generation = cache.generation(source);
+    // A later open owns the screen: this one neither replaces it nor stops
+    // its build. A connection removed from here on reads, caches and shows
+    // nothing more of this open.
+    const check = () => {
+      checkConnection(work);
+      if (open !== lastOpen) throw new DeckBuildReplaced();
+    };
     const none = { fileReadCount: 0, kept: false, cached: false };
     const ref = { repository: request.repository, number: request.number };
 
@@ -498,10 +555,10 @@ export function createDeckService(options: {
         return answerKept(onScreen, { ...none, kept: true, listed: false });
       }
       const found = await cache.find(at);
-      if (replaced()) throw new DeckBuildReplaced();
+      check();
       if (found) {
         doneReading();
-        return openCached(found, { ...none, listed: false });
+        return openCached(found, { ...none, listed: false }, stop);
       }
     }
 
@@ -509,10 +566,9 @@ export function createDeckService(options: {
       codeHost,
       "getPullRequestContent",
       ref,
-      replaced,
+      check,
     );
-    // A later open owns the screen: this one neither replaces it nor stops its build.
-    if (replaced()) throw new DeckBuildReplaced();
+    check();
     const key = keyOf(source, request, content);
     const id = deckCacheKeyString(key);
     const listed = { ...none, listed: true };
@@ -521,15 +577,14 @@ export function createDeckService(options: {
       return answerKept(onScreen, { ...listed, kept: true });
     }
     const found = await cache.get(key);
-    if (replaced()) throw new DeckBuildReplaced();
+    check();
     if (found) {
       doneReading();
-      return openCached(found, listed);
+      return openCached(found, listed, stop);
     }
     // Its reads and its guide build stop.
     onScreen?.stop.abort();
 
-    const stop = new AbortController();
     const built = buildPullRequestDiff(
       codeHost,
       request.repository,
@@ -542,6 +597,7 @@ export function createDeckService(options: {
       diff: built.then((result) => result.diff),
       input: built.then((result) => result.guideInput),
       guide: built.then((result) => {
+        checkConnection(work);
         void cache.put(key, result, generation);
         return buildGuide(key, result.guideInput, "open", stop.signal);
       }),
@@ -563,15 +619,15 @@ export function createDeckService(options: {
   }
 
   async function preloadOne(
-    source: DeckSource,
+    work: ConnectionWork,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
   ): Promise<Omit<DeckPreloaded, "failed">> {
+    const { source, generation, stop } = work;
     const ref = { repository: request.repository, number: request.number };
     const skipped = { queued: 0, fileReadCount: 0 };
-    // A connection removed from here on caches nothing this preload read.
-    const generation = cache.generation(source);
-    const removed = () => cache.generation(source) !== generation;
+    // Its batch's connection removed, it reads, caches and builds nothing more.
+    const check = () => checkConnection(work);
     /**
      * A pull request cached at `key` isn't read again, and one cached
      * without its guide gets its build queued again. Undefined when it
@@ -580,31 +636,34 @@ export function createDeckService(options: {
     const fromCache = async (key: DeckCacheKey) => {
       if (onScreen?.id === deckCacheKeyString(key)) return skipped;
       const peeked = await cache.peek(key);
+      check();
       if (!peeked) return undefined;
       if (peeked.hasGuide) return skipped;
       const found = await cache.get(key);
+      check();
       if (!found) return undefined;
       void buildGuide(key, found.guideInput, "preload");
       return { queued: 1, fileReadCount: 0 };
     };
     await opensDone();
+    check();
     if (request.headSha) {
       const at = { ...source, ...ref, headSha: request.headSha };
       if (onScreen && sameHead(onScreen.key, at)) return skipped;
       const found = await cache.find(at);
+      check();
       if (found) return (await fromCache(found.key)) ?? skipped;
     }
     const content = await runWhenFree(
       codeHost,
       "getPullRequestContent",
       ref,
-      () => false,
+      check,
     );
-    if (removed()) return skipped;
+    check();
     const key = keyOf(source, request, content);
     const cached = await fromCache(key);
     if (cached) return cached;
-    const stop = new AbortController();
     const result = await buildPullRequestDiff(
       codeHost,
       request.repository,
@@ -612,12 +671,14 @@ export function createDeckService(options: {
       stop.signal,
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
-    // An open of the same pull request may have read it meanwhile, or its
-    // connection was removed.
-    if (onScreen?.id === deckCacheKeyString(key) || removed()) {
+    check();
+    // An open of the same pull request may have read it meanwhile.
+    if (onScreen?.id === deckCacheKeyString(key)) {
       return { queued: 0, fileReadCount: result.fileReadCount };
     }
     await cache.put(key, result, generation);
+    // The connection may have gone while the write waited its turn.
+    check();
     void buildGuide(key, result.guideInput, "preload");
     return { queued: 1, fileReadCount: result.fileReadCount };
   }
@@ -668,25 +729,34 @@ export function createDeckService(options: {
      * at low priority, so they open at once. Each read waits while a pull
      * request opens, and a pull request cached at its head is not read
      * again. One that fails is skipped; when every one fails, the first
-     * error is thrown, so a refused token still reaches the caller.
+     * error is thrown, so a refused token still reaches the caller. Once
+     * the connection is removed, from the moment the batch is asked for,
+     * the rest of it stops, and it throws `DeckConnectionRemoved`.
      */
     preloadPullRequests(
       source: DeckSource,
       requests: DeckOpenRequest[],
       codeHost: DeckCodeHost,
     ): Promise<DeckPreloaded> {
+      const work = beginWork(source);
       const run = preloading.then(async () => {
         const total = { queued: 0, fileReadCount: 0, failed: 0 };
         let firstError: unknown;
-        for (const request of requests) {
-          try {
-            const one = await preloadOne(source, request, codeHost);
-            total.queued += one.queued;
-            total.fileReadCount += one.fileReadCount;
-          } catch (error) {
-            total.failed += 1;
-            firstError ??= error;
+        try {
+          for (const request of requests) {
+            checkConnection(work);
+            try {
+              const one = await preloadOne(work, request, codeHost);
+              total.queued += one.queued;
+              total.fileReadCount += one.fileReadCount;
+            } catch (error) {
+              if (error instanceof DeckConnectionRemoved) throw error;
+              total.failed += 1;
+              firstError ??= error;
+            }
           }
+        } finally {
+          working.delete(work);
         }
         if (requests.length && total.failed === requests.length) {
           throw firstError;
@@ -700,20 +770,21 @@ export function createDeckService(options: {
     /**
      * Forgets a removed connection, or every connection of a removed
      * plugin: its pull request on screen goes, with its reads and guide
-     * build, and so do its cached entries. Reads still under way cache
-     * nothing when they end.
+     * build, and so do its cached entries. Its opens and preloads under way
+     * stop, and read, cache and show nothing more.
      */
     forgetConnection(source: DeckCacheForgotten) {
-      if (
-        onScreen &&
-        onScreen.key.pluginId === source.pluginId &&
-        (source.connectionId === undefined ||
-          onScreen.key.connectionId === source.connectionId)
-      ) {
-        onScreen.stop.abort();
+      // The generation moves on first, so no work under way passes a check.
+      const forgotten = cache.forgetConnection(source);
+      const removed = new DeckConnectionRemoved();
+      for (const work of working) {
+        if (ofForgotten(work.source, source)) work.stop.abort(removed);
+      }
+      if (onScreen && ofForgotten(onScreen.key, source)) {
+        onScreen.stop.abort(removed);
         show(undefined);
       }
-      return cache.forgetConnection(source);
+      return forgotten;
     },
 
     /** The content cache, for Settings › Storage and syncs. */

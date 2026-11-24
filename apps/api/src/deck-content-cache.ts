@@ -28,6 +28,9 @@ import type { GuideBuildInput } from "./deck-guide-builds.ts";
  * doesn't read back drops its entry, and the pull request is read again.
  * An entry being removed leaves at once, but its files count until they are
  * gone: one Windows holds is deleted again at the next pass, or start.
+ * `removals.json` names the entries being removed, by id, and is written
+ * before their files are deleted, so a start never loads one whose files
+ * all stayed.
  *
  * No error leaves this module with a path in it: a cache that can't read or
  * write is a cache that misses, and Deck reads through the plugin instead.
@@ -105,6 +108,11 @@ const contentSchema = z.object({
 const guideFileSchema = z.object({
   version: z.literal(VERSION),
   guide: deckGuideSchema,
+});
+const ID = /^[0-9a-f]{40}$/;
+const removalsSchema = z.object({
+  version: z.literal(VERSION),
+  ids: z.array(z.string().regex(ID)),
 });
 
 /** The key as one string, as Deck's guide builds name a pull request. */
@@ -186,6 +194,7 @@ export function createDeckContentCache(options: {
   const now = options.now ?? Date.now;
   const fileOf = (id: string, part: Part) =>
     path.join(directory, `${id}.${part}.json`);
+  const removalsFile = path.join(directory, "removals.json");
 
   /** The whole entries, by id, as their meta files say. */
   const entries = new Map<string, Meta>();
@@ -241,10 +250,30 @@ export function createDeckContentCache(options: {
   };
 
   /**
+   * Saves the entries being removed, or deletes the list once there are
+   * none. A list that can't be saved leaves the removal to this run.
+   */
+  const saveRemovals = async (ids: Iterable<string>) => {
+    const list = [...ids];
+    try {
+      if (list.length) {
+        await writeFileAtomically(
+          removalsFile,
+          JSON.stringify({ version: VERSION, ids: list }),
+        );
+      } else {
+        await deleteFile(removalsFile);
+      }
+    } catch {
+      return;
+    }
+  };
+
+  /**
    * Removes an entry, or deletes again what a removal left. The entry is
    * never read again, even while a file of it stays.
    */
-  const remove = async (id: string) => {
+  const removeOne = async (id: string) => {
     const meta = entries.get(id);
     const sizes = meta
       ? { content: meta.contentBytes, guide: meta.guideBytes }
@@ -256,9 +285,34 @@ export function createDeckContentCache(options: {
     await removeFiles(id, sizes);
   };
 
+  /**
+   * Removes entries, saying so on disk first, so a start never loads one
+   * whose files stayed. The list then names only what stayed.
+   */
+  const remove = async (...ids: string[]) => {
+    if (!ids.length) return;
+    await saveRemovals(new Set([...leftovers.keys(), ...ids]));
+    for (const id of ids) await removeOne(id);
+    await saveRemovals(leftovers.keys());
+  };
+
   /** Deletes again the files earlier removals left. */
   const removeLeftovers = async () => {
-    for (const id of [...leftovers.keys()]) await remove(id);
+    if (!leftovers.size) return;
+    for (const id of [...leftovers.keys()]) await removeOne(id);
+    await saveRemovals(leftovers.keys());
+  };
+
+  /** The entries a run was removing when it stopped. */
+  const readRemovals = async () => {
+    try {
+      const parsed = removalsSchema.safeParse(
+        JSON.parse(await readFile(removalsFile, "utf8")),
+      );
+      return parsed.success ? new Set(parsed.data.ids) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
   };
 
   /** Deletes the temp files an interrupted write left. */
@@ -283,6 +337,8 @@ export function createDeckContentCache(options: {
         return;
       }
       await removeTempFiles(names);
+      // What a run was removing is deleted again, never loaded.
+      const removing = await readRemovals();
       const parts = new Map<string, Set<string>>();
       for (const name of names) {
         const match = ENTRY_FILE.exec(name);
@@ -292,7 +348,7 @@ export function createDeckContentCache(options: {
       }
       for (const [id, found] of parts) {
         let meta: Meta | undefined;
-        if (found.has("meta") && found.has("content")) {
+        if (!removing.has(id) && found.has("meta") && found.has("content")) {
           try {
             const parsed = metaSchema.safeParse(
               JSON.parse(await readFile(fileOf(id, "meta"), "utf8")),
@@ -313,6 +369,7 @@ export function createDeckContentCache(options: {
         }
         entries.set(id, meta);
       }
+      if (removing.size) await saveRemovals(leftovers.keys());
     })());
 
   /** What the entries and the leftovers hold on disk. */
@@ -483,8 +540,9 @@ export function createDeckContentCache(options: {
             throw new Error("An older guide stays.");
           }
           await writeMeta(id, meta);
-          leftovers.delete(id);
           entries.set(id, meta);
+          // Read again, it is no longer being removed.
+          if (leftovers.delete(id)) await saveRemovals(leftovers.keys());
         } catch {
           // Too large to serialize, or the disk refused: not cached.
           await remove(id);
@@ -576,10 +634,12 @@ export function createDeckContentCache(options: {
       forgotten.set(at, (forgotten.get(at) ?? 0) + 1);
       return serial(async () => {
         await load();
-        for (const [id, meta] of [...entries]) {
-          if (ofSource(meta.key, source)) await remove(id);
-        }
         await removeLeftovers();
+        await remove(
+          ...[...entries]
+            .filter(([, meta]) => ofSource(meta.key, source))
+            .map(([id]) => id),
+        );
       });
     },
 
@@ -590,9 +650,7 @@ export function createDeckContentCache(options: {
     clear() {
       return serial(async () => {
         await load();
-        for (const id of [...entries.keys(), ...leftovers.keys()]) {
-          await remove(id);
-        }
+        await remove(...entries.keys(), ...leftovers.keys());
         // Anything else an older version or a crash left.
         let names: string[] = [];
         try {
@@ -606,7 +664,10 @@ export function createDeckContentCache(options: {
           const id = ENTRY_FILE.exec(name)?.[1];
           if (id && !leftovers.has(id)) others.add(id);
         }
+        if (!others.size) return;
+        await saveRemovals(new Set([...leftovers.keys(), ...others]));
         for (const id of others) await removeFiles(id, await sizesOnDisk(id));
+        await saveRemovals(leftovers.keys());
       });
     },
 

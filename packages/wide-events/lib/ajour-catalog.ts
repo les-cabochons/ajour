@@ -3097,6 +3097,8 @@ export const catalog = defineCatalog({
         ...pluginRequestReasons,
         /** Another pull request opened before this one's diff was built. */
         "replaced",
+        /** Its connection was removed before the pull request was shown. */
+        "connection_removed",
       ],
       fields: {
         ...requestFields,
@@ -3131,6 +3133,8 @@ export const catalog = defineCatalog({
         ...pluginRequestReasons,
         /** Never thrown by a preload; shared with `deck.open`'s prelude. */
         "replaced",
+        /** Its connection was removed, and the rest of the preload stopped. */
+        "connection_removed",
       ],
       fields: {
         ...requestFields,
