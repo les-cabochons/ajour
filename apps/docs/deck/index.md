@@ -39,6 +39,18 @@ Click a pull request for its review page. Under the title, a status line reads i
 
 Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. Viewed marks last while the pull request stays open. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one; a folded hunk folds its threads too. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. The diff is read when you open the pull request: new commits show the next time you open it. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
+## Comment and finish your review
+
+Point at a line and click the **+** beside its number to comment on it, or drag from it to comment on several lines. **Add to review**, or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac), keeps the comment in your draft review, beside its line, marked **Draft**. **Comment now** posts it at once instead. A draft comment has **Edit** and **Remove**.
+
+Your draft review is saved on your computer, so it survives closing Ajour, and nothing in it is sent before you finish. The header's **Finish review · 2** counts its comments. It opens a dialog with an optional summary and the verdict: **Comment**, **Request changes** (**Wait for author** on Azure DevOps, where the verdict is your vote) or **Approve**. From the keyboard, press <kbd>R</kbd> then <kbd>C</kbd>, <kbd>N</kbd> or <kbd>A</kbd> to open it on that verdict, or <kbd>R</kbd> then <kbd>Y</kbd> to approve at once, with no dialog.
+
+The review goes to the code host as soon as you submit it. If it fails, your draft stays as it was, and the dialog says why, with **Retry**. Nothing waits to be sent later.
+
+When the author pushes and you open the pull request again, a draft comment whose line changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft: post its comments with **Post as comments**, or **Discard** it.
+
+Commenting and reviewing need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
+
 ## Ask for more detail
 
 Each concern's reason ends with a faint **more ›**. Click it and the question it asks shows in place, ready: what the concern changes, why, and what to check. Press Enter to ask it as is, or type your own question first; Escape closes it. The answer is written in place under the reason by the agent you picked in **Settings › Agents**. It shows **Getting more detail…** until the answer starts, then the answer comes in as it is written, and ends with the commit it is about. Type in **Ask something else…** under an answer to ask another question about the concern. **Stop** stops an answer, and **Dismiss** closes it. An answer you already got, for the same question and commit, shows at once.
@@ -47,6 +59,6 @@ The first time you ask about a repository's pull request, Ajour asks once whethe
 
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
-::: info Reviews happen in your code host for now
-Deck shows a GitHub pull request's changes. Azure DevOps pull requests show their status line, description, threads and conversation, and their changes in a later version. Commenting and merging still happen on GitHub or Azure DevOps.
+::: info Merging happens in your code host for now
+Deck shows a GitHub pull request's changes. Azure DevOps pull requests show their status line, description, threads and conversation, and their changes in a later version. Replying to a thread and merging still happen on GitHub or Azure DevOps.
 :::

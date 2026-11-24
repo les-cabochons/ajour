@@ -133,6 +133,15 @@ The review page also calls, beside the diff:
 
 A plugin without one of them still opens: the page says the code host doesn't offer it. The GitHub and Azure DevOps plugins implement both.
 
+### What Deck writes
+
+Deck's draft review writes through two operations, each sent as soon as the user acts, with no Undo window and nothing queued (ADR 0002). Ajour keeps the draft itself, so the code host holds no pending review.
+
+- `postComment`: one comment, `body` in markdown, on lines when `anchor` names a `path`, a `side`, a `line` and an optional `startLine` on that side, at the `headSha` the user reviewed, or on the whole pull request without one. Return the new comment's `commentId`.
+- `submitReview`: a review at `headSha`, with its `verdict` (`approve`, `request_changes` or `comment`), an optional `body`, the summary, and every line comment of the draft in `comments` (at most 500), each with its anchor and `body`. Return a `reviewId`. Send it in one call where the host can, so a failure leaves nothing behind; Ajour keeps the draft and offers Retry when you throw. A host with no review object, such as Azure DevOps, posts each comment and then sets the vote: the GitHub plugin maps the verdicts to `APPROVE`, `REQUEST_CHANGES` and `COMMENT`, and the Azure DevOps plugin votes 10 for approve and -5, "Wait for author", for request changes, and leaves the vote for a comment. Ajour labels request changes "Wait for author" for Azure DevOps. Make a retry safe: skip a comment you already posted.
+
+Put the write endpoints and operations behind their own access choice, such as the official plugins' `reviewPullRequests`, "Review pull requests", so a connection reads pull requests without being able to write to them. An update that adds the choice asks for consent once, and the choice starts off.
+
 ::: info Not used yet
-Ajour does not call the other review operations yet. The operations and their schemas may change before Ajour uses them.
+Ajour does not call `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` or `mergePullRequest` yet. They and their schemas may change before Ajour uses them.
 :::

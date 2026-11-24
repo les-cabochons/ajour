@@ -130,13 +130,7 @@ export function FinishReview({
       localStore.completeDraftComments(review, sent);
       setOpen(false);
       setSummary("");
-      showToast(
-        next === "approve"
-          ? "Approved"
-          : next === "request_changes"
-            ? `${verdicts.request_changes}: sent`
-            : "Review sent",
-      );
+      showToast(next === "approve" ? "Approved" : "Review sent");
       onSubmitted();
     } catch (error) {
       // Nothing left the draft: the dialog shows why, with Retry.

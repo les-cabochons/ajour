@@ -8,7 +8,7 @@ The GitHub plugin brings your open pull requests into Ajour: the ones you wrote,
 
 1. [Install the plugin](/plugins/#install-a-plugin) from **Settings › Plugins**, and turn it on.
 2. Create a GitHub personal access token in **Settings › Developer settings › Personal access tokens**:
-   - **Fine-grained token**: read and write access to pull requests, and read access to contents, on the repositories you want. Add organization members read access to see review requests sent to your teams. For issues, add read and write access to issues.
+   - **Fine-grained token**: read access to pull requests, and read access to contents, on the repositories you want. To comment and submit reviews from [Deck](/deck/#comment-and-finish-your-review), make pull requests read and write, and turn on the connection's **Review pull requests** access. Plugin 0.6.0 adds that access, off, and asks you to allow the update. Add organization members read access to see review requests sent to your teams. For issues, add read and write access to issues.
    - **Classic token**: the `repo` and `read:org` scopes.
 3. In Ajour, open the plugin, turn it on if it is off, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 
