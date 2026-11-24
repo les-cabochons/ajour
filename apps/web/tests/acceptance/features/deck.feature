@@ -106,6 +106,20 @@ Feature: Deck lists the pull requests on your plate
     When I switch to Files A–Z
     Then the changed files show in path order
 
+  Scenario: Draft a review beside the lines and finish it
+    Given the local API built the requested pull request's guide
+    And the code host takes reviews
+    When I open Deck
+    And I open the requested pull request summary
+    And I comment "Cap the backoff." on the line that reads "  const delay = backoff(attempt);"
+    And I add it to the review with Ctrl+Enter
+    Then the draft comment "Cap the backoff." sits beside its line
+    When I press the "r" key
+    And I press the "a" key
+    Then Finish review opens on Approve
+    When I submit the review
+    Then the code host gets an approval with the comment "Cap the backoff."
+
   Scenario: Read a pull request's guide on a narrow screen
     Given the local API built the requested pull request's guide
     When I open Deck on a narrow screen
