@@ -749,6 +749,382 @@ describe("opening a pull request in Deck", () => {
   });
 });
 
+describe("the checks of a pull request in Deck", () => {
+  const withChecks = `${pluginSource}
+export async function getChecks(connection, request) {
+  return {
+    checks: [
+      { name: "build", state: "success", url: "https://ci.example.test/build" },
+      { name: "test", state: "pending" },
+    ],
+  };
+}
+`;
+  const readChecks = (baseUrl: string, connectionId: string) =>
+    apiRequest(
+      baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/getChecks`,
+      { repository: "acme/api", number: 7 },
+    );
+
+  it("reads each check's name, state and url through the code host plugin", async () => {
+    const { api, connectionId } = await startDeck(withChecks);
+
+    await expect(readChecks(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 200,
+      body: {
+        checks: [
+          {
+            name: "build",
+            state: "success",
+            url: "https://ci.example.test/build",
+          },
+          { name: "test", state: "pending" },
+        ],
+      },
+    });
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_checks" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", pull_request: { check_count: 2 } });
+  });
+
+  it("says the plugin doesn't offer them when it has no getChecks", async () => {
+    const { api, connectionId } = await startDeck();
+
+    await expect(readChecks(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 404,
+      body: {
+        error: "GitHub doesn't offer this yet.",
+        reason: "not_supported",
+      },
+    });
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_checks" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "not_supported" });
+  });
+});
+
+describe("the guide of a pull request opened in Deck", () => {
+  it("is built by Review Deck's pipeline from the same diff, its concerns in reading order", async () => {
+    const { api, open } = await startDeck();
+    const text = (key: string) => {
+      const content = FILES[key];
+      return content === undefined || content === "binary" ? null : content;
+    };
+    const changes = [
+      { path: "assets/logo.png", changeType: "edit" as const },
+      { path: "src/api.ts", changeType: "edit" as const },
+      {
+        path: "src/moved.ts",
+        originalPath: "src/before.ts",
+        changeType: "rename" as const,
+      },
+      { path: "src/new.ts", changeType: "add" as const },
+      { path: "src/old.ts", changeType: "delete" as const },
+    ];
+    const contents = new Map<string, FileContents>(
+      changes.map((change) => [
+        change.path,
+        {
+          old: text(
+            `base:${"originalPath" in change ? change.originalPath : change.path}`,
+          ),
+          new: text(`head:${change.path}`),
+          binary: change.path === "assets/logo.png",
+          tooLarge: false,
+        },
+      ]),
+    );
+    const versions = (side: "base" | "head") =>
+      new Map(
+        Object.entries(FILES).flatMap(([key, content]) =>
+          key.startsWith(`${side}:`) && content !== "binary"
+            ? [[key.slice(side.length + 1), content] as const]
+            : [],
+        ),
+      );
+    const [old, head] = [versions("base"), versions("head")];
+    const { runPipeline, mergeConfig, createPipelineDeps } =
+      await loadPipeline();
+    const expected = await runPipeline(
+      {
+        title: "",
+        description: "",
+        diff: buildDiff(changes, contents),
+        files: {
+          get: async (file, side) =>
+            (side === "old" ? old : head).get(file) ?? null,
+        },
+      },
+      mergeConfig(),
+      await createPipelineDeps(),
+    );
+
+    const opened = await open();
+
+    expect(opened.status).toBe(200);
+    expect(opened.body.guide).toEqual({
+      madeWith: "code",
+      concerns: expected.groups.map((group) => ({
+        id: group.id,
+        title: group.title,
+        rationale: group.rationale,
+        hunkIds: group.hunkIds,
+      })),
+    });
+    // Every hunk is in one concern.
+    const hunkIds = (opened.body.files as { hunks: { id: string }[] }[])
+      .flatMap((file) => file.hunks.map((hunk) => hunk.id))
+      .sort();
+    expect(
+      (opened.body.guide.concerns as { hunkIds: string[] }[])
+        .flatMap((concern) => concern.hunkIds)
+        .sort(),
+    ).toEqual(hunkIds);
+    expect(
+      api.events.find((event) => event.name === "deck.guide_build"),
+    ).toMatchObject({
+      kind: "job",
+      outcome: "ok",
+      deck: { priority: "open", concern_count: expected.groups.length },
+    });
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({
+      deck: { concern_count: expected.groups.length, guide_built: true },
+    });
+    // The guide's titles and paths are content: no event carries them.
+    expect(JSON.stringify(api.events)).not.toContain("api.ts");
+  });
+
+  it("builds an opened pull request before the preloads, stopping the one running, which runs again after", async () => {
+    const guides = heldGuides();
+    const { api, open, preload } = await startDeck(undefined, guides.runtime);
+    const releasePreload = guides.hold("pr20");
+
+    // Pull request 20's build runs and holds; 21 and 22 wait behind it.
+    await expect(preload(20, 21, 22)).resolves.toEqual({
+      status: 202,
+      body: { queued: 3 },
+    });
+    expect(guides.started).toEqual(["pr20"]);
+
+    const answer = await open(23);
+
+    expect(answer.status).toBe(200);
+    expect(answer.body.guide.concerns[0].title).toBe("pr23");
+    expect(guides.built).toEqual(["pr23"]);
+    releasePreload();
+    await expect.poll(() => guides.built.length).toBe(4);
+    expect(guides.started).toEqual(["pr20", "pr23", "pr20", "pr21", "pr22"]);
+    expect(guides.built).toEqual(["pr23", "pr20", "pr21", "pr22"]);
+    expect(
+      api.events
+        .filter((event) => event.name === "deck.guide_build")
+        .map((event) => ({
+          outcome: event.outcome,
+          reason: (event as { outcome_reason?: string }).outcome_reason,
+          priority: (event as { deck?: { priority?: string } }).deck?.priority,
+        })),
+    ).toEqual([
+      { outcome: "cancelled", reason: "preempted", priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "open" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
+      { outcome: "ok", reason: undefined, priority: "preload" },
+    ]);
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.preload" && event.kind === "request",
+      ),
+    ).toMatchObject({
+      outcome: "ok",
+      deck: {
+        pull_request_count: 3,
+        queued_count: 3,
+        file_read_count: 3,
+        failed_count: 0,
+      },
+    });
+  });
+
+  it("moves a preloaded pull request's waiting build ahead when it opens, and reads none of its files again", async () => {
+    const guides = heldGuides();
+    const { api, open, preload, fileReads } = await startDeck(
+      undefined,
+      guides.runtime,
+    );
+    const releasePreload = guides.hold("pr20");
+    await preload(20, 21, 22);
+    expect(fileReads()).toBe(3);
+
+    const answer = await open(22);
+
+    expect(answer.status).toBe(200);
+    expect(answer.body.guide.concerns[0].title).toBe("pr22");
+    expect(fileReads()).toBe(3);
+    releasePreload();
+    await expect.poll(() => guides.built.length).toBe(3);
+    expect(guides.built).toEqual(["pr22", "pr20", "pr21"]);
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({ deck: { preloaded: true, file_read_count: 0 } });
+  });
+
+  it("skips a pull request a preload can't read, and fails only when none could be read", async () => {
+    const guides = heldGuides();
+    const { api, preload } = await startDeck(undefined, guides.runtime);
+
+    await expect(preload(404, 20)).resolves.toEqual({
+      status: 202,
+      body: { queued: 1 },
+    });
+    await expect(preload(404)).resolves.toEqual({
+      status: 502,
+      body: { error: "GitHub request failed (404): Not Found." },
+    });
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.preload" && event.kind === "request",
+      ),
+    ).toMatchObject({ deck: { queued_count: 1, failed_count: 1 } });
+  });
+
+  it("shows the diff without a guide when the build takes too long, and builds it again on the next open", async () => {
+    let calls = 0;
+    const { api, open, fileReads } = await startDeck(
+      undefined,
+      {
+        build: (input, signal) => {
+          calls += 1;
+          if (calls > 1) {
+            return Promise.resolve([
+              {
+                id: "g1",
+                title: "Built",
+                rationale: "",
+                hunkIds: parseDiff(input.diff).flatMap((file) =>
+                  file.hunks.map((hunk) => hunk.id),
+                ),
+              },
+            ]);
+          }
+          return new Promise((_, reject) =>
+            signal.addEventListener("abort", () =>
+              reject(new Error("Stopped.")),
+            ),
+          );
+        },
+        close: async () => {},
+      },
+      100,
+    );
+
+    const first = await open(20);
+    expect(first.status).toBe(200);
+    expect(first.body.guide).toBeNull();
+    expect(
+      api.events.find((event) => event.name === "deck.guide_build"),
+    ).toMatchObject({ outcome: "timeout" });
+
+    // A failed guide isn't kept: the next open reads and builds it again.
+    const second = await open(20);
+    expect(second.body.guide.concerns[0].title).toBe("Built");
+    expect(fileReads()).toBe(2);
+  });
+
+  it("cuts a title or rationale longer than the guide allows, keeping the guide", async () => {
+    const { open } = await startDeck(undefined, {
+      build: async (input) => [
+        {
+          id: "g1",
+          title: "t".repeat(600),
+          rationale: "r".repeat(2_500),
+          hunkIds: parseDiff(input.diff).flatMap((file) =>
+            file.hunks.map((hunk) => hunk.id),
+          ),
+        },
+      ],
+      close: async () => {},
+    });
+
+    const opened = await open(20);
+
+    expect(opened.body.guide.concerns[0].title).toHaveLength(500);
+    expect(opened.body.guide.concerns[0].rationale).toHaveLength(2_000);
+  });
+
+  it("doesn't read a pull request kept at its head again, on screen or preloaded", async () => {
+    const guides = heldGuides();
+    const { open, preload, fileReads } = await startDeck(
+      undefined,
+      guides.runtime,
+    );
+    await open(20);
+    await preload(21);
+    expect(fileReads()).toBe(2);
+
+    await expect(preload(20, 21)).resolves.toEqual({
+      status: 202,
+      body: { queued: 0 },
+    });
+    expect(fileReads()).toBe(2);
+  });
+
+  it("still answers the diff when the pipeline fails, without a guide", async () => {
+    const { api, open } = await startDeck(undefined, {
+      build: async () => {
+        throw new Error("The pipeline broke.");
+      },
+      close: async () => {},
+    });
+
+    const opened = await open();
+
+    expect(opened.status).toBe(200);
+    expect(opened.body.files).toHaveLength(5);
+    expect(opened.body.guide).toBeNull();
+    expect(
+      api.events.find((event) => event.name === "deck.guide_build"),
+    ).toMatchObject({ outcome: "error" });
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", deck: { guide_built: false } });
+  });
+
+  it("stops the guide build of a pull request replaced on screen", async () => {
+    const guides = heldGuides();
+    const { api, open } = await startDeck(undefined, guides.runtime);
+    guides.hold("pr20");
+
+    const first = open(20);
+    await expect.poll(() => guides.started).toEqual(["pr20"]);
+    const second = await open(21);
+
+    await expect(first).resolves.toEqual({
+      status: 409,
+      body: { error: "Another pull request opened in Deck." },
+    });
+    expect(second.status).toBe(200);
+    expect(guides.built).toEqual(["pr21"]);
+    expect(
+      api.events.find((event) => event.name === "deck.guide_build"),
+    ).toMatchObject({ outcome: "cancelled", outcome_reason: "replaced" });
+  });
+});
+
 /*
  * An Azure DevOps pull request (#780). The fake plugin answers what the Azure
  * DevOps plugin 2.3.0 answers for the changes below

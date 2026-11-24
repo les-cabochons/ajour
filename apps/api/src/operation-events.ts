@@ -32,6 +32,7 @@ export const CODE_HOST_EVENTS = {
   getPullRequestContent: "pull_request.load",
   getFileContent: "pull_request.load_file",
   getPullRequestConversation: "pull_request.load_conversation",
+  getChecks: "pull_request.load_checks",
   browsePullRequests: "pull_request.browse",
   submitReview: "pull_request.submit_review",
   postComment: "pull_request.comment",

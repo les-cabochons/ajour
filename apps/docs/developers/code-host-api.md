@@ -29,6 +29,7 @@ Report facts, never conclusions. Ajour computes "on your plate" from them:
 - `reviews` and `comments` with their authors and times. Set `mentionsViewer` when the text mentions the user. Do not send the text itself.
 - `lastPushedAt` and `lastPushActor`, so Ajour can tell new commits after a change request. Leave `lastPushActor` out if you cannot attribute the push. Ajour then never treats it as someone else's.
 - `checks` and `mergeability`.
+- `approvals`, optional: each reviewer's current vote, one entry per reviewer, at most 100. Include a reviewer who was asked and hasn't voted yet, with `vote: "none"`.
 
 Times are Unix milliseconds. A repository is its full name, such as `acme/api`.
 
@@ -98,6 +99,15 @@ interface CodeHostPullRequestFacts {
   }[];
   checks: "none" | "pending" | "success" | "failure";
   mergeability: "mergeable" | "conflicting" | "unknown";
+  /** At most 100, one per reviewer. Optional. */
+  approvals?: {
+    /** A person, or a team or group asked to review. */
+    reviewer: CodeHostUser;
+    /** `rejected` is Azure DevOps's Reject; `none` is asked, with no vote yet. */
+    vote: "approved" | "changes_requested" | "rejected" | "none";
+    /** The code host's policy requires this reviewer's approval. */
+    required?: boolean;
+  }[];
 }
 ```
 
@@ -105,7 +115,7 @@ The schemas are in [`packages/shared/code-host.ts`](https://github.com/les-caboc
 
 ## Review operations
 
-The contract also defines operations for reviewing in Ajour: `getPullRequestContent`, `getFileContent`, `getPullRequestConversation`, `browsePullRequests`, `submitReview`, `postComment`, `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` and `mergePullRequest`. Each takes `(connection, request)`.
+The contract also defines operations for reviewing in Ajour: `getPullRequestContent`, `getFileContent`, `getPullRequestConversation`, `getChecks`, `browsePullRequests`, `submitReview`, `postComment`, `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` and `mergePullRequest`. Each takes `(connection, request)`.
 
 ### What Deck reads
 
@@ -115,6 +125,13 @@ When the user opens a pull request in Deck, Ajour calls `getPullRequestContent`,
 - `getFileContent` returns `{ kind: "text", content }` with at most 5,000,000 characters, `{ kind: "binary" }` for a binary file or one too long to send, or `{ kind: "missing" }` when the file isn't at that commit.
 
 Ajour reads three files at a time. The GitHub and Azure DevOps plugins implement both.
+
+The review page also calls, beside the diff:
+
+- `getPullRequestConversation`: the `description` in markdown, the `timeline` (at most 5,000 comments, reviews, commits and other events, oldest first), the review `threads` (at most 2,000) with their `path`, `side` (`base` or `head`), `line` and `startLine` on that side, `resolved`, `outdated` and comments, the `viewedPaths` the user marked viewed, and the `mergeMethods` the repository allows. Leave `line` out when a thread no longer maps to a line of the latest diff. Ajour shows a thread beside its line, and one it can't place in the conversation at the end.
+- `getChecks`: the checks on the pull request's head, at most 500, each with its `name`, its `state` and an optional `url`. `state` is `pending` (queued, running or expected), `success`, `failure` (failed, errored, timed out or cancelled) or `skipped` (skipped, neutral or not applicable).
+
+A plugin without one of them still opens: the page says the code host doesn't offer it. The GitHub and Azure DevOps plugins implement both.
 
 ::: info Not used yet
 Ajour does not call the other review operations yet. The operations and their schemas may change before Ajour uses them.
