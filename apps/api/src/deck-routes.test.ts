@@ -65,8 +65,15 @@ export async function validateConnection({ config }) {
 }
 export async function getPullRequestContent(connection, request) {
   if (request.number === 404) throw new Error("GitHub request failed (404): Not Found.");
+  if (request.number === 12) {
+    globalThis.deckListGate.started += 1;
+    await globalThis.deckListGate.opened;
+  }
   const files =
-    request.number === 9 ? [{ path: "src/broken.ts", status: "modified" }]
+    request.number === 12 ? [{ path: "src/new.ts", status: "added" }]
+    : request.number === 13
+      ? [{ path: "slow/a.ts", status: "added" }, { path: "slow/b.ts", status: "added" }]
+    : request.number === 9 ? [{ path: "src/broken.ts", status: "modified" }]
     : request.number === 8 ? [{ path: "src/new.ts", status: "added" }]
     : request.number === 11 ? [{ path: "src/gone.ts", status: "modified" }]
     : request.number === 10
@@ -166,6 +173,38 @@ async function startDeck(source?: string) {
         event.kind === "plugin_operation",
     ).length;
   return { api, connectionId, open, fileReads };
+}
+
+/** Holds the file reads of the `slow/` files until `release` runs. */
+function holdSlowReads() {
+  let release!: () => void;
+  (globalThis as { deckTestGate?: Promise<void> }).deckTestGate = new Promise(
+    (resolve) => {
+      release = resolve;
+    },
+  );
+  stops.push(async () => {
+    release();
+    delete (globalThis as { deckTestGate?: Promise<void> }).deckTestGate;
+  });
+  return release;
+}
+
+/** Holds pull request 12's file list until `release` runs, counting the lists started. */
+function holdListing() {
+  let release!: () => void;
+  const gate = {
+    started: 0,
+    opened: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  };
+  (globalThis as { deckListGate?: typeof gate }).deckListGate = gate;
+  stops.push(async () => {
+    release();
+    delete (globalThis as { deckListGate?: typeof gate }).deckListGate;
+  });
+  return { release, started: () => gate.started };
 }
 
 /** The file reads the plugin host ran that ended with `outcome`. */
@@ -457,6 +496,74 @@ describe("opening a pull request in Deck", () => {
     } finally {
       release();
       delete (globalThis as { deckTestGate?: Promise<void> }).deckTestGate;
+    }
+  });
+
+  it("answers the pull request opened last, even when an earlier one's file list comes back after it", async () => {
+    const { api, open } = await startDeck();
+    const fileLists = () =>
+      api.events.filter(
+        (event) =>
+          event.name === "pull_request.load" &&
+          event.kind === "plugin_operation",
+      ).length;
+    const releaseReads = holdSlowReads();
+    const listing = holdListing();
+
+    // Pull request 12's file list waits. Pull request 10 opens meanwhile,
+    // lists its files and starts reading them.
+    const earlier = open(12);
+    await expect.poll(listing.started).toBe(1);
+    const later = open(10);
+    await expect.poll(fileLists).toBe(1);
+    listing.release();
+
+    await expect(earlier).resolves.toEqual({
+      status: 409,
+      body: { error: "Another pull request opened in Deck." },
+    });
+    releaseReads();
+    expect((await later).status).toBe(200);
+  });
+
+  it("answers that it was replaced when another pull request opens during its last file reads", async () => {
+    const { api, open } = await startDeck();
+    const fileLists = () =>
+      api.events.filter(
+        (event) =>
+          event.name === "pull_request.load" &&
+          event.kind === "plugin_operation",
+      ).length;
+    const release = holdSlowReads();
+
+    // Pull request 13's two files are read in one batch, and both wait.
+    const replaced = open(13);
+    await expect.poll(fileLists).toBe(1);
+    const next = open(8);
+    await expect.poll(fileLists).toBe(2);
+    release();
+
+    await expect(replaced).resolves.toEqual({
+      status: 409,
+      body: { error: "Another pull request opened in Deck." },
+    });
+    expect((await next).status).toBe(200);
+  });
+
+  it("waits to list the files while the plugin runs as many operations as it may", async () => {
+    const { open } = await startDeck();
+    const listing = holdListing();
+
+    // Four file lists of pull request 12 take the plugin's four slots.
+    const held = [open(12), open(12), open(12), open(12)];
+    await expect.poll(listing.started).toBe(4);
+    const next = open(7);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    listing.release();
+
+    expect((await next).status).toBe(200);
+    for (const opened of await Promise.all(held)) {
+      expect(opened.status).toBe(409);
     }
   });
 

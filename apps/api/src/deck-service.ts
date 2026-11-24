@@ -52,7 +52,7 @@ export class DeckBuildReplaced extends Error {
  * at a time and refuses the rest, so one slot stays free for a sync.
  */
 const FILE_READS_AT_ONCE = 3;
-/** How often, and after how long, a read the host refused for capacity is tried again. */
+/** How often, and after how long, an operation the host refused for capacity is tried again. */
 const BUSY_RETRIES = 40;
 const BUSY_RETRY_MS = 250;
 
@@ -91,24 +91,33 @@ async function withConcurrency<T>(
   await Promise.all(
     Array.from({ length: Math.min(limit, tasks.length) }, worker),
   );
+  // Another pull request may have opened during the last reads.
+  if (signal.aborted) throw new DeckBuildReplaced();
   return results;
 }
 
-/** Reads one file, waiting while the plugin runs as many operations as it may. */
-async function readFile(
+/**
+ * Runs one code host operation, waiting while the plugin runs as many
+ * operations as it may. It stops waiting once `replaced` says another pull
+ * request opened.
+ */
+async function runWhenFree<
+  Operation extends "getPullRequestContent" | "getFileContent",
+>(
   codeHost: DeckCodeHost,
-  request: CodeHostOperationRequest<"getFileContent">,
-  signal: AbortSignal,
+  operation: Operation,
+  request: CodeHostOperationRequest<Operation>,
+  replaced: () => boolean,
 ) {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await codeHost.run("getFileContent", request);
+      return await codeHost.run(operation, request);
     } catch (error) {
       const busy =
         error instanceof PluginOperationRefused && error.reason === "capacity";
       if (!busy || attempt >= BUSY_RETRIES) throw error;
       await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_MS));
-      if (signal.aborted) throw new DeckBuildReplaced();
+      if (replaced()) throw new DeckBuildReplaced();
     }
   }
 }
@@ -150,10 +159,11 @@ async function buildPullRequestDiff(
     versionsOf(file, content).map((version) => async (): Promise<Side> => {
       if (!version) return ABSENT;
       fileReadCount += 1;
-      const read = await readFile(
+      const read = await runWhenFree(
         codeHost,
+        "getFileContent",
         { repository, sha: version.sha, path: version.path },
-        signal,
+        () => signal.aborted,
       );
       // The file list says this version exists. Without it the diff would
       // show the whole file added or removed, so the open fails instead.
@@ -237,6 +247,8 @@ export function createDeckService() {
         stop: AbortController;
       }
     | undefined;
+  /** Counts the opens, so the last one wins whatever order their file lists come back in. */
+  let lastOpen = 0;
 
   return {
     /**
@@ -249,7 +261,16 @@ export function createDeckService() {
       request: DeckOpenRequest,
       codeHost: DeckCodeHost,
     ): Promise<DeckOpened> {
-      const content = await codeHost.run("getPullRequestContent", request);
+      const open = ++lastOpen;
+      const replaced = () => open !== lastOpen;
+      const content = await runWhenFree(
+        codeHost,
+        "getPullRequestContent",
+        request,
+        replaced,
+      );
+      // A later open owns the screen: this one neither replaces it nor stops its build.
+      if (replaced()) throw new DeckBuildReplaced();
       const key = JSON.stringify([
         source.pluginId,
         source.connectionId,
