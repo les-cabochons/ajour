@@ -18,6 +18,7 @@ The folder holds:
 - **`app-api-vault.json`**: the vault, with the secrets of connections and agent task settings, such as tokens and secret calendar addresses, encrypted by your operating system.
 - **`plugins/`**: installed plugins.
 - **`plugin-catalog/`**: the last listing read from each plugin source, and its plugins' images.
+- **`deck-cache/`**: Deck's content cache: both versions of each changed file, the diff and the guide of the pull requests Deck read, including ones it read after a sync before you opened them. It stays under the size limit of Settings › Storage, 1 GB by default, where **Clear cache** empties it. Removing a connection removes its pull requests from it.
 - **`agent-browser-profile/`**: the browser profile used by agent tasks in their separate browser mode. It keeps cookies, sessions and other browser data, including a Workday sign-in, between runs. An agent attached to your own browser uses that browser's profile instead.
 
 To back up Ajour, quit it and copy this folder.

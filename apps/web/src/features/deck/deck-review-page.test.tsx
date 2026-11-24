@@ -330,6 +330,7 @@ it("opens the pull request and shows its title and every hunk, files A–Z, with
   expect(api.openDeckPullRequest).toHaveBeenCalledWith("github", "work", {
     repository: "acme/api",
     number: 1,
+    headSha: "one",
   });
 });
 
@@ -623,6 +624,7 @@ it("opens the next pull request with its drawer closed and nothing viewed, after
   expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
     repository: "acme/api",
     number: 2,
+    headSha: "one",
   });
 });
 
@@ -867,6 +869,24 @@ it("ends with the conversation: the timeline in time order", async () => {
     changes.compareDocumentPosition(conversation) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+});
+
+it("says calmly that the connection was removed, with nothing to retry", async () => {
+  vi.mocked(api.openDeckPullRequest).mockRejectedValue(
+    new AppApiError("This connection was removed.", 409, undefined, {
+      error: "This connection was removed.",
+      reason: "connection_removed",
+    }),
+  );
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  expect(
+    await within(changes).findByText("This connection was removed."),
+  ).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(within(changes).queryByRole("button", { name: "Retry" })).toBeNull();
 });
 
 /** The page's hunks, by the names they give assistive technology. */

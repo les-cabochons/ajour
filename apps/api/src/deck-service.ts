@@ -11,12 +11,19 @@ import type {
   DeckOpenRequest,
   DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
-import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
+import { parseDeckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
   hunkToPatch,
   parseDiff,
 } from "../../../packages/review-deck/diff.ts";
+import {
+  deckCacheKeyString,
+  type DeckCacheForgotten,
+  type DeckCacheKey,
+  type DeckCachedEntry,
+  type DeckContentCache,
+} from "./deck-content-cache.ts";
 import {
   GuideBuildCancelled,
   type GuideBuildInput,
@@ -29,11 +36,13 @@ import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
  * each changed file, read through the code host plugin, with Review Deck's
  * vendored `buildDiff` (ADR 0003). The host's patch is never used, so the
  * hunk ids are Review Deck's. Its guide is built from the same diff by the
- * vendored pipeline, in the guide builds' worker thread (#782). The pull
- * request on screen is kept in memory until another one opens, and the last
- * preloaded ones until they open or newer preloads push them out. The disk
- * cache is a later ticket (#781). A pull request with more hunks than a
- * guide is built for gets none, and the pipeline doesn't run (#790).
+ * vendored pipeline, in the guide builds' worker thread (#782). What it read
+ * and built goes to the content cache on disk (#781), so a pull request
+ * opened or preloaded before opens again without reading a file, and one
+ * opened at the head the window's last sync saw doesn't ask the code host at
+ * all. The pull request on screen is also kept in memory until another one
+ * opens, and the cache never evicts it. A pull request with more hunks than
+ * a guide is built for gets none, and the pipeline doesn't run (#790).
  */
 
 /** The code host operations Deck calls, bound to one connection. */
@@ -42,6 +51,12 @@ export interface DeckCodeHost {
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
   ): Promise<CodeHostOperationResult<Operation>>;
+  /**
+   * The connection's generation (`cache.generation`) when the route found
+   * the connection. Work through it stops once the connection is removed
+   * after that moment, not only after the work began.
+   */
+  generation?: number;
 }
 
 /** What opening a pull request did, for its event. Never a path. */
@@ -51,13 +66,15 @@ export interface DeckOpened {
   fileReadCount: number;
   /** The diff was the one kept for the pull request on screen. */
   kept: boolean;
-  /** The diff was one a preload read. */
-  preloaded: boolean;
+  /** The diff came from the content cache: no file was read. */
+  cached: boolean;
+  /** The code host was asked for the pull request's file list. */
+  listed: boolean;
 }
 
 /** What preloading pull requests did, for its event. */
 export interface DeckPreloaded {
-  /** The guide builds queued. A pull request already kept is not read again. */
+  /** The guide builds queued. A pull request already cached is not read again. */
   queued: number;
   /** The pull requests read and kept with no guide build: they have too many hunks. */
   guideSkippedCount: number;
@@ -73,6 +90,19 @@ export class DeckBuildReplaced extends Error {
   }
 }
 
+/** An open or a preload stopped because its connection was removed meanwhile. */
+export class DeckConnectionRemoved extends Error {
+  constructor() {
+    super("This connection was removed.");
+  }
+}
+
+/** Why aborted work stopped: its connection was removed, or another pull request opened. */
+const stopped = (signal: AbortSignal) =>
+  signal.reason instanceof DeckConnectionRemoved
+    ? signal.reason
+    : new DeckBuildReplaced();
+
 /**
  * Files read at once. The plugin host runs at most 4 operations of a plugin
  * at a time and refuses the rest, so one slot stays free for a sync. A
@@ -80,8 +110,6 @@ export class DeckBuildReplaced extends Error {
  */
 const FILE_READS_AT_ONCE = 3;
 const PRELOAD_READS_AT_ONCE = 1;
-/** The preloaded pull requests kept in memory. Newer preloads push the oldest out. */
-const PRELOADS_KEPT = 20;
 /** How often, and after how long, an operation the host refused for capacity is tried again. */
 const BUSY_RETRIES = 40;
 const BUSY_RETRY_MS = 250;
@@ -111,7 +139,7 @@ async function withConcurrency<T>(
   const worker = async () => {
     while (!failed && next < tasks.length) {
       if (beforeEach) await beforeEach();
-      if (signal.aborted) throw new DeckBuildReplaced();
+      if (signal.aborted) throw stopped(signal);
       if (failed || next >= tasks.length) return;
       const index = next++;
       try {
@@ -125,15 +153,15 @@ async function withConcurrency<T>(
   await Promise.all(
     Array.from({ length: Math.min(limit, tasks.length) }, worker),
   );
-  // Another pull request may have opened during the last reads.
-  if (signal.aborted) throw new DeckBuildReplaced();
+  // Another pull request may have opened, or the connection gone, during the last reads.
+  if (signal.aborted) throw stopped(signal);
   return results;
 }
 
 /**
  * Runs one code host operation, waiting while the plugin runs as many
- * operations as it may. It stops waiting once `replaced` says another pull
- * request opened.
+ * operations as it may. It stops waiting once `check` throws: another pull
+ * request opened, or the connection was removed.
  */
 async function runWhenFree<
   Operation extends "getPullRequestContent" | "getFileContent",
@@ -141,7 +169,7 @@ async function runWhenFree<
   codeHost: DeckCodeHost,
   operation: Operation,
   request: CodeHostOperationRequest<Operation>,
-  replaced: () => boolean,
+  check: () => void,
 ) {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -151,7 +179,7 @@ async function runWhenFree<
         error instanceof PluginOperationRefused && error.reason === "capacity";
       if (!busy || attempt >= BUSY_RETRIES) throw error;
       await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_MS));
-      if (replaced()) throw new DeckBuildReplaced();
+      check();
     }
   }
 }
@@ -224,7 +252,9 @@ async function buildPullRequestDiff(
         codeHost,
         "getFileContent",
         { repository, sha: version.sha, path: version.path },
-        () => signal.aborted,
+        () => {
+          if (signal.aborted) throw stopped(signal);
+        },
       );
       // The file list says this version exists. Without it the diff would
       // show the whole file added or removed, so the open fails instead.
@@ -325,40 +355,60 @@ export interface DeckHeldPullRequest {
   versions: DeckFileVersions;
 }
 
-/** A pull request kept in memory at one base and head: its diff and its guide. */
+/** The pull request on screen at one base and head: its diff and its guide. */
 interface Entry {
-  key: string;
-  /** Its conversation key, `deckPullRequestKey`, and its head. */
-  pullRequest: string;
-  head: string;
+  key: DeckCacheKey;
+  id: string;
   diff: Promise<DeckPullRequestDiff>;
-  versions: Promise<DeckFileVersions>;
+  /** What its guide is built from: the diff and both versions of each file. */
+  input: Promise<GuideBuildInput>;
   /**
    * Null when the pipeline failed, or didn't run for too many hunks. It
    * rejects only when the build was cancelled.
    */
   guide: Promise<DeckGuide | null>;
+  /** The guide failed: the next open of the same pull request builds it again. */
+  guideFailed?: boolean;
   stop: AbortController;
 }
 
 type DeckSource = { pluginId: string; connectionId: string };
 
-const pullRequestOf = (source: DeckSource, request: DeckOpenRequest) =>
-  deckPullRequestKey({ ...source, ...request });
+/**
+ * Work on one connection: an open, or a preload batch. It holds the
+ * connection's generation from when it began, and a check throws once the
+ * connection was removed since, before each step that reads, writes or
+ * shows anything. Removing the connection also aborts `stop`, which ends
+ * its file reads.
+ */
+interface ConnectionWork {
+  source: DeckSource;
+  generation: number;
+  stop: AbortController;
+}
+
+const ofForgotten = (source: DeckSource, forgotten: DeckCacheForgotten) =>
+  source.pluginId === forgotten.pluginId &&
+  (forgotten.connectionId === undefined ||
+    source.connectionId === forgotten.connectionId);
 
 const keyOf = (
   source: DeckSource,
   request: DeckOpenRequest,
-  content: CodeHostOperationResult<"getPullRequestContent">,
-) =>
-  JSON.stringify([
-    source.pluginId,
-    source.connectionId,
-    request.repository,
-    request.number,
-    content.baseSha,
-    content.headSha,
-  ]);
+  content: { baseSha: string; headSha: string },
+): DeckCacheKey => ({
+  pluginId: source.pluginId,
+  connectionId: source.connectionId,
+  repository: request.repository,
+  number: request.number,
+  baseSha: content.baseSha,
+  headSha: content.headSha,
+});
+
+/** The same pull request at the same head, whatever its base. */
+const sameHead = (key: DeckCacheKey, at: Omit<DeckCacheKey, "baseSha">) =>
+  deckCacheKeyString({ ...key, baseSha: "" }) ===
+  deckCacheKeyString({ ...at, baseSha: "" });
 
 /** A failed build gives no guide, and the page shows the files A–Z. A cancelled one stays a rejection. */
 const guideOrNull = (built: Promise<DeckGuide>) =>
@@ -368,31 +418,83 @@ const guideOrNull = (built: Promise<DeckGuide>) =>
   });
 
 /** One local API's Deck service. */
-export function createDeckService(options: { guides: GuideBuilds }) {
-  const { guides } = options;
+export function createDeckService(options: {
+  guides: GuideBuilds;
+  cache: DeckContentCache;
+}) {
+  const { guides, cache } = options;
   /**
    * The pull request on screen: the last one opened, at its base and head.
    * Opening another stops its reads and its guide build, so they don't hold
-   * the plugin's operation slots or the worker.
+   * the plugin's operation slots or the worker. The cache never evicts it.
    */
   let onScreen: Entry | undefined;
-  /** The preloaded pull requests by key, oldest first. */
-  const preloaded = new Map<string, Entry>();
+  const show = (entry: Entry | undefined) => {
+    onScreen = entry;
+    cache.keep(entry?.key);
+  };
   /** Counts the opens, so the last one wins whatever order their file lists come back in. */
   let lastOpen = 0;
   /** The opens still reading their file lists or files, which preloads wait for. */
   const opening = new Set<Promise<void>>();
   /** Preload requests run one after the other. */
   let preloading: Promise<unknown> = Promise.resolve();
+  /** The opens and preload batches under way, which removing their connection stops. */
+  const working = new Set<ConnectionWork>();
+  const beginWork = (
+    source: DeckSource,
+    codeHost: DeckCodeHost,
+  ): ConnectionWork => {
+    const work = {
+      source,
+      generation: codeHost.generation ?? cache.generation(source),
+      stop: new AbortController(),
+    };
+    working.add(work);
+    return work;
+  };
+  const checkConnection = (work: ConnectionWork) => {
+    if (cache.generation(work.source) !== work.generation) {
+      throw new DeckConnectionRemoved();
+    }
+  };
+
+  /**
+   * The pull requests known to have too many hunks for a guide, so a
+   * preload doesn't read one from the cache again to find it has none.
+   */
+  const overGuideLimit = new Set<string>();
+  const overLimit = (key: DeckCacheKey, diff: DeckPullRequestDiff) => {
+    if (!guideSkippedFor(diff)) return false;
+    overGuideLimit.add(deckCacheKeyString(key));
+    return true;
+  };
 
   const opensDone = async () => {
     while (opening.size) await Promise.allSettled([...opening]);
   };
 
-  /** Stops a preload pushed out of the kept ones: its build, if it still runs or waits. */
-  const evict = (entry: Entry) => {
-    entry.stop.abort();
-    guides.evict(entry.key);
+  /**
+   * The guide of `key`, built from `input` at `priority`, and saved to its
+   * cache entry once built. A build already queued for it, as a preload's,
+   * is shared, and moves ahead for an open.
+   */
+  const buildGuide = (
+    key: DeckCacheKey,
+    input: GuideBuildInput,
+    priority: "open" | "preload",
+    signal?: AbortSignal,
+  ): Promise<DeckGuide | null> => {
+    const guide = guideOrNull(
+      guides.build(deckCacheKeyString(key), input, priority, signal),
+    );
+    guide.then(
+      (built) => {
+        if (built) void cache.putGuide(key, built);
+      },
+      () => {},
+    );
+    return guide;
   };
 
   /** The entry's diff and guide, once both are ready. */
@@ -401,23 +503,65 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     facts: Omit<DeckOpened, "opened">,
   ): Promise<DeckOpened> => {
     const diff = await entry.diff;
+    const building = entry.guide;
     let guide: DeckGuide | null;
     try {
-      guide = await entry.guide;
+      guide = await building;
     } catch (error) {
-      if (error instanceof GuideBuildCancelled) throw new DeckBuildReplaced();
+      if (error instanceof GuideBuildCancelled)
+        throw stopped(entry.stop.signal);
       throw error;
     }
-    if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
+    if (entry.stop.signal.aborted) throw stopped(entry.stop.signal);
     const guideSkipped = guideSkippedFor(diff);
-    // A failed guide isn't kept: opening it again reads and builds it again.
-    if (guide === null && !guideSkipped && onScreen === entry) {
-      onScreen = undefined;
+    // The pull request stays on screen, and kept from eviction, without a
+    // guide; opening it again builds the guide again. One with too many
+    // hunks never gets one.
+    if (guide === null && !guideSkipped && entry.guide === building) {
+      entry.guideFailed = true;
     }
     return {
       opened: { ...diff, guide, ...(guideSkipped ? { guideSkipped } : {}) },
       ...facts,
     };
+  };
+
+  /** The pull request on screen, opened again: a guide that failed is built again. */
+  const answerKept = (
+    entry: Entry,
+    facts: Omit<DeckOpened, "opened">,
+  ): Promise<DeckOpened> => {
+    if (entry.guideFailed) {
+      entry.guideFailed = false;
+      entry.guide = entry.input.then((input) =>
+        buildGuide(entry.key, input, "open", entry.stop.signal),
+      );
+      entry.guide.catch(() => {});
+    }
+    return answer(entry, facts);
+  };
+
+  /** Puts a cached pull request on screen, building its guide if it has none. */
+  const openCached = (
+    found: DeckCachedEntry,
+    facts: Omit<DeckOpened, "opened" | "cached">,
+    stop: AbortController,
+  ) => {
+    onScreen?.stop.abort();
+    const entry: Entry = {
+      key: found.key,
+      id: deckCacheKeyString(found.key),
+      diff: Promise.resolve(found.diff),
+      input: Promise.resolve(found.guideInput),
+      guide:
+        found.guide || overLimit(found.key, found.diff)
+          ? Promise.resolve(found.guide)
+          : buildGuide(found.key, found.guideInput, "open", stop.signal),
+      stop,
+    };
+    entry.guide.catch(() => {});
+    show(entry);
+    return answer(entry, { ...facts, cached: true });
   };
 
   async function openPullRequest(
@@ -431,54 +575,77 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       doneReading = resolve;
     });
     opening.add(reading);
+    const work = beginWork(source, codeHost);
     try {
-      return await openNow(source, request, codeHost, () => {
+      return await openNow(work, request, codeHost, () => {
         opening.delete(reading);
         doneReading();
       });
     } finally {
+      working.delete(work);
       opening.delete(reading);
       doneReading();
     }
   }
 
   async function openNow(
-    source: DeckSource,
+    work: ConnectionWork,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
     doneReading: () => void,
   ): Promise<DeckOpened> {
+    const { source, generation, stop } = work;
+    // Bound before its connection was removed, it doesn't even take the screen.
+    checkConnection(work);
     const open = ++lastOpen;
-    const replaced = () => open !== lastOpen;
+    // A later open owns the screen: this one neither replaces it nor stops
+    // its build. A connection removed from here on reads, caches and shows
+    // nothing more of this open.
+    const check = () => {
+      checkConnection(work);
+      if (open !== lastOpen) throw new DeckBuildReplaced();
+    };
+    const none = { fileReadCount: 0, kept: false, cached: false };
+    const ref = { repository: request.repository, number: request.number };
+
+    // At the head the last sync saw, the cache answers without the code host.
+    if (request.headSha) {
+      const at = { ...source, ...ref, headSha: request.headSha };
+      if (onScreen && sameHead(onScreen.key, at)) {
+        doneReading();
+        return answerKept(onScreen, { ...none, kept: true, listed: false });
+      }
+      const found = await cache.find(at);
+      check();
+      if (found) {
+        doneReading();
+        return openCached(found, { ...none, listed: false }, stop);
+      }
+    }
+
     const content = await runWhenFree(
       codeHost,
       "getPullRequestContent",
-      request,
-      replaced,
+      ref,
+      check,
     );
-    // A later open owns the screen: this one neither replaces it nor stops its build.
-    if (replaced()) throw new DeckBuildReplaced();
+    check();
     const key = keyOf(source, request, content);
-    const none = { fileReadCount: 0, kept: false, preloaded: false };
-    if (onScreen?.key === key) {
+    const id = deckCacheKeyString(key);
+    const listed = { ...none, listed: true };
+    if (onScreen?.id === id) {
       doneReading();
-      return answer(onScreen, { ...none, kept: true });
+      return answerKept(onScreen, { ...listed, kept: true });
+    }
+    const found = await cache.get(key);
+    check();
+    if (found) {
+      doneReading();
+      return openCached(found, listed, stop);
     }
     // Its reads and its guide build stop.
     onScreen?.stop.abort();
 
-    const ready = preloaded.get(key);
-    if (ready) {
-      preloaded.delete(key);
-      const entry: Entry = { ...ready, stop: new AbortController() };
-      onScreen = entry;
-      // Its build, if it still waits, runs before the other preloads.
-      guides.prioritize(key, entry.stop.signal);
-      doneReading();
-      return answer(entry, { ...none, preloaded: true });
-    }
-
-    const stop = new AbortController();
     const built = buildPullRequestDiff(
       codeHost,
       request.repository,
@@ -487,107 +654,132 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     );
     const entry: Entry = {
       key,
-      pullRequest: pullRequestOf(source, request),
-      head: content.headSha,
+      id,
       diff: built.then((result) => result.diff),
-      versions: built.then((result) => result.guideInput),
-      guide: built.then((result) =>
-        guideSkippedFor(result.diff)
+      input: built.then((result) => result.guideInput),
+      guide: built.then((result) => {
+        checkConnection(work);
+        void cache.put(key, result, generation);
+        return overLimit(key, result.diff)
           ? null
-          : guideOrNull(
-              guides.build(key, result.guideInput, "open", stop.signal),
-            ),
-      ),
+          : buildGuide(key, result.guideInput, "open", stop.signal);
+      }),
       stop,
     };
     // A failure reaches this caller below. A second caller awaits it too.
     entry.diff.catch(() => {});
-    entry.versions.catch(() => {});
+    entry.input.catch(() => {});
     entry.guide.catch(() => {});
-    onScreen = entry;
+    show(entry);
     try {
       const { fileReadCount } = await built;
       doneReading();
-      return await answer(entry, { ...none, fileReadCount });
+      return await answer(entry, { ...listed, fileReadCount });
     } catch (error) {
-      if (onScreen === entry) onScreen = undefined;
+      if (onScreen === entry) show(undefined);
       throw error;
     }
   }
 
   async function preloadOne(
-    source: DeckSource,
+    work: ConnectionWork,
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
   ): Promise<Omit<DeckPreloaded, "failed">> {
-    const none = { queued: 0, guideSkippedCount: 0 };
+    const { source, generation, stop } = work;
+    const ref = { repository: request.repository, number: request.number };
+    const skipped = { queued: 0, guideSkippedCount: 0, fileReadCount: 0 };
+    // Its batch's connection removed, it reads, caches and builds nothing more.
+    const check = () => checkConnection(work);
+    /**
+     * A pull request cached at `key` isn't read again, and one cached
+     * without its guide gets its build queued again. Undefined when it
+     * isn't cached.
+     */
+    const fromCache = async (key: DeckCacheKey) => {
+      if (onScreen?.id === deckCacheKeyString(key)) return skipped;
+      const peeked = await cache.peek(key);
+      check();
+      if (!peeked) return undefined;
+      if (peeked.hasGuide || overGuideLimit.has(deckCacheKeyString(key))) {
+        return skipped;
+      }
+      const found = await cache.get(key);
+      check();
+      if (!found) return undefined;
+      if (overLimit(key, found.diff)) return skipped;
+      void buildGuide(key, found.guideInput, "preload");
+      return { queued: 1, guideSkippedCount: 0, fileReadCount: 0 };
+    };
     await opensDone();
+    check();
+    if (request.headSha) {
+      const at = { ...source, ...ref, headSha: request.headSha };
+      if (onScreen && sameHead(onScreen.key, at)) return skipped;
+      const found = await cache.find(at);
+      check();
+      if (found) return (await fromCache(found.key)) ?? skipped;
+    }
     const content = await runWhenFree(
       codeHost,
       "getPullRequestContent",
-      request,
-      () => false,
+      ref,
+      check,
     );
+    check();
     const key = keyOf(source, request, content);
-    const kept = () => onScreen?.key === key || preloaded.has(key);
-    if (kept()) return { ...none, fileReadCount: 0 };
-    const stop = new AbortController();
-    const { diff, guideInput, fileReadCount } = await buildPullRequestDiff(
+    const cached = await fromCache(key);
+    if (cached) return cached;
+    const result = await buildPullRequestDiff(
       codeHost,
       request.repository,
       content,
       stop.signal,
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
+    check();
     // An open of the same pull request may have read it meanwhile.
-    if (kept()) return { ...none, fileReadCount };
-    const skipped = guideSkippedFor(diff) !== undefined;
-    const entry: Entry = {
-      key,
-      pullRequest: pullRequestOf(source, request),
-      head: content.headSha,
-      diff: Promise.resolve(diff),
-      versions: Promise.resolve(guideInput),
-      guide: skipped
-        ? Promise.resolve(null)
-        : guideOrNull(guides.build(key, guideInput, "preload")),
-      stop,
-    };
-    entry.guide.catch(() => {});
-    preloaded.set(key, entry);
-    for (const [oldKey, old] of preloaded) {
-      if (preloaded.size <= PRELOADS_KEPT) break;
-      preloaded.delete(oldKey);
-      evict(old);
+    if (onScreen?.id === deckCacheKeyString(key)) {
+      return { ...skipped, fileReadCount: result.fileReadCount };
     }
-    return skipped
-      ? { queued: 0, guideSkippedCount: 1, fileReadCount }
-      : { queued: 1, guideSkippedCount: 0, fileReadCount };
+    await cache.put(key, result, generation);
+    // The connection may have gone while the write waited its turn.
+    check();
+    const { fileReadCount } = result;
+    if (overLimit(key, result.diff)) {
+      return { queued: 0, guideSkippedCount: 1, fileReadCount };
+    }
+    void buildGuide(key, result.guideInput, "preload");
+    return { queued: 1, guideSkippedCount: 0, fileReadCount };
   }
 
   /**
-   * The pull request Deck holds at `head`, on screen or preloaded, or
-   * undefined: another head, one that failed or one no longer kept.
+   * The pull request Deck holds at `head`, on screen or in the content
+   * cache, or undefined: another head, one that failed or one evicted.
    */
   async function held(
     pullRequest: string,
     head: string,
   ): Promise<DeckHeldPullRequest | undefined> {
-    const entry = [onScreen, ...preloaded.values()].find(
-      (candidate) =>
-        candidate?.pullRequest === pullRequest && candidate.head === head,
-    );
-    if (!entry) return undefined;
-    try {
-      const [diff, versions, guide] = await Promise.all([
-        entry.diff,
-        entry.versions,
-        entry.guide,
-      ]);
-      return { diff, guide, versions };
-    } catch {
-      return undefined;
+    const source = parseDeckPullRequestKey(pullRequest);
+    if (!source) return undefined;
+    const at = { ...source, headSha: head };
+    if (onScreen && sameHead(onScreen.key, at)) {
+      try {
+        const [diff, versions, guide] = await Promise.all([
+          onScreen.diff,
+          onScreen.input,
+          onScreen.guide,
+        ]);
+        return { diff, guide, versions };
+      } catch {
+        return undefined;
+      }
     }
+    const found = await cache.find(at);
+    return found
+      ? { diff: found.diff, guide: found.guide, versions: found.guideInput }
+      : undefined;
   }
 
   return {
@@ -595,24 +787,28 @@ export function createDeckService(options: { guides: GuideBuilds }) {
 
     /**
      * The pull request's diff from the merge base to the head, and its
-     * guide. The file list is read each time, so a new push is seen. The
-     * diff and guide are built again only when the pull request, its base
-     * or its head changed, unless a preload built them.
+     * guide. With the head the window's last sync saw, a pull request the
+     * cache holds at that head opens without the code host. Otherwise the
+     * file list is read, so a new push is seen, and the files are read only
+     * when the cache doesn't hold the pull request at its base and head.
      */
     openPullRequest,
 
     /**
-     * Reads the pull requests and queues their guide builds at low
-     * priority, so they open at once. Each read waits while a pull request
-     * opens, and a pull request kept at its head is not read again. One
-     * that fails is skipped; when every one fails, the first error is
-     * thrown, so a refused token still reaches the caller.
+     * Reads the pull requests into the cache and queues their guide builds
+     * at low priority, so they open at once. Each read waits while a pull
+     * request opens, and a pull request cached at its head is not read
+     * again. One that fails is skipped; when every one fails, the first
+     * error is thrown, so a refused token still reaches the caller. Once
+     * the connection is removed, from the moment the batch is asked for,
+     * the rest of it stops, and it throws `DeckConnectionRemoved`.
      */
     preloadPullRequests(
       source: DeckSource,
       requests: DeckOpenRequest[],
       codeHost: DeckCodeHost,
     ): Promise<DeckPreloaded> {
+      const work = beginWork(source, codeHost);
       const run = preloading.then(async () => {
         const total = {
           queued: 0,
@@ -621,16 +817,22 @@ export function createDeckService(options: { guides: GuideBuilds }) {
           failed: 0,
         };
         let firstError: unknown;
-        for (const request of requests) {
-          try {
-            const one = await preloadOne(source, request, codeHost);
-            total.queued += one.queued;
-            total.guideSkippedCount += one.guideSkippedCount;
-            total.fileReadCount += one.fileReadCount;
-          } catch (error) {
-            total.failed += 1;
-            firstError ??= error;
+        try {
+          for (const request of requests) {
+            checkConnection(work);
+            try {
+              const one = await preloadOne(work, request, codeHost);
+              total.queued += one.queued;
+              total.guideSkippedCount += one.guideSkippedCount;
+              total.fileReadCount += one.fileReadCount;
+            } catch (error) {
+              if (error instanceof DeckConnectionRemoved) throw error;
+              total.failed += 1;
+              firstError ??= error;
+            }
           }
+        } finally {
+          working.delete(work);
         }
         if (requests.length && total.failed === requests.length) {
           throw firstError;
@@ -640,6 +842,29 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       preloading = run.catch(() => {});
       return run;
     },
+
+    /**
+     * Forgets a removed connection, or every connection of a removed
+     * plugin: its pull request on screen goes, with its reads and guide
+     * build, and so do its cached entries. Its opens and preloads under way
+     * stop, and read, cache and show nothing more.
+     */
+    forgetConnection(source: DeckCacheForgotten) {
+      // The generation moves on first, so no work under way passes a check.
+      const forgotten = cache.forgetConnection(source);
+      const removed = new DeckConnectionRemoved();
+      for (const work of working) {
+        if (ofForgotten(work.source, source)) work.stop.abort(removed);
+      }
+      if (onScreen && ofForgotten(onScreen.key, source)) {
+        onScreen.stop.abort(removed);
+        show(undefined);
+      }
+      return forgotten;
+    },
+
+    /** The content cache, for Settings › Storage and syncs. */
+    cache,
 
     close: () => guides.close(),
   };

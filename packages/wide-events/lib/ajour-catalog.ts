@@ -3098,7 +3098,7 @@ export const catalog = defineCatalog({
      * Opening a pull request in Deck: its file list and both versions of
      * each changed file read through the code host plugin, each its own
      * `pull_request.load` or `pull_request.load_file` run, and the diff
-     * built from them.
+     * built from them, unless the content cache holds them (#781).
      */
     "deck.open": {
       kinds: ["command", "request"],
@@ -3106,6 +3106,8 @@ export const catalog = defineCatalog({
         ...pluginRequestReasons,
         /** Another pull request opened before this one's diff was built. */
         "replaced",
+        /** Its connection was removed before the pull request was shown. */
+        "connection_removed",
       ],
       fields: {
         ...requestFields,
@@ -3117,8 +3119,10 @@ export const catalog = defineCatalog({
           file_read_count: operational<number>(),
           /** The diff was the one kept for the pull request on screen. */
           kept: operational<boolean>(),
-          /** The diff was one a preload read. */
-          preloaded: operational<boolean>(),
+          /** The diff came from the content cache: no file was read. */
+          cached: operational<boolean>(),
+          /** The code host was asked for the file list. False when the cache answered at the head the window named. */
+          listed: operational<boolean>(),
           /** The guide's concerns. Absent when no guide was built. */
           concern_count: operational<number>(),
           /** False when the pipeline failed or didn't run, and the page shows the files A–Z. */
@@ -3134,18 +3138,21 @@ export const catalog = defineCatalog({
      * queued at low priority.
      */
     "deck.preload": {
-      kinds: ["request"],
+      // The window preloads after each sync, as a job of its own (#781).
+      kinds: ["request", "job"],
       reasons: [
         ...pluginRequestReasons,
         /** Never thrown by a preload; shared with `deck.open`'s prelude. */
         "replaced",
+        /** Its connection was removed, and the rest of the preload stopped. */
+        "connection_removed",
       ],
       fields: {
         ...requestFields,
         ...pluginOperationFields,
         deck: {
           pull_request_count: operational<number>(),
-          /** The guide builds queued. A pull request already kept is not read again. */
+          /** The guide builds queued. A pull request already cached is not read again. */
           queued_count: operational<number>(),
           /** Pull requests read and kept with no guide build: more hunks than a guide is built for. */
           guide_skipped_count: operational<number>(),
@@ -3164,7 +3171,7 @@ export const catalog = defineCatalog({
       reasons: [
         /** Another pull request opened before it was built. */
         "replaced",
-        /** A preload pushed out of the ones kept before it was built. */
+        /** Its pull request left the content cache before it was built. */
         "evicted",
         /** The local API stopped. */
         "closed",
@@ -3183,6 +3190,47 @@ export const catalog = defineCatalog({
       },
     },
 
+    /** Settings › Storage: the content cache's size and cap (#781). Never a path. */
+    "deck.storage_read": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: {
+          size_bytes: operational<number>(),
+          cap_bytes: operational<number>(),
+          entry_count: operational<number>(),
+        },
+      },
+    },
+    /** Settings › Storage: a new cap, and what eviction left under it. */
+    "deck.storage_update": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: {
+          size_bytes: operational<number>(),
+          cap_bytes: operational<number>(),
+          entry_count: operational<number>(),
+        },
+      },
+    },
+    /** Settings › Storage: Clear cache, and how many entries it removed. */
+    "deck.storage_clear": {
+      kinds: ["request", "command"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: {
+          removed_count: operational<number>(),
+          /** What is left: entries Windows held while they were deleted. */
+          size_bytes: operational<number>(),
+          cap_bytes: operational<number>(),
+          entry_count: operational<number>(),
+        },
+      },
+    },
     /**
      * An ask in Deck (#791): "more detail" on a concern, answered from the
      * cache or by a `deck.ask` turn of the pull request's conversation. The

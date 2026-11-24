@@ -56,6 +56,18 @@ describe("getSettingsGroups", () => {
     expect(labels.indexOf("MCP")).toBe(labels.indexOf("Vault") + 1);
   });
 
+  it("lists Storage last in the Data group, in both views", () => {
+    for (const view of ["wide", "narrow"] as const) {
+      const data = getSettingsGroups(view).find(
+        (group) => group.label === "Data",
+      )!;
+      expect(data.pages.at(-1)).toMatchObject({
+        to: "/settings/storage",
+        label: "Storage",
+      });
+    }
+  });
+
   it("lists Agents after MCP in the App group", () => {
     const app = getSettingsGroups("wide")[0]!;
     const labels = app.pages.map((page) => page.label);

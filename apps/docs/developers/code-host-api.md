@@ -121,10 +121,10 @@ The contract also defines operations for reviewing in Ajour: `getPullRequestCont
 
 When the user opens a pull request in Deck, Ajour calls `getPullRequestContent`, then `getFileContent` for each changed file: at `baseSha` with `previousPath` (or `path`) unless the file was added, and at `headSha` with `path` unless it was removed. It builds the diff itself, with Review Deck's `buildDiff`, so its hunk ids are Review Deck's.
 
-- `getPullRequestContent` returns `headSha`, `baseSha` and at most 3,000 `files`. `baseSha` is the commit the head's diff starts from, the merge base of the base branch and the head, not the base branch's tip. Ajour reads each file's `path`, `previousPath` and `status` only, and ignores `patch`, which you may leave out.
+- `getPullRequestContent` returns `headSha`, `baseSha` and at most 3,000 `files`. `baseSha` is the commit the head's diff starts from, the merge base of the base branch and the head, not the base branch's tip. On Azure DevOps it is the latest iteration's common commit, the comparison Review Deck shows, and `headSha` that iteration's source commit. Ajour reads each file's `path`, `previousPath` and `status` only, and ignores `patch`, which you may leave out.
 - `getFileContent` returns `{ kind: "text", content }` with at most 5,000,000 characters, `{ kind: "binary" }` for a binary file or one too long to send, or `{ kind: "missing" }` when the file isn't at that commit.
 
-Ajour reads three files at a time. The GitHub plugin implements both.
+Ajour reads three files at a time. The GitHub and Azure DevOps plugins implement both.
 
 The review page also calls, beside the diff:
 
