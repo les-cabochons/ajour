@@ -153,6 +153,7 @@ import {
   deckConsentRevokeRequestSchema,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
+  parseDeckPullRequestKey,
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
@@ -1979,6 +1980,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       deckAsks.observe(event);
       mcpBridge.publish("agent-turn", event);
     },
+    // Each turn is sent only while its repository is allowed with its agent.
+    admitsTurn: (pullRequest, cli) => deckAsks.allowedWith(pullRequest, cli),
     ...(options.agentConversationIdleMs === undefined
       ? {}
       : { conversationIdleMs: options.agentConversationIdleMs }),
@@ -2044,7 +2047,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }
   const deckReads = createDeckAgentReads({
     deck: deckService,
-    allowed: (pullRequest) => deckAsks.allowedNow(pullRequest),
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
     conversation: deckConversation,
   });
 
@@ -4771,6 +4775,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         connection: { id: payload.connectionId },
       });
       if (!(await storage.revokeDeckConsent(payload))) unit.refuse("not_found");
+      // Its conversation closes: the running turn and those queued stop.
+      const closed = agentRunner.closeConversationWhere((pullRequest) => {
+        const source = parseDeckPullRequestKey(pullRequest);
+        return (
+          source?.pluginId === payload.pluginId &&
+          source.connectionId === payload.connectionId &&
+          source.repository === payload.repository
+        );
+      });
+      unit.set({ deck: { conversation_closed: closed } });
       writeJson(response, 200, { consents: await storage.getDeckConsents() });
     },
 

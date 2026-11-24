@@ -591,8 +591,9 @@ export const catalog = defineCatalog({
           resume_count: operational<number>(),
           /** Turns that rebound the conversation to a new head of its pull request. */
           head_change_count: operational<number>(),
+          /** `revoked`: the user took the repository back from its agent. */
           close_reason: operational<
-            "replaced" | "idle" | "shutdown" | "failed"
+            "replaced" | "idle" | "shutdown" | "failed" | "revoked"
           >(),
         },
         cleanup: {
@@ -610,7 +611,14 @@ export const catalog = defineCatalog({
      */
     "agent.turn": {
       kinds: ["job"],
-      reasons: ["cli_failed", "cli_exited", "mcp_failed", "stalled"],
+      reasons: [
+        "cli_failed",
+        "cli_exited",
+        "mcp_failed",
+        "stalled",
+        /** Refused: the repository isn't allowed with the conversation's agent now (#791). */
+        "repository_not_allowed",
+      ],
       fields: {
         agent: {
           turn_id: operational(),
@@ -629,7 +637,12 @@ export const catalog = defineCatalog({
           text_piece_count: operational<number>(),
           tool_call_count: operational<number>(),
           stop_reason: operational<
-            "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled"
+            | "user"
+            | "replaced"
+            | "shutdown"
+            | "interrupt_timeout"
+            | "stalled"
+            | "revoked"
           >(),
           exit_code: operational<number | null>(),
         },
@@ -3223,6 +3236,8 @@ export const catalog = defineCatalog({
         ...requestFields,
         plugin: { id: operational() },
         connection: { id: operational() },
+        /** The repository's conversation was open, and closed with its turns. */
+        deck: { conversation_closed: operational<boolean>() },
       },
     },
 

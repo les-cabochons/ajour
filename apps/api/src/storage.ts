@@ -123,6 +123,7 @@ import { withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
   agentRunnerSettingsSchema,
+  type AgentCliId,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
 import type { DeckAgentConsent } from "../../../packages/shared/deck.ts";
@@ -461,6 +462,12 @@ export interface StoredMcpClient {
 export interface McpClientPullRequestBinding {
   pullRequest: string;
   head: string;
+  /**
+   * The agent the conversation runs, set when its client is created and
+   * never changed: its reads need the repository's consent for this agent
+   * (#791). A client stored without one reads nothing.
+   */
+  cli: AgentCliId;
 }
 
 interface StoredMcpState {
@@ -2898,7 +2905,8 @@ export class AppApiStorage {
 
   /**
    * Binds a conversation's client to its pull request's new head (#778).
-   * False when no active client bound to that pull request has the id.
+   * False when no active client bound to that pull request and agent has
+   * the id. The agent never changes.
    */
   async rebindMcpClient(
     clientId: string,
@@ -2909,7 +2917,8 @@ export class AppApiStorage {
         (client) =>
           client.id === clientId &&
           client.revokedAt === undefined &&
-          client.pullRequest?.pullRequest === binding.pullRequest,
+          client.pullRequest?.pullRequest === binding.pullRequest &&
+          client.pullRequest.cli === binding.cli,
       );
       if (!target) return { nextState: state, result: false };
       return {
@@ -2924,6 +2933,7 @@ export class AppApiStorage {
                     pullRequest: {
                       pullRequest: binding.pullRequest,
                       head: binding.head,
+                      cli: binding.cli,
                     },
                   }
                 : client,

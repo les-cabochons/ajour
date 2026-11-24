@@ -1999,7 +1999,7 @@ describe("the MCP endpoint with MCP off", () => {
       const leftover = await createMcpClient(
         new AppApiStorage(statePath),
         "Claude Code, pull request conversation",
-        { pullRequest: PR },
+        { pullRequest: { ...PR, cli: "claude-code" } },
       );
 
       const api = await startConversationApi(() => [], { statePath });

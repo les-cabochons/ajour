@@ -120,7 +120,11 @@ describe("MCP clients", () => {
 });
 
 describe("a conversation's client", () => {
-  const binding = { pullRequest: "pr-482", head: "a41c9e2" };
+  const binding = {
+    pullRequest: "pr-482",
+    head: "a41c9e2",
+    cli: "claude-code",
+  } as const;
 
   it("drops a client whose pull request binding can't be read, rather than give it every tool", async () => {
     const statePath = await tempStatePath();
@@ -158,7 +162,7 @@ describe("a conversation's client", () => {
     expect((await authenticate(user.token)).kind).toBe("ok");
   });
 
-  it("rebinds to a new head of its own pull request only", async () => {
+  it("rebinds to a new head of its own pull request and agent only", async () => {
     const storage = new AppApiStorage(await tempStatePath());
     const created = await createMcpClient(storage, "Claude Code", {
       pullRequest: binding,
@@ -173,8 +177,16 @@ describe("a conversation's client", () => {
     ).toBe(true);
     expect(
       await storage.rebindMcpClient(created.client.id, {
+        ...binding,
         pullRequest: "pr-485",
         head: "b52d0f3",
+      }),
+    ).toBe(false);
+    expect(
+      await storage.rebindMcpClient(created.client.id, {
+        ...binding,
+        head: "b52d0f3",
+        cli: "codex",
       }),
     ).toBe(false);
     expect(await storage.rebindMcpClient(user.client.id, binding)).toBe(false);

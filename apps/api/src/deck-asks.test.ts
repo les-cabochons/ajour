@@ -1,12 +1,13 @@
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import {
   fakeCliAdapter,
+  fakeCodexAdapter,
   type FakeConversation,
 } from "./test-support/fake-cli-adapter.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
@@ -133,7 +134,7 @@ const answer = (...pieces: string[]) => [
 /**
  * The API with the fake GitHub plugin and the fake CLI as Claude Code,
  * pull request #482 open in Deck, and the window's event stream open with
- * MCP off.
+ * MCP off. Codex is installed too, so Settings can pick it.
  */
 async function startAskApi(conversation: FakeConversation) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-ask-"));
@@ -141,9 +142,11 @@ async function startAskApi(conversation: FakeConversation) {
   const report = path.join(root, "report.jsonl");
   const bin = path.join(root, "bin");
   await mkdir(bin);
-  await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
-    mode: 0o755,
-  });
+  for (const name of ["claude", "codex"]) {
+    await writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
+  }
   let mcpUrl = "";
   const api = await startLocalApi({
     pluginRuntime: new InProcessPluginRuntime(),
@@ -154,6 +157,11 @@ async function startAskApi(conversation: FakeConversation) {
     agentCliPath: bin,
     agentCliAdapters: [
       fakeCliAdapter([{ exit: 0 }], report, () => mcpUrl, conversation),
+      fakeCodexAdapter(
+        report,
+        () => mcpUrl,
+        () => [{ codexReadTurn: true }],
+      ),
     ],
   });
   stops.push(api.stop);
@@ -207,10 +215,31 @@ async function startAskApi(conversation: FakeConversation) {
         ...body,
       });
     },
-    consent() {
+    consent(cli = "claude-code") {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
-        cli: "claude-code",
+        cli,
+      });
+    },
+    /** Picks the agent in Settings › Agents. */
+    pick(cli: string) {
+      return apiRequest(api.baseUrl, "/api/agents/settings", {
+        cli,
+        browserMode: "my-chrome",
+      });
+    },
+    /** Starts a turn through the runner's own route, as a core task. */
+    startTurn(message: string) {
+      return apiRequest(api.baseUrl, "/api/agent-runs", {
+        task: "deck.ask",
+        pullRequest: deckPullRequestKey({
+          pluginId: "github",
+          connectionId,
+          repository: REPOSITORY,
+          number: 482,
+        }),
+        head: HEAD,
+        message,
       });
     },
     consents() {
@@ -222,6 +251,19 @@ async function startAskApi(conversation: FakeConversation) {
         connectionId,
         repository: REPOSITORY,
       });
+    },
+    /** The turn's end. */
+    async endingOf(turnId: string) {
+      await stream.waitFor(
+        "agent-turn",
+        (event) =>
+          (event as AgentTurnEvent).type === "ended" &&
+          (event as { turnId: string }).turnId === turnId,
+      );
+      return turnEvents().find(
+        (event): event is Extract<AgentTurnEvent, { type: "ended" }> =>
+          event.type === "ended" && event.turnId === turnId,
+      )!;
     },
     /** The turn's text, once it ended. */
     async answerOf(turnId: string) {
@@ -375,16 +417,19 @@ describe("consent for one agent", () => {
   );
 
   it(
-    "refuses the agent's reads once the repository is revoked, even in a turn already running",
+    "refuses the running agent's reads once the repository is allowed with another agent",
     { timeout: 20_000 },
     async () => {
       const api = await startAskApi(() => [
         { readTurn: true },
-        { wait: 1500 },
+        { wait: 2500 },
         {
           mcp: {
             method: "tools/call",
-            params: { name: "read_guide", arguments: {} },
+            params: {
+              name: "read_file",
+              arguments: { path: "src/api.ts", side: "head" },
+            },
           },
         },
         { stream: ["Done."] },
@@ -395,7 +440,9 @@ describe("consent for one agent", () => {
       const asked = await api.ask();
       await api.waitForStarted(asked.body.turn.id);
 
-      await api.revoke();
+      // Claude Code still runs; the repository is now allowed with Codex only.
+      expect((await api.pick("codex")).status).toBe(200);
+      expect((await api.consent("codex")).status).toBe(200);
       await api.answerOf(asked.body.turn.id);
 
       const [read] = await api.mcpReplies();
@@ -403,6 +450,78 @@ describe("consent for one agent", () => {
       expect(read!.reply.result.content[0].text).toMatch(
         /no longer allows Ajour/,
       );
+      expect(JSON.stringify(read!.reply)).not.toContain("TWO");
+    },
+  );
+
+  it(
+    "sends no queued turn to an agent the repository is no longer allowed with",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [
+        { readTurn: true },
+        { wait: 2500 },
+        { stream: ["First."] },
+        { result: true },
+        ...answer("Second."),
+        { readTurn: true },
+      ]);
+      await api.consent();
+      const first = await api.ask();
+      await api.waitForStarted(first.body.turn.id);
+      const second = await api.ask({ question: "What about errors?" });
+      const third = await api.startTurn("And the tests?");
+      expect(second.status).toBe(201);
+      expect(third.status).toBe(201);
+
+      await api.pick("codex");
+      await api.consent("codex");
+
+      expect(await api.answerOf(first.body.turn.id)).toBe("First.");
+      expect((await api.endingOf(second.body.turn.id)).outcome).toBe("failed");
+      expect((await api.endingOf(third.body.id)).outcome).not.toBe("done");
+      expect(await api.turnsRead()).toHaveLength(1);
+    },
+  );
+});
+
+describe("revoke", () => {
+  it(
+    "stops the repository's turns, the running one and those queued behind it, through either route",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [
+        { readTurn: true },
+        { wait: 5000 },
+        { stream: ["Late."] },
+        { result: true },
+        ...answer("Second."),
+        ...answer("Third."),
+        { readTurn: true },
+      ]);
+      await api.consent();
+      const first = await api.ask();
+      await api.waitForStarted(first.body.turn.id);
+      const second = await api.ask({ question: "What about errors?" });
+      const third = await api.startTurn("And the tests?");
+      expect(second.body.turn.state).toBe("waiting");
+      expect(third.body.state).toBe("waiting");
+      // The agent has the first turn and works on it.
+      await vi.waitFor(async () =>
+        expect(await api.turnsRead()).toHaveLength(1),
+      );
+
+      expect((await api.revoke()).status).toBe(200);
+
+      expect((await api.endingOf(first.body.turn.id)).outcome).toBe(
+        "cancelled",
+      );
+      expect((await api.endingOf(second.body.turn.id)).outcome).toBe(
+        "cancelled",
+      );
+      expect((await api.endingOf(third.body.id)).outcome).toBe("cancelled");
+      expect(await api.answerOf(first.body.turn.id)).toBe("");
+      expect(await api.turnsRead()).toHaveLength(1);
     },
   );
 });

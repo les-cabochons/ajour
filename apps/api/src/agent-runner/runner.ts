@@ -8,6 +8,7 @@ import type {
   McpClientCreateResponse,
 } from "../../../../packages/shared/agent-tools.ts";
 import type {
+  AgentCliId,
   AgentCliStatus,
   AgentRun,
   AgentRunnerOverview,
@@ -150,6 +151,11 @@ export interface AgentRunnerOptions {
   killGraceMs?: number;
   /** Where each conversation turn's events go: the window's event stream. */
   publishTurnEvent?: (event: AgentTurnEvent) => void;
+  /**
+   * Whether the user allows a pull request's repository with an agent,
+   * asked before each turn is sent to it. Without it, no turn is sent.
+   */
+  admitsTurn?: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
   /** How long a conversation with no turn stays open. Defaults to 5 minutes. */
   conversationIdleMs?: number;
   /** How long an interrupted turn has before its process is ended. Defaults to 5 seconds. */
@@ -251,6 +257,7 @@ export class AgentRunner {
       ajourMcpUrl: options.ajourMcpUrl,
       events: options.events,
       publish: options.publishTurnEvent ?? (() => undefined),
+      admits: options.admitsTurn ?? (async () => false),
       ...(options.conversationIdleMs === undefined
         ? {}
         : { idleMs: options.conversationIdleMs }),
@@ -277,6 +284,14 @@ export class AgentRunner {
   /** Stops a turn that waits or runs. False when it isn't going. */
   cancelTurn(turnId: string): boolean {
     return this.conversations.cancelTurn(turnId);
+  }
+
+  /**
+   * Closes the conversation about a pull request `pullRequest` matches,
+   * stopping its turns, as revoking its repository does. False when none.
+   */
+  closeConversationWhere(pullRequest: (key: string) => boolean): boolean {
+    return this.conversations.closeWhere(pullRequest);
   }
 
   private now() {

@@ -108,9 +108,11 @@ export function createDeckAsks(options: DeckAsksOptions) {
       question ?? null,
     ]);
 
-  /** Whether the user allowed the repository with the agent picked now. */
-  async function allowed(source: DeckPullRequestSource) {
-    const { cli } = await options.storage.getAgentRunnerSettings();
+  /** Whether the user allowed the repository with this agent. */
+  async function consentedWith(
+    source: DeckPullRequestSource,
+    cli: AgentCliId | null,
+  ) {
     if (!cli) return false;
     const consents = await options.storage.getDeckConsents();
     return consents.some(
@@ -130,7 +132,8 @@ export function createDeckAsks(options: DeckAsksOptions) {
    * as the turn's start would.
    */
   async function requireConsent(source: DeckPullRequestSource) {
-    if (await allowed(source)) return;
+    const { cli: picked } = await options.storage.getAgentRunnerSettings();
+    if (await consentedWith(source, picked)) return;
     const cli = await options.selectedCli();
     if (!cli) throw new AgentRunError(PICK_AN_AGENT, 400);
     if (!cli.installed) {
@@ -149,10 +152,14 @@ export function createDeckAsks(options: DeckAsksOptions) {
   }
 
   return {
-    /** Whether a pull request's repository is allowed now, for the agent's reads. */
-    async allowedNow(pullRequest: string) {
+    /**
+     * Whether a pull request's repository is allowed now with `cli`, the
+     * agent a conversation runs: asked before each turn is sent to it, and
+     * at each of its reads. Another agent's consent never counts.
+     */
+    async allowedWith(pullRequest: string, cli: AgentCliId | undefined) {
       const source = parseDeckPullRequestKey(pullRequest);
-      return source !== undefined && (await allowed(source));
+      return source !== undefined && (await consentedWith(source, cli ?? null));
     },
 
     /**

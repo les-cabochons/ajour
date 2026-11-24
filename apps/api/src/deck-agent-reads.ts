@@ -14,7 +14,8 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * `read_threads` and `read_guide`, the tools of a conversation's client.
  * Each answers for the client's binding only, the pull request and head the
  * conversation is about, from what Deck holds for it: never another pull
- * request, another head, or the user's own data (ADR 0021).
+ * request, another head, or the user's own data (ADR 0021). Each needs the
+ * repository's consent for the binding's agent, never the one picked now.
  */
 
 /** A read the binding can't answer, with a sentence for the agent. */
@@ -27,8 +28,11 @@ export interface DeckAgentReadsOptions {
       head: string,
     ): Promise<DeckHeldPullRequest | undefined>;
   };
-  /** Whether the user still allows the pull request's repository with this agent. */
-  allowed(pullRequest: string): Promise<boolean>;
+  /**
+   * Whether the user still allows the binding's repository with the
+   * binding's agent, the one its conversation runs.
+   */
+  allowed(binding: McpClientPullRequestBinding): Promise<boolean>;
   /** The pull request's threads, read through its code host plugin. */
   conversation(
     source: DeckPullRequestSource,
@@ -37,7 +41,7 @@ export interface DeckAgentReadsOptions {
 
 export function createDeckAgentReads(options: DeckAgentReadsOptions) {
   async function heldFor(binding: McpClientPullRequestBinding) {
-    if (!(await options.allowed(binding.pullRequest))) {
+    if (!(await options.allowed(binding))) {
       throw new DeckReadRefused(
         "The user no longer allows Ajour to send this repository's code to you. Stop, and say only that you can't read it now.",
       );
