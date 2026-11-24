@@ -35,7 +35,17 @@ Settling a pull request never writes to the code host.
 
 ## Open a pull request
 
-Click a pull request for its review page. Under the title, a status line reads its state, its checks and its approvals, such as **Open · 2 checks pending · 1 approval**. Click the checks for each one and its state, and open it on its page; click the approvals for each reviewer's vote. The author's **Description** is folded away until you open it. Then come its changes, as a guide: the hunks grouped into concerns, numbered in reading order, each with a title and a one-line reason. Ajour builds the guide on your device, from the code, the way Review Deck does, with no agent. **Files A–Z** shows every changed file in path order instead, and **Guide** goes back. Long lines wrap. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both.
+Click a pull request for its review page. Under the title, a status line reads its state, its checks and its approvals, such as **Open · 2 checks pending · 1 approval**. Click the checks for each one and its state, and open it on its page; click the approvals for each reviewer's vote.
+
+The **Summary** comes next, so you rarely need the description. It starts with the problem the pull request fixes: the title of the first issue it closes or is linked to on GitHub, or of its linked work item on Azure DevOps, then each linked ticket and its state, which opens on the code host. Without one it says **No linked ticket**. Then come the kinds of change the files tell (Tests, Docs, Dependencies, Build), and, when there are any:
+
+- **Risky areas**: migrations, auth and security, deletion, and locking and concurrency, with their files;
+- **Tests**: each concern's test files, and the changed code no test in the pull request covers;
+- **Leftovers** the pull request adds: TODO and FIXME lines, debug output, commented-out code and skipped tests.
+
+Click a line to go to its first hunk. Ajour builds the summary with the guide, on your device, by rules, with no agent. Each concern shows its kinds under its title too.
+
+The author's **Description** is folded away until you open it. Then come its changes, as a guide: the hunks grouped into concerns, numbered in reading order, each with a title and a one-line reason. Ajour builds the guide on your device, from the code, the way Review Deck does, with no agent. **Files A–Z** shows every changed file in path order instead, and **Guide** goes back. Long lines wrap. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both.
 
 Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. Viewed marks last while the pull request stays open. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one; a folded hunk folds its threads too. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. The diff is read when you open the pull request: new commits show the next time you open it. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
