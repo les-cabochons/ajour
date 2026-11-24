@@ -111,7 +111,7 @@ export function PullRequestReview({
           : undefined,
     [since.state, reviewedOnScreen],
   );
-  const { retry: retryDiff } = diff;
+  const { refresh: refreshDiff } = diff;
   const { retry: retryConversation } = conversation;
   const { retry: retryChecks } = checks;
   const { retry: retryVersions } = versions;
@@ -121,11 +121,12 @@ export function PullRequestReview({
   const [syncedAtOpen, setSyncedAtOpen] = useState(syncedHead);
   const refresh = useCallback(() => {
     setSyncedAtOpen(syncedHead);
-    retryDiff();
+    // The newest head, wherever it is: the last sync may not know it yet.
+    refreshDiff();
     retryConversation();
     retryChecks();
     retryVersions();
-  }, [syncedHead, retryDiff, retryConversation, retryChecks, retryVersions]);
+  }, [syncedHead, refreshDiff, retryConversation, retryChecks, retryVersions]);
 
   const versionsView: ReviewVersionsView = {
     state: versions.state,

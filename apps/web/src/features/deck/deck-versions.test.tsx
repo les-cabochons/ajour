@@ -407,17 +407,52 @@ it("shows a banner when a push comes in during the review, and keeps the diff un
       { number: 3, headSha: "three", pushedAt: 500, commits: [] },
     ],
   });
+  vi.mocked(api.openDeckPullRequest).mockImplementation(
+    async (_plugin, _connection, request) => diffAt(request.headSha ?? "three"),
+  );
   fireEvent.click(within(banner).getByRole("button", { name: "Refresh" }));
 
+  // Refresh finds the head itself: the content cache would answer a head
+  // the page names with the diff it holds there.
   await waitFor(() =>
     expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
       repository: "acme/api",
       number,
-      headSha: "three",
     }),
   );
   await within(versionsBar(changes)).findByText("v3");
   expect(screen.queryByRole("status", { name: "New pushes" })).toBeNull();
+});
+
+it("opens the newest head on Refresh when the versions know a push the last sync hasn't seen", async () => {
+  vi.mocked(api.openDeckPullRequest).mockImplementation(
+    async (_plugin, _connection, request) => diffAt(request.headSha ?? "three"),
+  );
+  // The last sync saw v2, which the page opens from the content cache; the
+  // versions already list v3.
+  vi.mocked(api.readPullRequestVersions).mockResolvedValue({
+    versions: [
+      ...VERSIONS.versions,
+      { number: 3, headSha: "three", pushedAt: 500, commits: [] },
+    ],
+  });
+  const changes = await renderReviewPage();
+  const banner = await screen.findByRole("status", { name: "New pushes" });
+  expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
+    repository: "acme/api",
+    number,
+    headSha: "two",
+  });
+
+  fireEvent.click(within(banner).getByRole("button", { name: "Refresh" }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("status", { name: "New pushes" })).toBeNull(),
+  );
+  expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
+    repository: "acme/api",
+    number,
+  });
 });
 
 it("says when the code host doesn't list its versions, and still shows the diff", async () => {

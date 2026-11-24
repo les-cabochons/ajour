@@ -52,7 +52,9 @@ type Read<T> = (
  * when it opens. A sync that finds a new push doesn't read it again: Retry,
  * or opening the pull request again, does. `withHead` sends the head the
  * last sync saw, so the content cache answers without the code host when it
- * holds that head (#781).
+ * holds that head (#781). `refresh` reads it again without that head, so
+ * the local API finds the newest one: the last sync may not have seen a
+ * push the page already knows of.
  */
 function usePullRequestRead<T>(
   pullRequest: LocalPullRequest | undefined,
@@ -63,7 +65,7 @@ function usePullRequestRead<T>(
   const [state, setState] = useState<PullRequestReadState<T>>({
     status: "loading",
   });
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState({ count: 0, newestHead: false });
   const pluginId = pullRequest?.pluginId;
   const connectionId = pullRequest?.connectionId;
   const repository = pullRequest?.facts.repository;
@@ -76,7 +78,9 @@ function usePullRequestRead<T>(
     let current = true;
     setState({ status: "loading" });
     const head =
-      withHead && headSha.current ? { headSha: headSha.current } : {};
+      withHead && !attempt.newestHead && headSha.current
+        ? { headSha: headSha.current }
+        : {};
     read(pluginId, connectionId, { repository, number, ...head }).then(
       (value) => {
         if (current) setState({ status: "ready", value });
@@ -98,8 +102,15 @@ function usePullRequestRead<T>(
     fallback,
     withHead,
   ]);
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-  return { state, retry };
+  const retry = useCallback(
+    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: false })),
+    [],
+  );
+  const refresh = useCallback(
+    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: true })),
+    [],
+  );
+  return { state, retry, refresh };
 }
 
 /** The pull request's diff from the merge base to the head, and its guide, as the local API builds them. */
