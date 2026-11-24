@@ -142,7 +142,8 @@ export const deckSummaryLineSchema = z.object({
 });
 export type DeckSummaryLine = z.infer<typeof deckSummaryLineSchema>;
 
-const summaryLinesSchema = z.array(deckSummaryLineSchema).max(500);
+/** As many as a guide's concerns: test coverage has a line per concern. */
+const summaryLinesSchema = z.array(deckSummaryLineSchema).max(3_000);
 
 /**
  * What Deck shows in place of the description (#662). The rules fill it in

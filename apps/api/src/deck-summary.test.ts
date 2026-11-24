@@ -98,3 +98,26 @@ it("fills in the tickets of a guide whose tickets couldn't be read, keeping the 
   expect(read.summary.leftovers).toEqual(unread.summary.leftovers);
   expect(read.concerns).toEqual(unread.concerns);
 });
+
+it("keeps a test coverage line for each of as many concerns as a guide holds", () => {
+  const concerns = Array.from({ length: 3_000 }, (_, index) => ({
+    id: `g${index + 1}`,
+    title: `Concern ${index + 1}`,
+    rationale: "",
+    hunkIds: [`src/${index}.ts#0`],
+    kinds: [],
+  }));
+  const lines = concerns.map((concern) => ({
+    id: `untested:${concern.id}`,
+    text: `No test for src/${concern.id}.ts`,
+    hunkIds: concern.hunkIds,
+    concernId: concern.id,
+  }));
+
+  const guide = guideOf(
+    { concerns, summary: { ...built.summary, tests: lines, untested: lines } },
+    [],
+  );
+
+  expect(guide.summary.untested).toHaveLength(3_000);
+});
