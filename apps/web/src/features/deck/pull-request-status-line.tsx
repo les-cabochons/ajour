@@ -35,7 +35,11 @@ import type { PullRequestReadState } from "./use-pull-request-read";
 /** A check's mark: a ring while pending, a tick once passed, a cross once failed. */
 function CheckMark({ state }: { state: CodeHostCheckRunState }) {
   if (state === "pending")
-    return <span aria-hidden="true" className="deck-status-pending" />;
+    return (
+      <span aria-hidden="true" className="deck-check-mark">
+        <span className="deck-status-pending" />
+      </span>
+    );
   const Icon =
     state === "success" ? Passed : state === "failure" ? Failed : Skipped;
   return (

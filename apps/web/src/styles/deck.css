@@ -102,10 +102,13 @@
     border-radius: 50%;
   }
 
+  /* A check's mark, ring or icon, in one 14px box so names line up. */
   .deck-check-mark {
+    display: inline-grid;
     width: 0.875rem;
     height: 0.875rem;
     flex: none;
+    place-items: center;
   }
 
   .deck-check-mark[data-tone="success"] {
