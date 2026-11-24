@@ -176,6 +176,10 @@ _Avoid_: Description, overview, AI summary
 A question to the agent asked in place, anchored to selected lines, a concern or a summary line. Its answer streams in below the anchor.
 _Avoid_: Prompt, chat message, query
 
+**Local clone**:
+The user's own Git clone of a pull request's repository, on this computer or in a WSL distribution, chosen once per repository. Deck fetches the pull request into it, into refs of Ajour's own, and an ask's agent reads it at the pull request's head, in a worktree Ajour makes and removes. See ADR 0023.
+_Avoid_: Checkout, repository folder (a project's folder for hand offs), workspace
+
 **Version**:
 One push of a pull request on GitHub, or one iteration on Azure DevOps, with its commits.
 _Avoid_: Iteration (outside Azure DevOps), revision, update

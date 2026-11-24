@@ -66,4 +66,8 @@ Deck's questions and chat about a pull request run as a conversation with the co
 
 On Windows, `~` is your user folder, such as `C:\Users\you`. If you set `XDG_DATA_HOME`, OpenCode uses `$XDG_DATA_HOME/opencode/` instead. To remove these conversations, quit Ajour and delete their files there, or use the CLI's own commands. Deleting them doesn't remove what the agent already sent to its provider. Timesheet agent tasks on Claude Code and Codex save no conversation: Ajour runs Claude Code with `--no-session-persistence` and Codex with `--ephemeral`. OpenCode has no such option, so it keeps each timesheet task's run in its session database too.
 
+### Your local clones
+
+When you let Deck's answers read your clone of a repository, Ajour fetches the pull request into that clone with your Git sign-in, under its own references, `refs/ajour/deck/…`, and checks it out in a folder under `deck-cache/worktrees/` in Ajour's data folder (in a WSL distribution, under `~/.cache/ajour/deck-worktrees/`). It removes that folder and its reference when it no longer holds the pull request, and what an earlier run left when it starts. **Settings › Agents › Local clones** forgets a clone. The commits fetched stay in your clone, as any fetch's do; `git gc` there removes them once nothing refers to them.
+
 To remove all desktop data, quit Ajour and delete the folder listed above and any copies you made. Uninstalling the application may leave that folder behind. To clear only the separate agent browser's sessions, close that browser and Ajour, then delete `agent-browser-profile/`. Clear sessions in your own browser separately if an agent used it. Revoke tokens and sign-ins at the service that issued them when you no longer want them to work.
