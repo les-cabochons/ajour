@@ -3,12 +3,14 @@ import type {
   CodeHostOperationRequest,
   CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
-import type {
-  DeckFile,
-  DeckGuide,
-  DeckOpenedPullRequest,
-  DeckOpenRequest,
-  DeckPullRequestDiff,
+import {
+  DECK_GUIDE_HUNK_LIMIT,
+  type DeckFile,
+  type DeckGuide,
+  type DeckGuideSkipped,
+  type DeckOpenedPullRequest,
+  type DeckOpenRequest,
+  type DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
@@ -30,7 +32,8 @@ import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
  * vendored pipeline, in the guide builds' worker thread (#782). The pull
  * request on screen is kept in memory until another one opens, and the last
  * preloaded ones until they open or newer preloads push them out. The disk
- * cache is a later ticket (#781).
+ * cache is a later ticket (#781). A pull request with more hunks than a
+ * guide is built for gets none, and the pipeline doesn't run (#790).
  */
 
 /** The code host operations Deck calls, bound to one connection. */
@@ -56,6 +59,8 @@ export interface DeckOpened {
 export interface DeckPreloaded {
   /** The guide builds queued. A pull request already kept is not read again. */
   queued: number;
+  /** The pull requests read and kept with no guide build: they have too many hunks. */
+  guideSkipped: number;
   fileReadCount: number;
   /** The pull requests that couldn't be read, and were skipped. */
   failed: number;
@@ -149,6 +154,22 @@ async function runWhenFree<
       if (replaced()) throw new DeckBuildReplaced();
     }
   }
+}
+
+/**
+ * Why the diff gets no guide: it has more hunks than a guide is built for,
+ * so neither syntax parsing nor scoring runs (#790).
+ */
+function guideSkippedFor(
+  diff: DeckPullRequestDiff,
+): DeckGuideSkipped | undefined {
+  const hunks = diff.files.reduce(
+    (count, file) => count + file.hunks.length,
+    0,
+  );
+  return hunks > DECK_GUIDE_HUNK_LIMIT
+    ? { reason: "too_many_hunks", hunkLimit: DECK_GUIDE_HUNK_LIMIT }
+    : undefined;
 }
 
 /** One version of a changed file: its text, or that it is binary. */
@@ -287,7 +308,10 @@ async function buildPullRequestDiff(
 interface Entry {
   key: string;
   diff: Promise<DeckPullRequestDiff>;
-  /** Null when the pipeline failed. It rejects only when the build was cancelled. */
+  /**
+   * Null when the pipeline failed, or didn't run for too many hunks. It
+   * rejects only when the build was cancelled.
+   */
   guide: Promise<DeckGuide | null>;
   stop: AbortController;
 }
@@ -357,9 +381,15 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       throw error;
     }
     if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
+    const guideSkipped = guideSkippedFor(diff);
     // A failed guide isn't kept: opening it again reads and builds it again.
-    if (guide === null && onScreen === entry) onScreen = undefined;
-    return { opened: { ...diff, guide }, ...facts };
+    if (guide === null && !guideSkipped && onScreen === entry) {
+      onScreen = undefined;
+    }
+    return {
+      opened: { ...diff, guide, ...(guideSkipped ? { guideSkipped } : {}) },
+      ...facts,
+    };
   };
 
   async function openPullRequest(
@@ -431,7 +461,11 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       key,
       diff: built.then((result) => result.diff),
       guide: built.then((result) =>
-        guideOrNull(guides.build(key, result.guideInput, "open", stop.signal)),
+        guideSkippedFor(result.diff)
+          ? null
+          : guideOrNull(
+              guides.build(key, result.guideInput, "open", stop.signal),
+            ),
       ),
       stop,
     };
@@ -454,6 +488,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
   ): Promise<Omit<DeckPreloaded, "failed">> {
+    const none = { queued: 0, guideSkipped: 0 };
     await opensDone();
     const content = await runWhenFree(
       codeHost,
@@ -463,7 +498,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     );
     const key = keyOf(source, request, content);
     const kept = () => onScreen?.key === key || preloaded.has(key);
-    if (kept()) return { queued: 0, fileReadCount: 0 };
+    if (kept()) return { ...none, fileReadCount: 0 };
     const stop = new AbortController();
     const { diff, guideInput, fileReadCount } = await buildPullRequestDiff(
       codeHost,
@@ -473,11 +508,14 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
     // An open of the same pull request may have read it meanwhile.
-    if (kept()) return { queued: 0, fileReadCount };
+    if (kept()) return { ...none, fileReadCount };
+    const skipped = guideSkippedFor(diff) !== undefined;
     const entry: Entry = {
       key,
       diff: Promise.resolve(diff),
-      guide: guideOrNull(guides.build(key, guideInput, "preload")),
+      guide: skipped
+        ? Promise.resolve(null)
+        : guideOrNull(guides.build(key, guideInput, "preload")),
       stop,
     };
     entry.guide.catch(() => {});
@@ -487,7 +525,9 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       preloaded.delete(oldKey);
       evict(old);
     }
-    return { queued: 1, fileReadCount };
+    return skipped
+      ? { queued: 0, guideSkipped: 1, fileReadCount }
+      : { queued: 1, guideSkipped: 0, fileReadCount };
   }
 
   return {
@@ -512,12 +552,18 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       codeHost: DeckCodeHost,
     ): Promise<DeckPreloaded> {
       const run = preloading.then(async () => {
-        const total = { queued: 0, fileReadCount: 0, failed: 0 };
+        const total = {
+          queued: 0,
+          guideSkipped: 0,
+          fileReadCount: 0,
+          failed: 0,
+        };
         let firstError: unknown;
         for (const request of requests) {
           try {
             const one = await preloadOne(source, request, codeHost);
             total.queued += one.queued;
+            total.guideSkipped += one.guideSkipped;
             total.fileReadCount += one.fileReadCount;
           } catch (error) {
             total.failed += 1;

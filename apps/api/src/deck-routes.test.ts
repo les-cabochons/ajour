@@ -8,6 +8,7 @@ import {
   type FileContents,
 } from "../../../packages/review-deck/diff.ts";
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
+import { DECK_GUIDE_HUNK_LIMIT } from "../../../packages/shared/deck.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
@@ -82,6 +83,8 @@ export async function getPullRequestContent(connection, request) {
       ? Array.from({ length: 20 }, (_, index) => ({ path: "slow/" + index + ".ts", status: "added" }))
     : request.number >= 20 && request.number < 30
       ? [{ path: "pr" + request.number + "/a.ts", status: "added" }]
+    : request.number === 30 ? [{ path: "huge1000/a.ts", status: "modified" }]
+    : request.number === 31 ? [{ path: "huge1001/a.ts", status: "modified" }]
     : CHANGED_FILES;
   return {
     headSha: "head",
@@ -95,6 +98,13 @@ export async function getFileContent(connection, request) {
   if (request.path.startsWith("slow/")) {
     await globalThis.deckTestGate;
     return { kind: "text", content: "slow\\n" };
+  }
+  if (request.path.startsWith("huge")) {
+    // One changed line in every 8, far enough apart for a hunk each.
+    const hunks = Number(request.path.slice(4, request.path.indexOf("/")));
+    const lines = Array.from({ length: hunks * 8 }, (_, index) =>
+      request.sha === "head" && index % 8 === 0 ? "changed " + index : "line " + index);
+    return { kind: "text", content: lines.join("\\n") + "\\n" };
   }
   if (request.path.startsWith("pr")) {
     return { kind: "text", content: "export const value = 1;\\n" };
@@ -989,6 +999,86 @@ describe("the guide of a pull request opened in Deck", () => {
       body: { queued: 0 },
     });
     expect(fileReads()).toBe(2);
+  });
+
+  it("builds the guide of a pull request with as many hunks as the limit", async () => {
+    const guides = heldGuides();
+    const { open } = await startDeck(undefined, guides.runtime);
+
+    const opened = await open(30);
+
+    expect(opened.status).toBe(200);
+    expect(
+      (opened.body.files as { hunks: unknown[] }[])[0]!.hunks,
+    ).toHaveLength(DECK_GUIDE_HUNK_LIMIT);
+    expect(guides.started).toEqual(["huge1000"]);
+    expect(opened.body.guide.concerns[0].title).toBe("huge1000");
+    expect(opened.body.guideSkipped).toBeUndefined();
+  });
+
+  it("builds no guide above the limit, and says why, so the page shows the files A–Z", async () => {
+    const guides = heldGuides();
+    const { api, open, fileReads } = await startDeck(undefined, guides.runtime);
+
+    const opened = await open(31);
+
+    expect(opened.status).toBe(200);
+    expect(
+      (opened.body.files as { hunks: unknown[] }[])[0]!.hunks,
+    ).toHaveLength(DECK_GUIDE_HUNK_LIMIT + 1);
+    expect(opened.body.guide).toBeNull();
+    expect(opened.body.guideSkipped).toEqual({
+      reason: "too_many_hunks",
+      hunkLimit: DECK_GUIDE_HUNK_LIMIT,
+    });
+    // Neither syntax parsing nor scoring ran: no build started.
+    expect(guides.started).toEqual([]);
+    expect(api.events.some((event) => event.name === "deck.guide_build")).toBe(
+      false,
+    );
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({
+      deck: {
+        hunk_count: DECK_GUIDE_HUNK_LIMIT + 1,
+        guide_built: false,
+        guide_skipped: true,
+      },
+    });
+
+    // It isn't a failed guide: the diff stays kept for the next open.
+    const again = await open(31);
+    expect(again.body.guideSkipped).toEqual(opened.body.guideSkipped);
+    expect(fileReads()).toBe(2);
+  });
+
+  it("queues no guide build for a preload above the limit, and opens it at once", async () => {
+    const guides = heldGuides();
+    const { api, open, preload, fileReads } = await startDeck(
+      undefined,
+      guides.runtime,
+    );
+
+    await expect(preload(31)).resolves.toEqual({
+      status: 202,
+      body: { queued: 0 },
+    });
+    expect(guides.started).toEqual([]);
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.preload" && event.kind === "request",
+      ),
+    ).toMatchObject({ deck: { queued_count: 0, guide_skipped_count: 1 } });
+
+    const opened = await open(31);
+    expect(opened.body.guide).toBeNull();
+    expect(opened.body.guideSkipped).toMatchObject({
+      reason: "too_many_hunks",
+    });
+    expect(fileReads()).toBe(2);
+    expect(guides.started).toEqual([]);
   });
 
   it("still answers the diff when the pipeline fails, without a guide", async () => {
