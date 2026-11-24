@@ -35,10 +35,10 @@ Settling a pull request never writes to the code host.
 
 ## Open a pull request
 
-Click a pull request for its state, author, checks and last update, then its changes: every changed file, in path order, with its hunks. Long lines wrap. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both. The diff is read when you open the pull request: new commits show the next time you open it. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
+Click a pull request for its review page. Under the title, a status line reads its state, its checks and its approvals, such as **Open · 2 checks pending · 1 approval**. Click the checks for each one and its state, and open it on its page; click the approvals for each reviewer's vote. The author's **Description** is folded away until you open it. Then come its changes: every changed file, in path order, with its hunks. Long lines wrap. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both. The diff is read when you open the pull request: new commits show the next time you open it. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Reviews happen in your code host for now
-Deck shows a GitHub pull request's changes. Azure DevOps pull requests show theirs in a later version. Commenting and merging still happen on GitHub or Azure DevOps.
+Deck shows a GitHub pull request's changes. Azure DevOps pull requests show their status line, description, threads and conversation, and their changes in a later version. Commenting and merging still happen on GitHub or Azure DevOps.
 :::

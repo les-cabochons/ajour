@@ -246,12 +246,13 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width        | Layout                                                              |
-| ------------ | ------------------------------------------------------------------- |
-| 768px and up | Desktop, sidebar expanded or hidden by preference                   |
-| Below 768px  | Narrow view, no sidebars                                            |
-| Below 480px  | Narrow view, with Deck: the bottom toggle's names under their icons |
-| Below 400px  | Narrow view, with the bottom toggle's names under their icons       |
+| Width         | Layout                                                              |
+| ------------- | ------------------------------------------------------------------- |
+| 1100px and up | Deck's review threads float in a gutter beside their lines          |
+| 768px and up  | Desktop, sidebar expanded or hidden by preference                   |
+| Below 768px   | Narrow view, no sidebars                                            |
+| Below 480px   | Narrow view, with Deck: the bottom toggle's names under their icons |
+| Below 400px   | Narrow view, with the bottom toggle's names under their icons       |
 
 Today's splits at 640px and 1023px go away.
 
@@ -1112,8 +1113,27 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 ### Summary
 
-- The summary shows the title, the repository, number and connection, then State (Open, Draft, Merged or Closed), Author, On your plate (its reason, Settled or Snoozed), Checks and Last updated. Its header holds the row's actions.
+- The review page shows the title, then a meta line: the repository and number, the connection, the author, and On your plate (its reason, Settled or Snoozed). Its header holds the row's actions.
 - Opening it clears the Returned mark. A pull request that left the local list says "This pull request is no longer in the local list."
+
+### Status line and description
+
+Decided in [Threads, status line and the description drawer](https://github.com/les-cabochons/ajour/issues/783).
+
+- Under the meta line, the status line reads the state (Open, Draft, Merged or Closed), the checks and the approvals: `Open · 2 checks pending · 1 approval`.
+- The checks read a failure first ("1 check failed"), then what's pending ("2 checks pending"), then what passed ("3 checks passed"); "No checks" when none ran. Until the code host lists each check, the line reads the synced rollup: "Checks pending", "Checks passed" or "Checks failed". Pending checks show a ring in the warning color and passed checks a tick in the success color. Nothing else on the line is colored.
+- Clicking the checks opens a small menu, "Checks on the head": each check's name and state (Passed, Pending, Failed or Skipped). Choosing one opens its page, or the pull request when it has none. A code host that doesn't list its checks says "This code host doesn't list its checks yet."
+- The approvals count the reviewers who approved ("1 approval", or "No approvals yet"). Clicking them opens a small menu, "Reviewers": each reviewer with their vote (Approved, Changes requested, Rejected or No vote yet), and "Required" when the code host requires them. A plugin that doesn't send votes gets them from each reviewer's latest approval or change request, and each person asked who hasn't given one.
+- Below it, **Description** is a drawer, closed when the page opens. Opening it shows the author's description as markdown, or "No description.".
+
+### Review threads and the conversation
+
+Decided in [Threads, status line and the description drawer](https://github.com/les-cabochons/ajour/issues/783).
+
+- From a 1,100px window, each review thread floats in a 272px gutter beside the diff, level with its line, joined to the line's end by a connector. A card that would overlap the one above it waits below it, and its connector steps down at an elbow. Below 1,100px, and in the narrow view, each thread sits right after its line, inside its hunk.
+- A thread shows each comment's author, time and text, then "Resolved" or "Outdated" when it is. Hovering or focusing a thread highlights its line, its border and its connector take the accent.
+- A thread whose line isn't in the diff, an outdated one, one on a whole file, or one on lines no hunk shows, joins the conversation instead, named by its file and lines.
+- The page ends with **Conversation**: the opening, comments, reviews (approved, requested changes, reviewed), commits and other events in time order, each with who and when, and the threads the diff can't show. While it loads, it says "Loading the conversation…"; a failure shows its reason with **Retry**; a code host that doesn't share it says so.
 
 ### Changes
 
