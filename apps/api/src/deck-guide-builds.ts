@@ -192,11 +192,15 @@ export function createGuideBuilds(options: {
   const jobs = new Map<string, Job>();
   const queue: Job[] = [];
   let running: Job | undefined;
+  let closed = false;
 
   const cancel = (job: Job, reason: Exclude<StopReason, "preempted">) => {
     if (jobs.get(job.key) !== job) return;
     if (job === running) {
-      job.stopReason ??= reason;
+      // A cancel ends the job, even one an open had only paused.
+      if (!job.stopReason || job.stopReason === "preempted") {
+        job.stopReason = reason;
+      }
       job.stop?.abort();
       return;
     }
@@ -218,7 +222,7 @@ export function createGuideBuilds(options: {
   };
 
   const pump = () => {
-    if (running || !queue.length) return;
+    if (closed || running || !queue.length) return;
     // Opened pull requests first, then preloads, each in the order queued.
     const index = Math.max(
       queue.findIndex((job) => job.priority === "open"),
@@ -362,6 +366,7 @@ export function createGuideBuilds(options: {
     },
 
     async close() {
+      closed = true;
       for (const job of [...queue]) cancel(job, "closed");
       if (running) cancel(running, "closed");
       await options.runtime.close();

@@ -1,7 +1,9 @@
 import { afterEach, expect, it } from "vitest";
 import { buildDiff } from "../../../packages/review-deck/diff.ts";
 import {
+  createGuideBuilds,
   createWorkerGuideRuntime,
+  GuideBuildCancelled,
   type DeckGuideRuntime,
 } from "./deck-guide-builds.ts";
 
@@ -57,4 +59,64 @@ it("runs the build after a stopped one on a new worker, which the old worker's e
   expect(concerns.flatMap((concern) => concern.hunkIds)).toEqual([
     "src/b.ts#0",
   ]);
+});
+
+/**
+ * A runtime whose builds end only when the test says, so a test can act
+ * between a build's stop and the moment the queue hears of it.
+ */
+function heldRuntime() {
+  const builds: {
+    path: string;
+    signal: AbortSignal;
+    finish: () => void;
+    fail: () => void;
+  }[] = [];
+  const runtime: DeckGuideRuntime = {
+    build(buildInput, signal) {
+      const [path = ""] = [...buildInput.new.keys()];
+      return new Promise((resolve, reject) => {
+        builds.push({
+          path,
+          signal,
+          finish: () => resolve([]),
+          fail: () => reject(new GuideBuildCancelled()),
+        });
+      });
+    },
+    close: async () => {},
+  };
+  return { runtime, builds, built: () => builds.map((build) => build.path) };
+}
+
+it("cancels a preload evicted after an open stopped it, rather than running it again", async () => {
+  const held = heldRuntime();
+  const queue = createGuideBuilds({ runtime: held.runtime });
+
+  const preload = queue.build("a", input("src/a.ts"), "preload");
+  const open = queue.build("b", input("src/b.ts"), "open");
+  expect(held.builds[0]!.signal.aborted).toBe(true);
+  queue.evict("a");
+  held.builds[0]!.fail();
+
+  await expect(preload).rejects.toBeInstanceOf(GuideBuildCancelled);
+  await expect.poll(() => held.builds.length).toBe(2);
+  held.builds[1]!.finish();
+  await open;
+  expect(held.built()).toEqual(["src/a.ts", "src/b.ts"]);
+});
+
+it("starts no build once closed, even for a preload an open had just stopped", async () => {
+  const held = heldRuntime();
+  const queue = createGuideBuilds({ runtime: held.runtime });
+
+  const preload = queue.build("a", input("src/a.ts"), "preload");
+  const open = queue.build("b", input("src/b.ts"), "open");
+  await queue.close();
+  held.builds[0]!.fail();
+
+  await expect(preload).rejects.toBeInstanceOf(GuideBuildCancelled);
+  await expect(open).rejects.toBeInstanceOf(GuideBuildCancelled);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(held.built()).toEqual(["src/a.ts"]);
 });
