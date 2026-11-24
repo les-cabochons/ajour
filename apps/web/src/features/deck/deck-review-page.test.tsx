@@ -9,10 +9,16 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import type {
+  CodeHostConversationResult,
+  CodeHostPullRequestFacts,
+  CodeHostReviewThread,
+} from "@ajour/shared";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
+import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
@@ -31,18 +37,66 @@ import { DeckPage } from "./deck-page";
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-api")>()),
   openDeckPullRequest: vi.fn(),
+  readPullRequestConversation: vi.fn(),
+  readPullRequestChecks: vi.fn(),
 }));
 vi.mock("@pierre/diffs/react", () => ({
   PatchDiff: ({
     patch,
     options,
+    lineAnnotations,
+    renderAnnotation,
+    selectedLines,
   }: {
     patch: string;
     options: { overflow: string };
-  }) => <pre data-overflow={options.overflow}>{patch}</pre>,
+    lineAnnotations?: {
+      side: string;
+      lineNumber: number;
+      metadata: { key: string };
+    }[];
+    renderAnnotation?: (annotation: unknown) => ReactNode;
+    selectedLines?: { side: string; start: number; end: number } | null;
+  }) => (
+    <div
+      data-selected={
+        selectedLines
+          ? `${selectedLines.side} ${selectedLines.start}-${selectedLines.end}`
+          : undefined
+      }
+    >
+      <pre data-overflow={options.overflow}>{patch}</pre>
+      {lineAnnotations?.map((annotation) => (
+        <div
+          key={annotation.metadata.key}
+          data-after={`${annotation.side} ${annotation.lineNumber}`}
+        >
+          {renderAnnotation?.(annotation)}
+        </div>
+      ))}
+    </div>
+  ),
 }));
 
-beforeAll(installDomShims);
+let originalMatchMedia: typeof window.matchMedia;
+beforeAll(() => {
+  installDomShims();
+  originalMatchMedia = window.matchMedia;
+});
+
+/** Makes the window as wide as Deck's gutter needs, or narrower. */
+function windowWideEnoughForTheGutter(wide: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: query === DECK_GUTTER_QUERY ? wide : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+}
 
 /** An IntersectionObserver whose elements the test brings on screen. */
 const observed = new Set<Element>();
@@ -124,11 +178,34 @@ const DIFF: DeckPullRequestDiff = {
   ],
 };
 
+const CONVERSATION: CodeHostConversationResult = {
+  description: "",
+  timeline: [],
+  threads: [],
+  viewedPaths: [],
+  mergeMethods: ["merge"],
+};
+
 const Shell = ({ children }: { children: ReactNode }) => (
   <TooltipProvider>{children}</TooltipProvider>
 );
 
 let itemId = "";
+/** Syncs the pull request again with these facts. */
+function syncFacts(overrides: Partial<CodeHostPullRequestFacts>) {
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [{ ...pullRequestFacts, ...overrides }],
+    },
+  );
+}
 beforeEach(() => {
   cachePluginsOverview(codeHostOverview);
   localStore.syncPullRequests(
@@ -147,9 +224,18 @@ beforeEach(() => {
   observed.clear();
 });
 
+beforeEach(() => {
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue(CONVERSATION);
+  vi.mocked(api.readPullRequestChecks).mockResolvedValue({ checks: [] });
+});
+
 afterEach(() => {
   cleanup();
   vi.mocked(api.openDeckPullRequest).mockReset();
+  vi.mocked(api.readPullRequestConversation).mockReset();
+  vi.mocked(api.readPullRequestChecks).mockReset();
+  window.matchMedia = originalMatchMedia;
+  vi.restoreAllMocks();
 });
 
 async function renderReviewPage() {
@@ -289,4 +375,340 @@ it("says the code host doesn't show changes yet, with nothing to retry", async (
   ).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(within(changes).queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+it("reads the status line, with the checks and the approvals each in a small menu", async () => {
+  syncFacts({
+    checks: "pending",
+    approvals: [
+      {
+        reviewer: { login: "bob", displayName: "Bob", isBot: false },
+        vote: "approved",
+      },
+      {
+        reviewer: { login: "carol", isBot: false },
+        vote: "none",
+        required: true,
+      },
+    ],
+  });
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestChecks).mockResolvedValue({
+    checks: [
+      { name: "build", state: "success", url: "https://ci.example.test/1" },
+      { name: "test", state: "pending" },
+      { name: "lint", state: "pending" },
+    ],
+  });
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+
+  await renderReviewPage();
+
+  const checks = await screen.findByRole("button", {
+    name: "Checks: 2 checks pending",
+  });
+  const line = checks.closest("p")!;
+  expect(line.textContent).toBe("Open·2 checks pending·1 approval");
+  // Only the pending mark takes a color: the warning ring.
+  expect(line.querySelector(".deck-status-pending")).toBeTruthy();
+  expect(api.readPullRequestChecks).toHaveBeenCalledWith("github", "work", {
+    repository: "acme/api",
+    number: 1,
+  });
+
+  fireEvent.click(checks);
+  const checkItems = await screen.findAllByRole("menuitem");
+  expect(checkItems.map((item) => item.textContent)).toEqual([
+    "buildPassed",
+    "testPending",
+    "lintPending",
+  ]);
+  fireEvent.click(checkItems[0]!);
+  expect(open).toHaveBeenCalledWith(
+    "https://ci.example.test/1",
+    "_blank",
+    "noopener,noreferrer",
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Approvals: 1 approval" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["BobApproved", "carolNo vote yet · Required"]),
+  );
+});
+
+it("reads the synced checks until the code host lists each one, and says when it can't", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestChecks).mockRejectedValue(
+    new AppApiError("GitHub doesn't offer this yet.", 404, undefined, {
+      error: "GitHub doesn't offer this yet.",
+      reason: "not_supported",
+    }),
+  );
+
+  await renderReviewPage();
+
+  const checks = await screen.findByRole("button", {
+    name: "Checks: Checks passed",
+  });
+  fireEvent.click(checks);
+  expect(
+    await screen.findByText("This code host doesn't list its checks yet."),
+  ).toBeTruthy();
+});
+
+it("keeps the description in a drawer, closed until the user opens it", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    description: "Retries stop on **410**.",
+  });
+
+  await renderReviewPage();
+
+  const toggle = screen.getByRole("button", { name: "Description" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await screen.findByRole("heading", { name: "src/api.ts" });
+  expect(screen.queryByText(/Retries stop on/)).toBeNull();
+
+  fireEvent.click(toggle);
+
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(await screen.findByText(/Retries stop on/)).toBeTruthy();
+});
+
+const reviewThread = (
+  id: string,
+  overrides: Partial<CodeHostReviewThread> = {},
+): CodeHostReviewThread => ({
+  id,
+  path: "src/api.ts",
+  side: "head",
+  line: 2,
+  resolved: false,
+  outdated: false,
+  comments: [
+    {
+      id: `${id}-1`,
+      author: { login: "bob", displayName: "Bob", isBot: false },
+      body: `Comment on ${id}`,
+      createdAt: 20,
+    },
+  ],
+  ...overrides,
+});
+
+/**
+ * Lays the page out as a browser would, in the grid's coordinates: each hunk
+ * box 100px below the last, from 100px, 600px wide, a drawn thread's anchor
+ * at 160px, and each card 60px tall. Returns a log of the layout reads.
+ */
+function layOut() {
+  const log: string[] = [];
+  const rect = (top: number, left = 0, width = 600, height = 40) =>
+    ({
+      top,
+      left,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+    }) as DOMRect;
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element) {
+      log.push("read");
+      if (this.matches("[data-thread-anchor]")) return rect(160);
+      if (this.matches("[data-hunk]")) {
+        const boxes = [...document.querySelectorAll("[data-hunk]")];
+        return rect(100 + boxes.indexOf(this) * 100);
+      }
+      if (this.matches(".deck-gutter")) return rect(0, 620, 272);
+      return rect(0, 0, 892);
+    },
+  );
+  vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (
+    this: Element,
+  ) {
+    log.push("read");
+    return (this.matches("[data-thread-anchor]")
+      ? [rect(160)]
+      : []) as unknown as DOMRectList;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    () => {
+      log.push("read");
+      return 60;
+    },
+  );
+  return log;
+}
+
+it("floats each thread in the gutter beside its line from 1,100px, and places it again once its hunk mounts", async () => {
+  windowWideEnoughForTheGutter(true);
+  const log = layOut();
+  // Each card's connector is written in the write pass, beside its top.
+  const setAttribute = Element.prototype.setAttribute;
+  vi.spyOn(Element.prototype, "setAttribute").mockImplementation(function (
+    this: Element,
+    name: string,
+    value: string,
+  ) {
+    if (name === "d" && this.hasAttribute("data-connector")) log.push("write");
+    setAttribute.call(this, name, value);
+  });
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [
+      reviewThread("on-b", { line: 2 }),
+      reviewThread("on-y", { line: 41 }),
+      reviewThread("outdated", { line: undefined, outdated: true }),
+    ],
+  });
+
+  await renderReviewPage();
+
+  const gutter = await screen.findByRole("complementary", {
+    name: "Review threads",
+  });
+  const cards = within(gutter).getAllByRole("article");
+  expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+    "Thread on src/api.ts, line 2",
+    "Thread on src/api.ts, line 41",
+  ]);
+  const card = (id: string) =>
+    gutter.querySelector<HTMLElement>(`[data-card="${id}"]`)!;
+  // Before the hunks mount, each card is level with its row: the first
+  // hunk's box at 100px, line 2 (+B) on its row 2 of 20px, inside the 1px
+  // border, its middle at 151px and the card 14px above.
+  expect(card("on-b").style.top).toBe("137px");
+  // The second hunk's box is at 200px, line 41 (+y) on its row 1, its middle
+  // at 231px. The first card ends at 197px, so this one is level too.
+  expect(card("on-y").style.top).toBe("217px");
+  // A placement measures everything, then moves everything: one read pass,
+  // then one write pass.
+  expect(log.join(" ")).toMatch(/^(read )+write write$/);
+  const connector = document.querySelector("[data-connector='on-b']");
+  expect(connector?.getAttribute("d")).toBe("M600 151 H610 V151 H620");
+  // The thread the diff can't show is in the conversation instead.
+  const conversation = screen.getByRole("heading", {
+    name: "Conversation",
+  }).parentElement!;
+  expect(
+    within(conversation).getByRole("article", {
+      name: "Thread on src/api.ts",
+    }),
+  ).toBeTruthy();
+
+  // Drawn, the first hunk marks the line its thread follows, at 160px, and
+  // the card moves level with the line above it: its middle at 150px.
+  log.length = 0;
+  const hunks = within(
+    screen.getByRole("region", { name: "Changes" }),
+  ).getAllByRole("group");
+  bringOnScreen(hunks[0]!);
+  await waitFor(() => expect(card("on-b").style.top).toBe("136px"));
+  expect(hunks[0]!.querySelector("[data-thread-anchor='on-b']")).toBeTruthy();
+  expect(within(hunks[0]!).queryByRole("article")).toBeNull();
+  expect(log.join(" ")).toMatch(/^((read )+write write ?)+$/);
+
+  // Hovering a card highlights its line, and its connector.
+  fireEvent.mouseEnter(within(card("on-b")).getByRole("article"));
+  expect(
+    hunks[0]!.querySelector("[data-selected]")?.getAttribute("data-selected"),
+  ).toBe("additions 2-2");
+  expect(connector?.hasAttribute("data-hot")).toBe(true);
+  fireEvent.mouseLeave(within(card("on-b")).getByRole("article"));
+  expect(hunks[0]!.querySelector("[data-selected]")).toBeNull();
+});
+
+it("puts each thread after its line below 1,100px, with no gutter", async () => {
+  windowWideEnoughForTheGutter(false);
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [reviewThread("on-b", { side: "base", line: 2 })],
+  });
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  await within(changes).findByRole("heading", { name: "src/api.ts" });
+  expect(
+    screen.queryByRole("complementary", { name: "Review threads" }),
+  ).toBeNull();
+  const hunks = within(changes).getAllByRole("group");
+  bringOnScreen(hunks[0]!);
+
+  const thread = await within(hunks[0]!).findByRole("article", {
+    name: "Thread on src/api.ts, removed line 2",
+  });
+  expect(thread.closest("[data-after]")?.getAttribute("data-after")).toBe(
+    "deletions 2",
+  );
+  expect(thread.textContent).toContain("Comment on on-b");
+
+  fireEvent.mouseEnter(thread);
+  expect(
+    hunks[0]!.querySelector("[data-selected]")?.getAttribute("data-selected"),
+  ).toBe("deletions 2-2");
+});
+
+it("ends with the conversation: the timeline in time order", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    timeline: [
+      {
+        kind: "event",
+        id: "opened",
+        actor: { login: "author", isBot: false },
+        text: "opened this pull request",
+        createdAt: 1,
+      },
+      {
+        kind: "commit",
+        sha: "abc1234567",
+        headline: "Stop on 410",
+        authorName: "Author",
+        createdAt: 2,
+      },
+      {
+        kind: "review",
+        id: "r1",
+        author: { login: "bob", displayName: "Bob", isBot: false },
+        verdict: "approved",
+        body: "Looks right.",
+        createdAt: 3,
+      },
+    ],
+  });
+
+  await renderReviewPage();
+
+  const heading = await screen.findByRole("heading", { name: "Conversation" });
+  const conversation = heading.parentElement!;
+  await waitFor(() =>
+    expect(within(conversation).getAllByRole("listitem")).toHaveLength(3),
+  );
+  const lines = within(conversation)
+    .getAllByRole("listitem")
+    .map(
+      (item) => item.querySelector(".deck-timeline-line")?.textContent ?? "",
+    );
+  expect(lines[0]).toMatch(/^authoropened this pull request/);
+  expect(lines[1]).toMatch(/^Authorcommitted abc1234 Stop on 410/);
+  expect(lines[2]).toMatch(/^Bobapproved/);
+  expect(within(conversation).getByText("Looks right.")).toBeTruthy();
+  // The conversation comes after the changes.
+  const changes = screen.getByRole("region", { name: "Changes" });
+  expect(
+    changes.compareDocumentPosition(conversation) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
