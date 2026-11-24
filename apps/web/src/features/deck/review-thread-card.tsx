@@ -54,6 +54,8 @@ export const ReviewThreadCard = memo(function ReviewThreadCard({
       data-thread={thread.id}
       data-hot={hot || undefined}
       aria-label={`Thread on ${threadLocation(thread)}`}
+      // Focusable when it highlights its line, so the keyboard reaches that too.
+      tabIndex={onHover ? 0 : undefined}
       onMouseEnter={onHover ? () => onHover(thread.id) : undefined}
       onMouseLeave={onHover ? () => onHover(undefined) : undefined}
       onFocus={onHover ? () => onHover(thread.id) : undefined}

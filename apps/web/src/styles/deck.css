@@ -246,6 +246,11 @@
     border-color: var(--primary);
   }
 
+  .deck-thread:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
   .deck-thread-location {
     margin: 0;
     padding: 0.5rem 0.625rem 0;

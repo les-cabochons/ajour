@@ -657,6 +657,15 @@ it("puts each thread after its line below 1,100px, with no gutter", async () => 
   expect(
     hunks[0]!.querySelector("[data-selected]")?.getAttribute("data-selected"),
   ).toBe("deletions 2-2");
+  fireEvent.mouseLeave(thread);
+  expect(hunks[0]!.querySelector("[data-selected]")).toBeNull();
+
+  // The keyboard reaches a card too, and focusing it highlights its line.
+  expect(thread.tabIndex).toBe(0);
+  act(() => thread.focus());
+  expect(
+    hunks[0]!.querySelector("[data-selected]")?.getAttribute("data-selected"),
+  ).toBe("deletions 2-2");
 });
 
 it("ends with the conversation: the timeline in time order", async () => {
