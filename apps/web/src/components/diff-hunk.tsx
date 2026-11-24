@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { FileDiffOptions } from "@pierre/diffs/react";
 
 /*
@@ -14,8 +15,6 @@ const PatchDiff = lazy(async () => {
   return { default: PatchDiff<undefined, undefined> };
 });
 
-/** A rendered line's height (`--diffs-line-height` in styles/deck.css), for the box a hunk holds before it mounts. */
-const LINE_HEIGHT_PX = 20;
 /** How far below or above the screen a hunk mounts, so scrolling finds it drawn. */
 const MOUNT_MARGIN = "1200px 0px";
 
@@ -63,17 +62,17 @@ function diffOptions(
 }
 
 export interface DiffHunkProps {
-  /** The hunk as a unified diff of its file: `---`, `+++`, the `@@` line and its lines. */
+  /** The hunk alone as a unified diff of its file: its header, the `@@` line and its lines. */
   patch: string;
-  /** Its line count, for the height it holds before it mounts. */
-  lineCount: number;
+  /** Its rows, the lines after the `@@` line, for the height it holds before it mounts. */
+  rows: number;
   /** Names the hunk for assistive technology, such as its file and lines. */
   label: string;
   theme: "light" | "dark";
 }
 
 /** One hunk of a diff, mounted when it nears the screen. */
-export function DiffHunk({ patch, lineCount, label, theme }: DiffHunkProps) {
+export function DiffHunk({ patch, rows, label, theme }: DiffHunkProps) {
   const box = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -81,17 +80,19 @@ export function DiffHunk({ patch, lineCount, label, theme }: DiffHunkProps) {
     if (!element || mounted) return;
     return observeOnce(element, () => setMounted(true));
   }, [mounted]);
-  const placeholder = { height: lineCount * LINE_HEIGHT_PX };
+  // Until it draws, the box is `--diff-line-height` tall per row (styles/deck.css).
+  const rowCount = { "--diff-hunk-rows": rows } as CSSProperties;
   return (
     <div
       ref={box}
       role="group"
       aria-label={label}
       className="diff-hunk"
-      style={mounted ? undefined : placeholder}
+      data-drawn={mounted || undefined}
+      style={rowCount}
     >
       {mounted ? (
-        <Suspense fallback={<div style={placeholder} />}>
+        <Suspense fallback={<div className="diff-hunk-placeholder" />}>
           <PatchDiff patch={patch} options={options[theme]} />
         </Suspense>
       ) : null}

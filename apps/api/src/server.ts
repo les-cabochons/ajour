@@ -148,7 +148,7 @@ import {
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import { deckOpenRequestSchema } from "../../../packages/shared/deck.ts";
-import { createDeckService } from "./deck-service.ts";
+import { createDeckService, DeckBuildReplaced } from "./deck-service.ts";
 import {
   calendarOperationSchema,
   calendarOperations,
@@ -252,6 +252,7 @@ import {
 } from "./plugin-host.ts";
 import { decideUpdateConsent, processConsentGate } from "./plugin-consent.ts";
 import {
+  PluginExportMissing,
   PluginOperationCancelled,
   PluginOperationRefused,
   PluginOperationFailure,
@@ -4495,43 +4496,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown code host operation." });
         return;
       }
-      const { plugin, runnable, unavailableReason } = await findPlugin(
-        pluginManager,
-        pluginId,
-      );
-      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
-        return;
-      }
-      if (!plugin || !pluginHasCodeHost(plugin)) {
-        unit.refuse("not_supported");
-        writeJson(response, 404, {
-          error: "This plugin does not provide pull requests.",
-        });
-        return;
-      }
-      const inactive = await inactiveCapability(
-        storage,
-        pluginId,
-        "codeHost",
-        runnable,
-        "using its pull requests",
-      );
-      if (inactive) {
-        unit.refuse(inactive.reason);
-        writeJson(response, 409, { error: inactive.message });
-        return;
-      }
-      // Paused, with a 409, when a secret it needs can't reach the plugin.
-      const connection = await storage.connectionForOperation(
+      const found = await codeHostConnection(
+        response,
+        unit,
         pluginId,
         connectionId,
-        secretManifestOf(plugin),
       );
-      if (!connection) {
-        unit.refuse("connection_not_found");
-        writeJson(response, 404, { error: "Connection not found." });
-        return;
-      }
+      if (!found) return;
+      const { plugin, connection } = found;
 
       // A malformed body fails here, outside the try, as a 400.
       const codeHostBody = await readJsonBody(request);
@@ -4581,42 +4553,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const { plugin, runnable, unavailableReason } = await findPlugin(
-        pluginManager,
-        pluginId,
-      );
-      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
-        return;
-      }
-      if (!plugin || !pluginHasCodeHost(plugin)) {
-        unit.refuse("not_supported");
-        writeJson(response, 404, {
-          error: "This plugin does not provide pull requests.",
-        });
-        return;
-      }
-      const inactive = await inactiveCapability(
-        storage,
-        pluginId,
-        "codeHost",
-        runnable,
-        "using its pull requests",
-      );
-      if (inactive) {
-        unit.refuse(inactive.reason);
-        writeJson(response, 409, { error: inactive.message });
-        return;
-      }
-      const connection = await storage.connectionForOperation(
+      const found = await codeHostConnection(
+        response,
+        unit,
         pluginId,
         connectionId,
-        secretManifestOf(plugin),
       );
-      if (!connection) {
-        unit.refuse("connection_not_found");
-        writeJson(response, 404, { error: "Connection not found." });
-        return;
-      }
+      if (!found) return;
+      const { plugin, connection } = found;
       const body = await readJsonBody(request);
       const ref = readInput(() => deckOpenRequestSchema.parse(body));
       for (const operation of ["getPullRequestContent", "getFileContent"]) {
@@ -4653,6 +4597,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         writeJson(response, 200, opened.diff);
       } catch (error) {
+        if (error instanceof DeckBuildReplaced) {
+          unit.refuse("replaced");
+          writeJson(response, 409, { error: error.message });
+          return;
+        }
+        if (error instanceof PluginExportMissing) {
+          // An older plugin, or a code host Deck doesn't read yet (#780).
+          unit.refuse("not_supported");
+          writeJson(response, 404, {
+            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
+            reason: "not_supported",
+          });
+          return;
+        }
         if (answerAccessOff(response, unit, error)) return;
         const credentials = await failedCall(
           storage,
@@ -5522,6 +5480,68 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
    * plugin runs: a 403 naming the choice it needs, so the web can hold the
    * edit. True when it refused.
    */
+  /**
+   * The code host plugin and connection a pull request route acts on, or
+   * undefined once it answered a refusal: the plugin is unavailable, has no
+   * pull requests or has its Pull requests switch off, or the connection is
+   * missing. A connection whose secrets can't reach the plugin is paused,
+   * with a 409.
+   */
+  async function codeHostConnection(
+    response: ServerResponse,
+    unit: {
+      refuse(
+        reason:
+          | "not_supported"
+          | "connection_not_found"
+          | "system_off"
+          | "plugin_off"
+          | "needs_consent"
+          | "capability_off",
+      ): void;
+    },
+    pluginId: string,
+    connectionId: string,
+  ) {
+    const { plugin, runnable, unavailableReason } = await findPlugin(
+      pluginManager,
+      pluginId,
+    );
+    if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+      return;
+    }
+    if (!plugin || !pluginHasCodeHost(plugin)) {
+      unit.refuse("not_supported");
+      writeJson(response, 404, {
+        error: "This plugin does not provide pull requests.",
+      });
+      return;
+    }
+    const inactive = await inactiveCapability(
+      storage,
+      pluginId,
+      "codeHost",
+      runnable,
+      "using its pull requests",
+    );
+    if (inactive) {
+      unit.refuse(inactive.reason);
+      writeJson(response, 409, { error: inactive.message });
+      return;
+    }
+    const connection = await storage.connectionForOperation(
+      pluginId,
+      connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!connection) {
+      unit.refuse("connection_not_found");
+      writeJson(response, 404, { error: "Connection not found." });
+      return;
+    }
+    return { plugin, connection };
+  }
+
   function refuseAccessOff(
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],

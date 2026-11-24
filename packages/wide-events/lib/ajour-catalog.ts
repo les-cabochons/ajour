@@ -3076,7 +3076,11 @@ export const catalog = defineCatalog({
      */
     "deck.open": {
       kinds: ["command", "request"],
-      reasons: pluginRequestReasons,
+      reasons: [
+        ...pluginRequestReasons,
+        /** Another pull request opened before this one's diff was built. */
+        "replaced",
+      ],
       fields: {
         ...requestFields,
         ...pluginOperationFields,

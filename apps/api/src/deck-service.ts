@@ -8,7 +8,11 @@ import type {
   DeckOpenRequest,
   DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
-import { buildDiff, parseDiff } from "../../../packages/review-deck/diff.ts";
+import {
+  buildDiff,
+  hunkToPatch,
+  parseDiff,
+} from "../../../packages/review-deck/diff.ts";
 import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 
 /*
@@ -36,6 +40,13 @@ export interface DeckOpened {
   kept: boolean;
 }
 
+/** A build stopped because another pull request opened meanwhile. */
+export class DeckBuildReplaced extends Error {
+  constructor() {
+    super("Another pull request opened in Deck.");
+  }
+}
+
 /**
  * Files read at once. The plugin host runs at most 4 operations of a plugin
  * at a time and refuses the rest, so one slot stays free for a sync.
@@ -53,16 +64,21 @@ const CHANGE_TYPES = {
   renamed: "rename",
 } as const;
 
-/** Runs `tasks` with at most `limit` running at once, failing on the first error. */
-async function inTurn<T>(
+/**
+ * Runs `tasks` with at most `limit` running at once. It stops starting tasks
+ * after the first failure, or once `signal` aborts.
+ */
+async function withConcurrency<T>(
   tasks: (() => Promise<T>)[],
   limit: number,
+  signal: AbortSignal,
 ): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
   let next = 0;
   let failed = false;
   const worker = async () => {
     while (!failed && next < tasks.length) {
+      if (signal.aborted) throw new DeckBuildReplaced();
       const index = next++;
       try {
         results[index] = await tasks[index]!();
@@ -78,12 +94,11 @@ async function inTurn<T>(
   return results;
 }
 
-type Side = { text: string | null; binary: boolean };
-
 /** Reads one file, waiting while the plugin runs as many operations as it may. */
 async function readFile(
   codeHost: DeckCodeHost,
   request: CodeHostOperationRequest<"getFileContent">,
+  signal: AbortSignal,
 ) {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -93,49 +108,66 @@ async function readFile(
         error instanceof PluginOperationRefused && error.reason === "capacity";
       if (!busy || attempt >= BUSY_RETRIES) throw error;
       await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_MS));
+      if (signal.aborted) throw new DeckBuildReplaced();
     }
   }
 }
 
-async function readSide(
-  codeHost: DeckCodeHost,
-  repository: string,
-  sha: string,
-  path: string,
-): Promise<Side> {
-  const content = await readFile(codeHost, { repository, sha, path });
-  if (content.kind === "binary") return { text: null, binary: true };
-  return {
-    text: content.kind === "text" ? content.content : null,
-    binary: false,
-  };
-}
+/** One version of a changed file: its text, or that it is binary. */
+type Side = { text: string | null; binary: boolean };
+const ABSENT: Side = { text: null, binary: false };
 
 /** Paths compare by UTF-16 code units, so every host lists files the same way. */
 const byPath = (a: CodeHostChangedFile, b: CodeHostChangedFile) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 
+/**
+ * Where each version of a file is, base then head: an added or copied file
+ * has no base version, and a removed one no head version.
+ */
+function versionsOf(
+  file: CodeHostChangedFile,
+  content: CodeHostOperationResult<"getPullRequestContent">,
+) {
+  const changeType = CHANGE_TYPES[file.status];
+  return [
+    changeType === "add"
+      ? null
+      : { sha: content.baseSha, path: file.previousPath ?? file.path },
+    changeType === "delete" ? null : { sha: content.headSha, path: file.path },
+  ];
+}
+
 async function buildPullRequestDiff(
   codeHost: DeckCodeHost,
   repository: string,
   content: CodeHostOperationResult<"getPullRequestContent">,
+  signal: AbortSignal,
 ) {
   const files = [...content.files].sort(byPath);
   let fileReadCount = 0;
-  const none: Side = { text: null, binary: false };
-  const read = (sha: string, path: string) => () => {
-    fileReadCount += 1;
-    return readSide(codeHost, repository, sha, path);
-  };
-  const reads = files.flatMap((file) => [
-    file.status === "added" || file.status === "copied"
-      ? async () => none
-      : read(content.baseSha, file.previousPath ?? file.path),
-    file.status === "removed"
-      ? async () => none
-      : read(content.headSha, file.path),
-  ]);
-  const sides = await inTurn(reads, FILE_READS_AT_ONCE);
+  const reads = files.flatMap((file) =>
+    versionsOf(file, content).map((version) => async (): Promise<Side> => {
+      if (!version) return ABSENT;
+      fileReadCount += 1;
+      const read = await readFile(
+        codeHost,
+        { repository, sha: version.sha, path: version.path },
+        signal,
+      );
+      // The file list says this version exists. Without it the diff would
+      // show the whole file added or removed, so the open fails instead.
+      if (read.kind === "missing") {
+        throw new Error(
+          "The code host has no version of a changed file at a commit the pull request names.",
+        );
+      }
+      return read.kind === "binary"
+        ? { text: null, binary: true }
+        : { text: read.content, binary: false };
+    }),
+  );
+  const sides = await withConcurrency(reads, FILE_READS_AT_ONCE, signal);
 
   const changes = files.map((file) => ({
     path: file.path,
@@ -162,30 +194,25 @@ async function buildPullRequestDiff(
       ];
     }),
   );
-  const binary = new Set(
-    [...contents].filter(([, entry]) => entry.binary).map(([path]) => path),
+  const diffFiles: DeckFile[] = parseDiff(buildDiff(changes, contents)).map(
+    (file) => ({
+      path: file.path,
+      ...(file.status === "renamed" && file.oldPath
+        ? { previousPath: file.oldPath }
+        : {}),
+      status: file.status,
+      binary: file.binary,
+      hunks: file.hunks.map((hunk) => ({
+        id: hunk.id,
+        header: hunk.header,
+        oldStart: hunk.oldStart,
+        oldLines: hunk.oldLines,
+        newStart: hunk.newStart,
+        newLines: hunk.newLines,
+        patch: hunkToPatch(file, hunk),
+      })),
+    }),
   );
-  const parsed = parseDiff(buildDiff(changes, contents));
-  const diffFiles: DeckFile[] = parsed.map((file) => ({
-    path: file.path,
-    ...(file.status === "renamed" && file.oldPath
-      ? { previousPath: file.oldPath }
-      : {}),
-    status: file.status,
-    binary: binary.has(file.path),
-    hunks: file.hunks.map((hunk) => ({
-      id: hunk.id,
-      header: hunk.header,
-      oldStart: hunk.oldStart,
-      oldLines: hunk.oldLines,
-      newStart: hunk.newStart,
-      newLines: hunk.newLines,
-      lines: hunk.lines.map(
-        (line) =>
-          `${line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}${line.text}`,
-      ),
-    })),
-  }));
   return {
     diff: {
       headSha: content.headSha,
@@ -198,8 +225,18 @@ async function buildPullRequestDiff(
 
 /** One local API's Deck service. */
 export function createDeckService() {
-  /** The pull request on screen: the last one opened, at its base and head. */
-  let onScreen: { key: string; diff: Promise<DeckPullRequestDiff> } | undefined;
+  /**
+   * The pull request on screen: the last one opened, at its base and head.
+   * Opening another stops its build, so its reads don't hold the plugin's
+   * operation slots.
+   */
+  let onScreen:
+    | {
+        key: string;
+        diff: Promise<DeckPullRequestDiff>;
+        stop: AbortController;
+      }
+    | undefined;
 
   return {
     /**
@@ -224,8 +261,15 @@ export function createDeckService() {
       if (onScreen?.key === key) {
         return { diff: await onScreen.diff, fileReadCount: 0, kept: true };
       }
-      const built = buildPullRequestDiff(codeHost, request.repository, content);
-      const entry = { key, diff: built.then((result) => result.diff) };
+      onScreen?.stop.abort();
+      const stop = new AbortController();
+      const built = buildPullRequestDiff(
+        codeHost,
+        request.repository,
+        content,
+        stop.signal,
+      );
+      const entry = { key, diff: built.then((result) => result.diff), stop };
       // A failure reaches this caller below. A second caller awaits it too.
       entry.diff.catch(() => {});
       onScreen = entry;

@@ -39,7 +39,8 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
 - `pipeline.ts`: `runPipeline` and `buildDiff`, the config, the result types,
   and `createPipelineDeps`, Ajour's side of `PipelineDeps`.
 - `diff.ts`: `buildDiff` and `parseDiff`, which cut a pull request's hunks
-  with Review Deck's `path#index` ids, and their types. It loads no parser,
+  with Review Deck's `path#index` ids, `hunkToPatch`, which writes one hunk
+  back as a patch for rendering, and their types. It loads no parser,
   so Deck's service in the local API builds a diff without the pipeline
   (#779).
 - `saved.ts`: the `saved-reviews` format 4.

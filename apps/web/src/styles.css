@@ -230,6 +230,8 @@
     --font-mono:
       "Geist Mono Variable", ui-monospace, "Cascadia Mono", "Segoe UI Mono",
       Menlo, monospace;
+    /* A diff's row in Deck: the 12px mono line with room to read it. */
+    --diff-line-height: 20px;
   }
 
   :root.dark {

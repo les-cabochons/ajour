@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { DeckFile, DeckHunk } from "@ajour/shared/deck";
-import { fileWithoutLines, hunkLabel, hunkPatch } from "./review-diff";
+import {
+  fileNote,
+  fileWithoutLines,
+  hunkLabel,
+  hunkRowCount,
+} from "./review-diff";
 
 const hunk = (overrides: Partial<DeckHunk> = {}): DeckHunk => ({
   id: "src/api.ts#0",
@@ -9,7 +14,17 @@ const hunk = (overrides: Partial<DeckHunk> = {}): DeckHunk => ({
   oldLines: 3,
   newStart: 1,
   newLines: 3,
-  lines: [" a", "-b", "+B", " c"],
+  patch: [
+    "diff --git a/src/api.ts b/src/api.ts",
+    "--- a/src/api.ts",
+    "+++ b/src/api.ts",
+    "@@ -1,3 +1,3 @@",
+    " a",
+    "-b",
+    "+B",
+    " c",
+    "",
+  ].join("\n"),
   ...overrides,
 });
 
@@ -21,60 +36,30 @@ const file = (overrides: Partial<DeckFile> = {}): DeckFile => ({
   ...overrides,
 });
 
-describe("hunkPatch", () => {
-  it("writes one hunk as a unified diff of its file", () => {
-    expect(hunkPatch(file(), hunk())).toBe(
-      [
-        "--- a/src/api.ts",
-        "+++ b/src/api.ts",
-        "@@ -1,3 +1,3 @@",
-        " a",
-        "-b",
-        "+B",
-        " c",
-        "",
-      ].join("\n"),
-    );
-  });
+const pseudo = hunk({
+  header: "",
+  patch: "diff --git a/src/api.ts b/src/api.ts\n",
+  oldStart: 0,
+  oldLines: 0,
+  newStart: 0,
+  newLines: 0,
+});
 
-  it("names a renamed file's old path, and no side for an added or deleted one", () => {
+describe("fileNote", () => {
+  it("names how a file changed, and nothing for a modified one", () => {
     expect(
-      hunkPatch(
-        file({
-          path: "src/moved.ts",
-          previousPath: "src/before.ts",
-          status: "renamed",
-        }),
-        hunk(),
-      )
-        .split("\n")
-        .slice(0, 2),
-    ).toEqual(["--- a/src/before.ts", "+++ b/src/moved.ts"]);
-    expect(
-      hunkPatch(file({ status: "added" }), hunk())
-        .split("\n")
-        .slice(0, 2),
-    ).toEqual(["--- /dev/null", "+++ b/src/api.ts"]);
-    expect(
-      hunkPatch(file({ status: "deleted" }), hunk())
-        .split("\n")
-        .slice(0, 2),
-    ).toEqual(["--- a/src/api.ts", "+++ /dev/null"]);
+      fileNote(file({ status: "renamed", previousPath: "src/before.ts" })),
+    ).toBe("Renamed from src/before.ts");
+    expect(fileNote(file({ status: "added" }))).toBe("Added");
+    expect(fileNote(file({ status: "deleted" }))).toBe("Deleted");
+    expect(fileNote(file())).toBeUndefined();
   });
 });
 
 describe("fileWithoutLines", () => {
   it("says why a file shows no lines", () => {
-    const pseudo = hunk({
-      header: "",
-      lines: [],
-      oldStart: 0,
-      oldLines: 0,
-      newStart: 0,
-      newLines: 0,
-    });
     expect(fileWithoutLines(file({ binary: true, hunks: [pseudo] }))).toBe(
-      "Binary file not shown.",
+      "Not shown: a binary file, or one too large to read.",
     );
     expect(
       fileWithoutLines(
@@ -115,5 +100,11 @@ describe("hunkLabel", () => {
         hunk({ oldStart: 5, oldLines: 2, newStart: 4, newLines: 0 }),
       ),
     ).toBe("src/api.ts, removed lines 5 to 6");
+  });
+});
+
+describe("hunkRowCount", () => {
+  it("counts the rows after the @@ line", () => {
+    expect(hunkRowCount(hunk())).toBe(4);
   });
 });

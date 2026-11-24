@@ -51,11 +51,17 @@
     --diffs-font-family: var(--font-mono);
     --diffs-header-font-family: var(--font-sans);
     --diffs-font-size: var(--text-xs);
-    --diffs-line-height: 20px;
+    --diffs-line-height: var(--diff-line-height);
     --diffs-bg-context-override: var(--background);
     --diffs-bg-context-gutter-override: var(--background);
     --diffs-bg-separator-override: var(--surface-tint);
     --diffs-addition-color-override: var(--success);
     --diffs-deletion-color-override: var(--destructive);
+  }
+
+  /* Before it draws, a hunk holds the height of its rows, so the page doesn't move as hunks mount. */
+  .diff-hunk:not([data-drawn]),
+  .diff-hunk-placeholder {
+    height: calc(var(--diff-hunk-rows) * var(--diff-line-height));
   }
 }

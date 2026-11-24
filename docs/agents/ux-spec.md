@@ -1119,10 +1119,12 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-cabochons/ajour/issues/779).
 
-- Below the summary, the page shows the pull request's changes: every changed file in path order, each with its path and a quiet note for an added, deleted or renamed file ("Renamed from …"), then its hunks in order. A hunk keeps 3 lines of context, and its long lines wrap rather than scroll sideways.
+- Below the summary, the page shows the pull request's changes under a **Changes** heading with the file count: every changed file in path order, each with its path and a quiet note for an added, deleted or renamed file ("Renamed from …"), then its hunks in order. A hunk keeps 3 lines of context, and its long lines wrap rather than scroll sideways.
 - Ajour builds the diff itself, from the version of each changed file where the pull request's branch started (the merge base) and the version at its head, the way Review Deck does, so each hunk has Review Deck's id. The code host's own patch is never shown.
-- A binary file, one too large to read (over 5,000,000 characters), a file renamed without changes and an empty file show a line saying so instead of hunks.
-- While the changes load, the page says "Loading the changes…". A failure shows its reason with **Retry**.
+- A file Ajour can't read as text says "Not shown: a binary file, or one too large to read." instead of hunks: a binary file, one over 5,000,000 characters or 8 MB, or one whose name the code host can't serve. A file renamed without changes and an empty file say so too.
+- While the changes load, the page says "Loading the changes…". A failure shows its reason with **Retry**. A version of a file that the pull request names but the code host doesn't have fails the open, rather than show the whole file added or removed.
+- A code host whose plugin doesn't read a pull request's changes yet, such as Azure DevOps until #780 or a GitHub plugin before 0.4.0, says "<Plugin> doesn't show a pull request's changes yet.", with no Retry.
+- Opening another pull request while one still loads stops reading the first one's files.
 - The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff of the pull request on screen is kept in memory until another one opens, so coming back to it at the same head reads no file again.
 
 ### On your plate

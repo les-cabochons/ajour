@@ -25,10 +25,12 @@ export const deckHunkSchema = z.object({
   newStart: lineNumberSchema,
   newLines: lineNumberSchema,
   /**
-   * The hunk's lines as a unified diff writes them: each starts with `+`
-   * for an added line, `-` for a removed one and a space for context.
+   * The hunk alone as a unified diff of its file, as Review Deck's
+   * `hunkToPatch` writes it: the file's `diff --git` header, the `@@` line,
+   * then each line after its `+`, `-` or space. Only the header for a file
+   * shown without hunks.
    */
-  lines: z.array(z.string()),
+  patch: z.string(),
 });
 export type DeckHunk = z.infer<typeof deckHunkSchema>;
 
@@ -46,7 +48,10 @@ export const deckFileSchema = z.object({
   /** The base's path of a renamed file. */
   previousPath: pathSchema.optional(),
   status: deckFileStatusSchema,
-  /** Binary, or too large to read: shown without its lines. */
+  /**
+   * Binary, too large to read, or named so the code host can't serve it:
+   * shown without its lines.
+   */
   binary: z.boolean(),
   /** At least one. */
   hunks: z.array(deckHunkSchema).min(1),

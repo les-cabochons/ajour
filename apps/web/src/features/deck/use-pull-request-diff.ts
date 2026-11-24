@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
-import { openDeckPullRequest } from "@/lib/app-api";
+import { AppApiError, openDeckPullRequest } from "@/lib/app-api";
 
 export type PullRequestDiffState =
   | { status: "loading" }
   | { status: "ready"; diff: DeckPullRequestDiff }
+  /** The code host's plugin doesn't read a pull request's changes. Retrying won't help. */
+  | { status: "unavailable"; message: string }
   | { status: "error"; message: string };
 
 /**
@@ -31,14 +33,19 @@ export function usePullRequestDiff(pullRequest: LocalPullRequest | undefined) {
         if (current) setState({ status: "ready", diff });
       },
       (error: unknown) => {
-        if (current)
-          setState({
-            status: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Unable to read the pull request's changes.",
-          });
+        if (!current) return;
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to read the pull request's changes.";
+        setState({
+          status:
+            error instanceof AppApiError &&
+            error.payload?.reason === "not_supported"
+              ? "unavailable"
+              : "error",
+          message,
+        });
       },
     );
     return () => {

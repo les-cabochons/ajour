@@ -122,6 +122,13 @@ export class PluginOperationFailure extends Error {
   }
 }
 
+/**
+ * The plugin's entrypoint doesn't export the operation's function, such as
+ * an older version of a plugin. It ends as a `plugin_error`, as before; a
+ * route that can do without the operation tells the user so.
+ */
+export class PluginExportMissing extends PluginOperationFailure {}
+
 /** What a host prepared for one operation: what to run, and how to read its result. */
 export interface PreparedOperation<T> {
   invocation: PluginInvocation;
@@ -460,8 +467,9 @@ export class PluginOperationLifetime<TMethod extends string> {
           outcome.handoffRefusal,
         );
       case "missing_export":
-        return this.pluginFailure(
+        return new PluginExportMissing(
           `${this.options.name} does not export ${method}().`,
+          "plugin_error",
         );
       case "result_too_large":
         return this.pluginFailure(

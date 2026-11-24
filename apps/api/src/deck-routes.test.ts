@@ -26,6 +26,10 @@ const lines = (count: number, label = "line") =>
     "",
   );
 
+/** One hunk as a patch of its file: the file's header, the `@@` line, its lines. */
+const patch = (header: string[], hunk: string, body: string[]) =>
+  [...header, hunk, ...body, ""].join("\n");
+
 /** The file versions the fake code host holds: `sha:path`. */
 const API_BASE = lines(20);
 const API_HEAD = API_BASE.replace("line 2\n", "line two\n").replace(
@@ -64,6 +68,9 @@ export async function getPullRequestContent(connection, request) {
   const files =
     request.number === 9 ? [{ path: "src/broken.ts", status: "modified" }]
     : request.number === 8 ? [{ path: "src/new.ts", status: "added" }]
+    : request.number === 11 ? [{ path: "src/gone.ts", status: "modified" }]
+    : request.number === 10
+      ? Array.from({ length: 20 }, (_, index) => ({ path: "slow/" + index + ".ts", status: "added" }))
     : CHANGED_FILES;
   return {
     headSha: "head",
@@ -74,6 +81,10 @@ export async function getPullRequestContent(connection, request) {
 }
 export async function getFileContent(connection, request) {
   if (request.path === "src/broken.ts") throw new Error("GitHub request failed (500).");
+  if (request.path.startsWith("slow/")) {
+    await globalThis.deckTestGate;
+    return { kind: "text", content: "slow\\n" };
+  }
   const content = FILES[request.sha + ":" + request.path];
   if (content === undefined) return { kind: "missing" };
   if (content === "binary") return { kind: "binary" };
@@ -157,6 +168,18 @@ async function startDeck(source?: string) {
   return { api, connectionId, open, fileReads };
 }
 
+/** The file reads the plugin host ran that ended with `outcome`. */
+const readsOf = (
+  events: { name: string; kind: string; outcome?: string }[],
+  outcome: string,
+) =>
+  events.filter(
+    (event) =>
+      event.name === "pull_request.load_file" &&
+      event.kind === "plugin_operation" &&
+      event.outcome === outcome,
+  ).length;
+
 describe("opening a pull request in Deck", () => {
   it("returns every file in path order, with the hunks Review Deck cuts from both versions", async () => {
     const { open } = await startDeck();
@@ -189,14 +212,22 @@ describe("opening a pull request in Deck", () => {
               oldLines: 5,
               newStart: 1,
               newLines: 5,
-              lines: [
-                " line 1",
-                "-line 2",
-                "+line two",
-                " line 3",
-                " line 4",
-                " line 5",
-              ],
+              patch: patch(
+                [
+                  "diff --git a/src/api.ts b/src/api.ts",
+                  "--- a/src/api.ts",
+                  "+++ b/src/api.ts",
+                ],
+                "@@ -1,5 +1,5 @@",
+                [
+                  " line 1",
+                  "-line 2",
+                  "+line two",
+                  " line 3",
+                  " line 4",
+                  " line 5",
+                ],
+              ),
             },
             {
               id: "src/api.ts#1",
@@ -205,15 +236,23 @@ describe("opening a pull request in Deck", () => {
               oldLines: 6,
               newStart: 15,
               newLines: 6,
-              lines: [
-                " line 15",
-                " line 16",
-                " line 17",
-                "-line 18",
-                "+line eighteen",
-                " line 19",
-                " line 20",
-              ],
+              patch: patch(
+                [
+                  "diff --git a/src/api.ts b/src/api.ts",
+                  "--- a/src/api.ts",
+                  "+++ b/src/api.ts",
+                ],
+                "@@ -15,6 +15,6 @@",
+                [
+                  " line 15",
+                  " line 16",
+                  " line 17",
+                  "-line 18",
+                  "+line eighteen",
+                  " line 19",
+                  " line 20",
+                ],
+              ),
             },
           ],
         },
@@ -234,7 +273,16 @@ describe("opening a pull request in Deck", () => {
             expect.objectContaining({
               id: "src/new.ts#0",
               header: "@@ -1,0 +1,1 @@",
-              lines: ["+export const a = 1;"],
+              patch: patch(
+                [
+                  "diff --git a/src/new.ts b/src/new.ts",
+                  "new file mode 100644",
+                  "--- /dev/null",
+                  "+++ b/src/new.ts",
+                ],
+                "@@ -1,0 +1,1 @@",
+                ["+export const a = 1;"],
+              ),
             }),
           ],
         },
@@ -246,7 +294,16 @@ describe("opening a pull request in Deck", () => {
             expect.objectContaining({
               id: "src/old.ts#0",
               header: "@@ -1,1 +1,0 @@",
-              lines: ["-export const b = 2;"],
+              patch: patch(
+                [
+                  "diff --git a/src/old.ts b/src/old.ts",
+                  "deleted file mode 100644",
+                  "--- a/src/old.ts",
+                  "+++ /dev/null",
+                ],
+                "@@ -1,1 +1,0 @@",
+                ["-export const b = 2;"],
+              ),
             }),
           ],
         },
@@ -356,6 +413,82 @@ describe("opening a pull request in Deck", () => {
       deck: { file_count: 5, hunk_count: 6, file_read_count: 0, kept: true },
     });
     expect(JSON.stringify(opens)).not.toContain("src/api.ts");
+  });
+
+  it("stops building a pull request's diff once another one opens, and answers that it was replaced", async () => {
+    const { api, open } = await startDeck();
+    const fileLists = () =>
+      api.events.filter(
+        (event) =>
+          event.name === "pull_request.load" &&
+          event.kind === "plugin_operation",
+      ).length;
+    let release!: () => void;
+    (globalThis as { deckTestGate?: Promise<void> }).deckTestGate = new Promise(
+      (resolve) => {
+        release = resolve;
+      },
+    );
+    try {
+      // Pull request 10's 20 files are read 3 at a time, and the first
+      // three wait. Pull request 7 opens while they do.
+      const slow = open(10);
+      await expect.poll(fileLists).toBe(1);
+      const fast = open(7);
+      await expect.poll(fileLists).toBe(2);
+      release();
+
+      await expect(slow).resolves.toEqual({
+        status: 409,
+        body: { error: "Another pull request opened in Deck." },
+      });
+      expect((await fast).status).toBe(200);
+      // The three reads already running finished; none of the other 17 started.
+      expect(readsOf(api.events, "ok")).toBe(3 + 8);
+      expect(
+        api.events.find(
+          (event) =>
+            event.name === "deck.open" &&
+            event.kind === "request" &&
+            (event as { outcome_reason?: string }).outcome_reason ===
+              "replaced",
+        ),
+      ).toMatchObject({ outcome: "refused" });
+    } finally {
+      release();
+      delete (globalThis as { deckTestGate?: Promise<void> }).deckTestGate;
+    }
+  });
+
+  it("fails rather than show a file added in full when a version the file list names is missing", async () => {
+    const { open } = await startDeck();
+
+    await expect(open(11)).resolves.toEqual({
+      status: 502,
+      body: {
+        error:
+          "The code host has no version of a changed file at a commit the pull request names.",
+      },
+    });
+  });
+
+  it("says the code host doesn't show changes yet when its plugin doesn't read them", async () => {
+    const { api, open } = await startDeck(
+      pluginSource.replace(/export async function getFileContent[\s\S]*$/, ""),
+    );
+
+    await expect(open()).resolves.toEqual({
+      status: 404,
+      body: {
+        error: "GitHub doesn't show a pull request's changes yet.",
+        reason: "not_supported",
+      },
+    });
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "not_supported" });
   });
 
   it("refuses a pull request of a connection that does not exist", async () => {
