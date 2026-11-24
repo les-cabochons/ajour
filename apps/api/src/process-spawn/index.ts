@@ -156,6 +156,24 @@ function recognizeShim(
       );
     return { command, prefix: [script] };
   }
+  // npm's cmd-shim for a bin that is itself a Windows program, such as
+  // opencode-ai's opencode.exe: it runs the program beside it, with no Node.
+  const npmNative =
+    /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n"%dp0%\\([^"\n]+)" +%\*$/i.exec(
+      source,
+    );
+  if (npmNative) {
+    const command = expandPath(`%dp0%\\${npmNative[1]}`, directory);
+    if (!command || !isFile(command)) return;
+    // Node with no script would read the arguments as its own options.
+    if (
+      !/\.exe$/i.test(command) ||
+      isInterpreter(command) ||
+      path.basename(command).toLowerCase() === "node.exe"
+    )
+      return { refused: "native_exe_required" };
+    return { command, prefix: [] };
+  }
   const yarn =
     /^(?:@|@goto #_undefined_# 2>NUL \|\| @title %COMSPEC% & @setlocal & @)"([^"\n]+)" +((?:"[^"\n]*"(?: +"[^"\n]*")*)?) *%\*$/.exec(
       source,

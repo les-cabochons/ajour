@@ -58,7 +58,7 @@ A plugin's own service requests are described below. Opening an external link or
 
 MCP and the agent runner are optional. An agent can send the information it reads to its provider, including time entries, notes, work-item content and pages it visits. We do not receive that information merely because you use Ajour's agent features.
 
-When you ask an agent about a pull request in Deck, the agent's CLI saves the conversation, its transcript included, in its own folder in your user profile: `~/.claude/projects/` for Claude Code and `~/.codex/sessions/` for Codex. It keeps it so a later question about the same pull request can continue the conversation. Ajour keeps only the conversation's ID, in memory. Timesheet agent tasks save no conversation. [Your data](/app/data#agent-conversations-about-pull-requests) explains how to remove these files. Removing them doesn't delete what the agent already sent to its provider.
+When you ask an agent about a pull request in Deck, the agent's CLI saves the conversation, its transcript included, in its own folder in your user profile: `~/.claude/projects/` for Claude Code, `~/.codex/sessions/` for Codex and `~/.local/share/opencode/` for OpenCode. It keeps it so a later question about the same pull request can continue the conversation. Ajour keeps only the conversation's ID, in memory. Timesheet agent tasks save no conversation on Claude Code or Codex. OpenCode keeps each timesheet task's run in its session history too. [Your data](/app/data#agent-conversations-about-pull-requests) explains how to remove these files. Removing them doesn't delete what the agent already sent to its provider.
 
 In its separate browser mode, the agent runner keeps a local browser profile between runs. That profile can retain cookies and signed-in sessions, including Workday sessions. When you attach an agent to your own browser, that browser keeps its own session data. Ending a task does not sign you out. See [Your data](/app/data#back-up-export-or-delete-data) for how to clear local sessions.
 
@@ -200,7 +200,7 @@ Send privacy complaints to the same address. In Quebec, you can also contact the
 
 We will publish changes here and update the date above. Material changes will include a notice on this page explaining what changed. A policy update does not by itself authorise a new use of your information where consent is required. The page's earlier versions remain available in the repository's history.
 
-November 24, 2026: Added that Ajour also builds a guide of the pull request's changes on your device, kept in memory like its diff.
+November 24, 2026: Added that Ajour also builds a guide of the pull request's changes on your device, kept in memory like its diff. Added where OpenCode saves Deck's conversations, and that OpenCode also keeps timesheet task runs in its session history.
 
 November 23, 2026: Added that the GitHub plugin reads the changed files of a pull request you open in Deck, and that Ajour keeps the diff it builds from them in memory only.
 
