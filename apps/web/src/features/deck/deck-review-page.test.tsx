@@ -42,6 +42,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   openDeckPullRequest: vi.fn(),
   readPullRequestConversation: vi.fn(),
   readPullRequestChecks: vi.fn(),
+  readPullRequestVersions: vi.fn(),
+  readDeckSinceReview: vi.fn(),
 }));
 vi.mock("@pierre/diffs/react", () => ({
   PatchDiff: ({
@@ -259,6 +261,7 @@ beforeEach(() => {
 beforeEach(() => {
   vi.mocked(api.readPullRequestConversation).mockResolvedValue(CONVERSATION);
   vi.mocked(api.readPullRequestChecks).mockResolvedValue({ checks: [] });
+  vi.mocked(api.readPullRequestVersions).mockResolvedValue({ versions: [] });
 });
 
 afterEach(() => {

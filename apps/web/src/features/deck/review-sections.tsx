@@ -3,6 +3,7 @@ import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckHunk } from "@ajour/shared/deck";
 import { DiffHunk, type DiffHunkAnnotation } from "@/components/diff-hunk";
 import { ConcernRationale } from "./deck-ask";
+import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
@@ -48,6 +49,7 @@ const ReviewHunkView = memo(function ReviewHunkView({
   annotations,
   renderAnnotation,
   hovered,
+  changedIn,
 }: {
   entry: ReviewHunk;
   inConcern: boolean;
@@ -59,6 +61,8 @@ const ReviewHunkView = memo(function ReviewHunkView({
   renderAnnotation: ((key: string) => ReactNode) | undefined;
   /** The hovered thread, when it's on this hunk. */
   hovered: PlacedThread | undefined;
+  /** The version the hunk last changed in, when it changed since the review (#787). */
+  changedIn: number | undefined;
 }) {
   const { file, hunk } = entry;
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
@@ -69,6 +73,9 @@ const ReviewHunkView = memo(function ReviewHunkView({
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
+        {changedIn ? (
+          <Chip className="deck-hunk-changed">{`Changed in v${changedIn}`}</Chip>
+        ) : null}
         <button
           type="button"
           className="deck-hunk-viewed"
@@ -111,6 +118,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   hovered,
   onHover,
   onAnchor,
+  changed,
 }: {
   section: ReviewSection;
   viewed: ReadonlySet<string>;
@@ -125,6 +133,8 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   onHover: (threadId: string | undefined) => void;
   /** Called with each mark after a thread's line as it's drawn, so the gutter can place its card. */
   onAnchor: (element: HTMLElement | null) => void;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
 }) {
   const headingId = useId();
   const byHunk = useMemo(() => {
@@ -184,6 +194,9 @@ export const ReviewSectionView = memo(function ReviewSectionView({
             {file.path}
           </h3>
           {note ? <span className="deck-file-note">{note}</span> : null}
+          {section.of ? (
+            <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+          ) : null}
         </header>
       ) : (
         <header className="deck-concern-header">
@@ -208,6 +221,9 @@ export const ReviewSectionView = memo(function ReviewSectionView({
               <p className="deck-concern-rationale">{section.rationale}</p>
             ) : null}
           </div>
+          {section.of ? (
+            <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+          ) : null}
           <Value tone="muted" className="deck-concern-progress">
             {seen}/{total}
           </Value>
@@ -226,6 +242,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
           hovered={
             hoveredEntry?.hunkId === entry.hunk.id ? hoveredEntry : undefined
           }
+          changedIn={changed?.get(entry.hunk.id)}
         />
       ))}
     </section>

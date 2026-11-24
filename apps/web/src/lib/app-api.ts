@@ -186,6 +186,7 @@ import {
   codeHostChecksResultSchema,
   codeHostConversationResultSchema,
   codeHostSyncResultSchema,
+  codeHostVersionsResultSchema,
   isCapabilityActive,
   type CodeHostSyncResult,
   type SwitchableCapability,
@@ -197,9 +198,11 @@ import {
   deckConsentsSchema,
   deckOpenedPullRequestSchema,
   deckPreloadResultSchema,
+  deckSinceReviewSchema,
   type DeckAskRequest,
   type DeckConsentRevokeRequest,
   type DeckOpenRequest,
+  type DeckSinceReviewRequest,
 } from "@ajour/shared/deck";
 import {
   findRetainedConnection,
@@ -357,6 +360,56 @@ export function readPullRequestConversation(
       body: JSON.stringify(pullRequest),
     },
     codeHostConversationResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * A pull request's versions, each push or iteration with its commits, for
+ * Deck's versions bar. A plugin without the operation answers 404 with the
+ * reason `not_supported`.
+ */
+export function readPullRequestVersions(
+  pluginId: string,
+  connectionId: string,
+  pullRequest: DeckOpenRequest,
+) {
+  return appApiRequest(
+    "readPullRequestVersions",
+    codeHostPath(pluginId, connectionId, "getPullRequestVersions"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repository: pullRequest.repository,
+        number: pullRequest.number,
+      }),
+    },
+    codeHostVersionsResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Which hunks of the pull request Deck shows at `head` changed since the
+ * version the user reviewed, each with the version it last changed in.
+ */
+export function readDeckSinceReview(
+  pluginId: string,
+  connectionId: string,
+  request: DeckSinceReviewRequest,
+) {
+  return appApiRequest(
+    "readDeckSinceReview",
+    `/api/deck/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/since-review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    deckSinceReviewSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );

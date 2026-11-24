@@ -70,6 +70,7 @@ export const APP_API_CLIENT = {
   readPullRequestConversation: "pull_request.load_conversation",
   readPullRequestChecks: "pull_request.load_checks",
   readPullRequestVersions: "pull_request.load_versions",
+  readDeckSinceReview: "deck.since_review",
   askDeck: "deck.ask",
   grantDeckConsent: "deck.consent",
   getDeckConsents: "deck.consents",

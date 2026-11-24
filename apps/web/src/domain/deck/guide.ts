@@ -34,6 +34,11 @@ export interface ReviewSection {
   /** The file of a Files A–Z section. */
   file?: DeckFile;
   hunks: ReviewHunk[];
+  /**
+   * Under the since-review filter, how many hunks the section has in all,
+   * when it shows only some of them (`versions.ts`).
+   */
+  of?: number;
 }
 
 /** Paths compare by UTF-16 code units, as the local API sorts them. */

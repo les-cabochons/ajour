@@ -1244,6 +1244,7 @@ channel to read the event each emits.
 | `pull_request.mark_file_viewed`      | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.merge`                 | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.open`                  | command                                 | store command                                    |
+| `pull_request.remember_review`       | command                                 | store command                                    |
 | `pull_request.reply`                 | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.resolve_thread`        | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.settle`                | command                                 | store command                                    |
