@@ -1980,10 +1980,15 @@ ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
   conversation.
 - **Lifetime.** The worktree and its ref go when the content cache removes
   its entry, the one on screen included (`onLeft`, from eviction, Clear
-  cache or a deleted connection). The first prepare of a clone after a start
-  sweeps Deck's worktrees and refs there whose entries the cache no longer
-  holds (`liveKeys`). `git worktree prune` runs only when every stale
-  registration is Deck's.
+  cache or a deleted connection), an earlier run's too: `release` takes the
+  entry's repository and finds the worktree through the saved clone. Once
+  the API listens, `sweepAtStart` removes, in every clone on this computer,
+  Deck's worktrees and refs whose entries the cache no longer holds
+  (`liveEntries`), and the folders under `deck-cache/worktrees/` no live
+  entry owns; a WSL clone is swept at its first use, so a start never wakes
+  WSL. Forgetting or replacing a clone removes its worktrees first, while
+  its mapping says where they are. `git worktree prune` runs only when every
+  stale registration is Deck's.
 - **Failure.** Any failure leaves the ask on the pull request alone, with a
   reason in the response's `clone` (`deckCloneUseSchema`) and a code in
   `deck.ask`'s `deck.clone`, never a path or git's words.

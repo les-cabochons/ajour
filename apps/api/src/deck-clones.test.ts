@@ -44,10 +44,10 @@ const exists = (file: string) =>
 
 function clones(
   worktreesFolder = fixture.worktrees,
-  liveKeys?: () => Promise<string[]>,
+  liveEntries?: () => Promise<DeckCloneEntry[]>,
 ) {
   return createDeckClones({
-    ...(liveKeys ? { liveKeys } : {}),
+    ...(liveEntries ? { liveEntries } : {}),
     storage: {
       getDeckClones: async () => saved,
       saveDeckClone: async (clone) => {
@@ -178,8 +178,15 @@ describe(
 
       expect(prepared.state).toBe("read");
       if (prepared.state !== "read") return;
+      // The worktree is under Ajour's folder, both by their real paths: a
+      // runner's temp folder can be an 8.3 short name or macOS's `/var` link.
       expect(
-        path.relative(fixture.worktrees, prepared.root).startsWith(".."),
+        path
+          .relative(
+            realpathSync.native(fixture.worktrees),
+            realpathSync.native(prepared.root),
+          )
+          .startsWith(".."),
       ).toBe(false);
       expect(
         await readFile(path.join(prepared.root, "head only.ts"), "utf8"),
@@ -422,7 +429,7 @@ describe(
       await rm(prepared.root, { recursive: true, force: true, maxRetries: 5 });
 
       // A new API: only the cache's live entries keep their worktrees.
-      await clones().releaseExcept(new Set());
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
 
       expect(
         git(fixture.clone, "worktree", "list", "--porcelain"),
@@ -450,7 +457,7 @@ describe(
       if (prepared.state !== "read") throw new Error("Not prepared.");
       await rm(prepared.root, { recursive: true, force: true, maxRetries: 5 });
 
-      await clones(worktrees).releaseExcept(new Set());
+      await clones(worktrees, async () => []).sweepAtStart();
 
       const listed = git(fixture.clone, "worktree", "list", "--porcelain");
       expect(listed).not.toContain("prunable");
@@ -470,7 +477,7 @@ describe(
       await writeFile(marker, "");
 
       // A new API: the cache still holds the entry, so its worktree stays.
-      const next = clones(fixture.worktrees, async () => [entry().key]);
+      const next = clones(fixture.worktrees, async () => [entry()]);
       expect(await next.prepare(entry())).toEqual(prepared);
       expect(await exists(marker)).toBe(true);
     });
@@ -483,9 +490,139 @@ describe(
         fixture.clone,
       );
       const prepared = await first.prepare(entry());
-      const next = clones();
-      await next.releaseExcept(new Set([entry().key]));
+      const next = clones(fixture.worktrees, async () => [entry()]);
+      await next.sweepAtStart();
       expect(await next.prepare(entry())).toEqual(prepared);
+    });
+  },
+);
+
+describe(
+  "after a restart, an earlier run's worktrees still go",
+  { timeout: 60_000 },
+  () => {
+    const other = () =>
+      entry({
+        key: JSON.stringify([
+          "github",
+          "c1",
+          "acme/api",
+          18,
+          fixture.base,
+          fixture.head,
+        ]),
+        number: 18,
+      });
+    const refs = (clone = fixture.clone) =>
+      git(clone, "for-each-ref", "--format=%(refname)", "refs/ajour");
+
+    /** Each entry's worktree, prepared by an API that then stopped. */
+    async function preparedByEarlierRun(...entries: DeckCloneEntry[]) {
+      const first = clones();
+      await first.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const roots: string[] = [];
+      for (const each of entries) {
+        const prepared = await first.prepare(each);
+        if (prepared.state !== "read") throw new Error("Not prepared.");
+        roots.push(prepared.root);
+      }
+      return roots;
+    }
+
+    it("Clear cache removes every worktree an earlier run made", async () => {
+      const roots = await preparedByEarlierRun(entry(), other());
+      const next = clones(fixture.worktrees, async () => []);
+
+      await next.release(entry().key, repository);
+      await next.release(other().key, repository);
+
+      for (const root of roots) expect(await exists(root)).toBe(false);
+      expect(
+        git(fixture.clone, "worktree", "list", "--porcelain"),
+      ).not.toContain("detached");
+      expect(refs()).toBe("");
+    });
+
+    it("an eviction removes that entry's worktree and keeps the others", async () => {
+      const [evicted, kept] = await preparedByEarlierRun(entry(), other());
+      const next = clones(fixture.worktrees, async () => [other()]);
+
+      await next.release(entry().key, repository);
+
+      expect(await exists(evicted!)).toBe(false);
+      expect(await exists(kept!)).toBe(true);
+      // One ref is left: the kept entry's.
+      expect(refs()).toMatch(/^refs\/ajour\/deck\/[0-9a-f]+\/head$/);
+      expect(await next.prepare(other())).toEqual({
+        state: "read",
+        root: kept,
+      });
+    });
+
+    it("forgetting the clone removes its worktrees before its mapping goes", async () => {
+      const [root] = await preparedByEarlierRun(entry());
+      const next = clones(fixture.worktrees, async () => [entry()]);
+
+      expect(await next.forget(repository)).toBe(true);
+
+      expect(saved).toEqual([]);
+      expect(await exists(root!)).toBe(false);
+      expect(
+        git(fixture.clone, "worktree", "list", "--porcelain"),
+      ).not.toContain("detached");
+      expect(refs()).toBe("");
+    });
+
+    it("choosing another clone removes the earlier clone's worktrees", async () => {
+      const [root] = await preparedByEarlierRun(entry());
+      const another = path.join(fixture.root, "another clone");
+      git(fixture.root, "clone", "--quiet", fixture.host, another);
+      const next = clones(fixture.worktrees, async () => [entry()]);
+
+      await next.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        another,
+      );
+
+      expect(await exists(root!)).toBe(false);
+      expect(
+        git(fixture.clone, "worktree", "list", "--porcelain"),
+      ).not.toContain("detached");
+      expect(refs()).toBe("");
+      // The next ask reads the clone chosen now.
+      const prepared = await next.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      expect(git(prepared.root, "rev-parse", "--git-common-dir")).toContain(
+        "another clone",
+      );
+    });
+
+    it("at start, removes the worktrees of entries the cache no longer holds", async () => {
+      const [gone, kept] = await preparedByEarlierRun(entry(), other());
+      const next = clones(fixture.worktrees, async () => [other()]);
+
+      await next.sweepAtStart();
+
+      expect(await exists(gone!)).toBe(false);
+      expect(await exists(kept!)).toBe(true);
+      // One ref is left: the kept entry's.
+      expect(refs()).toMatch(/^refs\/ajour\/deck\/[0-9a-f]+\/head$/);
+    });
+
+    it("at start, removes the folders of a clone that is gone", async () => {
+      const [gone, kept] = await preparedByEarlierRun(entry(), other());
+      await rm(fixture.clone, { recursive: true, force: true, maxRetries: 5 });
+      const next = clones(fixture.worktrees, async () => [other()]);
+
+      await next.sweepAtStart();
+
+      expect(await exists(gone!)).toBe(false);
+      expect(await exists(kept!)).toBe(true);
     });
   },
 );

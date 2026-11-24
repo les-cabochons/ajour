@@ -42,9 +42,11 @@ import { childEnvironment, gitEnvironment } from "./process-broker.ts";
  *   submodules. A WSL clone's worktree stays in its distribution.
  *
  * The worktree goes with its cache entry: `release` removes it and its ref,
- * and what an earlier run left for entries the cache no longer holds goes
- * the first time that clone is prepared, with `git worktree prune` only
- * when every stale registration in it is Deck's.
+ * an earlier run's too. What an earlier run left for entries the cache no
+ * longer holds goes at start (WSL clones at their first use), with
+ * `git worktree prune` only when every stale registration in it is Deck's.
+ * Forgetting or replacing a clone removes its worktrees first, while its
+ * mapping still says where they are.
  *
  * A clone that can't be prepared never stops an ask: `prepare` answers why,
  * and the agent reads the pull request alone. No reason holds a path, a
@@ -129,10 +131,15 @@ export interface DeckClonesOptions {
   timeouts?: Partial<DeckCloneTimeouts>;
   now?: () => number;
   /**
-   * The keys of the content cache's entries now: their worktrees, an
-   * earlier run's included, stay when a clone is swept.
+   * The content cache's entries now, by key and repository: their
+   * worktrees, an earlier run's included, stay when a clone is swept.
    */
-  liveKeys?: () => Promise<Iterable<string>>;
+  liveEntries?: () => Promise<Iterable<DeckCloneLive>>;
+}
+
+/** A content cache entry, as a sweep keeps its worktree. */
+export interface DeckCloneLive extends DeckCloneRepository {
+  key: string;
 }
 
 /** Git on this computer, as hand-off worktrees run it (ADR 0022). */
@@ -280,6 +287,11 @@ export function createDeckClones(options: DeckClonesOptions) {
   const preparing = new Map<string, Promise<unknown>>();
   /** The clones whose earlier runs' worktrees are swept, by `cloneKey`. */
   const swept = new Set<string>();
+  /**
+   * What a sweep kept of an earlier run for entries the cache still held,
+   * by `cloneKey`, by worktree id: their removal finds them here.
+   */
+  const leftovers = new Map<string, Set<string>>();
   /** Writes to one clone run one at a time. */
   const locks = new Map<string, Promise<unknown>>();
   const hooksFolder = path.join(options.worktreesFolder, ".no-hooks");
@@ -503,20 +515,59 @@ export function createDeckClones(options: DeckClonesOptions) {
       remote,
       chosenAt: now(),
     };
-    const earlier = (await options.storage.getDeckClones()).find((other) =>
-      sameKey(other, repository),
-    );
+    // Worktrees of the clone chosen before go first: the next ask reads this
+    // one, and no sweep finds them once its mapping is gone.
+    await clear(repository);
     await options.storage.saveDeckClone(clone);
-    // Worktrees of the clone chosen before go now: the next ask reads this one.
-    if (earlier) await releaseWhere((kept) => sameKey(kept.clone, repository));
     return clone;
   }
 
-  /** Removes the prepared worktrees `which` names. */
-  async function releaseWhere(which: (kept: Prepared) => boolean) {
-    for (const [key, kept] of [...prepared]) {
-      if (which(kept)) await release(key);
-    }
+  /**
+   * Removes every worktree and ref of the repository's chosen clone, this
+   * run's and an earlier's, before its mapping is forgotten or replaced.
+   * Another repository's that share the folder stay.
+   */
+  async function clear(repository: DeckCloneRepository) {
+    const clone = (await options.storage.getDeckClones()).find((other) =>
+      sameKey(other, repository),
+    );
+    if (!clone) return;
+    // What the preparations under way make goes too.
+    await Promise.all(
+      [...preparing.values()].map((run) => run.catch(() => undefined)),
+    );
+    const mine = [...prepared].filter(([, kept]) =>
+      sameKey(kept.clone, repository),
+    );
+    for (const [key] of mine) prepared.delete(key);
+    await locked(clone, async () => {
+      const opened = await open(clone.environment, clone.path);
+      if (typeof opened === "string") {
+        for (const [key] of mine) await removeFolder(clone, idOf(key));
+        return;
+      }
+      swept.add(cloneKey(clone));
+      const others = [
+        ...[...prepared].map(([key, kept]) => ({ key, ...kept.clone })),
+        ...((await options.liveEntries?.().catch(() => [])) ?? []),
+      ].filter((live) => !sameKey(live, repository));
+      await sweep(clone, opened, new Set(others.map(({ key }) => idOf(key))));
+    });
+  }
+
+  /**
+   * A worktree's folder on this computer, when git can't remove it: its
+   * clone is gone. Only Deck's own, under the cache.
+   */
+  async function removeFolder(clone: DeckClone, id: string) {
+    if (clone.environment.kind !== "native") return;
+    await fs
+      .rm(path.join(options.worktreesFolder, id), {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+      })
+      .catch(() => undefined);
   }
 
   /** Removes one worktree and its ref, in its clone. */
@@ -703,14 +754,33 @@ export function createDeckClones(options: DeckClonesOptions) {
 
   /**
    * Removes what an earlier run left in one clone: worktrees and refs of
-   * Deck's whose entries aren't in `liveIds`.
+   * Deck's whose entries aren't in `liveIds`. Those of live entries this
+   * run hasn't prepared are kept as leftovers, for their removal.
    */
-  async function sweep(opened: Opened, liveIds: ReadonlySet<string>) {
+  async function sweep(
+    clone: DeckClone,
+    opened: Opened,
+    liveIds: ReadonlySet<string>,
+  ) {
+    const kept = new Set<string>();
+    leftovers.set(cloneKey(clone), kept);
+    const ours = new Set(
+      [...prepared]
+        .filter(([, each]) => cloneKey(each.clone) === cloneKey(clone))
+        .map(([key]) => idOf(key)),
+    );
+    const keep = (id: string) => {
+      if (!ours.has(id)) kept.add(id);
+    };
     try {
       for (const tree of await worktreesOf(opened.git)) {
         const folder = normalized(opened, tree.folder);
         if (!isUnder(opened, opened.worktrees, folder)) continue;
-        if (liveIds.has(opened.style.basename(folder))) continue;
+        const id = opened.style.basename(folder);
+        if (liveIds.has(id)) {
+          keep(id);
+          continue;
+        }
         await removeWorktree(opened, folder, undefined);
       }
       const refs = await opened.git.read(
@@ -719,13 +789,41 @@ export function createDeckClones(options: DeckClonesOptions) {
       );
       for (const ref of refs.split(/\r?\n/).filter(Boolean)) {
         const id = /^refs\/ajour\/deck\/([0-9a-f]+)\/head$/.exec(ref)?.[1];
-        if (id && liveIds.has(id)) continue;
+        if (id && liveIds.has(id)) {
+          keep(id);
+          continue;
+        }
         await dropRef(opened.git, ref);
       }
       await pruneDeckOnly(opened);
     } catch {
       // Left for the next sweep.
+      swept.delete(cloneKey(clone));
     }
+  }
+
+  /**
+   * The first time this run opens a clone: what an earlier run left in it
+   * for entries the cache no longer holds goes. `keep` is an entry being
+   * prepared, `drop` one leaving.
+   */
+  async function sweepFirstTime(
+    clone: DeckClone,
+    opened: Opened,
+    change: { keep?: string; drop?: string } = {},
+  ) {
+    if (swept.has(cloneKey(clone))) return;
+    swept.add(cloneKey(clone));
+    const live = new Set([
+      ...prepared.keys(),
+      ...preparing.keys(),
+      ...[...((await options.liveEntries?.().catch(() => [])) ?? [])].map(
+        ({ key }) => key,
+      ),
+    ]);
+    if (change.keep) live.add(change.keep);
+    if (change.drop) live.delete(change.drop);
+    await sweep(clone, opened, new Set([...live].map(idOf)));
   }
 
   /**
@@ -781,17 +879,7 @@ export function createDeckClones(options: DeckClonesOptions) {
     const folder = opened.style.join(opened.worktrees, id);
     const root = opened.here(folder);
 
-    // What an earlier run left in this clone for entries the cache no
-    // longer holds goes the first time.
-    if (!swept.has(cloneKey(clone))) {
-      swept.add(cloneKey(clone));
-      const live = [
-        ...prepared.keys(),
-        ...((await options.liveKeys?.().catch(() => [])) ?? []),
-        entry.key,
-      ];
-      await sweep(opened, new Set(live.map(idOf)));
-    }
+    await sweepFirstTime(clone, opened, { keep: entry.key });
 
     // The remote still names the repository: a clone whose remote changed is chosen again.
     try {
@@ -821,6 +909,7 @@ export function createDeckClones(options: DeckClonesOptions) {
         (tree) => normalized(opened, tree.folder) === folder,
       );
       if (listed && !listed.prunable && listed.head === entry.head) {
+        leftovers.get(cloneKey(clone))?.delete(id);
         prepared.set(entry.key, { clone, folder, root, ref, head: entry.head });
         return { state: "read", root };
       }
@@ -923,42 +1012,102 @@ export function createDeckClones(options: DeckClonesOptions) {
             "Ajour couldn't check out this pull request's head from your clone.",
           );
     }
+    leftovers.get(cloneKey(clone))?.delete(id);
     prepared.set(entry.key, { clone, folder, root, ref, head: entry.head });
     return { state: "read", root };
   }
 
   /**
    * Removes an entry's worktree and ref: its cache entry left the cache. A
-   * preparation under way finishes first, so what it makes goes too.
+   * preparation under way finishes first, so what it makes goes too. With
+   * its repository, the worktree an earlier run made goes as well.
    */
-  async function release(key: string) {
+  async function release(key: string, repository?: DeckCloneRepository) {
     await preparing.get(key)?.catch(() => undefined);
     const kept = prepared.get(key);
-    if (!kept) return;
+    if (!kept) {
+      if (repository) await releaseLeftover(key, repository);
+      return;
+    }
     prepared.delete(key);
     await locked(kept.clone, async () => {
       const opened = await open(kept.clone.environment, kept.clone.path);
-      if (typeof opened === "string") return;
+      if (typeof opened === "string") {
+        await removeFolder(kept.clone, idOf(key));
+        return;
+      }
       await removeWorktree(opened, kept.folder, kept.ref);
     });
   }
 
-  /**
-   * Removes what an earlier run left in every chosen clone: worktrees and
-   * refs of Deck's whose entries aren't in `live` any more.
-   */
-  async function releaseExcept(live: ReadonlySet<string>) {
-    for (const [key] of [...prepared]) {
-      if (!live.has(key)) await release(key);
+  /** Removes the worktree and ref an earlier run made for the entry. */
+  async function releaseLeftover(key: string, repository: DeckCloneRepository) {
+    const clone = (await options.storage.getDeckClones()).find((other) =>
+      sameKey(other, repository),
+    );
+    if (!clone) return;
+    const id = idOf(key);
+    // Swept already, this run knows every leftover of the clone.
+    if (
+      swept.has(cloneKey(clone)) &&
+      !leftovers.get(cloneKey(clone))?.has(id)
+    ) {
+      return;
     }
-    const liveIds = new Set([...live].map(idOf));
-    for (const clone of await options.storage.getDeckClones()) {
+    await locked(clone, async () => {
+      const opened = await open(clone.environment, clone.path);
+      if (typeof opened === "string") {
+        await removeFolder(clone, id);
+        return;
+      }
+      await sweepFirstTime(clone, opened, { drop: key });
+      if (prepared.has(key) || !leftovers.get(cloneKey(clone))?.delete(id)) {
+        return;
+      }
+      await removeWorktree(
+        opened,
+        opened.style.join(opened.worktrees, id),
+        `refs/ajour/deck/${id}/head`,
+      );
+    });
+  }
+
+  /**
+   * At start: what an earlier run left in every clone on this computer for
+   * entries the cache no longer holds goes, and so do folders under the
+   * cache that no chosen clone or live entry owns. A WSL clone is swept the
+   * first time it's used, so a start never wakes WSL.
+   */
+  async function sweepAtStart() {
+    const clones = await options.storage.getDeckClones();
+    for (const clone of clones) {
+      if (clone.environment.kind !== "native") continue;
       await locked(clone, async () => {
         const opened = await open(clone.environment, clone.path);
         if (typeof opened === "string") return;
-        swept.add(cloneKey(clone));
-        await sweep(opened, liveIds);
+        await sweepFirstTime(clone, opened);
       });
+    }
+    const names = await fs
+      .readdir(options.worktreesFolder)
+      .catch(() => [] as string[]);
+    const cached = new Set(
+      [...((await options.liveEntries?.().catch(() => [])) ?? [])].map(
+        ({ key }) => idOf(key),
+      ),
+    );
+    for (const name of names) {
+      if (!/^[0-9a-f]{16}$/.test(name) || cached.has(name)) continue;
+      // Read at each folder: an ask may have started meanwhile.
+      const asked = [...prepared.keys(), ...preparing.keys()].map(idOf);
+      if (asked.includes(name)) continue;
+      await fs
+        .rm(path.join(options.worktreesFolder, name), {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+        })
+        .catch(() => undefined);
     }
   }
 
@@ -966,7 +1115,7 @@ export function createDeckClones(options: DeckClonesOptions) {
     choose,
     prepare,
     release,
-    releaseExcept,
+    sweepAtStart,
 
     /** The clones the user chose. */
     clones: () => options.storage.getDeckClones(),
@@ -980,7 +1129,7 @@ export function createDeckClones(options: DeckClonesOptions) {
 
     /** Forgets a repository's clone, and removes its worktrees. False when it had none. */
     async forget(repository: DeckCloneRepository) {
-      await releaseWhere((kept) => sameKey(kept.clone, repository));
+      await clear(repository);
       return options.storage.forgetDeckClone(repository);
     },
 

@@ -501,6 +501,8 @@ interface AppApiRuntime {
   stopWatchingCrashes?: () => void;
   folderResolver: FolderResolver;
   deckClones: DeckClones;
+  /** The sweep of Deck's worktrees an earlier run left, once the API listens. */
+  deckClonesSwept?: Promise<void>;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
@@ -1889,8 +1891,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       "worktrees",
     ),
     // An earlier run's worktrees of entries the cache still holds stay.
-    liveKeys: async () =>
-      (await deckService.cache.keys()).map(deckCacheKeyString),
+    liveEntries: async () =>
+      (await deckService.cache.keys()).map((key) => ({
+        key: deckCacheKeyString(key),
+        pluginId: key.pluginId,
+        connectionId: key.connectionId,
+        repository: key.repository,
+      })),
   });
   const deckGuides = createGuideBuilds({
     runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
@@ -1904,9 +1911,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       capBytes: () => storage.getDeckCacheCapBytes(),
       // A preload whose entry left the cache needn't build its guide.
       onRemoved: (key) => deckGuides.evict(deckCacheKeyString(key)),
-      // The worktree of the user's clone goes with its entry (#795).
+      // The worktree of the user's clone goes with its entry (#795), an
+      // earlier run's too.
       onLeft: (key) => {
-        void deckClones.release(deckCacheKeyString(key)).catch(() => undefined);
+        void deckClones
+          .release(deckCacheKeyString(key), {
+            pluginId: key.pluginId,
+            connectionId: key.connectionId,
+            repository: key.repository,
+          })
+          .catch(() => undefined);
       },
     }),
   });
@@ -6641,6 +6655,11 @@ export async function startAppApiServer(
   if (options.reportProcessCrashes) {
     runtime.stopWatchingCrashes = watchProcessCrashes(runtime.events);
   }
+  // What an earlier run left of Deck's worktrees in the user's clones goes
+  // once the API listens (#795).
+  runtime.deckClonesSwept = runtime.deckClones
+    .sweepAtStart()
+    .catch(() => undefined);
 
   return server;
 }
@@ -6802,6 +6821,11 @@ export async function chooseDeckCloneForServer(
 }
 
 /** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
+/** Resolves once the start's sweep of Deck's worktrees has finished. */
+export async function deckClonesSweptForServer(server: Server) {
+  await appApiRuntimesByServer.get(server)?.deckClonesSwept;
+}
+
 export async function addRepositoryFolderForServer(
   server: Server,
   projectId: string,

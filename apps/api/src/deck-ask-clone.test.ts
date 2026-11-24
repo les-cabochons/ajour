@@ -16,6 +16,7 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import {
   addRepositoryFolderForServer,
+  deckClonesSweptForServer,
   startAppApiServer,
   stopAppApiServer,
 } from "./server.ts";
@@ -149,43 +150,46 @@ async function startCloneApi() {
   }
   let mcpUrl = "";
   const sink = createRecordingSink<AjourEvent>();
-  const server = await startAppApiServer({
-    port: 0,
-    statePath: path.join(root, "data", "state.json"),
-    installedPluginDirectory: path.join(root, "installed"),
-    projectDataShapePluginDirectories: [],
-    allowedOrigins: [TEST_ORIGIN],
-    windowToken: TEST_WINDOW_TOKEN,
-    eventSink: sink,
-    pluginRuntime: new InProcessPluginRuntime(),
-    vault: new MemorySecretVault(),
-    allowDevelopmentPlugins: true,
-    developmentPluginDirectories: [await createCodeHostPlugin(root)],
-    deckGuideRuntime: guideRuntime,
-    agentCliPath: bin,
-    agentCliAdapters: [
-      fakeCliAdapter(
-        [{ exit: 0 }],
-        report,
-        () => mcpUrl,
-        // Each process names its session, so a later one resumes it.
-        () => [
-          { readTurn: true },
-          { session: "s-1" },
-          { stream: ["It reads ", "the clone."] },
-          { result: true },
-          ...answer("Again."),
-        ],
-      ),
-      fakeCodexAdapter(
-        report,
-        () => mcpUrl,
-        () => [{ codexReadTurn: true }],
-      ),
-    ],
-  });
+  const plugin = await createCodeHostPlugin(root);
+  const boot = () =>
+    startAppApiServer({
+      port: 0,
+      statePath: path.join(root, "data", "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      projectDataShapePluginDirectories: [],
+      allowedOrigins: [TEST_ORIGIN],
+      windowToken: TEST_WINDOW_TOKEN,
+      eventSink: sink,
+      pluginRuntime: new InProcessPluginRuntime(),
+      vault: new MemorySecretVault(),
+      allowDevelopmentPlugins: true,
+      developmentPluginDirectories: [plugin],
+      deckGuideRuntime: guideRuntime,
+      agentCliPath: bin,
+      agentCliAdapters: [
+        fakeCliAdapter(
+          [{ exit: 0 }],
+          report,
+          () => mcpUrl,
+          // Each process names its session, so a later one resumes it.
+          () => [
+            { readTurn: true },
+            { session: "s-1" },
+            { stream: ["It reads ", "the clone."] },
+            { result: true },
+            ...answer("Again."),
+          ],
+        ),
+        fakeCodexAdapter(
+          report,
+          () => mcpUrl,
+          () => [{ codexReadTurn: true }],
+        ),
+      ],
+    });
+  let server = await boot();
   stops.push(() => stopAppApiServer(server));
-  const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  let baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   mcpUrl = `${baseUrl}/mcp/ajour`;
   await apiRequest(baseUrl, "/api/agents/settings", {
     cli: "claude-code",
@@ -216,7 +220,17 @@ async function startCloneApi() {
   const source = { repositoryIdentity: { cloneUrls: [fixture.host] } };
 
   return {
-    baseUrl,
+    get baseUrl() {
+      return baseUrl;
+    },
+    /** Stops the API and starts it again on the same data folder. */
+    async restart() {
+      await stopAppApiServer(server);
+      server = await boot();
+      await deckClonesSweptForServer(server);
+      baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      mcpUrl = `${baseUrl}/mcp/ajour`;
+    },
     events: sink.events,
     open,
     source,
@@ -367,6 +381,33 @@ describe("an ask that reads the user's clone", () => {
           git(fixture.clone, "for-each-ref", "refs/ajour") === "",
       );
       expect(await fixture.userState()).toEqual(before);
+    },
+  );
+
+  it(
+    "Clear cache after a restart removes the worktree the earlier run made",
+    { timeout: 60_000 },
+    async () => {
+      const api = await startCloneApi();
+      await api.choose((await api.addFolder()).id);
+      const asked = await api.ask();
+      expect(asked.body.clone).toEqual({ state: "read" });
+      await api.ended(asked.body.turn.id);
+      const [argv] = await api.launches();
+      const root = argv![argv!.indexOf("--add-dir") + 1]!;
+
+      await api.restart();
+      // The start's sweep keeps it: the cache still holds its entry.
+      expect(await exists(root)).toBe(true);
+      expect(
+        (await apiRequest(api.baseUrl, "/api/deck/storage/clear", {})).status,
+      ).toBe(200);
+
+      await until(
+        async () =>
+          !(await exists(root)) &&
+          git(fixture.clone, "for-each-ref", "refs/ajour") === "",
+      );
     },
   );
 
