@@ -1,3 +1,4 @@
+import { builtFrom } from "./test-support/deck-guides.ts";
 import { afterEach, expect, it } from "vitest";
 import { buildDiff } from "../../../packages/review-deck/diff.ts";
 import {
@@ -35,14 +36,16 @@ it("builds a pull request's concerns in the worker", async () => {
   const runtime = createWorkerGuideRuntime();
   runtimes.push(runtime);
 
-  const concerns = await runtime.build(
+  const built = await runtime.build(
     input("src/a.ts"),
     new AbortController().signal,
   );
 
-  expect(concerns.flatMap((concern) => concern.hunkIds)).toEqual([
+  expect(built.concerns.flatMap((concern) => concern.hunkIds)).toEqual([
     "src/a.ts#0",
   ]);
+  // The summary's rules ran in the same build.
+  expect(built.summary).toMatchObject({ kinds: [], leftovers: [] });
 });
 
 it("runs the build after a stopped one on a new worker, which the old worker's end never fails", async () => {
@@ -55,8 +58,8 @@ it("runs the build after a stopped one on a new worker, which the old worker's e
   const next = runtime.build(input("src/b.ts"), new AbortController().signal);
 
   await expect(stopped).rejects.toThrow("The guide build was cancelled.");
-  const concerns = await next;
-  expect(concerns.flatMap((concern) => concern.hunkIds)).toEqual([
+  const built = await next;
+  expect(built.concerns.flatMap((concern) => concern.hunkIds)).toEqual([
     "src/b.ts#0",
   ]);
 });
@@ -79,7 +82,7 @@ function heldRuntime() {
         builds.push({
           path,
           signal,
-          finish: () => resolve([]),
+          finish: () => resolve(builtFrom(buildInput, [])),
           fail: () => reject(new GuideBuildCancelled()),
         });
       });

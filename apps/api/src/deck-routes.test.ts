@@ -16,6 +16,7 @@ import {
 } from "../../../packages/review-deck/diff.ts";
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { builtFrom } from "./test-support/deck-guides.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import {
@@ -135,7 +136,8 @@ export async function getPullRequestContent(connection, request) {
   };
 }
 export async function getLinkedTickets(connection, request) {
-  if (request.number === 31) throw new Error("GitHub request failed (502).");
+  if (request.number === 31 && !globalThis.deckTicketsBack) throw new Error("GitHub request failed (502).");
+  if (request.number === 31) return { tickets: [{ number: 5, title: "Back again", body: "", url: "https://github.com/acme/api/issues/5", state: "Open" }] };
   if (request.number !== 30) return { tickets: [] };
   return {
     tickets: [
@@ -419,7 +421,7 @@ function heldGuides() {
         ),
       ]);
       built.push(name);
-      return [
+      return builtFrom(input, [
         {
           id: "g1",
           title: name,
@@ -428,7 +430,7 @@ function heldGuides() {
             file.hunks.map((hunk) => hunk.id),
           ),
         },
-      ];
+      ]);
     },
     close: async () => {},
   };
@@ -1177,16 +1179,18 @@ describe("the guide of a pull request opened in Deck", () => {
         build: (input, signal) => {
           calls += 1;
           if (calls > 1) {
-            return Promise.resolve([
-              {
-                id: "g1",
-                title: "Built",
-                rationale: "",
-                hunkIds: parseDiff(input.diff).flatMap((file) =>
-                  file.hunks.map((hunk) => hunk.id),
-                ),
-              },
-            ]);
+            return Promise.resolve(
+              builtFrom(input, [
+                {
+                  id: "g1",
+                  title: "Built",
+                  rationale: "",
+                  hunkIds: parseDiff(input.diff).flatMap((file) =>
+                    file.hunks.map((hunk) => hunk.id),
+                  ),
+                },
+              ]),
+            );
           }
           return new Promise((_, reject) =>
             signal.addEventListener("abort", () =>
@@ -1215,16 +1219,17 @@ describe("the guide of a pull request opened in Deck", () => {
 
   it("cuts a title or rationale longer than the guide allows, keeping the guide", async () => {
     const { open } = await startDeck(undefined, {
-      build: async (input) => [
-        {
-          id: "g1",
-          title: "t".repeat(600),
-          rationale: "r".repeat(2_500),
-          hunkIds: parseDiff(input.diff).flatMap((file) =>
-            file.hunks.map((hunk) => hunk.id),
-          ),
-        },
-      ],
+      build: async (input) =>
+        builtFrom(input, [
+          {
+            id: "g1",
+            title: "t".repeat(600),
+            rationale: "r".repeat(2_500),
+            hunkIds: parseDiff(input.diff).flatMap((file) =>
+              file.hunks.map((hunk) => hunk.id),
+            ),
+          },
+        ]),
       close: async () => {},
     });
 
@@ -1431,7 +1436,7 @@ describe("the content cache", () => {
       build: async (input) => {
         calls += 1;
         if (calls === 1) throw new Error("The pipeline broke.");
-        return [
+        return builtFrom(input, [
           {
             id: "g1",
             title: "Built",
@@ -1440,7 +1445,7 @@ describe("the content cache", () => {
               file.hunks.map((hunk) => hunk.id),
             ),
           },
-        ];
+        ]);
       },
       close: async () => {},
     });
@@ -1986,12 +1991,15 @@ describe("opening an Azure DevOps pull request in Deck", () => {
 /** Builds one concern per file, in the diff's path order, in process. */
 const concernPerFile: DeckGuideRuntime = {
   async build(input) {
-    return parseDiff(input.diff).map((file, index) => ({
-      id: `g${index + 1}`,
-      title: file.path,
-      rationale: "",
-      hunkIds: file.hunks.map((hunk) => hunk.id),
-    }));
+    return builtFrom(
+      input,
+      parseDiff(input.diff).map((file, index) => ({
+        id: `g${index + 1}`,
+        title: file.path,
+        rationale: "",
+        hunkIds: file.hunks.map((hunk) => hunk.id),
+      })),
+    );
   },
   close: async () => {},
 };
@@ -2159,5 +2167,28 @@ describe("the summary of a pull request opened in Deck", () => {
       tickets: null,
       risks: [expect.objectContaining({ id: "risk:migrations" })],
     });
+  });
+});
+
+describe("linked tickets that couldn't be read", () => {
+  afterEach(() => {
+    delete (globalThis as { deckTicketsBack?: boolean }).deckTicketsBack;
+  });
+
+  it("are read again when the pull request opens again, on screen or from the content cache, without building its guide again", async () => {
+    const guides = heldGuides();
+    const { open } = await startDeck(undefined, guides.runtime);
+    const failed = await open(31);
+    expect(failed.body.guide.summary.tickets).toBeNull();
+
+    (globalThis as { deckTicketsBack?: boolean }).deckTicketsBack = true;
+    const again = await open(31);
+    expect(again.body.guide.summary.problem?.text).toBe("Back again");
+
+    // From the content cache, after another pull request took the screen.
+    await open(20);
+    const cached = await open(31);
+    expect(cached.body.guide.summary.problem?.text).toBe("Back again");
+    expect(guides.built.filter((name) => name !== "pr20")).toHaveLength(1);
   });
 });

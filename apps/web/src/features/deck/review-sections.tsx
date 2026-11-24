@@ -3,9 +3,7 @@ import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckHunk } from "@ajour/shared/deck";
 import { DiffHunk, type DiffHunkAnnotation } from "@/components/diff-hunk";
 import { ConcernRationale } from "./deck-ask";
-import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
-import { changeKindLabel } from "@/domain/deck/summary";
 import {
   fileNote,
   fileWithoutLines,
@@ -18,6 +16,7 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { PlacedThread } from "@/domain/deck/review-threads";
+import { ChangeKinds } from "./pull-request-summary";
 import { ReviewThreadCard } from "./review-thread-card";
 
 /*
@@ -209,15 +208,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
               <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
               {section.title}
             </h3>
-            {section.kinds?.length ? (
-              <ul className="deck-kinds" aria-label="Kinds of change">
-                {section.kinds.map((kind) => (
-                  <li key={kind}>
-                    <Chip>{changeKindLabel(kind)}</Chip>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <ChangeKinds kinds={section.kinds ?? []} />
             {section.concernId ? (
               <ConcernRationale
                 concernId={section.concernId}

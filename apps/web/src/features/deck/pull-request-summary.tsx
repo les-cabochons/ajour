@@ -1,5 +1,9 @@
 import { memo, useMemo } from "react";
-import type { DeckOpenedPullRequest, DeckSummary } from "@ajour/shared/deck";
+import type {
+  DeckChangeKind,
+  DeckOpenedPullRequest,
+  DeckSummary,
+} from "@ajour/shared/deck";
 import { SectionHeading } from "@/components/section-heading";
 import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
@@ -23,6 +27,20 @@ import { openSourceUrl } from "@/lib/source-navigation";
 /** Scrolls the changes to a hunk and focuses it. `PullRequestChanges` provides it. */
 export type ReachHunk = (hunkId: string) => void;
 
+/** Kinds of change as chips, on the summary and under a concern's title. */
+export function ChangeKinds({ kinds }: { kinds: readonly DeckChangeKind[] }) {
+  if (!kinds.length) return null;
+  return (
+    <ul className="deck-kinds" aria-label="Kinds of change">
+      {kinds.map((kind) => (
+        <li key={kind}>
+          <Chip>{changeKindLabel(kind)}</Chip>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** One line, a link to its first hunk. #793 ends it with `more ›`. */
 function SummaryLineView({
   entry: { line, concern },
@@ -35,9 +53,9 @@ function SummaryLineView({
   return (
     <li className="deck-summary-line">
       {concern !== undefined ? (
-        <span className="deck-summary-concern" aria-hidden>
+        <Value tone="muted" className="deck-summary-concern" aria-hidden>
           {concern}
-        </span>
+        </Value>
       ) : null}
       <button
         type="button"
@@ -138,15 +156,7 @@ export const PullRequestSummary = memo(function PullRequestSummary({
     <section className="deck-summary" aria-label="Summary">
       <SectionHeading className="deck-summary-heading">Summary</SectionHeading>
       <ProblemView summary={summary} repository={repository} />
-      {summary.kinds.length ? (
-        <ul className="deck-kinds" aria-label="Kinds of change">
-          {summary.kinds.map((kind) => (
-            <li key={kind}>
-              <Chip>{changeKindLabel(kind)}</Chip>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <ChangeKinds kinds={summary.kinds} />
       {sections.map((section) => (
         <div key={section.key} className="deck-summary-section">
           <h3 className="deck-summary-label">{section.heading}</h3>

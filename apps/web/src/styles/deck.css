@@ -664,9 +664,6 @@
   .deck-summary-concern {
     flex: none;
     min-width: 1rem;
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
   }
 
   .deck-summary-count {

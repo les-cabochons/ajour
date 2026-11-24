@@ -29,7 +29,7 @@ import {
   type GuideBuildInput,
   type GuideBuilds,
 } from "./deck-guide-builds.ts";
-import { summarizeGuide } from "./deck-summary.ts";
+import { guideOf, withTickets } from "./deck-summary.ts";
 import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 
 /*
@@ -321,21 +321,32 @@ async function buildPullRequestDiff(
 }
 
 /**
+ * Where a guide's linked tickets are read: the open's or the preload's code
+ * host, and its check, which throws once the work must stop (another pull
+ * request opened, or the connection was removed).
+ */
+interface TicketSource {
+  codeHost: DeckCodeHost;
+  check: () => void;
+}
+
+/**
  * The pull request's linked tickets, or null when the code host couldn't
- * say: a plugin without the operation, its access off, or a failed read.
- * The summary then says so, and the rest of the guide stands.
+ * say: a plugin without the operation, its access off, a failed read, or
+ * work that had to stop. The summary then says so, the rest of the guide
+ * stands, and the next open reads them again.
  */
 async function readLinkedTickets(
-  codeHost: DeckCodeHost,
+  { codeHost, check }: TicketSource,
   request: { repository: string; number: number },
-  stopped: () => boolean,
 ): Promise<CodeHostLinkedTicket[] | null> {
   try {
+    check();
     const { tickets } = await runWhenFree(
       codeHost,
       "getLinkedTickets",
       { repository: request.repository, number: request.number },
-      stopped,
+      check,
     );
     return tickets;
   } catch {
@@ -462,22 +473,24 @@ export function createDeckService(options: {
   };
 
   /**
-   * The guide of `key`, built from `input` at `priority`, and saved to its
-   * cache entry once built. A build already queued for it, as a preload's,
-   * is shared, and moves ahead for an open.
-   */
-  /**
-   * The guides being built or summarized, by cache key. One asked for again
-   * meanwhile, as an open of a pull request whose preload is still reading
-   * its tickets, shares it rather than build it twice.
+   * The guides being built or summarized, by cache key. The guide builds
+   * share a build only while the worker has it; this also covers the ticket
+   * read after it and the cache write, so an open of a pull request whose
+   * preload is still reading its tickets doesn't build it twice.
    */
   const building = new Map<string, Promise<DeckGuide | null>>();
 
+  /**
+   * The guide of `key`, built from `input` at `priority` with the linked
+   * tickets read from `tickets`, and saved to its cache entry once built. A
+   * guide already being built for it, as a preload's, is shared, and moves
+   * ahead for an open.
+   */
   const buildGuide = (
     key: DeckCacheKey,
     input: GuideBuildInput,
     priority: "open" | "preload",
-    codeHost: DeckCodeHost,
+    tickets: TicketSource,
     signal?: AbortSignal,
   ) => {
     const id = deckCacheKeyString(key);
@@ -487,16 +500,15 @@ export function createDeckService(options: {
       if (priority === "open") guides.prioritize(id, signal);
       return shared;
     }
-    // The linked tickets are read while the concerns build. A preload's
+    // The linked tickets are read while the worker builds. A preload's
     // read, like its file reads, waits while a pull request opens.
-    const tickets = (async () => {
+    const linked = (async () => {
       if (priority === "preload") await opensDone();
-      return readLinkedTickets(codeHost, key, () => signal?.aborted ?? false);
+      return readLinkedTickets(tickets, key);
     })();
     const guide = guideOrNull(
-      Promise.all([guides.build(id, input, priority, signal), tickets]).then(
-        ([concerns, linked]) =>
-          summarizeGuide(concerns, parseDiff(input.diff), linked),
+      Promise.all([guides.build(id, input, priority, signal), linked]).then(
+        ([built, read]) => guideOf(built, read),
       ),
     );
     building.set(id, guide);
@@ -514,6 +526,23 @@ export function createDeckService(options: {
       }, done)
       .catch(() => {});
     return guide;
+  };
+
+  /**
+   * A guide whose tickets couldn't be read when it was built, with its
+   * tickets read again, and cached so. Any other guide as it is.
+   */
+  const withTicketsRead = async (
+    key: DeckCacheKey,
+    guide: DeckGuide,
+    tickets: TicketSource,
+  ) => {
+    if (guide.summary.tickets !== null) return guide;
+    const read = await readLinkedTickets(tickets, key);
+    if (!read) return guide;
+    const next = withTickets(guide, read);
+    void cache.putGuide(key, next);
+    return next;
   };
 
   /** The entry's diff and guide, once both are ready. */
@@ -538,28 +567,38 @@ export function createDeckService(options: {
     return { opened: { ...diff, guide }, ...facts };
   };
 
-  /** The pull request on screen, opened again: a guide that failed is built again. */
+  /**
+   * The pull request on screen, opened again: a guide that failed is built
+   * again, and tickets that couldn't be read are read again.
+   */
   const answerKept = (
     entry: Entry,
     facts: Omit<DeckOpened, "opened">,
-    codeHost: DeckCodeHost,
+    tickets: TicketSource,
   ): Promise<DeckOpened> => {
     if (entry.guideFailed) {
       entry.guideFailed = false;
       entry.guide = entry.input.then((input) =>
-        buildGuide(entry.key, input, "open", codeHost, entry.stop.signal),
+        buildGuide(entry.key, input, "open", tickets, entry.stop.signal),
       );
-      entry.guide.catch(() => {});
+    } else {
+      entry.guide = entry.guide.then((guide) =>
+        guide ? withTicketsRead(entry.key, guide, tickets) : guide,
+      );
     }
+    entry.guide.catch(() => {});
     return answer(entry, facts);
   };
 
-  /** Puts a cached pull request on screen, building its guide if it has none. */
+  /**
+   * Puts a cached pull request on screen, building its guide if it has
+   * none, and reading its tickets again if they couldn't be read.
+   */
   const openCached = (
     found: DeckCachedEntry,
     facts: Omit<DeckOpened, "opened" | "cached">,
     stop: AbortController,
-    codeHost: DeckCodeHost,
+    tickets: TicketSource,
   ) => {
     onScreen?.stop.abort();
     const entry: Entry = {
@@ -568,14 +607,8 @@ export function createDeckService(options: {
       diff: Promise.resolve(found.diff),
       input: Promise.resolve(found.guideInput),
       guide: found.guide
-        ? Promise.resolve(found.guide)
-        : buildGuide(
-            found.key,
-            found.guideInput,
-            "open",
-            codeHost,
-            stop.signal,
-          ),
+        ? withTicketsRead(found.key, found.guide, tickets)
+        : buildGuide(found.key, found.guideInput, "open", tickets, stop.signal),
       stop,
     };
     entry.guide.catch(() => {});
@@ -624,6 +657,7 @@ export function createDeckService(options: {
       checkConnection(work);
       if (open !== lastOpen) throw new DeckBuildReplaced();
     };
+    const tickets: TicketSource = { codeHost, check };
     const none = { fileReadCount: 0, kept: false, cached: false };
     const ref = { repository: request.repository, number: request.number };
 
@@ -635,14 +669,14 @@ export function createDeckService(options: {
         return answerKept(
           onScreen,
           { ...none, kept: true, listed: false },
-          codeHost,
+          tickets,
         );
       }
       const found = await cache.find(at);
       check();
       if (found) {
         doneReading();
-        return openCached(found, { ...none, listed: false }, stop, codeHost);
+        return openCached(found, { ...none, listed: false }, stop, tickets);
       }
     }
 
@@ -658,13 +692,13 @@ export function createDeckService(options: {
     const listed = { ...none, listed: true };
     if (onScreen?.id === id) {
       doneReading();
-      return answerKept(onScreen, { ...listed, kept: true }, codeHost);
+      return answerKept(onScreen, { ...listed, kept: true }, tickets);
     }
     const found = await cache.get(key);
     check();
     if (found) {
       doneReading();
-      return openCached(found, listed, stop, codeHost);
+      return openCached(found, listed, stop, tickets);
     }
     // Its reads and its guide build stop.
     onScreen?.stop.abort();
@@ -683,13 +717,7 @@ export function createDeckService(options: {
       guide: built.then((result) => {
         checkConnection(work);
         void cache.put(key, result, generation);
-        return buildGuide(
-          key,
-          result.guideInput,
-          "open",
-          codeHost,
-          stop.signal,
-        );
+        return buildGuide(key, result.guideInput, "open", tickets, stop.signal);
       }),
       stop,
     };
@@ -718,6 +746,7 @@ export function createDeckService(options: {
     const skipped = { queued: 0, fileReadCount: 0 };
     // Its batch's connection removed, it reads, caches and builds nothing more.
     const check = () => checkConnection(work);
+    const tickets: TicketSource = { codeHost, check };
     /**
      * A pull request cached at `key` isn't read again, and one cached
      * without its guide gets its build queued again. Undefined when it
@@ -732,7 +761,7 @@ export function createDeckService(options: {
       const found = await cache.get(key);
       check();
       if (!found) return undefined;
-      void buildGuide(key, found.guideInput, "preload", codeHost);
+      void buildGuide(key, found.guideInput, "preload", tickets);
       return { queued: 1, fileReadCount: 0 };
     };
     await opensDone();
@@ -769,7 +798,7 @@ export function createDeckService(options: {
     await cache.put(key, result, generation);
     // The connection may have gone while the write waited its turn.
     check();
-    void buildGuide(key, result.guideInput, "preload", codeHost);
+    void buildGuide(key, result.guideInput, "preload", tickets);
     return { queued: 1, fileReadCount: result.fileReadCount };
   }
 
