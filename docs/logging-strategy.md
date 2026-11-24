@@ -586,6 +586,7 @@ The local API emits these (#305, #306):
 | `agent.session`                       | `AgentSessions`, from begin to end                                                                                                                      |
 | `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
 | `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
+| `deck.guide_build`                    | `createGuideBuilds` in `apps/api/src/deck-guide-builds.ts`, for each guide build, from its start in the worker to its end                               |
 
 ### Requests
 
@@ -1064,7 +1065,7 @@ channel to read the event each emits.
 | `agent_session.mark_seen`            | command, request                        | route, client call                               |
 | `agent_task.configure`               | command, request                        | route, client call                               |
 | `agent_tool.call`                    | request, job                            | local API, renderer                              |
-| `agent_turn.cancel`                  | command, request                        | route                                            |
+| `agent_turn.cancel`                  | command, request                        | route, client call                               |
 | `api.health`                         | request                                 | route                                            |
 | `api.request`                        | request                                 | local API                                        |
 | `api.start`                          | lifecycle                               | local API                                        |
@@ -1138,7 +1139,13 @@ channel to read the event each emits.
 | `connection.remove_secrets`          | command, request                        | route, client call                               |
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
+| `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.consent`                       | command, request                        | route, client call                               |
+| `deck.consent_revoke`                | command, request                        | route, client call                               |
+| `deck.consents`                      | command, request                        | route, client call                               |
+| `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
+| `deck.preload`                       | request                                 | route                                            |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |
 | `description.write`                  | command, request, plugin_operation      | route, plugin method, client call                |
 | `dev_plugins.configure`              | command, ipc                            | IPC channel                                      |

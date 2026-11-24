@@ -20,7 +20,8 @@ import { ReviewThreadCard } from "./review-thread-card";
  * measures every line and card, then one write pass moves them: the cost
  * follows the number of threads, not hunks. The cards are placed again
  * whenever the diff's column changes size, a card does, or a hunk draws the
- * mark after a thread's line.
+ * mark after a thread's line. A thread on a hunk folded as viewed hides
+ * with its line.
  */
 
 /** Space between stacked cards. */
@@ -80,9 +81,8 @@ export function ThreadGutter({
       Number.parseFloat(
         getComputedStyle(grid).getPropertyValue("--diff-line-height"),
       ) || 20;
-    const measured = [
-      ...gutter.querySelectorAll<HTMLElement>("[data-card]"),
-    ].flatMap((card) => {
+    const cards = [...gutter.querySelectorAll<HTMLElement>("[data-card]")];
+    const measured = cards.flatMap((card) => {
       const entry = byId.get(card.dataset.card ?? "");
       const box = entry
         ? grid.querySelector(`[data-hunk=${quoted(entry.hunkId)}]`)
@@ -139,6 +139,15 @@ export function ThreadGutter({
             toX,
           }),
         );
+    }
+    // A card whose hunk is folded as viewed has no line to sit beside.
+    const shown = new Set(measured.map((item) => item.card));
+    for (const card of cards) {
+      if (shown.has(card) || !("placed" in card.dataset)) continue;
+      delete card.dataset.placed;
+      connectors
+        .querySelector(`[data-connector=${quoted(card.dataset.card ?? "")}]`)
+        ?.removeAttribute("d");
     }
     gutter.style.setProperty("min-height", `${bottom}px`);
   }, [byId]);

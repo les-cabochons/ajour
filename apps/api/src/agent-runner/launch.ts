@@ -1,5 +1,8 @@
 /** What a plugin task's run and a conversation's process share to start. */
 
+/** Why a turn or a run can't start while no agent is picked. */
+export const PICK_AN_AGENT = "Pick an installed agent in Settings > Agents.";
+
 export class AgentRunError extends Error {
   readonly status: 400 | 404 | 409;
 

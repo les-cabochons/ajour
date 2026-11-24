@@ -81,6 +81,12 @@ export interface AgentConversationsOptions {
   events: ApiEvents;
   /** Sends a turn's events to the window. */
   publish: (event: AgentTurnEvent) => void;
+  /**
+   * Whether the user still allows the pull request's repository with this
+   * agent. Asked before each turn is sent, so nothing reaches an agent the
+   * user took the repository back from (#791).
+   */
+  admits: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
   idleMs?: number;
   killGraceMs?: number;
   interruptGraceMs?: number;
@@ -90,7 +96,7 @@ export interface AgentConversationsOptions {
 
 type ConversationUnit = Unit<AjourCatalog, "agent.conversation">;
 type TurnUnit = Unit<AjourCatalog, "agent.turn">;
-type CloseReason = "replaced" | "idle" | "shutdown" | "failed";
+type CloseReason = "replaced" | "idle" | "shutdown" | "failed" | "revoked";
 type LaunchStep =
   | "find_executable"
   | "rebind_client"
@@ -100,7 +106,12 @@ type LaunchStep =
   | "write_files"
   | "spawn";
 type TurnStopReason =
-  "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled";
+  | "user"
+  | "replaced"
+  | "shutdown"
+  | "interrupt_timeout"
+  | "stalled"
+  | "revoked";
 
 /** How a turn ended, for the window and its event. */
 type TurnEnding =
@@ -112,7 +123,13 @@ type TurnEnding =
       message: string;
       reason: "cli_failed" | "cli_exited" | "mcp_failed" | "stalled";
     }
-  | { outcome: "failed"; message: string; launchFailure: LaunchFailure };
+  | { outcome: "failed"; message: string; launchFailure: LaunchFailure }
+  | {
+      outcome: "failed";
+      message: string;
+      /** The repository isn't allowed with the conversation's agent now. */
+      reason: "repository_not_allowed";
+    };
 
 interface LaunchFailure {
   step: LaunchStep;
@@ -166,13 +183,19 @@ interface ConversationProcess {
    * turn waits for that, then starts a new process.
    */
   ending: boolean;
+  /**
+   * Set when Ajour ended it for another reason than a failed resume, such
+   * as a cancel or a failed MCP server: one that named no session yet may
+   * still have found it, so the conversation keeps it.
+   */
+  stoppedByAjour: boolean;
 }
 
 interface Conversation {
   id: string;
   /** Its pull request. A new head keeps the conversation. */
   key: string;
-  /** The pull request and the head its tools are bound to now. */
+  /** The pull request, the head its tools are bound to now, and its agent. */
   binding: McpClientPullRequestBinding;
   adapter: AgentCliAdapter;
   protocol: ConversationAdapter;
@@ -237,12 +260,6 @@ export class AgentConversations {
         400,
       );
     }
-    if (!adapter.conversation) {
-      throw new AgentRunError(
-        `${adapter.label} can't hold a conversation about a pull request yet. Pick Claude Code or Codex in Settings > Agents.`,
-        400,
-      );
-    }
     const pathValue = await this.options.loginShellPath();
     if (
       !(await this.options.findExecutable(adapter.executableName, pathValue))
@@ -268,7 +285,7 @@ export class AgentConversations {
       conversation = null;
     }
     conversation ??= this.open(
-      { pullRequest: request.pullRequest, head: request.head },
+      { pullRequest: request.pullRequest, head: request.head, cli: adapter.id },
       adapter,
       adapter.conversation,
       settings,
@@ -300,6 +317,18 @@ export class AgentConversations {
     const found = this.turns.get(turnId);
     if (!found) return false;
     this.stopTurn(found.conversation, found.turn, "user");
+    return true;
+  }
+
+  /**
+   * Closes the conversation when its pull request is one of `pullRequest`'s:
+   * its running turn and those queued behind it stop, and its client is
+   * revoked. Revoking a repository does this (#791).
+   */
+  closeWhere(pullRequest: (key: string) => boolean): boolean {
+    const { conversation } = this;
+    if (!conversation || !pullRequest(conversation.key)) return false;
+    this.close(conversation, "revoked");
     return true;
   }
 
@@ -482,12 +511,33 @@ export class AgentConversations {
   }
 
   /**
-   * Sends the turn to the conversation's process, starting one if needed.
-   * A turn about a new head first rebinds the conversation's tools to it.
+   * Whether the user still allows the pull request's repository with the
+   * conversation's agent. Not allowed, the turn fails and the conversation
+   * closes, so no turn queued behind it is sent either.
+   */
+  private async admitted(conversation: Conversation, turn: Turn) {
+    if (await this.options.admits(conversation.key, conversation.adapter.id)) {
+      return true;
+    }
+    turn.finish({
+      outcome: "failed",
+      // The page shows it, and nothing there names the agent.
+      message:
+        "Ajour may no longer send this repository's code. Ask again to allow it.",
+      reason: "repository_not_allowed",
+    });
+    return false;
+  }
+
+  /**
+   * Sends the turn to the conversation's process, starting one if needed,
+   * once the repository is still allowed with its agent. A turn about a new
+   * head first rebinds the conversation's tools to it.
    */
   private async send(conversation: Conversation, turn: Turn) {
     let step: LaunchStep = "find_executable";
     try {
+      if (!(await this.admitted(conversation, turn)) || turn.settled) return;
       if (turn.head !== conversation.binding.head) {
         step = "rebind_client";
         await this.rebind(conversation, turn);
@@ -519,8 +569,11 @@ export class AgentConversations {
         }
         turn.unit.set({ agent: { resumed: launched.resumed } });
       }
+      // Asked again right before the turn goes: the process may have taken
+      // a while to start.
+      if (!(await this.admitted(conversation, turn))) return;
       const { process: cli } = conversation;
-      if (!cli || turn.settled) return;
+      if (!cli || turn.settled || conversation.closing) return;
       turn.process = cli;
       cli.proc.write(
         cli.codec.sendTurn(
@@ -552,7 +605,7 @@ export class AgentConversations {
 
   /** Binds the conversation, and its client, to the turn's head. */
   private async rebind(conversation: Conversation, turn: Turn) {
-    const binding = { pullRequest: conversation.key, head: turn.head };
+    const binding = { ...conversation.binding, head: turn.head };
     turn.headChangedFrom = conversation.binding.head;
     // The binding changes first: a client created later gets the new head.
     conversation.binding = binding;
@@ -651,9 +704,10 @@ export class AgentConversations {
       onLine: (line) => {
         if (cli) this.onLine(conversation, cli, line);
       },
-      // Progress and retries on stderr show the CLI is still at work.
-      onErrorLine: () => {
-        if (cli) this.onActivity(conversation, cli);
+      // Progress and retries on stderr show the CLI is still at work. Some
+      // CLIs report a failure only there.
+      onErrorLine: (line) => {
+        if (cli) this.onErrorLine(conversation, cli, line);
       },
     });
     cli = {
@@ -662,6 +716,7 @@ export class AgentConversations {
       resumed: resume !== undefined,
       namedSession: false,
       ending: false,
+      stoppedByAjour: false,
     };
     const started = cli;
     conversation.launchCount += 1;
@@ -684,6 +739,18 @@ export class AgentConversations {
     const { events, reply } = cli.codec.read(line);
     cli.proc.write(reply);
     this.onActivity(conversation, cli);
+    for (const event of events) this.onEvent(conversation, cli, event);
+  }
+
+  private onErrorLine(
+    conversation: Conversation,
+    cli: ConversationProcess,
+    line: string,
+  ) {
+    this.onActivity(conversation, cli);
+    if (!cli.codec.readError) return;
+    const { events, reply } = cli.codec.readError(line);
+    cli.proc.write(reply);
     for (const event of events) this.onEvent(conversation, cli, event);
   }
 
@@ -728,14 +795,26 @@ export class AgentConversations {
         if (running) running.toolCalls += 1;
         return;
       case "mcp-failed":
+      case "cli-failed":
         // Ended first, so the turn ends once the process finished.
         this.terminate(cli);
         if (running) {
-          this.reportEnding(conversation, cli, running, {
-            outcome: "failed",
-            message: `The ${event.server} MCP server did not start.`,
-            reason: "mcp_failed",
-          });
+          this.reportEnding(
+            conversation,
+            cli,
+            running,
+            event.kind === "mcp-failed"
+              ? {
+                  outcome: "failed",
+                  message: `The ${event.server} MCP server did not start.`,
+                  reason: "mcp_failed",
+                }
+              : {
+                  outcome: "failed",
+                  message: event.message,
+                  reason: "cli_failed",
+                },
+          );
         }
         return;
       case "turn-done":
@@ -760,9 +839,12 @@ export class AgentConversations {
     }
   }
 
-  /** A resumed process that never named its session found no conversation to resume. */
+  /**
+   * A resumed process that never named its session found no conversation to
+   * resume, unless Ajour ended it before it could.
+   */
   private resumeFailed(cli: ConversationProcess) {
-    return cli.resumed && !cli.namedSession;
+    return cli.resumed && !cli.namedSession && !cli.stoppedByAjour;
   }
 
   /**
@@ -787,7 +869,7 @@ export class AgentConversations {
       return;
     }
     turn.reported ??= ending;
-    if (this.resumeFailed(cli)) this.terminate(cli);
+    if (this.resumeFailed(cli)) this.terminate(cli, { resumeFailed: true });
   }
 
   private onClose(
@@ -927,6 +1009,10 @@ export class AgentConversations {
       unit.end();
       // A conversation that can't start its process can't go on.
       if (!conversation.closing) this.close(conversation, "failed");
+    } else if (ending.reason === "repository_not_allowed") {
+      unit.end("refused", ending.reason);
+      // Nor can one whose repository its agent may no longer read.
+      if (!conversation.closing) this.close(conversation, "revoked");
     } else {
       unit.end("error", ending.reason);
     }
@@ -950,7 +1036,11 @@ export class AgentConversations {
     clearTimeout(conversation.idleTimer);
     if (this.conversation === conversation) this.conversation = null;
     const stopReason: TurnStopReason =
-      reason === "shutdown" ? "shutdown" : "replaced";
+      reason === "shutdown"
+        ? "shutdown"
+        : reason === "revoked"
+          ? "revoked"
+          : "replaced";
     for (const turn of [...conversation.turns]) {
       this.stopTurn(conversation, turn, stopReason);
     }
@@ -1021,8 +1111,12 @@ export class AgentConversations {
     conversation.unit.end(reason === "failed" ? "error" : "ok");
   }
 
-  private terminate(cli: ConversationProcess) {
+  private terminate(
+    cli: ConversationProcess,
+    { resumeFailed = false }: { resumeFailed?: boolean } = {},
+  ) {
     cli.ending = true;
+    if (!resumeFailed) cli.stoppedByAjour = true;
     cli.proc.terminate();
   }
 }

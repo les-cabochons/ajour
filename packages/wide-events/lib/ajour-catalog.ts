@@ -591,8 +591,9 @@ export const catalog = defineCatalog({
           resume_count: operational<number>(),
           /** Turns that rebound the conversation to a new head of its pull request. */
           head_change_count: operational<number>(),
+          /** `revoked`: the user took the repository back from its agent. */
           close_reason: operational<
-            "replaced" | "idle" | "shutdown" | "failed"
+            "replaced" | "idle" | "shutdown" | "failed" | "revoked"
           >(),
         },
         cleanup: {
@@ -610,7 +611,14 @@ export const catalog = defineCatalog({
      */
     "agent.turn": {
       kinds: ["job"],
-      reasons: ["cli_failed", "cli_exited", "mcp_failed", "stalled"],
+      reasons: [
+        "cli_failed",
+        "cli_exited",
+        "mcp_failed",
+        "stalled",
+        /** Refused: the repository isn't allowed with the conversation's agent now (#791). */
+        "repository_not_allowed",
+      ],
       fields: {
         agent: {
           turn_id: operational(),
@@ -629,7 +637,12 @@ export const catalog = defineCatalog({
           text_piece_count: operational<number>(),
           tool_call_count: operational<number>(),
           stop_reason: operational<
-            "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled"
+            | "user"
+            | "replaced"
+            | "shutdown"
+            | "interrupt_timeout"
+            | "stalled"
+            | "revoked"
           >(),
           exit_code: operational<number | null>(),
         },
@@ -652,6 +665,10 @@ export const catalog = defineCatalog({
         "already_running",
         "no_agent_task",
         "blocked",
+        /** A core turn about a repository the user hasn't allowed with this agent (#791). */
+        "repository_not_allowed",
+        /** A core turn about something that isn't a Deck pull request. */
+        "not_open",
         ...requestReasons,
       ],
       fields: {
@@ -3100,7 +3117,136 @@ export const catalog = defineCatalog({
           file_read_count: operational<number>(),
           /** The diff was the one kept for the pull request on screen. */
           kept: operational<boolean>(),
+          /** The diff was one a preload read. */
+          preloaded: operational<boolean>(),
+          /** The guide's concerns. Absent when no guide was built. */
+          concern_count: operational<number>(),
+          /** False when the pipeline failed, and the page shows the files A–Z. */
+          guide_built: operational<boolean>(),
         },
+      },
+    },
+    /**
+     * Preloading pull requests in Deck: each one's file list and files read
+     * through the code host plugin, one file at a time, and its guide build
+     * queued at low priority.
+     */
+    "deck.preload": {
+      kinds: ["request"],
+      reasons: [
+        ...pluginRequestReasons,
+        /** Never thrown by a preload; shared with `deck.open`'s prelude. */
+        "replaced",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        deck: {
+          pull_request_count: operational<number>(),
+          /** The guide builds queued. A pull request already kept is not read again. */
+          queued_count: operational<number>(),
+          file_read_count: operational<number>(),
+          /** Pull requests that couldn't be read, and were skipped. */
+          failed_count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * One guide build: Review Deck's pipeline run on a pull request's diff
+     * in the local API's worker thread, one at a time.
+     */
+    "deck.guide_build": {
+      kinds: ["job"],
+      reasons: [
+        /** Another pull request opened before it was built. */
+        "replaced",
+        /** A preload pushed out of the ones kept before it was built. */
+        "evicted",
+        /** The local API stopped. */
+        "closed",
+        /** A preload stopped for an opened pull request's build; it runs again after. */
+        "preempted",
+      ],
+      fields: {
+        deck: {
+          /** `open` for the pull request on screen, `preload` otherwise. */
+          priority: operational<"open" | "preload">(),
+          /** How long it waited in the queue. */
+          wait_ms: operational<number>(),
+          build_ms: operational<number>(),
+          concern_count: operational<number>(),
+        },
+      },
+    },
+
+    /**
+     * An ask in Deck (#791): "more detail" on a concern, answered from the
+     * cache or by a `deck.ask` turn of the pull request's conversation. The
+     * question and the answer are content, so neither is here.
+     */
+    "deck.ask": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "repository_not_allowed",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The guide has no such concern. */
+        "unknown_anchor",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          anchor_kind: operational<"concern">(),
+          /** The user typed a question in place of the default one. */
+          typed_question: operational<boolean>(),
+          /** Answered from the cache, with no turn. */
+          cached: operational<boolean>(),
+        },
+        agent: { turn_id: operational() },
+      },
+    },
+    /** The user allowed Deck's asks about a repository with the agent picked. */
+    "deck.consent": {
+      kinds: ["command", "request"],
+      reasons: [
+        "blocked",
+        /** Settings › Agents picks another agent than the dialog named. */
+        "agent_changed",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        agent: { cli: operational() },
+      },
+    },
+    /** Settings › Agents reads the repositories the user allowed. */
+    "deck.consents": {
+      kinds: ["command", "request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: { consent_count: operational<number>() },
+      },
+    },
+    /** The user took a repository's consent back. */
+    "deck.consent_revoke": {
+      kinds: ["command", "request"],
+      reasons: ["not_found", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        /** The repository's conversation was open, and closed with its turns. */
+        deck: { conversation_closed: operational<boolean>() },
       },
     },
 

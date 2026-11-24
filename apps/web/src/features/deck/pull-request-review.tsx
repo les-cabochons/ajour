@@ -17,9 +17,10 @@ import {
 
 /**
  * A pull request's review page below its title, in reading order: the
- * status line, the description drawer, the changes with each review thread
- * beside or after its line, then the conversation. The diff, the
- * conversation and the checks are read at once when the page opens.
+ * status line, the description drawer, the changes in the guide's order or
+ * A–Z with each review thread beside or after its line, then the
+ * conversation. The diff and its guide, the conversation and the checks
+ * are read at once when the page opens.
  */
 export function PullRequestReview({
   pullRequest,
@@ -63,12 +64,10 @@ export function PullRequestReview({
         retry={conversation.retry}
       />
       <PullRequestChanges
+        pullRequest={pullRequest}
         state={diff.state}
         retry={diff.retry}
-        placement={placement}
-        floating={floating}
-        hovered={hovered}
-        onHover={setHovered}
+        threads={{ placement, floating, hovered, onHover: setHovered }}
       />
       <PullRequestConversation
         state={conversation.state}

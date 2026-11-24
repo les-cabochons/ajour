@@ -473,6 +473,31 @@ export const ROUTES = {
     path: "/api/deck/:pluginId/connections/:connectionId/open",
     name: "deck.open",
   },
+  deckPreload: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/preload",
+    name: "deck.preload",
+  },
+  deckAsk: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/ask",
+    name: "deck.ask",
+  },
+  deckConsent: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/consent",
+    name: "deck.consent",
+  },
+  deckConsents: {
+    method: "GET",
+    path: "/api/deck/consents",
+    name: "deck.consents",
+  },
+  deckConsentRevoke: {
+    method: "POST",
+    path: "/api/deck/consents/revoke",
+    name: "deck.consent_revoke",
+  },
   backlogComment: {
     method: "POST",
     path: "/api/backlog-comments/:pluginId/connections/:connectionId/:operation",

@@ -1,243 +1,258 @@
-import { memo, useCallback, useId, useMemo, useRef } from "react";
-import type {
-  DeckFile,
-  DeckHunk,
-  DeckPullRequestDiff,
-} from "@ajour/shared/deck";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
-import { DiffHunk, type DiffHunkAnnotation } from "@/components/diff-hunk";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  fileNote,
-  fileWithoutLines,
-  hunkLabel,
-  hunkRowCount,
-} from "@/domain/deck/review-diff";
+  reviewSections,
+  sectionToReach,
+  toggleViewed,
+  type ReviewOrder,
+} from "@/domain/deck/guide";
 import type {
   PlacedThread,
   ThreadPlacement,
 } from "@/domain/deck/review-threads";
+import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
+import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
-import { ReviewThreadCard } from "./review-thread-card";
+import { DeckAskProvider } from "./deck-ask";
+import { GuideTree } from "./guide-tree";
+import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
 import type { PullRequestReadState } from "./use-pull-request-read";
 
-/** The lines a hovered thread highlights, kept inside its hunk. */
-function highlightOf(hunk: DeckHunk, entry: PlacedThread | undefined) {
-  if (!entry) return null;
-  const first = entry.side === "additions" ? hunk.newStart : hunk.oldStart;
-  const start = Math.max(entry.thread.startLine ?? entry.line, first);
-  return { side: entry.side, start, end: entry.line };
+/** Where a section scrolled to lands below the top of the page's scroller, as `scroll-margin-top` in styles/deck.css. */
+const SECTION_MARGIN = 16;
+
+/** The element that scrolls `element`, or undefined for the window. */
+function scrollerOf(element: HTMLElement) {
+  for (
+    let parent = element.parentElement;
+    parent;
+    parent = parent.parentElement
+  ) {
+    const { overflowY } = getComputedStyle(parent);
+    if (overflowY === "auto" || overflowY === "scroll") return parent;
+  }
+  return undefined;
 }
 
-/** One file of the diff: its path, then its hunks in order, its threads after their lines when inline. */
-const ChangedFile = memo(function ChangedFile({
-  file,
-  theme,
-  threads,
-  floating,
-  hovered,
-  onHover,
-  onAnchor,
-}: {
-  file: DeckFile;
-  theme: "light" | "dark";
-  /** The file's threads on its lines, or none. */
-  threads: readonly PlacedThread[] | undefined;
-  /** Threads float in the gutter, so a line only marks where its thread is. */
-  floating: boolean;
-  /** The hovered thread, when it's on this file. */
-  hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
-  /** Called with each mark after a thread's line as it's drawn, so the gutter can place its card. */
-  onAnchor: (element: HTMLElement | null) => void;
-}) {
-  const headingId = useId();
-  const withoutLines = fileWithoutLines(file);
-  const note = fileNote(file);
-  const byHunk = useMemo(() => {
-    const map = new Map<string, DiffHunkAnnotation[]>();
-    for (const entry of threads ?? []) {
-      const list = map.get(entry.hunkId) ?? [];
-      list.push({ key: entry.thread.id, side: entry.side, line: entry.line });
-      map.set(entry.hunkId, list);
-    }
-    return map;
-  }, [threads]);
-  const byId = useMemo(
-    () => new Map((threads ?? []).map((entry) => [entry.thread.id, entry])),
-    [threads],
-  );
-  // In the gutter a line's mark doesn't change with the hover, so the
-  // file's hunks don't draw again as it moves.
-  const hot = floating ? undefined : hovered;
-  const renderAnnotation = useCallback(
-    (key: string) => {
-      if (floating)
-        return (
-          <span
-            ref={onAnchor}
-            className="deck-thread-anchor"
-            data-thread-anchor={key}
-          />
-        );
-      const entry = byId.get(key);
-      return entry ? (
-        <div className="deck-inline-thread">
-          <ReviewThreadCard
-            thread={entry.thread}
-            hot={hot === key}
-            onHover={onHover}
-          />
-        </div>
-      ) : null;
-    },
-    [byId, floating, hot, onAnchor, onHover],
-  );
-  const hoveredEntry = hovered ? byId.get(hovered) : undefined;
-  return (
-    <section className="deck-file" aria-labelledby={headingId}>
-      <header className="deck-file-header">
-        <h3 id={headingId} className="deck-file-path">
-          {file.path}
-        </h3>
-        {note ? <span className="deck-file-note">{note}</span> : null}
-      </header>
-      {withoutLines ? (
-        <p className="deck-file-empty">{withoutLines}</p>
-      ) : (
-        file.hunks.map((hunk) => {
-          const annotations = byHunk.get(hunk.id);
-          return (
-            <DiffHunk
-              key={hunk.id}
-              hunkId={hunk.id}
-              patch={hunk.patch}
-              rows={hunkRowCount(hunk)}
-              label={hunkLabel(file, hunk)}
-              theme={theme}
-              annotations={annotations}
-              renderAnnotation={annotations ? renderAnnotation : undefined}
-              highlight={
-                annotations
-                  ? highlightOf(
-                      hunk,
-                      hoveredEntry?.hunkId === hunk.id
-                        ? hoveredEntry
-                        : undefined,
-                    )
-                  : undefined
-              }
-            />
-          );
-        })
-      )}
-    </section>
-  );
-});
+/** Whether `scroller`, or the window, is scrolled to its end. */
+function atEnd(scroller: HTMLElement | undefined) {
+  const box = scroller ?? document.scrollingElement;
+  return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+}
 
-function ChangedFiles({
-  diff,
-  placement,
-  floating,
-  hovered,
-  onHover,
-}: {
-  diff: DeckPullRequestDiff;
+/** Where the review page shows the review threads, as `PullRequestReview` works it out. */
+export interface ReviewThreadsView {
   placement: ThreadPlacement | undefined;
+  /** From 1,100px, the threads float in a gutter beside the sections. */
   floating: boolean;
   hovered: string | undefined;
   onHover: (threadId: string | undefined) => void;
+}
+
+/**
+ * The guide, or the files A–Z, of an opened pull request, with the guide
+ * tree beside it, and each review thread beside its line in the gutter or
+ * after it. J and K move between its sections and F opens the tree's
+ * titles, while the page is mounted (`deck` shortcuts).
+ */
+function ReviewChanges({
+  pullRequest,
+  threads: { placement, floating, hovered, onHover },
+}: {
+  pullRequest: DeckOpenedPullRequest;
+  threads: ReviewThreadsView;
 }) {
   const theme = useResolvedTheme();
-  const columnRef = useRef<HTMLDivElement>(null);
+  const [chosen, setChosen] = useState<ReviewOrder>("guide");
+  const order: ReviewOrder = pullRequest.guide ? chosen : "files";
+  const sections = useMemo(
+    () => reviewSections(pullRequest, order),
+    [pullRequest, order],
+  );
+  const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
+  const onToggleViewed = useCallback(
+    (hunkId: string) => setViewed((marks) => toggleViewed(marks, hunkId)),
+    [],
+  );
+  const [treeOpen, setTreeOpen] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+
+  /** The section J, K or a tick went to last. */
+  const reached = useRef<number | undefined>(undefined);
+  const reach = useCallback((index: number) => {
+    const section = list.current?.querySelectorAll<HTMLElement>(
+      `[${SECTION_ATTRIBUTE}]`,
+    )[index];
+    if (!section) return;
+    reached.current = index;
+    // Instant, so a second J reads where the first one landed.
+    section.scrollIntoView({ block: "start", behavior: "instant" });
+    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+  }, []);
+  const step = (direction: 1 | -1) => {
+    const element = list.current;
+    if (!element) return;
+    // One read pass on each key press; nothing listens to the scroll.
+    const tops = [
+      ...element.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`),
+    ].map((section) => section.getBoundingClientRect().top);
+    const scroller = scrollerOf(element);
+    const target = sectionToReach(
+      tops,
+      (scroller?.getBoundingClientRect().top ?? 0) + SECTION_MARGIN,
+      direction,
+      atEnd(scroller) ? reached.current : undefined,
+    );
+    if (target !== undefined) reach(target);
+  };
+  useShortcut("deck.next-concern", () => step(1));
+  useShortcut("deck.previous-concern", () => step(-1));
+  useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
+
   const scheduleRef = useRef<(() => void) | undefined>(undefined);
   const onAnchor = useCallback((element: HTMLElement | null) => {
     if (element) scheduleRef.current?.();
   }, []);
-  const { byFile, hunkFiles } = useMemo(() => {
-    const byFile = new Map<string, PlacedThread[]>();
-    const hunkFiles = new Map<string, string>();
-    for (const file of diff.files)
-      for (const hunk of file.hunks) hunkFiles.set(hunk.id, file.path);
+  const { bySection, sectionOfHunk } = useMemo(() => {
+    const sectionOfHunk = new Map<string, string>();
+    for (const section of sections)
+      for (const entry of section.hunks)
+        sectionOfHunk.set(entry.hunk.id, section.key);
+    const bySection = new Map<string, PlacedThread[]>();
     for (const entry of placement?.placed ?? []) {
-      const path = hunkFiles.get(entry.hunkId)!;
-      const list = byFile.get(path) ?? [];
+      const key = sectionOfHunk.get(entry.hunkId);
+      if (key === undefined) continue;
+      const list = bySection.get(key) ?? [];
       list.push(entry);
-      byFile.set(path, list);
+      bySection.set(key, list);
     }
-    return { byFile, hunkFiles };
-  }, [diff, placement]);
-  // Only the hovered thread's file draws again as the hover moves.
+    return { bySection, sectionOfHunk };
+  }, [sections, placement]);
+  // Only the hovered thread's section draws again as the hover moves.
   const hoveredHunk = placement?.placed.find(
     (entry) => entry.thread.id === hovered,
   )?.hunkId;
-  const hoveredPath = hoveredHunk ? hunkFiles.get(hoveredHunk) : undefined;
+  const hoveredSection = hoveredHunk
+    ? sectionOfHunk.get(hoveredHunk)
+    : undefined;
   const placed = placement?.placed ?? [];
   const gutter = floating && placed.length > 0;
-  if (!diff.files.length)
-    return (
-      <p className="deck-file-empty">This pull request changes no files.</p>
-    );
+  // Folding a hunk or changing the order moves the lines, even where the
+  // column keeps its height. The gutter places its cards itself as it mounts.
+  const laidOut = useRef({ sections, viewed });
+  useEffect(() => {
+    if (
+      laidOut.current.sections === sections &&
+      laidOut.current.viewed === viewed
+    )
+      return;
+    laidOut.current = { sections, viewed };
+    scheduleRef.current?.();
+  }, [sections, viewed]);
+
+  const count = order === "guide" ? sections.length : pullRequest.files.length;
   return (
-    <div className="deck-review-grid" data-gutter={gutter || undefined}>
-      <div ref={columnRef} className="deck-review-column">
-        {diff.files.map((file) => (
-          <ChangedFile
-            key={file.path}
-            file={file}
-            theme={theme}
-            threads={byFile.get(file.path)}
-            floating={gutter}
-            hovered={hoveredPath === file.path ? hovered : undefined}
-            onHover={onHover}
-            onAnchor={onAnchor}
-          />
-        ))}
+    <>
+      <div className="deck-guide-header">
+        <SectionHeading trailing={count} className="deck-guide-heading">
+          {order === "guide" ? "Guide" : "Files"}
+        </SectionHeading>
+        {order === "guide" ? (
+          <span className="deck-guide-source">Built from the code</span>
+        ) : null}
+        {pullRequest.guide ? (
+          <ToggleGroup
+            aria-label="Order"
+            variant="outline"
+            size="sm"
+            className="deck-guide-order"
+            value={[order]}
+            onValueChange={(values) => {
+              const next = values[0];
+              if (next === "guide" || next === "files") setChosen(next);
+            }}
+          >
+            <ToggleGroupItem value="guide">Guide</ToggleGroupItem>
+            <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
+          </ToggleGroup>
+        ) : pullRequest.files.length ? (
+          <span className="deck-guide-source">
+            The guide couldn't be built, so the files show A–Z.
+          </span>
+        ) : null}
       </div>
-      {gutter ? (
-        <ThreadGutter
-          placed={placed}
-          columnRef={columnRef}
-          hovered={hovered}
-          onHover={onHover}
-          scheduleRef={scheduleRef}
-        />
-      ) : null}
-    </div>
+      {sections.length ? (
+        <div className="deck-review">
+          <div className="deck-review-grid" data-gutter={gutter || undefined}>
+            <div ref={list} className="deck-review-sections">
+              {sections.map((section) => (
+                <ReviewSectionView
+                  key={section.key}
+                  section={section}
+                  viewed={viewed}
+                  theme={theme}
+                  onToggleViewed={onToggleViewed}
+                  placed={bySection.get(section.key)}
+                  floating={gutter}
+                  hovered={hoveredSection === section.key ? hovered : undefined}
+                  onHover={onHover}
+                  onAnchor={onAnchor}
+                />
+              ))}
+            </div>
+            {gutter ? (
+              <ThreadGutter
+                placed={placed}
+                columnRef={list}
+                hovered={hovered}
+                onHover={onHover}
+                scheduleRef={scheduleRef}
+              />
+            ) : null}
+          </div>
+          <GuideTree
+            sections={sections}
+            viewed={viewed}
+            open={treeOpen}
+            heading={order === "guide" ? "Guide" : "Files"}
+            onToggle={() => setTreeOpen((open) => !open)}
+            onReach={reach}
+          />
+        </div>
+      ) : (
+        <p className="deck-file-empty">This pull request changes no files.</p>
+      )}
+    </>
   );
 }
 
 /**
- * The pull request's changes: every file's hunks, in file order, with each
- * review thread beside its line when `floating`, or after it.
+ * The pull request's changes: its guide, or its files A–Z, once the local
+ * API built them, with each review thread beside its line when `floating`,
+ * or after it.
  */
 export function PullRequestChanges({
+  pullRequest,
   state,
   retry,
-  placement,
-  floating,
-  hovered,
-  onHover,
+  threads,
 }: {
-  state: PullRequestReadState<DeckPullRequestDiff>;
+  pullRequest: LocalPullRequest;
+  state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
-  placement: ThreadPlacement | undefined;
-  floating: boolean;
-  hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
+  threads: ReviewThreadsView;
 }) {
   return (
-    // Named outright: the heading's file count would join its name.
+    // Named outright: the heading's count would join its name.
     <section className="deck-changes" aria-label="Changes">
-      <SectionHeading
-        trailing={
-          state.status === "ready" ? state.value.files.length : undefined
-        }
-      >
-        Changes
-      </SectionHeading>
+      {state.status === "ready" ? null : (
+        <SectionHeading>Changes</SectionHeading>
+      )}
       {state.status === "loading" ? (
         <p role="status" className="deck-file-empty">
           Loading the changes…
@@ -252,13 +267,20 @@ export function PullRequestChanges({
           </Button>
         </MessagePanel>
       ) : (
-        <ChangedFiles
-          diff={state.value}
-          placement={placement}
-          floating={floating}
-          hovered={hovered}
-          onHover={onHover}
-        />
+        <DeckAskProvider
+          pluginId={pullRequest.pluginId}
+          connectionId={pullRequest.connectionId}
+          repository={pullRequest.facts.repository}
+          number={pullRequest.facts.number}
+          head={state.value.headSha}
+        >
+          {/* A new diff, or another head, starts with no hunk marked viewed. */}
+          <ReviewChanges
+            key={`${state.value.baseSha}..${state.value.headSha}`}
+            pullRequest={state.value}
+            threads={threads}
+          />
+        </DeckAskProvider>
       )}
     </section>
   );

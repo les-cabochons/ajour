@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DeckOpenRequest, DeckPullRequestDiff } from "@ajour/shared/deck";
+import type {
+  DeckOpenRequest,
+  DeckOpenedPullRequest,
+} from "@ajour/shared/deck";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import {
   AppApiError,
@@ -68,9 +71,9 @@ function usePullRequestRead<T>(
   return { state, retry };
 }
 
-/** The pull request's diff from the merge base to the head, as the local API builds it. */
+/** The pull request's diff from the merge base to the head, and its guide, as the local API builds them. */
 export const usePullRequestDiff = (pullRequest: LocalPullRequest | undefined) =>
-  usePullRequestRead<DeckPullRequestDiff>(
+  usePullRequestRead<DeckOpenedPullRequest>(
     pullRequest,
     openDeckPullRequest,
     "Unable to read the pull request's changes.",

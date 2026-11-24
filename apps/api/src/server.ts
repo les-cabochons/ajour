@@ -147,8 +147,27 @@ import {
   type CodeHostOperationRequest,
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
-import { deckOpenRequestSchema } from "../../../packages/shared/deck.ts";
-import { createDeckService, DeckBuildReplaced } from "./deck-service.ts";
+import {
+  deckAskRequestSchema,
+  deckConsentRequestSchema,
+  deckConsentRevokeRequestSchema,
+  deckOpenRequestSchema,
+  deckPreloadRequestSchema,
+  parseDeckPullRequestKey,
+  type DeckPullRequestSource,
+} from "../../../packages/shared/deck.ts";
+import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
+import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import {
+  createGuideBuilds,
+  createWorkerGuideRuntime,
+  type DeckGuideRuntime,
+} from "./deck-guide-builds.ts";
+import {
+  createDeckService,
+  DeckBuildReplaced,
+  type DeckCodeHost,
+} from "./deck-service.ts";
 import {
   calendarOperationSchema,
   calendarOperations,
@@ -244,6 +263,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
+import { PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import {
   capabilityOfMethod,
   PluginManager,
@@ -369,6 +389,14 @@ interface AppApiServerOptions {
   reportProcessCrashes?: boolean;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
+  /**
+   * What builds Deck's guides: by default a worker thread running Review
+   * Deck's vendored pipeline (#782). Tests pass an in-process fake to hold
+   * a build.
+   */
+  deckGuideRuntime?: DeckGuideRuntime;
+  /** How long one guide build may run. Tests shorten it. */
+  deckGuideTimeoutMs?: number;
   /**
    * The local log file's reads, for the MCP log tools. The desktop app passes
    * main's query service; without one, as in the standalone API, MCP lists
@@ -1805,8 +1833,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       if (refusal) throw refusal;
     },
   });
-  /** Deck: the pull request on screen, its diff built from both file versions. */
-  const deckService = createDeckService();
+  /**
+   * Deck: the pull request on screen and the preloaded ones, their diffs
+   * built from both file versions and their guides by the vendored pipeline.
+   */
+  const deckService = createDeckService({
+    guides: createGuideBuilds({
+      runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
+      events,
+      timeoutMs: options.deckGuideTimeoutMs,
+    }),
+  });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
@@ -1944,7 +1981,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     ajourMcpUrl: `http://${host}:${port}/mcp/ajour`,
     events,
     // On the window's stream, which the handoffs bridge opens with MCP off.
-    publishTurnEvent: (event) => mcpBridge.publish("agent-turn", event),
+    // Deck's asks read them too, to cache their answers.
+    publishTurnEvent: (event) => {
+      deckAsks.observe(event);
+      mcpBridge.publish("agent-turn", event);
+    },
+    // Each turn is sent only while its repository is allowed with its agent.
+    admitsTurn: (pullRequest, cli) => deckAsks.allowedWith(pullRequest, cli),
     ...(options.agentConversationIdleMs === undefined
       ? {}
       : { conversationIdleMs: options.agentConversationIdleMs }),
@@ -1958,6 +2001,63 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       ? {}
       : { killGraceMs: options.agentKillGraceMs }),
   });
+  /**
+   * Deck's asks (#791): the consent every core turn needs, and the answers
+   * cached per anchor, question and head.
+   */
+  const deckAsks = createDeckAsks({
+    storage,
+    selectedCli: () => agentRunner.selectedCli(),
+    deck: deckService,
+    startTurn: (request) => agentRunner.startTurn(request),
+  });
+
+  /** A Deck pull request's threads, for the agent's `read_threads`. */
+  async function deckConversation(source: DeckPullRequestSource) {
+    const { plugin } = await findPlugin(pluginManager, source.pluginId);
+    if (!plugin || !pluginHasCodeHost(plugin)) {
+      throw new DeckReadRefused("The pull request's code host is off.");
+    }
+    const connection = await storage.connectionForOperation(
+      source.pluginId,
+      source.connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!connection) {
+      throw new DeckReadRefused("The pull request's connection was removed.");
+    }
+    if (
+      connectionAccessRefusal(plugin, connection, "getPullRequestConversation")
+    ) {
+      throw new DeckReadRefused(
+        "The user's access choices don't let Ajour read this pull request's threads.",
+      );
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    try {
+      return await pluginManager.runCodeHostOperation(
+        source.pluginId,
+        "getPullRequestConversation",
+        pluginConnection(connection),
+        { repository: source.repository, number: source.number },
+        call.admit,
+      );
+    } catch (error) {
+      // The plugin's own words may hold what the agent shouldn't see.
+      throw new DeckReadRefused(
+        error instanceof PluginExportMissing
+          ? "This code host doesn't share a pull request's threads yet."
+          : "Ajour couldn't read the threads from the code host.",
+      );
+    }
+  }
+  const deckReads = createDeckAgentReads({
+    deck: deckService,
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    conversation: deckConversation,
+  });
+
   const runtime: AppApiRuntime = {
     folderResolver,
     events,
@@ -1992,6 +2092,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
     readBody: readJsonBody,
     localLogs: options.localLogs,
+    deckReads,
   };
 
   /**
@@ -2883,8 +2984,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const payload = await readRequest(request, agentRunStartRequestSchema);
       try {
         if ("task" in payload) {
-          // A core task: a turn of its pull request's conversation.
+          // A core task: a turn of its pull request's conversation, once the
+          // user allowed its repository (#791).
           unit.set({ agent: { task_id: payload.task } });
+          try {
+            await deckAsks.requireTurnConsent(payload.pullRequest);
+          } catch (error) {
+            if (!(error instanceof DeckAskRefused)) throw error;
+            // A turn has no anchor, so only these two refuse it.
+            unit.refuse(
+              error.eventReason === "repository_not_allowed"
+                ? "repository_not_allowed"
+                : "not_open",
+            );
+            writeJson(response, error.status, error.body);
+            return;
+          }
           const turn = await agentRunner.startTurn(payload);
           unit.set({ agent: { turn_id: turn.id } });
           writeJson(response, 201, turn);
@@ -4564,77 +4679,155 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
-    deckOpen: async ({ request, response, params, unit }) => {
-      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
-      const { connectionId } = params;
-      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const found = await codeHostConnection(
-        response,
-        unit,
-        pluginId,
-        connectionId,
+    deckOpen: async (context) => {
+      const { response, unit } = context;
+      const deck = await deckRequest(context, (body) =>
+        deckOpenRequestSchema.parse(body),
       );
-      if (!found) return;
-      const { plugin, connection } = found;
-      const body = await readJsonBody(request);
-      const ref = readInput(() => deckOpenRequestSchema.parse(body));
-      for (const operation of ["getPullRequestContent", "getFileContent"]) {
-        if (refuseAccessOff(response, unit, plugin, connection, operation)) {
-          return;
-        }
-      }
-      const call = admittedCall(plugin, connection.secrets);
+      if (!deck) return;
       try {
-        const opened = await deckService.openPullRequest(
-          { pluginId, connectionId },
-          ref,
-          {
-            run: (operation, operationRequest) =>
-              pluginManager.runCodeHostOperation(
-                pluginId,
-                operation,
-                pluginConnection(connection),
-                operationRequest,
-                call.admit,
-              ),
-          },
+        const { opened, ...facts } = await deckService.openPullRequest(
+          deck.source,
+          deck.ref,
+          deck.codeHost,
         );
         unit.set({
           deck: {
-            file_count: opened.diff.files.length,
-            hunk_count: opened.diff.files.reduce(
+            file_count: opened.files.length,
+            hunk_count: opened.files.reduce(
               (count, file) => count + file.hunks.length,
               0,
             ),
-            file_read_count: opened.fileReadCount,
-            kept: opened.kept,
+            file_read_count: facts.fileReadCount,
+            kept: facts.kept,
+            preloaded: facts.preloaded,
+            concern_count: opened.guide?.concerns.length,
+            guide_built: opened.guide !== null,
           },
         });
-        writeJson(response, 200, opened.diff);
+        writeJson(response, 200, opened);
       } catch (error) {
-        if (error instanceof DeckBuildReplaced) {
-          unit.refuse("replaced");
-          writeJson(response, 409, { error: error.message });
+        await deck.failed(error);
+      }
+    },
+
+    deckAsk: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckAskRequestSchema);
+      unit.set({
+        deck: {
+          anchor_kind: payload.anchor.kind,
+          typed_question: payload.question !== undefined,
+        },
+      });
+      try {
+        const asked = await deckAsks.ask({ pluginId, connectionId }, payload);
+        unit.set({ deck: { cached: asked.kind === "answer" } });
+        if (asked.kind === "turn") {
+          unit.set({ agent: { turn_id: asked.turn.id } });
+        }
+        writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
+      } catch (error) {
+        if (error instanceof DeckAskRefused) {
+          unit.refuse(error.eventReason);
+          writeJson(response, error.status, error.body);
           return;
         }
-        if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host Deck doesn't read yet (#780).
-          unit.refuse("not_supported");
-          writeJson(response, 404, {
-            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
-            reason: "not_supported",
-          });
-          return;
-        }
-        if (answerAccessOff(response, unit, error)) return;
-        const credentials = await failedCall(
-          storage,
-          unit,
-          error,
-          call,
-          connection,
+        if (!(error instanceof AgentRunError)) throw error;
+        unit.refuse(error.status === 409 ? "already_running" : "blocked");
+        writeJson(response, error.status, { error: error.message });
+      }
+    },
+
+    deckConsent: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckConsentRequestSchema);
+      const cli = await agentRunner.selectedCli();
+      if (!cli?.installed) {
+        unit.refuse("blocked");
+        writeJson(response, 400, {
+          error: cli ? `${cli.label} is not installed.` : PICK_AN_AGENT,
+        });
+        return;
+      }
+      unit.set({ agent: { cli: cli.id } });
+      // Only the agent the dialog named: one picked since asks again.
+      if (cli.id !== payload.cli) {
+        unit.refuse("agent_changed");
+        writeJson(response, 409, {
+          error: `Settings > Agents now picks ${cli.label}. Ask again to allow it.`,
+        });
+        return;
+      }
+      await storage.addDeckConsent({
+        pluginId,
+        connectionId,
+        repository: payload.repository,
+        cli: cli.id,
+        ...(cli.version ? { cliVersion: cli.version } : {}),
+        consentedAt: Date.now(),
+      });
+      writeJson(response, 200, { consents: await storage.getDeckConsents() });
+    },
+
+    deckConsents: async ({ response, unit }) => {
+      const consents = await storage.getDeckConsents();
+      unit.set({ deck: { consent_count: consents.length } });
+      writeJson(response, 200, { consents });
+    },
+
+    deckConsentRevoke: async ({ request, response, unit }) => {
+      const payload = await readRequest(
+        request,
+        deckConsentRevokeRequestSchema,
+      );
+      unit.set({
+        plugin: { id: payload.pluginId },
+        connection: { id: payload.connectionId },
+      });
+      if (!(await storage.revokeDeckConsent(payload))) unit.refuse("not_found");
+      // Its conversation closes: the running turn and those queued stop.
+      const closed = agentRunner.closeConversationWhere((pullRequest) => {
+        const source = parseDeckPullRequestKey(pullRequest);
+        return (
+          source?.pluginId === payload.pluginId &&
+          source.connectionId === payload.connectionId &&
+          source.repository === payload.repository
         );
-        writeJson(response, 502, { error: credentials.errorMessage(error) });
+      });
+      unit.set({ deck: { conversation_closed: closed } });
+      writeJson(response, 200, { consents: await storage.getDeckConsents() });
+    },
+
+    deckPreload: async (context) => {
+      const { response, unit } = context;
+      const deck = await deckRequest(context, (body) =>
+        deckPreloadRequestSchema.parse(body),
+      );
+      if (!deck) return;
+      unit.set({
+        deck: { pull_request_count: deck.ref.pullRequests.length },
+      });
+      try {
+        const preloaded = await deckService.preloadPullRequests(
+          deck.source,
+          deck.ref.pullRequests,
+          deck.codeHost,
+        );
+        unit.set({
+          deck: {
+            queued_count: preloaded.queued,
+            file_read_count: preloaded.fileReadCount,
+            failed_count: preloaded.failed,
+          },
+        });
+        writeJson(response, 202, { queued: preloaded.queued });
+      } catch (error) {
+        await deck.failed(error);
       }
     },
 
@@ -5491,10 +5684,81 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }
 
   /**
-   * Refuses an operation the connection's access doesn't allow, before the
-   * plugin runs: a 403 naming the choice it needs, so the web can hold the
-   * edit. True when it refused.
+   * The prelude of Deck's routes: the connection, the body read with
+   * `parse`, the access its reads need, and the code host bound to the
+   * connection. Undefined once it answered. `failed` answers an error the
+   * service threw.
    */
+  async function deckRequest<Ref>(
+    {
+      request,
+      response,
+      params,
+      unit,
+    }: RouteContext<"deckOpen" | "deckPreload">,
+    parse: (body: unknown) => Ref,
+  ) {
+    const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+    const { connectionId } = params;
+    unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const found = await codeHostConnection(
+      response,
+      unit,
+      pluginId,
+      connectionId,
+    );
+    if (!found) return undefined;
+    const { plugin, connection } = found;
+    const body = await readJsonBody(request);
+    const ref = readInput(() => parse(body));
+    for (const operation of ["getPullRequestContent", "getFileContent"]) {
+      if (refuseAccessOff(response, unit, plugin, connection, operation)) {
+        return undefined;
+      }
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    const codeHost: DeckCodeHost = {
+      run: (operation, operationRequest) =>
+        pluginManager.runCodeHostOperation(
+          pluginId,
+          operation,
+          pluginConnection(connection),
+          operationRequest,
+          call.admit,
+        ),
+    };
+    return {
+      source: { pluginId, connectionId },
+      ref,
+      codeHost,
+      async failed(error: unknown) {
+        if (error instanceof DeckBuildReplaced) {
+          unit.refuse("replaced");
+          writeJson(response, 409, { error: error.message });
+          return;
+        }
+        if (error instanceof PluginExportMissing) {
+          // An older plugin, or a code host Deck doesn't read yet (#780).
+          unit.refuse("not_supported");
+          writeJson(response, 404, {
+            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
+            reason: "not_supported",
+          });
+          return;
+        }
+        if (answerAccessOff(response, unit, error)) return;
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
+      },
+    };
+  }
+
   /**
    * The code host plugin and connection a pull request route acts on, or
    * undefined once it answered a refusal: the plugin is unavailable, has no
@@ -5557,6 +5821,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     return { plugin, connection };
   }
 
+  /**
+   * Refuses an operation the connection's access doesn't allow, before the
+   * plugin runs: a 403 naming the choice it needs, so the web can hold the
+   * edit. True when it refused.
+   */
   function refuseAccessOff(
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
@@ -5893,6 +6162,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    void deckService.close();
     handoffHooks.close();
     commandBridge.close();
     mcpBridge.close();

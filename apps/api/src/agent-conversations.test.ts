@@ -3,14 +3,15 @@ import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
+import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
-import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { AppApiStorage } from "./storage.ts";
 import { windowTokenHeader } from "./test-support/window-token.ts";
 import {
   fakeCliAdapter,
   fakeCodexAdapter,
+  fakeOpencodeAdapter,
   type FakeConversation,
 } from "./test-support/fake-cli-adapter.ts";
 import {
@@ -55,8 +56,19 @@ async function killEscapees(report: string) {
   }
 }
 
-const PR = { pullRequest: "pr-482", head: "a41c9e2" };
-const OTHER_PR = { pullRequest: "pr-485", head: "b52d0f3" };
+/** Two Deck pull requests of one repository, which each test allows first (#791). */
+const REPOSITORY = "acme/billing-api";
+const deckKey = (number: number) =>
+  deckPullRequestKey({
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    number,
+  });
+const PR = { pullRequest: deckKey(482), head: "a41c9e2" };
+const OTHER_PR = { pullRequest: deckKey(485), head: "b52d0f3" };
+/** How the agent's refusals name PR. */
+const PR_LABEL = `${REPOSITORY}#482`;
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
 /** One turn the fake CLI answers: it reads it, streams `pieces`, and ends it. */
@@ -130,7 +142,7 @@ async function startConversationApi(
   running.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const report = path.join(root, "report.jsonl");
   reports.push(report);
-  // Where the runner finds `claude` and `codex`. The fake CLI runs in their place.
+  // Where the runner finds `claude`, `codex` and `opencode`. The fake CLI runs in their place.
   const bin = path.join(root, "bin");
   await mkdir(bin);
   for (const name of ["claude", "codex", "opencode"]) {
@@ -151,7 +163,7 @@ async function startConversationApi(
         conversation,
       ),
       fakeCodexAdapter(report, () => mcpUrl, conversation),
-      opencodeAdapter,
+      fakeOpencodeAdapter(report, () => mcpUrl, conversation),
     ],
     ...(options.idleMs ? { agentConversationIdleMs: options.idleMs } : {}),
     agentInterruptGraceMs: options.interruptGraceMs ?? 5000,
@@ -165,6 +177,19 @@ async function startConversationApi(
     cli: options.cli ?? "claude-code",
     browserMode: "my-chrome",
   });
+  // The user allowed the repository's pull requests with this agent.
+  expect(
+    (
+      await apiRequest(
+        api.baseUrl,
+        "/api/deck/github/connections/work/consent",
+        {
+          repository: REPOSITORY,
+          cli: options.cli ?? "claude-code",
+        },
+      )
+    ).status,
+  ).toBe(200);
   const stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
   running.push(stream.close);
 
@@ -237,6 +262,20 @@ async function startConversationApi(
     async codexTurnsRead(): Promise<string[]> {
       return (await reportLines()).flatMap((line) =>
         typeof line.codexTurn === "string" ? [line.codexTurn] : [],
+      );
+    },
+    /** Each turn an OpenCode process read, in order. */
+    async acpTurnsRead(): Promise<string[]> {
+      return (await reportLines()).flatMap((line) =>
+        typeof line.acpTurn === "string" ? [line.acpTurn] : [],
+      );
+    },
+    /** Each session an OpenCode process loaded, in order. */
+    async acpLoads(): Promise<string[]> {
+      return (await reportLines()).flatMap((line) =>
+        line.stdin?.method === "session/load"
+          ? [String(line.stdin.params.sessionId)]
+          : [],
       );
     },
     /** The active MCP clients, as Settings > MCP lists them. */
@@ -560,22 +599,6 @@ describe("a pull request's conversation", () => {
       );
     },
   );
-
-  it(
-    "refuses a core task on OpenCode, which can't hold a conversation yet",
-    { timeout: 20_000 },
-    async () => {
-      const api = await startConversationApi(() => [], { cli: "opencode" });
-
-      const started = await api.startTurn();
-
-      expect(started.status).toBe(400);
-      expect(started.body.error).toBe(
-        "OpenCode can't hold a conversation about a pull request yet. Pick Claude Code or Codex in Settings > Agents.",
-      );
-      expect(await api.launches()).toEqual([]);
-    },
-  );
 });
 
 describe("the one agent slot", () => {
@@ -679,7 +702,7 @@ describe("the one agent slot", () => {
 
 describe("a conversation's tools", () => {
   it(
-    "binds the client to the pull request: no data or session tool, even with MCP off",
+    "binds the client to the pull request: Deck's reads, no data or session tool, even with MCP off",
     { timeout: 20_000 },
     async () => {
       const api = await startConversationApi(() => [
@@ -709,14 +732,16 @@ describe("a conversation's tools", () => {
 
       const [list, projects, session] = await api.mcpReplies();
       expect(list).toMatchObject({ status: 200 });
-      expect(list!.reply.result.tools).toEqual([]);
+      expect(
+        list!.reply.result.tools.map((tool: { name: string }) => tool.name),
+      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
       for (const [reply, tool] of [
         [projects, "list_projects"],
         [session, "begin_session"],
       ] as const) {
         expect(reply!.reply.result.isError).toBe(true);
         expect(reply!.reply.result.content[0].text).toBe(
-          `This conversation is bound to pull request ${PR.pullRequest} at head ${PR.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
+          `This conversation is bound to pull request ${PR_LABEL} at head ${PR.head}. Ajour refuses ${tool}, which is outside it. Use only the tools that tools/list returns.`,
         );
       }
       expect(
@@ -1396,6 +1421,385 @@ describe("a conversation on Codex", () => {
   });
 });
 
+/** One OpenCode turn the fake CLI answers: it reads it, streams `pieces`, and ends it. */
+const acpAnswer = (...pieces: string[]) => [
+  { acpReadTurn: true },
+  { acpStream: pieces },
+  { acpDone: true },
+];
+
+/** The line OpenCode logs when an MCP server doesn't start. */
+const OPENCODE_MCP_FAILED =
+  'timestamp=2026-11-24T07:15:29.127Z level=WARN run=12f67fb8 message="server unavailable" key=ajour type=remote status=failed';
+
+describe("a conversation on OpenCode", () => {
+  it(
+    "keeps one warm ACP process across turns and streams their text, with MCP off",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        () => [
+          { acpSession: "ses-0" },
+          { acpReadTurn: true },
+          { mcp: { method: "tools/list" } },
+          { acpToolCall: true },
+          { acpStream: ["Hel", "lo"] },
+          { acpDone: true },
+          ...acpAnswer("Second"),
+          { acpReadTurn: true },
+        ],
+        { cli: "opencode" },
+      );
+
+      const first = (await api.startTurn({ message: "What does this do?" }))
+        .body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      const second = (await api.startTurn({ task: "deck.chat" })).body;
+      await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === second.id,
+      );
+
+      expect(api.eventsOf(first.id)).toEqual([
+        {
+          type: "started",
+          turnId: first.id,
+          conversationId: first.conversationId,
+        },
+        expect.objectContaining({ type: "text", index: 0, text: "Hel" }),
+        expect.objectContaining({ type: "text", index: 1, text: "lo" }),
+        expect.objectContaining({ type: "ended", outcome: "done" }),
+      ]);
+      expect(second.conversationId).toBe(first.conversationId);
+      expect(api.eventsOf(second.id)).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Second" }),
+      );
+      const launches = await api.launches();
+      expect(launches).toHaveLength(1);
+      expect(launches[0]!.argv[0]).toBe("acp");
+      const read = await api.acpTurnsRead();
+      expect(read).toHaveLength(2);
+      expect(read[0]).toContain("What does this do?");
+      // The client is bound to the pull request, so it lists no tool.
+      const [list] = await api.mcpReplies();
+      expect(list).toMatchObject({ status: 200 });
+      expect(
+        list!.reply.result.tools.map((tool: { name: string }) => tool.name),
+      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === first.id,
+        ),
+      ).toMatchObject({
+        outcome: "ok",
+        agent: { cli: "opencode", tool_call_count: 1, text_piece_count: 2 },
+      });
+    },
+  );
+
+  it(
+    "cancels a running turn with session/cancel and keeps the process",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        () => [
+          { acpReadTurn: true },
+          { acpStream: ["Thinking"] },
+          { acpWaitForCancel: true },
+          { acpDone: true },
+          ...acpAnswer("After"),
+          { acpReadTurn: true },
+        ],
+        { cli: "opencode" },
+      );
+
+      const turn = (await api.startTurn()).body;
+      await api.waitForTurnEvent("text", (event) => event.turnId === turn.id);
+      expect((await api.cancel(turn.id)).status).toBe(200);
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "cancelled" });
+      const next = (await api.startTurn()).body;
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(await api.launches()).toHaveLength(1);
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === turn.id,
+        ),
+      ).toMatchObject({ outcome: "cancelled", agent: { stop_reason: "user" } });
+    },
+  );
+
+  it(
+    "loads the session again after an idle close, without replaying its history",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) => [
+          { acpSession: `ses-${index}` },
+          ...acpAnswer(`Answer ${index}`),
+          { acpReadTurn: true },
+        ],
+        { cli: "opencode", idleMs: 300 },
+      );
+
+      const first = (await api.startTurn()).body;
+      expect(await api.waitForTurnEvent("conversation-closed")).toMatchObject({
+        conversationId: first.conversationId,
+        reason: "idle",
+      });
+      const second = (await api.startTurn()).body;
+      await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === second.id,
+      );
+
+      expect(await api.launches()).toHaveLength(2);
+      expect(await api.acpLoads()).toEqual(["ses-0"]);
+      // The fake replays "An earlier answer" before the load answers.
+      expect(
+        api
+          .eventsOf(second.id)
+          .flatMap((event) => (event.type === "text" ? [event.text] : [])),
+      ).toEqual(["Answer 1"]);
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === second.id,
+        ),
+      ).toMatchObject({ outcome: "ok", agent: { resumed: true } });
+    },
+  );
+
+  it(
+    "starts the turn over without the history when the session to load is gone",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 1
+            ? [{ acpLoadFails: true }, { acpReadTurn: true }]
+            : [
+                { acpSession: `ses-${index}` },
+                ...acpAnswer(index === 0 ? "First" : "Fresh"),
+                { acpReadTurn: true },
+              ],
+        { cli: "opencode", idleMs: 300 },
+      );
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      await api.waitForTurnEvent("conversation-closed");
+
+      const second = (await api.startTurn({ message: "Still there?" })).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === second.id,
+        ),
+      ).toMatchObject({ outcome: "done", historyLost: true });
+      expect(api.eventsOf(second.id)).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Fresh" }),
+      );
+      expect(await api.launches()).toHaveLength(3);
+      expect(await api.acpLoads()).toEqual(["ses-0"]);
+      const read = await api.acpTurnsRead();
+      expect(read).toHaveLength(2);
+      expect(read[1]).toContain("could not be restored");
+      expect(read[1]).toContain("Still there?");
+    },
+  );
+
+  it.each([
+    {
+      ending: "its MCP server fails",
+      script: [{ acpHoldSession: true }, { stderr: OPENCODE_MCP_FAILED }],
+      cancel: false,
+      outcome: {
+        outcome: "failed",
+        error: "The ajour MCP server did not start.",
+      },
+    },
+    {
+      ending: "the user cancels",
+      script: [{ acpHoldSession: true }],
+      cancel: true,
+      outcome: { outcome: "cancelled" },
+    },
+  ])(
+    "keeps the session to load when $ending while it loads",
+    { timeout: 30_000 },
+    async ({ script, cancel, outcome }) => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 1
+            ? [...script, { hang: true }]
+            : [
+                { acpSession: `ses-${index}` },
+                ...acpAnswer(`Answer ${index}`),
+                { acpReadTurn: true },
+              ],
+        { cli: "opencode", idleMs: 300, killGraceMs: 300 },
+      );
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      await api.waitForTurnEvent("conversation-closed");
+
+      const loading = (await api.startTurn()).body;
+      if (cancel) {
+        await vi.waitFor(async () =>
+          expect(await api.acpLoads()).toHaveLength(1),
+        );
+        await api.cancel(loading.id);
+      }
+      const ended = await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === loading.id,
+      );
+      expect(ended).toMatchObject(outcome);
+      expect(ended).not.toHaveProperty("historyLost");
+      const next = (await api.startTurn()).body;
+      const nextEnded = await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === next.id,
+      );
+
+      // The process that was loading it never said the session was gone,
+      // so the next one loads it again.
+      expect(nextEnded).toMatchObject({ outcome: "done" });
+      expect(nextEnded).not.toHaveProperty("historyLost");
+      expect(await api.launches()).toHaveLength(3);
+      expect((await api.acpLoads()).at(-1)).toBe("ses-0");
+    },
+  );
+
+  it(
+    "ends a process whose session didn't open, and runs the next turn on a new one",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 0
+            ? [{ acpNewFails: "Model not found" }, { hang: true }]
+            : [...acpAnswer("Opened"), { acpReadTurn: true }],
+        { cli: "opencode", killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "failed", error: "Model not found" });
+      const next = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(await api.launches()).toHaveLength(2);
+    },
+  );
+
+  it(
+    "fails a turn whose Ajour MCP server didn't start, which OpenCode only logs",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        () => [{ stderr: OPENCODE_MCP_FAILED }, { hang: true }],
+        { cli: "opencode", killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "The ajour MCP server did not start.",
+      });
+      expect(
+        named(api.events, "agent.turn").find(
+          (event) => event.agent?.turn_id === turn.id,
+        ),
+      ).toMatchObject({ outcome: "error", outcome_reason: "mcp_failed" });
+    },
+  );
+
+  it(
+    "fails a turn whose provider failed, which OpenCode only logs, and keeps the process",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        () => [
+          { acpReadTurn: true },
+          {
+            stderr:
+              'timestamp=2026-11-24T07:22:39.894Z level=ERROR message="stream error" providerID=opencode error.error="AI_APICallError: Free usage limit reached."',
+          },
+          // OpenCode answers the prompt only once it is cancelled.
+          { acpWaitForCancel: true },
+          { acpDone: true },
+          ...acpAnswer("Back"),
+          { acpReadTurn: true },
+        ],
+        { cli: "opencode" },
+      );
+
+      const turn = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({
+        outcome: "failed",
+        error: "Free usage limit reached.",
+      });
+      const next = (await api.startTurn()).body;
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(await api.launches()).toHaveLength(1);
+    },
+  );
+
+  it("fails a turn its prompt request fails", { timeout: 20_000 }, async () => {
+    const api = await startConversationApi(
+      () => [
+        { acpReadTurn: true },
+        { acpDone: "Model not found" },
+        { acpReadTurn: true },
+      ],
+      { cli: "opencode" },
+    );
+
+    const turn = (await api.startTurn()).body;
+
+    expect(
+      await api.waitForTurnEvent("ended", (event) => event.turnId === turn.id),
+    ).toMatchObject({ outcome: "failed", error: "Model not found" });
+  });
+});
+
 describe("a conversation across heads", () => {
   const NEW_HEAD = "c63e1f4";
 
@@ -1441,7 +1845,7 @@ describe("a conversation across heads", () => {
       // The same client, bound to the new head.
       const [refused] = await api.mcpReplies();
       expect(refused!.reply.result.content[0].text).toContain(
-        `bound to pull request ${PR.pullRequest} at head ${NEW_HEAD}.`,
+        `bound to pull request ${PR_LABEL} at head ${NEW_HEAD}.`,
       );
       expect(await api.clients()).toHaveLength(1);
       expect(
@@ -1595,7 +1999,7 @@ describe("the MCP endpoint with MCP off", () => {
       const leftover = await createMcpClient(
         new AppApiStorage(statePath),
         "Claude Code, pull request conversation",
-        { pullRequest: PR },
+        { pullRequest: { ...PR, cli: "claude-code" } },
       );
 
       const api = await startConversationApi(() => [], { statePath });

@@ -140,6 +140,7 @@ import {
 import {
   agentRunnerOverviewSchema,
   agentRunSchema,
+  type AgentCliId,
   type AgentRunnerSettings,
   type PluginTaskRunRequest,
 } from "@ajour/shared/agent-runs";
@@ -190,7 +191,11 @@ import {
   type SwitchableCapability,
 } from "@ajour/shared";
 import {
-  deckPullRequestDiffSchema,
+  deckAskResponseSchema,
+  deckConsentsSchema,
+  deckOpenedPullRequestSchema,
+  type DeckAskRequest,
+  type DeckConsentRevokeRequest,
   type DeckOpenRequest,
 } from "@ajour/shared/deck";
 import {
@@ -211,9 +216,96 @@ export function connectionGeneration(pluginId: string, connectionId: string) {
   return connectionGenerations.get(connectionKey(pluginId, connectionId)) ?? 0;
 }
 
+const deckPath = (pluginId: string, connectionId: string, route: string) =>
+  `/api/deck/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/${route}`;
+
+/**
+ * Asks about a pull request in Deck (#791): the cached answer at once, or
+ * the turn whose `agent-turn` events stream it. A repository the user hasn't
+ * allowed yet answers 409 with `reason: "needs_consent"` and the agent.
+ */
+export function askDeck(
+  pluginId: string,
+  connectionId: string,
+  ask: DeckAskRequest,
+) {
+  return appApiRequest(
+    "askDeck",
+    deckPath(pluginId, connectionId, "ask"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ask),
+    },
+    deckAskResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Allows Deck's asks about a repository's pull requests with `cli`, the
+ * agent the consent dialog named. Refused when Settings › Agents picks
+ * another one now.
+ */
+export function grantDeckConsent(
+  pluginId: string,
+  connectionId: string,
+  repository: string,
+  cli: AgentCliId,
+) {
+  return appApiRequest(
+    "grantDeckConsent",
+    deckPath(pluginId, connectionId, "consent"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repository, cli }),
+    },
+    deckConsentsSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** The repositories the user allowed Deck's asks for, for Settings › Agents. */
+export function getDeckConsents() {
+  return appApiRequest(
+    "getDeckConsents",
+    "/api/deck/consents",
+    undefined,
+    deckConsentsSchema,
+  );
+}
+
+/** Takes a repository's consent back: its next ask asks again. */
+export function revokeDeckConsent(repository: DeckConsentRevokeRequest) {
+  return appApiRequest(
+    "revokeDeckConsent",
+    "/api/deck/consents/revoke",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(repository),
+    },
+    deckConsentsSchema,
+  );
+}
+
+/** Stops an agent turn that waits or runs, such as an ask's. */
+export function cancelAgentTurn(turnId: string) {
+  return appApiRequest(
+    "cancelAgentTurn",
+    `/api/agent-turns/${encodeURIComponent(turnId)}/cancel`,
+    { method: "POST", body: "{}" },
+    z.object({ cancelled: z.literal(true) }),
+  );
+}
+
 /**
  * Opens a pull request in Deck: its diff from the merge base to the head,
- * which the local API builds from both versions of each changed file.
+ * which the local API builds from both versions of each changed file, and
+ * its guide, built from the code by Review Deck's pipeline.
  */
 export function openDeckPullRequest(
   pluginId: string,
@@ -228,7 +320,7 @@ export function openDeckPullRequest(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(pullRequest),
     },
-    deckPullRequestDiffSchema,
+    deckOpenedPullRequestSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
