@@ -997,12 +997,15 @@ function codeHostRequestFields(
   return {};
 }
 
-/** A code host result's catalog fields: how many pull requests, files or threads. */
+/** A code host result's catalog fields: how many pull requests, files, threads or checks. */
 function codeHostResultFields(
   result: CodeHostOperationResult<CodeHostOperation>,
 ): FieldsOf<
   AjourCatalog,
-  "pull_request.sync" | "pull_request.load" | "pull_request.load_conversation"
+  | "pull_request.sync"
+  | "pull_request.load"
+  | "pull_request.load_conversation"
+  | "pull_request.load_checks"
 > {
   if ("pullRequests" in result && "viewer" in result) {
     return { pull_request: { received_count: result.pullRequests.length } };
@@ -1012,6 +1015,9 @@ function codeHostResultFields(
   }
   if ("threads" in result && "timeline" in result) {
     return { pull_request: { thread_count: result.threads.length } };
+  }
+  if ("checks" in result && Array.isArray(result.checks)) {
+    return { pull_request: { check_count: result.checks.length } };
   }
   return {};
 }
@@ -4648,6 +4654,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
+        if (error instanceof PluginExportMissing) {
+          // An older plugin, or a code host that doesn't offer this yet.
+          unit.refuse("not_supported");
+          writeJson(response, 404, {
+            error: `${plugin.displayName} doesn't offer this yet.`,
+            reason: "not_supported",
+          });
+          return;
+        }
         if (answerAccessOff(response, unit, error)) return;
         const credentials = await failedCall(
           storage,

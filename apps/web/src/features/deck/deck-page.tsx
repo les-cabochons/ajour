@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { RiRefreshLine as Refresh } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { PageHeader } from "@/components/page-header";
-import { PropertyList, PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,13 +20,14 @@ import {
   reasonLabels,
   runPullRequestAction,
 } from "./pull-request-row";
-import { PullRequestChanges } from "./pull-request-changes";
+import { personName } from "@/domain/deck/review-status";
+import { PullRequestReview } from "./pull-request-review";
 
 /**
  * Deck: the pull requests the user authored or was asked to review, and one
- * pull request's review page at `/deck/$itemId`: its summary, then every
- * file's hunks. The view is called Deck; what
- * it lists are pull requests.
+ * pull request's review page at `/deck/$itemId`: its title, status line,
+ * description, every file's hunks with their review threads, and its
+ * conversation. The view is called Deck; what it lists are pull requests.
  */
 export function DeckPage({ itemId }: { itemId?: string }) {
   const state = useLocalState();
@@ -114,43 +114,16 @@ export function DeckPage({ itemId }: { itemId?: string }) {
               <h1 className="backlog-item-page-title">{item.facts.title}</h1>
               <p className="backlog-item-page-meta">
                 {item.facts.repository} #{item.facts.number} ·{" "}
-                {item.connectionLabel}
-              </p>
-            </header>
-            <PropertyList className="max-w-xl">
-              <PropertyRow label="State">
-                {item.facts.state === "open"
-                  ? item.facts.draft
-                    ? "Draft"
-                    : "Open"
-                  : item.facts.state === "merged"
-                    ? "Merged"
-                    : "Closed"}
-              </PropertyRow>
-              <PropertyRow label="Author">
-                {item.facts.author.displayName ?? item.facts.author.login}
-              </PropertyRow>
-              <PropertyRow label="On your plate">
+                {item.connectionLabel} · {personName(item.facts.author)} ·{" "}
                 {item.status === "settled"
                   ? "Settled"
                   : isPullRequestSnoozed(item, now)
                     ? "Snoozed"
                     : reasonLabels[item.reason ?? "manual"]}
-              </PropertyRow>
-              <PropertyRow label="Checks">
-                {item.facts.checks === "none"
-                  ? "No checks"
-                  : item.facts.checks === "success"
-                    ? "Passed"
-                    : item.facts.checks === "failure"
-                      ? "Failed"
-                      : "Pending"}
-              </PropertyRow>
-              <PropertyRow label="Last updated">
-                {new Date(item.facts.updatedAt).toLocaleString()}
-              </PropertyRow>
-            </PropertyList>
-            <PullRequestChanges pullRequest={item} />
+              </p>
+            </header>
+            {/* Another pull request starts with its drawer closed, nothing viewed and no ask open. */}
+            <PullRequestReview key={item._id} pullRequest={item} />
           </>
         )}
       </div>

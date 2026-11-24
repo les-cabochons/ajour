@@ -1,6 +1,19 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
-import type { FileDiffOptions, PatchDiffProps } from "@pierre/diffs/react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { CSSProperties, ReactNode } from "react";
+import type {
+  DiffLineAnnotation,
+  FileDiffOptions,
+  PatchDiffProps,
+  SelectedLineRange,
+} from "@pierre/diffs/react";
 
 /*
  * A thin wrapper over `@pierre/diffs`, which renders one hunk of a diff.
@@ -11,6 +24,11 @@ import type { FileDiffOptions, PatchDiffProps } from "@pierre/diffs/react";
  * in the library's worker pool (`diff-highlighter.ts`).
  */
 
+/** What a line annotation carries: the key of what it shows. */
+interface AnnotationData {
+  key: string;
+}
+
 const PatchDiff = lazy(async () => {
   const [{ PatchDiff, WorkerPoolContext }, { diffWorkerPool }] =
     await Promise.all([
@@ -19,10 +37,10 @@ const PatchDiff = lazy(async () => {
     ]);
   const pool = diffWorkerPool();
   // Every hunk highlights in the shared worker pool.
-  function HighlightedPatch(props: PatchDiffProps<undefined, undefined>) {
+  function HighlightedPatch(props: PatchDiffProps<AnnotationData, undefined>) {
     return (
       <WorkerPoolContext.Provider value={pool}>
-        <PatchDiff<undefined, undefined> {...props} />
+        <PatchDiff<AnnotationData, undefined> {...props} />
       </WorkerPoolContext.Provider>
     );
   }
@@ -64,7 +82,7 @@ const options = {
 
 function diffOptions(
   themeType: "light" | "dark",
-): FileDiffOptions<undefined, undefined> {
+): FileDiffOptions<AnnotationData, undefined> {
   return {
     themeType,
     diffStyle: "unified",
@@ -75,6 +93,16 @@ function diffOptions(
   };
 }
 
+/** Which side of the unified diff a line is on: the head's lines are additions, the base's deletions. */
+export type DiffLineSide = "additions" | "deletions";
+
+/** Something shown after a line of the hunk, such as a review thread. */
+export interface DiffHunkAnnotation {
+  key: string;
+  side: DiffLineSide;
+  line: number;
+}
+
 export interface DiffHunkProps {
   /** The hunk alone as a unified diff of its file: its header, the `@@` line and its lines. */
   patch: string;
@@ -83,10 +111,26 @@ export interface DiffHunkProps {
   /** Names the hunk for assistive technology, such as its file and lines. */
   label: string;
   theme: "light" | "dark";
+  /** The hunk's id, as `data-hunk`, so a page can find its box. */
+  hunkId?: string;
+  /** What shows after each annotated line, drawn by `renderAnnotation`. */
+  annotations?: readonly DiffHunkAnnotation[];
+  renderAnnotation?: (key: string) => ReactNode;
+  /** Lines to highlight, such as the line of a hovered comment. */
+  highlight?: { side: DiffLineSide; start: number; end: number } | null;
 }
 
 /** One hunk of a diff, mounted when it nears the screen. */
-export function DiffHunk({ patch, rows, label, theme }: DiffHunkProps) {
+export const DiffHunk = memo(function DiffHunk({
+  patch,
+  rows,
+  label,
+  theme,
+  hunkId,
+  annotations,
+  renderAnnotation,
+  highlight,
+}: DiffHunkProps) {
   const box = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -94,6 +138,26 @@ export function DiffHunk({ patch, rows, label, theme }: DiffHunkProps) {
     if (!element || mounted) return;
     return observeOnce(element, () => setMounted(true));
   }, [mounted]);
+  const lineAnnotations = useMemo(
+    () =>
+      annotations?.map((annotation): DiffLineAnnotation<AnnotationData> => ({
+        side: annotation.side,
+        lineNumber: annotation.line,
+        metadata: { key: annotation.key },
+      })),
+    [annotations],
+  );
+  const selectedLines = useMemo((): SelectedLineRange | null | undefined => {
+    // A hunk without annotations leaves the selection to the library.
+    if (!annotations?.length) return undefined;
+    if (!highlight) return null;
+    return {
+      start: highlight.start,
+      end: highlight.end,
+      side: highlight.side,
+      endSide: highlight.side,
+    };
+  }, [annotations, highlight]);
   // Until it draws, the box is `--diff-line-height` tall per row (styles/deck.css).
   const rowCount = { "--diff-hunk-rows": rows } as CSSProperties;
   return (
@@ -102,14 +166,25 @@ export function DiffHunk({ patch, rows, label, theme }: DiffHunkProps) {
       role="group"
       aria-label={label}
       className="diff-hunk"
+      data-hunk={hunkId}
       data-drawn={mounted || undefined}
       style={rowCount}
     >
       {mounted ? (
         <Suspense fallback={<div className="diff-hunk-placeholder" />}>
-          <PatchDiff patch={patch} options={options[theme]} />
+          <PatchDiff
+            patch={patch}
+            options={options[theme]}
+            lineAnnotations={lineAnnotations}
+            selectedLines={selectedLines}
+            renderAnnotation={
+              renderAnnotation
+                ? (annotation) => renderAnnotation(annotation.metadata.key)
+                : undefined
+            }
+          />
         </Suspense>
       ) : null}
     </div>
   );
-}
+});

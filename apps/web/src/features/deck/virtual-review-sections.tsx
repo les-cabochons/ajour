@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type Ref,
+  type RefObject,
 } from "react";
 import {
   defaultRangeExtractor,
@@ -22,12 +23,17 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import { hunkRowCount } from "@/domain/deck/review-diff";
+import type { PlacedThread } from "@/domain/deck/review-threads";
 import {
   SECTION_MARGIN,
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
-import { ReviewHunkView, ReviewSectionHeader } from "./review-sections";
+import {
+  ReviewHunkView,
+  ReviewSectionHeader,
+  useThreadMarks,
+} from "./review-sections";
 
 /*
  * The sections of a huge pull request's review page (#790): one row per
@@ -36,7 +42,9 @@ import { ReviewHunkView, ReviewSectionHeader } from "./review-sections";
  * mounts, and again as its hunk draws or folds, so the rows above the
  * screen never move what is read. Each row is placed at its own offset,
  * and the row holding the focus stays mounted however far it scrolls away,
- * so Tab goes on from where the reader was.
+ * so Tab goes on from where the reader was. A thread's card in the gutter
+ * shows only while its hunk's row is mounted: the gutter places the cards
+ * again each time the mounted rows holding threads change.
  */
 
 /** Rows mounted beyond each edge of the screen. */
@@ -83,20 +91,45 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   theme,
   onToggleViewed,
   navigator,
+  listRef: list,
+  placed,
+  floating,
+  hovered,
+  onHover,
+  onAnchor,
+  onThreadRowsChange,
 }: {
   sections: readonly ReviewSection[];
   viewed: ReadonlySet<string>;
   theme: "light" | "dark";
   onToggleViewed: (hunkId: string) => void;
   navigator: Ref<SectionNavigator>;
+  /** The rows' box, which the gutter beside it follows. */
+  listRef: RefObject<HTMLDivElement | null>;
+  /** The review threads on the pull request's lines. */
+  placed: readonly PlacedThread[];
+  /** Threads float in the gutter, so a line only marks where its thread is. */
+  floating: boolean;
+  hovered: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+  /** Called with each mark after a thread's line as it's drawn. */
+  onAnchor: (element: HTMLElement | null) => void;
+  /** Called once the rows mounted holding threads change, so the gutter places its cards again. */
+  onThreadRowsChange: () => void;
 }) {
   const baseId = useId();
-  const list = useRef<HTMLDivElement>(null);
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
   /** How far below the top of the scroller's content the rows start. */
   const [margin, setMargin] = useState(0);
   const [lineHeight, setLineHeight] = useState(20);
   const { rows, sectionRows } = useMemo(() => reviewRows(sections), [sections]);
+  const { byHunk, renderAnnotation, hoveredEntry } = useThreadMarks({
+    placed,
+    floating,
+    hovered,
+    onHover,
+    onAnchor,
+  });
   // Counted once: the virtualizer asks again for every row not measured yet
   // each time a row's height changes.
   const estimates = useMemo(
@@ -142,7 +175,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, []);
+  }, [list]);
 
   /** The row holding the focus, kept mounted off screen. */
   const [focusedRow, setFocusedRow] = useState<number>();
@@ -224,6 +257,24 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     requestAnimationFrame(attempt);
   };
 
+  const items = virtualizer.getVirtualItems();
+  // The mounted hunk rows holding threads, compared in a word: a row mounting
+  // or unmounting without threads costs the gutter nothing.
+  const threadRows = items
+    .flatMap((item) => {
+      const row = rows[item.index]!;
+      return row.kind === "hunk" && byHunk.has(row.entry.hunk.id)
+        ? [row.key]
+        : [];
+    })
+    .join("\n");
+  const shownThreadRows = useRef("");
+  useLayoutEffect(() => {
+    if (shownThreadRows.current === threadRows) return;
+    shownThreadRows.current = threadRows;
+    onThreadRowsChange();
+  }, [threadRows, onThreadRowsChange]);
+
   useImperativeHandle(navigator, () => ({
     tops() {
       if (!scroller) return [];
@@ -261,7 +312,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
         }
       }}
     >
-      {virtualizer.getVirtualItems().map((item) => {
+      {items.map((item) => {
         const row = rows[item.index]!;
         const section = sections[row.section]!;
         return (
@@ -292,6 +343,15 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
                 viewed={viewed.has(row.entry.hunk.id)}
                 theme={theme}
                 onToggleViewed={onToggleViewed}
+                annotations={byHunk.get(row.entry.hunk.id)}
+                renderAnnotation={
+                  byHunk.has(row.entry.hunk.id) ? renderAnnotation : undefined
+                }
+                hovered={
+                  hoveredEntry?.hunkId === row.entry.hunk.id
+                    ? hoveredEntry
+                    : undefined
+                }
               />
             )}
           </div>
