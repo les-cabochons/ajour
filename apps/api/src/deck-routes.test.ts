@@ -106,16 +106,37 @@ export async function getFileContent(connection, request) {
 }
 `;
 
-async function createCodeHostPlugin(parent: string, source = pluginSource) {
-  const directory = path.join(parent, "github");
+/** The code host a test plugin stands for: its id, its name, its address field and a repository of it. */
+interface TestCodeHost {
+  id: string;
+  displayName: string;
+  urlField: string;
+  url: string;
+  repository: string;
+}
+
+const GITHUB: TestCodeHost = {
+  id: "github",
+  displayName: "GitHub",
+  urlField: "baseUrl",
+  url: "https://github.com",
+  repository: "acme/api",
+};
+
+async function createCodeHostPlugin(
+  parent: string,
+  source = pluginSource,
+  host = GITHUB,
+) {
+  const directory = path.join(parent, host.id);
   await mkdir(directory, { recursive: true });
   await writeFile(
     path.join(directory, "plugin.json"),
     JSON.stringify({
-      id: "github",
+      id: host.id,
       version: "1.0.0",
       apiVersion: 4,
-      displayName: "GitHub",
+      displayName: host.displayName,
       description: "Test code host.",
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
@@ -128,7 +149,12 @@ async function createCodeHostPlugin(parent: string, source = pluginSource) {
           required: true,
         },
         { id: "tenantLabel", label: "Account", type: "text", required: true },
-        { id: "baseUrl", label: "GitHub URL", type: "url", required: true },
+        {
+          id: host.urlField,
+          label: `${host.displayName} URL`,
+          type: "url",
+          required: true,
+        },
       ],
     }),
     "utf8",
@@ -146,6 +172,7 @@ async function startDeck(
   source?: string,
   deckGuideRuntime?: DeckGuideRuntime,
   deckGuideTimeoutMs?: number,
+  host = GITHUB,
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-"));
   stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
@@ -153,21 +180,23 @@ async function startDeck(
     pluginRuntime: new InProcessPluginRuntime(),
     vault: new MemorySecretVault(),
     allowDevelopmentPlugins: true,
-    developmentPluginDirectories: [await createCodeHostPlugin(root, source)],
+    developmentPluginDirectories: [
+      await createCodeHostPlugin(root, source, host),
+    ],
     deckGuideRuntime,
     deckGuideTimeoutMs,
   });
   stops.unshift(api.stop);
   const created = await apiRequest(
     api.baseUrl,
-    "/api/plugins/github/connections",
+    `/api/plugins/${host.id}/connections`,
     {
       values: {
         label: "Work",
         tenantLabel: "acme",
         autoSync: true,
         autoSyncIntervalMinutes: 5,
-        baseUrl: "https://github.com",
+        [host.urlField]: host.url,
       },
     },
   );
@@ -176,8 +205,8 @@ async function startDeck(
   const open = (number = 7) =>
     apiRequest(
       api.baseUrl,
-      `/api/deck/github/connections/${connectionId}/open`,
-      { repository: "acme/api", number },
+      `/api/deck/${host.id}/connections/${connectionId}/open`,
+      { repository: host.repository, number },
     );
   const fileReads = () =>
     api.events.filter(
@@ -193,10 +222,10 @@ async function startDeck(
   const preload = (...numbers: number[]) =>
     apiRequest(
       api.baseUrl,
-      `/api/deck/github/connections/${connectionId}/preload`,
+      `/api/deck/${host.id}/connections/${connectionId}/preload`,
       {
         pullRequests: numbers.map((number) => ({
-          repository: "acme/api",
+          repository: host.repository,
           number,
         })),
       },
@@ -717,6 +746,296 @@ describe("opening a pull request in Deck", () => {
       status: 404,
       body: { error: "Connection not found." },
     });
+  });
+});
+
+/*
+ * An Azure DevOps pull request (#780). The fake plugin answers what the Azure
+ * DevOps plugin 2.3.0 answers for the changes below
+ * (les-cabochons/ajour-plugins, plugins/azure-devops): the latest iteration's
+ * changes against its common commit, and each file read by commit and path.
+ * Review Deck reads the same changes in the Azure DevOps web page, and each
+ * file by its blob id. Both must cut the same hunks.
+ */
+
+const AZURE_DEVOPS: TestCodeHost = {
+  id: "azure_devops",
+  displayName: "Azure DevOps",
+  urlField: "organizationUrl",
+  url: "https://dev.azure.com/contoso",
+  repository: "Mercury/api",
+};
+
+/** The latest iteration's head, and the common commit it is compared with. */
+const AZURE_HEAD = "9f1c2e7b4a0d3c5e8f6a1b2c3d4e5f60718293a4";
+const AZURE_BASE = "2b7e151628aed2a6abf7158809cf4f3c762e7160";
+
+const AZURE_LIMITS = lines(40);
+const AZURE_BLOBS: Record<string, string> = {
+  "4b825dc642cb6eb9a060e54bf8d69288fbee4904": AZURE_LIMITS,
+  "8ab686eafeb1f44702738c8b0f24f2567c36da6d": AZURE_LIMITS.replace(
+    "line 2\n",
+    "line two\n",
+  ).replace("line 39\n", "line thirty-nine\n"),
+  e69de29bb2d1d6434b8b29ae775ad8c2e48c5391: "export const added = true;\n",
+  "3b18e512dba79e4c8300dd08aeb37f8e728b8dad": "export const removed = true;\n",
+  d670460b4b4aece5915caf5c68d12f560a9fe3e4:
+    "export const moved = 1;\nexport const kept = 2;\n",
+  "1f7391f92b6a3792204e07e99f71f643cc35e7e1":
+    "export const moved = 3;\nexport const kept = 2;\n",
+  f572d396fae9206628714fb2ce00f72e94f2258f: "# Read me\n",
+  "5d308e1d060b0c387d452cf4747f89ecb9935851":
+    "\u0089PNG\r\n\u001a\n\u0000\u0000",
+  a8a940627d132695a9769df883f85992f0ff4a43: "\u0089PNG\r\n\u001a\n\u0000\u0001",
+};
+
+/** As `iterations/3/changes?$compareTo=0` lists them: `changeType` is a list of flags. */
+const AZURE_CHANGES = [
+  {
+    changeTrackingId: 1,
+    item: { gitObjectType: "tree", path: "/src", isFolder: true },
+    changeType: "edit",
+  },
+  {
+    changeTrackingId: 2,
+    item: {
+      objectId: "8ab686eafeb1f44702738c8b0f24f2567c36da6d",
+      originalObjectId: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      gitObjectType: "blob",
+      path: "/src/limits.ts",
+    },
+    changeType: "edit",
+  },
+  {
+    changeTrackingId: 3,
+    item: {
+      objectId: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      gitObjectType: "blob",
+      path: "/src/new.ts",
+    },
+    changeType: "add",
+  },
+  {
+    changeTrackingId: 4,
+    item: {
+      originalObjectId: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad",
+      gitObjectType: "blob",
+      path: "/src/old.ts",
+    },
+    changeType: "delete",
+  },
+  {
+    changeTrackingId: 5,
+    item: {
+      objectId: "1f7391f92b6a3792204e07e99f71f643cc35e7e1",
+      originalObjectId: "d670460b4b4aece5915caf5c68d12f560a9fe3e4",
+      gitObjectType: "blob",
+      path: "/src/after.ts",
+    },
+    changeType: "edit, rename",
+    originalPath: "/src/before.ts",
+  },
+  {
+    changeTrackingId: 6,
+    item: {
+      objectId: "f572d396fae9206628714fb2ce00f72e94f2258f",
+      originalObjectId: "f572d396fae9206628714fb2ce00f72e94f2258f",
+      gitObjectType: "blob",
+      path: "/docs/guide.md",
+    },
+    changeType: "rename",
+    originalPath: "/docs/read me.md",
+  },
+  {
+    changeTrackingId: 7,
+    item: {
+      objectId: "a8a940627d132695a9769df883f85992f0ff4a43",
+      originalObjectId: "5d308e1d060b0c387d452cf4747f89ecb9935851",
+      gitObjectType: "blob",
+      path: "/assets/logo.png",
+    },
+    changeType: "edit",
+  },
+];
+
+/** What the plugin answers for those changes: no folder, no line counted, nothing guessed binary. */
+const AZURE_CONTENT = {
+  headSha: AZURE_HEAD,
+  baseSha: AZURE_BASE,
+  files: [
+    { path: "src/limits.ts", status: "modified" },
+    { path: "src/new.ts", status: "added" },
+    { path: "src/old.ts", status: "removed" },
+    { path: "src/after.ts", previousPath: "src/before.ts", status: "renamed" },
+    {
+      path: "docs/guide.md",
+      previousPath: "docs/read me.md",
+      status: "renamed",
+    },
+    { path: "assets/logo.png", status: "modified" },
+  ].map((file) => ({ ...file, additions: 0, deletions: 0, binary: false })),
+};
+
+/** The files the plugin reads through items, by `commit:path`: each change's blobs where they are. */
+const AZURE_FILES = Object.fromEntries(
+  AZURE_CHANGES.flatMap((change) => {
+    const { objectId, originalObjectId } = change.item as {
+      objectId?: string;
+      originalObjectId?: string;
+    };
+    const path = change.item.path.slice(1);
+    const basePath = change.originalPath?.slice(1) ?? path;
+    return [
+      ...(originalObjectId
+        ? [[`${AZURE_BASE}:${basePath}`, AZURE_BLOBS[originalObjectId]!]]
+        : []),
+      ...(objectId ? [[`${AZURE_HEAD}:${path}`, AZURE_BLOBS[objectId]!]] : []),
+    ];
+  }),
+);
+
+const azureDevOpsSource = `
+const CONTENT = ${JSON.stringify(AZURE_CONTENT)};
+const FILES = ${JSON.stringify(AZURE_FILES)};
+export async function validateConnection({ config }) {
+  return { normalizedConfig: config, connectionSummary: {} };
+}
+export async function getPullRequestContent(connection, request) {
+  if (request.repository !== "Mercury/api" || request.number !== 12) throw new Error("Azure DevOps could not find the pull request.");
+  return CONTENT;
+}
+export async function getFileContent(connection, request) {
+  const text = FILES[request.sha + ":" + request.path];
+  if (text === undefined) return { kind: "missing" };
+  if (text.includes("\\u0000")) return { kind: "binary" };
+  return { kind: "text", content: text };
+}
+`;
+
+/**
+ * The hunks Review Deck cuts from the same changes in the Azure DevOps web
+ * page (review-deck `extension/src/data/adoSource.ts` and
+ * `review/engine.ts`): folders left out, an addition or deletion first,
+ * then a rename, else an edit; each side read by its blob id, and a file
+ * with a NUL on either side binary.
+ */
+function reviewDeckHunks() {
+  const ADD = 1;
+  const RENAME = 8;
+  const DELETE = 16;
+  const FLAGS: Record<string, number> = {
+    add: ADD,
+    edit: 2,
+    rename: RENAME,
+    delete: DELETE,
+  };
+  const changes = AZURE_CHANGES.filter((change) => !change.item.isFolder).map(
+    (change) => {
+      const flags = change.changeType
+        .split(", ")
+        .reduce((all, flag) => all | FLAGS[flag]!, 0);
+      const changeType =
+        flags & ADD
+          ? ("add" as const)
+          : flags & DELETE
+            ? ("delete" as const)
+            : flags & RENAME
+              ? ("rename" as const)
+              : ("edit" as const);
+      const item = change.item as {
+        objectId?: string;
+        originalObjectId?: string;
+      };
+      return {
+        path: change.item.path.replace(/^\//, ""),
+        originalPath: change.originalPath?.replace(/^\//, ""),
+        changeType,
+        oldObjectId: changeType === "add" ? undefined : item.originalObjectId,
+        newObjectId: changeType === "delete" ? undefined : item.objectId,
+      };
+    },
+  );
+  const contents = new Map<string, FileContents>(
+    changes.map((change) => {
+      const old = change.oldObjectId ? AZURE_BLOBS[change.oldObjectId]! : null;
+      const next = change.newObjectId ? AZURE_BLOBS[change.newObjectId]! : null;
+      const binary = [old, next].some((text) => text?.includes("\u0000"));
+      return [change.path, { old, new: next, binary, tooLarge: false }];
+    }),
+  );
+  return parseDiff(buildDiff(changes, contents)).flatMap((file) =>
+    file.hunks.map((hunk) => [hunk.id, hunk.header]),
+  );
+}
+
+describe("opening an Azure DevOps pull request in Deck", () => {
+  it("gives the hunk ids Review Deck gives for the same iteration pair", async () => {
+    const { open } = await startDeck(
+      azureDevOpsSource,
+      undefined,
+      undefined,
+      AZURE_DEVOPS,
+    );
+
+    const opened = await open(12);
+
+    expect(opened.status).toBe(200);
+    const served = (
+      opened.body.files as { hunks: { id: string; header: string }[] }[]
+    ).flatMap((file) => file.hunks.map((hunk) => [hunk.id, hunk.header]));
+    expect(served.sort()).toEqual(reviewDeckHunks().sort());
+    // A binary file and a file renamed without changes keep one hunk, with no header.
+    expect(served.sort()).toEqual([
+      ["assets/logo.png#0", ""],
+      ["docs/guide.md#0", ""],
+      ["src/after.ts#0", "@@ -1,2 +1,2 @@"],
+      ["src/limits.ts#0", "@@ -1,5 +1,5 @@"],
+      ["src/limits.ts#1", "@@ -36,5 +36,5 @@"],
+      ["src/new.ts#0", "@@ -1,0 +1,1 @@"],
+      ["src/old.ts#0", "@@ -1,1 +1,0 @@"],
+    ]);
+  });
+
+  it("shows every file in path order, a rename at its previous path and a binary file without its lines", async () => {
+    const { open, fileReads } = await startDeck(
+      azureDevOpsSource,
+      undefined,
+      undefined,
+      AZURE_DEVOPS,
+    );
+
+    const opened = await open(12);
+
+    expect(opened.body).toMatchObject({
+      headSha: AZURE_HEAD,
+      baseSha: AZURE_BASE,
+    });
+    expect(
+      (
+        opened.body.files as {
+          path: string;
+          previousPath?: string;
+          status: string;
+          binary: boolean;
+          hunks: unknown[];
+        }[]
+      ).map((file) => [
+        file.path,
+        file.previousPath ?? null,
+        file.status,
+        file.binary,
+        file.hunks.length,
+      ]),
+    ).toEqual([
+      ["assets/logo.png", null, "modified", true, 1],
+      ["docs/guide.md", "docs/read me.md", "renamed", false, 1],
+      ["src/after.ts", "src/before.ts", "renamed", false, 1],
+      ["src/limits.ts", null, "modified", false, 2],
+      ["src/new.ts", null, "added", false, 1],
+      ["src/old.ts", null, "deleted", false, 1],
+    ]);
+    // Both versions of the edited, renamed and binary files, one of the added and deleted ones.
+    expect(fileReads()).toBe(10);
   });
 });
 

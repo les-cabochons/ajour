@@ -144,9 +144,9 @@ La version qui ajoutera la connexion Microsoft mettra cette politique à jour et
 
 ### Azure DevOps
 
-Le [plugin Azure DevOps](/plugins/azure-devops), dont le guide est en anglais, utilise l'adresse de votre organisation et votre jeton d'accès personnel pour lire ses éléments de travail et ses demandes de fusion. Ces données peuvent comprendre les noms des projets et des dépôts, les titres et les descriptions des éléments, les estimations, les états, les priorités, les commentaires, l'activité de revue et l'identité des personnes concernées. Les identités peuvent inclure les noms, les adresses courriel et les avatars retournés par Azure DevOps. Les suggestions de personnes peuvent rechercher dans l'organisation lorsque votre jeton le permet.
+Le [plugin Azure DevOps](/plugins/azure-devops), dont le guide est en anglais, utilise l'adresse de votre organisation et votre jeton d'accès personnel pour lire ses éléments de travail et ses demandes de fusion. Ces données peuvent comprendre les noms des projets et des dépôts, les titres et les descriptions des éléments, les estimations, les états, les priorités, les commentaires, l'activité de revue et l'identité des personnes concernées. Les identités peuvent inclure les noms, les adresses courriel et les avatars retournés par Azure DevOps. Les suggestions de personnes peuvent rechercher dans l'organisation lorsque votre jeton le permet. Lorsque vous ouvrez une demande de fusion dans Deck, il lit la liste des fichiers que modifie sa dernière itération et le contenu complet de chacun de ces fichiers à deux commits : celui auquel cette itération est comparée, où sa branche et la branche cible se rejoignent, et son dernier commit.
 
-Le plugin envoie à Azure DevOps les changements de description, d'estimation, d'état, de priorité, de commentaire, de réaction et de mention que vous demandez. Les éléments importés sont enregistrés dans votre espace de travail local. Le texte des commentaires est récupéré pour l'affichage et gardé en mémoire, sans archive enregistrée des commentaires. Le contenu des commentaires et des revues de demandes de fusion peut servir à établir les faits d'activité et de mention. Leur texte ne fait pas partie de ces faits synchronisés. Retirer une connexion n'efface pas le contenu déjà envoyé à Azure DevOps.
+Le plugin envoie à Azure DevOps les changements de description, d'estimation, d'état, de priorité, de commentaire, de réaction et de mention que vous demandez. Les éléments importés sont enregistrés dans votre espace de travail local. Le texte des commentaires est récupéré pour l'affichage et gardé en mémoire, sans archive enregistrée des commentaires. Le contenu des commentaires et des revues de demandes de fusion peut servir à établir les faits d'activité et de mention. Leur texte ne fait pas partie de ces faits synchronisés. Ajour construit sur votre appareil le diff de la demande, et le guide qui en regroupe les changements, à partir du contenu des fichiers lus, et les garde en mémoire seulement pour la demande affichée : ouvrir une autre demande ou fermer Ajour les efface, et ils ne sont pas enregistrés sur le disque. Retirer une connexion n'efface pas le contenu déjà envoyé à Azure DevOps.
 
 ### GitHub
 
@@ -203,6 +203,8 @@ Vous pouvez envoyer une plainte à la même adresse. Au Québec, vous pouvez aus
 ## Modifications de cette politique
 
 Nous publierons les modifications ici et mettrons à jour la date ci-dessus. Une modification importante sera accompagnée d'un avis sur cette page qui explique le changement. La mise à jour de la politique n'autorise pas à elle seule un nouvel usage de vos renseignements lorsqu'un consentement est nécessaire. Les versions antérieures restent accessibles dans l'historique du dépôt.
+
+24 novembre 2026 : Ajout de la lecture, par le plugin Azure DevOps, des fichiers modifiés d'une demande de fusion ouverte dans Deck, et de la conservation en mémoire seulement du diff qu'Ajour en tire.
 
 24 novembre 2026 : Ajout de ce qu'une question sur une demande de tirage dans Deck envoie au fournisseur de l'agent, de l'accord demandé une fois par dépôt et de la conservation des réponses en mémoire.
 
