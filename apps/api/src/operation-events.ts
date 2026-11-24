@@ -33,6 +33,7 @@ export const CODE_HOST_EVENTS = {
   getFileContent: "pull_request.load_file",
   getPullRequestConversation: "pull_request.load_conversation",
   getChecks: "pull_request.load_checks",
+  getLinkedTickets: "pull_request.load_tickets",
   browsePullRequests: "pull_request.browse",
   submitReview: "pull_request.submit_review",
   postComment: "pull_request.comment",

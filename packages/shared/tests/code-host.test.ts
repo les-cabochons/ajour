@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   codeHostChecksResultSchema,
+  codeHostLinkedTicketsResultSchema,
   codeHostOperationSchema,
   codeHostPullRequestFactsSchema,
   codeHostOperations,
@@ -139,6 +140,49 @@ describe("code host contract", () => {
     expect(() =>
       codeHostChecksResultSchema.parse({
         checks: [{ name: "build", state: "none" }],
+      }),
+    ).toThrow();
+  });
+
+  it("reads each linked ticket's title, body, link and state, an issue or a work item", () => {
+    const result = codeHostLinkedTicketsResultSchema.parse({
+      tickets: [
+        {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          body: "## Steps\n\nCall it twice.",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+        {
+          number: 1_204,
+          title: "Rate limits for the billing API",
+          body: "<p>Limit each tenant.</p>",
+          url: "https://dev.azure.com/acme/billing/_workitems/edit/1204",
+          state: "Active",
+        },
+      ],
+    });
+    expect(result.tickets.map((ticket) => ticket.number)).toEqual([482, 1_204]);
+    expect(result.tickets[1]?.repository).toBeUndefined();
+    expect(codeHostLinkedTicketsResultSchema.parse({ tickets: [] })).toEqual({
+      tickets: [],
+    });
+    const ticket = result.tickets[0]!;
+    for (const wrong of [
+      { ...ticket, url: "not a link" },
+      { ...ticket, title: " " },
+      { ...ticket, state: "" },
+      { ...ticket, number: 0 },
+    ]) {
+      expect(() =>
+        codeHostLinkedTicketsResultSchema.parse({ tickets: [wrong] }),
+      ).toThrow();
+    }
+    expect(() =>
+      codeHostLinkedTicketsResultSchema.parse({
+        tickets: Array.from({ length: 51 }, () => ticket),
       }),
     ).toThrow();
   });
