@@ -311,8 +311,9 @@ export function createGuideBuilds(options: {
      * `open` build runs before every queued preload, and stops a preload
      * running. A build already queued for the key is shared, and moves ahead
      * when it is now an open. Once `signal` aborts, the build stops and its
-     * promise rejects with `GuideBuildCancelled`. A build that fails or
-     * takes too long rejects with its error.
+     * promise rejects with `GuideBuildCancelled`, as it does at once once the
+     * queue is closed. A build that fails or takes too long rejects with its
+     * error.
      */
     build(
       key: string,
@@ -320,6 +321,8 @@ export function createGuideBuilds(options: {
       priority: GuidePriority,
       signal?: AbortSignal,
     ): Promise<DeckGuide> {
+      // A closed queue builds nothing more: a late build is cancelled at once.
+      if (closed) return Promise.reject(new GuideBuildCancelled());
       let job = jobs.get(key);
       if (!job) {
         let resolve!: Job["resolve"];

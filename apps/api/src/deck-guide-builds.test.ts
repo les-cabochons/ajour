@@ -120,3 +120,15 @@ it("starts no build once closed, even for a preload an open had just stopped", a
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(held.built()).toEqual(["src/a.ts"]);
 });
+
+it("cancels a build asked for after the queue closed, rather than leave it waiting", async () => {
+  const held = heldRuntime();
+  const queue = createGuideBuilds({ runtime: held.runtime });
+  await queue.close();
+
+  await expect(
+    queue.build("a", input("src/a.ts"), "open"),
+  ).rejects.toBeInstanceOf(GuideBuildCancelled);
+  queue.prioritize("a");
+  expect(held.built()).toEqual([]);
+});
