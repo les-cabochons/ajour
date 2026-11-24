@@ -7,11 +7,7 @@ import {
   parseDiff,
   type FileContents,
 } from "../../../packages/review-deck/diff.ts";
-import {
-  createPipelineDeps,
-  mergeConfig,
-  runPipeline,
-} from "../../../packages/review-deck/pipeline.ts";
+import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
@@ -254,6 +250,29 @@ function heldGuides() {
   };
   return { runtime, hold, started, built };
 }
+
+/**
+ * Review Deck's pipeline, loaded at run time: importing it by name would
+ * type-check the vendored code with the API's stricter settings
+ * (packages/review-deck/VENDORED.md).
+ */
+type Pipeline = {
+  runPipeline(
+    input: {
+      title: string;
+      description: string;
+      diff: string;
+      files: { get(path: string, side: "old" | "new"): Promise<string | null> };
+    },
+    config: unknown,
+    deps: unknown,
+  ): Promise<{ groups: GuideJobConcern[] }>;
+  mergeConfig(): unknown;
+  createPipelineDeps(): Promise<unknown>;
+};
+const pipelineEntry = "../../../packages/review-deck/pipeline.ts";
+const loadPipeline = () =>
+  import(new URL(pipelineEntry, import.meta.url).href) as Promise<Pipeline>;
 
 /** Lets the open whose file list or reads just ended queue its build. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
@@ -739,6 +758,8 @@ describe("the guide of a pull request opened in Deck", () => {
         ),
       );
     const [old, head] = [versions("base"), versions("head")];
+    const { runPipeline, mergeConfig, createPipelineDeps } =
+      await loadPipeline();
     const expected = await runPipeline(
       {
         title: "",
@@ -788,6 +809,8 @@ describe("the guide of a pull request opened in Deck", () => {
     ).toMatchObject({
       deck: { concern_count: expected.groups.length, guide_built: true },
     });
+    // The guide's titles and paths are content: no event carries them.
+    expect(JSON.stringify(api.events)).not.toContain("api.ts");
   });
 
   it("builds an opened pull request before the preloads still queued", async () => {

@@ -631,6 +631,17 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
 - Single-key shortcuts show in the menus as labels without being registered, so they never fire while the user types.
 - The web build has no menu bar. The palette and the "?" overlay cover everything the menus offer.
 
+### Deck review page
+
+Page-scoped keys, decided in [#774](https://github.com/les-cabochons/ajour/issues/774) and added with [#782](https://github.com/les-cabochons/ajour/issues/782). They work only on a pull request's review page, at `/deck/$itemId`, and use letters no app key takes there. Elsewhere nothing handles them, so E, F and S keep their app meanings: E settles a focused item, F favors a focused task or project, and S starts or stops an entry. S stays the timer key on the review page too.
+
+| Key   | Action                                |
+| ----- | ------------------------------------- |
+| J / K | Next or previous concern              |
+| F     | Open or close the guide tree's titles |
+
+The "?" overlay lists them under "Deck review page", and the command palette offers them while the page shows.
+
 ### Shortcut reference
 
 "?" opens an overlay listing every shortcut, with a search field.
@@ -1117,15 +1128,22 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 ### Changes
 
-Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-cabochons/ajour/issues/779).
+Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-cabochons/ajour/issues/779) and [The built guide: concerns in reading order](https://github.com/les-cabochons/ajour/issues/782).
 
-- Below the summary, the page shows the pull request's changes under a **Changes** heading with the file count: every changed file in path order, each with its path and a quiet note for an added, deleted or renamed file ("Renamed from …"), then its hunks in order. A hunk keeps 3 lines of context, and its long lines wrap rather than scroll sideways.
+- Below the summary, the page shows the pull request's changes as its **guide**: the hunks grouped into concerns, in reading order, under a **Guide** heading with the concern count. Each concern is a numbered section with its title and a one-line rationale, then its hunks, each after its file's path and a quiet note for an added, deleted or renamed file ("Renamed from …"). A concern whose hunks are all viewed fills its number.
+- The guide is always built locally from the code, by Review Deck's pipeline, with no agent. Its source label after the heading is plain text, "Built from the code", with no icon.
+- **Guide** and **Files A–Z**, a toggle at the end of the heading's row, switch to every changed file in path order, under a **Files** heading with the file count: each with its path and the same quiet note, then its hunks in order. The page opens on the guide. When the guide couldn't be built, the page shows Files A–Z with no toggle and says "The guide couldn't be built, so the files show A–Z."
+- Every hunk has a **Viewed** mark at the end of its header. A viewed hunk folds to its header; unmarking it draws it again. The marks are local to the page for now: opening the pull request again starts with none.
+- **The quiet guide tree** sits on the right of the changes. Closed, it is a strip of ticks, one per concern, or per file in Files A–Z: each as long as its hunks and filled as they are marked viewed, with the viewed count under them. Its button, or F, opens it on the numbered titles, each with its viewed count, and closes it again. A tick or a title scrolls to its section. In the narrow view the ticks run across above the changes, with no titles.
+- **J and K** go to the next and the previous concern, or file in Files A–Z. K first goes back to the top of the concern being read. Both move the focus to the concern's title. See [Deck review page](#deck-review-page) under Keyboard.
+- A hunk keeps 3 lines of context, and its long lines wrap rather than scroll sideways.
 - Ajour builds the diff itself, from the version of each changed file where the pull request's branch started (the merge base) and the version at its head, the way Review Deck does, so each hunk has Review Deck's id. The code host's own patch is never shown.
 - A file Ajour can't read as text says "Not shown: a binary file, or one too large to read." instead of hunks: a binary file, one over 5,000,000 characters or 8 MB, or one whose name the code host can't serve. A file renamed without changes and an empty file say so too.
 - While the changes load, the page says "Loading the changes…". A failure shows its reason with **Retry**. A version of a file that the pull request names but the code host doesn't have fails the open, rather than show the whole file added or removed.
 - A code host whose plugin doesn't read a pull request's changes yet, such as Azure DevOps until #780 or a GitHub plugin before 0.4.0, says "<Plugin> doesn't show a pull request's changes yet.", with no Retry.
 - Opening another pull request while one still loads stops reading the first one's files.
-- The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff of the pull request on screen is kept in memory until another one opens, so coming back to it at the same head reads no file again.
+- The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff and guide of the pull request on screen are kept in memory until another one opens, so coming back to it at the same head reads no file again.
+- Guides are built one at a time, off the window. The guide of the pull request just opened is built before any preloaded one still waiting, and the changes show once both the diff and the guide are ready.
 
 ### On your plate
 

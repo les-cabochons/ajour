@@ -1,5 +1,8 @@
 @layer components {
-  /* Deck's review page: every file's hunks, in file order (#779). */
+  /*
+   * Deck's review page: the guide's concerns in reading order, or every
+   * file's hunks A–Z (#779, #782), with the quiet guide tree on the right.
+   */
   .deck-changes {
     display: flex;
     min-width: 0;
@@ -7,11 +10,345 @@
     gap: 1.5rem;
   }
 
-  .deck-file {
+  .deck-guide-header {
+    display: flex;
+    min-height: 1.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .deck-guide-heading {
+    flex: none;
+    margin: 0;
+  }
+
+  .deck-guide-source {
+    min-width: 0;
+    flex: 1;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-guide-order {
+    margin-left: auto;
+  }
+
+  /* The sections, then the guide tree's column: a 24px strip, or 13rem open. */
+  .deck-review {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 1.25rem;
+  }
+
+  .deck-review-sections {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .deck-file,
+  .deck-concern {
     display: flex;
     min-width: 0;
     flex-direction: column;
     gap: 0.5rem;
+    /* Where J, K and the tree's ticks land it. */
+    scroll-margin-top: 1rem;
+  }
+
+  .deck-file-path:focus,
+  .deck-concern-title:focus {
+    outline: none;
+  }
+
+  .deck-concern-header {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .deck-concern-number {
+    display: inline-grid;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: none;
+    place-items: center;
+    margin-top: 0.0625rem;
+    border: 1px solid var(--field-border);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+  }
+
+  .deck-concern-number[data-done] {
+    border-color: var(--foreground);
+    background: var(--foreground);
+    color: var(--background);
+  }
+
+  .deck-concern-text {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .deck-concern-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .deck-concern-rationale {
+    margin: 0.125rem 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-concern-progress {
+    flex: none;
+    margin-top: 0.125rem;
+  }
+
+  /* A hunk: its file in a concern, its Viewed mark, then its lines. */
+  .deck-hunk {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .deck-hunk-header {
+    display: flex;
+    min-width: 0;
+    height: 1.5rem;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .deck-hunk-path {
+    min-width: 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .deck-hunk-viewed {
+    display: inline-flex;
+    height: 1.5rem;
+    flex: none;
+    align-items: center;
+    gap: 0.375rem;
+    margin-left: auto;
+    padding: 0 0.375rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-hunk-viewed:hover {
+    background: var(--hover-bg);
+  }
+
+  .deck-hunk-viewed-box {
+    display: inline-grid;
+    width: 0.875rem;
+    height: 0.875rem;
+    place-items: center;
+    border: 1px solid var(--field-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .deck-hunk-viewed[aria-pressed="true"] .deck-hunk-viewed-box {
+    border-color: var(--foreground);
+    background: var(--foreground);
+    color: var(--background);
+  }
+
+  .deck-hunk-viewed-box svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  /*
+   * The quiet guide tree. Closed, a 24px strip of ticks: each a 4px bar as
+   * long as its hunks, filled as they are viewed. Open, the titles.
+   */
+  .deck-guide-tree {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    width: 1.5rem;
+    max-height: calc(100vh - 6rem);
+    flex-direction: column;
+    align-items: center;
+    align-self: start;
+    gap: 0.375rem;
+    overflow-y: auto;
+  }
+
+  .deck-guide-tree[data-open] {
+    width: 13rem;
+    align-items: stretch;
+  }
+
+  .deck-tree-toggle {
+    display: inline-grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex: none;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+  }
+
+  .deck-tree-toggle:hover,
+  .deck-tick:hover,
+  .deck-tree-row:hover {
+    background: var(--hover-bg);
+  }
+
+  .deck-tree-toggle svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .deck-tree-ticks,
+  .deck-tree-rows {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    flex-direction: column;
+    gap: 0.125rem;
+    list-style: none;
+  }
+
+  .deck-tick {
+    display: grid;
+    width: 1.5rem;
+    place-items: center;
+    padding: 0.1875rem 0;
+    border-radius: var(--radius-sm);
+  }
+
+  .deck-tick-bar {
+    position: relative;
+    display: block;
+    width: 4px;
+    height: var(--deck-tick-length);
+    flex: none;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--field-border);
+  }
+
+  .deck-tick-bar::after {
+    position: absolute;
+    inset: 0 0 auto;
+    height: var(--deck-tick-fill);
+    background: var(--foreground);
+    content: "";
+    opacity: 0.7;
+  }
+
+  .deck-tree-progress {
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    writing-mode: vertical-rl;
+  }
+
+  .deck-tree-head {
+    display: flex;
+    height: 1.5rem;
+    align-items: center;
+    gap: 0.375rem;
+    padding-left: 0.375rem;
+  }
+
+  .deck-tree-heading {
+    flex: 1;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 500;
+  }
+
+  .deck-tree-row {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.3125rem 0.375rem;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    text-align: left;
+  }
+
+  .deck-tree-row .deck-tick-bar {
+    height: 0.875rem;
+    margin-top: 0.0625rem;
+  }
+
+  .deck-tree-title {
+    min-width: 0;
+    flex: 1;
+    line-height: 1.35;
+  }
+
+  .deck-tree-count,
+  .deck-tree-number {
+    flex: none;
+    color: var(--text-tertiary);
+  }
+
+  /* The narrow view: the ticks run across, above the changes, with no titles. */
+  @variant narrow {
+    .deck-review {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .deck-guide-tree,
+    .deck-guide-tree[data-open] {
+      position: static;
+      order: -1;
+      width: auto;
+      max-height: none;
+      flex-direction: row;
+      margin-bottom: 1rem;
+    }
+
+    .deck-tree-toggle,
+    .deck-tree-progress,
+    .deck-tree-head {
+      display: none;
+    }
+
+    .deck-tree-ticks {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+
+    .deck-tick {
+      width: auto;
+      padding: 0.5rem 0.125rem;
+    }
+
+    .deck-tick .deck-tick-bar {
+      width: var(--deck-tick-length);
+      height: 4px;
+    }
+
+    .deck-tick .deck-tick-bar::after {
+      inset: 0 auto 0 0;
+      width: var(--deck-tick-fill);
+      height: auto;
+    }
   }
 
   .deck-file-header {

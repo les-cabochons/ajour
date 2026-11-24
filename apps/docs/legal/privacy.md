@@ -9,7 +9,7 @@ next: false
 
 # Privacy policy
 
-Last updated: November 23, 2026
+Last updated: November 24, 2026
 
 <a href="/legal/confidentialite" lang="fr">Version française</a> · [Terms of service](/legal/terms)
 
@@ -148,7 +148,7 @@ The plugin sends description, estimate, state, priority, comment, reaction and m
 
 The [GitHub plugin](/plugins/github) uses your GitHub or GitHub Enterprise Server address and personal access token. It reads your account identity, organisation and team membership needed for review requests, repository names, assigned issues and their descriptions, and pull-request facts such as authors, reviewers, checks and activity. It can read comment and review text to detect mentions and review activity. When you open a pull request in Deck, it reads the list of the pull request's changed files and the full content of each changed file at two commits: the one the pull request's branch started from and its latest commit.
 
-Ajour keeps imported issues and pull-request facts locally. Pull-request comment and review text is not stored in those facts. Ajour builds the pull request's diff on your device from the file contents it read, and keeps it in memory for the pull request on screen only: opening another pull request or closing Ajour clears it, and it is not saved to disk. When you ask to change an issue's state, the plugin sends that change to GitHub. Comments, pull-request reviews and merges in this version happen on GitHub itself. Removing the connection does not remove the original issues or pull requests from GitHub.
+Ajour keeps imported issues and pull-request facts locally. Pull-request comment and review text is not stored in those facts. Ajour builds the pull request's diff, and the guide that groups its changes, on your device from the file contents it read, and keeps them in memory for the pull request on screen only: opening another pull request or closing Ajour clears it, and it is not saved to disk. When you ask to change an issue's state, the plugin sends that change to GitHub. Comments, pull-request reviews and merges in this version happen on GitHub itself. Removing the connection does not remove the original issues or pull requests from GitHub.
 
 ### Jira
 
@@ -199,6 +199,8 @@ Send privacy complaints to the same address. In Quebec, you can also contact the
 ## Changes to this policy
 
 We will publish changes here and update the date above. Material changes will include a notice on this page explaining what changed. A policy update does not by itself authorise a new use of your information where consent is required. The page's earlier versions remain available in the repository's history.
+
+November 24, 2026: Added that Ajour also builds a guide of the pull request's changes on your device, kept in memory like its diff.
 
 November 23, 2026: Added that the GitHub plugin reads the changed files of a pull request you open in Deck, and that Ajour keeps the diff it builds from them in memory only.
 
