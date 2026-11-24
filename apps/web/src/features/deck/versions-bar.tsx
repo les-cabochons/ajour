@@ -57,24 +57,26 @@ function VersionsMenu({
           />
         }
       >
-        {versions.map((version, index) => (
-          <Fragment key={version.number}>
-            {index ? <span aria-hidden="true">·</span> : null}
-            <span
-              className="deck-version"
-              data-shown={version === shown || undefined}
-            >
-              {`v${version.number}`}
-            </span>
-            {version === reviewed ? (
-              <Check
-                role="img"
-                aria-label={`You reviewed v${version.number}`}
-                className="deck-version-reviewed"
-              />
-            ) : null}
-          </Fragment>
-        ))}
+        <span className="deck-versions-items">
+          {versions.map((version, index) => (
+            <Fragment key={version.number}>
+              {index ? <span aria-hidden="true">·</span> : null}
+              <span
+                className="deck-version"
+                data-shown={version === shown || undefined}
+              >
+                {`v${version.number}`}
+              </span>
+              {version === reviewed ? (
+                <Check
+                  role="img"
+                  aria-label={`You reviewed v${version.number}`}
+                  className="deck-version-reviewed"
+                />
+              ) : null}
+            </Fragment>
+          ))}
+        </span>
         <Down aria-hidden="true" className="deck-versions-more" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-auto max-w-96">
@@ -196,7 +198,10 @@ export function VersionsBar({
               onPressedChange={onFilter}
               aria-label={`Changes since your review ${counted}`}
             >
-              Changes since your review
+              <span className="deck-versions-since-wide">
+                Changes since your review
+              </span>
+              <span className="deck-versions-since-narrow">Since review</span>
               <Value className="deck-versions-count">{counted}</Value>
             </Toggle>
           </>

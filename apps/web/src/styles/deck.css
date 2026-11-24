@@ -62,14 +62,15 @@
     text-overflow: ellipsis;
   }
 
-  /* `v1 · v2 ✓ · v3 ▾`, one button that opens each version's commits. */
+  /*
+   * `v1 · v2 ✓ · v3 ▾`, one button that opens each version's commits. With
+   * many versions the oldest are cut, so the latest and ▾ stay in view.
+   */
   .deck-versions-list {
     display: inline-flex;
     height: 1.5rem;
     min-width: 0;
     align-items: center;
-    gap: 0.25rem;
-    overflow: hidden;
     padding: 0 0.25rem;
     border-radius: var(--radius-sm);
     color: var(--text-tertiary);
@@ -81,7 +82,17 @@
     background: var(--hover-bg);
   }
 
+  .deck-versions-items {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    overflow: hidden;
+  }
+
   .deck-version {
+    flex: none;
     color: var(--text-secondary);
   }
 
@@ -107,6 +118,14 @@
 
   .deck-versions-since {
     flex: none;
+  }
+
+  .deck-versions-since-narrow {
+    display: none;
+  }
+
+  .deck-versions-more {
+    margin-left: 0.125rem;
   }
 
   .deck-versions-count {
@@ -577,6 +596,15 @@
   @variant narrow {
     .deck-review {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* "Since review", so the versions and their ▾ keep their room. */
+    .deck-versions-since-wide {
+      display: none;
+    }
+
+    .deck-versions-since-narrow {
+      display: inline;
     }
 
     .deck-guide-tree,
