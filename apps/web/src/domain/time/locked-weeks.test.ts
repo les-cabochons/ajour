@@ -521,6 +521,7 @@ describe("submit and reopen", () => {
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
       projects: state.projects,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
       weekDates: getWeekDates(LOCKED),
     });
 

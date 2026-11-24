@@ -7,4 +7,5 @@ Week 45 for Workday · Mon 2 – Sun 8 Nov 2026 · by task · hours use a comma
 
 Not sent     1:30 on Ajour Desktop / 09 Admin is local only.
 Waiting      3:00 on Temp migration has no Workday task yet.
+Held         0:15 on Sat 7 Nov, a non-working day. Move it to a working day.
 Running      1:24 on 07 Export is not listed. Stop it first.

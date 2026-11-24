@@ -210,8 +210,8 @@ export function HandoffTemplateEditor({
       </div>
       {invalidBranch ? (
         <p role="alert" className="text-destructive">
-          The branch template produces an invalid git branch. Leave it empty for
-          no worktree.
+          The branch template produces an invalid git branch. Leave it empty to
+          name a new worktree's branch after its folder, such as aj-4821.
         </p>
       ) : null}
       {!items.length ? (

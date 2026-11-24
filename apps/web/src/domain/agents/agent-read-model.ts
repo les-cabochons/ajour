@@ -35,6 +35,8 @@ import {
   applyCommitTarget,
   describeTimesheetCommitValues,
   getTimesheetEntryChange,
+  holdNonWorkingDay,
+  isChangeCommittable,
   isTimesheetEntryCommitted,
   listWeekChanges,
   type TimesheetChange,
@@ -590,11 +592,12 @@ export function getWeekChangesForAgent(
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
       projects: state.projects,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
       weekDates,
     })
-      // A change on a Not known yet task waits for the user, so no agent
-      // sends it under a temporary name.
-      .filter((change) => change.kind === "deleted" || !change.waiting)
+      // A change on a Not known yet task or a non-working day waits for the
+      // user, so no agent sends it.
+      .filter(isChangeCommittable)
       .filter((change) => !onlyChecked || !uncheckedIds.has(change.entryId))
       .map((change) => ({
         change: change.kind,
@@ -615,7 +618,7 @@ export function getWeekChangesForAgent(
 /**
  * The change of `entryId` now, as the week's changes list it: its deleted
  * change when it has a tombstone, else its entry's change, once local time is
- * left out. Null when the entry has nothing to commit, or only local time,
+ * left out and time on a non-working day is held. Null when the entry has nothing to commit, or only local time,
  * and undefined when Ajour knows no entry or deleted entry with that ID.
  */
 function findTimesheetChange(
@@ -632,7 +635,13 @@ function findTimesheetChange(
     ? { kind: "deleted", entryId, committed: tombstone.commit }
     : entry && getTimesheetEntryChange(entry);
   if (!tombstone && !entry) return undefined;
-  return (change && applyCommitTarget(change, state.projects)) ?? null;
+  const committable = change && applyCommitTarget(change, state.projects);
+  return committable
+    ? holdNonWorkingDay(
+        committable,
+        state.userPreferences.weeklyCapacityTargets,
+      )
+    : null;
 }
 
 /**
@@ -663,6 +672,11 @@ export function checkChangeVersionsOrRefuse(
       );
       throw new AgentToolRefusal(
         `${entryId} is on ${taskName ? `"${taskName}", a task` : "a task"} that is Not known yet. Its time stays out of the commit until the user chooses what the task commits as.`,
+      );
+    }
+    if (change && change.kind !== "deleted" && change.nonWorkingDay) {
+      throw new AgentToolRefusal(
+        `${entryId} is on ${change.current.localDate}, a non-working day. Its time stays out of the commit until the user moves it to a working day or deletes it.`,
       );
     }
     if (
@@ -721,6 +735,7 @@ export function getWeekStatusForAgent(
     entries: state.timesheetEntries,
     tombstones: state.timesheetTombstones,
     projects: state.projects,
+    capacityTargets: state.userPreferences.weeklyCapacityTargets,
     weekDates,
   }).length;
   const committedEntries = committed.map(({ entryId, commit }) => ({
@@ -836,6 +851,7 @@ export function getWeekLinesForAgent(
     entries: weekEntries,
     groupBy,
     projects,
+    capacityTargets: state.userPreferences.weeklyCapacityTargets,
     weekDates: selectedDates,
   }).map((section) => ({
     ...(section.localDate ? { localDate: section.localDate } : {}),
@@ -868,6 +884,9 @@ export function getWeekLinesForAgent(
   const waitingTasks = summary.warnings.flatMap((warning) =>
     warning.kind === "waiting-task" ? [warning] : [],
   );
+  const nonWorkingDays = summary.warnings.flatMap((warning) =>
+    warning.kind === "non-working-day" ? [warning] : [],
+  );
   return {
     weekOf: weekDates[0]!,
     groupBy,
@@ -889,6 +908,15 @@ export function getWeekLinesForAgent(
         taskId: task.taskId,
         taskName: task.taskName,
         hours: toDecimalHours(task.durationMs),
+      })),
+    },
+    nonWorkingDays: {
+      hours: toDecimalHours(
+        nonWorkingDays.reduce((total, day) => total + day.durationMs, 0),
+      ),
+      days: nonWorkingDays.map((day) => ({
+        date: day.localDate,
+        hours: toDecimalHours(day.durationMs),
       })),
     },
     running: readUnsavedRunningTime(state, week, now),

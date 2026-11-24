@@ -221,6 +221,7 @@ describe("agent tool contracts", () => {
           },
         ],
       },
+      nonWorkingDays: { hours: 0, days: [] },
       running: {
         timerId: "t",
         date: "2026-10-14",

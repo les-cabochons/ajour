@@ -51,8 +51,8 @@ function TypeIcon({ svg }: { svg: string }) {
   return (
     <img
       alt=""
-      width={16}
-      height={16}
+      width={14}
+      height={14}
       className="connection-type-icon"
       src={`data:image/svg+xml,${encodeURIComponent(svg)}`}
     />

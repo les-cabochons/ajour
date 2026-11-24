@@ -503,6 +503,7 @@ describe("agent read model", () => {
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
       projects: state.projects,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
       weekDates: WEEK,
     }).map((change) => timesheetChangeVersion(change));
 
@@ -561,6 +562,36 @@ describe("agent read model", () => {
       ),
     ).toThrow(
       'e1 is on "Build", a task that is Not known yet. Its time stays out of the commit until the user chooses what the task commits as.',
+    );
+  });
+
+  it("leaves out changes on a non-working day, and refuses to mark them", () => {
+    const working = changesState();
+    // e1 is on Tuesday 2026-10-13, which gets no capacity here.
+    const state: LocalAppState = {
+      ...working,
+      userPreferences: {
+        ...working.userPreferences,
+        weeklyCapacityTargets: {
+          ...working.userPreferences.weeklyCapacityTargets,
+          tuesday: 0,
+        },
+      },
+    };
+    const changes = getWeekChangesForAgent(state, allChecked).changes;
+    expect(changes.map((change) => change.entryId)).not.toContain("e1");
+
+    const version = getWeekChangesForAgent(working, allChecked).changes.find(
+      (change) => change.entryId === "e1",
+    )!.version;
+    expect(() =>
+      checkChangeVersionsOrRefuse(
+        state,
+        [{ entryId: "e1", version }],
+        NO_PROPERTY_PLUGINS,
+      ),
+    ).toThrow(
+      "e1 is on 2026-10-13, a non-working day. Its time stays out of the commit until the user moves it to a working day or deletes it.",
     );
   });
 
@@ -969,6 +1000,7 @@ describe("the Commit page's lines for agents", () => {
           },
         ],
       },
+      nonWorkingDays: { hours: 0, days: [] },
       running: {
         timerId: "timer-1",
         date: "2026-10-14",
@@ -1146,6 +1178,7 @@ describe("the Commit page's lines for agents", () => {
       sections: [],
       notSent: { hours: 0, items: [] },
       waiting: { hours: 0, tasks: [] },
+      nonWorkingDays: { hours: 0, days: [] },
       running: null,
     });
   });

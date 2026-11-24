@@ -224,15 +224,23 @@ export class DesktopRequiredPluginRuntime implements PluginRuntime {
  * (#819): `branchExists: true` when the branch Ajour asked for already
  * exists, or `setting`, the id of the tool's declared setting whose value it
  * refused. The host checks the setting against the tool's own.
+ * `mayHaveStarted: true` says the tool can't tell whether its thread started
+ * (#857), so Ajour keeps the worktree it made for the start.
  */
-export type HandoffRefusalHint = { branchExists: true } | { setting: string };
+export type HandoffRefusalHint =
+  { branchExists: true } | { setting: string } | { mayHaveStarted: true };
 
 /** The hint a thrown value carries, if it gives one (see `HandoffRefusalHint`). */
 export function handoffRefusalOf(
   error: unknown,
 ): HandoffRefusalHint | undefined {
   if (typeof error !== "object" || error === null) return undefined;
-  const { branchExists, setting } = error as Record<string, unknown>;
+  const { branchExists, setting, mayHaveStarted } = error as Record<
+    string,
+    unknown
+  >;
+  // First: a tool that may run must never lose its worktree to another hint.
+  if (mayHaveStarted === true) return { mayHaveStarted: true };
   if (branchExists === true) return { branchExists: true };
   // A manifest's setting id is 1 to 120 characters (`fieldIdSchema`).
   if (typeof setting === "string" && setting.trim() && setting.length <= 120)

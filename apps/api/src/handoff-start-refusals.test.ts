@@ -144,7 +144,7 @@ export function startHandoff(request) {
       item: { key: "PAY-12", title, type: "Bug", url: "" },
       settings: options.settings ?? {},
       // The default branch template would make every start ask for one.
-      branchOverride: options.branch ?? "pay-12",
+      startIn: { kind: "new", branch: options.branch ?? "pay-12" },
       promptOverride: "Fix it",
     });
   return { start, folder, other, sink };

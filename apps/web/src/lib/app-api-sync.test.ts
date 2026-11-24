@@ -562,6 +562,51 @@ describe("backlog refresh status", () => {
     },
   );
 
+  it("keeps an estimate typed into a blank field while the sync ran", async () => {
+    const { localStore, syncBacklogConnection, itemId, item } = await setup();
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise));
+    // The request sends the remaining estimate blank.
+    const run = syncBacklogConnection("azure_devops", "c1", {
+      trigger: "manual",
+    });
+    localStore.updateWorkItem(itemId, { remainingEstimateHours: 3 });
+    // The source got 6 meanwhile. The answer leaves out the blank it was sent.
+    pending.resolve(
+      Response.json(
+        answer(
+          { author: "Ana", at: "2026-10-18T10:30:00Z" },
+          {
+            commentFacts: [],
+            workItemUpdates: [
+              {
+                localWorkItemId: itemId,
+                sourceId: "s1",
+                fields: {
+                  remainingEstimateHours: {
+                    status: "pulled",
+                    remoteValue: 6,
+                    nextBaselineValue: 6,
+                  },
+                },
+              },
+            ],
+          },
+        ),
+      ),
+    );
+    await run;
+
+    // Both sides changed: the next upload finds the conflict.
+    expect(item()).toMatchObject({
+      remainingEstimateHours: 3,
+      estimateSync: { remainingEstimateHours: { remoteValue: 6 } },
+    });
+    expect(
+      item().estimateSync?.remainingEstimateHours?.baselineValue,
+    ).toBeUndefined();
+  });
+
   it("keeps local items absent from a read-only visit refresh", async () => {
     const { localStore, syncBacklogConnection, itemId, item } = await setup();
     localStore.unsettleWorkItem(itemId);

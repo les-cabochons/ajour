@@ -40,6 +40,11 @@ export interface HandoffTool {
   /** How the tool closes a thread from the card (#850). Absent, it can't. */
   closesThreads?: HandoffCloseKind;
   /**
+   * The tool makes its own git worktree (#863): Ajour makes none for it,
+   * and Start in decides whether the tool does.
+   */
+  ownWorktree?: boolean;
+  /**
    * The tool's switch on the plugin's page (#760). Only a tool that is on
    * takes new hand offs and offers found threads; one that is off still
    * names and draws the handoffs it started.
@@ -86,6 +91,7 @@ export function listHandoffTools(
         iconSvg: tool.iconSvg,
         followsState: tool.followsState !== false,
         ...(tool.closesThreads ? { closesThreads: tool.closesThreads } : {}),
+        ...(tool.ownWorktree ? { ownWorktree: true } : {}),
         enabled: enabled.has(tool.id),
         available: detected ? (found?.available ?? false) : undefined,
         ...(detected && !found?.available
@@ -161,7 +167,9 @@ export function getHandoffToolNote(tool: HandoffTool) {
 
 /**
  * What a tool's row says under its name in the hand-off sheet: why it can't
- * run, else whether Ajour follows its threads or it only starts them.
+ * run, else whether Ajour follows its threads or it only starts them. A
+ * tool that makes its own worktree says that instead where the hand off
+ * would start in one (`getOwnWorktreeNote`).
  */
 export function getHandoffToolSummary(tool: HandoffTool) {
   return (

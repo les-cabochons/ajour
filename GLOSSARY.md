@@ -218,6 +218,10 @@ _Avoid_: Snapshot, fingerprint, synced copy (that is a time sync's)
 The values of a time entry that Ajour and the other system of a time sync last agreed on: its day, minutes, whether it runs, project and task. It is not the committed copy: the timesheet tool learns of an entry only through a commit. When a later change there can't be taken, such as a move to a project the connection doesn't manage, the synced copy holds back Ajour's older values, which aren't sent while the entry keeps them. See ADR 0018.
 _Avoid_: Committed copy, remote copy, mirror
 
+**Non-working day**:
+A weekday whose Time capacity is zero, Saturday and Sunday by default. Its time stays out of the commit until the user moves it to a working day. When no weekday has capacity, no day is non-working.
+_Avoid_: Weekend (for the rule), day off, holiday
+
 **Submitted week**:
 A week the user locked after committing every change: its entries are read-only, for agents too, until the user reopens it. The code calls it a locked week.
 _Avoid_: Closed week, finalized week, frozen week
@@ -343,7 +347,7 @@ Something one connection may do that the user turns on for that connection, such
 _Avoid_: Permission, scope, toggle, feature flag
 
 **Handoff**:
-A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool. A thread the user started on their own becomes a handoff when its title names the item's key in brackets and the user links it from the item's Handoffs card; until then it is a found thread.
+A coding tool's thread linked to one backlog item, with its tool, repository folder and current state, the worktree it runs in when Ajour started it in one, and the connection it runs through when its tool uses one. Removing a handoff from the item leaves the thread in the tool. A thread the user started on their own becomes a handoff when its title names the item's key in brackets and the user links it from the item's Handoffs card; until then it is a found thread.
 _Avoid_: Agent run, agent session, job
 
 **Close** (handoff):
@@ -355,7 +359,7 @@ The state of a handoff whose tool can start a thread but doesn't report its stat
 _Avoid_: Running, launched, sent
 
 **Tool feature**:
-What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`), Updates within seconds (`hooks`, only for a tool that follows state), and Closes threads or Deletes threads (`closesThreads`). Ajour uses only a tool's features, as the tool declares them now.
+What a handoff tool supports, as it declares it: Starts threads (every tool), Follows state (`followsState`), Finds threads (`listsThreads`), Updates within seconds (`hooks`, only for a tool that follows state), Closes threads or Deletes threads (`closesThreads`), and Makes its own worktree (`ownWorktree`), for which Ajour makes none: Start in decides whether the tool makes one, by the branch and the source branch Ajour sends it. Ajour uses only a tool's features, as the tool declares them now.
 _Avoid_: Capability (that is the plugin's), ability
 
 **Tool switch**:
@@ -369,6 +373,26 @@ _Avoid_: Send to agent, delegate, dispatch
 **Handoff hook**:
 The address a coding tool posts to when its thread stops, needs the user or ends, so Ajour refreshes that handoff at once instead of at its next check. Each handoff has its own, on this computer only; a post says only "look again", never what the state is (ADR 0020).
 _Avoid_: Webhook, callback, push
+
+**Worktree**:
+A git worktree Ajour made for one backlog item inside a repository folder, at `.ajour/worktrees/aj-<item key>`, with the branch Ajour created for it. An item without a key gets `aj-` and the first 8 characters of its own id. A hand off starts in it, so two items of one project don't edit the same checkout, and a later hand off of the item starts in its newest one. Ajour keeps the list on this computer only. A worktree a tool makes for itself is not one: Ajour doesn't list it (ADR 0022).
+_Avoid_: Checkout, copy, clone, workspace
+
+**Start in**:
+Where a hand off runs: the main folder, a new worktree, or a worktree the item already has. Settings › Worktrees holds the default for this computer, Main folder, New worktree or Ask each time, with New worktree on a fresh install, and it never syncs. A project can override the default on this computer, on its page. The user can choose it for one hand off in the hand-off sheet, the Start in dialog and Review prompt. A tool that makes its own worktree follows it too: under New worktree it makes one, and a worktree the item has counts as New worktree for it.
+_Avoid_: Location, target, destination, mode
+
+**Main folder**:
+The repository folder itself, as the place a hand off starts in when it gets no worktree. A hand off also starts there when the folder isn't a git checkout and when the computer has no git. Ajour creates no branch there: the tool works on what is checked out, or makes its own worktree from the branch name it is sent. A tool that makes its own worktree always starts from it, and makes none when Start in says Main folder.
+_Avoid_: Root, base folder, main worktree, repository root
+
+**Clean up**:
+Ajour removing worktrees by itself, by two rules of Settings › Worktrees: those of finished items, a number of days after the item became done, settled or archived, and unused ones, a number of days after the last hand off or thread change. It keeps a worktree with uncommitted or untracked files, a thread that is Working or Needs you, or a change in the last hour, and it never deletes a branch. The window starts each round, at launch, once an hour and from Clean up now.
+_Avoid_: Garbage collection, purge, prune, sweep
+
+**Source branch**:
+The branch a new worktree's branch starts from, such as `origin/main`. The user picks it for one hand off in the branch finder. Without a pick it is the one last picked for that repository folder on this computer, else the remote's default branch, else the branch checked out in the main folder. The new branch never tracks it. A tool that makes its own worktree receives it with the branch name.
+_Avoid_: Parent branch, upstream, origin branch
 
 **Process broker**:
 The part of Ajour that starts a process for a plugin, such as `t3 thread start`, after checking the plugin's access, its gates and its command mode. A plugin never starts a process itself (ADR 0019).
@@ -442,9 +466,9 @@ The corner control that shows whether agents are idle, active, waiting for the u
 The chat the agent indicator opens, with the agent sessions, their questions and the activity list.
 
 **Repository folder**:
-A folder on this computer that the user associates with an Ajour project. A project can have several. Its stable id resolves to an absolute path in the local API. Paths and the last-used choice never sync with a team. Removing it forgets the association and leaves files in place.
+A folder on this computer that the user associates with an Ajour project. A project can have several. Its stable id resolves to an absolute path in the local API. Paths and the last-used choice never sync with a team. Removing it forgets the association and its worktrees, and leaves files in place.
 
 _Avoid_: clone, working directory or repository path for the saved association. A repository folder does not promise that Git is initialized there.
 
 **Remembered command approval**:
-A user's permission to repeat one exact executable name, argument list and repository folder id for a plugin. It ends when the plugin's version, package, signature or development directory changes. The user can remove it on the Access tab.
+A user's permission to repeat one exact executable name, argument list and repository folder id for a plugin. It also covers the same command in one of that folder's worktrees. It ends when the plugin's version, package, signature or development directory changes. The user can remove it on the Access tab.

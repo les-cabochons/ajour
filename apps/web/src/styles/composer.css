@@ -487,14 +487,15 @@
    the slot when another has one, so the names line up. */
 .connection-rows .connection-type-icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .connection-rows
   .connection-row-label[data-icon-slot="true"]
   .connection-row-count {
-  padding-inline-start: 20px;
+  /* The icon's 14px and the name's 4px gap. */
+  padding-inline-start: 18px;
 }
 
 /* A select row shows its arrow at rest, faintly: it says "pick me". */

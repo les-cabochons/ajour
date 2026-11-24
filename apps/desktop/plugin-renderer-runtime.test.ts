@@ -429,10 +429,12 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
-  it("passes on why a hand-off tool refused a start, and drops a hint it can't read (#819)", async () => {
+  it("passes on why a hand-off tool refused a start, and drops a hint it can't read (#819, #857)", async () => {
     const { start, ready } = setUp();
     const cases: [unknown, unknown][] = [
       [{ branchExists: true }, { branchExists: true }],
+      [{ mayHaveStarted: true }, { mayHaveStarted: true }],
+      [{ mayHaveStarted: "yes" }, undefined],
       [{ setting: " base " }, { setting: "base" }],
       [{ setting: "x".repeat(121) }, undefined],
       [{ setting: 3 }, undefined],

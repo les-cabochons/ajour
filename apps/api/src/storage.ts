@@ -37,6 +37,20 @@ import {
   repositoryFolderSchema,
   type RepositoryFolder,
 } from "../../../packages/shared/repository-folders.ts";
+import {
+  DEFAULT_WORKTREE_CLEAN_UP,
+  DEFAULT_WORKTREE_START_IN,
+  worktreeCleanUpRuleSchema,
+  worktreeSchema,
+  worktreeSettingsUpdateSchema,
+  worktreeStartInSchema,
+  type ProjectStartIn,
+  type Worktree,
+  type WorktreeCleanUpRuleName,
+  type WorktreeSettings,
+  type WorktreeSettingsUpdate,
+  type WorktreeStartIn,
+} from "../../../packages/shared/worktrees.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -553,6 +567,28 @@ interface AppApiStateV8 {
   /** Listed threads the user said aren't an item's: "Not this one", per item. */
   handoffThreadDismissals: HandoffThreadDismissal[];
   repositoryFolders: RepositoryFolder[];
+  /**
+   * The git worktrees Ajour made for backlog items on this computer
+   * (#860). A handoff names the one it runs in by `worktreeId`.
+   */
+  worktrees: Worktree[];
+  /**
+   * Settings › Worktrees: where a hand off starts by default, and the two
+   * rules of automatic clean up (#864). Never synced.
+   */
+  worktreeSettings: WorktreeSettings;
+  /**
+   * The source branch the user last picked for a new worktree, by
+   * repository folder id (#861). The folder's next new worktree starts
+   * from it. Never synced.
+   */
+  worktreeSources: Record<string, string>;
+  /**
+   * The Start in a project chose for itself, by project id (#864). It
+   * overrides `worktreeSettings.startIn` for that project's hand offs. A
+   * project without an entry follows Settings. Never synced.
+   */
+  worktreeProjectStartIn: Record<string, WorktreeStartIn>;
   version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
@@ -770,6 +806,98 @@ function withoutFolderSettings(
   );
 }
 
+/**
+ * The saved Worktrees settings, each part on its own: a value Ajour can't
+ * read gets its default and the others stay. A file written before clean
+ * up existed (#864) holds Start in alone, and gets the rules of a fresh
+ * install.
+ */
+function normalizeWorktreeSettings(raw: unknown): WorktreeSettings {
+  const saved =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const startIn = worktreeStartInSchema.safeParse(saved.startIn);
+  const rules =
+    saved.cleanUp &&
+    typeof saved.cleanUp === "object" &&
+    !Array.isArray(saved.cleanUp)
+      ? (saved.cleanUp as Record<string, unknown>)
+      : {};
+  const rule = (name: WorktreeCleanUpRuleName) => {
+    const parsed = worktreeCleanUpRuleSchema.safeParse(rules[name]);
+    return parsed.success ? parsed.data : DEFAULT_WORKTREE_CLEAN_UP[name];
+  };
+  return {
+    startIn: startIn.success ? startIn.data : DEFAULT_WORKTREE_START_IN,
+    cleanUp: { finished: rule("finished"), unused: rule("unused") },
+  };
+}
+
+/** The saved sources by folder id, without a malformed or unsafe entry. */
+function normalizeWorktreeSources(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (entry): entry is [string, string] =>
+        !UNSAFE_KEYS.has(entry[0]) &&
+        typeof entry[1] === "string" &&
+        entry[1].length > 0 &&
+        entry[1].length <= 500,
+    ),
+  );
+}
+
+/** Each project's own Start in, without a malformed or unsafe entry. */
+function normalizeProjectStartIn(
+  raw: unknown,
+): Record<string, WorktreeStartIn> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([projectId, value]) => {
+      const parsed = worktreeStartInSchema.safeParse(value);
+      return parsed.success &&
+        !UNSAFE_KEYS.has(projectId) &&
+        projectId.length <= 200
+        ? [[projectId, parsed.data] as const]
+        : [];
+    }),
+  );
+}
+
+/**
+ * The handoffs with no link to any of `worktreeIds`: they keep the rest.
+ * A tool whose resume command takes the folder stored the worktree's id
+ * among its resume arguments. That id resolves to nothing once the
+ * worktree is gone, so it becomes the repository folder's, and Open still
+ * reaches the thread (#862).
+ */
+function withoutWorktreeLinks(
+  handoffs: Handoff[],
+  worktreeIds: ReadonlySet<string>,
+): Handoff[] {
+  if (!handoffs.some((h) => h.worktreeId && worktreeIds.has(h.worktreeId)))
+    return handoffs;
+  return handoffs.map((handoff) => {
+    if (!handoff.worktreeId || !worktreeIds.has(handoff.worktreeId))
+      return handoff;
+    const { worktreeId, ...rest } = handoff;
+    if (!rest.resume) return rest;
+    return {
+      ...rest,
+      resume: {
+        ...rest.resume,
+        args: Object.fromEntries(
+          Object.entries(rest.resume.args).map(([name, value]) => [
+            name,
+            value === worktreeId ? rest.folderId : value,
+          ]),
+        ),
+      },
+    };
+  });
+}
+
 function createDefaultState(): AppApiState {
   return {
     handoffTemplates: {},
@@ -780,6 +908,13 @@ function createDefaultState(): AppApiState {
     handoffHooks: {},
     handoffThreadDismissals: [],
     repositoryFolders: [],
+    worktrees: [],
+    worktreeSettings: {
+      startIn: DEFAULT_WORKTREE_START_IN,
+      cleanUp: structuredClone(DEFAULT_WORKTREE_CLEAN_UP),
+    },
+    worktreeSources: {},
+    worktreeProjectStartIn: {},
     version: STATE_VERSION,
     connections: [],
     stagedImports: [],
@@ -1293,6 +1428,15 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       const parsed = repositoryFolderSchema.safeParse(folder);
       return parsed.success ? [parsed.data] : [];
     }),
+    worktrees: (Array.isArray(raw.worktrees) ? raw.worktrees : []).flatMap(
+      (worktree) => {
+        const parsed = worktreeSchema.safeParse(worktree);
+        return parsed.success ? [parsed.data] : [];
+      },
+    ),
+    worktreeSettings: normalizeWorktreeSettings(raw.worktreeSettings),
+    worktreeSources: normalizeWorktreeSources(raw.worktreeSources),
+    worktreeProjectStartIn: normalizeProjectStartIn(raw.worktreeProjectStartIn),
     // A step that held keeps the file below the current version.
     version:
       typeof raw.version === "number"
@@ -1686,18 +1830,38 @@ export class AppApiStorage {
       };
     });
   }
+  /**
+   * Removes a handoff. The worktree it ran in keeps when it was last used
+   * (`lastUsedAt`), so automatic clean up still counts that use once no
+   * handoff records it (#864).
+   */
   async removeHandoff(id: string): Promise<void> {
-    await this.mutate((state) => ({
-      nextState: {
-        ...state,
-        handoffs: removeHandoff(state.handoffs, id),
-        // Removing a handoff revokes its hook token.
-        handoffHooks: Object.fromEntries(
-          Object.entries(state.handoffHooks).filter(([key]) => key !== id),
-        ),
-      },
-      result: undefined,
-    }));
+    await this.mutate((state) => {
+      const leaving = state.handoffs.find((handoff) => handoff.id === id);
+      const usedAt = leaving
+        ? Math.max(leaving.startedAt, leaving.changedAt)
+        : undefined;
+      return {
+        nextState: {
+          ...state,
+          worktrees:
+            leaving?.worktreeId && usedAt !== undefined
+              ? state.worktrees.map((worktree) =>
+                  worktree.id === leaving.worktreeId &&
+                  usedAt > (worktree.lastUsedAt ?? worktree.createdAt)
+                    ? { ...worktree, lastUsedAt: usedAt }
+                    : worktree,
+                )
+              : state.worktrees,
+          handoffs: removeHandoff(state.handoffs, id),
+          // Removing a handoff revokes its hook token.
+          handoffHooks: Object.fromEntries(
+            Object.entries(state.handoffHooks).filter(([key]) => key !== id),
+          ),
+        },
+        result: undefined,
+      };
+    });
   }
   async listHandoffThreadDismissals(): Promise<HandoffThreadDismissal[]> {
     return structuredClone((await this.readState()).handoffThreadDismissals);
@@ -1758,10 +1922,26 @@ export class AppApiStorage {
     });
   }
 
+  /**
+   * Forgets a repository folder: its remembered tool settings and its
+   * worktree records go with it. Nothing on disk is touched, so the
+   * worktrees' folders and branches stay, and their handoffs stay too.
+   */
   async removeRepositoryFolder(projectId: string, id: string): Promise<void> {
     return this.mutate((state) => {
       const removed = state.repositoryFolders.some(
         (folder) => folder.projectId === projectId && folder.id === id,
+      );
+      const forgotten = new Set(
+        removed
+          ? state.worktrees
+              .filter(
+                (worktree) =>
+                  worktree.projectId === projectId &&
+                  worktree.repositoryFolderId === id,
+              )
+              .map((worktree) => worktree.id)
+          : [],
       );
       return {
         nextState: {
@@ -1773,10 +1953,160 @@ export class AppApiStorage {
           handoffFolderSettings: removed
             ? withoutFolderSettings(state.handoffFolderSettings, id)
             : state.handoffFolderSettings,
+          worktrees: forgotten.size
+            ? state.worktrees.filter((w) => !forgotten.has(w.id))
+            : state.worktrees,
+          // The source picked for its new worktrees goes with it too.
+          worktreeSources: Object.fromEntries(
+            Object.entries(state.worktreeSources).filter(
+              ([folderId]) => !removed || folderId !== id,
+            ),
+          ),
+          handoffs: withoutWorktreeLinks(state.handoffs, forgotten),
         },
         result: undefined,
       };
     });
+  }
+
+  /** Every worktree record on this computer, oldest first. */
+  async listWorktrees(): Promise<Worktree[]> {
+    return structuredClone((await this.readState()).worktrees);
+  }
+
+  /** Keeps a worktree Ajour just made. Its repository folder must still be the project's. */
+  async addWorktree(record: Worktree): Promise<void> {
+    const parsed = worktreeSchema.parse(record);
+    await this.mutate((state) => {
+      if (
+        !state.repositoryFolders.some(
+          (folder) =>
+            folder.id === parsed.repositoryFolderId &&
+            folder.projectId === parsed.projectId,
+        )
+      )
+        throw new Error("This repository folder is no longer available.");
+      return {
+        nextState: { ...state, worktrees: [...state.worktrees, parsed] },
+        result: undefined,
+      };
+    });
+  }
+
+  /**
+   * Forgets a worktree record. Its handoffs stay and lose their link to
+   * it. Nothing on disk is touched.
+   */
+  async removeWorktree(id: string): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        worktrees: state.worktrees.filter((worktree) => worktree.id !== id),
+        handoffs: withoutWorktreeLinks(state.handoffs, new Set([id])),
+      },
+      result: undefined,
+    }));
+  }
+
+  async getWorktreeSettings(): Promise<WorktreeSettings> {
+    return structuredClone((await this.readState()).worktreeSettings);
+  }
+
+  /**
+   * Changes Settings › Worktrees: only what `update` names. Answers the
+   * settings as they are now.
+   */
+  async setWorktreeSettings(
+    update: WorktreeSettingsUpdate,
+  ): Promise<WorktreeSettings> {
+    const parsed = worktreeSettingsUpdateSchema.parse(update);
+    return this.mutate((state) => {
+      const next: WorktreeSettings = {
+        startIn: parsed.startIn ?? state.worktreeSettings.startIn,
+        cleanUp: { ...state.worktreeSettings.cleanUp, ...parsed.cleanUp },
+      };
+      return {
+        nextState: { ...state, worktreeSettings: next },
+        result: structuredClone(next),
+      };
+    });
+  }
+
+  /**
+   * Where a project's hand offs start (#864): its own choice, when it has
+   * one, beside the default of Settings › Worktrees.
+   */
+  async getProjectStartIn(projectId: string): Promise<ProjectStartIn> {
+    const state = await this.readState();
+    const override = Object.hasOwn(state.worktreeProjectStartIn, projectId)
+      ? state.worktreeProjectStartIn[projectId]
+      : undefined;
+    return {
+      ...(override ? { override } : {}),
+      settings: state.worktreeSettings.startIn,
+    };
+  }
+
+  /**
+   * Keeps a project's own Start in, or with null drops it, so the project
+   * follows Settings again. Answers where its hand offs start now.
+   */
+  async setProjectStartIn(
+    projectId: string,
+    startIn: WorktreeStartIn | null,
+  ): Promise<ProjectStartIn> {
+    if (UNSAFE_KEYS.has(projectId) || !projectId || projectId.length > 200)
+      throw new Error("Choose a project.");
+    await this.mutate((state) => {
+      const { [projectId]: _dropped, ...others } = state.worktreeProjectStartIn;
+      return {
+        nextState: {
+          ...state,
+          worktreeProjectStartIn: startIn
+            ? { ...others, [projectId]: worktreeStartInSchema.parse(startIn) }
+            : others,
+        },
+        result: undefined,
+      };
+    });
+    return this.getProjectStartIn(projectId);
+  }
+
+  /** The source last picked for the folder's new worktrees, if any. */
+  async getWorktreeSource(
+    repositoryFolderId: string,
+  ): Promise<string | undefined> {
+    const sources = (await this.readState()).worktreeSources;
+    return Object.hasOwn(sources, repositoryFolderId)
+      ? sources[repositoryFolderId]
+      : undefined;
+  }
+
+  /**
+   * Keeps the source the user picked for a new worktree (#861), once the
+   * hand off started. A folder removed meanwhile keeps nothing.
+   */
+  async rememberWorktreeSource(
+    projectId: string,
+    repositoryFolderId: string,
+    source: string,
+  ): Promise<void> {
+    if (UNSAFE_KEYS.has(repositoryFolderId)) return;
+    await this.mutate((state) => ({
+      nextState: state.repositoryFolders.some(
+        (folder) =>
+          folder.id === repositoryFolderId && folder.projectId === projectId,
+      )
+        ? {
+            ...state,
+            worktreeSources: {
+              ...state.worktreeSources,
+              [repositoryFolderId]: source,
+            },
+          }
+        : state,
+      result: undefined,
+    }));
   }
 
   async useRepositoryFolder(projectId: string, id: string): Promise<void> {

@@ -544,6 +544,15 @@ const weekLinesOutputSchema = z.object({
     ),
   }),
   /**
+   * Time on non-working days, days with no capacity in Settings › General.
+   * It stays out of the lines until the user moves it to a working day or
+   * deletes it. A day with only empty entries lists 0 hours.
+   */
+  nonWorkingDays: z.object({
+    hours: z.number(),
+    days: z.array(z.object({ date: z.string(), hours: z.number() })),
+  }),
+  /**
    * The running entry when it runs in the week, with only the time it has
    * not saved yet, so the lines and it add up to the week's time once.
    */

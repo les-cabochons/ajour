@@ -209,11 +209,12 @@ describe("submit lines", () => {
       entries: week,
       groupBy: "day",
       projects: committing,
+      capacityTargets,
       weekDates,
     });
     expect(sections).toEqual(
       groupSubmitLines({
-        entries: listSentEntries(week, committing),
+        entries: listSentEntries(week, committing, capacityTargets),
         groupBy: "day",
         projects: committing,
         weekDates,
@@ -221,6 +222,24 @@ describe("submit lines", () => {
     );
     expect(sections.flatMap((section) => section.lines)).toMatchObject([
       { entryIds: ["dev"] },
+    ]);
+  });
+
+  it("leaves time on a non-working day out of the lines", () => {
+    // 2026-10-10 is a Saturday, which has no capacity here.
+    const sections = buildCommitLines({
+      entries: [
+        entry("fri", { localDate: "2026-10-09" }),
+        entry("sat", { localDate: "2026-10-10" }),
+      ],
+      groupBy: "task",
+      projects,
+      capacityTargets,
+      weekDates,
+    });
+
+    expect(sections.flatMap((section) => section.lines)).toMatchObject([
+      { entryIds: ["fri"], durationMs: HOUR },
     ]);
   });
 
@@ -622,6 +641,36 @@ describe("week summary", () => {
     entry("thu", { localDate: "2026-10-08", durationMs: 8 * HOUR }),
   ];
 
+  it("warns once per non-working day that holds time, empty entries too", () => {
+    const local: LocalProject = {
+      ...projects[0]!,
+      _id: "home",
+      localOnly: true,
+    };
+    const summary = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries: [
+        entry("sat", { localDate: "2026-10-10", durationMs: 4 * 60_000 }),
+        entry("empty", { localDate: "2026-10-10", durationMs: 0 }),
+        entry("sun", { localDate: "2026-10-11", durationMs: 0 }),
+        entry("local", { localDate: "2026-10-11", projectId: "home" }),
+      ],
+      projects: [...projects, local],
+    });
+
+    expect(
+      summary.warnings.filter((warning) => warning.kind === "non-working-day"),
+    ).toEqual([
+      {
+        kind: "non-working-day",
+        localDate: "2026-10-10",
+        durationMs: 4 * 60_000,
+      },
+      { kind: "non-working-day", localDate: "2026-10-11", durationMs: 0 },
+    ]);
+  });
+
   it("sums every entry of the week and warns about days and tasks", () => {
     const summary = summarizeWeek({
       capacityTargets,
@@ -828,9 +877,11 @@ describe("week summary", () => {
         { projectId: "home", projectName: "Home", durationMs: HOUR },
       ],
     });
-    expect(listSentEntries(week, committing).map((item) => item._id)).toEqual([
-      "dev",
-    ]);
+    expect(
+      listSentEntries(week, committing, capacityTargets).map(
+        (item) => item._id,
+      ),
+    ).toEqual(["dev"]);
   });
 
   it("keeps local time apart per task and per Local only project, and names it once on the page", () => {

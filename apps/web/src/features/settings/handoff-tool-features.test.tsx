@@ -48,14 +48,17 @@ const tools = [
   },
 ];
 
-function render(path = "/") {
+function render(
+  path = "/",
+  listed: Parameters<typeof PluginHandoffTools>[0]["tools"] = tools,
+) {
   return renderRoutes({
     path,
     routes: {
       "/": () => (
         <>
           <button type="button">Elsewhere</button>
-          <PluginHandoffTools pluginId="agent-handoff" tools={tools} />
+          <PluginHandoffTools pluginId="agent-handoff" tools={listed} />
         </>
       ),
     },
@@ -89,6 +92,27 @@ it("lists each handoff tool with the features it supports", async () => {
   expect(
     screen.getByText(/T3 Code, which runs Codex and Claude Code threads/),
   ).toBeTruthy();
+});
+
+it("says which tool makes its own worktree (#859)", async () => {
+  await render("/", [
+    {
+      id: "own",
+      label: "Own worktree tool",
+      listsThreads: true,
+      ownWorktree: true,
+    },
+    { id: "plain", label: "Plain tool" },
+  ]);
+  await screen.findByRole("switch", { name: "Use Own worktree tool" });
+  const row = (label: string) =>
+    screen.getByText(label).closest(".settings-row")!.textContent;
+  expect(row("Own worktree tool")).toContain(
+    "Starts threads · Follows state · Finds threads · Makes its own worktree",
+  );
+  // A tool without the value reads as before.
+  expect(row("Plain tool")).toContain("Starts threads · Follows state");
+  expect(row("Plain tool")).not.toContain("Makes its own worktree");
 });
 
 it("starts every tool off, and turns one on and off by its switch", async () => {

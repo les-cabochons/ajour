@@ -17,6 +17,11 @@ The top of the page shows the week total against your target, with a progress ba
 - Days under their capacity target, such as `Tue 6 has 6:30 of 8:00`.
 - Entries with no task.
 - Time on a task that is **Not known yet**, such as `3:00 on Temp migration waits for a task to commit as.` Press **Edit task** to choose what it [commits as](/projects/tasks#commits-as).
+- Time on a [non-working day](#non-working-days), such as `1:00 on Sat 10, a non-working day, stays out of the commit. Move it to a working day or delete it.` Press **Open day** to go to that day.
+
+## Non-working days
+
+A day with 0 hours of **Time capacity** in [Settings](/app/settings#general), such as Saturday and Sunday by default, is a non-working day. Time on a non-working day stays out of the commit. Its change shows a **Non-working day** label, its checkbox stays unchecked and greyed out, and it has no line under **Lines**. Move the entry to a working day or delete it, and **Submit week** can go ahead. If you did work that day and it belongs in your timesheet, give the day some hours in **Time capacity**.
 
 ## Local time
 

@@ -81,9 +81,13 @@ export function CommandAskDialog({
             {ask.reason}
           </p>
         ) : null}
+        {/* An approval is kept for a repository folder and covers its
+            worktrees (#860), wherever the command asked from: in a worktree
+            the ask names that folder apart. */}
         <p className="text-xs text-muted-foreground">
-          Always remembers only this executable, every argument, and this folder
-          id. An updated package or lost signature clears it.
+          {ask.cwdFolder
+            ? `Always remembers this executable and every argument for ${displayCommandText(ask.scopeFolderName ?? ask.folderName)} and its worktrees. An updated package or lost signature clears it.`
+            : "Always remembers only this executable, every argument, and this folder id. An updated package or lost signature clears it."}
         </p>
         <DialogFooter>
           <Button

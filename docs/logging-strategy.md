@@ -1324,6 +1324,23 @@ channel to read the event each emits.
 | `workflow_state.move`                | command                                 | store command                                    |
 | `workflow_state.set_write_rule`      | command                                 | store command                                    |
 | `workflow_state.update`              | command                                 | store command                                    |
+| `worktree.clean_up`                  | request, command                        | route, client call                               |
+| `worktree.create`                    | job                                     | local API                                        |
+| `worktree.delete`                    | request, command                        | route, client call                               |
+| `worktree.delete_preview`            | request, job                            | route, client call                               |
+| `worktree.discard`                   | job                                     | local API                                        |
+| `worktree.forget`                    | request, command                        | route, client call                               |
+| `worktree.keep`                      | job                                     | local API                                        |
+| `worktree.list`                      | request, job                            | route, client call                               |
+| `worktree.list_branches`             | request, job                            | route, client call                               |
+| `worktree.list_for_item`             | request, job                            | route, client call                               |
+| `worktree.open`                      | request, command                        | route, client call                               |
+| `worktree.project_settings_read`     | request, job                            | route, client call                               |
+| `worktree.project_settings_update`   | request, command                        | route, client call                               |
+| `worktree.resolve_source`            | job                                     | local API                                        |
+| `worktree.settings_read`             | request, job                            | route, client call                               |
+| `worktree.settings_update`           | request, command                        | route, client call                               |
+| `worktree.status`                    | request, job                            | route, client call                               |
 
 Handoff start, refresh and remove events record ids, tool and counts only.
 The handoff privacy canary marks prompts, titles, item keys and URLs, native
@@ -1351,6 +1368,112 @@ close threads, a plugin that can't run, and the tool's own refusal, which its
 `handoff_refused`, or `tool_off` for a tool turned off; `handoff.dismiss_thread` records the plugin and tool. None
 records a thread's title or id, the item's keys, or a folder. The privacy canary
 lists, links and dismisses marked threads through the real local API.
+
+A hand off in a new worktree (#860, ADR 0022) adds one event per worktree
+operation, each a detached `job` beside the `handoff.start` request.
+`worktree.create` covers the folder check, the fetch, the new branch and the
+checkout: `worktree.source` is `remote` or `local`, `worktree.fetch` is `ok`,
+`failed` (the branch started from the last fetched copy) or `none`,
+`worktree.name_suffix` and `worktree.branch_suffix` are the number a taken
+name got, and `worktree.rolled_back` says a failed create took back what it
+added. It ends `refused` with `git_missing` or `not_repository` when the hand
+off then starts in the main folder, with `source_unresolved`,
+`folder_unavailable`, `invalid_branch` or `name_unavailable` when the start is
+refused, and as an `error` with `git_failed` or a `timeout` when a git call
+failed. `worktree.keep` lifts git's lock once the tool answered.
+`worktree.discard` removes the worktree and the branch of a start that failed,
+with `worktree.branch_deleted`, and ends `refused` with `folder_changed` when
+something else holds the folder, so nothing there was removed. On
+`worktree.create`, `worktree.rolled_back` is false when a failed create
+couldn't take back what it made, and the create ends `refused` with
+`folder_changed` when that is because something else took its folder. None holds a branch name, a path, a file name
+or what git wrote: a failed git call gives only its reason. `worktree.list`
+counts the records it answers, and `worktree.settings_update` records
+`worktree.start_in`.
+
+Choosing where a hand off starts (#861) adds three things. `handoff.start`
+records `handoff.start_in`, the place the request named: `main`, `new`,
+`worktree`, or `default` when it named none and the API decided.
+`worktree.create` records `worktree.source_choice`: `picked` when the start
+named its source, `remembered` for the source last picked for the repository
+folder, `default` otherwise. `worktree.list_branches` counts the branches it
+answers and records `worktree.unavailable`, `git_missing` or
+`not_repository`, for a folder that gets no worktree. It ends `refused` with
+`folder_unavailable` when the folder is gone, and as an `error` with
+`git_failed` or a `timeout` when git failed. `worktree.list_for_item` counts
+the item's worktrees it answers. None holds a branch or source name.
+
+A hand off to a tool that makes its own worktree (#863) creates nothing, so
+it has no `worktree.create`. Under New worktree it has one
+`worktree.resolve_source`, a detached `job` beside the `handoff.start`
+request, for reading the source the tool is told: `worktree.source` is
+`remote` or `local` and `worktree.source_choice` is `picked`, `remembered` or
+`default`, as on a create, `worktree.fetch` is `ok`, `failed` (the tool
+starts from the last fetched copy) or `none`, and `worktree.branch_suffix` is
+the number a taken branch name got. It ends `refused` with `git_missing` or
+`not_repository` when the tool then starts with no branch, with
+`source_unresolved`, `invalid_branch`, `name_unavailable` or
+`folder_unavailable` when the start is refused, and as
+an `error` with `git_failed` or a `timeout` when a git call failed. A start
+that told the tool to make its worktree records `handoff.own_worktree: true`
+on `handoff.start`. A start under Main folder reads no source and has
+neither. None holds a branch or source name. A refused start that may have
+started the tool anyway (#857), because the plugin timed out, its process
+ended, its answer was too large or failed validation, the operation was
+cancelled, or its error said `mayHaveStarted`, records
+`handoff.may_have_started: true`: the worktree it made stays, with its
+`worktree.keep` and no `worktree.discard`.
+
+Worktrees on the Handoffs card (#862) add five events, each the request of
+its route. `worktree.status` lists worktrees with their status read from
+git: `worktree.scope` is `item`, `project` or `all`, `worktree.count`,
+`worktree.changed` and `worktree.missing` count them, and `worktree.pruned`
+counts the git registrations it dropped for folders that are gone.
+`worktree.delete_preview` records `worktree.state` and counts
+`worktree.files`, `worktree.running` and `worktree.unpushed_commits`: the
+file list goes to the window and to no event. `worktree.delete` records
+`worktree.delete_branch`, `worktree.branch_deleted` and `worktree.missing`.
+`worktree.forget` drops a record whose folder is gone. `worktree.open`
+records `worktree.in`, `terminal` or `files`, and `worktree.terminal`, the
+terminal app. The four that name one worktree end `refused` with
+`worktree_not_found`, `folder_unavailable`, `folder_changed` (something
+else than the worktree is at its path, so it stays), `git_missing`,
+`not_repository`, `branch_in_use`, `worktree_present` (a forget of a
+worktree still on disk) or `worktree_changed` (a delete whose worktree's git
+status, checked-out commit or branch tip changed since its preview, #857), and as an `error` with `git_failed` or a `timeout`.
+`worktree.open` also ends `refused` with `spawn_refused` or `open_failed`,
+and as an `error` with `spawn_failed` when starting the terminal app failed:
+the failure's own message may hold a path and is not recorded.
+None holds a worktree's name, a branch, a path, a file name or what git
+wrote.
+
+A project's own Start in (#864) adds two events, each the request of its
+route. `worktree.project_settings_update` records `worktree.start_in`:
+`worktree`, `main`, `ask`, or `settings` when the project follows the
+default again. Neither holds the project.
+
+Automatic clean up (#864) adds one event per round, `worktree.clean_up`,
+the request of the route the window calls at launch, once an hour and from
+Clean up now: `worktree.trigger` is `launch`, `timer` or `manual`,
+`worktree.finished_rule` and `worktree.unused_rule` say which rules were on,
+`worktree.count` counts the worktrees it looked at and `worktree.due` those a
+rule would remove now. `worktree.removed` counts the removals, split by rule
+in `worktree.removed_finished` and `worktree.removed_unused`, and
+`worktree.kept` those that stayed, split by reason in `worktree.kept_changes`,
+`worktree.kept_running`, `worktree.kept_recent`, `worktree.kept_branch`,
+`worktree.kept_not_ours`, `worktree.kept_missing`, `worktree.kept_unconfirmed`
+(the state of its threads couldn't be read from their tool) and
+`worktree.kept_failed`. `worktree.kept_unlinked` counts those kept, running
+or unconfirmed, for a thread no handoff links that its tool lists in the
+worktree (#857), and `worktree.thread_listings` the listings the round asked
+for to find those threads.
+A worktree git couldn't remove is a kept one, not a failed round, and nothing
+git wrote is recorded. The removals open no `worktree.delete` event of their
+own. `worktree.settings_update` records only what a save changed:
+`worktree.start_in`, or a rule's `worktree.finished_rule` and
+`worktree.finished_days`, or `worktree.unused_rule` and
+`worktree.unused_days`. None holds a worktree's name, a branch, a path, a
+file name or an item's title.
 
 ## Performance
 

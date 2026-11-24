@@ -46,6 +46,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Display options", link: "/backlog/display-options" },
       { text: "Settle and snooze", link: "/backlog/settle-and-snooze" },
       { text: "Workflow states", link: "/backlog/workflow" },
+      { text: "Worktrees for hand offs", link: "/backlog/worktrees" },
     ],
   },
   {

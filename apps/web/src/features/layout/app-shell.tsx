@@ -111,6 +111,7 @@ import { NewBacklogItemDialogHost } from "@/features/backlog/new-backlog-item-di
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { HandoffHost } from "@/features/backlog/handoff-workflow";
+import { WorktreeCleanUpScheduler } from "@/features/worktrees/worktree-clean-up-scheduler";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useRunningClock } from "@/lib/use-now";
@@ -598,7 +599,7 @@ export function AppShell() {
   const narrowSettingsPage =
     isNarrowView && isSettingsActive
       ? [
-          ...getSettingsPages("wide", true, true),
+          ...getSettingsPages("wide", true, true, true),
           ...unlistedSettingsPages,
         ].find((page) => pathname.startsWith(page.to))
       : undefined;
@@ -692,6 +693,7 @@ export function AppShell() {
       <CommandPalette selectedTimeDate={selectedTimeDate} />
       <SnoozePickerHost />
       <HandoffHost />
+      <WorktreeCleanUpScheduler />
       <SettleDialogHost />
       <NewBacklogItemDialogHost />
       <CloseSubitemsDialogHost />

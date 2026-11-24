@@ -113,6 +113,8 @@ function ChangeValue({
 
 const WAITING_REASON =
   "The task is Not known yet. Choose what it commits as to include this change.";
+const NON_WORKING_DAY_REASON =
+  "The day is a non-working day. Move the entry to a working day to include this change.";
 
 function CommitChangeRow({
   change,
@@ -151,9 +153,13 @@ function CommitChangeRow({
   const label = CHANGE_KIND_LABELS[change.kind];
   const title = `${shown.project} · ${shown.task}, ${shown.day}`;
   const Icon = CHANGE_KIND_ICONS[change.kind];
-  // A Not known yet task has no name to commit as yet, so its change stays
-  // out until the user picks one.
+  // A Not known yet task has no name to commit as yet, and time on a
+  // non-working day never goes to the timesheet, so their changes stay out
+  // until the user fixes the entry.
   const waiting = change.kind !== "deleted" && change.waiting === true;
+  const nonWorkingDay =
+    change.kind !== "deleted" && change.nonWorkingDay === true;
+  const held = waiting || nonWorkingDay;
 
   return (
     <li
@@ -161,7 +167,7 @@ function CommitChangeRow({
       className={cn(
         "commit-change",
         `is-${change.kind}`,
-        (!checked || waiting) && "is-excluded",
+        (!checked || held) && "is-excluded",
         // The note names the work, so it leads; without one, the task does.
         (after?.note ?? before?.note) === NO_NOTE && "has-no-note",
       )}
@@ -169,12 +175,18 @@ function CommitChangeRow({
       {/* A disabled checkbox takes no focus, so the wrapper says why. */}
       <DisabledReason
         label={`Include ${label.toLowerCase()} change: ${title}`}
-        reason={waiting ? WAITING_REASON : undefined}
+        reason={
+          waiting
+            ? WAITING_REASON
+            : nonWorkingDay
+              ? NON_WORKING_DAY_REASON
+              : undefined
+        }
         className="inline-flex"
       >
         <Checkbox
-          checked={checked && !waiting}
-          disabled={waiting}
+          checked={checked && !held}
+          disabled={held}
           aria-label={`Include ${label.toLowerCase()} change: ${title}`}
           onCheckedChange={(next) => onCheckedChange(next)}
         />
@@ -200,6 +212,7 @@ function CommitChangeRow({
           </span>
         ))}
         {waiting ? <Chip tone="warning">Not known yet</Chip> : null}
+        {nonWorkingDay ? <Chip tone="warning">Non-working day</Chip> : null}
       </span>
       <Value className="commit-change-hours">
         <ChangeValue before={before?.hours} after={after?.hours} />

@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  fillHandoffTemplates,
-  handoffTemplateDefaults,
-  isValidHandoffBranch,
-  type HandoffTemplates,
-} from "@ajour/shared/handoff-templates";
+import { fillHandoffTemplates } from "@ajour/shared/handoff-templates";
 import type { HandoffThreadOffer } from "@ajour/shared/handoff-threads";
 import {
   handoffStartRefusalSchema,
   type HandoffStartRefusal,
 } from "@ajour/shared/handoffs";
 import type { RepositoryFolder } from "@ajour/shared/repository-folders";
+import { startInOf, type HandoffStartIn } from "@ajour/shared/worktrees";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
@@ -40,6 +36,7 @@ import {
   type HandoffCloseAction,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
+import { defaultStartPlace } from "@/domain/handoffs/start-in";
 import { repositoryFolderSelection } from "@/domain/projects/repository-folders";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
@@ -48,7 +45,7 @@ import {
   closeHandoff,
   dismissHandoffThread,
   findHandoffThreads,
-  getHandoffTemplates,
+  getProjectStartIn,
   listRepositoryFolders,
   openHandoff,
   refreshHandoffs,
@@ -56,6 +53,8 @@ import {
   startHandoff,
 } from "@/lib/app-api";
 import { setHandoffs, upsertHandoff } from "@/lib/handoffs";
+import { useProjectStartOptions } from "@/lib/handoff-start-options";
+import { upsertWorktree } from "@/lib/worktrees";
 import {
   getHandoffTools,
   getHandoffToolsPageNow,
@@ -70,7 +69,11 @@ import {
   listenForHandoffRequests,
   setHandoffLaunching,
   setHandoffStarting,
+  type HandoffPlace,
 } from "@/features/backlog/handoff-request";
+import { HandoffPlaceButtons } from "@/features/backlog/handoff-start-in";
+import { StartInDialogContent } from "@/features/backlog/handoff-start-in-dialog";
+import { useHandoffTemplates } from "@/features/backlog/use-handoff-templates";
 import { useOpenSettings } from "@/features/settings/settings-link";
 import { settingsLocationOf } from "@/features/settings/settings-location";
 
@@ -80,8 +83,8 @@ import { settingsLocationOf } from "@/features/settings/settings-location";
  * (`handoff-request.ts`): the
  * item page's split button, the row menus and the command palette. The one
  * `HandoffHost`, mounted in the app shell, shows the first-time notice, the
- * repository picker and the Review prompt dialog, starts the thread and
- * says how it went.
+ * repository picker, the Start in dialog and the Review prompt dialog,
+ * starts the thread and says how it went.
  */
 
 function errorMessage(error: unknown, fallback: string) {
@@ -112,15 +115,20 @@ interface Job {
   projectId: string;
   review: boolean;
   folder?: RepositoryFolder;
+  /** The place chosen in the hand-off sheet's Start in row (#861). */
+  place?: HandoffPlace;
+  /** Start in is Ask each time: a start without a place asks for it first. */
+  ask?: boolean;
 }
 
 /**
- * What one start sends besides the item: Review prompt's prompt and branch,
- * and the tool settings the user gave when the tool refused one (#819).
+ * What one start sends besides the item: Review prompt's prompt, the place
+ * the user chose (#861), and the tool settings the user gave when the tool
+ * refused one (#819). Without a place the local API decides.
  */
 interface StartEdits {
   promptOverride?: string;
-  branchOverride?: string;
+  startIn?: HandoffStartIn;
   settings?: Record<string, string>;
 }
 
@@ -131,6 +139,8 @@ type Step =
   | { kind: "notice"; job: Job }
   | { kind: "picker"; job: Job }
   | { kind: "review"; job: Job }
+  // Start in is Ask each time: where does this hand off start (#861)?
+  | { kind: "place"; job: Job; folder: RepositoryFolder }
   // The branch exists, and the tool lists the item's thread (#819).
   | { kind: "link"; job: Job; offer: HandoffThreadOffer }
   // The tool refused one of its settings: ask for it, then start again.
@@ -169,7 +179,7 @@ async function start(
   const current = currentItem(job);
   // The Handoffs card names the tool while it starts the thread.
   setHandoffLaunching(current._id, tool.key);
-  const record = await startHandoff({
+  const { worktree, source, sourceStale, ...record } = await startHandoff({
     pluginId: tool.pluginId,
     toolId: tool.toolId,
     folderId: folder.id,
@@ -181,10 +191,22 @@ async function start(
     settings,
   }).finally(() => setHandoffLaunching(current._id));
   upsertHandoff(record);
+  // The Handoffs card names the worktree on the thread's branch line.
+  if (worktree) upsertWorktree(worktree);
   setLastHandoffTool(tool.key);
-  // No Undo: the thread already runs in the tool.
+  // No Undo: the thread already runs in the tool. The toast says where: the
+  // worktree's name, and that its source couldn't be fetched when so. A
+  // tool that made its own worktree has `source` to name it (#863).
+  const staleSource = sourceStale ? (worktree?.source ?? source) : undefined;
   showActionToast({
-    title: `Handed off to ${tool.label}`,
+    title: worktree
+      ? `Handed off to ${tool.label} in ${worktree.name}`
+      : `Handed off to ${tool.label}`,
+    ...(staleSource
+      ? {
+          description: `Couldn't fetch ${staleSource}. The worktree starts from the last fetched copy.`,
+        }
+      : {}),
     actionLabel: "Open",
     onAction: () => void openHandoffThread(record.id),
     timeout: UNDO_TOAST_TIMEOUT_MS,
@@ -324,46 +346,84 @@ export function HandoffHost() {
     return true;
   }
 
-  async function startInBackground(job: Job, folder: RepositoryFolder) {
+  async function startInBackground(
+    job: Job,
+    folder: RepositoryFolder,
+    edits: StartEdits = {},
+  ) {
     running.current.add(job.id);
     try {
-      await start(job, folder);
+      await start(job, folder, edits);
     } catch (error) {
-      if (!(await showFollowUp(job, folder, {}, error, false)))
+      if (!(await showFollowUp(job, folder, edits, error, false)))
         showStartError(job, error);
     } finally {
       settle(job);
     }
   }
 
-  /** A project with one folder starts at once; none or several ask which. */
-  async function proceed(job: Job) {
-    if (job.review) {
-      show({ kind: "review", job });
+  /**
+   * Starts in the folder: in the place the sheet's row chose there, else,
+   * under Ask each time, once the Start in dialog answered, else at once,
+   * where the local API decides.
+   */
+  async function startOrAsk(job: Job, folder: RepositoryFolder) {
+    const chosen =
+      job.place?.folderId === folder.id ? job.place.startIn : undefined;
+    if (!chosen && job.ask) {
+      show({ kind: "place", job, folder });
       return;
     }
-    running.current.add(job.id);
+    await startInBackground(job, folder, chosen ? { startIn: chosen } : {});
+  }
+
+  /** A project with one folder starts at once; none or several ask which. */
+  async function proceed(pending: Job) {
+    if (pending.review) {
+      show({ kind: "review", job: pending });
+      return;
+    }
+    running.current.add(pending.id);
     let folders: RepositoryFolder[];
+    let ask: boolean;
     try {
-      folders = await listRepositoryFolders(job.projectId);
+      [folders, ask] = await Promise.all([
+        listRepositoryFolders(pending.projectId),
+        // A place chosen in the sheet needs no question. A setting that
+        // can't be read stops the hand off: it may be Ask each time, and
+        // a start without the answer would skip the question.
+        pending.place
+          ? false
+          : getProjectStartIn(pending.projectId).then(
+              // The project's own choice counts before Settings (#864).
+              (project) => startInOf(project) === "ask",
+              () => {
+                throw new Error(
+                  "Ajour couldn't read where hand offs start. Try again.",
+                );
+              },
+            ),
+      ]);
     } catch (error) {
       showErrorToast({
-        title: `Couldn't hand off to ${job.tool.label}`,
+        title: `Couldn't hand off to ${pending.tool.label}`,
         description: errorMessage(error, "Could not load folders."),
       });
-      settle(job);
+      settle(pending);
       return;
     }
-    running.current.delete(job.id);
+    running.current.delete(pending.id);
+    const job: Job = { ...pending, ask };
     if (folders.length === 1) {
-      await startInBackground(job, folders[0]!);
+      await startOrAsk(job, folders[0]!);
       return;
     }
     show({ kind: "picker", job });
   }
 
   /**
-   * Review prompt's Start. The item stays starting until the start settles,
+   * A dialog's start: Review prompt's, the Start in dialog's, or the one
+   * after a refused setting. The item stays starting until the start settles,
    * even if the dialog closes first, and only this job's dialog closes.
    */
   async function startReviewed(
@@ -426,6 +486,7 @@ export function HandoffHost() {
         item,
         projectId: item.projectId,
         review: Boolean(request.review),
+        ...(request.place ? { place: request.place } : {}),
       };
       owners.current.set(item._id, job.id);
       setHandoffStarting(item._id, true);
@@ -491,12 +552,37 @@ export function HandoffHost() {
             show({ kind: "review", job: { ...picked, folder } });
             return;
           }
+          // Ask each time: the Start in dialog takes the picker's place.
+          if (picked.ask) {
+            show({ kind: "place", job: picked, folder });
+            return;
+          }
           // The start runs from here, so closing the picker keeps the job.
           running.current.add(picked.id);
           show(IDLE);
-          void startInBackground(picked, folder);
+          void startOrAsk(picked, folder);
         }}
       />
+      <Dialog
+        open={step.kind === "place"}
+        onOpenChange={(open) => {
+          if (!open) dismiss("place");
+        }}
+      >
+        {step.kind === "place" ? (
+          <StartInDialogContent
+            key={step.job.id}
+            tool={step.job.tool}
+            item={step.job.item}
+            projectId={step.job.projectId}
+            folder={step.folder}
+            onStart={(startIn) =>
+              startReviewed(step.job, step.folder, { startIn })
+            }
+            onCancel={() => dismiss("place")}
+          />
+        ) : null}
+      </Dialog>
       <Dialog
         open={step.kind === "review"}
         onOpenChange={(open) => {
@@ -645,10 +731,14 @@ function RefusedSettingContent({
 }
 
 /**
- * Review prompt…: the filled prompt, the folder and the branch, each
- * editable, before Start. The prompt goes as `promptOverride`; the branch as
- * `branchOverride`, empty for no worktree. Until the user edits them, both
- * follow the chosen folder, which `{{repo.name}}` may name.
+ * Review prompt…: the filled prompt, editable, with two quiet buttons right
+ * under it that say where the hand off starts and from which source, and
+ * change them (`HandoffPlaceButtons`, #861). Start sends the prompt as
+ * `promptOverride` and the place as the start's Start in, always: this
+ * dialog is where the user chose it, whatever Settings say. Until the user
+ * edits the prompt it follows the chosen folder, which `{{repo.name}}` may
+ * name. The dialog opens on the place chosen in the sheet's row, else on
+ * the last used folder, in the place a start there would take by itself.
  */
 function ReviewPromptContent({
   job,
@@ -662,50 +752,37 @@ function ReviewPromptContent({
   onFolder: (folder: RepositoryFolder) => void;
   onStart: (
     folder: RepositoryFolder,
-    overrides: { promptOverride: string; branchOverride: string },
+    overrides: { promptOverride: string; startIn: HandoffStartIn },
   ) => Promise<void>;
   onCancel: () => void;
 }) {
   const { tool, item, projectId, folder } = job;
-  const [templates, setTemplates] = useState<HandoffTemplates>();
-  const [loadError, setLoadError] = useState("");
+  const { templates, loadError } = useHandoffTemplates(tool.pluginId);
   const [prompt, setPrompt] = useState<string>();
-  const [branch, setBranch] = useState<string>();
+  /** The place the user chose, in the sheet or here. */
+  const [chosen, setChosen] = useState<HandoffPlace | undefined>(job.place);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [listed, setListed] = useState<readonly RepositoryFolder[]>();
+  // A folder added through the picker isn't in the options read before it.
+  const found = useProjectStartOptions(projectId, item._id, true, {
+    allFolders: true,
+    reloadKey:
+      folder && listed && !listed.some((known) => known.id === folder.id)
+        ? folder.id
+        : "",
+  });
+  useEffect(() => setListed(found?.folders), [found?.folders]);
 
+  // The folder of the place chosen in the sheet, else the last used one,
+  // unless the user picked one.
   useEffect(() => {
-    let live = true;
-    void getHandoffTemplates(tool.pluginId)
-      .then((value) => {
-        if (live) setTemplates(value);
-      })
-      .catch((error: unknown) => {
-        if (!live) return;
-        setLoadError(errorMessage(error, "Could not load the templates."));
-        setTemplates(handoffTemplateDefaults());
-      });
-    return () => {
-      live = false;
-    };
-  }, [tool.pluginId]);
-
-  // The last used folder, unless the user picked one.
-  useEffect(() => {
-    if (folder) return;
-    let live = true;
-    void listRepositoryFolders(projectId)
-      .then((folders) => {
-        const id = repositoryFolderSelection(folders, "");
-        const found = folders.find((candidate) => candidate.id === id);
-        if (live && found) onFolder(found);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
+    if (folder || !found) return;
+    const id = chosen?.folderId ?? repositoryFolderSelection(found.folders, "");
+    const first = found.folders.find((candidate) => candidate.id === id);
+    if (first) onFolder(first);
     // `onFolder` changes every render; the folder list is per project.
-  }, [folder, projectId]);
+  }, [folder, found]);
 
   const state = localStore.snapshot();
   const filled = templates
@@ -716,13 +793,24 @@ function ReviewPromptContent({
       })
     : undefined;
   const promptValue = prompt ?? filled?.prompt ?? "";
-  const branchValue = branch ?? filled?.branch ?? "";
-  const branchError =
-    branchValue && !isValidHandoffBranch(branchValue)
-      ? "Not a valid git branch name."
-      : "";
+
+  const settings = found?.options?.startIn;
+  const options = found?.options?.folders;
+  const current = options?.find(
+    (candidate) => candidate.folder.id === folder?.id,
+  );
+  let place: HandoffStartIn | undefined;
+  if (folder && chosen?.folderId === folder.id) place = chosen.startIn;
+  else if (current && settings) {
+    // Ask each time asks here: the dialog opens as a fresh install would.
+    const byDefault = defaultStartPlace(
+      settings === "ask" ? "worktree" : settings,
+      current,
+    );
+    place = byDefault.kind === "ask" ? { kind: "new" } : byDefault;
+  }
   const canStart =
-    Boolean(folder && templates && promptValue.trim()) && !branchError && !busy;
+    Boolean(folder && templates && promptValue.trim() && place) && !busy;
 
   return (
     <DialogContent className="sm:max-w-2xl">
@@ -731,23 +819,20 @@ function ReviewPromptContent({
         <DialogDescription>{item.title}</DialogDescription>
       </DialogHeader>
       <form
-        className="flex flex-col gap-4"
+        className="flex min-w-0 flex-col gap-4"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!canStart || !folder) return;
+          if (!canStart || !folder || !place) return;
           setBusy(true);
           setError("");
-          void onStart(folder, {
-            promptOverride: promptValue,
-            branchOverride: branchValue,
-          })
+          void onStart(folder, { promptOverride: promptValue, startIn: place })
             .catch((error: unknown) =>
               setError(errorMessage(error, "The tool refused the hand off.")),
             )
             .finally(() => setBusy(false));
         }}
       >
-        <Field>
+        <Field className="min-w-0 gap-1">
           <FieldLabel htmlFor="handoff-prompt">Prompt</FieldLabel>
           <Textarea
             id="handoff-prompt"
@@ -762,56 +847,23 @@ function ReviewPromptContent({
               {loadError} The default template is shown.
             </FieldDescription>
           ) : null}
-        </Field>
-        <Field>
-          <FieldLabel id="handoff-folder-label">Folder</FieldLabel>
-          <div
-            className="flex min-h-8 items-center gap-3"
-            aria-labelledby="handoff-folder-label"
-            role="group"
-          >
-            <span className="min-w-0 flex-1">
-              {folder ? (
-                <>
-                  <span className="block truncate text-sm">{folder.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {folder.path}
-                  </span>
-                </>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  No folder chosen
-                </span>
-              )}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onChooseFolder(folder)}
-            >
-              {folder ? "Change…" : "Choose folder…"}
-            </Button>
-          </div>
-        </Field>
-        <Field data-invalid={Boolean(branchError) || undefined}>
-          <FieldLabel htmlFor="handoff-branch">Branch</FieldLabel>
-          <Input
-            id="handoff-branch"
-            className="font-mono"
-            value={branchValue}
-            disabled={!templates || busy}
-            aria-invalid={Boolean(branchError) || undefined}
-            aria-describedby="handoff-branch-description"
-            onChange={(event) => setBranch(event.target.value)}
+          <HandoffPlaceButtons
+            folders={options}
+            folder={folder}
+            place={place}
+            template={{ branch: filled?.branch ?? "" }}
+            ownWorktreeOf={tool.ownWorktree ? tool.label : undefined}
+            disabled={busy}
+            onPlace={(next) => {
+              setChosen(next);
+              if (next.folderId === folder?.id) return;
+              const other = found?.folders.find(
+                (candidate) => candidate.id === next.folderId,
+              );
+              if (other) onFolder(other);
+            }}
+            onChooseFolder={() => onChooseFolder(folder)}
           />
-          <FieldDescription
-            id="handoff-branch-description"
-            role={branchError ? "alert" : undefined}
-            className={branchError ? "text-destructive" : undefined}
-          >
-            {branchError || "Leave it empty to work without a new worktree."}
-          </FieldDescription>
         </Field>
         {error ? (
           <p role="alert" className="text-sm text-destructive">

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { RiArrowDownSLine as MenuIcon } from "@remixicon/react";
+import type { HandoffStartIn } from "@ajour/shared/worktrees";
 
 import { DisabledReason } from "@/components/disabled-reason";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,12 @@ import {
   orderHandoffTools,
   type HandoffTool,
 } from "@/domain/handoffs/handoffs";
+import {
+  defaultStartPlace,
+  getOwnWorktreeNote,
+} from "@/domain/handoffs/start-in";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { listRepositoryFolders } from "@/lib/app-api";
+import { useProjectStartOptions } from "@/lib/handoff-start-options";
 import {
   detectHandoffToolsFor,
   useHandoffTools,
@@ -34,6 +39,7 @@ import {
   requestHandoff,
   useHandoffStarting,
 } from "@/features/backlog/handoff-request";
+import { HandoffStartInRow } from "@/features/backlog/handoff-start-in";
 
 /** A tool's own icon, from its plugin's manifest, drawn as an image. */
 export function HandoffToolIcon({
@@ -61,34 +67,16 @@ function focusWhenShown(row: HTMLElement | null) {
 }
 
 /**
- * Where the thread starts, for the sheet's heading (`getHandoffFolderNote`).
- * Asked each time the sheet opens, and empty until the project's folders
- * answer; a failed lookup says nothing.
- */
-function useHandoffFolderNote(projectId: string | undefined, open: boolean) {
-  const [found, setFound] = useState<{ projectId: string; note: string }>();
-  useEffect(() => {
-    if (!open || !projectId) return;
-    let live = true;
-    void listRepositoryFolders(projectId)
-      .then((folders) => {
-        if (live) setFound({ projectId, note: getHandoffFolderNote(folders) });
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [open, projectId]);
-  return found && found.projectId === projectId ? found.note : "";
-}
-
-/**
  * The item page's Hand off button, with the logos of the first tools. It
- * opens the hand-off sheet, a menu headed by where the thread starts, with
- * one row per tool that is on: its logo, its name and whether it follows
- * progress, those this computer lacks disabled with why. The tool last used
- * on this device comes first and takes the focus. Then Review prompt…, for
- * that first tool, and Choose tools…, which leads to the switches. While
+ * opens the hand-off sheet, a menu headed by the Start in row, which says
+ * where the hand off starts and lets the user change it for this opening of
+ * the sheet (#861). Then one row per tool that is on: its logo, its name
+ * and whether it follows progress, those this computer lacks disabled with
+ * why. A tool that makes its own worktree says so instead where the hand
+ * off would start in a worktree, and that it can't join one the item has
+ * (#863). The tool last used on this device comes first and takes the focus,
+ * so Enter hands off. Then Review prompt…, for that first tool, and Choose
+ * tools…, which leads to the switches. While
  * handoff plugins are active and none of their tools is on, the button reads
  * Choose your tools and leads there itself. Without a handoff plugin, as in
  * the web build, it renders nothing.
@@ -99,7 +87,9 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
   const lastKey = useLastHandoffTool();
   const busy = useHandoffStarting(item._id);
   const [open, setOpen] = useState(false);
-  const folderNote = useHandoffFolderNote(item.projectId, open);
+  /** The place chosen in the Start in row, for this opening only. */
+  const [chosen, setChosen] = useState<HandoffStartIn>();
+  const found = useProjectStartOptions(item.projectId, item._id, open);
   if (!tools.length)
     return choice ? (
       <Button variant="outline" onClick={requestChooseHandoffTools}>
@@ -110,11 +100,31 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
   const first = ordered[0]!;
   const itemRefusal = getHandoffItemRefusal(item);
   const reviewRefusal = getHandoffToolRefusal(first);
+  // The chosen place goes with the request. It names the project's one
+  // folder: the row offers no choice otherwise.
+  const folderId =
+    found?.folders.length === 1 ? found.folders[0]!.id : undefined;
+  const place =
+    chosen && folderId ? { place: { folderId, startIn: chosen } } : {};
+  // Where a click on a tool starts, as the Start in row says it, once the
+  // project's one folder is read. A tool that makes its own worktree says
+  // on its row what it does there.
+  const options =
+    found?.folders.length === 1 ? found.options?.folders[0] : undefined;
+  const ownWorktreeNote =
+    options && found?.options
+      ? getOwnWorktreeNote(
+          chosen ?? defaultStartPlace(found.options.startIn, options),
+          options,
+        )
+      : undefined;
   return (
     <DropdownMenu
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
+        // Each opening starts from the default place again.
+        if (next) setChosen(undefined);
         // A tool installed since the page opened shows up in the sheet.
         if (next && item.projectId) void detectHandoffToolsFor(item.projectId);
       }}
@@ -135,20 +145,26 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
           <MenuIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
       </DisabledReason>
-      <DropdownMenuContent className="w-76">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex min-h-12 flex-col px-3 pt-2 pb-1.5">
-            <span className="text-sm font-medium text-foreground">
-              Hand off
-            </span>
-            <span className="truncate">{folderNote}</span>
-          </DropdownMenuLabel>
+      {/* The tools come first in the menu's own order and the Start in row
+          last, drawn above them by `order-first`. So the sheet opens on its
+          first tool however it was opened, and Enter hands off. The arrows
+          still follow what the eye sees: the menu wraps, so Up from the
+          first tool reaches the row's bottom line, then its top line. */}
+      <DropdownMenuContent className="flex w-76 flex-col">
+        <DropdownMenuGroup aria-label="Tools">
           {ordered.map((tool, index) => {
             const refusal = getHandoffToolRefusal(tool);
-            const summary = [
-              getHandoffToolSummary(tool),
-              ...(tool.key === lastKey && !refusal ? ["last used"] : []),
-            ].join(" · ");
+            // What a tool that makes its own worktree does here takes the
+            // line alone, cut with an ellipsis: with "last used" after it,
+            // or a long worktree name in it, the row would grow a line.
+            const ownNote =
+              !refusal && tool.ownWorktree ? ownWorktreeNote : undefined;
+            const summary =
+              ownNote ??
+              [
+                getHandoffToolSummary(tool),
+                ...(tool.key === lastKey && !refusal ? ["last used"] : []),
+              ].join(" · ");
             return (
               <DropdownMenuItem
                 key={tool.key}
@@ -157,13 +173,24 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
                 aria-label={`Hand off to ${tool.label}`}
                 aria-description={summary}
                 onClick={() =>
-                  requestHandoff({ itemId: item._id, toolKey: tool.key })
+                  requestHandoff({
+                    itemId: item._id,
+                    toolKey: tool.key,
+                    ...place,
+                  })
                 }
               >
                 <HandoffToolIcon tool={tool} className="size-7 shrink-0" />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="font-medium">{tool.label}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span
+                    className={
+                      ownNote
+                        ? "truncate text-xs text-muted-foreground"
+                        : "text-xs text-muted-foreground"
+                    }
+                    title={ownNote}
+                  >
                     {summary}
                   </span>
                 </span>
@@ -186,18 +213,36 @@ export function HandoffButton({ item }: { item: LocalWorkItem }) {
               itemId: item._id,
               toolKey: first.key,
               review: true,
+              ...place,
             })
           }
         >
           <span>Review prompt…</span>
           <span className="text-xs text-muted-foreground">
-            {reviewRefusal ??
-              `Edit the prompt, folder and branch for ${first.label}`}
+            {reviewRefusal ?? `Edit the prompt and where ${first.label} starts`}
           </span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={requestChooseHandoffTools}>
           Choose tools…
         </DropdownMenuItem>
+        <DropdownMenuGroup className="order-first">
+          <DropdownMenuLabel className="px-3 pt-2 pb-0.5 text-sm font-medium text-foreground">
+            Hand off
+            {/* The row is plain text when the folder is asked for first, so
+                the group's name carries it for a screen reader. */}
+            {found && found.folders.length !== 1 ? (
+              <span className="sr-only">
+                . {getHandoffFolderNote(found.folders)}
+              </span>
+            ) : null}
+          </DropdownMenuLabel>
+          <HandoffStartInRow
+            found={found}
+            chosen={chosen}
+            onChoose={setChosen}
+          />
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator className="order-first" />
       </DropdownMenuContent>
     </DropdownMenu>
   );

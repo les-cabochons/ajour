@@ -7,6 +7,7 @@ import {
   HandoffRefused,
   HandoffTemplateRefused,
   HandoffToolOff,
+  HandoffMayHaveStarted,
 } from "./handoffs.ts";
 import {
   handoffStartRouteSchema,
@@ -30,14 +31,29 @@ import { z } from "zod";
 import {
   ProcessBroker,
   ProcessBrokerError,
+  childEnvironment,
   type ProcessReason,
 } from "./process-broker.ts";
+import { ProcessLaunchRefused, launchTerminalIn } from "./process-launch.ts";
 import {
   createSessionPackageGate,
   type SessionPackageGate,
 } from "./session-package-gate.ts";
 import { summarizePluginAccess } from "../../../packages/shared/plugin-access.ts";
 import { FolderResolver } from "./repository-folders.ts";
+import { WorktreeRefused, Worktrees } from "./worktrees.ts";
+import { handoffWorkFolder } from "./handoff-state.ts";
+import {
+  itemWorktreesRouteSchema,
+  projectStartInUpdateSchema,
+  worktreeCleanUpRouteSchema,
+  worktreeDeleteRouteSchema,
+  worktreeOpenRouteSchema,
+  worktreeSettingsUpdateSchema,
+  worktreeStatusRouteSchema,
+  type WorktreeKeptReason,
+  type WorktreeStatus,
+} from "../../../packages/shared/worktrees.ts";
 import { processRules } from "./process-rules.ts";
 import {
   createServer,
@@ -392,10 +408,23 @@ interface AppApiServerOptions {
   terminal?: () => Promise<
     import("./process-launch.ts").TerminalChoice | undefined
   >;
+  /**
+   * Shows a folder in the operating system's file manager, for a
+   * worktree's menu (#862). The desktop app passes Electron's
+   * `shell.openPath`, and rejects when it fails. Without one, as in the
+   * standalone API, that action is refused.
+   */
+  openFolder?: (folder: string) => Promise<void>;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
   /** The clock of the plugins' crash budget. Tests move it. */
   pluginClock?: () => number;
+  /**
+   * The clock of hand offs and of their worktrees: when a thread started
+   * or changed, when a worktree was made, and what automatic clean up
+   * counts its delays from (#864). Tests move it.
+   */
+  handoffClock?: () => number;
   /**
    * How long a stop gives running plugin operations to finish before it
    * cancels them: 5 s by default (#217).
@@ -827,6 +856,60 @@ function handoffOpenRefusal(reason: ProcessReason) {
     default:
       return "Couldn't open the thread.";
   }
+}
+
+/**
+ * Answers a request about one worktree that the worktrees module refused
+ * (#862). The refusal's message is Ajour's own and holds nothing git wrote,
+ * so it goes to the window. The event gets the reason only.
+ */
+function answerWorktreeRefusal(
+  unit: {
+    refuse(
+      reason:
+        | "worktree_not_found"
+        | "folder_unavailable"
+        | "folder_changed"
+        | "git_missing"
+        | "not_repository"
+        | "branch_in_use"
+        | "worktree_present"
+        | "worktree_changed",
+    ): unknown;
+    fail(
+      error: unknown,
+      options?: FailOptions<"timeout" | "git_failed">,
+    ): unknown;
+  },
+  response: ServerResponse,
+  error: unknown,
+) {
+  if (!(error instanceof WorktreeRefused)) throw error;
+  switch (error.reason) {
+    case "worktree_not_found":
+    case "folder_unavailable":
+    case "folder_changed":
+    case "git_missing":
+    case "not_repository":
+    case "branch_in_use":
+    case "worktree_present":
+    case "worktree_changed":
+      unit.refuse(error.reason);
+      break;
+    case "timeout":
+      unit.fail(new Error("timeout"), {
+        outcome: "timeout",
+        reason: "timeout",
+      });
+      break;
+    default:
+      unit.fail(new Error("git_failed"), { reason: "git_failed" });
+  }
+  writeJson(response, error.reason === "worktree_not_found" ? 404 : 409, {
+    error: error.message,
+    // The window reads the delete's preview again (#857).
+    ...(error.reason === "worktree_changed" ? { changed: true } : {}),
+  });
 }
 
 function recordPluginFailure(
@@ -1555,8 +1638,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         caller.development === true,
       ),
     ask: (ask, signal) => commandAsks.ask(ask, signal),
+    // A worktree shows under its own name, such as `aj-4821`.
     folderName: async (id) =>
-      (await storage.listRepositoryFolders()).find((f) => f.id === id)?.name,
+      (await storage.listRepositoryFolders()).find((f) => f.id === id)?.name ??
+      (await storage.listWorktrees()).find((w) => w.id === id)?.name,
+    // For access a worktree counts as its repository folder (#860).
+    accessFolder: async (id, projectId) => {
+      const worktree = (await storage.listWorktrees()).find(
+        (w) => w.id === id && w.projectId === projectId,
+      );
+      if (!worktree) return undefined;
+      const folder = (
+        await storage.listRepositoryFolders(worktree.projectId)
+      ).find((f) => f.id === worktree.repositoryFolderId);
+      return folder && { id: folder.id, name: folder.name, path: folder.path };
+    },
     remember: async (caller, command, approvedPolicy) => {
       const latest = await pluginManager.processPackage(caller.pluginId);
       const plugin = (await pluginManager.listPlugins()).find(
@@ -1735,9 +1831,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // When each plugin's threads last opened a terminal: Open resumes at most
   // five a minute per plugin, as the broker opens links.
   const handoffResumes = new Map<string, number[]>();
+  // The one place Ajour runs git itself: worktrees for hand offs (ADR 0022).
+  const worktrees = new Worktrees({
+    storage,
+    folders: folderResolver,
+    events,
+    ...(options.handoffClock ? { now: options.handoffClock } : {}),
+  });
   const handoffs = new Handoffs({
     storage,
     plugins: pluginManager,
+    worktrees,
+    ...(options.handoffClock ? { now: options.handoffClock } : {}),
     // Paused, with a throw, when a secret it needs can't reach the plugin.
     connection: async (pluginId, connectionId) => {
       const plugin = (await pluginManager.listPlugins()).find(
@@ -2109,17 +2214,30 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const payload = await readRequest(request, handoffStartRouteSchema);
       unit.set({
         plugin: { id: payload.pluginId },
-        handoff: { tool: payload.toolId },
+        // The place the start named, or `default` when the API decides.
+        handoff: {
+          tool: payload.toolId,
+          start_in: payload.startIn?.kind ?? "default",
+        },
       });
       try {
         const record = await handoffs.start(payload);
-        unit.set({ handoff: { id: record.id, count: 1 } });
+        unit.set({
+          handoff: {
+            id: record.id,
+            count: 1,
+            // The tool was told to make its own worktree (#863).
+            ...(record.ownWorktree ? { own_worktree: true } : {}),
+          },
+        });
         writeJson(response, 200, record);
       } catch (error) {
         if (!(error instanceof HandoffRefused)) throw error;
         unit.refuse(
           error instanceof HandoffToolOff ? "tool_off" : "handoff_refused",
         );
+        if (error instanceof HandoffMayHaveStarted)
+          unit.set({ handoff: { may_have_started: true } });
         if (error.refusal?.branchExists)
           unit.set({ handoff: { refusal: "branch_exists" } });
         if (error.refusal?.setting)
@@ -2254,7 +2372,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ...(record.connectionId ? { connectionId: record.connectionId } : {}),
           ...(record.link ? { link: record.link } : {}),
           ...(record.resume ? { resume: record.resume } : {}),
-          folderId: record.folderId,
+          // Where the thread works: its worktree, when it runs in one.
+          folderId: handoffWorkFolder(record),
         });
         writeJson(response, 200, {
           opened: record.link ? "link" : "terminal",
@@ -2339,6 +2458,312 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       handoffs.setVisible(payload.visible);
       writeJson(response, 200, { ok: true });
+    },
+    worktreeList: async ({ response, unit }) => {
+      const records = await worktrees.list();
+      unit.set({ worktree: { count: records.length } });
+      writeJson(response, 200, records);
+    },
+    worktreeItemList: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, itemWorktreesRouteSchema);
+      const live = await worktrees.liveOf(
+        payload.projectId,
+        payload.workItemId,
+      );
+      unit.set({ worktree: { count: live.length } });
+      writeJson(response, 200, live);
+    },
+    repositoryBranchList: async ({ response, params, unit }) => {
+      try {
+        const listed = await worktrees.branches(
+          params.projectId,
+          params.folderId,
+        );
+        // Counts only: a branch name never reaches an event.
+        unit.set({
+          worktree: {
+            count: listed.branches.length,
+            ...(listed.unavailable ? { unavailable: listed.unavailable } : {}),
+          },
+        });
+        writeJson(response, 200, listed);
+      } catch (error) {
+        if (!(error instanceof WorktreeRefused)) throw error;
+        // The refusal holds nothing git wrote, which may name a branch or
+        // a path: the response and the event get the reason and no more.
+        if (error.reason === "timeout" || error.reason === "git_failed")
+          unit.fail(new Error(error.reason), {
+            outcome: error.reason === "timeout" ? "timeout" : "error",
+            reason: error.reason,
+          });
+        else unit.refuse("folder_unavailable");
+        writeJson(response, 409, { error: error.message });
+      }
+    },
+    // Read from git now, so a file changed since the last list shows (#862).
+    worktreeStatus: async ({ request, response, unit }) => {
+      const scope = await readRequest(request, worktreeStatusRouteSchema);
+      const { listed, pruned } = await worktrees.statuses(scope);
+      const inState = (state: WorktreeStatus["state"]) =>
+        listed.filter((one) => one.status.state === state).length;
+      // Counts only: a name, a branch or a path never reaches an event.
+      unit.set({
+        worktree: {
+          scope: scope.workItemId
+            ? "item"
+            : scope.projectId
+              ? "project"
+              : "all",
+          count: listed.length,
+          changed: inState("changed"),
+          missing: inState("missing"),
+          pruned,
+        },
+      });
+      writeJson(response, 200, listed);
+    },
+    // The window starts each round, since it knows when an item is
+    // finished (#864). The rules and every safety check are the module's.
+    worktreeCleanUp: async ({ request, response, unit }) => {
+      const { trigger, finished } = await readRequest(
+        request,
+        worktreeCleanUpRouteSchema,
+      );
+      // The worktrees kept for a thread no handoff links, and the listings
+      // asked to find those threads (#857).
+      const unlinked = new Set<string>();
+      let threadListings = 0;
+      const round = await worktrees.cleanUp(finished, {
+        // A thread's state is read again from its tool before its worktree
+        // goes: Ajour may have last looked days ago.
+        // A thread whose state the tool didn't answer, as when its plugin
+        // is off or the read failed, is not confirmed: its worktree stays.
+        refreshThreads: async (worktreeIds) => {
+          const going = new Set(worktreeIds);
+          const unconfirmed = new Set<string>();
+          for (const handoff of await storage.listHandoffs()) {
+            if (!handoff.worktreeId || !going.has(handoff.worktreeId)) continue;
+            const confirmed = await handoffs.refresh(handoff.id).then(
+              (refreshed) => refreshed.failures.length === 0,
+              () => false,
+            );
+            if (!confirmed) unconfirmed.add(handoff.worktreeId);
+          }
+          // A thread taken off its item, or started by hand in the
+          // worktree, has no handoff: its tool lists it there, with the
+          // state the listing saw. No state read runs for it.
+          const found = await handoffs.unlinkedThreadsIn(
+            (await storage.listWorktrees()).filter((one) => going.has(one.id)),
+          );
+          threadListings = found.listings;
+          // A running thread keeps a worktree first, whatever else does.
+          for (const id of found.running) unlinked.add(id);
+          for (const id of found.unconfirmed)
+            if (!unconfirmed.has(id)) unlinked.add(id);
+          return {
+            running: found.running,
+            unconfirmed: [...unconfirmed, ...found.unconfirmed],
+          };
+        },
+      });
+      const { removed, kept } = round.result;
+      const keptFor = (reason: WorktreeKeptReason) =>
+        kept.filter((one) => one.reason === reason).length;
+      const removedBy = (rule: "finished" | "unused") =>
+        removed.filter((one) => one.rule === rule).length;
+      // Counts and outcomes only: a name, a branch, a path, a file name
+      // or an item's title never reaches the event.
+      unit.set({
+        worktree: {
+          trigger,
+          finished_rule: round.rules.finished.enabled,
+          unused_rule: round.rules.unused.enabled,
+          count: round.looked,
+          due: round.due,
+          removed: removed.length,
+          removed_finished: removedBy("finished"),
+          removed_unused: removedBy("unused"),
+          kept: kept.length,
+          kept_changes: keptFor("changes"),
+          kept_running: keptFor("running"),
+          kept_recent: keptFor("recent"),
+          kept_branch: keptFor("branch"),
+          kept_not_ours: keptFor("not_ours"),
+          kept_missing: keptFor("missing"),
+          kept_unconfirmed: keptFor("unconfirmed"),
+          kept_failed: keptFor("failed"),
+          kept_unlinked: kept.filter((one) => unlinked.has(one.worktreeId))
+            .length,
+          thread_listings: threadListings,
+        },
+      });
+      // The removed worktrees' handoffs stay, and no longer name them.
+      if (removed.length) await handoffs.publish();
+      writeJson(response, 200, {
+        removed,
+        kept,
+        handoffs: await storage.listHandoffs(),
+      });
+    },
+    worktreeDeletePreview: async ({ response, params, unit }) => {
+      try {
+        const preview = await worktrees.deletePreview(params.worktreeId);
+        // The file list goes to the window only. The event counts it.
+        unit.set({
+          worktree: {
+            state: preview.listed.status.state,
+            files: preview.files.length + preview.moreFiles,
+            running: preview.running.length,
+            ...(preview.branch
+              ? { unpushed_commits: preview.branch.unpushedCommits }
+              : {}),
+          },
+        });
+        writeJson(response, 200, preview);
+      } catch (error) {
+        answerWorktreeRefusal(unit, response, error);
+      }
+    },
+    worktreeDelete: async ({ request, response, params, unit }) => {
+      const { deleteBranch, fingerprint } = await readRequest(
+        request,
+        worktreeDeleteRouteSchema,
+      );
+      unit.set({ worktree: { delete_branch: deleteBranch } });
+      try {
+        const deleted = await worktrees.delete(params.worktreeId, {
+          deleteBranch,
+          fingerprint,
+        });
+        unit.set({
+          worktree: {
+            branch_deleted: deleted.branchDeleted,
+            missing: deleted.missing,
+          },
+        });
+        // Its handoffs stay on the item and no longer name it.
+        await handoffs.publish();
+        writeJson(response, 200, {
+          branchDeleted: deleted.branchDeleted,
+          handoffs: await storage.listHandoffs(),
+        });
+      } catch (error) {
+        answerWorktreeRefusal(unit, response, error);
+      }
+    },
+    worktreeForget: async ({ response, params, unit }) => {
+      try {
+        await worktrees.forget(params.worktreeId);
+        await handoffs.publish();
+        writeJson(response, 200, { handoffs: await storage.listHandoffs() });
+      } catch (error) {
+        answerWorktreeRefusal(unit, response, error);
+      }
+    },
+    // The window names the worktree, never a path: the API finds its folder.
+    worktreeOpen: async ({ request, response, params, unit }) => {
+      const where = (await readRequest(request, worktreeOpenRouteSchema)).in;
+      unit.set({ worktree: { in: where } });
+      let folder: string;
+      try {
+        folder = await worktrees.folderOf(params.worktreeId);
+      } catch (error) {
+        answerWorktreeRefusal(unit, response, error);
+        return;
+      }
+      if (where === "files") {
+        const shown = await (options.openFolder
+          ? options.openFolder(folder).then(
+              () => true,
+              () => false,
+            )
+          : false);
+        if (!shown) {
+          unit.refuse("open_failed");
+          writeJson(response, 409, {
+            error: "Ajour couldn't show this folder in the file manager.",
+          });
+          return;
+        }
+        writeJson(response, 200, { ok: true });
+        return;
+      }
+      try {
+        // Inside the catch too: reading the chosen terminal app can fail.
+        const terminal = (await options.terminal?.()) ?? {
+          app:
+            process.platform === "win32"
+              ? ("wt" as const)
+              : ("Terminal" as const),
+        };
+        unit.set({ worktree: { terminal: terminal.app } });
+        await launchTerminalIn(
+          folder,
+          childEnvironment(await resolveLoginShellPath()),
+          terminal,
+        );
+        writeJson(response, 200, { ok: true });
+      } catch (error) {
+        if (!(error instanceof ProcessLaunchRefused)) {
+          // Such as the terminal setting that couldn't be read, or the
+          // launch script that couldn't be written. The error names its
+          // path, so neither the event nor the window gets its message:
+          // a fixed reason and fixed words.
+          unit.fail(new Error("spawn_failed"), { reason: "spawn_failed" });
+          writeJson(response, 500, {
+            error: "Ajour couldn't open the terminal app.",
+          });
+          return;
+        }
+        unit.refuse("spawn_refused");
+        // Ajour's own words: no path and nothing a program wrote.
+        writeJson(response, 409, {
+          error:
+            error.reason === "invalid_request"
+              ? "This folder's path holds characters Ajour can't pass to the terminal app. Copy the path instead."
+              : "Ajour couldn't open the terminal app. Check Settings > General > Terminal.",
+        });
+      }
+    },
+    worktreeSettingsGet: async ({ response }) => {
+      writeJson(response, 200, await storage.getWorktreeSettings());
+    },
+    // Only what the request names changes (#864): Start in, or a rule.
+    worktreeSettingsSave: async ({ request, response, unit }) => {
+      const update = await readRequest(request, worktreeSettingsUpdateSchema);
+      const { finished, unused } = update.cleanUp ?? {};
+      unit.set({
+        worktree: {
+          ...(update.startIn ? { start_in: update.startIn } : {}),
+          ...(finished
+            ? { finished_rule: finished.enabled, finished_days: finished.days }
+            : {}),
+          ...(unused
+            ? { unused_rule: unused.enabled, unused_days: unused.days }
+            : {}),
+        },
+      });
+      writeJson(response, 200, await storage.setWorktreeSettings(update));
+    },
+    projectStartInGet: async ({ response, params }) => {
+      writeJson(
+        response,
+        200,
+        await storage.getProjectStartIn(params.projectId),
+      );
+    },
+    projectStartInSave: async ({ request, response, params, unit }) => {
+      const { startIn } = await readRequest(
+        request,
+        projectStartInUpdateSchema,
+      );
+      // The choice only: a project's id never reaches an event here.
+      unit.set({ worktree: { start_in: startIn ?? "settings" } });
+      writeJson(
+        response,
+        200,
+        await storage.setProjectStartIn(params.projectId, startIn),
+      );
     },
     repositoryFolderList: async ({ response, params }) => {
       writeJson(

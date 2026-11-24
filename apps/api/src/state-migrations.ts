@@ -368,6 +368,20 @@ function toVersion13(state: StoredStateRecord): StoredStateRecord {
   };
 }
 
+/**
+ * Version 14 adds hand-off worktrees (#860): no worktree yet, and hand offs
+ * start in a new worktree, the default of a fresh install. The value is
+ * spelled here, not imported, so a later change of the default never
+ * rewrites what this step gave.
+ */
+function toVersion14(state: StoredStateRecord): StoredStateRecord {
+  return {
+    ...state,
+    worktrees: state.worktrees ?? [],
+    worktreeSettings: state.worktreeSettings ?? { startIn: "worktree" },
+  };
+}
+
 /** Every step, in order. The last one's version is the current one. */
 export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 2, migrate: toVersion2 },
@@ -399,6 +413,8 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
   },
   // Handoff tools start off (#760), but not for a user already handing off.
   { version: 13, migrate: toVersion13 },
+  // Hand-off worktrees and where a hand off starts (#860).
+  { version: 14, migrate: toVersion14 },
 ];
 
 /** The version this build writes. */

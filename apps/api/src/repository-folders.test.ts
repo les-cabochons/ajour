@@ -91,7 +91,7 @@ afterEach(async () => {
 it("Given version 10, migration adds local folders without changing connections", async () => {
   expect(
     await runStateMigrations({ version: 10, connections: [] }, 10),
-  ).toMatchObject({ version: 13, connections: [], repositoryFolders: [] });
+  ).toMatchObject({ version: 14, connections: [], repositoryFolders: [] });
 });
 
 it("Given a chosen folder, resolves its id after reload and refuses protected folders and junctions", async () => {

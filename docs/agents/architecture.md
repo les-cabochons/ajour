@@ -56,7 +56,7 @@ It does not edit managed policy files. Path references checked on
 - `packages/plugin-sdk`: `@ajour/plugin-sdk`, the SDK plugin authors build plugin API 4 plugins with, published separately from the app. It imports nothing from the app or other packages at runtime; its contract types are generated from `packages/shared`.
 - `packages/wide-events`: the wide-event model every runtime emits through: the envelope, the catalog of event names with a privacy class on every field, the emitter, W3C trace context, the error scrubber and the sinks. It runs in the browser and in Node. See `docs/logging-strategy.md`.
 - `packages/review-deck`: Review Deck's grouping pipeline, copied in its upstream layout (#595, `VENDORED.md`). It builds a pull request's diff from both versions of each file, with Review Deck's hunk ids, groups the hunks into a guide, reads and writes the `saved-reviews` format, and finds stacks. No app imports it yet; the Deck service in the local API will run it.
-- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Every write tool's output carries the write's `undoToken`, or null. `delete_entries` (1 to 500 ids, through `localStore.deleteTimesheetEntries` in one action) and `discard_timer` (`localStore.cancelTimer` on the running entry) do what Delete and Discard do in the window, and refuse with the action sets' reasons; `undo` presses the Undo of the agent's last write through `localStore.undo` (`features/agents/agent-undo.ts`), as long as no later action replaced it and its toast is open (#531). `continue_entry` (`{ entryId }`) runs `localStore.continueTimesheetEntry` in one undoable action after the entry's action set allows Continue: today's entry resumes with its saved time, another day's starts a new running entry today with its task and note, and the running entry is refused ("Already running"). `start_timer` with no backlog item or project starts an empty entry, as S does, and takes `countedMinutes` for a late start; `start_timer` and `continue_entry` return the entry a Switch saved in `saved`, and `stop_timer` the saved entry in `entry`, so the terminal prints their rows without a second read (#536). `get_week_lines` (`{ weekOf, groupBy }`, `day-task` by default) returns the Commit page's lines from `buildCommitLines` in `domain/time/timesheet-submission.ts`, the same function the page calls: per line the project's full name and code, the name the task commits as (`getLineCommitTaskName`: what the Names choice's task plugin names it, its own name included; with no task plugin chosen, the first that maps it, else its own name), hours as a number rounded as the page copies them (`toDecimalHours`), comments merged with " | " and entry ids. Local time per task or per Local only project (`notSent`), Not known yet time (`waiting`) and the running entry's time not saved yet (`running.unsavedMinutes`, so a continued entry's saved time counts once) come beside the lines, never in them, and `locked` says whether the week is submitted (#533). The reads carry what the terminal prints and resolves (#532): `list_time_entries` gives each saved and running entry an optional `commitsAs: { kind }` classification (`own`, `task`, `not-known-yet`, `local-only` or `unknown`), including archived projects and tasks, from `domain/projects/commit-target.ts`; without plugin names it uses the same `unknown` rule as `list_projects`. Older Ajour versions omit the field. It gives `targets`, each day's target in hours from `weeklyCapacityTargets` (`getDayTargetMs` in `domain/time/week-pace.ts`); `list_projects` gives each project's `fullName`, `displayName` and `localOnly`, and each task's `pinnedSlot` (1 to 10, key 0 is 10) and `commitsAs` (`local-only` and `not-known-yet` from `domain/projects/commit-target.ts`; otherwise `task` with the name `resolveCommitTaskName` gives under the Commit page's Names choice, as `get_week_lines` and the page name it, or `own`). `list_projects` waits at most `PLUGIN_NAMES_DEADLINE_MS` (2 s) for the plugins overview, since discovery can wait behind a plugin install; on a failure or past it, a task holding a plugin value that may rename it reads `unknown`, never its own name and never a name from the window's cached overview, which can be stale; every entry and the running entry carry a `shortId`; and `find_entries` (`{ idPrefix }`, 4 to 32 lowercase hex characters) returns every entry on any day whose short id starts with it, plus the running entry when its short id or its timer's does (a running entry that continues a saved one shows the saved one's short id); and `get_last_saved_entry` (no input) returns in `entry` the saved entry with the newest `usedAt ?? committedAt` on any day, never the running entry, or null, for the terminal's `last` and its idle status line (`getLastSavedEntryForAgent` in `domain/agents/agent-read-model.ts`). The short id is the UUID in the `_id` without dashes, or the whole `_id` when it has none; `packages/shared/entry-short-id.ts` derives it for Ajour and the CLI alike. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
+- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Every write tool's output carries the write's `undoToken`, or null. `delete_entries` (1 to 500 ids, through `localStore.deleteTimesheetEntries` in one action) and `discard_timer` (`localStore.cancelTimer` on the running entry) do what Delete and Discard do in the window, and refuse with the action sets' reasons; `undo` presses the Undo of the agent's last write through `localStore.undo` (`features/agents/agent-undo.ts`), as long as no later action replaced it and its toast is open (#531). `continue_entry` (`{ entryId }`) runs `localStore.continueTimesheetEntry` in one undoable action after the entry's action set allows Continue: today's entry resumes with its saved time, another day's starts a new running entry today with its task and note, and the running entry is refused ("Already running"). `start_timer` with no backlog item or project starts an empty entry, as S does, and takes `countedMinutes` for a late start; `start_timer` and `continue_entry` return the entry a Switch saved in `saved`, and `stop_timer` the saved entry in `entry`, so the terminal prints their rows without a second read (#536). `get_week_lines` (`{ weekOf, groupBy }`, `day-task` by default) returns the Commit page's lines from `buildCommitLines` in `domain/time/timesheet-submission.ts`, the same function the page calls: per line the project's full name and code, the name the task commits as (`getLineCommitTaskName`: what the Names choice's task plugin names it, its own name included; with no task plugin chosen, the first that maps it, else its own name), hours as a number rounded as the page copies them (`toDecimalHours`), comments merged with " | " and entry ids. Local time per task or per Local only project (`notSent`), Not known yet time (`waiting`), time per non-working day (`nonWorkingDays`, see `domain/time/working-days.ts`) and the running entry's time not saved yet (`running.unsavedMinutes`, so a continued entry's saved time counts once) come beside the lines, never in them, and `locked` says whether the week is submitted (#533). The reads carry what the terminal prints and resolves (#532): `list_time_entries` gives each saved and running entry an optional `commitsAs: { kind }` classification (`own`, `task`, `not-known-yet`, `local-only` or `unknown`), including archived projects and tasks, from `domain/projects/commit-target.ts`; without plugin names it uses the same `unknown` rule as `list_projects`. Older Ajour versions omit the field. It gives `targets`, each day's target in hours from `weeklyCapacityTargets` (`getDayTargetMs` in `domain/time/week-pace.ts`); `list_projects` gives each project's `fullName`, `displayName` and `localOnly`, and each task's `pinnedSlot` (1 to 10, key 0 is 10) and `commitsAs` (`local-only` and `not-known-yet` from `domain/projects/commit-target.ts`; otherwise `task` with the name `resolveCommitTaskName` gives under the Commit page's Names choice, as `get_week_lines` and the page name it, or `own`). `list_projects` waits at most `PLUGIN_NAMES_DEADLINE_MS` (2 s) for the plugins overview, since discovery can wait behind a plugin install; on a failure or past it, a task holding a plugin value that may rename it reads `unknown`, never its own name and never a name from the window's cached overview, which can be stale; every entry and the running entry carry a `shortId`; and `find_entries` (`{ idPrefix }`, 4 to 32 lowercase hex characters) returns every entry on any day whose short id starts with it, plus the running entry when its short id or its timer's does (a running entry that continues a saved one shows the saved one's short id); and `get_last_saved_entry` (no input) returns in `entry` the saved entry with the newest `usedAt ?? committedAt` on any day, never the running entry, or null, for the terminal's `last` and its idle status line (`getLastSavedEntryForAgent` in `domain/agents/agent-read-model.ts`). The short id is the UUID in the `_id` without dashes, or the whole `_id` when it has none; `packages/shared/entry-short-id.ts` derives it for Ajour and the CLI alike. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 `get_week_lines` accepts optional inclusive `from` and `to` bounds. The renderer filters the week's entries and running time before building sections and exclusion summaries, so partial-week task totals never include days outside the CLI range. The output's `weekOf` and lock state still refer to the week's Monday. The CLI requests every touched week before printing any lines.
 
@@ -1054,7 +1054,8 @@ The local API's own state file is versioned the same way: numbered steps in
 can't finish holds the file at the version before it. Version 8 moves secrets
 into the vault, 9 gives every connection read-only access, and 10 rewrites the
 official GitHub plugin's legacy saved addresses for plugin API 4 (see the plugin
-host section).
+host section). Version 14 adds hand-off worktrees and where a hand off starts
+(see Hand-off worktrees).
 
 Desktop bootstrap is recovery input, not an authoritative replica. Apply it once,
 merge projects by stable ID so local references remain valid, normalize the merged
@@ -1163,7 +1164,7 @@ The desktop tray panel, specified in [#609](https://github.com/les-cabochons/ajo
 
 ## Repository folders
 
-API state version 11 adds `repositoryFolders`, with stable ids, project ids, names, absolute paths and optional last-use timestamps. Only the local API file stores these per-device records. They never enter renderer project records, bootstrap or team sync. `FolderResolver` in `apps/api/src/repository-folders.ts` resolves ids for the process broker, rechecks real paths at use, and refuses Ajour's user-data and install directories and their descendants.
+API state version 11 adds `repositoryFolders`, with stable ids, project ids, names, absolute paths and optional last-use timestamps. Only the local API file stores these per-device records. They never enter renderer project records, bootstrap or team sync. `FolderResolver` in `apps/api/src/repository-folders.ts` resolves ids for the process broker, rechecks real paths at use, and refuses Ajour's user-data and install directories and their descendants. It also resolves the id of a worktree Ajour made inside a repository folder (see Hand-off worktrees). Removing a repository folder forgets its worktree records too, and deletes nothing.
 
 The restricted `ajour:choose-folder` IPC accepts only a project id from the active main frame. Main opens the native directory chooser and calls `addRepositoryFolderForServer` directly. HTTP exposes list, remove and remember-use routes under `/api/projects/:projectId/repository-folders`; POST to the collection refuses paths and directs callers to the chooser. Removal deletes only the mapping. No directory is deleted or scanned.
 
@@ -1371,7 +1372,11 @@ start's hook URL. `checkHandoffConnections` refuses it unless the plugin
 declares a command with a `hook-url` slot (`declaresHookUrl`) and the tool
 follows state. `handoffToolFeatures` in `packages/shared/handoffs.ts`
 derives each tool's features for the plugin's page from `followsState`,
-`listsThreads`, `hooks` and `closesThreads` alone.
+`listsThreads`, `hooks`, `closesThreads` and `ownWorktree` alone. A tool
+declares `ownWorktree: true` (ticket #859) when it makes its own git
+worktree. Ajour then makes none for it: its start runs in the repository
+folder, and Start in decides whether the request carries a branch and a
+source (#863, see Hand-off worktrees).
 
 The authenticated window routes are GET and POST `/api/handoffs`, POST
 `/api/handoffs/refresh`, POST `/api/handoffs/:handoffId/refresh`, POST
@@ -1500,6 +1505,435 @@ refuses it; a listing taken after the close shows what the tool lists then. The 
 operation too for a tool that doesn't declare it (`not_supported`). The
 window asks before a `delete` close, never before an `archive` one.
 
+### Hand-off worktrees
+
+A hand off can start in a git worktree Ajour makes for the backlog item (spec
+#857, ticket #860, ADR 0022). `apps/api/src/worktrees.ts` is the one module of
+Ajour that runs git itself. Its `Worktrees` class makes worktrees (`create`),
+lists them (`list`, `liveOf`, `newestLive`, `branches`), and since ticket #862
+reads their status and removes them (`statuses`, `deletePreview`, `delete`,
+`forget`, `folderOf`, see "Status, delete and forget" below). Since ticket
+#864 it also removes worktrees by itself (`cleanUp`, see "Automatic clean up"
+below).
+
+Every git call goes through the module's `Git` runner: `spawn` without a
+shell, an argument list, `--` before paths, a refusal of any ref that starts
+with `-` (`checkedRef`), a timeout per call (15 s on refs, 20 s for a fetch,
+120 s for a checkout, `WorktreeGitTimeouts`), and at most 1 MB of output. The
+environment is `gitEnvironment(childEnvironment(userPath))` from
+`process-broker.ts`, the one a plugin's git child gets, plus
+`GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`. On POSIX the child is
+detached, so it leads a session without a terminal and `endProcessTree` ends
+its helpers with it. Git is found on the login shell's PATH, as the broker
+finds executables.
+
+`create` takes the project, the repository folder id, the item id, the item's
+key, and optionally the branch and the source (#861). It answers `{ kind: "unavailable" }`, with `git_missing`
+or `not_repository`, for a computer without git or a folder that isn't the
+top folder of a git checkout (`rev-parse --show-toplevel` must name the
+folder itself; a linked worktree counts). The hand off then starts in the
+repository folder. Otherwise, under one lock per repository, keyed by its
+common git folder, it:
+
+1. adds `/.ajour/` to the local exclude file, found with
+   `rev-parse --git-path`, when the line is missing;
+2. picks the source. A source the start named (`pickedSource`) must be a
+   branch the repository has, a remote's for `<remote>/<branch>` or a local
+   one, else the create refuses with `source_unresolved`. Without one
+   (`defaultSource`) it is the source last picked for the repository folder
+   (`worktreeSources` in the state file) while the repository still has it,
+   else the default branch of `origin`, or of the first remote, as
+   `refs/remotes/<remote>/HEAD` records it or `ls-remote --symref` says, else
+   the branch checked out in the main folder, else its detached `HEAD`;
+3. fetches a remote source into its remote-tracking ref. A failed fetch only
+   sets `sourceStale`;
+4. resolves the source to a commit, and refuses with `source_unresolved` when
+   it names none;
+5. makes `.ajour` and `.ajour/worktrees` as real folders
+   (`worktreesFolder`), and refuses with `folder_unavailable` when either is a
+   link or a file, or when the worktrees folder's real path is another: a
+   link there would send the checkout outside the repository folder. Then
+   it writes `.ajour/.gitignore` holding `*` (`ignoreAjourFolder`, #857),
+   made with the `wx` flag, so it follows no link and leaves a file already
+   there as it is: a committed `.gitignore` that re-includes folders, such
+   as `*` then `!*/`, outranks the exclude line;
+6. takes the folder name by making the folder with a `mkdir` that fails on an
+   existing name (`claimName`): `aj-` and the key's slug cut to 23 characters
+   (`worktreeBaseName`), or, for an item whose key slugs to nothing, `aj-`
+   and the first 8 characters of the work item id's unique part, the UUID
+   after `work_item_`, then `-2` to `-50`, also skipping a name in the
+   repository folder's worktree records or in `git worktree list`;
+7. picks the branch, then `-2` to `-50` while `refs/heads/<name>` exists, and
+   creates it with `git branch --no-track -- <branch> <commit>`, which fails
+   when the branch exists;
+8. runs `git worktree add --lock -- <folder> <branch>` and saves the record.
+
+Steps 6 to 8 note what they made (`Made`: the folder, the branch, the
+registered worktree), and a rollback removes those and nothing else, so a
+folder or a branch another program made under the same name meanwhile stays.
+It answers the record with `keep` and `discard`. `Handoffs.start` calls
+`keep` once the tool answered, which runs `git worktree unlock`, and `discard`
+when the start failed or the tool refused it. A start whose outcome is
+unknown calls `keep` instead (#857): the plugin operation failed with
+`timeout`, `crashed`, `exited_early` or `result_too_large`, the tool's answer
+failed validation (`InvalidPluginResultError`, `invalid_result`), since the
+tool did answer, the operation was cancelled (`PluginOperationCancelled`), as
+when the user turns the plugin off while the tool reads back what it
+launched, or the tool's error carried the refusal hint `mayHaveStarted: true` (`HandoffRefusalHint`).
+The tool may run in the worktree, so it stays with its branch and record,
+no handoff is recorded, and the refusal (`HandoffMayHaveStarted`) names the
+worktree it kept. `discard` forgets the record
+and runs `remove`, as a create that fails partway does. `remove` checks
+`.ajour/worktrees` again, then the folder itself: `claimName` kept its `dev`
+and `ino`, and the name must still hold that directory, not a link or
+another folder (`folderNow`). Otherwise it removes nothing, hands git no
+path, and throws `folder_changed`. It then reads `git worktree list`
+(`registrations`). An add can register and lock the worktree and still fail,
+as when a `post-checkout` hook does, so a worktree listed at the folder on
+the create's own branch is the create's, and `git worktree remove --force
+--force` removes it. A worktree listed there on another branch, detached or
+bare is another program's, added in the folder the create reserved: git's
+removal and the folder cleanup are both skipped, and `folder_changed` is
+thrown once the branch is handled. Otherwise it removes what is left of the
+folder while it is still the create's. The branch the create made is deleted
+only while it still points at the commit it started from and no worktree has
+it checked out. A create whose rollback throws `folder_changed` is refused
+with that reason. No prune ever runs. A failure throws `WorktreeRefused` with
+a message for the user, which the start route answers as a 409.
+
+API state version 14 adds `worktrees` and `worktreeSettings`
+(`packages/shared/worktrees.ts`). A worktree record holds its id, repository
+folder, project and work item ids, the item's key at creation, the folder
+name, the branch, the source's name and the creation time. `worktreeSettings`
+is `{ startIn: "worktree" | "main" | "ask", cleanUp: { finished, unused } }`,
+`worktree` by default. Each clean-up rule (#864) is `{ enabled, days }`:
+`finished` is on after 3 days and `unused` off after 30. `worktreeProjectStartIn`
+(#864) maps a project id to the Start in that project chose for itself.
+Neither needs a new version: `normalizeWorktreeSettings` reads each part
+alone, so a file that holds Start in alone keeps it and gets the rules of a
+fresh install, and a missing map reads as empty.
+`worktreeSources` (#861) maps a repository folder id to the source the user
+last picked for its new worktrees; it needs no new version, an older file
+reads as an empty map, and removing the folder forgets its entry. A handoff record
+gains an optional `worktreeId`; its `folderId` stays the repository folder.
+`removeWorktree` and `removeRepositoryFolder` clear that link on the handoffs
+they leave (`withoutWorktreeLinks`), and change a resume argument that holds
+the worktree's id to the repository folder's id, so Open still resolves the
+folder of a tool whose resume command takes it (#862).
+
+A worktree's id is a folder id. `FolderResolver.resolve` resolves it, for a
+caller in the worktree's project only, to
+`<repository folder>/.ajour/worktrees/<name>` (`worktreePathIn`), and only
+while that path's real path is itself and a directory. `Handoffs` sends the
+id wherever it sent the repository folder's: `startHandoff`'s `folder`, the
+`folderId` of `readHandoffStates` and `closeThread`, and the folder slot
+`openHandoff` fills (`handoffWorkFolder` in `handoff-state.ts`). For access a
+worktree counts as its repository folder. The process broker's `accessFolder`
+option maps a worktree id to its repository folder, and an undeclared
+command's approvals are matched, asked and remembered with that folder's id,
+while the command still runs in the worktree. The ask then carries
+`scopeFolderName`, the repository folder's name. The dialog says, for any
+command in a folder, that Always covers the repository folder and its
+worktrees. The tool settings kept per
+folder (`handoffFolderSettings`) are read and saved with the repository
+folder's id. The command rules already count a worktree's path as inside its
+repository folder.
+
+One start of an item in a repository folder picks its place and runs at a
+time (`Handoffs.inTurn`, keyed by project, folder and item), from
+`startPlace` until its worktree is kept or taken back. A second start asked
+meanwhile then sees how the first ended: it never joins a worktree the first
+is about to remove, and two starts never make two worktrees.
+
+`Handoffs.startPlace` picks where a start runs. The request's `startIn`
+(`handoffStartInSchema`, #861) says it: `{ kind: "main" }`,
+`{ kind: "new", source?, branch? }`, or `{ kind: "worktree", worktreeId }`,
+which must be one of the item's worktrees in that folder that still resolves.
+Without it the place is the item's newest worktree in the route's repository
+folder that still resolves (`newestLive`), else the repository folder when
+`worktreeSettings.startIn` is `main`, else a new worktree. `ask` is resolved
+by the window, which then always sends a `startIn`; a start that sends none
+under `ask` gets a new worktree. An `unavailable` create runs in the
+repository folder, and so does every start of a tool with `ownWorktree`
+(see below). In the repository folder Ajour creates no branch. The request
+still carries `branch` for a tool without `ownWorktree`, and the record
+keeps it, as before worktrees: a plugin released before `ownWorktree` may
+make its own worktree from it and refuse a start without one. A state read
+replaces the record's `branch` with what the tool reports. A name git
+wouldn't take is left out there, never sent, so never recorded. The branch
+of a new
+worktree is `startIn.branch`, else the branch template's, else the worktree's
+folder name: an empty branch is no longer a choice of place. A branch that
+is no valid git branch refuses the start only where the start creates it,
+and only once the folder is known to take a worktree: `Worktrees.create` and
+`Worktrees.sourceFor` check the name after the git and repository checks and
+before they make anything, and `refusePlace` turns their `invalid_branch`
+into the branch template's refusal (`checkBranch`, a 400). So an invalid
+branch template doesn't stop a start in a worktree the item has, one in the
+main folder the user or the settings chose, or a default start that falls
+back to the main folder because the folder is no git checkout or the
+computer has no git. A branch named `HEAD` is refused
+(`isValidNewBranchName`) by `Worktrees.create`, once it knows it will create
+a branch: a folder that gets no worktree starts in the main folder whatever
+the name. The route has no
+`branchOverride` any more. Once a start that named its `source` succeeded,
+`rememberWorktreeSource` keeps it for the repository folder. The worktree is
+made last, after the templates, the connection and the prompt passed. In a
+worktree the request's `folder` is `{ id: <worktree id>, name: <folder name> }`
+and its `branch` is the worktree's own. Such a request also carries
+`repositoryFolder`, the repository folder's own id and name: a tool that
+refuses the start loses a new worktree at once (`discard`), so a step the
+user must take in a folder that lasts, such as trusting it, goes to the
+repository folder. A start whose `folder` is the repository folder carries
+none. POST `/api/handoffs` answers the
+handoff record with `worktree` and `sourceStale: true` beside its fields
+(`handoffStartAnswerSchema`). GET `/api/worktrees` lists the records. GET and
+POST `/api/worktrees/settings` read and save `{ startIn }`, `worktree`, `main`
+or `ask`. POST `/api/worktrees/item` takes `{ projectId, workItemId }` and
+answers the item's worktrees whose folder still resolves, newest first
+(`liveOf`). GET `/api/projects/:projectId/repository-folders/:folderId/branches`
+answers `repositoryBranchesSchema` (`Worktrees.branches`): `unavailable` for a
+folder that gets no worktree, else `current`, the branch checked out in the
+main folder, `source`, what `defaultSource` picks from local refs alone, and at most 2000
+`branches`, local and remote, from one `for-each-ref` sorted by last commit,
+with the source, the remote's default branch (`default`) and the main folder's
+branch (`current`) moved first. It reads the refs the repository already has
+and never contacts a remote, so it answers at once when the remote can't be
+reached: a remote whose default branch git didn't record marks no `default`
+and leaves `source` out (`listedSource`), since only the start asks the
+remote (`ls-remote`) and may get another branch than the main folder's. The
+window then names no source and sends the branch the user picks. A folder that is gone or a
+git call that fails answers 409 with a message that holds nothing git wrote,
+and the event gets the reason alone.
+
+A tool with `ownWorktree` (#863) takes another path, `Handoffs.ownWorktreePlace`.
+Ajour makes it no worktree, and the request's `folder` is always the
+repository folder. What Start in says reaches the plugin through two
+optional fields of `startHandoffRequestSchema`. Under New worktree the
+request carries `branch`, the branch to create (`startIn.branch`, else the
+branch template's, else `worktreeBaseName(item.key, workItemId)` when the template fills
+empty, with `-2`, `-3` when the repository has that local branch), and
+`source`, the name the branch starts from, such as `origin/main`.
+`Worktrees.sourceFor` answers both. The branch is the first free name, by
+the `freeBranch` a create uses, read and not reserved. The source is the
+`startIn.source` the repository has, else what `defaultSource` picks, asking
+the remote as a create does. A
+remote's branch is then fetched, with the `fetch`, the repository lock and
+the timeout of a create, so the name resolves in the tool and both kinds of
+worktree start from the same commit. A fetch that fails leaves the last
+fetched copy and the answer says `sourceStale: true`, with `source` beside
+it since there is no `worktree` to name it. Without any copy the start
+answers 409. Beside that fetch nothing is written: no folder, no branch, no
+exclude line. Under Main folder the request carries neither field, and
+nothing is fetched. A `startIn` of kind `worktree`, and a start
+without `startIn` for an item that has a live worktree, count as New
+worktree, since such a tool can't join a worktree of Ajour's. A folder that
+gets no worktree (`unavailable`) gets no branch. A source the repository
+doesn't have answers 409, and so does a branch `isValidNewBranchName`
+refuses. Only such a tool ever receives `source`: every other tool's request
+is as before. The handoff record of a start that told the tool to make its
+worktree has `ownWorktree: true` and no `worktreeId`, and the source the
+user picked is remembered as for a worktree of Ajour's. The window reads the
+flag in `groupHandoffsByPlace` to put the thread under "<tool label>'s own
+worktree". A state read can change a record's `branch`, so the branch alone
+could not say it. Ajour never lists, deletes or cleans such a worktree.
+
+**Status, delete and forget (#862).** `statuses(scope)` lists the worktrees
+of an item, of a project, or all of them, newest first, each with its status
+read from git now and the path of its folder (`listedWorktreeSchema`):
+`clean`, `changed` with the number of entries `git status --porcelain=v1 -z
+--untracked-files=normal` prints, `missing` when the worktree's id no longer
+resolves to a real directory, or `unknown` when git can't say. For a missing
+one it drops git's registration of that worktree with `git worktree remove
+--force --force -- <folder>` (`pruneMissing`), under the repository's lock
+and only while nothing holds the name. It never runs `git worktree prune`,
+which would also drop the user's own worktrees whose folders are away.
+`deletePreview(id)` answers `worktreeDeletePreviewSchema` and changes
+nothing: the status entries (at most 200, `moreFiles` counts the rest),
+`fingerprint` (#857), a SHA-256 of `git status --porcelain=v1 -z
+--untracked-files=all`, so each file inside an untracked folder counts, of
+the size and change time (`lstat`) of each file that status names, so more
+edits to a file already listed count, of the worktree's `HEAD` commit and of
+the count of commits only that `HEAD` holds, all for a worktree on disk, and
+of the tip of the record's branch, also for a worktree already missing. It is
+read before the file list so a change between the two reads makes the delete
+refuse. Then the
+worktree's handoffs that are `working` or `needs-you` and not paused, and
+the count of the branch's commits no remote-tracking branch reaches
+(`rev-list --count <branch> --not --remotes`, as last fetched).
+
+`delete(id, { deleteBranch })` takes a worktree's id and never a path. The
+folder is `worktreePathIn(<repository folder>, <record name>)`, checked as a
+create checks it (`worktreesFolder`, which refuses a link at `.ajour` or
+`.ajour/worktrees`). A stored record holds no file-system identity, so the
+proof that the folder is Ajour's worktree is git's: the folder is a real
+directory, `git worktree list` holds it, and git run inside it answers the
+same top folder and the same common git folder as the repository. Anything
+else throws `folder_changed` and stays. A worktree on another branch than the
+record's, which a tool switched, passes once the user confirmed (#857):
+`deletePreview` names the branch it is on now (`switched`), or, when it is
+detached, counts the commits only its `HEAD` holds (`commitsOnNoBranch`,
+`rev-list --count HEAD --not --branches --remotes --tags`), which the
+removal of its `HEAD` and reflog leaves for `git gc` to drop, and
+`deleteBranch` still deletes only the record's branch. A clean-up removal
+(`unconfirmed`) refuses it with `folder_changed`. A folder that is
+already gone needs no proof: its registration and record go, unless the
+preview's fingerprint was taken while the folder was on disk, which throws
+`worktree_changed`, since its branch may hold a commit the preview never
+counted. With
+`delete` resolves the repository from the record, then reads the record
+again once it holds the repository's lock, so a delete queued behind another
+one of the same worktree throws `worktree_not_found`. With
+`deleteBranch`, another worktree that has the branch checked out refuses the
+delete with `branch_in_use` before anything is removed. The removal is `git
+worktree remove --force --force`, whatever is uncommitted: the user confirmed
+with the file list. The route requires the preview's `fingerprint`
+(`DeleteOptions.fingerprint`): under the lock, just before that removal,
+`deleteFingerprint` reads it again, and a worktree whose files, `HEAD`,
+commits on no branch or branch tip no longer match throws `worktree_changed`
+and stays whole: a file added inside an untracked folder, a branch deleted
+that held a detached `HEAD`'s commits, or a commit made since the preview,
+which "Also delete the branch" would drop uncounted. The route answers it with
+409 and `changed: true` (`worktreeDeleteRefusalSchema`), and the dialog reads
+the preview again. Files git leaves once it has dropped the registration
+are removed while the folder is still the directory checked before. The
+record goes next (`removeWorktree`, which clears `worktreeId` on its
+handoffs), then `git branch -D` when asked, whose failure only makes
+`branchDeleted` false. `forget(id)` drops the record of a worktree that is
+not live, with its registration, and throws `worktree_present` otherwise. A
+refusal's message is Ajour's own: a git failure answers "Ajour couldn't
+delete this worktree: git failed." and what git wrote goes nowhere.
+
+The routes: POST `/api/worktrees/status` takes `{ projectId?, workItemId?,
+finished? }`.
+GET `/api/worktrees/:worktreeId/delete-preview`. POST
+`/api/worktrees/:worktreeId/delete` takes `{ deleteBranch, fingerprint }` and answers
+`{ branchDeleted, handoffs }` (`worktreeDeleteAnswerSchema`). POST
+`/api/worktrees/:worktreeId/forget` answers `{ handoffs }`. POST
+`/api/worktrees/:worktreeId/open` takes `{ in: "terminal" | "files" }`: the
+API finds the folder from the id (`folderOf`), then starts the terminal app
+there with the user's shell (`launchTerminalIn` in `process-launch.ts`, the
+launch a plugin's terminal command gets, without a command) or calls the
+server option `openFolder`, which the desktop app sets to Electron's
+`shell.openPath`. The window never sends a path. An unknown id answers 404,
+any other refusal 409 (`answerWorktreeRefusal`). A terminal launch that fails
+outside a `ProcessLaunchRefused`, such as the terminal setting that can't be
+read or the launch script that can't be written,
+answers 500 with fixed words and ends the event as an `error` with
+`spawn_failed`: the failure's message may hold a path and goes nowhere.
+
+**A project's Start in (#864).** GET and POST
+`/api/projects/:projectId/start-in` read and write the project's own Start
+in, answering `{ override?, settings }` (`projectStartInSchema`). A POST of
+`{ startIn: null }` drops the override. `startInOf` gives the choice that
+applies. `Handoffs.defaultStartIn` reads it in the two places a start that
+names no place reads a default (`startPlace` and `ownWorktreePlace`), and the
+window reads the same route for the hand-off sheet's row and for its Ask each
+time check (`loadStartOptions`, `HandoffHost.proceed`). The local API knows no
+project: it keeps the choice under whatever project id the window names, and
+only in the state file of this computer.
+
+**Automatic clean up (#864).** The local API doesn't know when a backlog item
+is finished, so the window starts each round: `lib/worktree-clean-up.ts` runs
+one at launch and one an hour (`WorktreeCleanUpScheduler` in the app shell),
+and Settings › Worktrees runs one from Clean up now. A round reads GET
+`/api/worktrees`, then POSTs `/api/worktrees/clean-up` with `{ trigger,
+finished }`, where `finished` holds, for each finished item that has a
+worktree, the latest of its settled and archived moments (`finishedItemsOf`
+in `domain/handoffs/worktrees.ts`). It asks nothing when the computer has no
+worktree.
+
+`Worktrees.cleanUp(finished, { refreshThreads })` applies the two rules of
+`worktreeSettings.cleanUp` with the module's clock, one round at a time. A
+worktree is due under `finished` once `finishedAt + days` has passed, and
+under `unused` once `days` have passed since the last `startedAt` or
+`changedAt` of its handoffs, its record's `lastUsedAt`, or its `createdAt`.
+`storage.removeHandoff` stamps `lastUsedAt` with the leaving handoff's last
+use, so removing a thread from its item never makes its worktree look older. A due worktree stays when
+`keptReason` names a reason: its id no longer resolves (`missing`, or
+`not_ours` when a folder is still reached at its path, as through a link at
+`.ajour/worktrees`), git no longer lists the folder as this repository's
+worktree or the folder is no checkout of it (`not_ours`), one of its handoffs
+is `working` or `needs-you`, paused or not (`running`), git status reports a
+file (`changes`), the branch git lists there is not the record's (`branch`),
+git can't say (`failed`), or its last use is less than an hour old (`recent`).
+A hand off that is starting in a worktree the item has counts as a use too:
+`Handoffs.start` holds the worktree (`Worktrees.hold`) from the moment it
+picks that place until the handoff is kept, since no thread names the
+worktree before its tool answers. The hold is taken under the repository's
+lock, the one a removal holds, so a hand off that arrives during a removal
+waits for it, finds the worktree gone and is refused before any tool starts.
+Under the lock the hold also asks that the folder is still a checkout git
+lists for the repository (`checkoutOf`), so no hand off starts in what a
+partial removal left. It takes one on any branch (#857): a tool may have
+switched the worktree with `git switch -c`. The hold answers the branch
+checked out there, and the start tells the tool that branch, or none when
+the worktree is detached, and the handoff records it. The record keeps the
+branch Ajour made. A hand off
+that can't take the lock, as when git is gone or doesn't answer, is refused
+the same way.
+For the worktrees left, the route's `refreshThreads` reads their threads'
+state again from their tools (`Handoffs.refresh`) and answers the worktrees
+whose threads it couldn't read: those are kept as `unconfirmed`. It then
+asks `Handoffs.unlinkedThreadsIn` for the threads no handoff links (#857),
+such as one taken off its item with Remove from item or started by hand in
+the worktree: each tool that is on, available, connected when it needs a
+connection, lists threads and follows state is asked now, past the listing
+cache, for its threads in each worktree by the worktree's id. Their state
+is the one the listing gives (`ListedThread.state`): `readHandoffStates` is
+never asked for them, since a read may act on the thread, as Claude Code's
+stops a background job that is done or waits for the user. A worktree
+where one is `working` or `needs-you` is kept as `running`. A listing that
+fails, gives such a thread no state or `unknown`, or returns as many
+threads as the limit it asked for, so it may have cut an older one, keeps
+it as `unconfirmed`. A tool that doesn't list threads, or doesn't
+follow state (#873), is not asked. A removal is
+`delete(id, { unconfirmed })`: the delete path with all its proofs, under
+the repository's lock. It reads git status again, then takes the round's last
+look (`lastLook`), the last thing before the removal starts: it reads the
+rules, the clock, the holds and the stored handoffs again and leaves the
+worktree when no rule is due any more, a hand off holds it, a thread runs in
+it, a thread is still `unknown` after the refresh (`unconfirmed`) or it was
+used in the last hour. Then it runs `git worktree remove` without `--force`, so git itself refuses a
+worktree with modified or untracked files or a lock. It never drops the
+record of a folder that is gone, and when git drops its registration and
+leaves files behind, they stay: only a delete the user confirmed removes
+what git left. No branch is deleted. The module remembers in memory the
+worktrees git couldn't remove and those whose threads it couldn't
+read, so the list says so. The route answers `{ removed, kept, handoffs }`
+(`worktreeCleanUpAnswerSchema`) and publishes the handoffs when something
+went. Its event is the round's one event.
+
+POST `/api/worktrees/status` takes an optional `finished` too. With it,
+`statuses` gives each worktree a `cleanUp` from the same rules (`verdict`):
+`{ kind: "kept", reason }` for a due one that stays, `{ kind: "goes", at }`
+for a due one the next round removes and for one a rule will remove that
+nothing but time keeps, with the day the first of its delays ends. A finished
+moment before zero or after the module's clock is ignored. Every listed worktree also has `running`,
+`working` or `needs-you`, from its handoffs.
+
+Thread listing (`Handoffs.findThreads`) asks each tool once per repository
+folder and once per worktree of the item that is still on disk
+(`Worktrees.liveOf`), the worktrees first. `adopt` accepts a worktree's id as
+the offer's folder: the new handoff keeps the repository folder's id and
+names the worktree (`adoptHandoff`).
+
+In the window, `features/backlog/use-item-handoffs.ts` reads the item's
+statuses when the item opens, when its threads' worktrees change, and after
+a delete or a forget, and `domain/handoffs/worktrees.ts` groups the threads
+by place and words the lines and the dialog. The project page's Repositories
+section and Settings › Worktrees (#864) read the statuses of a project and of
+the computer, and show each worktree in a `WorktreeRow`
+(`features/worktrees/worktree-row.tsx`).
+
+For a start, `lib/handoff-start-options.ts` reads the item and branch routes and the
+settings each time the hand-off sheet, the Start in dialog or Review prompt
+opens, and `domain/handoffs/start-in.ts` words the choice
+(`docs/agents/ui-registry.md`, Handoffs). `lib/worktrees.ts` keeps the records by id: it loads the list
+the first time a handoff with a `worktreeId` shows, and a start adds its
+worktree. `hasWorktrees` says whether this window hands off at all, which is
+what lists Settings › Worktrees.
+
 ## Handoff hooks
 
 A tool that supports hooks posts back when its thread changes, so the item's
@@ -1585,7 +2019,7 @@ bearer tokens share the port risk.
 
 Per-plugin prompt, title and branch templates live in local API state as `handoffTemplates`, defaulting to an empty map for older state. They are separate from agent-task values and never team-synced. GET and POST `/api/plugins/:pluginId/handoffs/templates` read and save them. Save validates slot names and the 16 KiB UTF-8 limit per template. The manifest may supply `capabilities.handoff.promptTemplate`. Without one, the host uses the item's key, title, description and URL.
 
-The window's start request carries `item` fields, `projectName`, a repository folder id and optional `promptOverride` and `branchOverride`. The API resolves the folder name and fills templates before validating the plugin request. It no longer accepts finished title or branch fields. `packages/shared/handoff-templates.ts` owns filling and preview. The frontmatter parser now lives in `packages/shared/description-frontmatter.ts`; the web domain entry point preserves existing imports. Descriptions exclude parsed frontmatter and keep at most 32 KiB of UTF-8, including a newline and ellipsis when cut.
+The window's start request carries `item` fields, `projectName`, a repository folder id and optional `promptOverride` and `startIn` (see Hand-off worktrees). The API resolves the folder name and fills templates before validating the plugin request. It no longer accepts finished title or branch fields. `packages/shared/handoff-templates.ts` owns filling and preview. The frontmatter parser now lives in `packages/shared/description-frontmatter.ts`; the web domain entry point preserves existing imports. Descriptions exclude parsed frontmatter and keep at most 32 KiB of UTF-8, including a newline and ellipsis when cut.
 
 ### Undeclared command modes
 

@@ -94,12 +94,17 @@ export async function sendHeldEdit(edit: HeldEdit): Promise<void> {
       localStore.releaseHeldSourceWrite(edit.itemId);
       await sendPendingSourceWrites([edit.itemId]);
       return;
-    case "estimate":
+    case "estimate": {
       localStore.releaseHeldEstimate(edit.itemId, edit.field);
+      const sourceId = itemOf(edit.itemId)?.sourceId;
       try {
-        // The sync uploads it, or finds a conflict with the source.
+        // A sync of the item alone uploads it, or finds a conflict with the
+        // source. It shows as the item's running sync, so the estimate
+        // watcher, which the release also wakes, waits for its answer
+        // instead of sending the change a second time.
         await syncBacklogConnection(edit.pluginId, edit.connectionId, {
           trigger: "source_write",
+          ...(sourceId ? { refresh: true, sourceId } : {}),
         });
       } catch (error) {
         showErrorToast({
@@ -108,6 +113,7 @@ export async function sendHeldEdit(edit: HeldEdit): Promise<void> {
         });
       }
       return;
+    }
     case "description":
       localStore.releaseHeldDescription(edit.itemId);
       await saveSyncedDescription(edit.itemId, "save");

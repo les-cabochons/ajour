@@ -206,7 +206,7 @@ Declare `capabilities.connector.itemTypes` to tell the connection form about you
 
 The request lists the types the form shows: those of the connection's synced items, each with the `sourceId` of one of its items so you can find its project, then the types the saved value names, without one. Return, for each type you know:
 
-- `iconSvg`: the type's icon, as SVG markup of at most 20,000 characters. Ajour draws it at 16px, as an image, so scripts and links in it do nothing. Leave it out and the row shows none.
+- `iconSvg`: the type's icon, as SVG markup of at most 20,000 characters. Ajour draws it at 14px, as an image, so scripts and links in it do nothing. Leave it out and the row shows none.
 - `fields`: the type's fields, each with its `name` and, if your tool has one, its `id`.
 - `suggestions`: by the id of a field the `typeOverrides` field replaces, the names of the type's fields to use instead, best first.
 
