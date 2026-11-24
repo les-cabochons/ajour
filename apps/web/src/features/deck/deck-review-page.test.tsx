@@ -24,6 +24,11 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
+import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../../tests/fixtures/pull-requests";
@@ -1115,4 +1120,96 @@ it("floats each thread beside its line in its concern, and hides it while its hu
   fireEvent.click(within(changes).getByRole("button", { name: "Files A–Z" }));
   await waitFor(() => expect(card("on-b").style.top).toBe("137px"));
   expect(card("on-y").style.top).toBe("217px");
+});
+
+/** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
+const HUGE: DeckOpenedPullRequest = {
+  headSha: "head",
+  baseSha: "base",
+  guide: null,
+  files: [
+    {
+      path: "src/big.ts",
+      status: "modified",
+      binary: false,
+      hunks: Array.from({ length: 600 }, (_, index) =>
+        hunk(`src/big.ts#${index}`, `@@ -${index + 1},1 +${index + 1},1 @@`, [
+          "-a",
+          "+A",
+        ]),
+      ),
+    },
+  ],
+};
+
+it("shows a huge pull request's threads only while their hunks are mounted, and places them again as they come back", async () => {
+  windowWideEnoughForTheGutter(true);
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [
+      reviewThread("first", { path: "src/big.ts", line: 1 }),
+      reviewThread("last", { path: "src/big.ts", line: 600 }),
+    ],
+  });
+  // A 900px scroller whose rows are 100px high: about a dozen mount.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (element) makeScrollable(element);
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const scroller = screen.getByTestId("scroller");
+    const gutter = await screen.findByRole("complementary", {
+      name: "Review threads",
+    });
+    const placed = (id: string) =>
+      gutter
+        .querySelector<HTMLElement>(`[data-card="${id}"]`)!
+        .hasAttribute("data-placed");
+    const connected = (id: string) =>
+      document.querySelector(`[data-connector="${id}"]`)!.hasAttribute("d");
+    const mounted = (index: number) =>
+      document.querySelector(`[data-hunk="src/big.ts#${index}"]`) !== null;
+
+    // The first hunk is on screen and the last isn't: only the first
+    // thread shows, joined to its line.
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(mounted(599)).toBe(false);
+    expect(placed("last")).toBe(false);
+    expect(connected("first")).toBe(true);
+    expect(connected("last")).toBe(false);
+
+    // Scrolled to the end, the first hunk unmounts and the last mounts.
+    scrollElement(scroller, { top: 61_000 });
+    await waitFor(() => expect(placed("last")).toBe(true));
+    expect(mounted(0)).toBe(false);
+    expect(placed("first")).toBe(false);
+    expect(connected("first")).toBe(false);
+    expect(connected("last")).toBe(true);
+
+    // Back at the top, the first thread shows again.
+    scrollElement(scroller, { top: 0 });
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(placed("last")).toBe(false);
+    expect(connected("last")).toBe(false);
+  } finally {
+    restore();
+  }
 });
