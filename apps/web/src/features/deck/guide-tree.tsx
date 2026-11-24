@@ -4,7 +4,11 @@ import {
   RiLayoutRight2Line as ShowTree,
   RiLayoutRightLine as HideTree,
 } from "@remixicon/react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from "@tanstack/react-virtual";
 import { TooltipButton } from "@/components/tooltip-button";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { Value } from "@/components/ui/value";
@@ -25,7 +29,7 @@ import {
  * tooltip: there is one per concern, and the open tree shows the titles.
  * With more sections than `treeVirtualized` allows, as a huge pull
  * request's Files A–Z has (#790), only the ticks or titles in the tree's
- * view are mounted.
+ * view are mounted, and the one holding the focus, so Tab goes on from it.
  */
 
 function Tick({ hunks, viewed }: { hunks: number; viewed: number }) {
@@ -139,6 +143,17 @@ function VirtualTreeItems({
     (index: number) => sections[index]!.key,
     [sections],
   );
+  /** The item holding the focus, kept mounted out of the tree's view. */
+  const [focused, setFocused] = useState<number>();
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const indexes = defaultRangeExtractor(range);
+      if (focused === undefined || focused >= range.count) return indexes;
+      if (indexes.includes(focused)) return indexes;
+      return [...indexes, focused].sort((a, b) => a - b);
+    },
+    [focused],
+  );
   const virtualizer = useVirtualizer({
     count: sections.length,
     horizontal: across,
@@ -149,6 +164,7 @@ function VirtualTreeItems({
         : (across ? NARROW_TICK_PADDING : TICK_PADDING) +
           tickLength(sections[index]!.hunks.length),
     getItemKey,
+    rangeExtractor,
     gap: ITEM_GAP,
     overscan: 8,
     scrollMargin: margin,
@@ -165,6 +181,17 @@ function VirtualTreeItems({
           ? { width: virtualizer.getTotalSize() }
           : { height: virtualizer.getTotalSize() }
       }
+      onFocus={(event) => {
+        const item = (event.target as Element).closest<HTMLElement>(
+          "[data-index]",
+        );
+        if (item) setFocused(Number(item.dataset.index));
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocused(undefined);
+        }
+      }}
     >
       {virtualizer.getVirtualItems().map((item) => {
         const section = sections[item.index]!;
