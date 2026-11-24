@@ -71,6 +71,29 @@ export type DeckPullRequestDiff = z.infer<typeof deckPullRequestDiffSchema>;
 export const deckOpenRequestSchema = codeHostPullRequestRefSchema;
 export type DeckOpenRequest = z.infer<typeof deckOpenRequestSchema>;
 
+const hunkIdSchema = z.string().min(1).max(1_100);
+
+/**
+ * A kind of change, on a concern and on the summary (#662). Rules find
+ * `tests`, `docs`, `dependencies` and `build` from the paths; the agent's
+ * guide run gives the others (#794).
+ */
+export const deckChangeKindSchema = z.enum([
+  "breaking",
+  "feature",
+  "fix",
+  "refactor",
+  "performance",
+  "tests",
+  "docs",
+  "dependencies",
+  "build",
+]);
+export type DeckChangeKind = z.infer<typeof deckChangeKindSchema>;
+
+/** The kinds in the order the page lists them. */
+export const DECK_CHANGE_KINDS = deckChangeKindSchema.options;
+
 /**
  * One concern of a guide: hunks that belong together, with a title and a
  * one-line rationale, as Review Deck's pipeline groups them.
@@ -81,18 +104,80 @@ export const deckConcernSchema = z.object({
   title: z.string().max(500),
   rationale: z.string().max(2_000),
   /** Hunk ids of the diff, in reading order. */
-  hunkIds: z.array(z.string().min(1).max(1_100)).min(1),
+  hunkIds: z.array(hunkIdSchema).min(1),
+  /** Its kinds of change, in `DECK_CHANGE_KINDS` order. */
+  kinds: z.array(deckChangeKindSchema).max(DECK_CHANGE_KINDS.length),
 });
 export type DeckConcern = z.infer<typeof deckConcernSchema>;
 
+/** The tickets a pull request is linked to, as the summary shows them: never their text. */
+export const deckTicketSchema = z.object({
+  number: z.number().int().positive(),
+  /** A GitHub issue's repository. Absent for a work item. */
+  repository: z.string().min(1).max(240).optional(),
+  title: z.string().min(1).max(1_000),
+  url: z.string().url().max(2_000),
+  /** The code host's name for its state, such as "Open" or "Active". */
+  state: z.string().min(1).max(100),
+});
+export type DeckTicket = z.infer<typeof deckTicketSchema>;
+
 /**
- * A pull request's guide: its concerns in reading order. `madeWith: "code"`
- * is the guide Deck builds locally, from the code, with the vendored
- * pipeline.
+ * One line of the summary, with the hunks it is about. Its id is stable for
+ * the pull request at one head, so a later ask can anchor to it (#793).
+ */
+export const deckSummaryLineSchema = z.object({
+  id: z.string().min(1).max(200),
+  text: z.string().min(1).max(500),
+  /** In the diff's order. The page's link goes to the first. */
+  hunkIds: z.array(hunkIdSchema).min(1),
+  /** The concern a test coverage line is about. */
+  concernId: z.string().min(1).max(100).optional(),
+});
+export type DeckSummaryLine = z.infer<typeof deckSummaryLineSchema>;
+
+const summaryLinesSchema = z.array(deckSummaryLineSchema).max(500);
+
+/**
+ * What Deck shows in place of the description (#662). The rules fill it in
+ * the guide build (#789); the agent's guide run fills `problem` when no
+ * ticket is linked, the other kinds and `breaking` later (#794), in the
+ * same fields as its `submit_guide`.
+ */
+export const deckSummarySchema = z.object({
+  /** The problem the pull request fixes: the first linked ticket's title, from the rules. */
+  problem: z
+    .object({
+      text: z.string().min(1).max(1_000),
+      source: z.enum(["ticket", "inferred"]),
+      ticket: deckTicketSchema.optional(),
+    })
+    .nullable(),
+  /** Every linked ticket in the code host's order, or null when they couldn't be read. */
+  tickets: z.array(deckTicketSchema).max(50).nullable(),
+  /** The union of the concerns' kinds, in `DECK_CHANGE_KINDS` order. */
+  kinds: z.array(deckChangeKindSchema).max(DECK_CHANGE_KINDS.length),
+  breaking: summaryLinesSchema,
+  /** Migrations, auth and security, deletion, locking and concurrency. */
+  risks: summaryLinesSchema,
+  /** The test files of each concern that has some. */
+  tests: summaryLinesSchema,
+  /** Changed code no test in the pull request covers, per concern. */
+  untested: summaryLinesSchema,
+  /** `TODO` and `FIXME` lines, debug output, commented-out code and skipped tests the pull request adds. */
+  leftovers: summaryLinesSchema,
+});
+export type DeckSummary = z.infer<typeof deckSummarySchema>;
+
+/**
+ * A pull request's guide: its concerns in reading order, and the summary
+ * built with them. `madeWith: "code"` is the guide Deck builds locally,
+ * from the code, with the vendored pipeline and the summary's rules.
  */
 export const deckGuideSchema = z.object({
   madeWith: z.literal("code"),
   concerns: z.array(deckConcernSchema).max(3_000),
+  summary: deckSummarySchema,
 });
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 

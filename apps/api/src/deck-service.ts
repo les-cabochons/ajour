@@ -1,5 +1,6 @@
 import type {
   CodeHostChangedFile,
+  CodeHostLinkedTicket,
   CodeHostOperationRequest,
   CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
@@ -15,12 +16,15 @@ import {
   buildDiff,
   hunkToPatch,
   parseDiff,
+  type FileDiff,
 } from "../../../packages/review-deck/diff.ts";
 import {
   GuideBuildCancelled,
   type GuideBuildInput,
   type GuideBuilds,
+  type GuidePriority,
 } from "./deck-guide-builds.ts";
+import { summarizeGuide } from "./deck-summary.ts";
 import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 
 /*
@@ -28,15 +32,21 @@ import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
  * each changed file, read through the code host plugin, with Review Deck's
  * vendored `buildDiff` (ADR 0003). The host's patch is never used, so the
  * hunk ids are Review Deck's. Its guide is built from the same diff by the
- * vendored pipeline, in the guide builds' worker thread (#782). The pull
+ * vendored pipeline, in the guide builds' worker thread (#782), and its
+ * summary by the summary's rules, with the tickets the pull request is
+ * linked to (#789). The pull
  * request on screen is kept in memory until another one opens, and the last
  * preloaded ones until they open or newer preloads push them out. The disk
  * cache is a later ticket (#781).
  */
 
+/** The code host operations Deck's service calls. */
+type DeckOperation =
+  "getPullRequestContent" | "getFileContent" | "getLinkedTickets";
+
 /** The code host operations Deck calls, bound to one connection. */
 export interface DeckCodeHost {
-  run<Operation extends "getPullRequestContent" | "getFileContent">(
+  run<Operation extends DeckOperation>(
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
   ): Promise<CodeHostOperationResult<Operation>>;
@@ -131,9 +141,7 @@ async function withConcurrency<T>(
  * operations as it may. It stops waiting once `replaced` says another pull
  * request opened.
  */
-async function runWhenFree<
-  Operation extends "getPullRequestContent" | "getFileContent",
->(
+async function runWhenFree<Operation extends DeckOperation>(
   codeHost: DeckCodeHost,
   operation: Operation,
   request: CodeHostOperationRequest<Operation>,
@@ -256,7 +264,8 @@ async function buildPullRequestDiff(
     if (base && old !== null) guideInput.old.set(base.path, old);
     if (head && next !== null) guideInput.new.set(head.path, next);
   });
-  const diffFiles: DeckFile[] = parseDiff(diffText).map((file) => ({
+  const parsed = parseDiff(diffText);
+  const diffFiles: DeckFile[] = parsed.map((file) => ({
     path: file.path,
     ...(file.status === "renamed" && file.oldPath
       ? { previousPath: file.oldPath }
@@ -280,8 +289,55 @@ async function buildPullRequestDiff(
       files: diffFiles,
     },
     guideInput,
+    parsed,
     fileReadCount,
   };
+}
+
+/**
+ * The pull request's linked tickets, or null when the code host couldn't
+ * say: a plugin without the operation, its access off, or a failed read.
+ * The summary then says so, and the rest of the guide stands.
+ */
+async function readLinkedTickets(
+  codeHost: DeckCodeHost,
+  request: DeckOpenRequest,
+  stopped: () => boolean,
+): Promise<CodeHostLinkedTicket[] | null> {
+  try {
+    const { tickets } = await runWhenFree(
+      codeHost,
+      "getLinkedTickets",
+      { repository: request.repository, number: request.number },
+      stopped,
+    );
+    return tickets;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The guide of a pull request whose diff was read: its concerns from the
+ * guide builds and, at once, its linked tickets from the code host, then
+ * the summary's rules over both. Null when the build or the rules failed.
+ */
+function guideFor(
+  guides: GuideBuilds,
+  key: string,
+  read: { guideInput: GuideBuildInput; parsed: FileDiff[] },
+  priority: GuidePriority,
+  tickets: () => Promise<CodeHostLinkedTicket[] | null>,
+  signal?: AbortSignal,
+) {
+  return guideOrNull(
+    Promise.all([
+      guides.build(key, read.guideInput, priority, signal),
+      tickets(),
+    ]).then(([concerns, linked]) =>
+      summarizeGuide(concerns, read.parsed, linked),
+    ),
+  );
 }
 
 /** Both versions of the changed files: the base's by base path, the head's by head path. */
@@ -330,7 +386,7 @@ const keyOf = (
   ]);
 
 /** A failed build gives no guide, and the page shows the files A–Z. A cancelled one stays a rejection. */
-const guideOrNull = (built: Promise<DeckGuide>) =>
+const guideOrNull = (built: Promise<DeckGuide>): Promise<DeckGuide | null> =>
   built.catch((error: unknown) => {
     if (error instanceof GuideBuildCancelled) throw error;
     return null;
@@ -455,7 +511,14 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       diff: built.then((result) => result.diff),
       versions: built.then((result) => result.guideInput),
       guide: built.then((result) =>
-        guideOrNull(guides.build(key, result.guideInput, "open", stop.signal)),
+        guideFor(
+          guides,
+          key,
+          result,
+          "open",
+          () => readLinkedTickets(codeHost, request, () => stop.signal.aborted),
+          stop.signal,
+        ),
       ),
       stop,
     };
@@ -490,13 +553,14 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     const kept = () => onScreen?.key === key || preloaded.has(key);
     if (kept()) return { queued: 0, fileReadCount: 0 };
     const stop = new AbortController();
-    const { diff, guideInput, fileReadCount } = await buildPullRequestDiff(
+    const read = await buildPullRequestDiff(
       codeHost,
       request.repository,
       content,
       stop.signal,
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
+    const { diff, guideInput, fileReadCount } = read;
     // An open of the same pull request may have read it meanwhile.
     if (kept()) return { queued: 0, fileReadCount };
     const entry: Entry = {
@@ -505,7 +569,11 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       head: content.headSha,
       diff: Promise.resolve(diff),
       versions: Promise.resolve(guideInput),
-      guide: guideOrNull(guides.build(key, guideInput, "preload")),
+      guide: guideFor(guides, key, read, "preload", async () => {
+        // Like its file reads, it waits while a pull request opens.
+        await opensDone();
+        return readLinkedTickets(codeHost, request, () => stop.signal.aborted);
+      }),
       stop,
     };
     entry.guide.catch(() => {});

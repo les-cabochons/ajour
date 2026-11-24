@@ -50,6 +50,35 @@ const FILES: Record<string, string | "binary"> = {
   "base:src/broken.ts": "x\n",
 };
 
+/**
+ * Pull request 30, whose summary every rule has a line in: a migration, a
+ * TODO, debug output, a skipped test, a test per concern, code without one,
+ * and docs. Its paths are `[base, head]`.
+ */
+const SUMMARY_FILES: Record<string, [string | null, string | null]> = {
+  "db/migrations/0042_users.sql": [null, "CREATE TABLE users (id int);\n"],
+  "src/retry.ts": [
+    "export const retry = 1;\n",
+    "// TODO: stop on 410\nconsole.log(attempt);\nexport const retry = 2;\n",
+  ],
+  "src/retry.test.ts": [
+    'it("retries", () => {});\n',
+    'it("retries", () => {});\nit.skip("stops on 410", () => {});\n',
+  ],
+  "src/billing.ts": ["export const a = 1;\n", "export const a = 2;\n"],
+  "README.md": ["# Api\n", "# Api\n\nRetries stop on 410.\n"],
+};
+for (const [file, [base, head]] of Object.entries(SUMMARY_FILES)) {
+  if (base !== null) FILES[`base:${file}`] = base;
+  if (head !== null) FILES[`head:${file}`] = head;
+}
+const SUMMARY_CHANGED_FILES = Object.entries(SUMMARY_FILES).map(
+  ([file, [base]]) => ({
+    path: file,
+    status: base === null ? "added" : "modified",
+  }),
+);
+
 /** The pull request's files, in the order the host lists them, which is not path order. */
 const CHANGED_FILES = [
   { path: "src/new.ts", status: "added" },
@@ -62,6 +91,7 @@ const CHANGED_FILES = [
 const pluginSource = `
 const FILES = ${JSON.stringify(FILES)};
 const CHANGED_FILES = ${JSON.stringify(CHANGED_FILES)};
+const SUMMARY_CHANGED_FILES = ${JSON.stringify(SUMMARY_CHANGED_FILES)};
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
@@ -82,12 +112,37 @@ export async function getPullRequestContent(connection, request) {
       ? Array.from({ length: 20 }, (_, index) => ({ path: "slow/" + index + ".ts", status: "added" }))
     : request.number >= 20 && request.number < 30
       ? [{ path: "pr" + request.number + "/a.ts", status: "added" }]
+    : request.number === 30 ? SUMMARY_CHANGED_FILES
     : CHANGED_FILES;
   return {
     headSha: "head",
     baseSha: "base",
     // The host's patch is never used: this one would cut other hunks.
     files: files.map((file) => ({ additions: 1, deletions: 1, binary: false, patch: "@@ -1 +1 @@\\n-nothing\\n+like this", ...file })),
+  };
+}
+export async function getLinkedTickets(connection, request) {
+  if (request.number === 31) throw new Error("GitHub request failed (502).");
+  if (request.number !== 30) return { tickets: [] };
+  return {
+    tickets: [
+      {
+        number: 482,
+        repository: "acme/api",
+        title: "Retries never stop on 410",
+        body: "The ticket's own words.",
+        url: "https://github.com/acme/api/issues/482",
+        state: "Open",
+      },
+      {
+        number: 12,
+        repository: "acme/web",
+        title: "Show the retries",
+        body: "",
+        url: "https://github.com/acme/web/issues/12",
+        state: "Closed",
+      },
+    ],
   };
 }
 export async function getFileContent(connection, request) {
@@ -842,12 +897,15 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(opened.status).toBe(200);
     expect(opened.body.guide).toEqual({
       madeWith: "code",
+      // No rule finds a kind in these files.
       concerns: expected.groups.map((group) => ({
         id: group.id,
         title: group.title,
         rationale: group.rationale,
         hunkIds: group.hunkIds,
+        kinds: [],
       })),
+      summary: expect.objectContaining({ problem: null, tickets: [] }),
     });
     // Every hunk is in one concern.
     const hunkIds = (opened.body.files as { hunks: { id: string }[] }[])
@@ -1093,5 +1151,184 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(
       api.events.find((event) => event.name === "deck.guide_build"),
     ).toMatchObject({ outcome: "cancelled", outcome_reason: "replaced" });
+  });
+});
+
+/** Builds one concern per file, in the diff's path order, in process. */
+const concernPerFile: DeckGuideRuntime = {
+  async build(input) {
+    return parseDiff(input.diff).map((file, index) => ({
+      id: `g${index + 1}`,
+      title: file.path,
+      rationale: "",
+      hunkIds: file.hunks.map((hunk) => hunk.id),
+    }));
+  },
+  close: async () => {},
+};
+
+describe("the summary of a pull request opened in Deck", () => {
+  it("comes with the guide: the linked ticket, the kinds, risks, tests and leftovers, each line with its hunks", async () => {
+    const { api, open } = await startDeck(undefined, concernPerFile);
+
+    const opened = await open(30);
+
+    expect(opened.status).toBe(200);
+    const { concerns, summary } = opened.body.guide;
+    // README.md, the migration, billing, the test, retry: path order.
+    expect(
+      concerns.map((concern: { kinds: string[] }) => concern.kinds),
+    ).toEqual([["docs"], [], [], ["tests"], []]);
+    expect(summary).toEqual({
+      problem: {
+        text: "Retries never stop on 410",
+        source: "ticket",
+        ticket: {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      },
+      tickets: [
+        expect.objectContaining({ number: 482 }),
+        {
+          number: 12,
+          repository: "acme/web",
+          title: "Show the retries",
+          url: "https://github.com/acme/web/issues/12",
+          state: "Closed",
+        },
+      ],
+      kinds: ["tests", "docs"],
+      breaking: [],
+      risks: [
+        {
+          id: "risk:migrations",
+          text: "Migrations: db/migrations/0042_users.sql",
+          hunkIds: ["db/migrations/0042_users.sql#0"],
+        },
+      ],
+      tests: [
+        {
+          id: "tests:g4",
+          text: "Tested in src/retry.test.ts",
+          hunkIds: ["src/retry.test.ts#0"],
+          concernId: "g4",
+        },
+      ],
+      untested: [
+        {
+          id: "untested:g3",
+          text: "No test for src/billing.ts",
+          hunkIds: ["src/billing.ts#0"],
+          concernId: "g3",
+        },
+      ],
+      leftovers: [
+        {
+          id: "leftover:0",
+          text: 'Skipped test in src/retry.test.ts:2: it.skip("stops on 410", () => {});',
+          hunkIds: ["src/retry.test.ts#0"],
+        },
+        {
+          id: "leftover:1",
+          text: "TODO in src/retry.ts:1: // TODO: stop on 410",
+          hunkIds: ["src/retry.ts#0"],
+        },
+        {
+          id: "leftover:2",
+          text: "Debug output in src/retry.ts:2: console.log(attempt);",
+          hunkIds: ["src/retry.ts#0"],
+        },
+      ],
+    });
+    // Every line's hunks are the diff's.
+    const hunkIds = new Set(
+      (opened.body.files as { hunks: { id: string }[] }[]).flatMap((file) =>
+        file.hunks.map((hunk) => hunk.id),
+      ),
+    );
+    const lines = [
+      ...summary.risks,
+      ...summary.tests,
+      ...summary.untested,
+      ...summary.leftovers,
+    ] as { hunkIds: string[] }[];
+    expect(
+      lines.flatMap((line) => line.hunkIds).every((id) => hunkIds.has(id)),
+    ).toBe(true);
+    // The ticket's text is read for the agent later, never sent to the page.
+    expect(JSON.stringify(opened.body)).not.toContain(
+      "The ticket's own words.",
+    );
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_tickets" &&
+          event.kind === "plugin_operation",
+      ),
+    ).toMatchObject({ outcome: "ok" });
+    expect(JSON.stringify(api.events)).not.toContain("Retries never stop");
+  });
+
+  it("has no problem line when no ticket is linked", async () => {
+    const { open } = await startDeck(undefined, concernPerFile);
+
+    const opened = await open(7);
+
+    expect(opened.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: [],
+    });
+  });
+
+  it("reads the linked tickets through the code host route too, counting them on its event", async () => {
+    const { api, connectionId } = await startDeck();
+
+    const read = await apiRequest(
+      api.baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/getLinkedTickets`,
+      { repository: "acme/api", number: 30 },
+    );
+
+    expect(read.status).toBe(200);
+    expect(
+      read.body.tickets.map((ticket: { number: number }) => ticket.number),
+    ).toEqual([482, 12]);
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_tickets" &&
+          event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", pull_request: { ticket_count: 2 } });
+  });
+
+  it("says the tickets couldn't be read when the code host fails or doesn't offer them, and keeps the guide", async () => {
+    const failing = await startDeck(undefined, concernPerFile);
+    const failed = await failing.open(31);
+    expect(failed.status).toBe(200);
+    expect(failed.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: null,
+    });
+    expect(failed.body.guide.concerns.length).toBeGreaterThan(0);
+
+    const older = await startDeck(
+      pluginSource.replace(
+        "export async function getLinkedTickets",
+        "async function notExported",
+      ),
+      concernPerFile,
+    );
+    const opened = await older.open(30);
+    expect(opened.status).toBe(200);
+    expect(opened.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: null,
+      risks: [expect.objectContaining({ id: "risk:migrations" })],
+    });
   });
 });

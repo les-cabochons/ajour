@@ -3,7 +3,9 @@ import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckHunk } from "@ajour/shared/deck";
 import { DiffHunk, type DiffHunkAnnotation } from "@/components/diff-hunk";
 import { ConcernRationale } from "./deck-ask";
+import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
+import { changeKindLabel } from "@/domain/deck/summary";
 import {
   fileNote,
   fileWithoutLines,
@@ -29,6 +31,8 @@ import { ReviewThreadCard } from "./review-thread-card";
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";
+/** Holds a hunk's id on its element, which a summary line scrolls to. */
+export const HUNK_ATTRIBUTE = "data-hunk-id";
 
 /** The lines a hovered thread highlights, kept inside its hunk. */
 function highlightOf(hunk: DeckHunk, entry: PlacedThread | undefined) {
@@ -64,8 +68,14 @@ const ReviewHunkView = memo(function ReviewHunkView({
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
   const label = hunk.header ? hunkLabel(file, hunk) : file.path;
   const note = inConcern ? fileNote(file) : undefined;
+  const attribute = { [HUNK_ATTRIBUTE]: hunk.id };
   return (
-    <div className="deck-hunk" data-viewed={viewed || undefined}>
+    <div
+      className="deck-hunk"
+      data-viewed={viewed || undefined}
+      tabIndex={-1}
+      {...attribute}
+    >
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
@@ -199,6 +209,15 @@ export const ReviewSectionView = memo(function ReviewSectionView({
               <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
               {section.title}
             </h3>
+            {section.kinds?.length ? (
+              <ul className="deck-kinds" aria-label="Kinds of change">
+                {section.kinds.map((kind) => (
+                  <li key={kind}>
+                    <Chip>{changeKindLabel(kind)}</Chip>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {section.concernId ? (
               <ConcernRationale
                 concernId={section.concernId}

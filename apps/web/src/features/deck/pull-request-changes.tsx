@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
@@ -19,7 +26,12 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
-import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
+import type { ReachHunk } from "./pull-request-summary";
+import {
+  HUNK_ATTRIBUTE,
+  ReviewSectionView,
+  SECTION_ATTRIBUTE,
+} from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
 import type { PullRequestReadState } from "./use-pull-request-read";
 
@@ -63,9 +75,11 @@ export interface ReviewThreadsView {
 function ReviewChanges({
   pullRequest,
   threads: { placement, floating, hovered, onHover },
+  reachHunkRef,
 }: {
   pullRequest: DeckOpenedPullRequest;
   threads: ReviewThreadsView;
+  reachHunkRef: RefObject<ReachHunk | undefined>;
 }) {
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
@@ -110,6 +124,22 @@ function ReviewChanges({
     );
     if (target !== undefined) reach(target);
   };
+  // A summary line scrolls its hunk to the top, in either order, and focuses it.
+  useEffect(() => {
+    reachHunkRef.current = (hunkId) => {
+      const hunk = [
+        ...(list.current?.querySelectorAll<HTMLElement>(
+          `[${HUNK_ATTRIBUTE}]`,
+        ) ?? []),
+      ].find((element) => element.getAttribute(HUNK_ATTRIBUTE) === hunkId);
+      if (!hunk) return;
+      hunk.scrollIntoView({ block: "start", behavior: "instant" });
+      hunk.focus({ preventScroll: true });
+    };
+    return () => {
+      reachHunkRef.current = undefined;
+    };
+  }, [reachHunkRef]);
   useShortcut("deck.next-concern", () => step(1));
   useShortcut("deck.previous-concern", () => step(-1));
   useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
@@ -241,11 +271,14 @@ export function PullRequestChanges({
   state,
   retry,
   threads,
+  reachHunkRef,
 }: {
   pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
   threads: ReviewThreadsView;
+  /** Set while the changes show, to the way a summary line reaches its hunk. */
+  reachHunkRef: RefObject<ReachHunk | undefined>;
 }) {
   return (
     // Named outright: the heading's count would join its name.
@@ -279,6 +312,7 @@ export function PullRequestChanges({
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
             threads={threads}
+            reachHunkRef={reachHunkRef}
           />
         </DeckAskProvider>
       )}

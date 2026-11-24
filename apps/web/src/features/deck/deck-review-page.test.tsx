@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_DECK_SUMMARY } from "@/test-support/deck";
 import type { ReactNode } from "react";
 import {
   act,
@@ -196,18 +197,21 @@ const GUIDED: DeckOpenedPullRequest = {
   ...DIFF,
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Handle the request",
         rationale: "The handler and the export it reads.",
         hunkIds: ["src/api.ts#1", "src/new.ts#0"],
+        kinds: [],
       },
       {
         id: "mechanical",
         title: "Mechanical changes",
         rationale: "1 binary. Nothing to review line by line.",
         hunkIds: ["assets/logo.png#0", "src/api.ts#0"],
+        kinds: [],
       },
     ],
   },
@@ -1084,4 +1088,197 @@ it("floats each thread beside its line in its concern, and hides it while its hu
   fireEvent.click(within(changes).getByRole("button", { name: "Files A–Z" }));
   await waitFor(() => expect(card("on-b").style.top).toBe("137px"));
   expect(card("on-y").style.top).toBe("217px");
+});
+
+/** The guided pull request with a summary every section of which has a line. */
+const SUMMARIZED: DeckOpenedPullRequest = {
+  ...GUIDED,
+  guide: {
+    ...GUIDED.guide!,
+    concerns: [
+      { ...GUIDED.guide!.concerns[0]!, kinds: ["tests"] },
+      { ...GUIDED.guide!.concerns[1]!, kinds: ["dependencies", "build"] },
+    ],
+    summary: {
+      problem: {
+        text: "Retries never stop on 410",
+        source: "ticket",
+        ticket: {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      },
+      tickets: [
+        {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+        {
+          number: 12,
+          repository: "acme/web",
+          title: "Show the retries",
+          url: "https://github.com/acme/web/issues/12",
+          state: "Closed",
+        },
+      ],
+      kinds: ["tests", "dependencies", "build"],
+      breaking: [],
+      risks: [
+        {
+          id: "risk:auth",
+          text: "Auth and security: src/api.ts",
+          hunkIds: ["src/api.ts#0", "src/api.ts#1"],
+        },
+      ],
+      tests: [],
+      untested: [
+        {
+          id: "untested:g1",
+          text: "No test for src/api.ts and src/new.ts",
+          hunkIds: ["src/api.ts#1", "src/new.ts#0"],
+          concernId: "g1",
+        },
+      ],
+      leftovers: [
+        {
+          id: "leftover:0",
+          text: "TODO in src/new.ts:1: // TODO: stop on 410",
+          hunkIds: ["src/new.ts#0"],
+        },
+      ],
+    },
+  },
+};
+
+async function openSummarized(pullRequest = SUMMARIZED) {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(pullRequest);
+  await renderReviewPage();
+  return await screen.findByRole("region", { name: "Summary" });
+}
+
+it("opens on the summary, above the description and the guide: the ticket, the kinds and each section's lines", async () => {
+  const summary = await openSummarized();
+
+  const description = screen.getByRole("region", { name: "Description" });
+  const changes = screen.getByRole("region", { name: "Changes" });
+  expect(
+    summary.compareDocumentPosition(description) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    description.compareDocumentPosition(changes) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(within(summary).getByText("Retries never stop on 410")).toBeTruthy();
+  expect(
+    within(summary).getByRole("button", {
+      name: "Open #482: Retries never stop on 410",
+    }),
+  ).toBeTruthy();
+  expect(
+    within(summary).getByRole("button", {
+      name: "Open acme/web#12: Show the retries",
+    }),
+  ).toBeTruthy();
+  expect(
+    within(within(summary).getByRole("list", { name: "Kinds of change" }))
+      .getAllByRole("listitem")
+      .map((kind) => kind.textContent),
+  ).toEqual(["Tests", "Dependencies", "Build"]);
+  expect(
+    within(summary)
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent),
+  ).toEqual(["Risky areas", "Tests", "Leftovers"]);
+  expect(
+    within(summary).getByRole("button", {
+      name: "Concern 1: No test for src/api.ts and src/new.ts",
+    }),
+  ).toBeTruthy();
+  expect(within(summary).getAllByText("2 hunks")).toHaveLength(2);
+  // Each concern shows its own kinds.
+  const mechanical = screen.getByRole("region", {
+    name: "Concern 2: Mechanical changes",
+  });
+  expect(
+    within(within(mechanical).getByRole("list", { name: "Kinds of change" }))
+      .getAllByRole("listitem")
+      .map((kind) => kind.textContent),
+  ).toEqual(["Dependencies", "Build"]);
+});
+
+it("scrolls to a line's first hunk and focuses it, in the guide and in Files A–Z", async () => {
+  const summary = await openSummarized();
+  const scrolled: string[] = [];
+  const changes = screen.getByRole("region", { name: "Changes" });
+  const watchHunks = () => {
+    for (const hunk of changes.querySelectorAll<HTMLElement>(
+      "[data-hunk-id]",
+    )) {
+      hunk.scrollIntoView = () => {
+        scrolled.push(hunk.dataset.hunkId!);
+      };
+    }
+  };
+  watchHunks();
+
+  fireEvent.click(
+    within(summary).getByRole("button", { name: /^TODO in src\/new\.ts/ }),
+  );
+  expect(scrolled).toEqual(["src/new.ts#0"]);
+  expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+    "src/new.ts#0",
+  );
+
+  fireEvent.click(
+    within(within(changes).getByRole("group", { name: "Order" })).getByRole(
+      "button",
+      { name: "Files A–Z" },
+    ),
+  );
+  watchHunks();
+  fireEvent.click(
+    within(summary).getByRole("button", {
+      name: "Auth and security: src/api.ts",
+    }),
+  );
+  expect(scrolled).toEqual(["src/new.ts#0", "src/api.ts#0"]);
+  expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+    "src/api.ts#0",
+  );
+});
+
+it("says there's no linked ticket, or that the tickets couldn't be read", async () => {
+  const none = await openSummarized({
+    ...GUIDED,
+    guide: { ...GUIDED.guide!, summary: NO_DECK_SUMMARY },
+  });
+  expect(within(none).getByText("No linked ticket")).toBeTruthy();
+  expect(within(none).queryByRole("list")).toBeNull();
+  cleanup();
+
+  const unread = await openSummarized({
+    ...GUIDED,
+    guide: {
+      ...GUIDED.guide!,
+      summary: { ...NO_DECK_SUMMARY, tickets: null },
+    },
+  });
+  expect(
+    within(unread).getByText("The linked tickets couldn't be read."),
+  ).toBeTruthy();
+});
+
+it("shows no summary while the guide couldn't be built", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  await renderReviewPage();
+  await screen.findByRole("heading", { name: "src/api.ts" });
+
+  expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
 });

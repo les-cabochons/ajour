@@ -1,14 +1,12 @@
 import { Worker } from "node:worker_threads";
+import { z } from "zod";
 import {
   GUIDE_WORKER_URL,
   type GuideJob,
   type GuideJobResult,
 } from "../../../packages/review-deck/guide-job.ts";
-import {
-  deckGuideSchema,
-  type DeckConcern,
-  type DeckGuide,
-} from "../../../packages/shared/deck.ts";
+import { deckConcernSchema } from "../../../packages/shared/deck.ts";
+import type { BuiltConcern } from "./deck-summary.ts";
 import type { ApiEvents } from "./events.ts";
 
 /*
@@ -36,7 +34,7 @@ export interface GuideBuildInput {
  * too long.
  */
 export interface DeckGuideRuntime {
-  build(input: GuideBuildInput, signal: AbortSignal): Promise<DeckConcern[]>;
+  build(input: GuideBuildInput, signal: AbortSignal): Promise<BuiltConcern[]>;
   close(): Promise<void>;
 }
 
@@ -65,7 +63,7 @@ export function createWorkerGuideRuntime(
   type Pending = Map<
     number,
     {
-      resolve: (concerns: DeckConcern[]) => void;
+      resolve: (concerns: BuiltConcern[]) => void;
       reject: (error: Error) => void;
     }
   >;
@@ -116,7 +114,7 @@ export function createWorkerGuideRuntime(
       current ??= start();
       const { worker, pending } = current;
       const id = ++nextId;
-      const built = new Promise<DeckConcern[]>((resolve, reject) => {
+      const built = new Promise<BuiltConcern[]>((resolve, reject) => {
         pending.set(id, { resolve, reject });
       });
       const job: GuideJob = { id, ...input };
@@ -142,20 +140,24 @@ export function createWorkerGuideRuntime(
   };
 }
 
+const builtConcernsSchema = z
+  .array(deckConcernSchema.omit({ kinds: true }))
+  .max(3_000);
+
 /**
- * The guide the pipeline's groups make, within the wire's limits: a title
- * or rationale too long is cut, so one long heuristic title never loses the
- * whole guide. Anything else out of bounds fails the build.
+ * The concerns the pipeline's groups make, within the wire's limits: a
+ * title or rationale too long is cut, so one long heuristic title never
+ * loses the whole guide. Anything else out of bounds fails the build. The
+ * summary's rules add their kinds (`summarizeGuide`).
  */
-function guideOf(concerns: DeckConcern[]): DeckGuide {
-  return deckGuideSchema.parse({
-    madeWith: "code",
-    concerns: concerns.map((concern) => ({
+function concernsOf(concerns: BuiltConcern[]): BuiltConcern[] {
+  return builtConcernsSchema.parse(
+    concerns.map((concern) => ({
       ...concern,
       title: concern.title.slice(0, 500),
       rationale: concern.rationale.slice(0, 2_000),
     })),
-  });
+  );
 }
 
 export type GuidePriority = "open" | "preload";
@@ -168,8 +170,8 @@ interface Job {
   input: GuideBuildInput;
   priority: GuidePriority;
   queuedAt: number;
-  promise: Promise<DeckGuide>;
-  resolve: (guide: DeckGuide) => void;
+  promise: Promise<BuiltConcern[]>;
+  resolve: (concerns: BuiltConcern[]) => void;
   reject: (error: Error) => void;
   /** Set while the job runs. */
   stop?: AbortController;
@@ -253,16 +255,17 @@ export function createGuideBuilds(options: {
     });
     let requeue = false;
     try {
-      const concerns = await options.runtime.build(job.input, stop.signal);
-      const guide = guideOf(concerns);
+      const concerns = concernsOf(
+        await options.runtime.build(job.input, stop.signal),
+      );
       unit?.set({
         deck: {
-          concern_count: guide.concerns.length,
+          concern_count: concerns.length,
           build_ms: now() - startedAt,
         },
       });
       unit?.end();
-      job.resolve(guide);
+      job.resolve(concerns);
     } catch (error) {
       const reason = stop.signal.aborted ? job.stopReason : undefined;
       if (reason === "preempted") {
@@ -307,7 +310,7 @@ export function createGuideBuilds(options: {
 
   return {
     /**
-     * The guide of the pull request named `key`, built from `input`. An
+     * The concerns of the pull request named `key`, built from `input`. An
      * `open` build runs before every queued preload, and stops a preload
      * running. A build already queued for the key is shared, and moves ahead
      * when it is now an open. Once `signal` aborts, the build stops and its
@@ -320,14 +323,14 @@ export function createGuideBuilds(options: {
       input: GuideBuildInput,
       priority: GuidePriority,
       signal?: AbortSignal,
-    ): Promise<DeckGuide> {
+    ): Promise<BuiltConcern[]> {
       // A closed queue builds nothing more: a late build is cancelled at once.
       if (closed) return Promise.reject(new GuideBuildCancelled());
       let job = jobs.get(key);
       if (!job) {
         let resolve!: Job["resolve"];
         let reject!: Job["reject"];
-        const promise = new Promise<DeckGuide>((resolveJob, rejectJob) => {
+        const promise = new Promise<BuiltConcern[]>((resolveJob, rejectJob) => {
           resolve = resolveJob;
           reject = rejectJob;
         });

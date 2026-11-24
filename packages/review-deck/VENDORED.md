@@ -29,7 +29,7 @@ Not copied: `src/node/` (CLI, embedder, CLI titler), `src/render/`,
 off.
 
 Ajour's own files are the entry points `saved.ts`, `stack.ts`, `diff.ts`,
-`guide-job.ts` and `guide-worker.ts`, the block
+`paths.ts`, `guide-job.ts` and `guide-worker.ts`, the block
 at the end of `pipeline.ts`, `ajour/deps.ts`, and the tests
 `build-diff.test.ts`, `deps-grammar.test.ts`, `deps-init.test.ts`,
 `description.test.ts` and `languages.test.ts`, which Ajour rewrote. The
@@ -44,6 +44,9 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   back as a patch for rendering, and their types. It loads no parser,
   so Deck's service in the local API builds a diff without the pipeline
   (#779).
+- `paths.ts`: `isTestPath` and `logicalModule`, which tell a test file from
+  the code it tests. It loads no parser, so the summary's rules in the local
+  API (#789) find tests the way the pipeline's test pairing does.
 - `guide-worker.ts`: the worker thread Deck's service in the local API runs
   the pipeline in, one pull request at a time, with Ajour's `PipelineDeps`
   (#782). It answers each job with the groups in reading order.
