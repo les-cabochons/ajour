@@ -9,7 +9,7 @@ next: false
 
 # Terms of service
 
-Last updated: October 24, 2026
+Last updated: November 24, 2026
 
 The [French version](/legal/conditions) is available in full. Reading or using this English page does not constitute an express choice to waive the French version or any language right.
 
@@ -52,6 +52,8 @@ A plugin author's responsibility does not exclude any responsibility that applic
 Azure DevOps, Jira, GitHub, Google, Microsoft, your team's backend, your AI provider and other services you choose operate independently of Ajour. Their terms, prices, permissions and privacy policies apply to your use of them. Their availability and APIs can change, and a plugin may stop working as a result.
 
 Enabling MCP or starting an agent task can give an agent access to workspace data or a signed-in browser. The agent may send what it reads to your configured AI provider and may make changes in external services. Give it only the access you intend, supervise its actions and follow your organisation's rules. A browser session may remain signed in after a task ends.
+
+Asking for more detail about a pull request in Deck sends parts of that repository's code and review threads to the agent you picked and its AI provider, once you allow the repository. Allow a repository only when your organisation lets its code go to that provider. Answers can be wrong: check them against the code before you rely on them.
 
 We do not promise the availability, security or accuracy of independent services, and we do not offer an Ajour-hosted team service under these terms.
 

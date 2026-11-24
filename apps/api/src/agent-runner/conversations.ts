@@ -81,6 +81,12 @@ export interface AgentConversationsOptions {
   events: ApiEvents;
   /** Sends a turn's events to the window. */
   publish: (event: AgentTurnEvent) => void;
+  /**
+   * Whether the user still allows the pull request's repository with this
+   * agent. Asked before each turn is sent, so nothing reaches an agent the
+   * user took the repository back from (#791).
+   */
+  admits: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
   idleMs?: number;
   killGraceMs?: number;
   interruptGraceMs?: number;
@@ -90,7 +96,7 @@ export interface AgentConversationsOptions {
 
 type ConversationUnit = Unit<AjourCatalog, "agent.conversation">;
 type TurnUnit = Unit<AjourCatalog, "agent.turn">;
-type CloseReason = "replaced" | "idle" | "shutdown" | "failed";
+type CloseReason = "replaced" | "idle" | "shutdown" | "failed" | "revoked";
 type LaunchStep =
   | "find_executable"
   | "rebind_client"
@@ -100,7 +106,12 @@ type LaunchStep =
   | "write_files"
   | "spawn";
 type TurnStopReason =
-  "user" | "replaced" | "shutdown" | "interrupt_timeout" | "stalled";
+  | "user"
+  | "replaced"
+  | "shutdown"
+  | "interrupt_timeout"
+  | "stalled"
+  | "revoked";
 
 /** How a turn ended, for the window and its event. */
 type TurnEnding =
@@ -112,7 +123,13 @@ type TurnEnding =
       message: string;
       reason: "cli_failed" | "cli_exited" | "mcp_failed" | "stalled";
     }
-  | { outcome: "failed"; message: string; launchFailure: LaunchFailure };
+  | { outcome: "failed"; message: string; launchFailure: LaunchFailure }
+  | {
+      outcome: "failed";
+      message: string;
+      /** The repository isn't allowed with the conversation's agent now. */
+      reason: "repository_not_allowed";
+    };
 
 interface LaunchFailure {
   step: LaunchStep;
@@ -178,7 +195,7 @@ interface Conversation {
   id: string;
   /** Its pull request. A new head keeps the conversation. */
   key: string;
-  /** The pull request and the head its tools are bound to now. */
+  /** The pull request, the head its tools are bound to now, and its agent. */
   binding: McpClientPullRequestBinding;
   adapter: AgentCliAdapter;
   protocol: ConversationAdapter;
@@ -268,7 +285,7 @@ export class AgentConversations {
       conversation = null;
     }
     conversation ??= this.open(
-      { pullRequest: request.pullRequest, head: request.head },
+      { pullRequest: request.pullRequest, head: request.head, cli: adapter.id },
       adapter,
       adapter.conversation,
       settings,
@@ -300,6 +317,18 @@ export class AgentConversations {
     const found = this.turns.get(turnId);
     if (!found) return false;
     this.stopTurn(found.conversation, found.turn, "user");
+    return true;
+  }
+
+  /**
+   * Closes the conversation when its pull request is one of `pullRequest`'s:
+   * its running turn and those queued behind it stop, and its client is
+   * revoked. Revoking a repository does this (#791).
+   */
+  closeWhere(pullRequest: (key: string) => boolean): boolean {
+    const { conversation } = this;
+    if (!conversation || !pullRequest(conversation.key)) return false;
+    this.close(conversation, "revoked");
     return true;
   }
 
@@ -482,12 +511,33 @@ export class AgentConversations {
   }
 
   /**
-   * Sends the turn to the conversation's process, starting one if needed.
-   * A turn about a new head first rebinds the conversation's tools to it.
+   * Whether the user still allows the pull request's repository with the
+   * conversation's agent. Not allowed, the turn fails and the conversation
+   * closes, so no turn queued behind it is sent either.
+   */
+  private async admitted(conversation: Conversation, turn: Turn) {
+    if (await this.options.admits(conversation.key, conversation.adapter.id)) {
+      return true;
+    }
+    turn.finish({
+      outcome: "failed",
+      // The page shows it, and nothing there names the agent.
+      message:
+        "Ajour may no longer send this repository's code. Ask again to allow it.",
+      reason: "repository_not_allowed",
+    });
+    return false;
+  }
+
+  /**
+   * Sends the turn to the conversation's process, starting one if needed,
+   * once the repository is still allowed with its agent. A turn about a new
+   * head first rebinds the conversation's tools to it.
    */
   private async send(conversation: Conversation, turn: Turn) {
     let step: LaunchStep = "find_executable";
     try {
+      if (!(await this.admitted(conversation, turn)) || turn.settled) return;
       if (turn.head !== conversation.binding.head) {
         step = "rebind_client";
         await this.rebind(conversation, turn);
@@ -519,8 +569,11 @@ export class AgentConversations {
         }
         turn.unit.set({ agent: { resumed: launched.resumed } });
       }
+      // Asked again right before the turn goes: the process may have taken
+      // a while to start.
+      if (!(await this.admitted(conversation, turn))) return;
       const { process: cli } = conversation;
-      if (!cli || turn.settled) return;
+      if (!cli || turn.settled || conversation.closing) return;
       turn.process = cli;
       cli.proc.write(
         cli.codec.sendTurn(
@@ -552,7 +605,7 @@ export class AgentConversations {
 
   /** Binds the conversation, and its client, to the turn's head. */
   private async rebind(conversation: Conversation, turn: Turn) {
-    const binding = { pullRequest: conversation.key, head: turn.head };
+    const binding = { ...conversation.binding, head: turn.head };
     turn.headChangedFrom = conversation.binding.head;
     // The binding changes first: a client created later gets the new head.
     conversation.binding = binding;
@@ -956,6 +1009,10 @@ export class AgentConversations {
       unit.end();
       // A conversation that can't start its process can't go on.
       if (!conversation.closing) this.close(conversation, "failed");
+    } else if (ending.reason === "repository_not_allowed") {
+      unit.end("refused", ending.reason);
+      // Nor can one whose repository its agent may no longer read.
+      if (!conversation.closing) this.close(conversation, "revoked");
     } else {
       unit.end("error", ending.reason);
     }
@@ -979,7 +1036,11 @@ export class AgentConversations {
     clearTimeout(conversation.idleTimer);
     if (this.conversation === conversation) this.conversation = null;
     const stopReason: TurnStopReason =
-      reason === "shutdown" ? "shutdown" : "replaced";
+      reason === "shutdown"
+        ? "shutdown"
+        : reason === "revoked"
+          ? "revoked"
+          : "replaced";
     for (const turn of [...conversation.turns]) {
       this.stopTurn(conversation, turn, stopReason);
     }

@@ -8,6 +8,7 @@ import type {
   McpClientCreateResponse,
 } from "../../../../packages/shared/agent-tools.ts";
 import type {
+  AgentCliId,
   AgentCliStatus,
   AgentRun,
   AgentRunnerOverview,
@@ -150,6 +151,11 @@ export interface AgentRunnerOptions {
   killGraceMs?: number;
   /** Where each conversation turn's events go: the window's event stream. */
   publishTurnEvent?: (event: AgentTurnEvent) => void;
+  /**
+   * Whether the user allows a pull request's repository with an agent,
+   * asked before each turn is sent to it. Without it, no turn is sent.
+   */
+  admitsTurn?: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
   /** How long a conversation with no turn stays open. Defaults to 5 minutes. */
   conversationIdleMs?: number;
   /** How long an interrupted turn has before its process is ended. Defaults to 5 seconds. */
@@ -251,6 +257,7 @@ export class AgentRunner {
       ajourMcpUrl: options.ajourMcpUrl,
       events: options.events,
       publish: options.publishTurnEvent ?? (() => undefined),
+      admits: options.admitsTurn ?? (async () => false),
       ...(options.conversationIdleMs === undefined
         ? {}
         : { idleMs: options.conversationIdleMs }),
@@ -279,6 +286,14 @@ export class AgentRunner {
     return this.conversations.cancelTurn(turnId);
   }
 
+  /**
+   * Closes the conversation about a pull request `pullRequest` matches,
+   * stopping its turns, as revoking its repository does. False when none.
+   */
+  closeConversationWhere(pullRequest: (key: string) => boolean): boolean {
+    return this.conversations.closeWhere(pullRequest);
+  }
+
   private now() {
     return this.options.now?.() ?? Date.now();
   }
@@ -302,38 +317,49 @@ export class AgentRunner {
     };
   }
 
-  private async detectClis(): Promise<AgentCliStatus[]> {
+  /** The agent Settings > Agents picks, as Settings shows it, or null for none. */
+  async selectedCli(): Promise<AgentCliStatus | null> {
+    const { cli } = await this.options.storage.getAgentRunnerSettings();
+    if (!cli) return null;
+    return (await this.detectClis([cli])).find(({ id }) => id === cli) ?? null;
+  }
+
+  private async detectClis(
+    only?: AgentCliStatus["id"][],
+  ): Promise<AgentCliStatus[]> {
     const pathValue = await this.options.loginShellPath();
     const readVersion = this.options.readVersion ?? defaultReadVersion;
     return await Promise.all(
-      ALL_CLIS.map(async (cli) => {
-        const adapter = this.options.adapters.find(
-          (candidate) => candidate.id === cli.id,
-        );
-        const executable = await this.options.findExecutable(
-          cli.executableName,
-          pathValue,
-        );
-        const output = executable
-          ? await readVersion(executable, pathValue)
-          : undefined;
-        const refusalReason =
-          output && executable && typeof output !== "string"
-            ? spawnRefusalMessage(output.refused, cli.label, executable)
+      ALL_CLIS.filter((cli) => !only || only.includes(cli.id)).map(
+        async (cli) => {
+          const adapter = this.options.adapters.find(
+            (candidate) => candidate.id === cli.id,
+          );
+          const executable = await this.options.findExecutable(
+            cli.executableName,
+            pathValue,
+          );
+          const output = executable
+            ? await readVersion(executable, pathValue)
             : undefined;
-        const version =
-          typeof output === "string" && output
-            ? (adapter?.parseVersion(output) ?? output.trim())
-            : undefined;
-        return {
-          id: cli.id,
-          label: cli.label,
-          supported: adapter !== undefined,
-          installed: executable !== null,
-          ...(version ? { version } : {}),
-          ...(refusalReason ? { refusalReason } : {}),
-        };
-      }),
+          const refusalReason =
+            output && executable && typeof output !== "string"
+              ? spawnRefusalMessage(output.refused, cli.label, executable)
+              : undefined;
+          const version =
+            typeof output === "string" && output
+              ? (adapter?.parseVersion(output) ?? output.trim())
+              : undefined;
+          return {
+            id: cli.id,
+            label: cli.label,
+            supported: adapter !== undefined,
+            installed: executable !== null,
+            ...(version ? { version } : {}),
+            ...(refusalReason ? { refusalReason } : {}),
+          };
+        },
+      ),
     );
   }
 

@@ -11,7 +11,7 @@ next: false
 
 # Conditions d'utilisation
 
-Dernière mise à jour : 24 octobre 2026
+Dernière mise à jour : 24 novembre 2026
 
 <a href="/legal/terms" lang="en">English version</a>. Consulter la version anglaise ou l'utiliser ne constitue pas un choix exprès de renoncer à la version française ou à un droit linguistique.
 
@@ -54,6 +54,8 @@ La responsabilité d'un auteur de plugin n'exclut pas une responsabilité que la
 Azure DevOps, Jira, GitHub, Google, Microsoft, le serveur de votre équipe, votre fournisseur d'IA et les autres services que vous choisissez fonctionnent indépendamment d'Ajour. Leurs conditions, leurs tarifs, leurs permissions et leurs politiques de confidentialité s'appliquent à votre utilisation. Leur disponibilité et leurs API peuvent changer et empêcher un plugin de fonctionner.
 
 Activer MCP ou démarrer une tâche d'agent peut donner à un agent accès aux données de votre espace de travail ou à un navigateur connecté. L'agent peut transmettre ce qu'il lit au fournisseur d'IA configuré et apporter des changements dans des services externes. Donnez-lui seulement l'accès voulu, surveillez ses actions et respectez les règles de votre organisation. Une session du navigateur peut rester ouverte après la fin d'une tâche.
+
+Demander plus de détails sur une demande de tirage dans Deck envoie des parties du code et des fils de revue de ce dépôt à l'agent choisi et à son fournisseur d'IA, une fois le dépôt autorisé. N'autorisez un dépôt que si votre organisation permet d'envoyer son code à ce fournisseur. Les réponses peuvent être fausses : vérifiez-les dans le code avant de vous y fier.
 
 Nous ne garantissons pas la disponibilité, la sécurité ou l'exactitude des services indépendants. Les présentes conditions ne proposent pas de service d'équipe hébergé par Ajour.
 

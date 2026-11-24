@@ -11,6 +11,7 @@ import type {
   DeckOpenRequest,
   DeckPullRequestDiff,
 } from "../../../packages/shared/deck.ts";
+import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
   hunkToPatch,
@@ -311,10 +312,27 @@ async function buildPullRequestDiff(
   };
 }
 
+/** Both versions of the changed files: the base's by base path, the head's by head path. */
+export interface DeckFileVersions {
+  old: ReadonlyMap<string, string>;
+  new: ReadonlyMap<string, string>;
+}
+
+/** A pull request Deck holds at one head, for an ask and the agent's reads (#791). */
+export interface DeckHeldPullRequest {
+  diff: DeckPullRequestDiff;
+  guide: DeckGuide | null;
+  versions: DeckFileVersions;
+}
+
 /** A pull request kept in memory at one base and head: its diff and its guide. */
 interface Entry {
   key: string;
+  /** Its conversation key, `deckPullRequestKey`, and its head. */
+  pullRequest: string;
+  head: string;
   diff: Promise<DeckPullRequestDiff>;
+  versions: Promise<DeckFileVersions>;
   /**
    * Null when the pipeline failed, or didn't run for too many hunks. It
    * rejects only when the build was cancelled.
@@ -324,6 +342,9 @@ interface Entry {
 }
 
 type DeckSource = { pluginId: string; connectionId: string };
+
+const pullRequestOf = (source: DeckSource, request: DeckOpenRequest) =>
+  deckPullRequestKey({ ...source, ...request });
 
 const keyOf = (
   source: DeckSource,
@@ -466,7 +487,10 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     );
     const entry: Entry = {
       key,
+      pullRequest: pullRequestOf(source, request),
+      head: content.headSha,
       diff: built.then((result) => result.diff),
+      versions: built.then((result) => result.guideInput),
       guide: built.then((result) =>
         guideSkippedFor(result.diff)
           ? null
@@ -478,6 +502,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     };
     // A failure reaches this caller below. A second caller awaits it too.
     entry.diff.catch(() => {});
+    entry.versions.catch(() => {});
     entry.guide.catch(() => {});
     onScreen = entry;
     try {
@@ -519,7 +544,10 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     const skipped = guideSkippedFor(diff) !== undefined;
     const entry: Entry = {
       key,
+      pullRequest: pullRequestOf(source, request),
+      head: content.headSha,
       diff: Promise.resolve(diff),
+      versions: Promise.resolve(guideInput),
       guide: skipped
         ? Promise.resolve(null)
         : guideOrNull(guides.build(key, guideInput, "preload")),
@@ -537,7 +565,34 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       : { queued: 1, guideSkippedCount: 0, fileReadCount };
   }
 
+  /**
+   * The pull request Deck holds at `head`, on screen or preloaded, or
+   * undefined: another head, one that failed or one no longer kept.
+   */
+  async function held(
+    pullRequest: string,
+    head: string,
+  ): Promise<DeckHeldPullRequest | undefined> {
+    const entry = [onScreen, ...preloaded.values()].find(
+      (candidate) =>
+        candidate?.pullRequest === pullRequest && candidate.head === head,
+    );
+    if (!entry) return undefined;
+    try {
+      const [diff, versions, guide] = await Promise.all([
+        entry.diff,
+        entry.versions,
+        entry.guide,
+      ]);
+      return { diff, guide, versions };
+    } catch {
+      return undefined;
+    }
+  }
+
   return {
+    held,
+
     /**
      * The pull request's diff from the merge base to the head, and its
      * guide. The file list is read each time, so a new push is seen. The
