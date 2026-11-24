@@ -353,8 +353,13 @@ describe("an ask that reads the user's clone", () => {
         clone: { state: "read" },
       });
 
-      // The worktree goes with its entry: another pull request replaces it on screen.
+      // Another pull request on screen keeps it: its entry stays cached.
       expect((await api.open(18)).status).toBe(200);
+      expect(await exists(root)).toBe(true);
+      // The worktree goes with its entry, the one on screen included.
+      expect(
+        (await apiRequest(api.baseUrl, "/api/deck/storage/clear", {})).status,
+      ).toBe(200);
       // Its ref goes right after the worktree.
       await until(
         async () =>

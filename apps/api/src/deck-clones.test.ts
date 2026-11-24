@@ -42,8 +42,12 @@ const exists = (file: string) =>
     () => false,
   );
 
-function clones(worktreesFolder = fixture.worktrees) {
+function clones(
+  worktreesFolder = fixture.worktrees,
+  liveKeys?: () => Promise<string[]>,
+) {
   return createDeckClones({
+    ...(liveKeys ? { liveKeys } : {}),
     storage: {
       getDeckClones: async () => saved,
       saveDeckClone: async (clone) => {
@@ -451,6 +455,24 @@ describe(
       const listed = git(fixture.clone, "worktree", "list", "--porcelain");
       expect(listed).not.toContain("prunable");
       expect(listed).not.toContain("detached");
+    });
+
+    it("reuses, after a restart, the worktree of an entry the cache still holds", async () => {
+      const first = clones();
+      await first.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const prepared = await first.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      const marker = path.join(prepared.root, "still here");
+      await writeFile(marker, "");
+
+      // A new API: the cache still holds the entry, so its worktree stays.
+      const next = clones(fixture.worktrees, async () => [entry().key]);
+      expect(await next.prepare(entry())).toEqual(prepared);
+      expect(await exists(marker)).toBe(true);
     });
 
     it("keeps the worktree of an entry still in the cache", async () => {

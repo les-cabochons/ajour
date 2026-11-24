@@ -1,6 +1,13 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildDiff,
@@ -11,7 +18,12 @@ import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
-import { apiRequest, startLocalApi } from "./test-support/local-api.ts";
+import {
+  apiRequest,
+  startLocalApi,
+  TEST_ORIGIN,
+} from "./test-support/local-api.ts";
+import { windowTokenHeader } from "./test-support/window-token.ts";
 
 /*
  * Deck's service in the local API (#779): opening a pull request fetches both
@@ -75,6 +87,7 @@ export async function getPullRequestContent(connection, request) {
     request.number === 12 ? [{ path: "src/new.ts", status: "added" }]
     : request.number === 13
       ? [{ path: "slow/a.ts", status: "added" }, { path: "slow/b.ts", status: "added" }]
+    : request.number === 14 ? [{ path: "slow/a.ts", status: "added" }]
     : request.number === 9 ? [{ path: "src/broken.ts", status: "modified" }]
     : request.number === 8 ? [{ path: "src/new.ts", status: "added" }]
     : request.number === 11 ? [{ path: "src/gone.ts", status: "modified" }]
@@ -84,15 +97,19 @@ export async function getPullRequestContent(connection, request) {
       ? [{ path: "pr" + request.number + "/a.ts", status: "added" }]
     : CHANGED_FILES;
   return {
-    headSha: "head",
+    headSha: globalThis.deckHeads?.[request.number] ?? "head",
     baseSha: "base",
     // The host's patch is never used: this one would cut other hunks.
     files: files.map((file) => ({ additions: 1, deletions: 1, binary: false, patch: "@@ -1 +1 @@\\n-nothing\\n+like this", ...file })),
   };
 }
+export async function syncPullRequests() {
+  return { viewer: { login: "octocat", isBot: false }, pullRequests: globalThis.deckSynced ?? [] };
+}
 export async function getFileContent(connection, request) {
   if (request.path === "src/broken.ts") throw new Error("GitHub request failed (500).");
   if (request.path.startsWith("slow/")) {
+    globalThis.deckSlowReads = (globalThis.deckSlowReads ?? 0) + 1;
     await globalThis.deckTestGate;
     return { kind: "text", content: "slow\\n" };
   }
@@ -149,15 +166,29 @@ async function startDeck(
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-"));
   stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
-  const api = await startLocalApi({
-    pluginRuntime: new InProcessPluginRuntime(),
-    vault: new MemorySecretVault(),
-    allowDevelopmentPlugins: true,
-    developmentPluginDirectories: [await createCodeHostPlugin(root, source)],
-    deckGuideRuntime,
-    deckGuideTimeoutMs,
-  });
-  stops.unshift(api.stop);
+  const pluginDirectory = await createCodeHostPlugin(root, source);
+  /** Without the plugin, its connections stay in the state file, as after an uninstall that kept them. */
+  const launch = async (withPlugin = true) => {
+    const started = await startLocalApi({
+      pluginRuntime: new InProcessPluginRuntime(),
+      vault: new MemorySecretVault(),
+      allowDevelopmentPlugins: true,
+      developmentPluginDirectories: withPlugin ? [pluginDirectory] : [],
+      deckGuideRuntime,
+      deckGuideTimeoutMs,
+      // The state file, and the content cache beside it, outlive a restart.
+      statePath: path.join(root, "state.json"),
+    });
+    let stopped = false;
+    const stop = async () => {
+      if (stopped) return;
+      stopped = true;
+      await started.stop();
+    };
+    stops.unshift(stop);
+    return { ...started, stop };
+  };
+  let api = await launch();
   const created = await apiRequest(
     api.baseUrl,
     "/api/plugins/github/connections",
@@ -173,11 +204,11 @@ async function startDeck(
   );
   expect(created.status).toBe(200);
   const connectionId = created.body.connection.id as string;
-  const open = (number = 7) =>
+  const open = (number = 7, headSha?: string) =>
     apiRequest(
       api.baseUrl,
       `/api/deck/github/connections/${connectionId}/open`,
-      { repository: "acme/api", number },
+      { repository: "acme/api", number, ...(headSha ? { headSha } : {}) },
     );
   const fileReads = () =>
     api.events.filter(
@@ -201,7 +232,84 @@ async function startDeck(
         })),
       },
     );
-  return { api, connectionId, open, preload, fileReads, fileLists };
+  const storage = async () =>
+    (await apiRequest(api.baseUrl, "/api/deck/storage")).body as {
+      sizeBytes: number;
+      capBytes: number;
+      entryCount: number;
+      pendingRemovalCount: number;
+    };
+  return {
+    get api() {
+      return api;
+    },
+    root,
+    connectionId,
+    open,
+    preload,
+    fileReads,
+    fileLists,
+    storage,
+    setCap: (capBytes: number) =>
+      apiRequest(api.baseUrl, "/api/deck/storage", { capBytes }),
+    clearCache: () => apiRequest(api.baseUrl, "/api/deck/storage/clear", {}),
+    sync: (pullRequests: { number: number; state: string }[]) => {
+      const holder = globalThis as { deckSynced?: unknown };
+      holder.deckSynced = pullRequests.map(({ number, state }) =>
+        fact(number, state),
+      );
+      stops.push(async () => {
+        delete holder.deckSynced;
+      });
+      return apiRequest(
+        api.baseUrl,
+        `/api/code-hosts/github/connections/${connectionId}/syncPullRequests`,
+        { tracked: [] },
+      );
+    },
+    deleteConnection: () =>
+      fetch(`${api.baseUrl}/api/plugins/github/connections/${connectionId}`, {
+        method: "DELETE",
+        headers: { ...windowTokenHeader, Origin: TEST_ORIGIN },
+      }),
+    /** Stops the API and starts another on the same state file and cache. */
+    async restart(withPlugin = true) {
+      await api.stop();
+      api = await launch(withPlugin);
+    },
+  };
+}
+
+/** A pull request as a sync reports it, in `state`. */
+const fact = (number: number, state: string) => ({
+  id: `PR_${number}`,
+  repository: "acme/api",
+  number,
+  url: `https://github.com/acme/api/pull/${number}`,
+  title: "A change",
+  author: { login: "someone", isBot: false },
+  state,
+  draft: false,
+  createdAt: 1_700_000_000_000,
+  updatedAt: 1_700_000_100_000,
+  ...(state === "open" ? {} : { closedAt: 1_700_000_200_000 }),
+  viewerIsAuthor: false,
+  headSha: "head",
+  lastPushedAt: 1_700_000_050_000,
+  reviewRequests: [],
+  reviews: [],
+  comments: [],
+  checks: "none",
+  mergeability: "unknown",
+});
+
+/** Moves a pull request's head in the fake code host, as a push does. */
+function push(number: number, headSha: string) {
+  const holder = globalThis as { deckHeads?: Record<number, string> };
+  holder.deckHeads = { ...holder.deckHeads, [number]: headSha };
+  stops.push(async () => {
+    delete holder.deckHeads;
+  });
 }
 
 /**
@@ -290,9 +398,14 @@ function holdSlowReads() {
   stops.push(async () => {
     release();
     delete (globalThis as { deckTestGate?: Promise<void> }).deckTestGate;
+    delete (globalThis as { deckSlowReads?: number }).deckSlowReads;
   });
   return release;
 }
+
+/** The `slow/` file reads started so far. */
+const slowReadsStarted = () =>
+  (globalThis as { deckSlowReads?: number }).deckSlowReads ?? 0;
 
 /** Holds pull request 12's file list until `release` runs, counting the lists started. */
 function holdListing() {
@@ -498,7 +611,7 @@ describe("opening a pull request in Deck", () => {
     expect(served.sort()).toEqual(expected.sort());
   });
 
-  it("keeps the pull request on screen in memory, and reads its files again once another one opened", async () => {
+  it("keeps the pull request on screen, and reads no file again of one opened before, from the content cache", async () => {
     const { open, fileReads } = await startDeck();
 
     await open();
@@ -512,7 +625,7 @@ describe("opening a pull request in Deck", () => {
     expect((await open(8)).status).toBe(200);
     expect(fileReads()).toBe(9);
     await open();
-    expect(fileReads()).toBe(17);
+    expect(fileReads()).toBe(9);
   });
 
   it("answers the plugin's error when a file can't be read, and names it on the event", async () => {
@@ -949,7 +1062,7 @@ describe("the guide of a pull request opened in Deck", () => {
       api.events.find(
         (event) => event.name === "deck.open" && event.kind === "request",
       ),
-    ).toMatchObject({ deck: { preloaded: true, file_read_count: 0 } });
+    ).toMatchObject({ deck: { cached: true, file_read_count: 0 } });
   });
 
   it("skips a pull request a preload can't read, and fails only when none could be read", async () => {
@@ -1008,10 +1121,11 @@ describe("the guide of a pull request opened in Deck", () => {
       api.events.find((event) => event.name === "deck.guide_build"),
     ).toMatchObject({ outcome: "timeout" });
 
-    // A failed guide isn't kept: the next open reads and builds it again.
+    // A failed guide isn't kept: the next open builds it again, from the
+    // files the content cache kept.
     const second = await open(20);
     expect(second.body.guide.concerns[0].title).toBe("Built");
-    expect(fileReads()).toBe(2);
+    expect(fileReads()).toBe(1);
   });
 
   it("cuts a title or rationale longer than the guide allows, keeping the guide", async () => {
@@ -1093,5 +1207,397 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(
       api.events.find((event) => event.name === "deck.guide_build"),
     ).toMatchObject({ outcome: "cancelled", outcome_reason: "replaced" });
+  });
+});
+
+describe("the content cache", () => {
+  it("opens a preloaded pull request at the head its sync saw, without calling the plugin", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await expect(deck.preload(20)).resolves.toEqual({
+      status: 202,
+      body: { queued: 1 },
+    });
+    await expect.poll(() => guides.built).toEqual(["pr20"]);
+    const before = [deck.fileLists(), deck.fileReads()];
+
+    const opened = await deck.open(20, "head");
+
+    expect(opened.status).toBe(200);
+    expect(opened.body.headSha).toBe("head");
+    expect(opened.body.guide.concerns[0].title).toBe("pr20");
+    expect([deck.fileLists(), deck.fileReads()]).toEqual(before);
+    // Its guide came from the cache too.
+    expect(guides.built).toEqual(["pr20"]);
+    expect(
+      deck.api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({
+      deck: { cached: true, listed: false, file_read_count: 0 },
+    });
+  });
+
+  it("asks the plugin for a head it doesn't hold", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(20);
+    await deck.open(21);
+
+    push(20, "pushed");
+    const reopened = await deck.open(20, "pushed");
+
+    expect(reopened.body.headSha).toBe("pushed");
+    expect(deck.fileLists()).toBe(3);
+  });
+
+  it("doesn't ask the plugin again when a sync preloads a pull request it holds at that head", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(20);
+    await deck.open(21);
+    const lists = deck.fileLists();
+
+    const preloaded = await apiRequest(
+      deck.api.baseUrl,
+      `/api/deck/github/connections/${deck.connectionId}/preload`,
+      {
+        pullRequests: [{ repository: "acme/api", number: 20, headSha: "head" }],
+      },
+    );
+
+    expect(preloaded).toEqual({ status: 202, body: { queued: 0 } });
+    expect(deck.fileLists()).toBe(lists);
+  });
+
+  it("keeps what it read across a restart", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(7);
+
+    await deck.restart();
+    const opened = await deck.open(7, "head");
+
+    expect(opened.status).toBe(200);
+    expect(opened.body.files).toHaveLength(5);
+    expect([deck.fileLists(), deck.fileReads()]).toEqual([0, 0]);
+  });
+
+  it("makes a new entry for a new head, and keeps the old one", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(24);
+
+    push(24, "pushed");
+    const pushed = await deck.open(24);
+
+    expect(pushed.body.headSha).toBe("pushed");
+    expect(deck.fileReads()).toBe(2);
+    expect(await deck.storage()).toMatchObject({ entryCount: 2 });
+    const older = await deck.open(24, "head");
+    expect(older.body.headSha).toBe("head");
+    expect(deck.fileReads()).toBe(2);
+  });
+
+  it("evicts closed pull requests first, then the least recently used, never the one on screen", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    // Three pull requests of the same size; 22 is on screen.
+    for (const number of [20, 21, 22]) await deck.open(number);
+    const { sizeBytes, entryCount } = await deck.storage();
+    expect(entryCount).toBe(3);
+    const size = sizeBytes / 3;
+    expect((await deck.sync([{ number: 21, state: "merged" }])).status).toBe(
+      200,
+    );
+
+    // Room for two and a half: the merged one goes, not 20, used longer ago.
+    const capped = await deck.setCap(Math.floor(size * 2.5));
+    expect(capped.status).toBe(200);
+    expect(capped.body).toMatchObject({ entryCount: 2 });
+
+    // Opening 21 again reads it, and pushes out 20, the least recently used.
+    let lists = deck.fileLists();
+    await deck.open(21, "head");
+    expect(deck.fileLists()).toBe(lists + 1);
+    lists = deck.fileLists();
+    await deck.open(22, "head");
+    expect(deck.fileLists()).toBe(lists);
+    await deck.open(20, "head");
+    expect(deck.fileLists()).toBe(lists + 1);
+  });
+
+  it("never evicts the pull request on screen, even under a cap it alone passes", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(20);
+
+    await deck.setCap(1);
+    await deck.preload(21);
+    await deck.open(20, "head");
+
+    expect(await deck.storage()).toMatchObject({ entryCount: 1 });
+    expect(deck.fileLists()).toBe(2);
+  });
+
+  it("never evicts the pull request on screen when its guide failed, and builds the guide again when it opens", async () => {
+    let calls = 0;
+    const deck = await startDeck(undefined, {
+      build: async (input) => {
+        calls += 1;
+        if (calls === 1) throw new Error("The pipeline broke.");
+        return [
+          {
+            id: "g1",
+            title: "Built",
+            rationale: "",
+            hunkIds: parseDiff(input.diff).flatMap((file) =>
+              file.hunks.map((hunk) => hunk.id),
+            ),
+          },
+        ];
+      },
+      close: async () => {},
+    });
+    expect((await deck.open(20)).body.guide).toBeNull();
+
+    await deck.setCap(1);
+
+    expect(await deck.storage()).toMatchObject({ entryCount: 1 });
+    const again = await deck.open(20, "head");
+    expect(again.body.guide.concerns[0].title).toBe("Built");
+    expect(deck.fileLists()).toBe(1);
+    expect(deck.fileReads()).toBe(1);
+  });
+
+  it("drops an entry whose files are cut short, and reads the pull request again", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(7);
+    await deck.open(8);
+    await deck.storage();
+    const cache = path.join(deck.root, "deck-cache");
+    for (const name of await readdir(cache)) {
+      const file = path.join(cache, name);
+      const text = await readFile(file, "utf8");
+      await writeFile(file, text.slice(0, Math.floor(text.length / 2)));
+    }
+
+    const opened = await deck.open(7, "head");
+
+    expect(opened.status).toBe(200);
+    expect(opened.body.files).toHaveLength(5);
+    expect(deck.fileReads()).toBe(8 + 1 + 8);
+    // It is cached again, whole.
+    await deck.open(20);
+    await deck.open(7, "head");
+    expect(deck.fileReads()).toBe(8 + 1 + 8 + 1);
+  });
+
+  it("shows its size and cap, saves the cap, and clears, in Settings › Storage", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    expect(await deck.storage()).toEqual({
+      sizeBytes: 0,
+      capBytes: 1024 ** 3,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    await deck.open(7);
+    const used = await deck.storage();
+    expect(used.entryCount).toBe(1);
+    expect(used.sizeBytes).toBeGreaterThan(0);
+
+    await expect(deck.setCap(0)).resolves.toMatchObject({ status: 400 });
+    const saved = await deck.setCap(250 * 1024 ** 2);
+    expect(saved).toEqual({
+      status: 200,
+      body: { ...used, capBytes: 250 * 1024 ** 2 },
+    });
+    await deck.restart();
+    expect(await deck.storage()).toEqual(saved.body);
+
+    const cleared = await deck.clearCache();
+    expect(cleared).toEqual({
+      status: 200,
+      body: {
+        sizeBytes: 0,
+        capBytes: 250 * 1024 ** 2,
+        entryCount: 0,
+        pendingRemovalCount: 0,
+      },
+    });
+    await deck.open(7, "head");
+    expect(deck.fileReads()).toBe(8);
+    expect(
+      deck.api.events.find((event) => event.name === "deck.storage_clear"),
+    ).toMatchObject({ outcome: "ok", deck: { removed_count: 1 } });
+    // No event names the cache's folder.
+    expect(JSON.stringify(deck.api.events)).not.toContain("deck-cache");
+  });
+
+  it("says when Clear cache leaves a file Windows holds, and removes it at the next clear", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(7);
+    // Once written.
+    await deck.storage();
+    // A folder in its place can't be deleted as a file, as a file another
+    // program holds without delete sharing.
+    const cache = path.join(deck.root, "deck-cache");
+    const content = (await readdir(cache)).find((name) =>
+      name.endsWith(".content.json"),
+    )!;
+    const text = await readFile(path.join(cache, content), "utf8");
+    await rm(path.join(cache, content));
+    await mkdir(path.join(cache, content, "held"), { recursive: true });
+
+    const cleared = await deck.clearCache();
+
+    // Its guide was deleted; its contents count until they are.
+    expect(cleared.body).toMatchObject({
+      sizeBytes: Buffer.byteLength(text),
+      entryCount: 1,
+      pendingRemovalCount: 1,
+    });
+    expect(
+      deck.api.events.find((event) => event.name === "deck.storage_clear"),
+    ).toMatchObject({ outcome: "ok", deck: { removed_count: 0 } });
+    // It isn't read from the cache again.
+    await deck.open(20);
+    await deck.open(7, "head");
+    expect(deck.fileReads()).toBe(8 + 1 + 8);
+
+    await rm(path.join(cache, content), { recursive: true });
+    await writeFile(path.join(cache, content), text, "utf8");
+    expect((await deck.clearCache()).body).toMatchObject({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+  });
+
+  it("removes a deleted connection's pull requests from the cache", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(7);
+
+    const deleted = await deck.deleteConnection();
+
+    expect(deleted.status).toBe(200);
+    await expect.poll(async () => (await deck.storage()).entryCount).toBe(0);
+  });
+
+  it("caches nothing of a preload whose last file read ends after its connection was deleted", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const release = holdSlowReads();
+    const preloaded = deck.preload(14);
+    await expect.poll(slowReadsStarted).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    release();
+    await preloaded;
+
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+    expect(guides.started).toEqual([]);
+  });
+
+  it("caches nothing of an open whose last file read ends after its connection was deleted", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const release = holdSlowReads();
+    const opened = deck.open(14);
+    await expect.poll(slowReadsStarted).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    release();
+    const answer = await opened;
+
+    expect(answer.status).toBe(409);
+    expect(answer.body).toEqual({
+      error: "This connection was removed.",
+      reason: "connection_removed",
+    });
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+    // Its reads and its guide build stopped with the connection.
+    expect(guides.built).toEqual([]);
+  });
+
+  it("reads and shows nothing of an open whose file list comes back after its connection was deleted", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const listing = holdListing();
+    const opened = deck.open(12);
+    await expect.poll(listing.started).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    listing.release();
+    const answer = await opened;
+
+    expect(answer.status).toBe(409);
+    expect(answer.body).toMatchObject({ reason: "connection_removed" });
+    expect(deck.fileReads()).toBe(0);
+    expect(guides.started).toEqual([]);
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+  });
+
+  it("stops the rest of a preload once its connection is deleted during a read", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const release = holdSlowReads();
+    const preloaded = deck.preload(14, 20);
+    await expect.poll(slowReadsStarted).toBe(1);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    release();
+    const answer = await preloaded;
+
+    expect(answer.status).toBe(409);
+    expect(answer.body).toMatchObject({ reason: "connection_removed" });
+    // Pull request 20 was never read.
+    expect(deck.fileLists()).toBe(1);
+    expect(deck.fileReads()).toBe(1);
+    expect(guides.started).toEqual([]);
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+    expect(await readdir(path.join(deck.root, "deck-cache"))).toEqual([]);
+  });
+
+  it("caches no guide that finishes building after its connection was deleted", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    const release = guides.hold("pr20");
+    await deck.preload(20);
+    await expect.poll(() => guides.started).toEqual(["pr20"]);
+
+    expect((await deck.deleteConnection()).status).toBe(200);
+    await expect.poll(async () => (await deck.storage()).entryCount).toBe(0);
+    release();
+    await expect
+      .poll(() =>
+        deck.api.events.some((event) => event.name === "deck.guide_build"),
+      )
+      .toBe(true);
+
+    expect(await deck.storage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+    expect(await readdir(path.join(deck.root, "deck-cache"))).toEqual([]);
+  });
+
+  it("removes a removed plugin's pull requests from the cache with its connections", async () => {
+    const guides = heldGuides();
+    const deck = await startDeck(undefined, guides.runtime);
+    await deck.open(7);
+    // The plugin is gone, its connections and their cached pull requests stay.
+    await deck.restart(false);
+    expect(await deck.storage()).toMatchObject({ entryCount: 1 });
+
+    const removed = await fetch(`${deck.api.baseUrl}/api/plugins/github/data`, {
+      method: "DELETE",
+      headers: { ...windowTokenHeader, Origin: TEST_ORIGIN },
+    });
+
+    expect(removed.status).toBe(200);
+    await expect.poll(async () => (await deck.storage()).entryCount).toBe(0);
+    expect(await readdir(path.join(deck.root, "deck-cache"))).toEqual([]);
   });
 });

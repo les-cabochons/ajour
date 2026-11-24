@@ -42,9 +42,9 @@ import { childEnvironment, gitEnvironment } from "./process-broker.ts";
  *   submodules. A WSL clone's worktree stays in its distribution.
  *
  * The worktree goes with its cache entry: `release` removes it and its ref,
- * and what an earlier run left in a clone goes the first time that clone is
- * prepared, with `git worktree prune` only when every stale registration in
- * it is Deck's.
+ * and what an earlier run left for entries the cache no longer holds goes
+ * the first time that clone is prepared, with `git worktree prune` only
+ * when every stale registration in it is Deck's.
  *
  * A clone that can't be prepared never stops an ask: `prepare` answers why,
  * and the agent reads the pull request alone. No reason holds a path, a
@@ -128,6 +128,11 @@ export interface DeckClonesOptions {
   wslGit?: (distro: string, cwd: string) => Git;
   timeouts?: Partial<DeckCloneTimeouts>;
   now?: () => number;
+  /**
+   * The keys of the content cache's entries now: their worktrees, an
+   * earlier run's included, stay when a clone is swept.
+   */
+  liveKeys?: () => Promise<Iterable<string>>;
 }
 
 /** Git on this computer, as hand-off worktrees run it (ADR 0022). */
@@ -776,11 +781,16 @@ export function createDeckClones(options: DeckClonesOptions) {
     const folder = opened.style.join(opened.worktrees, id);
     const root = opened.here(folder);
 
-    // What an earlier run left in this clone goes the first time: no Deck
-    // entry outlives the API that made it.
+    // What an earlier run left in this clone for entries the cache no
+    // longer holds goes the first time.
     if (!swept.has(cloneKey(clone))) {
       swept.add(cloneKey(clone));
-      await sweep(opened, new Set([...prepared.keys()].map(idOf)));
+      const live = [
+        ...prepared.keys(),
+        ...((await options.liveKeys?.().catch(() => [])) ?? []),
+        entry.key,
+      ];
+      await sweep(opened, new Set(live.map(idOf)));
     }
 
     // The remote still names the repository: a clone whose remote changed is chosen again.
