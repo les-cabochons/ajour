@@ -545,6 +545,8 @@ export function createDeckService(options: {
     doneReading: () => void,
   ): Promise<DeckOpened> {
     const { source, generation, stop } = work;
+    // Bound before its connection was removed, it doesn't even take the screen.
+    checkConnection(work);
     const open = ++lastOpen;
     // A later open owns the screen: this one neither replaces it nor stops
     // its build. A connection removed from here on reads, caches and shows

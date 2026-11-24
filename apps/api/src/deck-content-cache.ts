@@ -303,15 +303,24 @@ export function createDeckContentCache(options: {
     await saveRemovals(leftovers.keys());
   };
 
-  /** The entries a run was removing when it stopped. */
-  const readRemovals = async () => {
+  /**
+   * The entries a run was removing when it stopped: none without a list,
+   * and every entry when the list can't be read, since it may name any.
+   */
+  const readRemovals = async (): Promise<Set<string> | "all"> => {
+    let text: string;
     try {
-      const parsed = removalsSchema.safeParse(
-        JSON.parse(await readFile(removalsFile, "utf8")),
-      );
-      return parsed.success ? new Set(parsed.data.ids) : new Set<string>();
+      text = await readFile(removalsFile, "utf8");
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? new Set<string>()
+        : "all";
+    }
+    try {
+      const parsed = removalsSchema.safeParse(JSON.parse(text));
+      return parsed.success ? new Set(parsed.data.ids) : "all";
     } catch {
-      return new Set<string>();
+      return "all";
     }
   };
 
@@ -348,7 +357,8 @@ export function createDeckContentCache(options: {
       }
       for (const [id, found] of parts) {
         let meta: Meta | undefined;
-        if (!removing.has(id) && found.has("meta") && found.has("content")) {
+        const removed = removing === "all" || removing.has(id);
+        if (!removed && found.has("meta") && found.has("content")) {
           try {
             const parsed = metaSchema.safeParse(
               JSON.parse(await readFile(fileOf(id, "meta"), "utf8")),
@@ -369,7 +379,9 @@ export function createDeckContentCache(options: {
         }
         entries.set(id, meta);
       }
-      if (removing.size) await saveRemovals(leftovers.keys());
+      if (removing === "all" || removing.size) {
+        await saveRemovals(leftovers.keys());
+      }
     })());
 
   /** What the entries and the leftovers hold on disk. */

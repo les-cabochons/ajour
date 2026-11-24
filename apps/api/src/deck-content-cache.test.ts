@@ -495,6 +495,20 @@ describe("the Deck content cache", () => {
     expect(await start(directory).get(key(1))).toBeDefined();
   });
 
+  it("keeps no entry across a restart when its removal list can't be read", async () => {
+    const directory = await cacheFolder();
+    const cache = start(directory);
+    await cache.put(key(1), content(1), FRESH);
+    await cache.flush();
+    // A removal list cut short, as by a crash, may have named this entry.
+    await writeFile(path.join(directory, "removals.json"), '{"ids":["', "utf8");
+
+    const next = start(directory);
+
+    expect(await next.get(key(1))).toBeUndefined();
+    expect(await next.usage()).toMatchObject({ sizeBytes: 0, entryCount: 0 });
+  });
+
   it("names entries by a hash, so no path, repository or commit is in a file name", async () => {
     const directory = await cacheFolder();
     const cache = start(directory);

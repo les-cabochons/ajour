@@ -133,4 +133,34 @@ describe("Deck's service when a connection is removed", () => {
     expect(deck.builds).toEqual([]);
     expect(await deck.cache.usage()).toMatchObject({ entryCount: 0 });
   });
+
+  it("asks the code host nothing for a request bound before its connection was removed, even once it's added again", async () => {
+    const deck = await startService();
+    deck.releasePuts();
+    const operations: string[] = [];
+    const counting: DeckCodeHost = {
+      run(operation, request) {
+        operations.push(operation);
+        return codeHost.run(operation, request);
+      },
+    };
+    const stale = { ...counting, generation: deck.cache.generation(SOURCE) };
+    await deck.service.forgetConnection(SOURCE);
+    // The same connection id comes back, and opens the pull request.
+    await deck.service.openPullRequest(
+      SOURCE,
+      { repository: "acme/api", number: 20 },
+      counting,
+    );
+    operations.length = 0;
+
+    await expect(
+      deck.service.openPullRequest(
+        SOURCE,
+        { repository: "acme/api", number: 20 },
+        stale,
+      ),
+    ).rejects.toBeInstanceOf(DeckConnectionRemoved);
+    expect(operations).toEqual([]);
+  });
 });
