@@ -99,6 +99,27 @@ exit /b 127
 set "t3_exit=%ERRORLEVEL%"
 exit /b %t3_exit%
 `;
+// Generated verbatim by npm 11's cmd-shim for a native executable bin, from
+// `npm i -g opencode-ai@1.19.6`: it runs the .exe directly, with no node.
+const npmNative = `@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe"   %*
+`;
+const npmNativeExecutable = path.join(
+  root,
+  "node_modules",
+  "opencode-ai",
+  "bin",
+  "opencode.exe",
+);
+mkdirSync(path.dirname(npmNativeExecutable), { recursive: true });
+linkSync(process.execPath, npmNativeExecutable);
 const fixtures = {
   npm,
   "npm-cmd-shim-8": npmCmdShim8,
@@ -597,6 +618,53 @@ describe.skipIf(process.platform !== "win32")(
         'a" & b',
       ]);
       expect(existsSync(marker)).toBe(false);
+    });
+
+    it("Given npm's native executable shim, starts that .exe directly with every value intact", () => {
+      const shim = path.join(root, "opencode.cmd");
+      writeFileSync(shim, npmNative.replace(/\n/g, "\r\n"));
+      // Every short hostile value Windows can carry: NUL and lone surrogates are refused.
+      const values = corpus
+        .filter((v) => v.length < 1000 && v !== "nul\0tail" && v !== "\ud800")
+        .slice(0, 60);
+      const plan = resolveSpawn(shim, [script, ...values], env);
+      if ("refused" in plan) throw new Error(plan.refused);
+      expect(plan.command).toBe(npmNativeExecutable);
+      expect(plan.args).toEqual([script, ...values]);
+      const child = spawnSync(plan.command, plan.args, {
+        shell: false,
+        env: plan.env,
+        timeout: 10000,
+      });
+      expect(child.status, String(child.stderr)).toBe(0);
+      expect(JSON.parse(readFileSync(output, "utf8")).argv).toEqual(values);
+      expect(existsSync(marker)).toBe(false);
+    });
+
+    it("Given a changed npm native executable shim, refuses", () => {
+      const shim = path.join(root, "opencode-changed.cmd");
+      writeFileSync(path.join(root, "node_modules", "pwsh.exe"), "");
+      linkSync(process.execPath, path.join(root, "node_modules", "node.exe"));
+      const target = "opencode-ai\\bin\\opencode.exe";
+      for (const change of [
+        `echo HIT>"${marker}"\n${npmNative}`,
+        `${npmNative}echo HIT>"${marker}"\n`,
+        npmNative.replace("%*", '"%*"'),
+        npmNative.replace("%*", "%1"),
+        npmNative.replace("   %*", ' "--extra" %*'),
+        npmNative.replace("%dp0%\\", `${root}\\`),
+        npmNative.replace("opencode.exe", "missing.exe"),
+        npmNative.replace("opencode.exe", "opencode.cmd"),
+        npmNative.replace("opencode.exe", "%VAR%.exe"),
+        npmNative.replace(target, "pwsh.exe"),
+        npmNative.replace(target, "node.exe"),
+      ]) {
+        writeFileSync(shim, change);
+        expect(resolveSpawn(shim, ["--eval", "1"], env), change).toHaveProperty(
+          "refused",
+        );
+        expect(existsSync(marker)).toBe(false);
+      }
     });
   },
 );
