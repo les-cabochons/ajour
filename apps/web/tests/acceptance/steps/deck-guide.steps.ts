@@ -88,14 +88,64 @@ const OPENED = {
         title: "Sign each webhook payload",
         rationale: "sign is new, and nothing else reads it yet.",
         hunkIds: ["src/webhooks/signer.ts#0"],
+        kinds: [],
       },
       {
         id: "g2",
         title: "Back off between retries",
         rationale: "backoff replaces the fixed delay, with its test.",
         hunkIds: ["src/client/retry.ts#0", "src/client/retry.test.ts#0"],
+        kinds: ["tests"],
       },
     ],
+    summary: {
+      problem: {
+        text: "Webhook retries hammer the receiver",
+        source: "ticket",
+        ticket: {
+          number: 482,
+          repository: "acme/api",
+          title: "Webhook retries hammer the receiver",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      },
+      tickets: [
+        {
+          number: 482,
+          repository: "acme/api",
+          title: "Webhook retries hammer the receiver",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      ],
+      kinds: ["tests"],
+      breaking: [],
+      risks: [
+        {
+          id: "risk:auth",
+          text: "Auth and security: src/webhooks/signer.ts",
+          hunkIds: ["src/webhooks/signer.ts#0"],
+        },
+      ],
+      tests: [
+        {
+          id: "tests:g2",
+          text: "Tested in src/client/retry.test.ts",
+          hunkIds: ["src/client/retry.test.ts#0"],
+          concernId: "g2",
+        },
+      ],
+      untested: [
+        {
+          id: "untested:g1",
+          text: "No test for src/webhooks/signer.ts",
+          hunkIds: ["src/webhooks/signer.ts#0"],
+          concernId: "g1",
+        },
+      ],
+      leftovers: [],
+    },
   },
 };
 
@@ -192,4 +242,42 @@ Then("the guide fits the narrow viewport", async ({ page }) => {
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/deck-guide-narrow.png" });
+});
+
+Then(
+  "the summary names the linked ticket, the kinds and each section's lines",
+  async ({ page }) => {
+    const summary = page.getByRole("region", { name: "Summary" });
+    await expect(
+      summary.getByText("Webhook retries hammer the receiver"),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("button", {
+        name: "Open #482: Webhook retries hammer the receiver",
+      }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("list", { name: "Kinds of change" }),
+    ).toHaveText("Tests");
+    await expect(summary.getByRole("heading", { level: 3 })).toHaveText([
+      "Risky areas",
+      "Tests",
+    ]);
+    await page.screenshot({ path: "test-results/deck-summary.png" });
+  },
+);
+
+When("I follow the summary's line about the test", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Summary" })
+    .getByRole("button", {
+      name: "Concern 2: Tested in src/client/retry.test.ts",
+    })
+    .click();
+});
+
+Then("the test's hunk is in view and focused", async ({ page }) => {
+  const hunk = page.locator('[data-hunk-id="src/client/retry.test.ts#0"]');
+  await expect(hunk).toBeFocused();
+  await expect(hunk).toBeInViewport();
 });

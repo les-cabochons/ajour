@@ -106,6 +106,14 @@ Feature: Deck lists the pull requests on your plate
     When I switch to Files A–Z
     Then the changed files show in path order
 
+  Scenario: Read a pull request's summary and go to a line's hunk
+    Given the local API built the requested pull request's guide
+    When I open Deck
+    And I open the requested pull request summary
+    Then the summary names the linked ticket, the kinds and each section's lines
+    When I follow the summary's line about the test
+    Then the test's hunk is in view and focused
+
   Scenario: Read a pull request's guide on a narrow screen
     Given the local API built the requested pull request's guide
     When I open Deck on a narrow screen
