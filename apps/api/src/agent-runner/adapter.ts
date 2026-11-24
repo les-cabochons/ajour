@@ -94,6 +94,12 @@ export interface ConversationCodec {
   interrupt(): string[];
   /** What one stdout line says, and the lines to answer it with. */
   read(line: string): { events: ConversationEvent[]; reply: string[] };
+  /**
+   * What one stderr line says, and the lines to answer it with, for a CLI
+   * that reports some failures only in its log. Absent when stderr only
+   * shows the CLI is at work.
+   */
+  readError?(line: string): { events: ConversationEvent[]; reply: string[] };
 }
 
 /**

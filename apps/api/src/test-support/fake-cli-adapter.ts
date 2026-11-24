@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { claudeCodeAdapter } from "../agent-runner/adapters/claude-code.ts";
 import { codexAdapter } from "../agent-runner/adapters/codex.ts";
+import { opencodeAdapter } from "../agent-runner/adapters/opencode.ts";
 import type {
   AgentCliAdapter,
   ConversationAdapter,
@@ -117,6 +118,27 @@ export function fakeCodexAdapter(
     ...codexAdapter,
     conversation: fakeConversation(
       codexAdapter.conversation!,
+      report,
+      mcpUrl,
+      conversation,
+    ),
+  };
+}
+
+/**
+ * OpenCode, played by the fake CLI, for a pull request's conversation: one
+ * warm `acp` process that speaks the Agent Client Protocol. The runner
+ * looks it up as `opencode`.
+ */
+export function fakeOpencodeAdapter(
+  report: string,
+  mcpUrl: () => string,
+  conversation: FakeConversation,
+): AgentCliAdapter {
+  return {
+    ...opencodeAdapter,
+    conversation: fakeConversation(
+      opencodeAdapter.conversation!,
       report,
       mcpUrl,
       conversation,

@@ -239,7 +239,7 @@ export class AgentConversations {
     }
     if (!adapter.conversation) {
       throw new AgentRunError(
-        `${adapter.label} can't hold a conversation about a pull request yet. Pick Claude Code or Codex in Settings > Agents.`,
+        `${adapter.label} can't hold a conversation about a pull request. Pick another agent in Settings > Agents.`,
         400,
       );
     }
@@ -651,9 +651,10 @@ export class AgentConversations {
       onLine: (line) => {
         if (cli) this.onLine(conversation, cli, line);
       },
-      // Progress and retries on stderr show the CLI is still at work.
-      onErrorLine: () => {
-        if (cli) this.onActivity(conversation, cli);
+      // Progress and retries on stderr show the CLI is still at work. Some
+      // CLIs report a failure only there.
+      onErrorLine: (line) => {
+        if (cli) this.onErrorLine(conversation, cli, line);
       },
     });
     cli = {
@@ -684,6 +685,18 @@ export class AgentConversations {
     const { events, reply } = cli.codec.read(line);
     cli.proc.write(reply);
     this.onActivity(conversation, cli);
+    for (const event of events) this.onEvent(conversation, cli, event);
+  }
+
+  private onErrorLine(
+    conversation: Conversation,
+    cli: ConversationProcess,
+    line: string,
+  ) {
+    this.onActivity(conversation, cli);
+    if (!cli.codec.readError) return;
+    const { events, reply } = cli.codec.readError(line);
+    cli.proc.write(reply);
     for (const event of events) this.onEvent(conversation, cli, event);
   }
 

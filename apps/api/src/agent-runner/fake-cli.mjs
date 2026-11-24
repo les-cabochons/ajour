@@ -33,6 +33,17 @@
 // { codexTurn }; { "codexMessage": "<text>" } prints a completed agent
 // message; { "codexDone": true } completes the turn, and
 // { "codexDone": "<message>" } fails it.
+//
+// OpenCode's `acp` process speaks the Agent Client Protocol: it answers
+// initialize, session/new with the ID { "acpSession": "<id>" } names (or
+// "ses-fake"), and session/load, which replays an earlier answer first, or
+// fails when a step is { "acpLoadFails": true }. { "acpReadTurn": true }
+// waits for the next session/prompt and reports its text as { acpTurn }, and
+// exits 0 once stdin ends; { "acpStream": ["Hel", "lo"] } sends each piece as
+// a message chunk; { "acpToolCall": true } sends a tool call;
+// { "acpWaitForCancel": true } waits for session/cancel; { "acpDone": true }
+// answers the prompt, as cancelled after a cancel, and
+// { "acpDone": "<message>" } fails it.
 import { spawn } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -57,7 +68,7 @@ const settleStdin = () => {
   }
 };
 let stdinReader;
-const nextLine = () => {
+const readStdin = () => {
   stdinReader ??= createInterface({ input: process.stdin })
     .on("line", (line) => {
       let parsed = line;
@@ -67,6 +78,8 @@ const nextLine = () => {
         // Not JSON: the report keeps the text.
       }
       report({ stdin: parsed });
+      // ACP's setup requests are answered as they come.
+      if (acp && answerAcpSetup(parsed)) return;
       stdinLines.push(parsed);
       settleStdin();
     })
@@ -74,6 +87,9 @@ const nextLine = () => {
       stdinEnded = true;
       settleStdin();
     });
+};
+const nextLine = () => {
+  readStdin();
   return new Promise((resolve) => {
     stdinWaiters.push(resolve);
     settleStdin();
@@ -88,6 +104,51 @@ const resumed = argv.includes("--resume")
     ? argv.at(-2)
     : undefined;
 let codexItems = 0;
+
+const steps = JSON.parse(process.env.FAKE_CLI_SCRIPT ?? "[]");
+const acp = argv[0] === "acp";
+let acpSessionId =
+  steps.find((step) => step.acpSession)?.acpSession ?? "ses-fake";
+let acpPromptId;
+let acpCancelled = false;
+const acpUpdate = (update) =>
+  print({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: acpSessionId, update },
+  });
+const acpChunk = (text) =>
+  acpUpdate({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text },
+  });
+/** Answers initialize, session/new and session/load. True when it did. */
+function answerAcpSetup(message) {
+  const answer = (result) => print({ jsonrpc: "2.0", id: message.id, result });
+  if (message?.method === "initialize") {
+    answer({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
+  } else if (message?.method === "session/new") {
+    answer({ sessionId: acpSessionId });
+  } else if (message?.method === "session/load") {
+    if (steps.some((step) => step.acpLoadFails)) {
+      print({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: {
+          code: -32603,
+          message: "Internal error: OpenCode service failure",
+        },
+      });
+    } else {
+      acpSessionId = message.params.sessionId;
+      acpChunk("An earlier answer");
+      answer(null);
+    }
+  } else {
+    return false;
+  }
+  return true;
+}
 
 const probe = process.env.FAKE_CLI_SECRET_PROBE;
 if (process.env.FAKE_CLI_REPORT) {
@@ -115,7 +176,7 @@ if (process.env.FAKE_CLI_REPORT) {
     }) + "\n",
   );
 }
-const steps = JSON.parse(process.env.FAKE_CLI_SCRIPT ?? "[]");
+if (acp) readStdin();
 let mcpRequestId = 0;
 for (const step of steps) {
   if (step.mcp) {
@@ -189,6 +250,52 @@ for (const step of steps) {
         ? { type: "turn.failed", error: { message: step.codexDone } }
         : { type: "turn.completed", usage: {} },
     );
+  }
+  if (step.acpReadTurn) {
+    let line = await nextLine();
+    while (line !== null && line?.method !== "session/prompt") {
+      line = await nextLine();
+    }
+    if (line === null) process.exit(0);
+    acpPromptId = line.id;
+    report({ acpTurn: line.params.prompt.map((block) => block.text).join("") });
+  }
+  for (const text of step.acpStream ?? []) acpChunk(text);
+  if (step.acpToolCall) {
+    acpUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "call_1",
+      title: "ajour_read_hunks",
+      status: "pending",
+    });
+  }
+  if (step.acpWaitForCancel) {
+    let line = await nextLine();
+    while (line !== null && line?.method !== "session/cancel") {
+      line = await nextLine();
+    }
+    if (line === null) process.exit(0);
+    acpCancelled = true;
+  }
+  if (step.acpDone !== undefined) {
+    print(
+      typeof step.acpDone === "string"
+        ? {
+            jsonrpc: "2.0",
+            id: acpPromptId,
+            error: {
+              code: -32603,
+              message: "Internal error",
+              data: { message: step.acpDone },
+            },
+          }
+        : {
+            jsonrpc: "2.0",
+            id: acpPromptId,
+            result: { stopReason: acpCancelled ? "cancelled" : "end_turn" },
+          },
+    );
+    acpCancelled = false;
   }
   if (step.session) {
     print({
