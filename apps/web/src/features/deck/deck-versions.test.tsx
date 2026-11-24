@@ -21,6 +21,11 @@ import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
+import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../../tests/fixtures/pull-requests";
@@ -321,6 +326,155 @@ it("keeps only the hunks changed since your review, marks them, and folds the un
 
   fireEvent.click(since);
   expect(hunkNames(changes)).toHaveLength(3);
+});
+
+/**
+ * A huge pull request at "two" (#790): 700 hunks in its first concern, of
+ * which v2 changed the first 600, then a config hunk it left untouched and
+ * a changed docs hunk.
+ */
+const hugeAt = (headSha: string): DeckOpenedPullRequest => {
+  const file = (path: string, hunks: ReturnType<typeof hunk>[]) => ({
+    path,
+    status: "modified" as const,
+    binary: false,
+    hunks,
+  });
+  const big = Array.from({ length: 700 }, (_, index) =>
+    hunk(`src/big.ts#${index}`, index + 1, ["-a", "+A"]),
+  );
+  return {
+    headSha,
+    baseSha: "base",
+    files: [
+      file("src/big.ts", big),
+      file("src/config.ts", [hunk("src/config.ts#0", 3, ["-c", "+C"])]),
+      file("src/docs.ts", [hunk("src/docs.ts#0", 5, ["-d", "+D"])]),
+    ],
+    guide: {
+      madeWith: "code",
+      concerns: [
+        {
+          id: "g1",
+          title: "Handle the request",
+          rationale: "The handler.",
+          hunkIds: big.map((entry) => entry.id),
+        },
+        {
+          id: "g2",
+          title: "Read the config",
+          rationale: "The setting.",
+          hunkIds: ["src/config.ts#0"],
+        },
+        {
+          id: "g3",
+          title: "Document it",
+          rationale: "The docs.",
+          hunkIds: ["src/docs.ts#0"],
+        },
+      ],
+    },
+  };
+};
+
+it("marks the changed hunks and folds the untouched concerns on a huge pull request too", async () => {
+  vi.mocked(api.openDeckPullRequest).mockImplementation(
+    async (_plugin, _connection, request) => hugeAt(request.headSha ?? "two"),
+  );
+  vi.mocked(api.readDeckSinceReview).mockResolvedValue({
+    head: "two",
+    reviewedHead: "one",
+    version: 2,
+    reviewedVersion: 1,
+    changed: [
+      ...Array.from({ length: 600 }, (_, index) => ({
+        hunkId: `src/big.ts#${index}`,
+        version: 2,
+      })),
+      { hunkId: "src/docs.ts#0", version: 2 },
+    ],
+  });
+  // A 900px scroller whose rows are 100px high: about a dozen mount.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-versions", width: 1000, height: 60 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (element) makeScrollable(element);
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const scroller = screen.getByTestId("scroller");
+    const changes = screen.getByRole("region", { name: "Changes" });
+    await within(changes).findByRole("heading", {
+      name: "Concern 1: Handle the request",
+    });
+    const rows = () =>
+      changes.querySelector(".deck-review-sections[data-virtual]");
+    const headings = () =>
+      within(changes)
+        .queryAllByRole("heading", { level: 3 })
+        .map((heading) => heading.textContent);
+    const since = await within(versionsBar(changes)).findByRole("button", {
+      name: "Changes since your review 601",
+    });
+
+    // Only the rows near the screen mount, and each changed one says when.
+    expect(rows()).not.toBeNull();
+    expect(hunkNames(changes).length).toBeLessThan(30);
+    expect(within(changes).getAllByText("Changed in v2")).toHaveLength(
+      hunkNames(changes).length,
+    );
+    scrollElement(scroller, { top: 200_000 });
+    await waitFor(() =>
+      expect(hunkNames(changes)).toContain("src/config.ts, line 3"),
+    );
+    expect(hunkNames(changes)).toContain("src/big.ts, line 700");
+    // The untouched hunks carry no chip.
+    expect(within(changes).getAllByText("Changed in v2").length).toBeLessThan(
+      hunkNames(changes).length,
+    );
+
+    fireEvent.click(since);
+
+    // Still mounted row by row, with fewer rows: the end of the list now
+    // holds the last changed hunk of the first concern, then the docs.
+    expect(rows()).not.toBeNull();
+    scrollElement(scroller, { top: 0 });
+    await waitFor(() =>
+      expect(headings()).toContain("Concern 1: Handle the request"),
+    );
+    expect(within(changes).getByText("600 of 700 changed")).toBeTruthy();
+    scrollElement(scroller, { top: 200_000 });
+    await waitFor(() => expect(headings()).toContain("Concern 3: Document it"));
+    expect(headings()).not.toContain("Concern 2: Read the config");
+    expect(hunkNames(changes)).toContain("src/big.ts, line 600");
+    expect(hunkNames(changes)).not.toContain("src/big.ts, line 700");
+    expect(hunkNames(changes)).not.toContain("src/config.ts, line 3");
+    expect(within(changes).getAllByText("Changed in v2")).toHaveLength(
+      hunkNames(changes).length,
+    );
+    expect(
+      within(changes).getByText("Unchanged since your review:").parentElement!
+        .textContent,
+    ).toBe("Unchanged since your review:2Read the config");
+  } finally {
+    restore();
+  }
 });
 
 it("says when nothing changed since your review, with a way back to every hunk", async () => {

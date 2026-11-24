@@ -4769,6 +4769,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             listed: facts.listed,
             concern_count: opened.guide?.concerns.length,
             guide_built: opened.guide !== null,
+            guide_skipped: opened.guideSkipped !== undefined,
           },
         });
         writeJson(response, 200, opened);
@@ -4932,6 +4933,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({
           deck: {
             queued_count: preloaded.queued,
+            guide_skipped_count: preloaded.guideSkippedCount,
             file_read_count: preloaded.fileReadCount,
             failed_count: preloaded.failed,
           },

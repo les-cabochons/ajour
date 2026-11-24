@@ -6,6 +6,7 @@ import type {
 import type {
   DeckFile,
   DeckGuide,
+  DeckGuideSkipped,
   DeckOpenedPullRequest,
   DeckOpenRequest,
   DeckPullRequestDiff,
@@ -49,7 +50,8 @@ import {
  * opened or preloaded before opens again without reading a file, and one
  * opened at the head the window's last sync saw doesn't ask the code host at
  * all. The pull request on screen is also kept in memory until another one
- * opens, and the cache never evicts it.
+ * opens, and the cache never evicts it. A pull request with more hunks than
+ * a guide is built for gets none, and the pipeline doesn't run (#790).
  */
 
 /** The code host operations Deck calls itself. */
@@ -87,6 +89,8 @@ export interface DeckOpened {
 export interface DeckPreloaded {
   /** The guide builds queued. A pull request already cached is not read again. */
   queued: number;
+  /** The pull requests read and kept with no guide build: they have too many hunks. */
+  guideSkippedCount: number;
   fileReadCount: number;
   /** The pull requests that couldn't be read, and were skipped. */
   failed: number;
@@ -189,6 +193,30 @@ async function runWhenFree<Operation extends DeckOperation>(
       check();
     }
   }
+}
+
+/**
+ * The most hunks Deck builds a guide for (#790). Above it the pipeline
+ * doesn't run: its syntax parsing and pair scoring would take over 10
+ * seconds and hundreds of megabytes, growing with the square of the hunks
+ * (36 s and 966 MB at 3,090), so the page shows the files A–Z.
+ */
+export const DECK_GUIDE_HUNK_LIMIT = 1_000;
+
+/**
+ * Why the diff gets no guide: it has more hunks than a guide is built for,
+ * so neither syntax parsing nor scoring runs (#790).
+ */
+function guideSkippedFor(
+  diff: DeckPullRequestDiff,
+): DeckGuideSkipped | undefined {
+  const hunks = diff.files.reduce(
+    (count, file) => count + file.hunks.length,
+    0,
+  );
+  return hunks > DECK_GUIDE_HUNK_LIMIT
+    ? { reason: "too_many_hunks", hunkLimit: DECK_GUIDE_HUNK_LIMIT }
+    : undefined;
 }
 
 /** One version of a changed file: its text, or that it is binary. */
@@ -458,7 +486,10 @@ interface Entry {
   diff: Promise<DeckPullRequestDiff>;
   /** What its guide is built from: the diff and both versions of each file. */
   input: Promise<GuideBuildInput>;
-  /** Null when the pipeline failed. It rejects only when the build was cancelled. */
+  /**
+   * Null when the pipeline failed, or didn't run for too many hunks. It
+   * rejects only when the build was cancelled.
+   */
   guide: Promise<DeckGuide | null>;
   /** The guide failed: the next open of the same pull request builds it again. */
   guideFailed?: boolean;
@@ -552,6 +583,17 @@ export function createDeckService(options: {
     }
   };
 
+  /**
+   * The pull requests known to have too many hunks for a guide, so a
+   * preload doesn't read one from the cache again to find it has none.
+   */
+  const overGuideLimit = new Set<string>();
+  const overLimit = (key: DeckCacheKey, diff: DeckPullRequestDiff) => {
+    if (!guideSkippedFor(diff)) return false;
+    overGuideLimit.add(deckCacheKeyString(key));
+    return true;
+  };
+
   const opensDone = async () => {
     while (opening.size) await Promise.allSettled([...opening]);
   };
@@ -566,7 +608,7 @@ export function createDeckService(options: {
     input: GuideBuildInput,
     priority: "open" | "preload",
     signal?: AbortSignal,
-  ) => {
+  ): Promise<DeckGuide | null> => {
     const guide = guideOrNull(
       guides.build(deckCacheKeyString(key), input, priority, signal),
     );
@@ -595,10 +637,17 @@ export function createDeckService(options: {
       throw error;
     }
     if (entry.stop.signal.aborted) throw stopped(entry.stop.signal);
+    const guideSkipped = guideSkippedFor(diff);
     // The pull request stays on screen, and kept from eviction, without a
-    // guide; opening it again builds the guide again.
-    if (guide === null && entry.guide === building) entry.guideFailed = true;
-    return { opened: { ...diff, guide }, ...facts };
+    // guide; opening it again builds the guide again. One with too many
+    // hunks never gets one.
+    if (guide === null && !guideSkipped && entry.guide === building) {
+      entry.guideFailed = true;
+    }
+    return {
+      opened: { ...diff, guide, ...(guideSkipped ? { guideSkipped } : {}) },
+      ...facts,
+    };
   };
 
   /** The pull request on screen, opened again: a guide that failed is built again. */
@@ -628,9 +677,10 @@ export function createDeckService(options: {
       id: deckCacheKeyString(found.key),
       diff: Promise.resolve(found.diff),
       input: Promise.resolve(found.guideInput),
-      guide: found.guide
-        ? Promise.resolve(found.guide)
-        : buildGuide(found.key, found.guideInput, "open", stop.signal),
+      guide:
+        found.guide || overLimit(found.key, found.diff)
+          ? Promise.resolve(found.guide)
+          : buildGuide(found.key, found.guideInput, "open", stop.signal),
       stop,
     };
     entry.guide.catch(() => {});
@@ -734,7 +784,9 @@ export function createDeckService(options: {
       guide: built.then((result) => {
         checkConnection(work);
         void cache.put(key, result, generation);
-        return buildGuide(key, result.guideInput, "open", stop.signal);
+        return overLimit(key, result.diff)
+          ? null
+          : buildGuide(key, result.guideInput, "open", stop.signal);
       }),
       stop,
     };
@@ -760,7 +812,7 @@ export function createDeckService(options: {
   ): Promise<Omit<DeckPreloaded, "failed">> {
     const { source, generation, stop } = work;
     const ref = { repository: request.repository, number: request.number };
-    const skipped = { queued: 0, fileReadCount: 0 };
+    const skipped = { queued: 0, guideSkippedCount: 0, fileReadCount: 0 };
     // Its batch's connection removed, it reads, caches and builds nothing more.
     const check = () => checkConnection(work);
     /**
@@ -773,12 +825,15 @@ export function createDeckService(options: {
       const peeked = await cache.peek(key);
       check();
       if (!peeked) return undefined;
-      if (peeked.hasGuide) return skipped;
+      if (peeked.hasGuide || overGuideLimit.has(deckCacheKeyString(key))) {
+        return skipped;
+      }
       const found = await cache.get(key);
       check();
       if (!found) return undefined;
+      if (overLimit(key, found.diff)) return skipped;
       void buildGuide(key, found.guideInput, "preload");
-      return { queued: 1, fileReadCount: 0 };
+      return { queued: 1, guideSkippedCount: 0, fileReadCount: 0 };
     };
     await opensDone();
     check();
@@ -809,13 +864,17 @@ export function createDeckService(options: {
     check();
     // An open of the same pull request may have read it meanwhile.
     if (onScreen?.id === deckCacheKeyString(key)) {
-      return { queued: 0, fileReadCount: result.fileReadCount };
+      return { ...skipped, fileReadCount: result.fileReadCount };
     }
     await cache.put(key, result, generation);
     // The connection may have gone while the write waited its turn.
     check();
+    const { fileReadCount } = result;
+    if (overLimit(key, result.diff)) {
+      return { queued: 0, guideSkippedCount: 1, fileReadCount };
+    }
     void buildGuide(key, result.guideInput, "preload");
-    return { queued: 1, fileReadCount: result.fileReadCount };
+    return { queued: 1, guideSkippedCount: 0, fileReadCount };
   }
 
   /**
@@ -1068,7 +1127,12 @@ export function createDeckService(options: {
     ): Promise<DeckPreloaded> {
       const work = beginWork(source, codeHost);
       const run = preloading.then(async () => {
-        const total = { queued: 0, fileReadCount: 0, failed: 0 };
+        const total = {
+          queued: 0,
+          guideSkippedCount: 0,
+          fileReadCount: 0,
+          failed: 0,
+        };
         let firstError: unknown;
         try {
           for (const request of requests) {
@@ -1076,6 +1140,7 @@ export function createDeckService(options: {
             try {
               const one = await preloadOne(work, request, codeHost);
               total.queued += one.queued;
+              total.guideSkippedCount += one.guideSkippedCount;
               total.fileReadCount += one.fileReadCount;
             } catch (error) {
               if (error instanceof DeckConnectionRemoved) throw error;

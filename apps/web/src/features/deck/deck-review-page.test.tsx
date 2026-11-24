@@ -24,6 +24,11 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
+import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../../tests/fixtures/pull-requests";
@@ -45,7 +50,12 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   readPullRequestVersions: vi.fn(),
   readDeckSinceReview: vi.fn(),
 }));
-vi.mock("@pierre/diffs/react", () => ({
+// Highlighting runs in the window here: jsdom has no workers.
+vi.mock("@/components/diff-highlighter", () => ({
+  diffWorkerPool: () => undefined,
+}));
+vi.mock("@pierre/diffs/react", async () => ({
+  WorkerPoolContext: (await import("react")).createContext(undefined),
   PatchDiff: ({
     patch,
     options,
@@ -325,6 +335,32 @@ it("opens the pull request and shows its title and every hunk, files A–Z, with
     number: 1,
     headSha: "one",
   });
+});
+
+it("says the guide isn't built for a pull request with too many hunks, and shows its files A–Z", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...DIFF,
+    guideSkipped: { reason: "too_many_hunks", hunkLimit: 1_000 },
+  });
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  await within(changes).findByRole("heading", { name: "src/api.ts" });
+  expect(within(changes).getByRole("heading", { level: 2 }).textContent).toBe(
+    "Files3",
+  );
+  expect(
+    within(changes).getByText(
+      "This pull request has more than 1,000 hunks, too many to build a guide, so the files show A–Z.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(changes).queryByText(
+      "The guide couldn't be built, so the files show A–Z.",
+    ),
+  ).toBeNull();
+  expect(within(changes).queryByRole("group", { name: "Order" })).toBeNull();
 });
 
 it("mounts nothing per line at rest, and draws a hunk with wrapped lines once it nears the screen", async () => {
@@ -730,7 +766,8 @@ it("floats each thread in the gutter beside its line from 1,100px, and places it
   await waitFor(() => expect(card("on-b").style.top).toBe("136px"));
   expect(hunks[0]!.querySelector("[data-thread-anchor='on-b']")).toBeTruthy();
   expect(within(hunks[0]!).queryByRole("article")).toBeNull();
-  expect(log.join(" ")).toMatch(/^((read )+write write ?)+$/);
+  // Only the connector that moved is written again: the other card stays.
+  expect(log.join(" ")).toMatch(/^((read )+write ?)+$/);
 
   // Hovering a card highlights its line, and its connector.
   fireEvent.mouseEnter(within(card("on-b")).getByRole("article"));
@@ -1107,4 +1144,105 @@ it("floats each thread beside its line in its concern, and hides it while its hu
   fireEvent.click(within(changes).getByRole("button", { name: "Files A–Z" }));
   await waitFor(() => expect(card("on-b").style.top).toBe("137px"));
   expect(card("on-y").style.top).toBe("217px");
+});
+
+/** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
+const HUGE: DeckOpenedPullRequest = {
+  headSha: "head",
+  baseSha: "base",
+  guide: null,
+  files: [
+    {
+      path: "src/big.ts",
+      status: "modified",
+      binary: false,
+      hunks: Array.from({ length: 600 }, (_, index) =>
+        hunk(`src/big.ts#${index}`, `@@ -${index + 1},1 +${index + 1},1 @@`, [
+          "-a",
+          "+A",
+        ]),
+      ),
+    },
+  ],
+};
+
+it("shows a huge pull request's threads only while their hunks are mounted, and places them again as they come back", async () => {
+  windowWideEnoughForTheGutter(true);
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [
+      reviewThread("first", { path: "src/big.ts", line: 1 }),
+      reviewThread("last", { path: "src/big.ts", line: 600 }),
+    ],
+  });
+  // A 900px scroller whose rows are 100px high: about a dozen mount.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (element) makeScrollable(element);
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const scroller = screen.getByTestId("scroller");
+    const gutter = await screen.findByRole("complementary", {
+      name: "Review threads",
+    });
+    // The gutter holds only the cards of mounted hunks: one off screen
+    // isn't there at all.
+    const placed = (id: string) =>
+      gutter
+        .querySelector<HTMLElement>(`[data-card="${id}"]`)
+        ?.hasAttribute("data-placed") ?? false;
+    const connected = (id: string) =>
+      document.querySelector(`[data-connector="${id}"]`)?.hasAttribute("d") ??
+      false;
+    const cards = () =>
+      [...gutter.querySelectorAll<HTMLElement>("[data-card]")].map(
+        (card) => card.dataset.card,
+      );
+    const mounted = (index: number) =>
+      document.querySelector(`[data-hunk="src/big.ts#${index}"]`) !== null;
+
+    // The first hunk is on screen and the last isn't: only the first
+    // thread shows, joined to its line.
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(mounted(599)).toBe(false);
+    expect(placed("last")).toBe(false);
+    expect(connected("first")).toBe(true);
+    expect(connected("last")).toBe(false);
+    expect(cards()).toEqual(["first"]);
+
+    // Scrolled to the end, the first hunk unmounts and the last mounts.
+    scrollElement(scroller, { top: 61_000 });
+    await waitFor(() => expect(placed("last")).toBe(true));
+    expect(mounted(0)).toBe(false);
+    expect(placed("first")).toBe(false);
+    expect(connected("first")).toBe(false);
+    expect(connected("last")).toBe(true);
+    expect(cards()).toEqual(["last"]);
+
+    // Back at the top, the first thread shows again.
+    scrollElement(scroller, { top: 0 });
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(placed("last")).toBe(false);
+    expect(connected("last")).toBe(false);
+  } finally {
+    restore();
+  }
 });

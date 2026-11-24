@@ -11,6 +11,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type {
   DiffLineAnnotation,
   FileDiffOptions,
+  PatchDiffProps,
   SelectedLineRange,
 } from "@pierre/diffs/react";
 
@@ -19,7 +20,8 @@ import type {
  * Each hunk mounts only when it nears the screen: until then it is an empty
  * box as tall as its lines, so a pull request with thousands of hunks
  * mounts nothing per line at rest. One observer watches every hunk, and the
- * library loads with the first hunk that mounts.
+ * library loads with the first hunk that mounts. Its lines are highlighted
+ * in the library's worker pool (`diff-highlighter.ts`).
  */
 
 /** What a line annotation carries: the key of what it shows. */
@@ -28,8 +30,21 @@ interface AnnotationData {
 }
 
 const PatchDiff = lazy(async () => {
-  const { PatchDiff } = await import("@pierre/diffs/react");
-  return { default: PatchDiff<AnnotationData, undefined> };
+  const [{ PatchDiff, WorkerPoolContext }, { diffWorkerPool }] =
+    await Promise.all([
+      import("@pierre/diffs/react"),
+      import("./diff-highlighter"),
+    ]);
+  const pool = diffWorkerPool();
+  // Every hunk highlights in the shared worker pool.
+  function HighlightedPatch(props: PatchDiffProps<AnnotationData, undefined>) {
+    return (
+      <WorkerPoolContext.Provider value={pool}>
+        <PatchDiff<AnnotationData, undefined> {...props} />
+      </WorkerPoolContext.Provider>
+    );
+  }
+  return { default: HighlightedPatch };
 });
 
 /** How far below or above the screen a hunk mounts, so scrolling finds it drawn. */

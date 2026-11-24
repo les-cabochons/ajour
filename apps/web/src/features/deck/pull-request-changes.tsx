@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+  type RefObject,
+} from "react";
 import type { CodeHostVersion, CodeHostVersionsResult } from "@ajour/shared";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
@@ -6,10 +15,13 @@ import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  noGuideNote,
   reviewSections,
   sectionToReach,
   toggleViewed,
+  virtualized,
   type ReviewOrder,
+  type ReviewSection,
 } from "@/domain/deck/guide";
 import type {
   PlacedThread,
@@ -21,6 +33,12 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
+import {
+  atEnd,
+  readingOffset,
+  scrollerOf,
+  type SectionNavigator,
+} from "./review-scroll";
 import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
 import type {
@@ -28,32 +46,76 @@ import type {
   SinceReviewState,
 } from "./use-pull-request-read";
 import { NewPushesBanner, VersionsBar } from "./versions-bar";
+import { VirtualReviewSections } from "./virtual-review-sections";
 
-/**
- * Where a section scrolled to lands below the sticky versions bar, as
- * `scroll-margin-top` in styles/deck.css.
- */
-const SECTION_MARGIN = 16;
-/** The versions bar the sections land below, within the changes. */
-const VERSIONS_BAR = ".deck-versions";
-
-/** The element that scrolls `element`, or undefined for the window. */
-function scrollerOf(element: HTMLElement) {
-  for (
-    let parent = element.parentElement;
-    parent;
-    parent = parent.parentElement
-  ) {
-    const { overflowY } = getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll") return parent;
-  }
-  return undefined;
-}
-
-/** Whether `scroller`, or the window, is scrolled to its end. */
-function atEnd(scroller: HTMLElement | undefined) {
-  const box = scroller ?? document.scrollingElement;
-  return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+/** Every section mounted, for a pull request that isn't huge. */
+function MountedReviewSections({
+  sections,
+  viewed,
+  theme,
+  onToggleViewed,
+  navigator,
+  listRef,
+  bySection,
+  floating,
+  hovered,
+  hoveredSection,
+  onHover,
+  onAnchor,
+  changed,
+}: {
+  sections: readonly ReviewSection[];
+  viewed: ReadonlySet<string>;
+  theme: "light" | "dark";
+  onToggleViewed: (hunkId: string) => void;
+  navigator: Ref<SectionNavigator>;
+  /** The sections' column, which the gutter beside it follows. */
+  listRef: RefObject<HTMLDivElement | null>;
+  /** Each section's review threads, by its key. */
+  bySection: ReadonlyMap<string, readonly PlacedThread[]>;
+  floating: boolean;
+  hovered: string | undefined;
+  /** The key of the section holding the hovered thread. */
+  hoveredSection: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+  onAnchor: (element: HTMLElement | null) => void;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
+}) {
+  const all = () => [
+    ...(listRef.current?.querySelectorAll<HTMLElement>(
+      `[${SECTION_ATTRIBUTE}]`,
+    ) ?? []),
+  ];
+  useImperativeHandle(navigator, () => ({
+    tops: () => all().map((section) => section.getBoundingClientRect().top),
+    reach(index) {
+      const section = all()[index];
+      if (!section) return;
+      // Instant, so a second J reads where the first one landed.
+      section.scrollIntoView({ block: "start", behavior: "instant" });
+      section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    },
+  }));
+  return (
+    <div ref={listRef} className="deck-review-sections">
+      {sections.map((section) => (
+        <ReviewSectionView
+          key={section.key}
+          section={section}
+          viewed={viewed}
+          theme={theme}
+          onToggleViewed={onToggleViewed}
+          placed={bySection.get(section.key)}
+          floating={floating}
+          hovered={hoveredSection === section.key ? hovered : undefined}
+          onHover={onHover}
+          onAnchor={onAnchor}
+          changed={changed}
+        />
+      ))}
+    </div>
+  );
 }
 
 /** Where the review page shows the review threads, as `PullRequestReview` works it out. */
@@ -137,35 +199,27 @@ function ReviewChanges({
     [],
   );
   const [treeOpen, setTreeOpen] = useState(false);
-  const list = useRef<HTMLDivElement>(null);
+  const review = useRef<HTMLDivElement>(null);
+  const navigator = useRef<SectionNavigator>(null);
+  // A huge pull request mounts only the rows near the screen (#790).
+  const huge = useMemo(() => virtualized(sections), [sections]);
 
   /** The section J, K or a tick went to last. */
   const reached = useRef<number | undefined>(undefined);
   const reach = useCallback((index: number) => {
-    const section = list.current?.querySelectorAll<HTMLElement>(
-      `[${SECTION_ATTRIBUTE}]`,
-    )[index];
-    if (!section) return;
+    if (index < 0 || !navigator.current) return;
     reached.current = index;
-    // Instant, so a second J reads where the first one landed.
-    section.scrollIntoView({ block: "start", behavior: "instant" });
-    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    navigator.current.reach(index);
   }, []);
   const step = (direction: 1 | -1) => {
-    const element = list.current;
-    if (!element) return;
+    const element = review.current;
+    if (!element || !navigator.current) return;
     // One read pass on each key press; nothing listens to the scroll.
-    const tops = [
-      ...element.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`),
-    ].map((section) => section.getBoundingClientRect().top);
+    const tops = navigator.current.tops();
     const scroller = scrollerOf(element);
     const target = sectionToReach(
       tops,
-      (scroller?.getBoundingClientRect().top ?? 0) +
-        (element
-          .closest(".deck-changes")
-          ?.querySelector<HTMLElement>(VERSIONS_BAR)?.offsetHeight ?? 0) +
-        SECTION_MARGIN,
+      (scroller?.getBoundingClientRect().top ?? 0) + readingOffset(element),
       direction,
       atEnd(scroller) ? reached.current : undefined,
     );
@@ -175,10 +229,21 @@ function ReviewChanges({
   useShortcut("deck.previous-concern", () => step(-1));
   useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
 
+  const list = useRef<HTMLDivElement>(null);
   const scheduleRef = useRef<(() => void) | undefined>(undefined);
   const onAnchor = useCallback((element: HTMLElement | null) => {
     if (element) scheduleRef.current?.();
   }, []);
+  // A huge pull request's hunks mount and unmount as the page scrolls, and
+  // the gutter holds the cards of the mounted ones only: thousands of hidden
+  // cards would cost every style and layout pass.
+  const [mountedThreadHunks, setMountedThreadHunks] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const onThreadRowsChange = useCallback(
+    (hunkIds: ReadonlySet<string>) => setMountedThreadHunks(hunkIds),
+    [],
+  );
   const { bySection, sectionOfHunk } = useMemo(() => {
     const sectionOfHunk = new Map<string, string>();
     for (const section of sections)
@@ -210,6 +275,22 @@ function ReviewChanges({
     [placement, sectionOfHunk],
   );
   const gutter = floating && placed.length > 0;
+  const gutterPlaced = useMemo(
+    () =>
+      huge
+        ? placed.filter((entry) => mountedThreadHunks.has(entry.hunkId))
+        : placed,
+    [huge, placed, mountedThreadHunks],
+  );
+  // A hovered card whose hunk scrolled away is no longer under the pointer.
+  useEffect(() => {
+    if (
+      hovered !== undefined &&
+      gutter &&
+      !gutterPlaced.some((entry) => entry.thread.id === hovered)
+    )
+      onHover(undefined);
+  }, [gutter, gutterPlaced, hovered, onHover]);
   // Folding a hunk or changing the order moves the lines, even where the
   // column keeps its height. The gutter places its cards itself as it mounts.
   const laidOut = useRef({ sections, viewed });
@@ -263,34 +344,48 @@ function ReviewChanges({
             <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
           </ToggleGroup>
         ) : pullRequest.files.length ? (
-          <span className="deck-guide-source">
-            The guide couldn't be built, so the files show A–Z.
-          </span>
+          <span className="deck-guide-source">{noGuideNote(pullRequest)}</span>
         ) : null}
       </div>
       {sections.length ? (
-        <div className="deck-review">
+        <div ref={review} className="deck-review">
           <div className="deck-review-grid" data-gutter={gutter || undefined}>
-            <div ref={list} className="deck-review-sections">
-              {sections.map((section) => (
-                <ReviewSectionView
-                  key={section.key}
-                  section={section}
-                  viewed={viewed}
-                  theme={theme}
-                  onToggleViewed={onToggleViewed}
-                  placed={bySection.get(section.key)}
-                  changed={changed}
-                  floating={gutter}
-                  hovered={hoveredSection === section.key ? hovered : undefined}
-                  onHover={onHover}
-                  onAnchor={onAnchor}
-                />
-              ))}
-            </div>
+            {huge ? (
+              <VirtualReviewSections
+                sections={sections}
+                viewed={viewed}
+                theme={theme}
+                onToggleViewed={onToggleViewed}
+                navigator={navigator}
+                listRef={list}
+                placed={placed}
+                floating={gutter}
+                hovered={hovered}
+                onHover={onHover}
+                onAnchor={onAnchor}
+                onThreadRowsChange={onThreadRowsChange}
+                changed={changed}
+              />
+            ) : (
+              <MountedReviewSections
+                sections={sections}
+                viewed={viewed}
+                theme={theme}
+                onToggleViewed={onToggleViewed}
+                navigator={navigator}
+                listRef={list}
+                bySection={bySection}
+                floating={gutter}
+                hovered={hovered}
+                hoveredSection={hoveredSection}
+                onHover={onHover}
+                onAnchor={onAnchor}
+                changed={changed}
+              />
+            )}
             {gutter ? (
               <ThreadGutter
-                placed={placed}
+                placed={gutterPlaced}
                 columnRef={list}
                 hovered={hovered}
                 onHover={onHover}

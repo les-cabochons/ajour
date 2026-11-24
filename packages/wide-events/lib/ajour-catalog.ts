@@ -3134,8 +3134,10 @@ export const catalog = defineCatalog({
           listed: operational<boolean>(),
           /** The guide's concerns. Absent when no guide was built. */
           concern_count: operational<number>(),
-          /** False when the pipeline failed, and the page shows the files A–Z. */
+          /** False when the pipeline failed or didn't run, and the page shows the files A–Z. */
           guide_built: operational<boolean>(),
+          /** True when the pull request has more hunks than a guide is built for, so the pipeline didn't run. */
+          guide_skipped: operational<boolean>(),
         },
       },
     },
@@ -3194,6 +3196,8 @@ export const catalog = defineCatalog({
           pull_request_count: operational<number>(),
           /** The guide builds queued. A pull request already cached is not read again. */
           queued_count: operational<number>(),
+          /** Pull requests read and kept with no guide build: more hunks than a guide is built for. */
+          guide_skipped_count: operational<number>(),
           file_read_count: operational<number>(),
           /** Pull requests that couldn't be read, and were skipped. */
           failed_count: operational<number>(),
