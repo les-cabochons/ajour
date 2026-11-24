@@ -10,6 +10,7 @@ import {
   askGoing,
   failAsk,
   startAsk,
+  stopAsk,
   type AskState,
 } from "@/domain/deck/ask";
 import { watchAgentTurn } from "@/lib/agent-turns";
@@ -21,7 +22,8 @@ import { AppApiError, askDeck, cancelAgentTurn } from "@/lib/app-api";
  * the rows near the screen (#790), so a header scrolled away unmounts: its
  * question, its answer and the turn writing it carry on here, and show
  * again as it comes back. Each ask is keyed by the head it is about and
- * its concern.
+ * its concern. A revoked consent drops the repository's answers, cached
+ * ones too, and stops the asks still waiting for one.
  */
 
 /** The pull request the page asks about, at the head it shows. */
@@ -53,6 +55,10 @@ export interface AskSession {
   turnId?: string;
 }
 
+/** The answer a session shows, its turn's or the cache's, which a revoked consent hides. */
+const holdsAnswer = (session: AskSession) =>
+  !session.composing && !session.awaitingConsent && !askGoing(session.state);
+
 /** The key of `concernId`'s ask at `head`. */
 export function askKey(head: string, concernId: string) {
   return `${head} ${concernId}`;
@@ -72,6 +78,8 @@ export class DeckAskSessions {
   readonly #watching = new Map<string, () => void>();
   /** Whether the page shows, so its asks follow their turns. */
   #attached = false;
+  /** The conversations the asks' turns ran in. */
+  readonly #conversations = new Set<string>();
 
   constructor(
     requestConsent: (request: DeckNeedsConsent) => Promise<ConsentAnswer>,
@@ -164,6 +172,7 @@ export class DeckAskSessions {
           }));
           return;
         }
+        this.#conversations.add(asked.turn.conversationId);
         this.#update(key, () => ({ turnId: asked.turn.id }));
         this.#watch(key, asked.turn.id, target.head);
         return;
@@ -216,6 +225,31 @@ export class DeckAskSessions {
   detach() {
     this.#attached = false;
     for (const key of [...this.#watching.keys()]) this.#unwatch(key);
+  }
+
+  /**
+   * The repository's consent is taken back: its answers, cached or not, show
+   * no more, and an ask still waiting for its answer stops and drops it. A
+   * running turn stops on its own, keeping what came; a question being
+   * written stays, and its ask opens the consent dialog again.
+   */
+  revoke() {
+    for (const [key, session] of [...this.#sessions]) {
+      if (session.composing || session.awaitingConsent) continue;
+      if (holdsAnswer(session)) {
+        this.close(key);
+      } else if (!session.turnId) {
+        this.#bump(key);
+        this.#set(key, { ...session, state: stopAsk(session.state) });
+      }
+    }
+  }
+
+  /** A conversation closed: revoked, it is the repository's consent taken back. */
+  conversationClosed(conversationId: string, reason: string) {
+    if (reason === "revoked" && this.#conversations.has(conversationId)) {
+      this.revoke();
+    }
   }
 
   /** Drops the asks about any head but `head`, which the page no longer shows. */

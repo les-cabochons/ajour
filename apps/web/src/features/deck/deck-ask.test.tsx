@@ -10,10 +10,17 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { AgentTurn, AgentTurnEvent } from "@ajour/shared/agent-runs";
-import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
+import type {
+  DeckAskResponse,
+  DeckOpenedPullRequest,
+} from "@ajour/shared/deck";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { receiveAgentTurnEvent } from "@/lib/agent-turns";
+import {
+  announceDeckConsentRevoked,
+  DECK_CONSENT_REVOKED_STORAGE_KEY,
+} from "@/lib/deck-consent-revocations";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
@@ -713,4 +720,103 @@ it("says why the consent couldn't be recorded", async () => {
     ),
   ).toBeTruthy();
   expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+const BILLING = {
+  pluginId: "github",
+  connectionId: "work",
+  repository: "acme/billing-api",
+};
+
+/** Settings › Agents revokes `repository` in another window, which this one hears through storage. */
+function revokeInAnotherWindow(repository: typeof BILLING) {
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: DECK_CONSENT_REVOKED_STORAGE_KEY,
+        newValue: JSON.stringify({ ...repository, at: Date.now() }),
+      }),
+    );
+  });
+}
+
+it("shows a revoked repository's answer no more once its conversation closes, back from Files A–Z", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t12"),
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  fireEvent.click(screen.getByRole("button", { name: "Files A–Z" }));
+  // Settings › Agents revokes the repository: its conversation closes.
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+
+  const again = await screen.findByRole("region", {
+    name: "Concern 1: Handle the request",
+  });
+  expect(within(again).queryByRole("region", { name: "More detail" })).toBe(
+    null,
+  );
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  expect(moreOn(again).getAttribute("aria-expanded")).toBe("false");
+});
+
+it("hides a cached answer as its repository is revoked in another window", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "Cached long ago.",
+    head: HEAD,
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  await within(concern).findByText("Cached long ago.");
+
+  // Another repository's revocation leaves it.
+  revokeInAnotherWindow({ ...BILLING, repository: "acme/other" });
+  expect(within(concern).getByText("Cached long ago.")).toBeTruthy();
+
+  revokeInAnotherWindow(BILLING);
+  expect(within(concern).queryByText("Cached long ago.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Files A–Z" }));
+  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+  const again = await screen.findByRole("region", {
+    name: "Concern 1: Handle the request",
+  });
+  expect(within(again).queryByText("Cached long ago.")).toBeNull();
+});
+
+it("stops an ask still waiting for its answer when its repository is revoked, and drops the answer that comes after", async () => {
+  let answerLate: (answer: DeckAskResponse) => void = () => {};
+  vi.mocked(api.askDeck).mockReturnValueOnce(
+    new Promise((resolve) => {
+      answerLate = resolve;
+    }),
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  expect(within(answer).getByText("Getting more detail…")).toBeTruthy();
+
+  act(() => announceDeckConsentRevoked(BILLING));
+  expect(within(answer).getByText("Stopped.")).toBeTruthy();
+  await act(async () => {
+    answerLate({ kind: "answer", text: "Sent before the revoke.", head: HEAD });
+  });
+  expect(screen.queryByText("Sent before the revoke.")).toBeNull();
+  expect(within(answer).getByText("Stopped.")).toBeTruthy();
 });

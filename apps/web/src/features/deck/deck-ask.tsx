@@ -19,7 +19,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { askGoing, askText, shortHead } from "@/domain/deck/ask";
+import { watchClosedConversations } from "@/lib/agent-turns";
 import { grantDeckConsent } from "@/lib/app-api";
+import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
 import { DeckConsentDialog } from "./deck-consent-dialog";
 import {
   askKey,
@@ -93,6 +95,24 @@ export function DeckAskProvider({
     return () => sessions.detach();
   }, [sessions]);
   useEffect(() => sessions.keepHead(head), [sessions, head]);
+  // A revoked repository's answers show no more, in this window or another.
+  useEffect(() => {
+    const stopRevocations = watchDeckConsentRevocations((revoked) => {
+      if (
+        revoked.pluginId === pluginId &&
+        revoked.connectionId === connectionId &&
+        revoked.repository === repository
+      )
+        sessions.revoke();
+    });
+    const stopClosed = watchClosedConversations((event) =>
+      sessions.conversationClosed(event.conversationId, event.reason),
+    );
+    return () => {
+      stopRevocations();
+      stopClosed();
+    };
+  }, [sessions, pluginId, connectionId, repository]);
   const answer = async (allowed: boolean) => {
     const current = asking;
     if (!current) return;
