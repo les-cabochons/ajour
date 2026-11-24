@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { Markdown } from "@/components/markdown";
@@ -18,6 +17,10 @@ import {
 } from "@/domain/deck/review-notes";
 import { getShortcutPlatform } from "@/lib/shortcuts";
 import { useShortcut } from "@/lib/shortcut-handlers";
+import {
+  useComposerState,
+  type ReviewComposerState,
+} from "./review-composer-state";
 import { ReviewThreadCard, threadLocation } from "./review-thread-card";
 
 /*
@@ -33,8 +36,13 @@ export interface ReviewNoteActions {
   onHover: (key: string | undefined) => void;
   /** Adds the composer's comment to the draft review, or saves its edit. */
   addToReview: (target: ComposerTarget, body: string) => void;
-  /** Posts the composer's comment at once. Rejects with the reason it failed. */
+  /**
+   * Posts the composer's comment at once, keeping in `composer` that it's
+   * posting, then why it failed or that the code host couldn't tell.
+   */
   commentNow: (target: ComposerTarget, body: string) => Promise<void>;
+  /** What the open composer holds, kept while its hunk scrolls away. */
+  composer: ReviewComposerState;
   cancelComposer: () => void;
   editDraft: (comment: DeckDraftComment) => void;
   removeDraft: (comment: DeckDraftComment) => void;
@@ -128,34 +136,32 @@ export const DraftCommentCard = memo(function DraftCommentCard({
 /**
  * The composer on the lines a "+" picked: **Add to review** (Ctrl+Enter)
  * keeps the comment in the draft review, **Comment now** posts it at once,
- * and a failed post keeps the words with the reason and Retry. Editing a
- * draft comment offers Save instead.
+ * and a failed post keeps the words with the reason and Retry, or Post
+ * again when the code host couldn't tell whether it has it. Editing a
+ * draft comment offers Save instead. Its words live with the page, so a
+ * huge pull request's hunk scrolling away and back keeps them.
  */
 function ReviewComposer({ target }: { target: ComposerTarget }) {
-  const { addToReview, commentNow, cancelComposer } = useNoteActions();
-  const [body, setBody] = useState(target.body);
-  const [posting, setPosting] = useState(false);
-  const [failure, setFailure] = useState<string | undefined>();
+  const { addToReview, commentNow, cancelComposer, composer } =
+    useNoteActions();
+  const { body, posting, failure, uncertain, focus } = useComposerState(
+    composer,
+    target,
+  );
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
+    if (!focus) return;
     field.current?.focus({ preventScroll: true });
-  }, []);
+    composer.update(target, { focus: false });
+  }, [focus, composer, target]);
   const empty = !body.trim();
   const add = () => {
     if (!empty && !posting) addToReview(target, body);
   };
   useShortcut("deck.add-to-review", add);
-  async function postNow() {
-    if (empty || posting) return;
-    setPosting(true);
-    setFailure(undefined);
-    try {
-      await commentNow(target, body);
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : String(error));
-      setPosting(false);
-    }
-  }
+  const postNow = () => {
+    if (!empty && !posting) void commentNow(target, body);
+  };
   const keys = getShortcutPlatform() === "mac" ? "Meta+Enter" : "Control+Enter";
   return (
     <form
@@ -172,7 +178,9 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
         placeholder="Leave a comment"
         value={body}
         rows={3}
-        onChange={(event) => setBody(event.target.value)}
+        onChange={(event) =>
+          composer.update(target, { body: event.target.value })
+        }
         onKeyDown={(event) => {
           if (event.key === "Escape" && !posting) {
             event.preventDefault();
@@ -182,7 +190,7 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
       />
       {failure ? (
         <p role="alert" className="deck-composer-error">
-          Couldn't post the comment: {failure}
+          {uncertain ? failure : `Couldn't post the comment: ${failure}`}
         </p>
       ) : null}
       <div className="deck-note-actions">
@@ -200,9 +208,15 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
             variant="outline"
             size="sm"
             disabled={empty || posting}
-            onClick={() => void postNow()}
+            onClick={postNow}
           >
-            {posting ? "Posting…" : failure ? "Retry" : "Comment now"}
+            {posting
+              ? "Posting…"
+              : uncertain
+                ? "Post again"
+                : failure
+                  ? "Retry"
+                  : "Comment now"}
           </Button>
         )}
         <Button

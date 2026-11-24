@@ -24,7 +24,8 @@ import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
  * name, and the plugin finds what an earlier try left on the code host
  * instead of posting it twice. Changing what the review sends makes it a
  * new submission; the code host taking it clears the name. A retry says
- * when the first try was sent, so the plugin looks back to then. When the
+ * when the first try was sent, a hint for which unmarked post of the
+ * user's may be that try's. When the
  * plugin can't tell whether an earlier try reached the code host, the user
  * chooses to post again, as a new submission.
  *

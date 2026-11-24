@@ -31,6 +31,7 @@ import {
 } from "./pull-request-conversation";
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
+import { ReviewComposerState } from "./review-composer-state";
 import {
   DraftCommentCard,
   ReviewNotesContext,
@@ -65,6 +66,12 @@ export function PullRequestReview({
   const floating = useMediaQuery(DECK_GUTTER_QUERY);
   const [hovered, setHovered] = useState<string | undefined>();
   const [composer, setComposer] = useState<ComposerTarget | undefined>();
+  // The open composer's words, kept while its hunk scrolls away.
+  const [composerState] = useState(() => new ReviewComposerState());
+  const closeComposer = useCallback(() => {
+    composerState.close();
+    setComposer(undefined);
+  }, [composerState]);
 
   const { pluginId, connectionId } = pullRequest;
   const { repository, number } = pullRequest.facts;
@@ -152,7 +159,7 @@ export function PullRequestReview({
   /**
    * Comment now's last try, named: Retry with the same words and lines sends
    * the same name. Like the composer's words, it lives only while the page
-   * is open. Undefined after an uncertain answer, so Retry posts anew.
+   * is open. Undefined after an uncertain answer, so Post again posts anew.
    */
   const commentNowTry = useRef<DeckReviewSubmission | undefined>(undefined);
   const actions = useMemo(
@@ -169,10 +176,11 @@ export function PullRequestReview({
             body,
             lineText: target.lineText,
           });
-        setComposer(undefined);
+        closeComposer();
       },
       commentNow: async (target, body) => {
         if (!headSha) return;
+        composerState.update(target, { posting: true, failure: undefined });
         const anchor = { ...lineAnchor(target), headSha };
         const { submission, fields } = nameSubmission(
           commentNowTry.current,
@@ -194,16 +202,28 @@ export function PullRequestReview({
             ...fields,
           });
         } catch (error) {
-          throw new Error(writeFailure(error, pullRequest));
+          composerState.update(target, {
+            posting: false,
+            failure: writeFailure(error, pullRequest),
+          });
+          return;
         }
         // Taken, or unsettled: the next try is a new post.
         commentNowTry.current = undefined;
-        if ("uncertain" in result)
-          throw new Error(mayAlreadyBeThere("comment", pullRequest));
-        setComposer(undefined);
+        if ("uncertain" in result) {
+          composerState.update(target, {
+            posting: false,
+            failure: mayAlreadyBeThere("comment", pullRequest),
+            uncertain: true,
+          });
+          return;
+        }
+        // Another composer opened meanwhile keeps its words.
+        if (composerState.holds(target)) closeComposer();
         retryConversation();
       },
-      cancelComposer: () => setComposer(undefined),
+      composer: composerState,
+      cancelComposer: closeComposer,
       editDraft: (comment: DeckDraftComment) =>
         setComposer({
           ...lineAnchor(comment),
@@ -213,6 +233,7 @@ export function PullRequestReview({
         }),
       removeDraft: (comment: DeckDraftComment) => {
         localStore.removeDraftComment(ref, comment.id);
+        // The composer on it closes; nothing opens it again.
         setComposer((target) =>
           target?.editing === comment.id ? undefined : target,
         );
@@ -228,6 +249,8 @@ export function PullRequestReview({
       number,
       pullRequest,
       retryConversation,
+      composerState,
+      closeComposer,
     ],
   );
   const outdated = drafts?.elsewhere ?? [];

@@ -228,6 +228,10 @@ function ReviewChanges({
     (hunkIds: ReadonlySet<string>) => setMountedNoteHunks(hunkIds),
     [],
   );
+  // The hunk of the gutter's card holding the focus, such as the composer
+  // being typed in: its row stays mounted however far it scrolls away, as
+  // the row holding the focus does.
+  const [focusedCardHunk, setFocusedCardHunk] = useState<string>();
   const sectionOfHunk = useMemo(() => {
     const map = new Map<string, string>();
     for (const section of sections)
@@ -308,7 +312,21 @@ function ReviewChanges({
       </div>
       {sections.length ? (
         <div ref={review} className="deck-review">
-          <div className="deck-review-grid" data-gutter={gutter || undefined}>
+          <div
+            className="deck-review-grid"
+            data-gutter={gutter || undefined}
+            onFocus={(event) => {
+              const key = (event.target as Element).closest<HTMLElement>(
+                "[data-card]",
+              )?.dataset.card;
+              const hunkId = notes.find((entry) => entry.key === key)?.hunkId;
+              setFocusedCardHunk(hunkId);
+            }}
+            onBlur={(event) => {
+              const next = event.relatedTarget as Element | null;
+              if (!next?.closest("[data-card]")) setFocusedCardHunk(undefined);
+            }}
+          >
             {huge ? (
               <VirtualReviewSections
                 sections={sections}
@@ -323,6 +341,7 @@ function ReviewChanges({
                 onAnchor={onAnchor}
                 onAddComment={onAddComment}
                 onNoteRowsChange={onNoteRowsChange}
+                focusedHunk={focusedCardHunk}
               />
             ) : (
               <MountedReviewSections

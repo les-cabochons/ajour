@@ -23,6 +23,11 @@ import { localStore } from "@/lib/local-store";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
+import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../../tests/fixtures/pull-requests";
@@ -479,6 +484,158 @@ it("posts a comment at once with Comment now, and keeps its words with Retry whe
   expect(api.readPullRequestConversation).toHaveBeenCalledTimes(2);
   expect(draftComments() ?? []).toEqual([]);
 });
+
+it("asks before posting a comment again when the code host can't tell whether Comment now reached it", async () => {
+  vi.mocked(api.postPullRequestComment)
+    .mockRejectedValueOnce(new Error("The connection dropped."))
+    .mockResolvedValueOnce({ uncertain: true });
+  await renderReviewPage();
+  const form = compose("Look here.");
+  fireEvent.click(within(form).getByRole("button", { name: "Comment now" }));
+  fireEvent.click(await within(form).findByRole("button", { name: "Retry" }));
+
+  await waitFor(() =>
+    expect(within(form).getByRole("alert").textContent).toBe(
+      "This comment may already be on GitHub: something you posted since may be it. Check the pull request, then post again if it's not there.",
+    ),
+  );
+  const calls = () =>
+    vi.mocked(api.postPullRequestComment).mock.calls.map((call) => call[2]);
+  expect(calls()[1]).toMatchObject({
+    submissionId: calls()[0]!.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+  // Not Retry: what it sends is a new post, which may make two.
+  expect(within(form).queryByRole("button", { name: "Retry" })).toBeNull();
+
+  fireEvent.click(within(form).getByRole("button", { name: "Post again" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("form", { name: "New comment" })).toBeNull(),
+  );
+  expect(calls()[2]!.submissionId).not.toBe(calls()[0]!.submissionId);
+  expect(calls()[2]).not.toHaveProperty("firstTriedAt");
+});
+
+/** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
+const HUGE: DeckOpenedPullRequest = {
+  headSha: "one",
+  baseSha: "base",
+  guide: null,
+  files: [
+    {
+      path: "src/big.ts",
+      status: "modified",
+      binary: false,
+      hunks: Array.from({ length: 600 }, (_, index) =>
+        hunk(`src/big.ts#${index}`, `@@ -${index + 1},1 +${index + 1},1 @@`, [
+          "-a",
+          "+A",
+        ]),
+      ),
+    },
+  ],
+};
+
+/** Deck's gutter from 1,100px, or every note after its line. */
+function wideEnoughForTheGutter(wide: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: query === DECK_GUTTER_QUERY ? wide : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+}
+
+/**
+ * The huge pull request's page in a 900px scroller whose rows are 100px
+ * high, through the real virtualizer: about a dozen rows mount.
+ */
+async function renderHugeReviewPage(
+  run: (scroller: HTMLElement) => Promise<void>,
+) {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (element) makeScrollable(element);
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    await screen.findByRole("button", { name: "Gutter + line 1" });
+    await run(screen.getByTestId("scroller"));
+  } finally {
+    restore();
+  }
+}
+
+const composerField = () =>
+  screen.queryByRole("textbox", {
+    name: "Comment",
+  }) as HTMLTextAreaElement | null;
+
+for (const [where, wide] of [
+  ["after its line", false],
+  ["in the gutter", true],
+] as const)
+  it(`keeps the composer's words on a huge pull request as its hunk scrolls away and back, ${where}`, async () => {
+    const original = window.matchMedia;
+    wideEnoughForTheGutter(wide);
+    try {
+      await renderHugeReviewPage(async (scroller) => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Gutter + line 1" }),
+        );
+        fireEvent.change(composerField()!, { target: { value: "Keep me." } });
+        expect(document.activeElement).toBe(composerField());
+
+        // While it holds the focus, its hunk stays mounted however far away.
+        scrollElement(scroller, { top: 61_000 });
+        await waitFor(() =>
+          expect(
+            document.querySelector('[data-hunk="src/big.ts#599"]'),
+          ).not.toBeNull(),
+        );
+        expect(composerField()?.value).toBe("Keep me.");
+        expect(document.activeElement).toBe(composerField());
+
+        // Without the focus it unmounts, and comes back with its words.
+        act(() => composerField()!.blur());
+        await waitFor(() => expect(composerField()).toBeNull());
+        scrollElement(scroller, { top: 0 });
+        await waitFor(() => expect(composerField()?.value).toBe("Keep me."));
+        // It took the focus as it opened, once: back, it leaves it where it is.
+        expect(document.activeElement).not.toBe(composerField());
+
+        // A composer opened again starts empty.
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: "Gutter + line 1" }),
+        );
+        expect(composerField()?.value).toBe("");
+      });
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 
 it("sends the draft review with Finish review and its verdict, then clears it", async () => {
   await renderReviewPage();
