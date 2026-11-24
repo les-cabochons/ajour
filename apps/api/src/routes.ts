@@ -478,6 +478,11 @@ export const ROUTES = {
     path: "/api/deck/:pluginId/connections/:connectionId/preload",
     name: "deck.preload",
   },
+  deckSinceReview: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/since-review",
+    name: "deck.since_review",
+  },
   // Settings › Storage: Deck's content cache (#781).
   deckStorageGet: {
     method: "GET",

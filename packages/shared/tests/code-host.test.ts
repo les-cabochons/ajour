@@ -178,9 +178,7 @@ describe("code host contract", () => {
     );
     expect(() =>
       codeHostVersionsResultSchema.parse({
-        versions: [
-          { number: 0, headSha: "h1", pushedAt: 1, commits: [] },
-        ],
+        versions: [{ number: 0, headSha: "h1", pushedAt: 1, commits: [] }],
       }),
     ).toThrow();
     expect(() =>

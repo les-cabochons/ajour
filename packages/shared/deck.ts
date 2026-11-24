@@ -126,6 +126,47 @@ export const deckPreloadResultSchema = z.object({
   queued: z.number().int().nonnegative(),
 });
 
+/*
+ * Changes since your review (#787): the hunks on screen that changed since
+ * the version the user last reviewed, each with the version it last
+ * changed in. A hunk whose added and removed lines are the same bytes in
+ * the reviewed version is unchanged, wherever a rebase moved it.
+ */
+
+const deckCommitSchema = z.string().trim().min(1).max(120);
+
+/** Compares the diff at `head`, the one on screen, with the version reviewed. */
+export const deckSinceReviewRequestSchema = codeHostPullRequestRefSchema.extend(
+  {
+    head: deckCommitSchema,
+    /** The head of the version the user last reviewed. */
+    reviewedHead: deckCommitSchema,
+  },
+);
+export type DeckSinceReviewRequest = z.infer<
+  typeof deckSinceReviewRequestSchema
+>;
+
+export const deckSinceReviewSchema = z.object({
+  head: deckCommitSchema,
+  reviewedHead: deckCommitSchema,
+  /** The numbers of both versions, as the code host numbers them. */
+  version: z.number().int().positive(),
+  reviewedVersion: z.number().int().positive(),
+  /**
+   * The hunks of the diff at `head` changed since the version reviewed, in
+   * the diff's order, each with the version it last changed in. Every other
+   * hunk is unchanged.
+   */
+  changed: z.array(
+    z.object({
+      hunkId: z.string().min(1).max(1_100),
+      version: z.number().int().positive(),
+    }),
+  ),
+});
+export type DeckSinceReview = z.infer<typeof deckSinceReviewSchema>;
+
 /** The content cache's cap until the user sets one in Settings › Storage: 1 GB. */
 export const DECK_CACHE_DEFAULT_CAP_BYTES = 1024 ** 3;
 

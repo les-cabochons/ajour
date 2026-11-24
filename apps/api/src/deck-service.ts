@@ -9,12 +9,16 @@ import type {
   DeckOpenedPullRequest,
   DeckOpenRequest,
   DeckPullRequestDiff,
+  DeckSinceReview,
+  DeckSinceReviewRequest,
 } from "../../../packages/shared/deck.ts";
 import { parseDeckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
   buildDiff,
   hunkToPatch,
   parseDiff,
+  type FileChange,
+  type FileContents,
 } from "../../../packages/review-deck/diff.ts";
 import {
   deckCacheKeyString,
@@ -29,6 +33,11 @@ import {
   type GuideBuilds,
 } from "./deck-guide-builds.ts";
 import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
+import {
+  changedSinceReview,
+  diffSignatures,
+  type DiffSignatures,
+} from "./deck-since-review.ts";
 
 /*
  * Deck's service: it builds a pull request's diff from both versions of
@@ -43,9 +52,13 @@ import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
  * opens, and the cache never evicts it.
  */
 
+/** The code host operations Deck calls itself. */
+export type DeckOperation =
+  "getPullRequestContent" | "getFileContent" | "getPullRequestVersions";
+
 /** The code host operations Deck calls, bound to one connection. */
 export interface DeckCodeHost {
-  run<Operation extends "getPullRequestContent" | "getFileContent">(
+  run<Operation extends DeckOperation>(
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
   ): Promise<CodeHostOperationResult<Operation>>;
@@ -159,9 +172,7 @@ async function withConcurrency<T>(
  * operations as it may. It stops waiting once `check` throws: another pull
  * request opened, or the connection was removed.
  */
-async function runWhenFree<
-  Operation extends "getPullRequestContent" | "getFileContent",
->(
+async function runWhenFree<Operation extends DeckOperation>(
   codeHost: DeckCodeHost,
   operation: Operation,
   request: CodeHostOperationRequest<Operation>,
@@ -325,6 +336,120 @@ export interface DeckHeldPullRequest {
   diff: DeckPullRequestDiff;
   guide: DeckGuide | null;
   versions: DeckFileVersions;
+}
+
+/** Why Deck refused to compare a pull request with the version reviewed. */
+export class DeckSinceReviewRefused extends Error {
+  readonly reason: "not_open" | "unknown_version";
+  constructor(reason: "not_open" | "unknown_version", message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+/** What comparing with the version reviewed did, for its event. */
+export interface DeckSinceReviewed {
+  result: DeckSinceReview;
+  /** The diff's hunks on screen. */
+  hunkCount: number;
+  /** The answer came from the content cache. */
+  cached: boolean;
+  fileReadCount: number;
+  /** The versions whose diffs were read or found, the reviewed one included. */
+  comparedCount: number;
+}
+
+/**
+ * The versions walked back through at most, between the reviewed one and
+ * the one on screen. A hunk the same in all of them is counted as changed
+ * in the oldest, so a long run of pushes reads at most this many diffs.
+ */
+const VERSIONS_WALKED = 8;
+
+/** Reads a file at a commit once per comparison. */
+type FileReads = Map<string, Promise<Side>>;
+
+/**
+ * The diff of `files` at one version, from its base to its head: only the
+ * files on screen matter, since only their hunks are compared. A file
+ * missing on a side is absent there, as a file the version didn't have yet.
+ */
+async function versionDiff(
+  codeHost: DeckCodeHost,
+  repository: string,
+  files: readonly DeckFile[],
+  version: { headSha: string; baseSha: string },
+  reads: FileReads,
+  check: () => void,
+  signal: AbortSignal,
+  counted: { fileReadCount: number },
+) {
+  const read = (sha: string, path: string) => {
+    const at = `${sha}\u0000${path}`;
+    let found = reads.get(at);
+    if (!found) {
+      counted.fileReadCount += 1;
+      found = runWhenFree(
+        codeHost,
+        "getFileContent",
+        { repository, sha, path },
+        check,
+      ).then((result): Side =>
+        result.kind === "text"
+          ? { text: result.content, binary: false }
+          : result.kind === "binary"
+            ? { text: null, binary: true }
+            : ABSENT,
+      );
+      reads.set(at, found);
+    }
+    return found;
+  };
+  const sides = await withConcurrency(
+    files.map((file) => async () => {
+      const basePath = file.previousPath ?? file.path;
+      return [
+        file.status === "added"
+          ? ABSENT
+          : await read(version.baseSha, basePath),
+        file.status === "deleted"
+          ? ABSENT
+          : await read(version.headSha, file.path),
+      ] as const;
+    }),
+    FILE_READS_AT_ONCE,
+    signal,
+  );
+  const changes: FileChange[] = [];
+  const contents = new Map<string, FileContents>();
+  files.forEach((file, index) => {
+    const [old, head] = sides[index]!;
+    const oldThere = old.text !== null || old.binary;
+    const headThere = head.text !== null || head.binary;
+    if (!oldThere && !headThere) return;
+    const renamed =
+      oldThere && headThere && file.previousPath
+        ? { originalPath: file.previousPath }
+        : {};
+    changes.push({
+      path: file.path,
+      ...renamed,
+      changeType: !oldThere
+        ? "add"
+        : !headThere
+          ? "delete"
+          : file.previousPath
+            ? "rename"
+            : "edit",
+    });
+    contents.set(file.path, {
+      old: old.text,
+      new: head.text,
+      binary: old.binary || head.binary,
+      tooLarge: false,
+    });
+  });
+  return parseDiff(buildDiff(changes, contents));
 }
 
 /** The pull request on screen at one base and head: its diff and its guide. */
@@ -704,27 +829,219 @@ export function createDeckService(options: {
   ): Promise<DeckHeldPullRequest | undefined> {
     const source = parseDeckPullRequestKey(pullRequest);
     if (!source) return undefined;
-    const at = { ...source, headSha: head };
+    const found = await heldAt({ ...source, headSha: head });
+    if (!found) return undefined;
+    try {
+      return {
+        diff: found.diff,
+        versions: found.versions,
+        guide: await found.guide,
+      };
+    } catch {
+      // Its guide build was cancelled: another pull request opened.
+      return undefined;
+    }
+  }
+
+  /** The pull request Deck holds at a head, with its key, or undefined. */
+  async function heldAt(at: Omit<DeckCacheKey, "baseSha">) {
     if (onScreen && sameHead(onScreen.key, at)) {
+      const entry = onScreen;
       try {
-        const [diff, versions, guide] = await Promise.all([
-          onScreen.diff,
-          onScreen.input,
-          onScreen.guide,
-        ]);
-        return { diff, guide, versions };
+        const [diff, versions] = await Promise.all([entry.diff, entry.input]);
+        return { key: entry.key, diff, versions, guide: entry.guide };
       } catch {
         return undefined;
       }
     }
     const found = await cache.find(at);
     return found
-      ? { diff: found.diff, guide: found.guide, versions: found.guideInput }
+      ? {
+          key: found.key,
+          diff: found.diff,
+          versions: found.guideInput,
+          guide: Promise.resolve(found.guide),
+        }
       : undefined;
+  }
+
+  /** The comparisons under way, by version pair, which a second ask shares. */
+  const comparing = new Map<string, Promise<DeckSinceReviewed>>();
+
+  async function sinceReview(
+    source: DeckSource,
+    request: DeckSinceReviewRequest,
+    codeHost: DeckCodeHost,
+  ): Promise<DeckSinceReviewed> {
+    const work = beginWork(source, codeHost);
+    try {
+      checkConnection(work);
+      const ref = { repository: request.repository, number: request.number };
+      const current = await heldAt({
+        ...source,
+        ...ref,
+        headSha: request.head,
+      });
+      checkConnection(work);
+      if (!current) {
+        throw new DeckSinceReviewRefused(
+          "not_open",
+          "Deck doesn't hold this pull request at this head. Open it again.",
+        );
+      }
+      const hunkCount = current.diff.files.reduce(
+        (count, file) => count + file.hunks.length,
+        0,
+      );
+      const saved = await cache.getSince(current.key, request.reviewedHead);
+      if (saved) {
+        return {
+          result: saved,
+          hunkCount,
+          cached: true,
+          fileReadCount: 0,
+          comparedCount: 0,
+        };
+      }
+      const pair = JSON.stringify([
+        deckCacheKeyString(current.key),
+        request.reviewedHead,
+      ]);
+      let running = comparing.get(pair);
+      if (!running) {
+        running = compare(work, ref, current, request.reviewedHead, codeHost);
+        comparing.set(pair, running);
+        void running.then(
+          () => comparing.delete(pair),
+          () => comparing.delete(pair),
+        );
+      }
+      return { ...(await running), hunkCount };
+    } finally {
+      working.delete(work);
+    }
+  }
+
+  async function compare(
+    work: ConnectionWork,
+    ref: { repository: string; number: number },
+    current: {
+      key: DeckCacheKey;
+      diff: DeckPullRequestDiff;
+      versions: GuideBuildInput;
+    },
+    reviewedHead: string,
+    codeHost: DeckCodeHost,
+  ): Promise<DeckSinceReviewed> {
+    const check = () => checkConnection(work);
+    const { versions } = await runWhenFree(
+      codeHost,
+      "getPullRequestVersions",
+      ref,
+      check,
+    );
+    check();
+    const now = versions.find(
+      (version) => version.headSha === current.key.headSha,
+    );
+    const reviewed = versions.find(
+      (version) => version.headSha === reviewedHead,
+    );
+    if (!now || !reviewed) {
+      throw new DeckSinceReviewRefused(
+        "unknown_version",
+        now
+          ? "The version you reviewed isn't one of this pull request's versions."
+          : "The head on screen isn't one of this pull request's versions.",
+      );
+    }
+    const counted = { fileReadCount: 0 };
+    let comparedCount = 0;
+    const onScreenFiles = parseDiff(current.versions.diff);
+    let changed: DeckSinceReview["changed"] = [];
+    if (reviewed.number < now.number) {
+      const reads: FileReads = new Map();
+      const signaturesAt = async (version: {
+        headSha: string;
+        baseSha?: string;
+      }): Promise<DiffSignatures> => {
+        comparedCount += 1;
+        // A version opened before is in the content cache at its head.
+        const cached = await cache.find({
+          ...work.source,
+          ...ref,
+          headSha: version.headSha,
+        });
+        check();
+        if (
+          cached &&
+          (!version.baseSha || cached.key.baseSha === version.baseSha)
+        ) {
+          return diffSignatures(parseDiff(cached.guideInput.diff));
+        }
+        const files = await versionDiff(
+          codeHost,
+          ref.repository,
+          current.diff.files,
+          {
+            headSha: version.headSha,
+            baseSha: version.baseSha ?? current.key.baseSha,
+          },
+          reads,
+          check,
+          work.stop.signal,
+          counted,
+        );
+        check();
+        return diffSignatures(files);
+      };
+      const between = versions
+        .filter(
+          (version) =>
+            version.number > reviewed.number && version.number < now.number,
+        )
+        .sort((a, b) => b.number - a.number)
+        .slice(0, VERSIONS_WALKED)
+        .map((version) => ({
+          number: version.number,
+          signatures: () => signaturesAt(version),
+        }));
+      changed = await changedSinceReview({
+        current: onScreenFiles,
+        version: now.number,
+        reviewed: await signaturesAt(reviewed),
+        between,
+      });
+    }
+    const result: DeckSinceReview = {
+      head: current.key.headSha,
+      reviewedHead,
+      version: now.number,
+      reviewedVersion: reviewed.number,
+      changed,
+    };
+    check();
+    await cache.putSince(current.key, result);
+    return {
+      result,
+      hunkCount: 0,
+      cached: false,
+      fileReadCount: counted.fileReadCount,
+      comparedCount,
+    };
   }
 
   return {
     held,
+
+    /**
+     * Compares the pull request Deck holds at `head` with the version whose
+     * head the user last reviewed, reading the versions through the code
+     * host, and each version's files only when the content cache doesn't
+     * hold its diff. The answer is cached per version pair with the entry
+     * at `head`.
+     */
+    sinceReview,
 
     /**
      * The pull request's diff from the merge base to the head, and its
