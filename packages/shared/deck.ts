@@ -67,8 +67,14 @@ export const deckPullRequestDiffSchema = z.object({
 });
 export type DeckPullRequestDiff = z.infer<typeof deckPullRequestDiffSchema>;
 
-/** Opens a pull request of a code host connection in Deck. */
-export const deckOpenRequestSchema = codeHostPullRequestRefSchema;
+/**
+ * Opens a pull request of a code host connection in Deck. `headSha` is the
+ * head the window's last sync saw: when the content cache holds the pull
+ * request at that head, it opens from there without asking the code host.
+ */
+export const deckOpenRequestSchema = codeHostPullRequestRefSchema.extend({
+  headSha: z.string().trim().min(1).max(120).optional(),
+});
 export type DeckOpenRequest = z.infer<typeof deckOpenRequestSchema>;
 
 const hunkIdSchema = z.string().min(1).max(1_100);
@@ -190,11 +196,51 @@ export const deckOpenedPullRequestSchema = deckPullRequestDiffSchema.extend({
 });
 export type DeckOpenedPullRequest = z.infer<typeof deckOpenedPullRequestSchema>;
 
-/** Builds the guides of pull requests ahead of their opening, at low priority. */
+/**
+ * Reads pull requests into the content cache ahead of their opening, and
+ * builds their guides at low priority. One cached at the `headSha` given
+ * isn't asked of the code host again.
+ */
 export const deckPreloadRequestSchema = z.object({
   pullRequests: z.array(deckOpenRequestSchema).max(20),
 });
 export type DeckPreloadRequest = z.infer<typeof deckPreloadRequestSchema>;
+
+/** A preload's answer: the guide builds it queued. */
+export const deckPreloadResultSchema = z.object({
+  queued: z.number().int().nonnegative(),
+});
+
+/** The content cache's cap until the user sets one in Settings › Storage: 1 GB. */
+export const DECK_CACHE_DEFAULT_CAP_BYTES = 1024 ** 3;
+
+/** Sets the content cache's cap, in bytes. Settings › Storage offers a few. */
+export const deckCacheSettingsUpdateSchema = z
+  .object({
+    capBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(1024 ** 4),
+  })
+  .strict();
+export type DeckCacheSettingsUpdate = z.infer<
+  typeof deckCacheSettingsUpdateSchema
+>;
+
+/** Settings › Storage: what the content cache holds, and its cap. */
+export const deckCacheStorageSchema = z.object({
+  /** What is on disk, the files not deleted yet included. */
+  sizeBytes: z.number().int().nonnegative(),
+  capBytes: z.number().int().positive(),
+  entryCount: z.number().int().nonnegative(),
+  /**
+   * The entries removed whose files another program held, as an antivirus
+   * scan does on Windows: they count until a later pass deletes them.
+   */
+  pendingRemovalCount: z.number().int().nonnegative(),
+});
+export type DeckCacheStorage = z.infer<typeof deckCacheStorageSchema>;
 
 /*
  * Asks (#791): a question to the agent anchored to what the user reads, its

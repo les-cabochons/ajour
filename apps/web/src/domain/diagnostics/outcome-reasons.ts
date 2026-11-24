@@ -63,6 +63,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The connection was saved again while the sync ran, so its answer wasn't used.",
   connection_not_found:
     "The connection doesn't exist anymore, or belongs to another plugin.",
+  connection_removed:
+    "The connection was removed while Deck read its pull request, so nothing more was read or kept.",
   connection_refused:
     "Turning the capability on checked a connection, and the plugin refused it, so the capability stays off.",
   crashed:
@@ -81,7 +83,7 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   escaping_entry:
     "The downloaded archive held a file that would land outside its folder, so nothing was installed.",
   evicted:
-    "Newer preloads pushed this pull request out of Deck's memory before its guide was built.",
+    "This pull request left Deck's content cache before its guide was built.",
   executable_missing:
     "The command's program isn't installed, or isn't on the PATH.",
   exited_early: "The plugin stopped before it returned a result.",
