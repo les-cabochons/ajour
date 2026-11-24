@@ -1144,6 +1144,9 @@ Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-ca
 - Opening another pull request while one still loads stops reading the first one's files.
 - The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff and guide of the pull request on screen are kept in memory until another one opens, so coming back to it at the same head reads no file again.
 - Guides are built one at a time, off the window. The guide of the pull request just opened is built before any preloaded one, and stops a preloaded one being built, which is built again after. The changes show once both the diff and the guide are ready. A guide that takes over two minutes, or fails, gives Files A–Z, and opening the pull request again builds it again.
+- **Huge pull requests** ([#790](https://github.com/les-cabochons/ajour/issues/790)). A pull request with more than 1,000 hunks gets no guide: it opens on Files A–Z with no toggle, and the line after the heading says "This pull request has more than 1,000 hunks, too many to build a guide, so the files show A–Z." The limit comes from timing Review Deck's 3,090-hunk mock: the guide took 9.5 s at 1,030 hunks and 36 s at 3,090.
+- Above 500 hunks the page keeps only the hunks near the screen mounted, and above 200 sections the guide tree keeps only the ticks or titles in its view. Scrolling, J, K, the ticks and Viewed behave the same. The browser's find in page finds only the hunks near the screen then.
+- A hunk's lines are highlighted off the window's main thread, so scrolling never waits on a large hunk or a language's first grammar.
 
 ### On your plate
 
