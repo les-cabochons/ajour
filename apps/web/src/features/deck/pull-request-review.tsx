@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
-import { Button } from "@/components/ui/button";
 import {
   draftReviewOf,
+  lineAnchor,
   lineTextOf,
   placeDrafts,
   type DeckDraftComment,
   type DeckReviewRef,
 } from "@/domain/deck/draft-review";
-import { personName } from "@/domain/deck/review-status";
-import { findLine, placeThreads } from "@/domain/deck/review-threads";
-import {
-  isPullRequestSnoozed,
-  type LocalPullRequest,
-} from "@/domain/pull-requests/pull-request-lifecycle";
+import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
+import { placeThreads } from "@/domain/deck/review-threads";
+import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { postPullRequestComment } from "@/lib/app-api";
 import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { useLocalState } from "@/lib/local-hooks";
@@ -26,17 +22,11 @@ import {
   DescriptionDrawer,
   PullRequestConversation,
 } from "./pull-request-conversation";
-import {
-  pullRequestActions,
-  reasonLabels,
-  runPullRequestAction,
-} from "./pull-request-row";
+import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
 import {
   DraftCommentCard,
   ReviewNotesContext,
-  type ComposerTarget,
-  type ReviewNote,
   type ReviewNoteActions,
 } from "./review-notes";
 import type { AddComment } from "./review-sections";
@@ -107,78 +97,26 @@ export function PullRequestReview({
           : (threads ?? []),
     [placement, diffState.status, threads],
   );
+  // Until the refresh moved the draft to the head shown, its comments wait.
   const drafts = useMemo(
-    () => (shown ? placeDrafts(shown, draft) : undefined),
+    () =>
+      shown && (!draft || draft.headSha === shown.headSha)
+        ? placeDrafts(shown, draft)
+        : undefined,
     [shown, draft],
   );
-
-  const threadNotes = useMemo(
-    (): ReviewNote[] =>
-      (placement?.placed ?? []).map((entry) => ({
-        kind: "thread",
-        key: entry.thread.id,
-        thread: entry.thread,
-        hunkId: entry.hunkId,
-        side: entry.side,
-        line: entry.line,
-        ...(entry.thread.startLine !== undefined
-          ? { startLine: entry.thread.startLine }
-          : {}),
-        row: entry.row,
-      })),
-    [placement],
+  const notes = useMemo(
+    () =>
+      shown
+        ? reviewNotes(
+            shown,
+            placement?.placed ?? [],
+            drafts?.placed ?? [],
+            composer,
+          )
+        : [],
+    [shown, placement, drafts, composer],
   );
-  const draftNotes = useMemo(
-    (): ReviewNote[] =>
-      (drafts?.placed ?? [])
-        // The composer takes the place of the comment it edits.
-        .filter((entry) => entry.comment.id !== composer?.editing)
-        .map((entry) => ({
-          kind: "draft",
-          key: `draft:${entry.comment.id}`,
-          comment: entry.comment,
-          hunkId: entry.hunkId,
-          side: entry.side,
-          line: entry.line,
-          ...(entry.comment.startLine !== undefined
-            ? { startLine: entry.comment.startLine }
-            : {}),
-          row: entry.row,
-        })),
-    [drafts, composer?.editing],
-  );
-  const composerNote = useMemo((): ReviewNote | undefined => {
-    const at = composer && shown ? findLine(shown, composer) : undefined;
-    return at && composer
-      ? {
-          kind: "composer",
-          key: "composer",
-          target: composer,
-          hunkId: at.hunkId,
-          side: at.side,
-          line: at.line,
-          ...(composer.startLine !== undefined
-            ? { startLine: composer.startLine }
-            : {}),
-          row: at.row,
-        }
-      : undefined;
-  }, [composer, shown]);
-  const notes = useMemo(() => {
-    const all = [...threadNotes, ...draftNotes];
-    if (composerNote) all.push(composerNote);
-    // In the diff's order, so the gutter's cards and Tab follow the lines.
-    const order = new Map<string, number>();
-    let index = 0;
-    for (const file of shown?.files ?? [])
-      for (const hunk of file.hunks) order.set(hunk.id, index++);
-    return all.sort(
-      (a, b) =>
-        order.get(a.hunkId)! - order.get(b.hunkId)! ||
-        a.row - b.row ||
-        a.key.localeCompare(b.key),
-    );
-  }, [threadNotes, draftNotes, composerNote, shown]);
 
   const retryConversation = conversation.retry;
   const onAddComment = useCallback<AddComment>(
@@ -207,14 +145,7 @@ export function PullRequestReview({
         else if (headSha)
           localStore.addDraftComment(ref, {
             headSha,
-            anchor: {
-              path: target.path,
-              side: target.side,
-              line: target.line,
-              ...(target.startLine !== undefined
-                ? { startLine: target.startLine }
-                : {}),
-            },
+            anchor: lineAnchor(target),
             body,
             lineText: target.lineText,
           });
@@ -227,15 +158,7 @@ export function PullRequestReview({
             repository,
             number,
             body,
-            anchor: {
-              path: target.path,
-              side: target.side,
-              line: target.line,
-              ...(target.startLine !== undefined
-                ? { startLine: target.startLine }
-                : {}),
-              headSha,
-            },
+            anchor: { ...lineAnchor(target), headSha },
           });
         } catch (error) {
           throw new Error(writeFailure(error, pullRequest));
@@ -246,12 +169,7 @@ export function PullRequestReview({
       cancelComposer: () => setComposer(undefined),
       editDraft: (comment: DeckDraftComment) =>
         setComposer({
-          path: comment.path,
-          side: comment.side,
-          line: comment.line,
-          ...(comment.startLine !== undefined
-            ? { startLine: comment.startLine }
-            : {}),
+          ...lineAnchor(comment),
           lineText: comment.lineText,
           editing: comment.id,
           body: comment.body,
@@ -279,47 +197,20 @@ export function PullRequestReview({
 
   return (
     <ReviewNotesContext.Provider value={actions}>
-      <PageHeader
-        backLink={{ label: "Deck", to: "/deck" }}
-        actions={
-          <>
-            {open ? (
-              <FinishReview
-                pullRequest={pullRequest}
-                draft={draft}
-                headSha={headSha ?? pullRequest.facts.headSha}
-                onSubmitted={retryConversation}
-              />
-            ) : null}
-            {pullRequestActions(pullRequest, now).map((action) => (
-              <Button
-                key={action.id}
-                variant="outline"
-                onClick={() =>
-                  runPullRequestAction(
-                    pullRequest,
-                    action.id as Parameters<typeof runPullRequestAction>[1],
-                  )
-                }
-              >
-                {action.label}
-              </Button>
-            ))}
-          </>
+      <PullRequestHeader
+        pullRequest={pullRequest}
+        now={now}
+        review={
+          open ? (
+            <FinishReview
+              pullRequest={pullRequest}
+              draft={draft}
+              headSha={headSha}
+              onSubmitted={retryConversation}
+            />
+          ) : null
         }
       />
-      <header>
-        <h1 className="backlog-item-page-title">{pullRequest.facts.title}</h1>
-        <p className="backlog-item-page-meta">
-          {repository} #{number} · {pullRequest.connectionLabel} ·{" "}
-          {personName(pullRequest.facts.author)} ·{" "}
-          {pullRequest.status === "settled"
-            ? "Settled"
-            : isPullRequestSnoozed(pullRequest, now)
-              ? "Snoozed"
-              : reasonLabels[pullRequest.reason ?? "manual"]}
-        </p>
-      </header>
       <PullRequestStatusLine pullRequest={pullRequest} checks={checks.state} />
       {!open && draft ? (
         <ClosedDraftReview

@@ -27,7 +27,7 @@ This section covers the app's storage, credentials, network requests and agent a
 
 Ajour stores projects, tasks, time entries, notes, backlog items, imported content, settings and plugin connections on your device. Data read from a connected service can include work-item descriptions, comments and people's names or contact details. Calendar events are fetched for display rather than saved as a calendar archive. An event you turn into a time entry becomes part of your workspace.
 
-Deck's draft reviews are stored in your local workspace too: the comments you add to a pull request's review before you submit it, each with its file, its lines and the text of its line, so a later push can mark it outdated. A draft survives restarts and stays until you submit it, post it, remove its comments or discard it, also after the pull request closes. Removing the connection deletes its drafts. Nothing in a draft leaves your device before you submit it.
+Deck's draft reviews are stored in your local workspace too: the comments you add to a pull request's review before you submit it, each with its file, its lines and the text of its line, so a later push can mark it outdated. A draft survives restarts and stays until you submit it, post it, remove its comments or discard it, also after the pull request closes, which keeps that pull request in your local list meanwhile. Removing the connection deletes its drafts. Nothing in a draft leaves your device before you submit it.
 
 These records support the features you use. They are not sent to us through the normal local workflow. We do not sell personal information, use it for advertising or build profiles of your activity for our own purposes.
 

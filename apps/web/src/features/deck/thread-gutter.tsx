@@ -7,7 +7,8 @@ import {
   type RefObject,
 } from "react";
 import { connectorPath, stackCards } from "@/domain/deck/review-threads";
-import { renderNoteCard, type ReviewNote } from "./review-notes";
+import type { ReviewNote } from "@/domain/deck/review-notes";
+import { renderNoteCard } from "./review-notes";
 
 /*
  * The gutter beside the diff, from 1,100px up: each review thread, draft

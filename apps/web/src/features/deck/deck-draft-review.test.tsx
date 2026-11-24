@@ -18,6 +18,7 @@ import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
+import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
@@ -322,6 +323,67 @@ it("adds to the review with Ctrl+Enter, and edits and removes a draft comment", 
   );
   expect(draftComments() ?? []).toEqual([]);
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
+});
+
+it("starts a composer of its own for other lines or another comment to edit, in the gutter too", async () => {
+  const original = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: query === DECK_GUTTER_QUERY,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  try {
+    for (const [line, body] of [
+      [2, "On B."],
+      [3, "On c."],
+    ] as const)
+      localStore.addDraftComment(REF, {
+        headSha: "one",
+        anchor: { path: "src/api.ts", side: "head", line },
+        body,
+        lineText: line === 2 ? "B" : "c",
+      });
+    await renderReviewPage();
+    const gutter = screen.getByRole("complementary", {
+      name: "Review threads",
+    });
+    const editOn = (line: number) =>
+      fireEvent.click(
+        within(
+          within(gutter).getByRole("article", {
+            name: `Draft comment on src/api.ts, line ${line}`,
+          }),
+        ).getByRole("button", { name: "Edit" }),
+      );
+    const field = () =>
+      within(gutter).getByRole("textbox", {
+        name: "Comment",
+      }) as HTMLTextAreaElement;
+
+    editOn(2);
+    expect(field().value).toBe("On B.");
+    fireEvent.change(field(), { target: { value: "Changed, not saved." } });
+    // Editing the other comment shows its own words, and Save keeps them there.
+    editOn(3);
+    expect(field().value).toBe("On c.");
+    fireEvent.click(within(gutter).getByRole("button", { name: "Save" }));
+    expect(draftComments()?.map((comment) => comment.body)).toEqual([
+      "On B.",
+      "On c.",
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Comment on line 1" }));
+    fireEvent.change(field(), { target: { value: "On a." } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment on line 2" }));
+    expect(field().value).toBe("");
+  } finally {
+    window.matchMedia = original;
+  }
 });
 
 it("posts a comment at once with Comment now, and keeps its words with Retry when it fails", async () => {

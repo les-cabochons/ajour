@@ -17,7 +17,9 @@ export function EventTime({ at }: { at: number }) {
 }
 
 /** Where a thread is: its file, and its line or lines on the head or the base. */
-export function threadLocation(thread: CodeHostReviewThread) {
+export function threadLocation(
+  thread: Pick<CodeHostReviewThread, "path" | "side" | "line" | "startLine">,
+) {
   if (thread.line === undefined) return thread.path;
   const lines =
     thread.startLine !== undefined && thread.startLine < thread.line

@@ -19,7 +19,8 @@ import {
   type ReviewHunk,
   type ReviewSection,
 } from "@/domain/deck/guide";
-import { renderNoteCard, type ReviewNote } from "./review-notes";
+import type { ReviewNote } from "@/domain/deck/review-notes";
+import { renderNoteCard } from "./review-notes";
 
 /*
  * The sections of Deck's review page (#782): the guide's concerns, numbered

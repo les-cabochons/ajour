@@ -296,7 +296,7 @@ describe("code host sync persistence", () => {
       }),
     ]);
   });
-  it("keeps a draft review when its pull request closes or leaves the list, and across a reload", async () => {
+  it("keeps a draft review, and its closed pull request in the list, until the draft is posted or discarded, across a reload", async () => {
     const { localStore } = await import("./local-store");
     const ref = {
       pluginId: "github",
@@ -313,19 +313,36 @@ describe("code host sync persistence", () => {
     });
     expect(comment).toBeDefined();
 
-    // Merged, then gone past the days a closed pull request is kept.
+    // Merged past the days a closed pull request is kept: its draft keeps it
+    // in the list, where the draft can be posted or discarded.
     const closedAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    localStore.syncPullRequests(source, {
-      ...result,
-      pullRequests: [{ ...facts, state: "merged", closedAt }],
-    });
-    expect(localStore.snapshot().pullRequests).toEqual([]);
+    const merged = { ...facts, state: "merged" as const, closedAt };
+    localStore.syncPullRequests(source, { ...result, pullRequests: [merged] });
+    expect(localStore.snapshot().pullRequests).toEqual([
+      expect.objectContaining({ facts: merged }),
+    ]);
+    // A sync that no longer lists it keeps it too.
+    localStore.syncPullRequests(source, { ...result, pullRequests: [] });
+    expect(localStore.snapshot().pullRequests).toHaveLength(1);
 
     vi.resetModules();
     const reloaded = (await import("./local-store")).localStore;
     expect(reloaded.snapshot().deckDraftReviews).toEqual([
       expect.objectContaining({ ...ref, comments: [comment] }),
     ]);
+
+    expect(reloaded.snapshot().pullRequests).toHaveLength(1);
+
+    // Once the draft is discarded, the next sync lets the pull request go.
+    reloaded.discardDraftReview(ref);
+    reloaded.syncPullRequests(source, { ...result, pullRequests: [] });
+    expect(reloaded.snapshot().pullRequests).toEqual([]);
+    reloaded.addDraftComment(ref, {
+      headSha: "head",
+      anchor: { path: "src/api.ts", side: "head", line: 2 },
+      body: "Rename this.",
+      lineText: "B",
+    });
 
     // A deleted connection takes its drafts with it.
     reloaded.removeConnectionPullRequests("github", "work");

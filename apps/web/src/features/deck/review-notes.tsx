@@ -7,56 +7,26 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { CodeHostDiffSide, CodeHostReviewThread } from "@ajour/shared";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { DeckDraftComment } from "@/domain/deck/draft-review";
-import type { AnnotationSide } from "@/domain/deck/review-threads";
+import {
+  composerIdentity,
+  type ComposerTarget,
+  type ReviewNote,
+} from "@/domain/deck/review-notes";
 import { getShortcutPlatform } from "@/lib/shortcuts";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { ReviewThreadCard, threadLocation } from "./review-thread-card";
 
 /*
- * What the review page shows at a line of the diff (#783, #784): a review
- * thread, a comment of the draft review, or the composer. Each floats in
- * the gutter beside its line from 1,100px, or sits right after it. The
- * page's actions reach the cards through `ReviewNotesContext`, so a card
- * changing draws only its own section again.
+ * The cards of what the review page shows at a line (`domain/deck/review-notes.ts`):
+ * a review thread, a comment of the draft review, or the composer. Each
+ * floats in the gutter beside its line from 1,100px, or sits right after
+ * it. The page's actions reach the cards through `ReviewNotesContext`, so
+ * a card changing draws only its own section again.
  */
-
-/** Where a note is on the diff. */
-export interface NotePlace {
-  /** Unique on the page: a thread's id, `draft:` and a draft comment's, or `composer`. */
-  key: string;
-  hunkId: string;
-  side: AnnotationSide;
-  line: number;
-  /** The first line of a note on several lines. */
-  startLine?: number;
-  /** The hunk's row the line is on, from 0, for where the card goes before the hunk draws. */
-  row: number;
-}
-
-/** The lines the composer comments on, and the draft comment it edits. */
-export interface ComposerTarget {
-  path: string;
-  side: CodeHostDiffSide;
-  line: number;
-  startLine?: number;
-  /** The line's text, kept with the draft comment. */
-  lineText: string;
-  /** The draft comment being edited, or undefined for a new comment. */
-  editing?: string;
-  body: string;
-}
-
-export type ReviewNote = NotePlace &
-  (
-    | { kind: "thread"; thread: CodeHostReviewThread }
-    | { kind: "draft"; comment: DeckDraftComment }
-    | { kind: "composer"; target: ComposerTarget }
-  );
 
 /** The page's actions on its notes. */
 export interface ReviewNoteActions {
@@ -91,7 +61,10 @@ export function NoteCard({ note, hot }: { note: ReviewNote; hot: boolean }) {
     );
   if (note.kind === "draft")
     return <DraftCommentCard comment={note.comment} hot={hot} />;
-  return <ReviewComposer target={note.target} />;
+  // Other lines, or another comment to edit, start a composer of their own.
+  return (
+    <ReviewComposer key={composerIdentity(note.target)} target={note.target} />
+  );
 }
 
 /** Draws each note's card, for the gutter and for the lines. */
@@ -100,16 +73,8 @@ export const renderNoteCard = (note: ReviewNote, hot: boolean): ReactNode => (
 );
 
 /** Where a draft comment is, for one listed away from its line. */
-export function draftLocation(comment: DeckDraftComment) {
-  return threadLocation({
-    path: comment.path,
-    side: comment.side,
-    line: comment.line,
-    ...(comment.startLine !== undefined
-      ? { startLine: comment.startLine }
-      : {}),
-  } as CodeHostReviewThread);
-}
+export const draftLocation = (comment: DeckDraftComment) =>
+  threadLocation(comment);
 
 /**
  * A comment of the draft review: "Draft", its words, and Edit and Remove.

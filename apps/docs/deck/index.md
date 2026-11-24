@@ -47,7 +47,7 @@ Your draft review is saved on your computer, so it survives closing Ajour, and n
 
 The review goes to the code host as soon as you submit it. If it fails, your draft stays as it was, and the dialog says why, with **Retry**. Nothing waits to be sent later.
 
-When the author pushes and you open the pull request again, a draft comment whose line changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft: post its comments with **Post as comments**, or **Discard** it.
+When the author pushes and you open the pull request again, a draft comment whose line changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft, and stays under **Recently closed** until you post its comments with **Post as comments**, or **Discard** it.
 
 Commenting and reviewing need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
 

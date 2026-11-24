@@ -65,6 +65,7 @@ import {
   addDraftComment,
   completeDraftComments,
   discardDraftReview,
+  draftReviewOf,
   editDraftComment,
   normalizeDraftReviews,
   refreshDraftReview,
@@ -1766,6 +1767,9 @@ const store = {
           createId: () => createId("pull_request"),
           changesEndSnoozeEarly:
             state.userPreferences.changesEndSnoozeEarly === true,
+          // A draft review keeps its pull request, to post or discard.
+          keep: (ref) =>
+            draftReviewOf(state.deckDraftReviews ?? [], ref) !== undefined,
         },
       ),
     }));

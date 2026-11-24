@@ -86,18 +86,32 @@ export function findLine(
   return undefined;
 }
 
+/**
+ * What sits on lines of the diff, in file, hunk and row order, then by
+ * `key` for two on one line: the order the gutter's cards and Tab follow.
+ */
+export function inDiffOrder<
+  T extends { hunkId: string; row: number; key?: string },
+>(diff: DeckPullRequestDiff, items: readonly T[]): T[] {
+  const order = new Map<string, number>();
+  let index = 0;
+  for (const file of diff.files)
+    for (const hunk of file.hunks) order.set(hunk.id, index++);
+  return [...items].sort(
+    (a, b) =>
+      (order.get(a.hunkId) ?? 0) - (order.get(b.hunkId) ?? 0) ||
+      a.row - b.row ||
+      (a.key ?? "").localeCompare(b.key ?? ""),
+  );
+}
+
 /** Each thread on the line of the diff it names, or kept for the conversation. */
 export function placeThreads(
   diff: DeckPullRequestDiff,
   threads: readonly CodeHostReviewThread[],
 ): ThreadPlacement {
-  const order = new Map<string, number>();
-  const found: (PlacedThread & { order: number })[] = [];
+  const found: PlacedThread[] = [];
   const elsewhere: CodeHostReviewThread[] = [];
-  let hunkOrder = 0;
-  for (const file of diff.files)
-    for (const hunk of file.hunks) order.set(hunk.id, hunkOrder++);
-
   for (const thread of threads) {
     const at =
       thread.line === undefined
@@ -114,14 +128,10 @@ export function placeThreads(
         side: at.side,
         line: at.line,
         row: at.row,
-        order: order.get(at.hunkId)!,
       });
     else elsewhere.push(thread);
   }
-
-  found.sort((a, b) => a.order - b.order || a.row - b.row);
-  const placed = found.map(({ order: _order, ...entry }) => entry);
-  return { placed, elsewhere };
+  return { placed: inDiffOrder(diff, found), elsewhere };
 }
 
 /** A card to place in the gutter: the height of its line's middle, and its own height. */

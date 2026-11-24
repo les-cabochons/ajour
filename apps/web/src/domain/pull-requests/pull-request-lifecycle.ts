@@ -241,8 +241,29 @@ export function reconcilePullRequests(
     now: number;
     createId: () => string;
     changesEndSnoozeEarly: boolean;
+    /**
+     * Keeps a closed pull request past the days closed ones are kept, such
+     * as one with a draft review still to post or discard.
+     */
+    keep?: (ref: {
+      pluginId: string;
+      connectionId: string;
+      repository: string;
+      number: number;
+    }) => boolean;
   },
 ): LocalPullRequest[] {
+  const kept = (pullRequest: {
+    pluginId: string;
+    connectionId: string;
+    facts: { repository: string; number: number };
+  }) =>
+    options.keep?.({
+      pluginId: pullRequest.pluginId,
+      connectionId: pullRequest.connectionId,
+      repository: pullRequest.facts.repository,
+      number: pullRequest.facts.number,
+    }) === true;
   const inConnection = (item: LocalPullRequest) =>
     item.pluginId === source.pluginId &&
     item.connectionId === source.connectionId;
@@ -262,7 +283,11 @@ export function reconcilePullRequests(
       facts.state === "open"
         ? undefined
         : (facts.closedAt ?? old?.closedAt ?? options.now);
-    if (closedAt !== undefined && options.now - closedAt >= CLOSED_RETENTION_MS)
+    if (
+      closedAt !== undefined &&
+      options.now - closedAt >= CLOSED_RETENTION_MS &&
+      !kept({ ...source, facts })
+    )
       return [];
     const initial: LocalPullRequest = old ?? {
       ...source,
@@ -322,7 +347,8 @@ export function reconcilePullRequests(
       (item) =>
         !inConnection(item) &&
         (item.closedAt === undefined ||
-          options.now - item.closedAt < CLOSED_RETENTION_MS),
+          options.now - item.closedAt < CLOSED_RETENTION_MS ||
+          kept(item)),
     ),
     ...items
       .filter(
@@ -330,7 +356,8 @@ export function reconcilePullRequests(
           inConnection(item) &&
           !received.has(refKey(item.facts)) &&
           (item.closedAt === undefined ||
-            options.now - item.closedAt < CLOSED_RETENTION_MS),
+            options.now - item.closedAt < CLOSED_RETENTION_MS ||
+            kept(item)),
       )
       .map((item) => ({ ...item, missingFromSync: true })),
     ...imported,

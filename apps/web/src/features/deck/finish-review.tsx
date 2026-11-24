@@ -24,6 +24,7 @@ import { showToast } from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import {
   finishReviewRequest,
+  lineAnchor,
   reviewVerdicts,
   type DeckDraftReview,
   type DeckReviewRef,
@@ -55,8 +56,8 @@ export function writeFailure(error: unknown, pullRequest: LocalPullRequest) {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The draft review's comments as the dialog counts them. */
-function commentCount(draft: DeckDraftReview | undefined) {
+/** The dialog's line on what goes with the review, and what stays in the draft. */
+function goesWithIt(draft: DeckDraftReview | undefined) {
   const current = draft?.comments.filter((comment) => !comment.outdated) ?? [];
   const outdated = (draft?.comments.length ?? 0) - current.length;
   const sent =
@@ -83,7 +84,8 @@ export function FinishReview({
 }: {
   pullRequest: LocalPullRequest;
   draft: DeckDraftReview | undefined;
-  headSha: string;
+  /** Undefined until the page read the diff: nothing is sent before. */
+  headSha: string | undefined;
   /** After the code host took the review, so the page reads its threads again. */
   onSubmitted: () => void;
 }) {
@@ -105,7 +107,7 @@ export function FinishReview({
     setOpen(true);
   }
   async function submit(next: Verdict, body: string) {
-    if (sending) return;
+    if (sending || !headSha) return;
     setSending(true);
     setFailure(undefined);
     const review: DeckDraftReview = draft ?? {
@@ -142,16 +144,20 @@ export function FinishReview({
     }
   }
 
-  useShortcut("deck.review-comment", () => show("comment"));
-  useShortcut("deck.review-request-changes", () => show("request_changes"));
-  useShortcut("deck.review-approve", () => show("approve"));
+  const ready = headSha !== undefined;
+  useShortcut("deck.review-comment", () => ready && show("comment"));
+  useShortcut(
+    "deck.review-request-changes",
+    () => ready && show("request_changes"),
+  );
+  useShortcut("deck.review-approve", () => ready && show("approve"));
   useShortcut("deck.review-quick-approve", () => {
-    if (!open) void submit("approve", "");
+    if (ready && !open) void submit("approve", "");
   });
 
   return (
     <>
-      <Button variant="outline" onClick={() => show(verdict)}>
+      <Button variant="outline" disabled={!ready} onClick={() => show(verdict)}>
         {count ? `Finish review · ${count}` : "Finish review"}
       </Button>
       <Dialog
@@ -170,7 +176,7 @@ export function FinishReview({
           >
             <DialogHeader>
               <DialogTitle>Finish review</DialogTitle>
-              <DialogDescription>{commentCount(draft)}</DialogDescription>
+              <DialogDescription>{goesWithIt(draft)}</DialogDescription>
             </DialogHeader>
             <label htmlFor={summaryId} className="sr-only">
               Summary
@@ -215,7 +221,7 @@ export function FinishReview({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={empty || sending}>
+              <Button type="submit" disabled={empty || sending || !ready}>
                 {sending ? "Sending…" : failure ? "Retry" : "Submit review"}
               </Button>
             </DialogFooter>
@@ -260,15 +266,7 @@ export function ClosedDraftReview({
             repository: draft.repository,
             number: draft.number,
             body: comment.body,
-            anchor: {
-              path: comment.path,
-              side: comment.side,
-              line: comment.line,
-              ...(comment.startLine !== undefined
-                ? { startLine: comment.startLine }
-                : {}),
-              headSha: draft.headSha,
-            },
+            anchor: { ...lineAnchor(comment), headSha: draft.headSha },
           },
         );
         // Posted ones leave at once, so a retry sends only the rest.

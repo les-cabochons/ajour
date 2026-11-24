@@ -15,7 +15,7 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
-import type { ReviewNote } from "./review-notes";
+import type { ReviewNote } from "@/domain/deck/review-notes";
 import {
   ReviewSectionView,
   SECTION_ATTRIBUTE,

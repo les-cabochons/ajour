@@ -5,7 +5,7 @@ import type {
   CodeHostSubmitReviewRequest,
 } from "@ajour/shared";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
-import { findLine, type AnnotationSide } from "./review-threads";
+import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
 
 /*
  * The draft review (#784, ADR 0002): line comments a reviewer collects on a
@@ -95,13 +95,9 @@ export function addDraftComment(
   { now, createId }: { now: number; createId: () => string },
 ): { reviews: DeckDraftReview[]; comment?: DeckDraftComment } {
   if (!input.body.trim()) return { reviews: [...reviews] };
-  const { path, side, line, startLine } = input.anchor;
   const comment: DeckDraftComment = {
     id: createId(),
-    path,
-    side,
-    line,
-    ...(startLine !== undefined && startLine < line ? { startLine } : {}),
+    ...lineAnchor(input.anchor),
     body: input.body,
     lineText: input.lineText,
     createdAt: now,
@@ -208,11 +204,7 @@ export function placeDrafts(
   diff: DeckPullRequestDiff,
   draft: DeckDraftReview | undefined,
 ): { placed: PlacedDraft[]; elsewhere: DeckDraftComment[] } {
-  const order = new Map<string, number>();
-  let index = 0;
-  for (const file of diff.files)
-    for (const hunk of file.hunks) order.set(hunk.id, index++);
-  const placed: (PlacedDraft & { order: number })[] = [];
+  const placed: PlacedDraft[] = [];
   const elsewhere: DeckDraftComment[] = [];
   for (const comment of draft?.comments ?? []) {
     const at =
@@ -229,13 +221,25 @@ export function placeDrafts(
       side: at.side,
       line: at.line,
       row: at.row,
-      order: order.get(at.hunkId)!,
     });
   }
-  placed.sort((a, b) => a.order - b.order || a.row - b.row);
+  return { placed: inDiffOrder(diff, placed), elsewhere };
+}
+
+/** Lines of the diff as the code host contract names them, without an empty `startLine`. */
+export function lineAnchor(lines: {
+  path: string;
+  side: CodeHostDiffSide;
+  line: number;
+  startLine?: number;
+}): CodeHostLineAnchor {
   return {
-    placed: placed.map(({ order: _order, ...entry }) => entry),
-    elsewhere,
+    path: lines.path,
+    side: lines.side,
+    line: lines.line,
+    ...(lines.startLine !== undefined && lines.startLine < lines.line
+      ? { startLine: lines.startLine }
+      : {}),
   };
 }
 
@@ -265,12 +269,7 @@ export function finishReviewRequest(
       verdict,
       ...(summary ? { body: summary } : {}),
       comments: current.map((comment) => ({
-        path: comment.path,
-        side: comment.side,
-        line: comment.line,
-        ...(comment.startLine !== undefined
-          ? { startLine: comment.startLine }
-          : {}),
+        ...lineAnchor(comment),
         body: comment.body,
       })),
     },
