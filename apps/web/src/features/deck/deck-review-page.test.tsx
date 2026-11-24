@@ -761,7 +761,8 @@ it("floats each thread in the gutter beside its line from 1,100px, and places it
   await waitFor(() => expect(card("on-b").style.top).toBe("136px"));
   expect(hunks[0]!.querySelector("[data-thread-anchor='on-b']")).toBeTruthy();
   expect(within(hunks[0]!).queryByRole("article")).toBeNull();
-  expect(log.join(" ")).toMatch(/^((read )+write write ?)+$/);
+  // Only the connector that moved is written again: the other card stays.
+  expect(log.join(" ")).toMatch(/^((read )+write ?)+$/);
 
   // Hovering a card highlights its line, and its connector.
   fireEvent.mouseEnter(within(card("on-b")).getByRole("article"));
