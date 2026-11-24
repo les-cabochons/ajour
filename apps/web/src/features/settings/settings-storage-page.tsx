@@ -152,7 +152,8 @@ export function SettingsStoragePage() {
             <OptionSelect
               id="deck-cache-cap"
               value={storage ? String(storage.capBytes) : ""}
-              options={options}
+              // Until the API answers, no limit is chosen.
+              options={storage ? options : [{ value: "", label: "—" }]}
               disabled={locked}
               onChange={saveCap}
             />

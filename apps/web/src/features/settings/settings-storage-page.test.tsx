@@ -136,6 +136,14 @@ it("says so when the local API can't read the cache, with nothing to set", async
     (screen.getByRole("button", { name: "Clear cache" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  // No limit is chosen, and the select can't open.
+  const limit = screen.getByRole("combobox", { name: "Size limit" });
+  expect(limit.textContent).toBe("—");
+  expect(
+    limit.hasAttribute("disabled") ||
+      limit.getAttribute("aria-disabled") === "true" ||
+      limit.hasAttribute("data-disabled"),
+  ).toBe(true);
 });
 
 it("works in the narrow view", async () => {
