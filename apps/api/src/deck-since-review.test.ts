@@ -55,6 +55,15 @@ const FILES: Record<string, string> = {
   "b2:src/other.ts": "export const a = 1;\n",
   "h3:src/other.ts": "export const a = 2;\n",
   "h3:src/new.ts": "export const fresh = true;\n",
+  // The same line twice in the file: v1 changed the first, v3 the second too.
+  ...Object.fromEntries(
+    ["b1", "h1", "h2", "b2", "h3"].map((sha) => {
+      let rows = change(change(lines(30), 5, "dup"), 25, "dup");
+      if (sha.startsWith("h")) rows = change(rows, 5, "X");
+      if (sha === "h3") rows = change(rows, 25, "X");
+      return [`${sha}:src/twice.ts`, text(rows)];
+    }),
+  ),
 };
 
 const VERSIONS = [
@@ -84,6 +93,7 @@ export async function getPullRequestContent() {
       { path: "src/app.ts", status: "modified", additions: 3, deletions: 3, binary: false },
       { path: "src/new.ts", status: "added", additions: 1, deletions: 0, binary: false },
       { path: "src/other.ts", status: "modified", additions: 1, deletions: 1, binary: false },
+      { path: "src/twice.ts", status: "modified", additions: 2, deletions: 2, binary: false },
     ],
   };
 }
@@ -230,6 +240,8 @@ describe("changes since your review in Deck", () => {
       "src/app.ts#2",
       "src/new.ts#0",
       "src/other.ts#0",
+      "src/twice.ts#0",
+      "src/twice.ts#1",
     ]);
 
     await expect(deck.sinceReview("h1")).resolves.toEqual({
@@ -245,6 +257,8 @@ describe("changes since your review in Deck", () => {
           // C came in v2, and the rebase only moved it.
           { hunkId: "src/app.ts#2", version: 2 },
           { hunkId: "src/new.ts#0", version: 3 },
+          // The same change as the first copy, but new in v3.
+          { hunkId: "src/twice.ts#1", version: 3 },
         ],
       },
     });
@@ -255,7 +269,7 @@ describe("changes since your review in Deck", () => {
       ),
     ).toMatchObject({
       outcome: "ok",
-      deck: { changed_count: 3, hunk_count: 5, cached: false },
+      deck: { changed_count: 4, hunk_count: 7, cached: false },
     });
   });
 
@@ -293,6 +307,7 @@ describe("changes since your review in Deck", () => {
         changed: [
           { hunkId: "src/app.ts#1", version: 3 },
           { hunkId: "src/new.ts#0", version: 3 },
+          { hunkId: "src/twice.ts#1", version: 3 },
         ],
       },
     });

@@ -113,7 +113,7 @@
     width: 1px;
     height: 1rem;
     flex: none;
-    background: var(--field-border);
+    background: var(--border);
   }
 
   .deck-versions-since {

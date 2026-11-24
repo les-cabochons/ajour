@@ -46,8 +46,13 @@ export function diffSignatures(files: readonly FileDiff[]): DiffSignatures {
   return byPath;
 }
 
-const has = (signatures: DiffSignatures, path: string, signature: string) =>
-  (signatures.get(path)?.get(signature) ?? 0) > 0;
+/** Whether the diff shows the `nth` copy (from 1) of a hunk in its file. */
+const has = (
+  signatures: DiffSignatures,
+  path: string,
+  signature: string,
+  nth: number,
+) => (signatures.get(path)?.get(signature) ?? 0) >= nth;
 
 /** A version between the reviewed one and the one on screen, its diff read only when needed. */
 export interface VersionBetween {
@@ -81,12 +86,17 @@ export async function changedSinceReview(options: {
   };
   const changed: DeckSinceReview["changed"] = [];
   for (const file of options.current) {
+    // A file showing the same hunk twice: the second copy is the same only
+    // where a version shows it twice too.
+    const seen = new Map<string, number>();
     for (const hunk of file.hunks) {
       const signature = hunkSignature(file, hunk);
-      if (has(options.reviewed, file.path, signature)) continue;
+      const nth = (seen.get(signature) ?? 0) + 1;
+      seen.set(signature, nth);
+      if (has(options.reviewed, file.path, signature, nth)) continue;
       let version = options.version;
       for (const earlier of options.between) {
-        if (!has(await signaturesOf(earlier), file.path, signature)) break;
+        if (!has(await signaturesOf(earlier), file.path, signature, nth)) break;
         version = earlier.number;
       }
       changed.push({ hunkId: hunk.id, version });

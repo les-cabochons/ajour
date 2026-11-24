@@ -866,7 +866,10 @@ export function createDeckService(options: {
   }
 
   /** The comparisons under way, by version pair, which a second ask shares. */
-  const comparing = new Map<string, Promise<DeckSinceReviewed>>();
+  const comparing = new Map<
+    string,
+    Promise<Omit<DeckSinceReviewed, "hunkCount">>
+  >();
 
   async function sinceReview(
     source: DeckSource,
@@ -932,7 +935,7 @@ export function createDeckService(options: {
     },
     reviewedHead: string,
     codeHost: DeckCodeHost,
-  ): Promise<DeckSinceReviewed> {
+  ): Promise<Omit<DeckSinceReviewed, "hunkCount">> {
     const check = () => checkConnection(work);
     const { versions } = await runWhenFree(
       codeHost,
@@ -1024,7 +1027,6 @@ export function createDeckService(options: {
     await cache.putSince(current.key, result);
     return {
       result,
-      hunkCount: 0,
       cached: false,
       fileReadCount: counted.fileReadCount,
       comparedCount,

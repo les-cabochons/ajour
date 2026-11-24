@@ -321,7 +321,7 @@ function ReviewChanges({
       ) : (
         <p className="deck-file-empty">This pull request changes no files.</p>
       )}
-      {since?.folded.length ? (
+      {sections.length && since?.folded.length ? (
         <p className="deck-unchanged">
           <span>Unchanged since your review:</span>
           {since.folded.map((section) => (

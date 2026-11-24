@@ -3109,6 +3109,36 @@ export const catalog = defineCatalog({
      * `pull_request.load` or `pull_request.load_file` run, and the diff
      * built from them, unless the content cache holds them (#781).
      */
+    "deck.open": {
+      kinds: ["command", "request"],
+      reasons: [
+        ...pluginRequestReasons,
+        /** Another pull request opened before this one's diff was built. */
+        "replaced",
+        /** Its connection was removed before the pull request was shown. */
+        "connection_removed",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        deck: {
+          file_count: operational<number>(),
+          hunk_count: operational<number>(),
+          /** Files read through the plugin, both versions counted. */
+          file_read_count: operational<number>(),
+          /** The diff was the one kept for the pull request on screen. */
+          kept: operational<boolean>(),
+          /** The diff came from the content cache: no file was read. */
+          cached: operational<boolean>(),
+          /** The code host was asked for the file list. False when the cache answered at the head the window named. */
+          listed: operational<boolean>(),
+          /** The guide's concerns. Absent when no guide was built. */
+          concern_count: operational<number>(),
+          /** False when the pipeline failed, and the page shows the files A–Z. */
+          guide_built: operational<boolean>(),
+        },
+      },
+    },
     /**
      * Changes since your review (#787): the pull request on screen compared
      * with the version the user last reviewed, its versions read through
@@ -3139,36 +3169,6 @@ export const catalog = defineCatalog({
           file_read_count: operational<number>(),
           /** The versions whose diffs were compared, the reviewed one included. */
           compared_count: operational<number>(),
-        },
-      },
-    },
-    "deck.open": {
-      kinds: ["command", "request"],
-      reasons: [
-        ...pluginRequestReasons,
-        /** Another pull request opened before this one's diff was built. */
-        "replaced",
-        /** Its connection was removed before the pull request was shown. */
-        "connection_removed",
-      ],
-      fields: {
-        ...requestFields,
-        ...pluginOperationFields,
-        deck: {
-          file_count: operational<number>(),
-          hunk_count: operational<number>(),
-          /** Files read through the plugin, both versions counted. */
-          file_read_count: operational<number>(),
-          /** The diff was the one kept for the pull request on screen. */
-          kept: operational<boolean>(),
-          /** The diff came from the content cache: no file was read. */
-          cached: operational<boolean>(),
-          /** The code host was asked for the file list. False when the cache answered at the head the window named. */
-          listed: operational<boolean>(),
-          /** The guide's concerns. Absent when no guide was built. */
-          concern_count: operational<number>(),
-          /** False when the pipeline failed, and the page shows the files A–Z. */
-          guide_built: operational<boolean>(),
         },
       },
     },
