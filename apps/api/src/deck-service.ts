@@ -371,8 +371,11 @@ type FileReads = Map<string, Promise<Side>>;
 
 /**
  * The diff of `files` at one version, from its base to its head: only the
- * files on screen matter, since only their hunks are compared. A file
- * missing on a side is absent there, as a file the version didn't have yet.
+ * files on screen matter, since only their hunks are compared. Both sides
+ * of each file are read whatever its status on screen: a file deleted or
+ * added since that version may have been on both sides then. A file
+ * missing on a side is absent there, as a file the version didn't have.
+ * Its patch text.
  */
 async function versionDiff(
   codeHost: DeckCodeHost,
@@ -409,12 +412,8 @@ async function versionDiff(
     files.map((file) => async () => {
       const basePath = file.previousPath ?? file.path;
       return [
-        file.status === "added"
-          ? ABSENT
-          : await read(version.baseSha, basePath),
-        file.status === "deleted"
-          ? ABSENT
-          : await read(version.headSha, file.path),
+        await read(version.baseSha, basePath),
+        await read(version.headSha, file.path),
       ] as const;
     }),
     FILE_READS_AT_ONCE,
@@ -449,7 +448,7 @@ async function versionDiff(
       tooLarge: false,
     });
   });
-  return parseDiff(buildDiff(changes, contents));
+  return buildDiff(changes, contents);
 }
 
 /** The pull request on screen at one base and head: its diff and its guide. */
@@ -960,7 +959,6 @@ export function createDeckService(options: {
     }
     const counted = { fileReadCount: 0 };
     let comparedCount = 0;
-    const onScreenFiles = parseDiff(current.versions.diff);
     let changed: DeckSinceReview["changed"] = [];
     if (reviewed.number < now.number) {
       const reads: FileReads = new Map();
@@ -980,9 +978,9 @@ export function createDeckService(options: {
           cached &&
           (!version.baseSha || cached.key.baseSha === version.baseSha)
         ) {
-          return diffSignatures(parseDiff(cached.guideInput.diff));
+          return diffSignatures(cached.guideInput.diff);
         }
-        const files = await versionDiff(
+        const patch = await versionDiff(
           codeHost,
           ref.repository,
           current.diff.files,
@@ -996,7 +994,7 @@ export function createDeckService(options: {
           counted,
         );
         check();
-        return diffSignatures(files);
+        return diffSignatures(patch);
       };
       const between = versions
         .filter(
@@ -1010,7 +1008,7 @@ export function createDeckService(options: {
           signatures: () => signaturesAt(version),
         }));
       changed = await changedSinceReview({
-        current: onScreenFiles,
+        current: current.versions.diff,
         version: now.number,
         reviewed: await signaturesAt(reviewed),
         between,

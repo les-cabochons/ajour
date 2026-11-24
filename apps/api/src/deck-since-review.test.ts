@@ -86,7 +86,7 @@ export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function getPullRequestContent() {
-  return {
+  return globalThis.deckContent ?? {
     headSha: "h3",
     baseSha: "b2",
     files: [
@@ -101,7 +101,7 @@ export async function getPullRequestVersions() {
   return { versions: globalThis.deckVersions ?? VERSIONS };
 }
 export async function getFileContent(connection, request) {
-  const content = FILES[request.sha + ":" + request.path];
+  const content = (globalThis.deckFiles ?? FILES)[request.sha + ":" + request.path];
   return content === undefined ? { kind: "missing" } : { kind: "text", content };
 }
 `;
@@ -126,7 +126,14 @@ const oneConcern: DeckGuideRuntime = {
 const stops: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const stop of stops.splice(0)) await stop();
-  delete (globalThis as { deckVersions?: unknown }).deckVersions;
+  const fixtures = globalThis as {
+    deckVersions?: unknown;
+    deckFiles?: unknown;
+    deckContent?: unknown;
+  };
+  delete fixtures.deckVersions;
+  delete fixtures.deckFiles;
+  delete fixtures.deckContent;
 });
 
 async function startDeck(source = pluginSource) {
@@ -351,6 +358,114 @@ describe("changes since your review in Deck", () => {
     await expect(deck.sinceReview("h1")).resolves.toMatchObject({
       status: 404,
       body: { reason: "not_supported" },
+    });
+  });
+
+  it("marks a file deleted since the review changed, though the version reviewed was never opened", async () => {
+    // v1, which the user reviewed and never opened, changed the file; v2
+    // deleted it. The diff on screen shows its deletion.
+    Object.assign(globalThis, {
+      deckFiles: {
+        "b1:src/gone.ts": "export const a = 1;\n",
+        "h1:src/gone.ts": "export const a = 2;\n",
+      },
+      deckVersions: [
+        {
+          number: 1,
+          headSha: "h1",
+          baseSha: "b1",
+          pushedAt: 1_000,
+          commits: [],
+        },
+        {
+          number: 2,
+          headSha: "h2",
+          baseSha: "b1",
+          pushedAt: 2_000,
+          commits: [],
+        },
+      ],
+      deckContent: {
+        headSha: "h2",
+        baseSha: "b1",
+        files: [
+          {
+            path: "src/gone.ts",
+            status: "removed",
+            additions: 0,
+            deletions: 1,
+            binary: false,
+          },
+        ],
+      },
+    });
+    const deck = await startDeck();
+    expect((await deck.open()).status).toBe(200);
+
+    await expect(deck.sinceReview("h1", "h2")).resolves.toMatchObject({
+      status: 200,
+      body: {
+        version: 2,
+        reviewedVersion: 1,
+        changed: [{ hunkId: "src/gone.ts#0", version: 2 }],
+      },
+    });
+  });
+
+  it("marks a line changed when only its line ending or the file's final newline changed", async () => {
+    // v1 ended each file's new line with a newline; v2 ends one with CRLF
+    // and the other with no final newline.
+    Object.assign(globalThis, {
+      deckFiles: {
+        "b1:src/crlf.ts": "old\n",
+        "h1:src/crlf.ts": "new\n",
+        "h2:src/crlf.ts": "new\r\n",
+        "b1:src/eof.ts": "old\n",
+        "h1:src/eof.ts": "new\n",
+        "h2:src/eof.ts": "new",
+        "b1:src/same.ts": "old\r\n",
+        "h1:src/same.ts": "new\r\n",
+        "h2:src/same.ts": "new\r\n",
+      },
+      deckVersions: [
+        {
+          number: 1,
+          headSha: "h1",
+          baseSha: "b1",
+          pushedAt: 1_000,
+          commits: [],
+        },
+        {
+          number: 2,
+          headSha: "h2",
+          baseSha: "b1",
+          pushedAt: 2_000,
+          commits: [],
+        },
+      ],
+      deckContent: {
+        headSha: "h2",
+        baseSha: "b1",
+        files: ["src/crlf.ts", "src/eof.ts", "src/same.ts"].map((path) => ({
+          path,
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          binary: false,
+        })),
+      },
+    });
+    const deck = await startDeck();
+    expect((await deck.open()).status).toBe(200);
+
+    await expect(deck.sinceReview("h1", "h2")).resolves.toMatchObject({
+      status: 200,
+      body: {
+        changed: [
+          { hunkId: "src/crlf.ts#0", version: 2 },
+          { hunkId: "src/eof.ts#0", version: 2 },
+        ],
+      },
     });
   });
 });

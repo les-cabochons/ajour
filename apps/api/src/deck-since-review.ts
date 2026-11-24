@@ -1,4 +1,8 @@
-import type { FileDiff, Hunk } from "../../../packages/review-deck/diff.ts";
+import {
+  parseDiff,
+  type FileDiff,
+  type Hunk,
+} from "../../../packages/review-deck/diff.ts";
 import type { DeckSinceReview } from "../../../packages/shared/deck.ts";
 
 /*
@@ -7,38 +11,84 @@ import type { DeckSinceReview } from "../../../packages/shared/deck.ts";
  * the version each other one last changed in. A hunk is the same when its
  * file shows a hunk with the same added and removed lines, byte for byte,
  * in that version's diff, at any position: a rebase that only moves a hunk
- * leaves it unchanged. Its context lines and line numbers don't count.
+ * leaves it unchanged. Its context lines and line numbers don't count; its
+ * line endings and a missing final newline do. The signatures come from
+ * the patch text itself, since the parser normalizes CRLF and drops the
+ * "\ No newline at end of file" markers.
  */
 
 /** The hunks of a diff, by file path, as signatures with how often each appears. */
 export type DiffSignatures = ReadonlyMap<string, ReadonlyMap<string, number>>;
 
-/**
- * What a hunk changes, as one string: its added and removed lines in order.
- * A file shown without lines, binary or only renamed, is its status, its
- * base path and whether it is binary.
- */
-export function hunkSignature(file: FileDiff, hunk: Hunk): string {
-  const changed = hunk.lines.filter((line) => line.kind !== "ctx");
-  if (!hunk.header || !changed.length) {
-    return JSON.stringify([
-      "file",
-      file.status,
-      file.oldPath ?? "",
-      file.binary,
-    ]);
-  }
-  return JSON.stringify(
-    changed.map((line) => `${line.kind === "add" ? "+" : "-"}${line.text}`),
-  );
+/** A file of a patch with each of its hunks signed, in the patch's order. */
+interface SignedFile {
+  file: FileDiff;
+  hunks: { hunk: Hunk; signature: string }[];
 }
 
-export function diffSignatures(files: readonly FileDiff[]): DiffSignatures {
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
+
+/**
+ * Each file section of `patch`, and each hunk in it as its changed lines
+ * with their exact bytes. A changed line the patch marks as the end of a
+ * file with no final newline is followed by the marker "\".
+ */
+function exactChangedLines(patch: string): string[][][] {
+  const files: string[][][] = [];
+  let hunks: string[][] | undefined;
+  let hunk: string[] | undefined;
+  // The line before was a changed one, which a marker belongs to.
+  let afterChange = false;
+  // Splitting at "\n" alone keeps each "\r", and yields the parser's lines.
+  for (const line of patch.split("\n")) {
+    let changed = false;
+    if (line.startsWith("diff --git ")) {
+      hunks = [];
+      files.push(hunks);
+      hunk = undefined;
+    } else if (hunks && HUNK_HEADER.test(line)) {
+      hunk = [];
+      hunks.push(hunk);
+    } else if (hunk && (line.startsWith("+") || line.startsWith("-"))) {
+      hunk.push(line);
+      changed = true;
+    } else if (hunk && afterChange && line.startsWith("\\")) {
+      hunk.push("\\");
+    }
+    afterChange = changed;
+  }
+  return files;
+}
+
+/**
+ * The files and hunks of a patch, each hunk signed with what it changes:
+ * its added and removed lines in order, byte for byte. A file shown
+ * without lines, binary or only renamed, is signed with its status, its
+ * base path and whether it is binary.
+ */
+export function signedDiff(patch: string): SignedFile[] {
+  const exact = exactChangedLines(patch);
+  return parseDiff(patch).map((file, fileIndex) => ({
+    file,
+    hunks: file.hunks.map((hunk, hunkIndex) => {
+      const lines = hunk.header ? exact[fileIndex]?.[hunkIndex] : undefined;
+      return {
+        hunk,
+        signature: JSON.stringify(
+          lines?.length
+            ? lines
+            : ["file", file.status, file.oldPath ?? "", file.binary],
+        ),
+      };
+    }),
+  }));
+}
+
+export function diffSignatures(patch: string): DiffSignatures {
   const byPath = new Map<string, Map<string, number>>();
-  for (const file of files) {
+  for (const { file, hunks } of signedDiff(patch)) {
     const signatures = byPath.get(file.path) ?? new Map<string, number>();
-    for (const hunk of file.hunks) {
-      const signature = hunkSignature(file, hunk);
+    for (const { signature } of hunks) {
       signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
     }
     byPath.set(file.path, signatures);
@@ -68,7 +118,8 @@ export interface VersionBetween {
  * a hunk walks back to it.
  */
 export async function changedSinceReview(options: {
-  current: readonly FileDiff[];
+  /** The patch on screen. */
+  current: string;
   /** The version on screen. */
   version: number;
   reviewed: DiffSignatures;
@@ -85,12 +136,11 @@ export async function changedSinceReview(options: {
     return found;
   };
   const changed: DeckSinceReview["changed"] = [];
-  for (const file of options.current) {
+  for (const { file, hunks } of signedDiff(options.current)) {
     // A file showing the same hunk twice: the second copy is the same only
     // where a version shows it twice too.
     const seen = new Map<string, number>();
-    for (const hunk of file.hunks) {
-      const signature = hunkSignature(file, hunk);
+    for (const { hunk, signature } of hunks) {
       const nth = (seen.get(signature) ?? 0) + 1;
       seen.set(signature, nth);
       if (has(options.reviewed, file.path, signature, nth)) continue;
