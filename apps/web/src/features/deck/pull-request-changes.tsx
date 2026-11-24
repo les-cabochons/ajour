@@ -1,42 +1,81 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  noGuideNote,
   reviewSections,
   sectionToReach,
   toggleViewed,
+  virtualized,
   type ReviewOrder,
+  type ReviewSection,
 } from "@/domain/deck/guide";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { GuideTree } from "./guide-tree";
+import {
+  SECTION_MARGIN,
+  atEnd,
+  scrollerOf,
+  type SectionNavigator,
+} from "./review-scroll";
 import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
 import { usePullRequestDiff } from "./use-pull-request-diff";
+import { VirtualReviewSections } from "./virtual-review-sections";
 
-/** Where a section scrolled to lands below the top of the page's scroller, as `scroll-margin-top` in styles/deck.css. */
-const SECTION_MARGIN = 16;
-
-/** The element that scrolls `element`, or undefined for the window. */
-function scrollerOf(element: HTMLElement) {
-  for (
-    let parent = element.parentElement;
-    parent;
-    parent = parent.parentElement
-  ) {
-    const { overflowY } = getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll") return parent;
-  }
-  return undefined;
-}
-
-/** Whether `scroller`, or the window, is scrolled to its end. */
-function atEnd(scroller: HTMLElement | undefined) {
-  const box = scroller ?? document.scrollingElement;
-  return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+/** Every section mounted, for a pull request that isn't huge. */
+function MountedReviewSections({
+  sections,
+  viewed,
+  theme,
+  onToggleViewed,
+  navigator,
+}: {
+  sections: readonly ReviewSection[];
+  viewed: ReadonlySet<string>;
+  theme: "light" | "dark";
+  onToggleViewed: (hunkId: string) => void;
+  navigator: Ref<SectionNavigator>;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  const all = () => [
+    ...(list.current?.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`) ??
+      []),
+  ];
+  useImperativeHandle(navigator, () => ({
+    tops: () => all().map((section) => section.getBoundingClientRect().top),
+    reach(index) {
+      const section = all()[index];
+      if (!section) return;
+      // Instant, so a second J reads where the first one landed.
+      section.scrollIntoView({ block: "start", behavior: "instant" });
+      section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    },
+  }));
+  return (
+    <div ref={list} className="deck-review-sections">
+      {sections.map((section) => (
+        <ReviewSectionView
+          key={section.key}
+          section={section}
+          viewed={viewed}
+          theme={theme}
+          onToggleViewed={onToggleViewed}
+        />
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -62,27 +101,23 @@ function ReviewChanges({
     [],
   );
   const [treeOpen, setTreeOpen] = useState(false);
-  const list = useRef<HTMLDivElement>(null);
+  const review = useRef<HTMLDivElement>(null);
+  const navigator = useRef<SectionNavigator>(null);
+  // A huge pull request mounts only the rows near the screen (#790).
+  const huge = useMemo(() => virtualized(sections), [sections]);
 
   /** The section J, K or a tick went to last. */
   const reached = useRef<number | undefined>(undefined);
   const reach = useCallback((index: number) => {
-    const section = list.current?.querySelectorAll<HTMLElement>(
-      `[${SECTION_ATTRIBUTE}]`,
-    )[index];
-    if (!section) return;
+    if (index < 0 || !navigator.current) return;
     reached.current = index;
-    // Instant, so a second J reads where the first one landed.
-    section.scrollIntoView({ block: "start", behavior: "instant" });
-    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    navigator.current.reach(index);
   }, []);
   const step = (direction: 1 | -1) => {
-    const element = list.current;
-    if (!element) return;
+    const element = review.current;
+    if (!element || !navigator.current) return;
     // One read pass on each key press; nothing listens to the scroll.
-    const tops = [
-      ...element.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`),
-    ].map((section) => section.getBoundingClientRect().top);
+    const tops = navigator.current.tops();
     const scroller = scrollerOf(element);
     const target = sectionToReach(
       tops,
@@ -122,24 +157,28 @@ function ReviewChanges({
             <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
           </ToggleGroup>
         ) : pullRequest.files.length ? (
-          <span className="deck-guide-source">
-            The guide couldn't be built, so the files show A–Z.
-          </span>
+          <span className="deck-guide-source">{noGuideNote(pullRequest)}</span>
         ) : null}
       </div>
       {sections.length ? (
-        <div className="deck-review">
-          <div ref={list} className="deck-review-sections">
-            {sections.map((section) => (
-              <ReviewSectionView
-                key={section.key}
-                section={section}
-                viewed={viewed}
-                theme={theme}
-                onToggleViewed={onToggleViewed}
-              />
-            ))}
-          </div>
+        <div ref={review} className="deck-review">
+          {huge ? (
+            <VirtualReviewSections
+              sections={sections}
+              viewed={viewed}
+              theme={theme}
+              onToggleViewed={onToggleViewed}
+              navigator={navigator}
+            />
+          ) : (
+            <MountedReviewSections
+              sections={sections}
+              viewed={viewed}
+              theme={theme}
+              onToggleViewed={onToggleViewed}
+              navigator={navigator}
+            />
+          )}
           <GuideTree
             sections={sections}
             viewed={viewed}

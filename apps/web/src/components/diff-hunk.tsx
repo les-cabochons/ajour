@@ -1,18 +1,32 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FileDiffOptions } from "@pierre/diffs/react";
+import type { FileDiffOptions, PatchDiffProps } from "@pierre/diffs/react";
 
 /*
  * A thin wrapper over `@pierre/diffs`, which renders one hunk of a diff.
  * Each hunk mounts only when it nears the screen: until then it is an empty
  * box as tall as its lines, so a pull request with thousands of hunks
  * mounts nothing per line at rest. One observer watches every hunk, and the
- * library loads with the first hunk that mounts.
+ * library loads with the first hunk that mounts. Its lines are highlighted
+ * in the library's worker pool (`diff-highlighter.ts`).
  */
 
 const PatchDiff = lazy(async () => {
-  const { PatchDiff } = await import("@pierre/diffs/react");
-  return { default: PatchDiff<undefined, undefined> };
+  const [{ PatchDiff, WorkerPoolContext }, { diffWorkerPool }] =
+    await Promise.all([
+      import("@pierre/diffs/react"),
+      import("./diff-highlighter"),
+    ]);
+  const pool = diffWorkerPool();
+  // Every hunk highlights in the shared worker pool.
+  function HighlightedPatch(props: PatchDiffProps<undefined, undefined>) {
+    return (
+      <WorkerPoolContext.Provider value={pool}>
+        <PatchDiff<undefined, undefined> {...props} />
+      </WorkerPoolContext.Provider>
+    );
+  }
+  return { default: HighlightedPatch };
 });
 
 /** How far below or above the screen a hunk mounts, so scrolling finds it drawn. */

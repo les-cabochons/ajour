@@ -48,6 +48,36 @@
     gap: 1.75rem;
   }
 
+  /*
+   * A huge pull request's rows (#790): only those near the screen are
+   * mounted, in a window moved down to the first of them, inside a box as
+   * tall as every row. Each row holds its own spacing, so its measured
+   * height is all it takes: the same gaps as the sections' flex gaps.
+   */
+  .deck-review-sections[data-virtual] {
+    position: relative;
+    display: block;
+  }
+
+  .deck-review-window {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+  }
+
+  .deck-review-group {
+    min-width: 0;
+  }
+
+  .deck-review-row[data-row="hunk"] {
+    padding-top: 0.5rem;
+  }
+
+  .deck-review-row[data-before-section] {
+    padding-bottom: 1.75rem;
+  }
+
   .deck-file,
   .deck-concern {
     display: flex;
@@ -229,6 +259,29 @@
     list-style: none;
   }
 
+  /* A tree with more sections than it mounts (#790): only those in its view, each placed by its offset. */
+  .deck-tree-ticks[data-virtual],
+  .deck-tree-rows[data-virtual] {
+    position: relative;
+    display: block;
+    flex: none;
+    width: 100%;
+  }
+
+  .deck-tree-ticks[data-virtual] > li,
+  .deck-tree-rows[data-virtual] > li {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    display: grid;
+    justify-items: center;
+  }
+
+  .deck-tree-rows[data-virtual] > li {
+    justify-items: stretch;
+  }
+
   .deck-tick {
     display: grid;
     width: 1.5rem;
@@ -400,5 +453,14 @@
   .diff-hunk:not([data-drawn]),
   .diff-hunk-placeholder {
     height: calc(var(--diff-hunk-rows) * var(--diff-line-height));
+  }
+
+  /*
+   * Drawn, it never gets shorter than its rows: the library shows an empty
+   * box until the highlighter worker answers, which would pull the end of
+   * a huge pull request's page up under the reader (#790).
+   */
+  .diff-hunk[data-drawn] {
+    min-height: calc(var(--diff-hunk-rows) * var(--diff-line-height));
   }
 }

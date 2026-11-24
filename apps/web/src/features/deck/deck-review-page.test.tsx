@@ -34,7 +34,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-api")>()),
   openDeckPullRequest: vi.fn(),
 }));
-vi.mock("@pierre/diffs/react", () => ({
+vi.mock("@pierre/diffs/react", async () => ({
+  WorkerPoolContext: (await import("react")).createContext(undefined),
   PatchDiff: ({
     patch,
     options,
@@ -231,6 +232,32 @@ it("opens the pull request and shows its title and every hunk, files A–Z, with
     repository: "acme/api",
     number: 1,
   });
+});
+
+it("says the guide isn't built for a pull request with too many hunks, and shows its files A–Z", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...DIFF,
+    guideSkipped: { reason: "too_many_hunks", hunkLimit: 1_000 },
+  });
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  await within(changes).findByRole("heading", { name: "src/api.ts" });
+  expect(within(changes).getByRole("heading", { level: 2 }).textContent).toBe(
+    "Files3",
+  );
+  expect(
+    within(changes).getByText(
+      "This pull request has more than 1,000 hunks, too many to build a guide, so the files show A–Z.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(changes).queryByText(
+      "The guide couldn't be built, so the files show A–Z.",
+    ),
+  ).toBeNull();
+  expect(within(changes).queryByRole("group", { name: "Order" })).toBeNull();
 });
 
 it("mounts nothing per line at rest, and draws a hunk with wrapped lines once it nears the screen", async () => {

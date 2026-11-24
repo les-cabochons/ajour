@@ -25,7 +25,7 @@ import {
 export const SECTION_ATTRIBUTE = "data-review-section";
 
 /** One hunk: in a concern, its file's path first; then its Viewed mark and its lines. */
-const ReviewHunkView = memo(function ReviewHunkView({
+export const ReviewHunkView = memo(function ReviewHunkView({
   entry,
   inConcern,
   viewed,
@@ -74,6 +74,55 @@ const ReviewHunkView = memo(function ReviewHunkView({
   );
 });
 
+/**
+ * A section's header: a file's path and note, or a concern's number, title,
+ * rationale and viewed count. Its `h3` has `headingId`, and J and K focus it.
+ */
+export function ReviewSectionHeader({
+  section,
+  seen,
+  headingId,
+}: {
+  section: ReviewSection;
+  /** Its hunks marked viewed. */
+  seen: number;
+  headingId: string;
+}) {
+  const { file } = section;
+  const note = file ? fileNote(file) : undefined;
+  const total = section.hunks.length;
+  return file ? (
+    <header className="deck-file-header">
+      <h3 id={headingId} tabIndex={-1} className="deck-file-path">
+        {file.path}
+      </h3>
+      {note ? <span className="deck-file-note">{note}</span> : null}
+    </header>
+  ) : (
+    <header className="deck-concern-header">
+      <span
+        className="deck-concern-number"
+        data-done={seen === total || undefined}
+        aria-hidden
+      >
+        {section.number}
+      </span>
+      <div className="deck-concern-text">
+        <h3 id={headingId} tabIndex={-1} className="deck-concern-title">
+          <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
+          {section.title}
+        </h3>
+        {section.rationale ? (
+          <p className="deck-concern-rationale">{section.rationale}</p>
+        ) : null}
+      </div>
+      <Value tone="muted" className="deck-concern-progress">
+        {seen}/{total}
+      </Value>
+    </header>
+  );
+}
+
 /** A concern of the guide, or a file of Files A–Z, with its hunks in order. */
 export const ReviewSectionView = memo(function ReviewSectionView({
   section,
@@ -87,52 +136,23 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   onToggleViewed: (hunkId: string) => void;
 }) {
   const headingId = useId();
-  const { file } = section;
-  const note = file ? fileNote(file) : undefined;
-  const seen = viewedCount(section, viewed);
-  const total = section.hunks.length;
   const attribute = { [SECTION_ATTRIBUTE]: "" };
   return (
     <section
-      className={file ? "deck-file" : "deck-concern"}
+      className={section.file ? "deck-file" : "deck-concern"}
       aria-labelledby={headingId}
       {...attribute}
     >
-      {file ? (
-        <header className="deck-file-header">
-          <h3 id={headingId} tabIndex={-1} className="deck-file-path">
-            {file.path}
-          </h3>
-          {note ? <span className="deck-file-note">{note}</span> : null}
-        </header>
-      ) : (
-        <header className="deck-concern-header">
-          <span
-            className="deck-concern-number"
-            data-done={seen === total || undefined}
-            aria-hidden
-          >
-            {section.number}
-          </span>
-          <div className="deck-concern-text">
-            <h3 id={headingId} tabIndex={-1} className="deck-concern-title">
-              <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
-              {section.title}
-            </h3>
-            {section.rationale ? (
-              <p className="deck-concern-rationale">{section.rationale}</p>
-            ) : null}
-          </div>
-          <Value tone="muted" className="deck-concern-progress">
-            {seen}/{total}
-          </Value>
-        </header>
-      )}
+      <ReviewSectionHeader
+        section={section}
+        seen={viewedCount(section, viewed)}
+        headingId={headingId}
+      />
       {section.hunks.map((entry) => (
         <ReviewHunkView
           key={entry.hunk.id}
           entry={entry}
-          inConcern={!file}
+          inConcern={!section.file}
           viewed={viewed.has(entry.hunk.id)}
           theme={theme}
           onToggleViewed={onToggleViewed}

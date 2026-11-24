@@ -34,6 +34,21 @@ export interface ReviewSection {
   hunks: ReviewHunk[];
 }
 
+/**
+ * Why the page shows the files A–Z with no Guide toggle: the guide wasn't
+ * built for a pull request with too many hunks (#790), or it couldn't be
+ * built. Undefined while there is a guide.
+ */
+export function noGuideNote(
+  pullRequest: Pick<DeckOpenedPullRequest, "guide" | "guideSkipped">,
+): string | undefined {
+  if (pullRequest.guide) return undefined;
+  const skipped = pullRequest.guideSkipped;
+  return skipped
+    ? `This pull request has more than ${skipped.hunkLimit.toLocaleString("en-US")} hunks, too many to build a guide, so the files show A–Z.`
+    : "The guide couldn't be built, so the files show A–Z.";
+}
+
 /** Paths compare by UTF-16 code units, as the local API sorts them. */
 const byPath = (a: DeckFile, b: DeckFile) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
@@ -149,4 +164,70 @@ export function viewedCount(
 /** A guide tree tick's length in pixels: longer for more hunks, from 6 to 40. */
 export function tickLength(hunkCount: number): number {
   return Math.min(40, Math.round(6 + Math.max(1, hunkCount) * 2.4) - 2);
+}
+
+/*
+ * Huge pull requests (#790). Above a hunk count the page mounts only the
+ * rows near the screen, and above a section count the guide tree mounts
+ * only the ticks or titles in its view. The limits come from the timing
+ * run on Review Deck's 3,090-hunk mock: without it, scrolling stays clean
+ * up to about 1,000 hunks and has long tasks from 1,500, and the mount
+ * grows with every hunk.
+ */
+
+/** The most hunks the page mounts at once. */
+export const VIRTUAL_HUNK_THRESHOLD = 500;
+/** The most sections the guide tree mounts at once. */
+export const VIRTUAL_TREE_THRESHOLD = 200;
+
+/** Whether the page mounts only the rows near the screen. */
+export function virtualized(sections: readonly ReviewSection[]): boolean {
+  let hunks = 0;
+  for (const section of sections) hunks += section.hunks.length;
+  return hunks > VIRTUAL_HUNK_THRESHOLD;
+}
+
+/** Whether the guide tree mounts only the ticks or titles in its view. */
+export function treeVirtualized(sections: readonly ReviewSection[]): boolean {
+  return sections.length > VIRTUAL_TREE_THRESHOLD;
+}
+
+/** One row of the page while it mounts only what is near the screen: a section's header, or one of its hunks. */
+export type ReviewRow =
+  | { kind: "section"; key: string; section: number }
+  | {
+      kind: "hunk";
+      key: string;
+      section: number;
+      entry: ReviewHunk;
+      /** The last hunk of a section another section follows, which holds the space between them. */
+      beforeSection: boolean;
+    };
+
+/** The sections as rows in reading order, and the row of each section's header. */
+export function reviewRows(sections: readonly ReviewSection[]): {
+  rows: ReviewRow[];
+  sectionRows: number[];
+} {
+  const rows: ReviewRow[] = [];
+  const sectionRows: number[] = [];
+  sections.forEach((section, index) => {
+    sectionRows.push(rows.length);
+    rows.push({
+      kind: "section",
+      key: `section:${section.key}`,
+      section: index,
+    });
+    section.hunks.forEach((entry, position) => {
+      rows.push({
+        kind: "hunk",
+        key: entry.hunk.id,
+        section: index,
+        entry,
+        beforeSection:
+          position === section.hunks.length - 1 && index < sections.length - 1,
+      });
+    });
+  });
+  return { rows, sectionRows };
 }

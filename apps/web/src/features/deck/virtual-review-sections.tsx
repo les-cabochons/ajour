@@ -1,0 +1,297 @@
+import {
+  memo,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+import {
+  reviewRows,
+  viewedCount,
+  type ReviewRow,
+  type ReviewSection,
+} from "@/domain/deck/guide";
+import { hunkRowCount } from "@/domain/deck/review-diff";
+import {
+  SECTION_MARGIN,
+  scrollerOf,
+  type SectionNavigator,
+} from "./review-scroll";
+import { ReviewHunkView, ReviewSectionHeader } from "./review-sections";
+
+/*
+ * The sections of a huge pull request's review page (#790): one row per
+ * section header and per hunk, of which only the rows near the screen are
+ * mounted, through `@tanstack/react-virtual`. Each row is measured once it
+ * mounts, and again as its hunk draws or folds, so the rows above the
+ * screen never move what is read. The rows on screen sit in a `section`
+ * per concern or file, named for assistive technology.
+ */
+
+/** Rows mounted beyond each edge of the screen. */
+const OVERSCAN = 4;
+
+/*
+ * A row's height before it is measured, from styles/deck.css: a hunk row's
+ * 8px top padding, its 24px header, a 4px gap, then its lines in a hairline
+ * frame, or a folded or line-less hunk's header alone; 28px more for the
+ * hunk that ends a section. A concern's header holds two lines, a file's
+ * one.
+ */
+const HUNK_PADDING = 8;
+const HUNK_HEADER = 24;
+const HUNK_GAP = 4;
+const HUNK_FRAME = 2;
+const SECTION_SPACE = 28;
+const CONCERN_HEADER = 44;
+const FILE_HEADER = 18;
+const NOTE_HEIGHT = 18;
+
+/** A row's height, folded (a viewed hunk's header alone) and open. */
+function estimateRow(
+  row: ReviewRow,
+  sections: readonly ReviewSection[],
+  lineHeight: number,
+): { folded: number; open: number } {
+  if (row.kind === "section") {
+    const height = sections[row.section]?.file ? FILE_HEADER : CONCERN_HEADER;
+    return { folded: height, open: height };
+  }
+  const { hunk } = row.entry;
+  const folded =
+    HUNK_PADDING + HUNK_HEADER + (row.beforeSection ? SECTION_SPACE : 0);
+  const body = hunk.header
+    ? HUNK_GAP + HUNK_FRAME + hunkRowCount(hunk) * lineHeight
+    : HUNK_GAP + NOTE_HEIGHT;
+  return { folded, open: folded + body };
+}
+
+/** What a section's rows on screen are named: its title, as its heading reads. */
+function sectionName(section: ReviewSection) {
+  return section.number
+    ? `Concern ${section.number}: ${section.title}`
+    : section.title;
+}
+
+/** The rows on screen, grouped by the section they belong to. */
+function bySection(items: VirtualItem[], rows: readonly ReviewRow[]) {
+  const groups: { section: number; items: VirtualItem[] }[] = [];
+  for (const item of items) {
+    const section = rows[item.index]!.section;
+    const last = groups.at(-1);
+    if (last?.section === section) last.items.push(item);
+    else groups.push({ section, items: [item] });
+  }
+  return groups;
+}
+
+export const VirtualReviewSections = memo(function VirtualReviewSections({
+  sections,
+  viewed,
+  theme,
+  onToggleViewed,
+  navigator,
+}: {
+  sections: readonly ReviewSection[];
+  viewed: ReadonlySet<string>;
+  theme: "light" | "dark";
+  onToggleViewed: (hunkId: string) => void;
+  navigator: Ref<SectionNavigator>;
+}) {
+  const baseId = useId();
+  const list = useRef<HTMLDivElement>(null);
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  /** How far below the top of the scroller's content the rows start. */
+  const [margin, setMargin] = useState(0);
+  const [lineHeight, setLineHeight] = useState(20);
+  const { rows, sectionRows } = useMemo(() => reviewRows(sections), [sections]);
+  // Counted once: the virtualizer asks again for every row not measured yet
+  // each time a row's height changes.
+  const estimates = useMemo(
+    () => rows.map((row) => estimateRow(row, sections, lineHeight)),
+    [rows, sections, lineHeight],
+  );
+  // Read by the estimate, which runs only for rows not measured yet.
+  const viewedNow = useRef(viewed);
+  useLayoutEffect(() => {
+    viewedNow.current = viewed;
+  }, [viewed]);
+
+  useLayoutEffect(() => {
+    const element = list.current;
+    if (!element) return;
+    const box = scrollerOf(element);
+    if (!box) return;
+    setScroller(box);
+    const height = Number.parseFloat(
+      getComputedStyle(element).getPropertyValue("--diff-line-height"),
+    );
+    if (height > 0) setLineHeight(height);
+    // The summary and the heading above the rows can change height.
+    const measure = () => {
+      const offset =
+        element.getBoundingClientRect().top -
+        box.getBoundingClientRect().top +
+        box.scrollTop;
+      setMargin((current) =>
+        Math.abs(current - offset) < 0.5 ? current : offset,
+      );
+    };
+    measure();
+    // A frame later: the new margin resizes the rows' box, which this
+    // observer would otherwise report again within the same frame.
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+    observer.observe(box.firstElementChild ?? box);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scroller,
+    estimateSize: (index) => {
+      const row = rows[index]!;
+      const estimate = estimates[index]!;
+      return row.kind === "hunk" && viewedNow.current.has(row.entry.hunk.id)
+        ? estimate.folded
+        : estimate.open;
+    },
+    getItemKey: (index) => rows[index]!.key,
+    overscan: OVERSCAN,
+    scrollMargin: margin,
+    // Rows measured a frame later, so their new heights never loop the observer.
+    useAnimationFrameWithResizeObserver: true,
+  });
+
+  /**
+   * Focuses section `index`'s title once its row has mounted, and holds it
+   * on the reading line while the rows around it draw: a hunk's drawn
+   * height can differ from the height it held, after the virtualizer's
+   * jump. It stops once the title stays put for three frames, after 60
+   * frames, or when another reach starts.
+   */
+  const reaching = useRef(0);
+  const settle = (index: number) => {
+    const run = (reaching.current += 1);
+    let frames = 0;
+    let still = 0;
+    const attempt = () => {
+      if (run !== reaching.current || !scroller) return;
+      frames += 1;
+      const heading = list.current?.querySelector<HTMLElement>(
+        `[data-section-index="${index}"] h3`,
+      );
+      if (heading) {
+        if (document.activeElement !== heading) {
+          heading.focus({ preventScroll: true });
+        }
+        const off =
+          heading
+            .closest<HTMLElement>(".deck-review-row")!
+            .getBoundingClientRect().top -
+          (scroller.getBoundingClientRect().top + SECTION_MARGIN);
+        if (Math.abs(off) > 1) {
+          // Through the virtualizer, which otherwise keeps the offset it
+          // last saw and moves the page back from there as rows resize.
+          virtualizer.scrollToOffset(scroller.scrollTop + off);
+          still = 0;
+        } else {
+          still += 1;
+        }
+      }
+      if (still < 3 && frames < 60) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  };
+
+  useImperativeHandle(navigator, () => ({
+    tops() {
+      if (!scroller) return [];
+      const top = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const measured = virtualizer.measurementsCache;
+      return sectionRows.map((row) => top + (measured[row]?.start ?? 0));
+    },
+    reach(index) {
+      const row = sectionRows[index];
+      if (row === undefined || !scroller) return;
+      // A jump to where the rows above it say it starts, then the title
+      // holds the reading line by its own position as the rows near it
+      // mount and draw.
+      const start = virtualizer.measurementsCache[row]?.start ?? 0;
+      virtualizer.scrollToOffset(start - SECTION_MARGIN);
+      settle(index);
+    },
+  }));
+
+  const items = virtualizer.getVirtualItems();
+  const shift = (items[0]?.start ?? margin) - margin;
+  return (
+    <div
+      ref={list}
+      className="deck-review-sections"
+      data-virtual=""
+      style={{ height: virtualizer.getTotalSize() }}
+    >
+      <div
+        className="deck-review-window"
+        style={{ transform: `translateY(${shift}px)` }}
+      >
+        {bySection(items, rows).map((group) => {
+          const section = sections[group.section]!;
+          return (
+            <section
+              key={section.key}
+              className="deck-review-group"
+              aria-label={sectionName(section)}
+            >
+              {group.items.map((item) => {
+                const row = rows[item.index]!;
+                return (
+                  <div
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    data-index={item.index}
+                    data-row={row.kind}
+                    data-before-section={
+                      row.kind === "hunk" && row.beforeSection ? "" : undefined
+                    }
+                    data-section-index={
+                      row.kind === "section" ? row.section : undefined
+                    }
+                    className="deck-review-row"
+                  >
+                    {row.kind === "section" ? (
+                      <ReviewSectionHeader
+                        section={section}
+                        seen={viewedCount(section, viewed)}
+                        headingId={`${baseId}-${row.section}`}
+                      />
+                    ) : (
+                      <ReviewHunkView
+                        entry={row.entry}
+                        inConcern={!section.file}
+                        viewed={viewed.has(row.entry.hunk.id)}
+                        theme={theme}
+                        onToggleViewed={onToggleViewed}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
