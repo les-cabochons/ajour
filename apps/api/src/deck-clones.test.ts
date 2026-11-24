@@ -1,4 +1,12 @@
-import { access, lstat, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import {
+  access,
+  lstat,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DeckClone } from "../../../packages/shared/deck.ts";
@@ -34,7 +42,7 @@ const exists = (file: string) =>
     () => false,
   );
 
-function clones() {
+function clones(worktreesFolder = fixture.worktrees) {
   return createDeckClones({
     storage: {
       getDeckClones: async () => saved,
@@ -60,7 +68,7 @@ function clones() {
         return saved.length < before;
       },
     },
-    worktreesFolder: fixture.worktrees,
+    worktreesFolder,
   });
 }
 
@@ -103,7 +111,10 @@ describe("choosing a clone", { timeout: 30_000 }, () => {
       environment: { kind: "native" },
       remote: "origin",
     });
-    expect(path.relative(chosen.path, fixture.clone)).toBe("");
+    // Git names the folder by its long path, whatever form it was given.
+    expect(realpathSync.native(chosen.path)).toBe(
+      realpathSync.native(fixture.clone),
+    );
     expect(saved).toEqual([chosen]);
   });
 
@@ -418,6 +429,28 @@ describe(
       expect(
         git(fixture.clone, "for-each-ref", "--format=%(refname)", "refs/ajour"),
       ).toBe("");
+    });
+
+    it("removes a leftover when Ajour's data folder is reached through another name than git prints", async () => {
+      // As a short 8.3 name or a link does: git prints the folder's real path.
+      const linked = path.join(fixture.root, "data link");
+      await symlink(path.dirname(fixture.worktrees), linked, "junction");
+      const worktrees = path.join(linked, "worktrees");
+      const first = clones(worktrees);
+      await first.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const prepared = await first.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      await rm(prepared.root, { recursive: true, force: true, maxRetries: 5 });
+
+      await clones(worktrees).releaseExcept(new Set());
+
+      const listed = git(fixture.clone, "worktree", "list", "--porcelain");
+      expect(listed).not.toContain("prunable");
+      expect(listed).not.toContain("detached");
     });
 
     it("keeps the worktree of an entry still in the cache", async () => {

@@ -355,12 +355,18 @@ export function createDeckClones(options: DeckClonesOptions) {
       };
     }
     const nativeTop = path.resolve(top);
+    // Git prints long paths: a short 8.3 name in the data folder's path,
+    // as on a CI runner's temp folder, would never compare equal to them.
+    await fs.mkdir(options.worktreesFolder, { recursive: true });
+    const worktrees = await fs
+      .realpath(options.worktreesFolder)
+      .catch(() => options.worktreesFolder);
     return {
       git: (await gitIn(environment, nativeTop, signal)) ?? git,
       environment,
       style: path as typeof path.posix,
       top: nativeTop,
-      worktrees: options.worktreesFolder,
+      worktrees,
       here: (native) => native,
     };
   }
