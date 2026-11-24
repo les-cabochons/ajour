@@ -163,6 +163,10 @@ describe("Codex conversation", () => {
     expect(files["prompt.md"]).toBe("Review pull request pr-1.");
   });
 
+  it("can't read a clone: it reads files only through its shell, which stays off", () => {
+    expect(conversation.readsFiles).toBe(false);
+  });
+
   it("resumes the thread by its ID", () => {
     const { args } = conversation.buildInvocation({
       ...conversationInput,

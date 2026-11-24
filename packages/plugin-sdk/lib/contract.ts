@@ -853,6 +853,13 @@ export type CodeHostOperations = {
         checks: "none" | "pending" | "success" | "failure";
         mergeability: "unknown" | "mergeable" | "conflicting";
         closedAt?: number | undefined;
+        headRef?: string | undefined;
+        repositoryIdentity?:
+          | {
+              cloneUrls: string[];
+              source?: { repository: string; cloneUrls: string[] } | undefined;
+            }
+          | undefined;
         lastPushActor?:
           | {
               login: string;

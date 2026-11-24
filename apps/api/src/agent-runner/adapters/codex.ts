@@ -82,6 +82,8 @@ function turnFailure(event: Record<string, unknown>): string {
  */
 const codexConversation: ConversationAdapter = {
   mode: "per-turn",
+  // Codex reads files only through its shell, which stays off.
+  readsFiles: false,
 
   buildInvocation(input) {
     return {

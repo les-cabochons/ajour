@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { agentCliIdSchema, agentTurnSchema } from "./agent-runs.ts";
-import { codeHostPullRequestRefSchema } from "./code-host.ts";
+import {
+  codeHostPullRequestRefSchema,
+  codeHostRepositoryIdentitySchema,
+} from "./code-host.ts";
 
 /*
  * Deck's review page, as the local API serves it to the window. Deck builds a
@@ -194,6 +197,28 @@ export const deckAskAnchorSchema = z.object({
 });
 export type DeckAskAnchor = z.infer<typeof deckAskAnchorSchema>;
 
+/**
+ * What Deck needs to read the user's clone at the pull request's head,
+ * from the pull request's facts: its clone addresses and its branch.
+ */
+export const deckCloneSourceSchema = z.object({
+  repositoryIdentity: codeHostRepositoryIdentitySchema,
+  headRef: z.string().trim().min(1).max(400).optional(),
+});
+export type DeckCloneSource = z.infer<typeof deckCloneSourceSchema>;
+
+/**
+ * Whether an answer read the user's clone (#795): it did, it couldn't and
+ * why, or the user hasn't chosen one for the repository. Absent when the
+ * code host doesn't say where the repository is cloned from.
+ */
+export const deckCloneUseSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("read") }),
+  z.object({ state: z.literal("unavailable"), reason: z.string() }),
+  z.object({ state: z.literal("not_chosen") }),
+]);
+export type DeckCloneUse = z.infer<typeof deckCloneUseSchema>;
+
 /** Asks about a pull request at one head, on its default question or a typed one. */
 export const deckAskRequestSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
@@ -203,6 +228,8 @@ export const deckAskRequestSchema = z.object({
   anchor: deckAskAnchorSchema,
   /** The user's own question, in place of the anchor's default one. */
   question: z.string().trim().min(1).max(DECK_QUESTION_MAX).optional(),
+  /** Where the repository is cloned from, so the agent can read the user's clone too. */
+  clone: deckCloneSourceSchema.optional(),
 });
 export type DeckAskRequest = z.infer<typeof deckAskRequestSchema>;
 
@@ -216,8 +243,13 @@ export const deckAskResponseSchema = z.discriminatedUnion("kind", [
     text: z.string(),
     /** The head the answer is about. */
     head: z.string(),
+    clone: deckCloneUseSchema.optional(),
   }),
-  z.object({ kind: z.literal("turn"), turn: agentTurnSchema }),
+  z.object({
+    kind: z.literal("turn"),
+    turn: agentTurnSchema,
+    clone: deckCloneUseSchema.optional(),
+  }),
 ]);
 export type DeckAskResponse = z.infer<typeof deckAskResponseSchema>;
 
@@ -280,6 +312,76 @@ export const deckConsentsSchema = z.object({
   consents: z.array(deckAgentConsentSchema),
 });
 export type DeckConsents = z.infer<typeof deckConsentsSchema>;
+
+/*
+ * The user's local clones (#795): one per repository, on this computer or
+ * in a WSL distribution. Kept in the local API's machine-local state, never
+ * synced and never in the content cache.
+ */
+
+/** Where a clone lives: this computer's own file system, or a WSL distribution's. */
+export const deckCloneEnvironmentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("native") }),
+  z.object({
+    kind: z.literal("wsl"),
+    distro: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+  }),
+]);
+export type DeckCloneEnvironment = z.infer<typeof deckCloneEnvironmentSchema>;
+
+/** The clone the user chose for a repository. */
+export const deckCloneSchema = z.object({
+  pluginId: z.string().min(1),
+  connectionId: z.string().min(1),
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  environment: deckCloneEnvironmentSchema,
+  /** The clone's top folder: a native path, or a Linux path in its distribution. */
+  path: z.string().min(1).max(4_000),
+  /** The remote Deck fetches from, whose address matched the repository. */
+  remote: z.string().min(1).max(200),
+  chosenAt: z.number().int().nonnegative(),
+});
+export type DeckClone = z.infer<typeof deckCloneSchema>;
+
+export const deckClonesSchema = z.object({ clones: z.array(deckCloneSchema) });
+export type DeckClones = z.infer<typeof deckClonesSchema>;
+
+/** A repository folder Ajour already knows whose remote names the repository. */
+export const deckCloneSuggestionSchema = z.object({
+  /** The repository folder's ID, which choosing it sends back. */
+  folderId: z.string().min(1),
+  name: z.string(),
+  path: z.string(),
+});
+export type DeckCloneSuggestion = z.infer<typeof deckCloneSuggestionSchema>;
+
+/** Asks for the repository's clone, and the folders that could be it. */
+export const deckCloneSuggestionsRequestSchema = z.object({
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  clone: deckCloneSourceSchema,
+});
+
+export const deckCloneSuggestionsSchema = z.object({
+  clone: deckCloneSchema.optional(),
+  suggestions: z.array(deckCloneSuggestionSchema),
+});
+export type DeckCloneSuggestions = z.infer<typeof deckCloneSuggestionsSchema>;
+
+/** Chooses a suggested folder as the repository's clone. */
+export const deckCloneChooseRequestSchema = z.object({
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  clone: deckCloneSourceSchema,
+  folderId: z.string().min(1).max(200),
+});
+
+/** Forgets a repository's clone. */
+export const deckCloneForgetRequestSchema = deckConsentRevokeRequestSchema;
+
+/** Why a folder can't be the repository's clone, as the picker shows it. */
+export const deckCloneRefusalSchema = z.object({
+  reason: z.literal("clone_refused"),
+  error: z.string(),
+});
 
 /*
  * The agent's reads (#791): Deck's MCP tools, for a conversation's client

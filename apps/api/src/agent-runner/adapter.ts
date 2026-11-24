@@ -67,6 +67,12 @@ export interface ConversationInput {
   token: string;
   /** The provider's ID of an earlier conversation to continue. */
   resume?: string;
+  /**
+   * A folder the CLI may read with its own read-only file tools, and never
+   * change: the worktree of the user's clone at the pull request's head
+   * (#795). Only for an adapter whose `readsFiles` is true.
+   */
+  readRoot?: string;
 }
 
 /** What the runner learns from one line of a conversation's output. */
@@ -112,6 +118,12 @@ export interface ConversationCodec {
  */
 export interface ConversationAdapter {
   mode: "warm" | "per-turn";
+  /**
+   * Whether the CLI can read a folder with file tools that neither write
+   * nor run commands. A CLI that reads files only through its shell can't,
+   * and keeps to the pull request.
+   */
+  readsFiles: boolean;
   buildInvocation(input: ConversationInput): AdapterInvocation;
   createCodec(input: ConversationInput): ConversationCodec;
 }

@@ -292,6 +292,8 @@ export interface DeckFileVersions {
 
 /** A pull request Deck holds at one head, for an ask and the agent's reads (#791). */
 export interface DeckHeldPullRequest {
+  /** The entry's key: the pull request at its base and head. */
+  key: string;
   diff: DeckPullRequestDiff;
   guide: DeckGuide | null;
   versions: DeckFileVersions;
@@ -337,7 +339,15 @@ const guideOrNull = (built: Promise<DeckGuide>) =>
   });
 
 /** One local API's Deck service. */
-export function createDeckService(options: { guides: GuideBuilds }) {
+export function createDeckService(options: {
+  guides: GuideBuilds;
+  /**
+   * An entry left: another pull request replaced it on screen, or newer
+   * preloads pushed it out. What lives with it, such as the worktree of the
+   * user's clone (#795), goes too.
+   */
+  onRemoved?: (key: string) => void;
+}) {
   const { guides } = options;
   /**
    * The pull request on screen: the last one opened, at its base and head.
@@ -362,6 +372,16 @@ export function createDeckService(options: { guides: GuideBuilds }) {
   const evict = (entry: Entry) => {
     entry.stop.abort();
     guides.evict(entry.key);
+    options.onRemoved?.(entry.key);
+  };
+
+  /** The pull request on screen is now `next`: the one it replaces leaves. */
+  const putOnScreen = (next: Entry | undefined) => {
+    const previous = onScreen;
+    onScreen = next;
+    if (previous && previous.key !== next?.key) {
+      options.onRemoved?.(previous.key);
+    }
   };
 
   /** The entry's diff and guide, once both are ready. */
@@ -379,7 +399,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     }
     if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
     // A failed guide isn't kept: opening it again reads and builds it again.
-    if (guide === null && onScreen === entry) onScreen = undefined;
+    if (guide === null && onScreen === entry) putOnScreen(undefined);
     return { opened: { ...diff, guide }, ...facts };
   };
 
@@ -434,7 +454,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     if (ready) {
       preloaded.delete(key);
       const entry: Entry = { ...ready, stop: new AbortController() };
-      onScreen = entry;
+      putOnScreen(entry);
       // Its build, if it still waits, runs before the other preloads.
       guides.prioritize(key, entry.stop.signal);
       doneReading();
@@ -463,13 +483,13 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     entry.diff.catch(() => {});
     entry.versions.catch(() => {});
     entry.guide.catch(() => {});
-    onScreen = entry;
+    putOnScreen(entry);
     try {
       const { fileReadCount } = await built;
       doneReading();
       return await answer(entry, { ...none, fileReadCount });
     } catch (error) {
-      if (onScreen === entry) onScreen = undefined;
+      if (onScreen === entry) putOnScreen(undefined);
       throw error;
     }
   }
@@ -537,7 +557,7 @@ export function createDeckService(options: { guides: GuideBuilds }) {
         entry.versions,
         entry.guide,
       ]);
-      return { diff, guide, versions };
+      return { key: entry.key, diff, guide, versions };
     } catch {
       return undefined;
     }

@@ -493,6 +493,26 @@ export const ROUTES = {
     path: "/api/deck/consents",
     name: "deck.consents",
   },
+  deckCloneSuggestions: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/clone/suggestions",
+    name: "deck.clone_suggestions",
+  },
+  deckCloneChoose: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/clone",
+    name: "deck.clone_choose",
+  },
+  deckClones: {
+    method: "GET",
+    path: "/api/deck/clones",
+    name: "deck.clones",
+  },
+  deckCloneForget: {
+    method: "POST",
+    path: "/api/deck/clones/forget",
+    name: "deck.clone_forget",
+  },
   deckConsentRevoke: {
     method: "POST",
     path: "/api/deck/consents/revoke",

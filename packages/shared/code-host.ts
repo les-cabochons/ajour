@@ -108,6 +108,27 @@ export type CodeHostPullRequestRef = z.infer<
   typeof codeHostPullRequestRefSchema
 >;
 
+/** A clone address, HTTPS or SSH, never one that carries a credential. */
+const cloneUrlSchema = z.string().trim().min(1).max(2_000);
+
+/**
+ * Where a pull request's repository is cloned from, so Deck finds the
+ * user's local clone of it (#795). `source` is the fork the pull request
+ * comes from, when it isn't the repository itself.
+ */
+export const codeHostRepositoryIdentitySchema = z.object({
+  cloneUrls: z.array(cloneUrlSchema).min(1).max(4),
+  source: z
+    .object({
+      repository: repositorySchema,
+      cloneUrls: z.array(cloneUrlSchema).min(1).max(4),
+    })
+    .optional(),
+});
+export type CodeHostRepositoryIdentity = z.infer<
+  typeof codeHostRepositoryIdentitySchema
+>;
+
 export const codeHostPullRequestSummarySchema =
   codeHostPullRequestRefSchema.extend({
     id: idSchema,
@@ -128,6 +149,10 @@ export const codeHostPullRequestFactsSchema =
   codeHostPullRequestSummarySchema.extend({
     viewerIsAuthor: z.boolean(),
     headSha: shaSchema,
+    /** The branch the pull request comes from, such as `feature/login`. */
+    headRef: z.string().trim().min(1).max(400).optional(),
+    /** Optional, so pull requests stored before it was added still read. */
+    repositoryIdentity: codeHostRepositoryIdentitySchema.optional(),
     lastPushedAt: timeSchema,
     /** Missing attribution must not trigger a return for a possibly own push. */
     lastPushActor: codeHostUserSchema.optional(),

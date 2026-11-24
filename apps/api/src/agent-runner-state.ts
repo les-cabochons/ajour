@@ -14,7 +14,9 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   deckAgentConsentSchema,
+  deckCloneSchema,
   type DeckAgentConsent,
+  type DeckClone,
 } from "../../../packages/shared/deck.ts";
 
 /** Which of a holder's values the vault holds. See `connection-credentials.ts`. */
@@ -49,6 +51,12 @@ export interface StoredAgentRunnerState {
    * with the agent allowed (#791). Absent from a file saved before: none.
    */
   deckConsents: DeckAgentConsent[];
+  /**
+   * The local clone the user chose for each repository, so Deck's agent can
+   * read it (#795). Machine-local: never synced. Absent from a file saved
+   * before: none.
+   */
+  deckClones: DeckClone[];
 }
 
 export function defaultAgentRunnerSettings(): AgentRunnerSettings {
@@ -159,10 +167,17 @@ export function normalizeAgentRunnerState(
         return parsed.success ? [parsed.data] : [];
       })
     : [];
+  const deckClones = Array.isArray(record.deckClones)
+    ? record.deckClones.flatMap((clone) => {
+        const parsed = deckCloneSchema.safeParse(clone);
+        return parsed.success ? [parsed.data] : [];
+      })
+    : [];
   return {
     settings: settings.success ? settings.data : defaultAgentRunnerSettings(),
     pluginValues,
     pluginSecrets,
     deckConsents,
+    deckClones,
   };
 }

@@ -3199,8 +3199,81 @@ export const catalog = defineCatalog({
           typed_question: operational<boolean>(),
           /** Answered from the cache, with no turn. */
           cached: operational<boolean>(),
+          /**
+           * What the turn did with the user's local clone (#795): read it,
+           * none chosen, or why it couldn't. Never its path or a reason's words.
+           */
+          clone: operational<
+            | "read"
+            | "not_chosen"
+            | "agent_reads_no_files"
+            | "clone_missing"
+            | "remote_changed"
+            | "no_git"
+            | "wsl_unavailable"
+            | "head_not_full"
+            | "no_head_ref"
+            | "no_fork_remote"
+            | "fetch_failed"
+            | "fetch_timeout"
+            | "head_not_found"
+            | "checkout_failed"
+          >(),
         },
         agent: { turn_id: operational() },
+      },
+    },
+    /** The picker asks for a repository's clone and the known folders that could be it (#795). */
+    "deck.clone_suggestions": {
+      kinds: ["command", "request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          folder_count: operational<number>(),
+          suggestion_count: operational<number>(),
+          clone_chosen: operational<boolean>(),
+        },
+      },
+    },
+    /** The user chose a repository's clone, a suggested folder or one from the chooser. */
+    "deck.clone_choose": {
+      kinds: ["command", "request", "ipc"],
+      reasons: [
+        /** The folder isn't a clone of the repository, or Ajour can't read it. */
+        "clone_refused",
+        /** The suggested folder is no longer one Ajour knows. */
+        "not_found",
+        "foreign_sender",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        ipc: ipcFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: { clone_environment: operational<"native" | "wsl">() },
+      },
+    },
+    /** Settings › Agents reads the clones the user chose. */
+    "deck.clones": {
+      kinds: ["command", "request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: { clone_count: operational<number>() },
+      },
+    },
+    /** The user forgot a repository's clone. */
+    "deck.clone_forget": {
+      kinds: ["command", "request"],
+      reasons: ["not_found", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
       },
     },
     /** The user allowed Deck's asks about a repository with the agent picked. */

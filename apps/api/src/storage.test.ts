@@ -1185,6 +1185,8 @@ describe("state files from earlier versions", () => {
       pluginSecrets: {},
       // Added to version 8 without a new version (#791): none.
       deckConsents: [],
+      // Added without a new version (#795): none.
+      deckClones: [],
     },
     pluginBrokerActivity: {},
     pluginProcesses: {},

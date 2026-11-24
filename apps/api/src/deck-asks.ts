@@ -15,10 +15,18 @@ import {
   type DeckAskRequest,
   type DeckAskResponse,
   type DeckAskRefusal,
+  type DeckCloneUse,
   type DeckConcern,
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
+import type { TurnOptions } from "./agent-runner/conversations.ts";
 import { AgentRunError, PICK_AN_AGENT } from "./agent-runner/launch.ts";
+import type {
+  DeckCloneEntry,
+  DeckCloneFailure,
+  DeckClonePrepared,
+  DeckCloneRepository,
+} from "./deck-clones.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
@@ -29,6 +37,11 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * repository with that agent. A done answer is cached per anchor, typed
  * question and head commit, so asking again answers at once. The cache lives
  * in memory until the disk cache (#781).
+ *
+ * When the user chose a local clone of the repository, the turn may read it
+ * too, at the pull request's head (#795). A clone that can't be prepared
+ * never stops the ask: the agent reads the pull request alone, and the
+ * answer says why.
  */
 
 /** Answers kept. Older ones are asked again. */
@@ -69,7 +82,27 @@ export interface DeckAsksOptions {
       head: string,
     ): Promise<DeckHeldPullRequest | undefined>;
   };
-  startTurn(request: CoreTaskRunRequest): Promise<AgentTurn>;
+  startTurn(
+    request: CoreTaskRunRequest,
+    options?: TurnOptions,
+  ): Promise<AgentTurn>;
+  /** The user's local clones. Without them, asks read the pull request alone. */
+  clones?: {
+    isChosen(repository: DeckCloneRepository): Promise<boolean>;
+    prepare(entry: DeckCloneEntry): Promise<DeckClonePrepared>;
+  };
+  /** Whether the agent can read a folder with read-only file tools. */
+  readsFiles?: (cli: AgentCliId) => boolean;
+}
+
+/** What an ask did with the clone, for its event: never a path or a reason's words. */
+export type DeckAskCloneFact =
+  "read" | "not_chosen" | "agent_reads_no_files" | DeckCloneFailure;
+
+/** The answer and, when there was one, what it read of the clone. */
+interface Answer {
+  text: string;
+  clone?: DeckCloneUse;
 }
 
 /** The turn's words: the anchor as Ajour holds it, then the question. */
@@ -87,9 +120,59 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
 
 export function createDeckAsks(options: DeckAsksOptions) {
   /** Done answers by `cacheKey`, oldest first. */
-  const answers = new Map<string, string>();
-  /** The asks still streaming, by turn ID: their cache key and text so far. */
-  const streaming = new Map<string, { key: string; pieces: string[] }>();
+  const answers = new Map<string, Answer>();
+  /** The asks still streaming, by turn ID: their cache key, text so far and clone. */
+  const streaming = new Map<
+    string,
+    { key: string; pieces: string[]; clone?: DeckCloneUse }
+  >();
+
+  /**
+   * The user's clone at the pull request's head, when they chose one and
+   * the agent can read it: the folder the turn reads, or why it can't.
+   */
+  async function cloneFor(
+    source: DeckPullRequestSource,
+    held: DeckHeldPullRequest,
+    request: DeckAskRequest,
+  ): Promise<{ use?: DeckCloneUse; root?: string; fact?: DeckAskCloneFact }> {
+    const { clones } = options;
+    if (!clones || !request.clone) return {};
+    const repository = {
+      pluginId: source.pluginId,
+      connectionId: source.connectionId,
+      repository: source.repository,
+    };
+    const { cli } = await options.storage.getAgentRunnerSettings();
+    if (cli && options.readsFiles && !options.readsFiles(cli)) {
+      if (!(await clones.isChosen(repository))) return {};
+      return {
+        use: {
+          state: "unavailable",
+          reason:
+            "This agent reads files only through a shell, which Ajour keeps off, so it read the pull request alone.",
+        },
+        fact: "agent_reads_no_files",
+      };
+    }
+    const prepared = await clones.prepare({
+      ...repository,
+      key: held.key,
+      number: source.number,
+      head: request.head,
+      clone: request.clone,
+    });
+    if (prepared.state === "read") {
+      return { use: { state: "read" }, root: prepared.root, fact: "read" };
+    }
+    if (prepared.state === "not_chosen") {
+      return { use: { state: "not_chosen" }, fact: "not_chosen" };
+    }
+    return {
+      use: { state: "unavailable", reason: prepared.reason },
+      fact: prepared.failure,
+    };
+  }
 
   const cacheKey = (
     pullRequest: string,
@@ -178,7 +261,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     async ask(
       source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
       request: DeckAskRequest,
-    ): Promise<DeckAskResponse> {
+    ): Promise<DeckAskResponse & { cloneFact?: DeckAskCloneFact }> {
       const pullRequestSource: DeckPullRequestSource = {
         ...source,
         repository: request.repository,
@@ -196,7 +279,12 @@ export function createDeckAsks(options: DeckAsksOptions) {
       if (cached !== undefined) {
         answers.delete(key);
         answers.set(key, cached);
-        return { kind: "answer", text: cached, head: request.head };
+        return {
+          kind: "answer",
+          text: cached.text,
+          head: request.head,
+          ...(cached.clone ? { clone: cached.clone } : {}),
+        };
       }
       const held = await options.deck.held(pullRequest, request.head);
       if (!held) {
@@ -214,14 +302,27 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "unknown_anchor",
         });
       }
-      const turn = await options.startTurn({
-        task: "deck.ask",
-        pullRequest,
-        head: request.head,
-        message: concernMessage(concern, request.question),
+      const clone = await cloneFor(pullRequestSource, held, request);
+      const turn = await options.startTurn(
+        {
+          task: "deck.ask",
+          pullRequest,
+          head: request.head,
+          message: concernMessage(concern, request.question),
+        },
+        clone.root ? { readRoot: clone.root } : {},
+      );
+      streaming.set(turn.id, {
+        key,
+        pieces: [],
+        ...(clone.use ? { clone: clone.use } : {}),
       });
-      streaming.set(turn.id, { key, pieces: [] });
-      return { kind: "turn", turn };
+      return {
+        kind: "turn",
+        turn,
+        ...(clone.use ? { clone: clone.use } : {}),
+        ...(clone.fact ? { cloneFact: clone.fact } : {}),
+      };
     },
 
     /** Reads every turn event the window gets, to cache the asks' answers. */
@@ -237,7 +338,10 @@ export function createDeckAsks(options: DeckAsksOptions) {
       streaming.delete(event.turnId);
       if (event.outcome !== "done") return;
       answers.delete(ask.key);
-      answers.set(ask.key, ask.pieces.join(""));
+      answers.set(ask.key, {
+        text: ask.pieces.join(""),
+        ...(ask.clone ? { clone: ask.clone } : {}),
+      });
       for (const oldest of answers.keys()) {
         if (answers.size <= ANSWERS_KEPT) break;
         answers.delete(oldest);

@@ -60,6 +60,17 @@ function resultFailure(event: Record<string, unknown>): string | undefined {
 }
 
 /**
+ * Claude Code reads a network folder, such as a WSL distribution's
+ * `\\wsl.localhost\Ubuntu\…`, only with a rule that allows it by name, even
+ * among the folders it was given. The rule allows reads under that folder
+ * and nowhere else (Claude Code 2.1.330).
+ */
+function networkReadRule(root: string): string[] {
+  if (!/^\\\\[^\\]/.test(root)) return [];
+  return [`Read(${root.replaceAll("\\", "/").replace(/\/+$/, "")}/**)`];
+}
+
+/**
  * A pull request's conversation. Claude Code reads one user message per turn
  * on its open stdin and streams partial messages, with only Ajour's server
  * and no built-in tool. A later process continues it with `--resume`. Flags
@@ -67,6 +78,7 @@ function resultFailure(event: Record<string, unknown>): string | undefined {
  */
 const claudeCodeConversation: ConversationAdapter = {
   mode: "warm",
+  readsFiles: true,
 
   buildInvocation(input) {
     const mcpConfig = {
@@ -96,10 +108,15 @@ const claudeCodeConversation: ConversationAdapter = {
         "--setting-sources",
         "",
         "--disable-slash-commands",
+        // With a clone, only its read-only file tools, rooted at the
+        // worktree: `dontAsk` refuses a read of anything outside the
+        // folders Claude Code was given (#795).
         "--tools",
-        "",
+        input.readRoot ? "Read,Grep,Glob" : "",
+        ...(input.readRoot ? ["--add-dir", input.readRoot] : []),
         "--allowedTools",
         "mcp__ajour",
+        ...(input.readRoot ? networkReadRule(input.readRoot) : []),
         "--permission-mode",
         "dontAsk",
         ...(input.resume ? ["--resume", input.resume] : []),

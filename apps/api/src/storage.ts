@@ -126,7 +126,10 @@ import {
   type AgentCliId,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
-import type { DeckAgentConsent } from "../../../packages/shared/deck.ts";
+import type {
+  DeckAgentConsent,
+  DeckClone,
+} from "../../../packages/shared/deck.ts";
 import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
   ConnectionPausedError,
@@ -953,6 +956,7 @@ function createDefaultState(): AppApiState {
       pluginValues: {},
       pluginSecrets: {},
       deckConsents: [],
+      deckClones: [],
     },
     pluginBrokerActivity: {},
     pluginProcesses: {},
@@ -3026,6 +3030,48 @@ export class AppApiStorage {
           agentRunner: { ...state.agentRunner, deckConsents: kept },
         },
         result: kept.length !== state.agentRunner.deckConsents.length,
+      };
+    });
+  }
+
+  /** The local clone the user chose for each repository (#795). */
+  async getDeckClones(): Promise<DeckClone[]> {
+    return (await this.readState()).agentRunner.deckClones;
+  }
+
+  /** Keeps a repository's clone, replacing the one chosen before. */
+  async saveDeckClone(clone: DeckClone): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        agentRunner: {
+          ...state.agentRunner,
+          deckClones: [
+            ...state.agentRunner.deckClones.filter(
+              (entry) => !sameDeckRepository(entry, clone),
+            ),
+            clone,
+          ],
+        },
+      },
+      result: undefined,
+    }));
+  }
+
+  /** Forgets a repository's clone. False when it had none. */
+  async forgetDeckClone(
+    repository: Pick<DeckClone, "pluginId" | "connectionId" | "repository">,
+  ): Promise<boolean> {
+    return this.mutate((state) => {
+      const kept = state.agentRunner.deckClones.filter(
+        (entry) => !sameDeckRepository(entry, repository),
+      );
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, deckClones: kept },
+        },
+        result: kept.length !== state.agentRunner.deckClones.length,
       };
     });
   }
