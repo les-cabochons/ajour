@@ -148,9 +148,15 @@ import {
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import {
+  deckCacheSettingsUpdateSchema,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
+  type DeckCacheStorage,
 } from "../../../packages/shared/deck.ts";
+import {
+  createDeckContentCache,
+  deckCacheKeyString,
+} from "./deck-content-cache.ts";
 import {
   createGuideBuilds,
   createWorkerGuideRuntime,
@@ -1820,16 +1826,41 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
   });
   /**
-   * Deck: the pull request on screen and the preloaded ones, their diffs
-   * built from both file versions and their guides by the vendored pipeline.
+   * Deck: the pull request on screen and the content cache on disk (#781),
+   * their diffs built from both file versions and their guides by the
+   * vendored pipeline.
    */
+  const deckGuides = createGuideBuilds({
+    runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
+    events,
+    timeoutMs: options.deckGuideTimeoutMs,
+  });
   const deckService = createDeckService({
-    guides: createGuideBuilds({
-      runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
-      events,
-      timeoutMs: options.deckGuideTimeoutMs,
+    guides: deckGuides,
+    cache: createDeckContentCache({
+      directory: path.join(storage.dataDirectory, "deck-cache"),
+      capBytes: () => storage.getDeckCacheCapBytes(),
+      // A preload whose entry left the cache needn't build its guide.
+      onRemoved: (key) => deckGuides.evict(deckCacheKeyString(key)),
     }),
   });
+  /** What Settings › Storage shows, and its event's fields. */
+  const deckCacheStorage = async (unit: {
+    set(fields: object): unknown;
+  }): Promise<DeckCacheStorage> => {
+    const [usage, capBytes] = await Promise.all([
+      deckService.cache.usage(),
+      storage.getDeckCacheCapBytes(),
+    ]);
+    unit.set({
+      deck: {
+        size_bytes: usage.sizeBytes,
+        cap_bytes: capBytes,
+        entry_count: usage.entryCount,
+      },
+    });
+    return { ...usage, capBytes };
+  };
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
@@ -3874,6 +3905,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
+      // Its pull requests' cached contents go with it.
+      void deckService.cache.forgetConnection({ pluginId, connectionId });
       // The handoffs that ran through it pause as unknown, with why. They
       // queue behind any running refresh, so the delete doesn't wait.
       void handoffs
@@ -4559,6 +4592,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             connectionId,
             Date.now(),
           );
+          // Merged and closed pull requests leave the content cache first.
+          const { pullRequests } =
+            result as CodeHostOperationResult<"syncPullRequests">;
+          void deckService.cache.markClosed(
+            { pluginId, connectionId },
+            pullRequests,
+          );
         }
         writeJson(response, 200, result);
       } catch (error) {
@@ -4599,7 +4639,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             ),
             file_read_count: facts.fileReadCount,
             kept: facts.kept,
-            preloaded: facts.preloaded,
+            cached: facts.cached,
+            listed: facts.listed,
             concern_count: opened.guide?.concerns.length,
             guide_built: opened.guide !== null,
           },
@@ -4636,6 +4677,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       } catch (error) {
         await deck.failed(error);
       }
+    },
+
+    deckStorageGet: async ({ response, unit }) => {
+      writeJson(response, 200, await deckCacheStorage(unit));
+    },
+    // A lower cap evicts at once, closed pull requests first.
+    deckStorageSave: async ({ request, response, unit }) => {
+      const update = await readRequest(request, deckCacheSettingsUpdateSchema);
+      await storage.setDeckCacheCapBytes(update.capBytes);
+      await deckService.cache.evict();
+      writeJson(response, 200, await deckCacheStorage(unit));
+    },
+    deckStorageClear: async ({ response, unit }) => {
+      const { entryCount } = await deckService.cache.usage();
+      await deckService.cache.clear();
+      unit.set({ deck: { removed_count: entryCount } });
+      writeJson(response, 200, await deckCacheStorage(unit));
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {

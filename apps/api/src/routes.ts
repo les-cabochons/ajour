@@ -478,6 +478,22 @@ export const ROUTES = {
     path: "/api/deck/:pluginId/connections/:connectionId/preload",
     name: "deck.preload",
   },
+  // Settings › Storage: Deck's content cache (#781).
+  deckStorageGet: {
+    method: "GET",
+    path: "/api/deck/storage",
+    name: "deck.storage_read",
+  },
+  deckStorageSave: {
+    method: "POST",
+    path: "/api/deck/storage",
+    name: "deck.storage_update",
+  },
+  deckStorageClear: {
+    method: "POST",
+    path: "/api/deck/storage/clear",
+    name: "deck.storage_clear",
+  },
   backlogComment: {
     method: "POST",
     path: "/api/backlog-comments/:pluginId/connections/:connectionId/:operation",

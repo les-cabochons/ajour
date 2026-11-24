@@ -38,6 +38,10 @@ import {
   type RepositoryFolder,
 } from "../../../packages/shared/repository-folders.ts";
 import {
+  DECK_CACHE_DEFAULT_CAP_BYTES,
+  deckCacheSettingsUpdateSchema,
+} from "../../../packages/shared/deck.ts";
+import {
   DEFAULT_WORKTREE_CLEAN_UP,
   DEFAULT_WORKTREE_START_IN,
   worktreeCleanUpRuleSchema,
@@ -589,6 +593,11 @@ interface AppApiStateV8 {
    * project without an entry follows Settings. Never synced.
    */
   worktreeProjectStartIn: Record<string, WorktreeStartIn>;
+  /**
+   * Settings › Storage: the cap of Deck's content cache, in bytes, once the
+   * user set one (#781). Never synced.
+   */
+  deckCacheCapBytes?: number;
   version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
@@ -1437,6 +1446,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
     worktreeSettings: normalizeWorktreeSettings(raw.worktreeSettings),
     worktreeSources: normalizeWorktreeSources(raw.worktreeSources),
     worktreeProjectStartIn: normalizeProjectStartIn(raw.worktreeProjectStartIn),
+    ...normalizeDeckCacheCap(raw.deckCacheCapBytes),
     // A step that held keeps the file below the current version.
     version:
       typeof raw.version === "number"
@@ -1615,6 +1625,12 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       }),
     ),
   };
+}
+
+/** A saved cap of Deck's content cache, or none, so the default holds. */
+function normalizeDeckCacheCap(raw: unknown): { deckCacheCapBytes?: number } {
+  const parsed = deckCacheSettingsUpdateSchema.shape.capBytes.safeParse(raw);
+  return parsed.success ? { deckCacheCapBytes: parsed.data } : {};
 }
 
 /** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
@@ -2004,6 +2020,21 @@ export class AppApiStorage {
         worktrees: state.worktrees.filter((worktree) => worktree.id !== id),
         handoffs: withoutWorktreeLinks(state.handoffs, new Set([id])),
       },
+      result: undefined,
+    }));
+  }
+
+  /** The cap of Deck's content cache (#781): the user's, or 1 GB. */
+  async getDeckCacheCapBytes(): Promise<number> {
+    return (
+      (await this.readState()).deckCacheCapBytes ?? DECK_CACHE_DEFAULT_CAP_BYTES
+    );
+  }
+
+  async setDeckCacheCapBytes(capBytes: number): Promise<void> {
+    const parsed = deckCacheSettingsUpdateSchema.parse({ capBytes });
+    await this.mutate((state) => ({
+      nextState: { ...state, deckCacheCapBytes: parsed.capBytes },
       result: undefined,
     }));
   }

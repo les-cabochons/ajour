@@ -16,6 +16,12 @@ import {
   parseDiff,
 } from "../../../packages/review-deck/diff.ts";
 import {
+  deckCacheKeyString,
+  type DeckCacheKey,
+  type DeckCachedEntry,
+  type DeckContentCache,
+} from "./deck-content-cache.ts";
+import {
   GuideBuildCancelled,
   type GuideBuildInput,
   type GuideBuilds,
@@ -27,10 +33,12 @@ import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
  * each changed file, read through the code host plugin, with Review Deck's
  * vendored `buildDiff` (ADR 0003). The host's patch is never used, so the
  * hunk ids are Review Deck's. Its guide is built from the same diff by the
- * vendored pipeline, in the guide builds' worker thread (#782). The pull
- * request on screen is kept in memory until another one opens, and the last
- * preloaded ones until they open or newer preloads push them out. The disk
- * cache is a later ticket (#781).
+ * vendored pipeline, in the guide builds' worker thread (#782). What it read
+ * and built goes to the content cache on disk (#781), so a pull request
+ * opened or preloaded before opens again without reading a file, and one
+ * opened at the head the window's last sync saw doesn't ask the code host at
+ * all. The pull request on screen is also kept in memory until another one
+ * opens, and the cache never evicts it.
  */
 
 /** The code host operations Deck calls, bound to one connection. */
@@ -48,13 +56,15 @@ export interface DeckOpened {
   fileReadCount: number;
   /** The diff was the one kept for the pull request on screen. */
   kept: boolean;
-  /** The diff was one a preload read. */
-  preloaded: boolean;
+  /** The diff came from the content cache: no file was read. */
+  cached: boolean;
+  /** The code host was asked for the pull request's file list. */
+  listed: boolean;
 }
 
 /** What preloading pull requests did, for its event. */
 export interface DeckPreloaded {
-  /** The guide builds queued. A pull request already kept is not read again. */
+  /** The guide builds queued. A pull request already cached is not read again. */
   queued: number;
   fileReadCount: number;
   /** The pull requests that couldn't be read, and were skipped. */
@@ -75,8 +85,6 @@ export class DeckBuildReplaced extends Error {
  */
 const FILE_READS_AT_ONCE = 3;
 const PRELOAD_READS_AT_ONCE = 1;
-/** The preloaded pull requests kept in memory. Newer preloads push the oldest out. */
-const PRELOADS_KEPT = 20;
 /** How often, and after how long, an operation the host refused for capacity is tried again. */
 const BUSY_RETRIES = 40;
 const BUSY_RETRY_MS = 250;
@@ -283,9 +291,10 @@ async function buildPullRequestDiff(
   };
 }
 
-/** A pull request kept in memory at one base and head: its diff and its guide. */
+/** The pull request on screen at one base and head: its diff and its guide. */
 interface Entry {
-  key: string;
+  key: DeckCacheKey;
+  id: string;
   diff: Promise<DeckPullRequestDiff>;
   /** Null when the pipeline failed. It rejects only when the build was cancelled. */
   guide: Promise<DeckGuide | null>;
@@ -297,16 +306,20 @@ type DeckSource = { pluginId: string; connectionId: string };
 const keyOf = (
   source: DeckSource,
   request: DeckOpenRequest,
-  content: CodeHostOperationResult<"getPullRequestContent">,
-) =>
-  JSON.stringify([
-    source.pluginId,
-    source.connectionId,
-    request.repository,
-    request.number,
-    content.baseSha,
-    content.headSha,
-  ]);
+  content: { baseSha: string; headSha: string },
+): DeckCacheKey => ({
+  pluginId: source.pluginId,
+  connectionId: source.connectionId,
+  repository: request.repository,
+  number: request.number,
+  baseSha: content.baseSha,
+  headSha: content.headSha,
+});
+
+/** The same pull request at the same head, whatever its base. */
+const sameHead = (key: DeckCacheKey, at: Omit<DeckCacheKey, "baseSha">) =>
+  deckCacheKeyString({ ...key, baseSha: "" }) ===
+  deckCacheKeyString({ ...at, baseSha: "" });
 
 /** A failed build gives no guide, and the page shows the files A–Z. A cancelled one stays a rejection. */
 const guideOrNull = (built: Promise<DeckGuide>) =>
@@ -316,16 +329,21 @@ const guideOrNull = (built: Promise<DeckGuide>) =>
   });
 
 /** One local API's Deck service. */
-export function createDeckService(options: { guides: GuideBuilds }) {
-  const { guides } = options;
+export function createDeckService(options: {
+  guides: GuideBuilds;
+  cache: DeckContentCache;
+}) {
+  const { guides, cache } = options;
   /**
    * The pull request on screen: the last one opened, at its base and head.
    * Opening another stops its reads and its guide build, so they don't hold
-   * the plugin's operation slots or the worker.
+   * the plugin's operation slots or the worker. The cache never evicts it.
    */
   let onScreen: Entry | undefined;
-  /** The preloaded pull requests by key, oldest first. */
-  const preloaded = new Map<string, Entry>();
+  const show = (entry: Entry | undefined) => {
+    onScreen = entry;
+    cache.keep(entry?.key);
+  };
   /** Counts the opens, so the last one wins whatever order their file lists come back in. */
   let lastOpen = 0;
   /** The opens still reading their file lists or files, which preloads wait for. */
@@ -337,10 +355,27 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     while (opening.size) await Promise.allSettled([...opening]);
   };
 
-  /** Stops a preload pushed out of the kept ones: its build, if it still runs or waits. */
-  const evict = (entry: Entry) => {
-    entry.stop.abort();
-    guides.evict(entry.key);
+  /**
+   * The guide of `key`, built from `input` at `priority`, and saved to its
+   * cache entry once built. A build already queued for it, as a preload's,
+   * is shared, and moves ahead for an open.
+   */
+  const buildGuide = (
+    key: DeckCacheKey,
+    input: GuideBuildInput,
+    priority: "open" | "preload",
+    signal?: AbortSignal,
+  ) => {
+    const guide = guideOrNull(
+      guides.build(deckCacheKeyString(key), input, priority, signal),
+    );
+    guide.then(
+      (built) => {
+        if (built) void cache.putGuide(key, built);
+      },
+      () => {},
+    );
+    return guide;
   };
 
   /** The entry's diff and guide, once both are ready. */
@@ -357,9 +392,30 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       throw error;
     }
     if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
-    // A failed guide isn't kept: opening it again reads and builds it again.
-    if (guide === null && onScreen === entry) onScreen = undefined;
+    // A failed guide isn't kept: opening it again builds it again, from the cache.
+    if (guide === null && onScreen === entry) show(undefined);
     return { opened: { ...diff, guide }, ...facts };
+  };
+
+  /** Puts a cached pull request on screen, building its guide if it has none. */
+  const openCached = (
+    found: DeckCachedEntry,
+    facts: Omit<DeckOpened, "opened" | "cached">,
+  ) => {
+    onScreen?.stop.abort();
+    const stop = new AbortController();
+    const entry: Entry = {
+      key: found.key,
+      id: deckCacheKeyString(found.key),
+      diff: Promise.resolve(found.diff),
+      guide: found.guide
+        ? Promise.resolve(found.guide)
+        : buildGuide(found.key, found.guideInput, "open", stop.signal),
+      stop,
+    };
+    entry.guide.catch(() => {});
+    show(entry);
+    return answer(entry, { ...facts, cached: true });
   };
 
   async function openPullRequest(
@@ -392,33 +448,47 @@ export function createDeckService(options: { guides: GuideBuilds }) {
   ): Promise<DeckOpened> {
     const open = ++lastOpen;
     const replaced = () => open !== lastOpen;
+    const none = { fileReadCount: 0, kept: false, cached: false };
+    const ref = { repository: request.repository, number: request.number };
+
+    // At the head the last sync saw, the cache answers without the code host.
+    if (request.headSha) {
+      const at = { ...source, ...ref, headSha: request.headSha };
+      if (onScreen && sameHead(onScreen.key, at)) {
+        doneReading();
+        return answer(onScreen, { ...none, kept: true, listed: false });
+      }
+      const found = await cache.find(at);
+      if (replaced()) throw new DeckBuildReplaced();
+      if (found) {
+        doneReading();
+        return openCached(found, { ...none, listed: false });
+      }
+    }
+
     const content = await runWhenFree(
       codeHost,
       "getPullRequestContent",
-      request,
+      ref,
       replaced,
     );
     // A later open owns the screen: this one neither replaces it nor stops its build.
     if (replaced()) throw new DeckBuildReplaced();
     const key = keyOf(source, request, content);
-    const none = { fileReadCount: 0, kept: false, preloaded: false };
-    if (onScreen?.key === key) {
+    const id = deckCacheKeyString(key);
+    const listed = { ...none, listed: true };
+    if (onScreen?.id === id) {
       doneReading();
-      return answer(onScreen, { ...none, kept: true });
+      return answer(onScreen, { ...listed, kept: true });
+    }
+    const found = await cache.get(key);
+    if (replaced()) throw new DeckBuildReplaced();
+    if (found) {
+      doneReading();
+      return openCached(found, listed);
     }
     // Its reads and its guide build stop.
     onScreen?.stop.abort();
-
-    const ready = preloaded.get(key);
-    if (ready) {
-      preloaded.delete(key);
-      const entry: Entry = { ...ready, stop: new AbortController() };
-      onScreen = entry;
-      // Its build, if it still waits, runs before the other preloads.
-      guides.prioritize(key, entry.stop.signal);
-      doneReading();
-      return answer(entry, { ...none, preloaded: true });
-    }
 
     const stop = new AbortController();
     const built = buildPullRequestDiff(
@@ -429,22 +499,24 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     );
     const entry: Entry = {
       key,
+      id,
       diff: built.then((result) => result.diff),
-      guide: built.then((result) =>
-        guideOrNull(guides.build(key, result.guideInput, "open", stop.signal)),
-      ),
+      guide: built.then((result) => {
+        void cache.put(key, result);
+        return buildGuide(key, result.guideInput, "open", stop.signal);
+      }),
       stop,
     };
     // A failure reaches this caller below. A second caller awaits it too.
     entry.diff.catch(() => {});
     entry.guide.catch(() => {});
-    onScreen = entry;
+    show(entry);
     try {
       const { fileReadCount } = await built;
       doneReading();
-      return await answer(entry, { ...none, fileReadCount });
+      return await answer(entry, { ...listed, fileReadCount });
     } catch (error) {
-      if (onScreen === entry) onScreen = undefined;
+      if (onScreen === entry) show(undefined);
       throw error;
     }
   }
@@ -454,18 +526,41 @@ export function createDeckService(options: { guides: GuideBuilds }) {
     request: DeckOpenRequest,
     codeHost: DeckCodeHost,
   ): Promise<Omit<DeckPreloaded, "failed">> {
+    const ref = { repository: request.repository, number: request.number };
+    const skipped = { queued: 0, fileReadCount: 0 };
+    /**
+     * A pull request cached at `key` isn't read again, and one cached
+     * without its guide gets its build queued again. Undefined when it
+     * isn't cached.
+     */
+    const fromCache = async (key: DeckCacheKey) => {
+      if (onScreen?.id === deckCacheKeyString(key)) return skipped;
+      const peeked = await cache.peek(key);
+      if (!peeked) return undefined;
+      if (peeked.hasGuide) return skipped;
+      const found = await cache.get(key);
+      if (!found) return undefined;
+      void buildGuide(key, found.guideInput, "preload");
+      return { queued: 1, fileReadCount: 0 };
+    };
     await opensDone();
+    if (request.headSha) {
+      const at = { ...source, ...ref, headSha: request.headSha };
+      if (onScreen && sameHead(onScreen.key, at)) return skipped;
+      const found = await cache.find(at);
+      if (found) return (await fromCache(found.key)) ?? skipped;
+    }
     const content = await runWhenFree(
       codeHost,
       "getPullRequestContent",
-      request,
+      ref,
       () => false,
     );
     const key = keyOf(source, request, content);
-    const kept = () => onScreen?.key === key || preloaded.has(key);
-    if (kept()) return { queued: 0, fileReadCount: 0 };
+    const cached = await fromCache(key);
+    if (cached) return cached;
     const stop = new AbortController();
-    const { diff, guideInput, fileReadCount } = await buildPullRequestDiff(
+    const result = await buildPullRequestDiff(
       codeHost,
       request.repository,
       content,
@@ -473,38 +568,30 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
     // An open of the same pull request may have read it meanwhile.
-    if (kept()) return { queued: 0, fileReadCount };
-    const entry: Entry = {
-      key,
-      diff: Promise.resolve(diff),
-      guide: guideOrNull(guides.build(key, guideInput, "preload")),
-      stop,
-    };
-    entry.guide.catch(() => {});
-    preloaded.set(key, entry);
-    for (const [oldKey, old] of preloaded) {
-      if (preloaded.size <= PRELOADS_KEPT) break;
-      preloaded.delete(oldKey);
-      evict(old);
+    if (onScreen?.id === deckCacheKeyString(key)) {
+      return { queued: 0, fileReadCount: result.fileReadCount };
     }
-    return { queued: 1, fileReadCount };
+    await cache.put(key, result);
+    void buildGuide(key, result.guideInput, "preload");
+    return { queued: 1, fileReadCount: result.fileReadCount };
   }
 
   return {
     /**
      * The pull request's diff from the merge base to the head, and its
-     * guide. The file list is read each time, so a new push is seen. The
-     * diff and guide are built again only when the pull request, its base
-     * or its head changed, unless a preload built them.
+     * guide. With the head the window's last sync saw, a pull request the
+     * cache holds at that head opens without the code host. Otherwise the
+     * file list is read, so a new push is seen, and the files are read only
+     * when the cache doesn't hold the pull request at its base and head.
      */
     openPullRequest,
 
     /**
-     * Reads the pull requests and queues their guide builds at low
-     * priority, so they open at once. Each read waits while a pull request
-     * opens, and a pull request kept at its head is not read again. One
-     * that fails is skipped; when every one fails, the first error is
-     * thrown, so a refused token still reaches the caller.
+     * Reads the pull requests into the cache and queues their guide builds
+     * at low priority, so they open at once. Each read waits while a pull
+     * request opens, and a pull request cached at its head is not read
+     * again. One that fails is skipped; when every one fails, the first
+     * error is thrown, so a refused token still reaches the caller.
      */
     preloadPullRequests(
       source: DeckSource,
@@ -532,6 +619,9 @@ export function createDeckService(options: { guides: GuideBuilds }) {
       preloading = run.catch(() => {});
       return run;
     },
+
+    /** The content cache, for Settings › Storage, syncs and removed connections. */
+    cache,
 
     close: () => guides.close(),
   };
