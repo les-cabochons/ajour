@@ -119,7 +119,6 @@
     color: var(--text-tertiary);
     font: inherit;
     white-space: nowrap;
-    cursor: pointer;
   }
 
   .deck-more:hover,

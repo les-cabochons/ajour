@@ -262,6 +262,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
+import { PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import {
   capabilityOfMethod,
   PluginManager,
@@ -2043,6 +2044,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }
   const deckReads = createDeckAgentReads({
     deck: deckService,
+    allowed: (pullRequest) => deckAsks.allowedNow(pullRequest),
     conversation: deckConversation,
   });
 
@@ -2979,8 +2981,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             await deckAsks.requireTurnConsent(payload.pullRequest);
           } catch (error) {
             if (!(error instanceof DeckAskRefused)) throw error;
+            // A turn has no anchor, so only these two refuse it.
             unit.refuse(
-              error.reason === "needs_consent"
+              error.eventReason === "repository_not_allowed"
                 ? "repository_not_allowed"
                 : "not_open",
             );
@@ -4709,11 +4712,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
       } catch (error) {
         if (error instanceof DeckAskRefused) {
-          unit.refuse(
-            error.reason === "needs_consent"
-              ? "repository_not_allowed"
-              : error.reason,
-          );
+          unit.refuse(error.eventReason);
           writeJson(response, error.status, error.body);
           return;
         }
@@ -4729,14 +4728,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const payload = await readRequest(request, deckConsentRequestSchema);
       const cli = await agentRunner.selectedCli();
-      if (!cli) {
+      if (!cli?.installed) {
         unit.refuse("blocked");
         writeJson(response, 400, {
-          error: "Pick an installed agent in Settings > Agents.",
+          error: cli ? `${cli.label} is not installed.` : PICK_AN_AGENT,
         });
         return;
       }
       unit.set({ agent: { cli: cli.id } });
+      // Only the agent the dialog named: one picked since asks again.
+      if (cli.id !== payload.cli) {
+        unit.refuse("agent_changed");
+        writeJson(response, 409, {
+          error: `Settings > Agents now picks ${cli.label}. Ask again to allow it.`,
+        });
+        return;
+      }
       await storage.addDeckConsent({
         pluginId,
         connectionId,

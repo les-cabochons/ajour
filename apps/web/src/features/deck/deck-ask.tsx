@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DECK_QUESTION_MAX,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
   type DeckNeedsConsent,
@@ -56,36 +57,46 @@ export interface DeckAskTarget {
 
 interface DeckAskContextValue {
   target: DeckAskTarget;
-  /** Opens the consent dialog. Resolves true once the repository is allowed. */
-  requestConsent(request: DeckNeedsConsent): Promise<boolean>;
+  /**
+   * Opens the consent dialog. Resolves true once the repository is allowed,
+   * false for Not now, or why recording the consent failed.
+   */
+  requestConsent(request: DeckNeedsConsent): Promise<ConsentAnswer>;
 }
+
+type ConsentAnswer = boolean | { error: string };
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
 
-/** Gives the page's asks their pull request, and its one consent dialog. */
+/** Gives the page's asks their pull request at `head`, and its one consent dialog. */
 export function DeckAskProvider({
-  target,
+  pluginId,
+  connectionId,
+  repository,
+  number,
+  head,
   children,
-}: {
-  target: DeckAskTarget;
-  children: ReactNode;
-}) {
+}: DeckAskTarget & { children: ReactNode }) {
+  const target = useMemo(
+    () => ({ pluginId, connectionId, repository, number, head }),
+    [pluginId, connectionId, repository, number, head],
+  );
   const [asking, setAsking] = useState<{
     request: DeckNeedsConsent;
-    resolve: (allowed: boolean) => void;
+    resolve: (answer: ConsentAnswer) => void;
   }>();
   const requestConsent = useCallback(
     (request: DeckNeedsConsent) =>
-      new Promise<boolean>((resolve) =>
+      new Promise<ConsentAnswer>((resolve) =>
         setAsking((current) => {
           // A second ask while the dialog shows waits on the same answer.
           if (current) {
             const first = current.resolve;
             return {
               request,
-              resolve: (allowed) => {
-                first(allowed);
-                resolve(allowed);
+              resolve: (answer) => {
+                first(answer);
+                resolve(answer);
               },
             };
           }
@@ -103,14 +114,21 @@ export function DeckAskProvider({
       return;
     }
     try {
+      // Only for the agent the dialog named.
       await grantDeckConsent(
         target.pluginId,
         target.connectionId,
         current.request.repository,
+        current.request.provider.cli,
       );
       current.resolve(true);
-    } catch {
-      current.resolve(false);
+    } catch (error) {
+      current.resolve({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Ajour couldn't record your answer.",
+      });
     }
   };
   const value = useMemo(
@@ -176,7 +194,11 @@ export function ConcernRationale({
   );
 }
 
-/** The answer of an open ask: it asks the default question once mounted. */
+/**
+ * The answer of an open ask: it asks the default question once mounted.
+ * Nothing here depends on an unmount, so React's development remount keeps
+ * the ask going, and a closed answer's turn ends on its own and is cached.
+ */
 function AskAnswer({
   id,
   anchor,
@@ -193,18 +215,14 @@ function AskAnswer({
   const [draft, setDraft] = useState("");
   /** The consent dialog is open: nothing is asked yet, so nothing shows. */
   const [awaitingConsent, setAwaitingConsent] = useState(false);
-  /** The running turn, which Stop stops. */
+  /** The running turn, which Stop stops and whose events the ask follows. */
   const [turnId, setTurnId] = useState<string>();
-  /** Stops listening to the running turn's events. */
-  const unwatch = useRef<(() => void) | undefined>(undefined);
   /** Counts the asks, so an answer for an earlier one is dropped. */
   const generation = useRef(0);
 
   const ask = useCallback(
     async (question?: string) => {
       const mine = ++generation.current;
-      unwatch.current?.();
-      unwatch.current = undefined;
       setTurnId(undefined);
       setState(startAsk(question));
       const current = () => generation.current === mine;
@@ -223,10 +241,6 @@ function AskAnswer({
             return;
           }
           setTurnId(asked.turn.id);
-          unwatch.current = watchAgentTurn(asked.turn.id, (event) => {
-            if (!current()) return;
-            setState((state) => applyTurnEvent(state, event, target.head));
-          });
           return;
         } catch (error) {
           if (!current()) return;
@@ -236,13 +250,15 @@ function AskAnswer({
               : undefined;
           if (consent?.success && attempt === 0) {
             setAwaitingConsent(true);
-            const allowed = await requestConsent(consent.data);
+            const answer = await requestConsent(consent.data);
             setAwaitingConsent(false);
-            if (allowed) {
-              if (!current()) return;
-              continue;
+            if (!current()) return;
+            if (answer === true) continue;
+            if (answer === false) {
+              onClose();
+              return;
             }
-            if (current()) onClose();
+            setState((state) => failAsk(state, answer.error));
             return;
           }
           setState((state) =>
@@ -267,14 +283,15 @@ function AskAnswer({
     asked.current = true;
     void ask();
   }, [ask]);
-  // A closed answer stops listening; its turn ends on its own and is cached.
-  useEffect(
-    () => () => {
-      generation.current += 1;
-      unwatch.current?.();
-    },
-    [],
-  );
+  // Follows the running turn. Its events so far come first, so a remount
+  // applies them again, which leaves the same state.
+  const { head } = target;
+  useEffect(() => {
+    if (!turnId) return;
+    return watchAgentTurn(turnId, (event) =>
+      setState((state) => applyTurnEvent(state, event, head)),
+    );
+  }, [turnId, head]);
 
   if (awaitingConsent) return null;
   const going = askGoing(state);
@@ -329,7 +346,7 @@ function AskAnswer({
                 aria-label="Ask something else"
                 placeholder="Ask something else…"
                 value={draft}
-                maxLength={2000}
+                maxLength={DECK_QUESTION_MAX}
                 onChange={(event) => setDraft(event.target.value)}
               />
             </form>

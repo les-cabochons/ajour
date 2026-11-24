@@ -210,6 +210,7 @@ async function startAskApi(conversation: FakeConversation) {
     consent() {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
+        cli: "claude-code",
       });
     },
     consents() {
@@ -237,6 +238,15 @@ async function startAskApi(conversation: FakeConversation) {
         )
         .map((event) => event.text)
         .join("");
+    },
+    /** The turn's start, once it holds the agent. */
+    waitForStarted(turnId: string) {
+      return stream.waitFor(
+        "agent-turn",
+        (event) =>
+          (event as AgentTurnEvent).type === "started" &&
+          (event as { turnId: string }).turnId === turnId,
+      );
     },
     /** The turn's first piece of text. */
     waitForText(turnId: string) {
@@ -343,6 +353,58 @@ describe("consent", () => {
     expect((await api.consents()).body.consents).toEqual([]);
     expect(await api.turnsRead()).toHaveLength(1);
   });
+});
+
+describe("consent for one agent", () => {
+  it(
+    "refuses a consent for an agent other than the one Settings picks now",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      const granted = await apiRequest(
+        api.baseUrl,
+        `/api/deck/github/connections/${api.connectionId}/consent`,
+        { repository: REPOSITORY, cli: "codex" },
+      );
+
+      expect(granted.status).toBe(409);
+      expect((await api.consents()).body.consents).toEqual([]);
+      expect((await api.ask()).status).toBe(409);
+    },
+  );
+
+  it(
+    "refuses the agent's reads once the repository is revoked, even in a turn already running",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [
+        { readTurn: true },
+        { wait: 1500 },
+        {
+          mcp: {
+            method: "tools/call",
+            params: { name: "read_guide", arguments: {} },
+          },
+        },
+        { stream: ["Done."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+      const asked = await api.ask();
+      await api.waitForStarted(asked.body.turn.id);
+
+      await api.revoke();
+      await api.answerOf(asked.body.turn.id);
+
+      const [read] = await api.mcpReplies();
+      expect(read!.reply.result.isError).toBe(true);
+      expect(read!.reply.result.content[0].text).toMatch(
+        /no longer allows Ajour/,
+      );
+    },
+  );
 });
 
 describe("answers", () => {

@@ -3193,7 +3193,12 @@ export const catalog = defineCatalog({
     /** The user allowed Deck's asks about a repository with the agent picked. */
     "deck.consent": {
       kinds: ["command", "request"],
-      reasons: ["blocked", ...requestReasons],
+      reasons: [
+        "blocked",
+        /** Settings › Agents picks another agent than the dialog named. */
+        "agent_changed",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         plugin: { id: operational() },

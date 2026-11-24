@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import {
   act,
   cleanup,
@@ -175,9 +175,9 @@ afterEach(() => {
 });
 
 /** The review page, with its guide shown. */
-async function renderGuide() {
+async function renderGuide(shell = Shell) {
   await renderRoutes({
-    shell: Shell,
+    shell,
     path: `/deck/${itemId}`,
     routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
   });
@@ -384,6 +384,7 @@ it("asks once for the repository, naming the agent and what leaves the machine, 
     "github",
     "work",
     "acme/billing-api",
+    "claude-code",
   );
   expect(
     await within(concern).findByRole("region", { name: "More detail" }),
@@ -433,4 +434,58 @@ it("says why an ask failed, and tries again", async () => {
   ).toBeTruthy();
   fireEvent.click(within(answer).getByRole("button", { name: "Try again" }));
   expect(await within(answer).findByText("Now it works.")).toBeTruthy();
+});
+
+it("streams the answer under React's development remount too", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t7"),
+  });
+  const concern = await renderGuide(({ children }) => (
+    <StrictMode>
+      <Shell>{children}</Shell>
+    </StrictMode>
+  ));
+
+  fireEvent.click(moreOn(concern));
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  await waitFor(() => expect(api.askDeck).toHaveBeenCalled());
+  started("t7");
+  text("t7", 0, "Still here.");
+  ended("t7");
+
+  expect(await within(answer).findByText("Still here.")).toBeTruthy();
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+it("says why the consent couldn't be recorded", async () => {
+  vi.mocked(api.askDeck).mockRejectedValueOnce(
+    new AppApiError("Ajour asks once for billing-api.", 409, undefined, {
+      reason: "needs_consent",
+      repository: "acme/billing-api",
+      provider: { cli: "claude-code", label: "Claude Code" },
+    }),
+  );
+  vi.mocked(api.grantDeckConsent).mockRejectedValueOnce(
+    new AppApiError(
+      "Settings > Agents now picks Codex. Ask again to allow it.",
+      409,
+    ),
+  );
+  const concern = await renderGuide();
+  fireEvent.click(moreOn(concern));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Allow",
+    }),
+  );
+
+  expect(
+    await within(concern).findByText(
+      "Settings > Agents now picks Codex. Ask again to allow it.",
+    ),
+  ).toBeTruthy();
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
 });

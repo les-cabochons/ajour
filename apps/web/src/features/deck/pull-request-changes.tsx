@@ -13,7 +13,7 @@ import {
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
-import { DeckAskProvider, type DeckAskTarget } from "./deck-ask";
+import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
 import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
 import { usePullRequestDiff } from "./use-pull-request-diff";
@@ -164,15 +164,6 @@ export function PullRequestChanges({
   pullRequest: LocalPullRequest;
 }) {
   const { state, retry } = usePullRequestDiff(pullRequest);
-  const head = state.status === "ready" ? state.diff.headSha : undefined;
-  const { pluginId, connectionId } = pullRequest;
-  const { repository, number } = pullRequest.facts;
-  // What the page's asks are about: the pull request at the head it shows.
-  const askTarget = useMemo<DeckAskTarget | undefined>(
-    () =>
-      head ? { pluginId, connectionId, repository, number, head } : undefined,
-    [pluginId, connectionId, repository, number, head],
-  );
   return (
     // Named outright: the heading's count would join its name.
     <section className="deck-changes" aria-label="Changes">
@@ -193,7 +184,13 @@ export function PullRequestChanges({
           </Button>
         </MessagePanel>
       ) : (
-        <DeckAskProvider target={askTarget!}>
+        <DeckAskProvider
+          pluginId={pullRequest.pluginId}
+          connectionId={pullRequest.connectionId}
+          repository={pullRequest.facts.repository}
+          number={pullRequest.facts.number}
+          head={state.diff.headSha}
+        >
           {/* A new diff, or another head, starts with no hunk marked viewed. */}
           <ReviewChanges
             key={`${state.diff.baseSha}..${state.diff.headSha}`}

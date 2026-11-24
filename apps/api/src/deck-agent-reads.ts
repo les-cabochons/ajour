@@ -27,6 +27,8 @@ export interface DeckAgentReadsOptions {
       head: string,
     ): Promise<DeckHeldPullRequest | undefined>;
   };
+  /** Whether the user still allows the pull request's repository with this agent. */
+  allowed(pullRequest: string): Promise<boolean>;
   /** The pull request's threads, read through its code host plugin. */
   conversation(
     source: DeckPullRequestSource,
@@ -35,6 +37,11 @@ export interface DeckAgentReadsOptions {
 
 export function createDeckAgentReads(options: DeckAgentReadsOptions) {
   async function heldFor(binding: McpClientPullRequestBinding) {
+    if (!(await options.allowed(binding.pullRequest))) {
+      throw new DeckReadRefused(
+        "The user no longer allows Ajour to send this repository's code to you. Stop, and say only that you can't read it now.",
+      );
+    }
     const held = await options.deck.held(binding.pullRequest, binding.head);
     if (!held) {
       throw new DeckReadRefused(

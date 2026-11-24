@@ -185,6 +185,7 @@ async function startConversationApi(
         "/api/deck/github/connections/work/consent",
         {
           repository: REPOSITORY,
+          cli: options.cli ?? "claude-code",
         },
       )
     ).status,

@@ -25,6 +25,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   admin_cancelled:
     "Removing the ajour command needed administrator rights, and that request was cancelled.",
   agent_access: "Agents aren't allowed to do this, so the call was refused.",
+  agent_changed:
+    "Settings › Agents picked another agent than the one the dialog named, so nothing was allowed.",
   already_running: "An agent run is already going, so a new one didn't start.",
   api_stop_failed: "Ajour quit, but stopping the local API failed first.",
   api_stop_timed_out: "Ajour quit, but the local API took too long to stop.",

@@ -168,6 +168,11 @@ export function parseDeckPullRequestKey(
   return { pluginId, connectionId, repository, number };
 }
 
+/** A repository's own name, without its owner: `billing-api` for `acme/billing-api`. */
+export function repositoryName(repository: string): string {
+  return repository.slice(repository.lastIndexOf("/") + 1) || repository;
+}
+
 /** How the agent and its refusals name a pull request: `acme/api#482`, or the key itself. */
 export function deckPullRequestLabel(key: string): string {
   const source = parseDeckPullRequestKey(key);
@@ -228,6 +233,11 @@ export const deckNeedsConsentSchema = z.object({
 });
 export type DeckNeedsConsent = z.infer<typeof deckNeedsConsentSchema>;
 
+/** Why Deck refused an ask, as the page reads it. */
+export type DeckAskRefusal =
+  | (DeckNeedsConsent & { error: string })
+  | { error: string; reason: "not_open" | "unknown_anchor" };
+
 /** The user allowed asks about a repository's pull requests, with one agent. */
 export const deckAgentConsentSchema = z.object({
   pluginId: z.string().min(1),
@@ -240,9 +250,13 @@ export const deckAgentConsentSchema = z.object({
 });
 export type DeckAgentConsent = z.infer<typeof deckAgentConsentSchema>;
 
-/** Allows asks about a repository's pull requests with the agent Settings › Agents picks. */
+/**
+ * Allows asks about a repository's pull requests with the agent the consent
+ * dialog named. It is refused when Settings › Agents picks another one now.
+ */
 export const deckConsentRequestSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
+  cli: agentCliIdSchema,
 });
 
 /** Takes a repository's consent back. */

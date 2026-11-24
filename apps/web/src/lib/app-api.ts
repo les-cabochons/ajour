@@ -140,6 +140,7 @@ import {
 import {
   agentRunnerOverviewSchema,
   agentRunSchema,
+  type AgentCliId,
   type AgentRunnerSettings,
   type PluginTaskRunRequest,
 } from "@ajour/shared/agent-runs";
@@ -240,11 +241,16 @@ export function askDeck(
   );
 }
 
-/** Allows Deck's asks about a repository's pull requests, with the agent picked. */
+/**
+ * Allows Deck's asks about a repository's pull requests with `cli`, the
+ * agent the consent dialog named. Refused when Settings › Agents picks
+ * another one now.
+ */
 export function grantDeckConsent(
   pluginId: string,
   connectionId: string,
   repository: string,
+  cli: AgentCliId,
 ) {
   return appApiRequest(
     "grantDeckConsent",
@@ -252,7 +258,7 @@ export function grantDeckConsent(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository }),
+      body: JSON.stringify({ repository, cli }),
     },
     deckConsentsSchema,
     (unit) =>

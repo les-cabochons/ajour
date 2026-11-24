@@ -1,4 +1,4 @@
-import type { DeckNeedsConsent } from "@ajour/shared/deck";
+import { repositoryName, type DeckNeedsConsent } from "@ajour/shared/deck";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,10 +9,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
-/** The repository's own name, without its owner: `billing-api`. */
-export const repositoryName = (repository: string) =>
-  repository.slice(repository.lastIndexOf("/") + 1) || repository;
 
 /**
  * The once-per-repository consent of Deck's asks (#791): it names the agent
