@@ -5890,7 +5890,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host Deck doesn't read yet (#780).
+          // An older plugin, or a code host Deck doesn't read.
           unit.refuse("not_supported");
           writeJson(response, 404, {
             error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
