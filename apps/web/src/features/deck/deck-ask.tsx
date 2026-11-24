@@ -413,6 +413,8 @@ function AskAnswer({
       {state.kind === "answered" ? (
         <AnswerFooter
           state={state}
+          // Without where the repository is cloned from, there's nothing to choose.
+          canChooseClone={target.clone !== undefined}
           onChooseClone={() =>
             void pickClone().then((chosen) => {
               // Asked again, the answer reads the clone.
@@ -482,9 +484,11 @@ function AskAnswer({
  */
 function AnswerFooter({
   state,
+  canChooseClone,
   onChooseClone,
 }: {
   state: Extract<AskState, { kind: "answered" }>;
+  canChooseClone: boolean;
   onChooseClone: () => void;
 }) {
   const footer = answerFooter(state);
@@ -492,7 +496,7 @@ function AnswerFooter({
     <>
       <p className="deck-ask-footer">
         {footer.source}
-        {footer.offersClone ? (
+        {footer.offersClone && canChooseClone ? (
           <>
             {" · "}
             <button
@@ -506,9 +510,7 @@ function AnswerFooter({
         ) : null}
       </p>
       {footer.cloneReason ? (
-        <p className="deck-ask-footer">
-          Your clone wasn't read: {footer.cloneReason}
-        </p>
+        <p className="deck-ask-footer">{footer.cloneReason}</p>
       ) : null}
     </>
   );

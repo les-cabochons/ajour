@@ -655,7 +655,7 @@ it("says why the clone wasn't read, quietly, under the answer", async () => {
   expect(within(answer).getByText("From the code at a41c9e2")).toBeTruthy();
   expect(
     within(answer).getByText(
-      "Your clone wasn't read: Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
+      "Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
     ),
   ).toBeTruthy();
   expect(
