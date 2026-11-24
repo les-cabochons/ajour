@@ -1024,6 +1024,7 @@ export type CodeHostOperations = {
         baseSha?: string | undefined;
         forced?: boolean | undefined;
       }[];
+      versionName?: "push" | "iteration" | undefined;
     };
   };
   readonly browsePullRequests: {

@@ -168,7 +168,9 @@ describe("code host contract", () => {
           commits: [],
         },
       ],
+      versionName: "iteration",
     });
+    expect(result.versionName).toBe("iteration");
     expect(result.versions.map((version) => version.headSha)).toEqual([
       "h1",
       "h2",

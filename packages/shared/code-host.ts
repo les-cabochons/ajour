@@ -400,6 +400,11 @@ export type CodeHostVersionsRequest = z.infer<
  */
 export const codeHostVersionsResultSchema = z.object({
   versions: z.array(codeHostVersionSchema).max(500),
+  /**
+   * What the code host calls a version, as Deck's versions bar names them:
+   * Pushes, or Iterations. A push when absent.
+   */
+  versionName: z.enum(["push", "iteration"]).optional(),
 });
 export type CodeHostVersionsResult = z.infer<
   typeof codeHostVersionsResultSchema
