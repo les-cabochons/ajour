@@ -54,5 +54,5 @@ To get the pull request's commit, Ajour runs `git fetch` in your clone with your
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Reviews happen in your code host for now
-Deck shows a GitHub pull request's changes. Azure DevOps pull requests show their status line, description, threads and conversation, and their changes in a later version. Commenting and merging still happen on GitHub or Azure DevOps.
+Deck shows the changes of GitHub and Azure DevOps pull requests. Commenting and merging still happen on GitHub or Azure DevOps.
 :::
