@@ -136,6 +136,10 @@ it("says so when the local API can't read the cache, with nothing to set", async
     (screen.getByRole("button", { name: "Clear cache" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  // The Used row keeps its two lines, so nothing moves once it reads.
+  expect(
+    screen.getByText("Used").closest(".settings-row")?.textContent,
+  ).toContain("—");
   // No limit is chosen, and the select can't open.
   const limit = screen.getByRole("combobox", { name: "Size limit" });
   expect(limit.textContent).toBe("—");

@@ -122,17 +122,18 @@ export function SettingsStoragePage() {
         <AppPanel>
           <SettingRow
             label="Used"
+            // Two lines from the start, so the row keeps its height as it loads.
             description={
-              storage ? (
-                <>
-                  <span className="block tabular-nums">
-                    {`${formatBytes(storage.sizeBytes)} of ${capLabel(storage.capBytes)}`}
-                  </span>
-                  <span className="block">
-                    {describeEntries(storage.entryCount)}
-                  </span>
-                </>
-              ) : null
+              <>
+                <span className="block tabular-nums">
+                  {storage
+                    ? `${formatBytes(storage.sizeBytes)} of ${capLabel(storage.capBytes)}`
+                    : "—"}
+                </span>
+                <span className="block">
+                  {storage ? describeEntries(storage.entryCount) : "\u00a0"}
+                </span>
+              </>
             }
           >
             <Button

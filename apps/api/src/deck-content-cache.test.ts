@@ -144,6 +144,29 @@ describe("the Deck content cache", () => {
     expect((await cache.get(key(1, "pushed")))?.diff.headSha).toBe("pushed");
   });
 
+  it("keeps an entry and its guide when the same base and head is put again", async () => {
+    const cache = start(await cacheFolder());
+    await cache.put(key(1), content(1));
+    await cache.putGuide(key(1), guide);
+
+    // A preload that read the pull request while an open built it.
+    await cache.put(key(1), content(1));
+
+    expect((await cache.get(key(1)))?.guide).toEqual(guide);
+    expect((await cache.usage()).entryCount).toBe(1);
+  });
+
+  it("still keeps and gives back entries when the cap can't be read", async () => {
+    const cache = createDeckContentCache({
+      directory: await cacheFolder(),
+      capBytes: () => Promise.reject(new Error("The state file is locked.")),
+    });
+
+    await expect(cache.put(key(1), content(1))).resolves.toBeUndefined();
+    await expect(cache.putGuide(key(1), guide)).resolves.toBeUndefined();
+    expect((await cache.get(key(1)))?.guide).toEqual(guide);
+  });
+
   it("keeps its entries across a restart", async () => {
     const directory = await cacheFolder();
     const first = start(directory);

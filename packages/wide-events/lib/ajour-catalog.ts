@@ -3190,6 +3190,10 @@ export const catalog = defineCatalog({
         ...requestFields,
         deck: {
           removed_count: operational<number>(),
+          /** What is left: entries Windows held while they were deleted. */
+          size_bytes: operational<number>(),
+          cap_bytes: operational<number>(),
+          entry_count: operational<number>(),
         },
       },
     },

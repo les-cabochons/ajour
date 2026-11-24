@@ -25,7 +25,7 @@ This section covers the app's storage, credentials, network requests and agent a
 
 ### Your local workspace
 
-Ajour stores projects, tasks, time entries, notes, backlog items, imported content, settings and plugin connections on your device. Data read from a connected service can include work-item descriptions, comments and people's names or contact details. Calendar events are fetched for display rather than saved as a calendar archive. An event you turn into a time entry becomes part of your workspace.
+Ajour stores projects, tasks, time entries, notes, backlog items, imported content, settings and plugin connections on your device. Data read from a connected service can include work-item descriptions, comments and people's names or contact details. Calendar events are fetched for display rather than saved as a calendar archive. An event you turn into a time entry becomes part of your workspace. Deck keeps the pull requests it reads, with the full content of their changed files, their diffs and guides, in a content cache on your device, under a size limit you set in Settings › Storage; after each sync it reads the ones waiting on you, before you open them. Each code host section below says what it reads.
 
 These records support the features you use. They are not sent to us through the normal local workflow. We do not sell personal information, use it for advertising or build profiles of your activity for our own purposes.
 

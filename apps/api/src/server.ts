@@ -487,6 +487,8 @@ interface AppApiRuntime {
   /** The package each plugin with a process session has, kept between checks. */
   sessionPackages: SessionPackageGate;
   stopping: boolean;
+  /** Finishes the content cache's writes under way, so a quit keeps them (#781). */
+  flushDeckCache: () => Promise<void>;
   pluginDrainMs: number;
   /**
    * The requests being handled that run plugin operations: a stop lets
@@ -2013,6 +2015,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       : { killGraceMs: options.agentKillGraceMs }),
   });
   const runtime: AppApiRuntime = {
+    flushDeckCache: () => deckService.cache.flush(),
     folderResolver,
     events,
     openSockets: new Set(),
@@ -6362,6 +6365,18 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     // No plugin sends a request now: write what the broker gathered for
     // Access review since its last write, so a quit loses none.
     await runtime?.storage.flushBrokerActivity().catch(() => undefined);
+    // The content cache's writes under way finish, within the drain: a
+    // write cut short leaves only a temp file, which the next start drops.
+    if (runtime) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        runtime.flushDeckCache(),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, runtime.pluginDrainMs);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     phaseStartedAt = Date.now();
     // The connections still open are cut off by the stop, not by their
     // clients: their requests end `cancelled` with `stopping`.

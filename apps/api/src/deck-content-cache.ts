@@ -118,7 +118,34 @@ const idOf = (key: DeckCacheKey) =>
     .slice(0, 40);
 
 const ENTRY_FILE = /^([0-9a-f]{40})\.(meta|content|guide)\.json$/;
-const PARTS = ["content", "guide", "meta"] as const;
+type Part = "meta" | "content" | "guide";
+
+/** Delete errors Windows gives for a moment while another process, such as an antivirus scan, holds the file. */
+const TRANSIENT_DELETE_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const DELETE_ATTEMPTS = 5;
+
+/**
+ * Deletes a file, trying again a few times while Windows holds it (`rm`
+ * retries only folders). True once it is gone, false when it stays.
+ */
+async function deleteFile(file: string): Promise<boolean> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rm(file, { force: true });
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (
+        attempt >= DELETE_ATTEMPTS ||
+        code === undefined ||
+        !TRANSIENT_DELETE_CODES.has(code)
+      ) {
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20 * attempt));
+    }
+  }
+}
 
 const sameKey = (a: DeckCacheKey, b: DeckCacheKey) =>
   deckCacheKeyString(a) === deckCacheKeyString(b);
@@ -133,7 +160,7 @@ export function createDeckContentCache(options: {
 }) {
   const { directory } = options;
   const now = options.now ?? Date.now;
-  const fileOf = (id: string, part: (typeof PARTS)[number]) =>
+  const fileOf = (id: string, part: Part) =>
     path.join(directory, `${id}.${part}.json`);
 
   /** The whole entries, by id, as their meta files say. */
@@ -152,20 +179,31 @@ export function createDeckContentCache(options: {
     return run;
   };
 
+  /**
+   * Deletes an entry's files, the meta first: files left without one are
+   * dropped at the next start. False when the meta stays, so the entry
+   * would load again.
+   */
   const removeFiles = async (id: string) => {
-    // The meta goes first: files left without one are dropped at the next start.
-    for (const part of ["meta", "content", "guide"] as const) {
-      await rm(fileOf(id, part), { force: true, maxRetries: 3 }).catch(
-        () => undefined,
-      );
-    }
+    if (!(await deleteFile(fileOf(id, "meta")))) return false;
+    await deleteFile(fileOf(id, "content"));
+    await deleteFile(fileOf(id, "guide"));
+    return true;
   };
 
+  /** Removes an entry. One whose meta file Windows holds stays, and counts. */
   const remove = async (id: string) => {
     const meta = entries.get(id);
+    if (!(await removeFiles(id))) return;
     entries.delete(id);
-    await removeFiles(id);
     if (meta && id !== kept) options.onRemoved?.(meta.key);
+  };
+
+  /** Deletes the temp files an interrupted write left. */
+  const removeTempFiles = async (names: string[]) => {
+    for (const name of names) {
+      if (name.endsWith(".tmp")) await deleteFile(path.join(directory, name));
+    }
   };
 
   const writeMeta = (id: string, meta: Meta) =>
@@ -182,18 +220,11 @@ export function createDeckContentCache(options: {
       } catch {
         return;
       }
+      await removeTempFiles(names);
       const parts = new Map<string, Set<string>>();
       for (const name of names) {
         const match = ENTRY_FILE.exec(name);
-        if (!match) {
-          // A temp file an interrupted write left.
-          if (name.endsWith(".tmp")) {
-            await rm(path.join(directory, name), { force: true }).catch(
-              () => undefined,
-            );
-          }
-          continue;
-        }
+        if (!match) continue;
         const [, id, part] = match;
         parts.set(id!, (parts.get(id!) ?? new Set()).add(part!));
       }
@@ -228,9 +259,17 @@ export function createDeckContentCache(options: {
       0,
     );
 
-  /** Closed pull requests first, then the least recently used. */
+  /**
+   * Closed pull requests first, then the least recently used. A cap that
+   * can't be read evicts nothing this time.
+   */
   const evictNow = async () => {
-    const cap = await options.capBytes();
+    let cap: number;
+    try {
+      cap = await options.capBytes();
+    } catch {
+      return;
+    }
     let size = total();
     if (size <= cap) return;
     const candidates = [...entries]
@@ -341,12 +380,15 @@ export function createDeckContentCache(options: {
 
     /**
      * Keeps a pull request's contents, then evicts down to the cap. A
-     * pull request too large to write is simply not cached.
+     * pull request too large to write is simply not cached. One already
+     * cached at this base and head stays as it is, with its guide: the
+     * contents of a key never change.
      */
     put(key: DeckCacheKey, content: DeckCachedContent) {
       return serial(async () => {
         await load();
         const id = idOf(key);
+        if (entries.has(id)) return;
         try {
           const text = JSON.stringify({
             version: VERSION,
@@ -358,17 +400,17 @@ export function createDeckContentCache(options: {
               new: [...content.guideInput.new],
             },
           });
-          const previous = entries.get(id);
           await writeFileAtomically(fileOf(id, "content"), text);
           const meta: Meta = {
             version: VERSION,
             key,
-            closed: previous?.closed ?? false,
+            closed: false,
             lastUsedAt: now(),
             contentBytes: Buffer.byteLength(text),
             guideBytes: 0,
           };
-          await rm(fileOf(id, "guide"), { force: true });
+          // A guide an older entry left, without its meta, isn't this one's.
+          await deleteFile(fileOf(id, "guide"));
           await writeMeta(id, meta);
           entries.set(id, meta);
         } catch {
@@ -470,14 +512,18 @@ export function createDeckContentCache(options: {
         } catch {
           return;
         }
+        await removeTempFiles(names);
         for (const name of names) {
-          if (ENTRY_FILE.test(name) || name.endsWith(".tmp")) {
-            await rm(path.join(directory, name), { force: true }).catch(
-              () => undefined,
-            );
+          if (ENTRY_FILE.test(name) && !entries.has(name.slice(0, 40))) {
+            await deleteFile(path.join(directory, name));
           }
         }
       });
+    },
+
+    /** Resolves once every read and write asked for so far has finished. */
+    flush(): Promise<void> {
+      return serial(async () => {});
     },
 
     /** Evicts down to the cap now, as after the cap is lowered. */
