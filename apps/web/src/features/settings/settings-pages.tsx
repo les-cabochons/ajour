@@ -97,6 +97,12 @@ export const SettingsSyncReviewPage = lazy(
     return { default: module.SettingsImportReviewPage };
   }),
 );
+export const SettingsStoragePage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-storage-page");
+    return { default: module.SettingsStoragePage };
+  }),
+);
 export const SettingsWhatsNewPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-whats-new-page");
@@ -164,6 +170,8 @@ export function settingsPageElement(location: SettingsLocation) {
       return <SettingsTimeEntriesPage />;
     case "sync-review":
       return <SettingsSyncReviewPage />;
+    case "storage":
+      return <SettingsStoragePage />;
     case "whats-new":
       return <SettingsWhatsNewPage />;
     case "debug":

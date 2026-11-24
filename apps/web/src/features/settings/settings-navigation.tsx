@@ -16,6 +16,7 @@ import {
   RiPulseLine as Diagnostics,
   RiFlowChart as Workflow,
   RiGitForkLine as Worktree,
+  RiHardDrive2Line as Storage,
 } from "@remixicon/react";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { hasWorktrees } from "@/lib/worktrees";
@@ -100,6 +101,7 @@ export function getSettingsGroups(
       pages: [
         { to: "/settings/time-entries", label: "Time entries", icon: Download },
         { to: "/settings/sync-review", label: "Sync review", icon: Inbox },
+        { to: "/settings/storage", label: "Storage", icon: Storage },
       ],
     },
   ] as const;

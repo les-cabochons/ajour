@@ -13,6 +13,7 @@ import {
   isPullRequestReturned,
   reattachPullRequests,
   reconcilePullRequests,
+  selectPullRequestsToPreload,
   selectSidebarPullRequests,
   type LocalPullRequest,
 } from "./pull-request-lifecycle";
@@ -656,5 +657,63 @@ describe("pull requests of a connection whose access leaves them off", () => {
       ),
     ).toEqual([["fabrikam"]]);
     expect(enabledCodeHostGroups(none)).toEqual([]);
+  });
+});
+
+describe("the pull requests preloaded after a sync", () => {
+  const active = (patch: Partial<LocalPullRequest>): LocalPullRequest => ({
+    ...changePullRequest(settled(), { type: "unsettle" }, 600),
+    ...patch,
+  });
+
+  it("are the connection's open, active ones not snoozed, longest waiting first, at the head the sync saw", () => {
+    const items = [
+      active({ _id: "b", activeAt: 700, facts: { ...facts, number: 2 } }),
+      active({
+        _id: "a",
+        activeAt: 500,
+        facts: { ...facts, number: 3, headSha: "three" },
+      }),
+      active({
+        _id: "snoozed",
+        snoozedUntil: 2_000,
+        facts: { ...facts, number: 4 },
+      }),
+      active({
+        _id: "closed",
+        facts: { ...facts, number: 5, state: "merged" },
+      }),
+      active({
+        _id: "missing",
+        missingFromSync: true,
+        facts: { ...facts, number: 6 },
+      }),
+      active({
+        _id: "other",
+        connectionId: "home",
+        facts: { ...facts, number: 7 },
+      }),
+      settled({ ...facts, number: 8 }),
+    ];
+
+    expect(selectPullRequestsToPreload(items, source, 1_000)).toEqual([
+      { repository: "acme/api", number: 3, headSha: "three" },
+      { repository: "acme/api", number: 2, headSha: "one" },
+    ]);
+  });
+
+  it("are at most 20, as one preload takes", () => {
+    const items = Array.from({ length: 25 }, (_, index) =>
+      active({
+        _id: `pr${index}`,
+        activeAt: index,
+        facts: { ...facts, number: index + 1 },
+      }),
+    );
+
+    const preloaded = selectPullRequestsToPreload(items, source, 1_000);
+
+    expect(preloaded).toHaveLength(20);
+    expect(preloaded[0]?.number).toBe(1);
   });
 });
