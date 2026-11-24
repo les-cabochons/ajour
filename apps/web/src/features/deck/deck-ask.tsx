@@ -103,7 +103,7 @@ export function DeckAskProvider({
         revoked.connectionId === connectionId &&
         revoked.repository === repository
       )
-        sessions.revoke();
+        sessions.revoke(revoked.at);
     });
     const stopClosed = watchClosedConversations((event) =>
       sessions.conversationClosed(event.conversationId, event.reason),

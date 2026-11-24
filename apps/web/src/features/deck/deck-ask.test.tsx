@@ -728,13 +728,13 @@ const BILLING = {
   repository: "acme/billing-api",
 };
 
-/** Settings › Agents revokes `repository` in another window, which this one hears through storage. */
-function revokeInAnotherWindow(repository: typeof BILLING) {
+/** Settings › Agents revokes `repository` in another window, at `at`, which this one hears through storage. */
+function revokeInAnotherWindow(repository: typeof BILLING, at = Date.now()) {
   act(() => {
     window.dispatchEvent(
       new StorageEvent("storage", {
         key: DECK_CONSENT_REVOKED_STORAGE_KEY,
-        newValue: JSON.stringify({ ...repository, at: Date.now() }),
+        newValue: JSON.stringify({ ...repository, at }),
       }),
     );
   });
@@ -803,6 +803,40 @@ it("keeps an answer asked after allowing the repository again, when the revoked 
     conversationId: "c1",
     reason: "revoked",
   });
+
+  expect(within(concern).getByText("Asked again.")).toBeTruthy();
+});
+
+it("keeps an answer asked after allowing the repository again, when another window's revocation reaches this one late", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "Asked again.",
+      head: HEAD,
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  // Revoked in another window: the conversation's close comes first, then
+  // the repository is allowed and asked again, then that window's signal.
+  const revokedAt = Date.now() - 1_000;
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  askOn(concern);
+  await within(concern).findByText("Asked again.");
+  revokeInAnotherWindow(BILLING, revokedAt);
 
   expect(within(concern).getByText("Asked again.")).toBeTruthy();
 });

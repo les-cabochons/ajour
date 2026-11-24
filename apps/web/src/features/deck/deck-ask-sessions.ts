@@ -53,6 +53,8 @@ export interface AskSession {
   awaitingConsent: boolean;
   /** The running turn, which Stop stops and whose events the ask follows. */
   turnId?: string;
+  /** When it was asked: a revocation from before then leaves it. */
+  askedAt?: number;
 }
 
 /** The answer a session shows, its turn's or the cache's, which a revoked consent hides. */
@@ -153,6 +155,7 @@ export class DeckAskSessions {
       focusQuestion: false,
       awaitingConsent: false,
       turnId: undefined,
+      askedAt: Date.now(),
       state: startAsk(question),
     }));
     const current = () => this.#generations.get(key) === mine;
@@ -231,14 +234,18 @@ export class DeckAskSessions {
    * The repository's consent is taken back: its answers, cached or not, show
    * no more, and an ask still waiting for its answer stops and drops it. A
    * running turn stops on its own, keeping what came; a question being
-   * written stays, and its ask opens the consent dialog again.
+   * written stays, and its ask opens the consent dialog again. With `at`,
+   * when the consent was taken back, an ask made after then stays: the
+   * revocation reached this page late, after the repository was allowed
+   * again.
    */
-  revoke() {
+  revoke(at?: number) {
     // Every conversation so far is the revoked consent's: a close of one that
     // comes later, after the repository was allowed again, revokes nothing.
     this.#conversations.clear();
     for (const [key, session] of [...this.#sessions]) {
       if (session.composing || session.awaitingConsent) continue;
+      if (at !== undefined && (session.askedAt ?? 0) > at) continue;
       if (holdsAnswer(session)) {
         this.close(key);
       } else if (!session.turnId) {

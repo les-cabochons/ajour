@@ -47,6 +47,7 @@ it("tells this window and the others that a revoked repository asks again", asyn
       pluginId: "github",
       connectionId: "work",
       repository: "acme/billing-api",
+      at: expect.any(Number),
     });
     // Other windows hear it through storage: the repository, never an answer.
     expect(
