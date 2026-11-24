@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
@@ -10,13 +10,18 @@ import {
   toggleViewed,
   type ReviewOrder,
 } from "@/domain/deck/guide";
+import type {
+  PlacedThread,
+  ThreadPlacement,
+} from "@/domain/deck/review-threads";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
 import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
-import { usePullRequestDiff } from "./use-pull-request-diff";
+import { ThreadGutter } from "./thread-gutter";
+import type { PullRequestReadState } from "./use-pull-request-read";
 
 /** Where a section scrolled to lands below the top of the page's scroller, as `scroll-margin-top` in styles/deck.css. */
 const SECTION_MARGIN = 16;
@@ -40,15 +45,27 @@ function atEnd(scroller: HTMLElement | undefined) {
   return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
 }
 
+/** Where the review page shows the review threads, as `PullRequestReview` works it out. */
+export interface ReviewThreadsView {
+  placement: ThreadPlacement | undefined;
+  /** From 1,100px, the threads float in a gutter beside the sections. */
+  floating: boolean;
+  hovered: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+}
+
 /**
  * The guide, or the files A–Z, of an opened pull request, with the guide
- * tree beside it. J and K move between its sections and F opens the tree's
+ * tree beside it, and each review thread beside its line in the gutter or
+ * after it. J and K move between its sections and F opens the tree's
  * titles, while the page is mounted (`deck` shortcuts).
  */
 function ReviewChanges({
   pullRequest,
+  threads: { placement, floating, hovered, onHover },
 }: {
   pullRequest: DeckOpenedPullRequest;
+  threads: ReviewThreadsView;
 }) {
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
@@ -97,6 +114,47 @@ function ReviewChanges({
   useShortcut("deck.previous-concern", () => step(-1));
   useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
 
+  const scheduleRef = useRef<(() => void) | undefined>(undefined);
+  const onAnchor = useCallback((element: HTMLElement | null) => {
+    if (element) scheduleRef.current?.();
+  }, []);
+  const { bySection, sectionOfHunk } = useMemo(() => {
+    const sectionOfHunk = new Map<string, string>();
+    for (const section of sections)
+      for (const entry of section.hunks)
+        sectionOfHunk.set(entry.hunk.id, section.key);
+    const bySection = new Map<string, PlacedThread[]>();
+    for (const entry of placement?.placed ?? []) {
+      const key = sectionOfHunk.get(entry.hunkId);
+      if (key === undefined) continue;
+      const list = bySection.get(key) ?? [];
+      list.push(entry);
+      bySection.set(key, list);
+    }
+    return { bySection, sectionOfHunk };
+  }, [sections, placement]);
+  // Only the hovered thread's section draws again as the hover moves.
+  const hoveredHunk = placement?.placed.find(
+    (entry) => entry.thread.id === hovered,
+  )?.hunkId;
+  const hoveredSection = hoveredHunk
+    ? sectionOfHunk.get(hoveredHunk)
+    : undefined;
+  const placed = placement?.placed ?? [];
+  const gutter = floating && placed.length > 0;
+  // Folding a hunk or changing the order moves the lines, even where the
+  // column keeps its height. The gutter places its cards itself as it mounts.
+  const laidOut = useRef({ sections, viewed });
+  useEffect(() => {
+    if (
+      laidOut.current.sections === sections &&
+      laidOut.current.viewed === viewed
+    )
+      return;
+    laidOut.current = { sections, viewed };
+    scheduleRef.current?.();
+  }, [sections, viewed]);
+
   const count = order === "guide" ? sections.length : pullRequest.files.length;
   return (
     <>
@@ -130,16 +188,32 @@ function ReviewChanges({
       </div>
       {sections.length ? (
         <div className="deck-review">
-          <div ref={list} className="deck-review-sections">
-            {sections.map((section) => (
-              <ReviewSectionView
-                key={section.key}
-                section={section}
-                viewed={viewed}
-                theme={theme}
-                onToggleViewed={onToggleViewed}
+          <div className="deck-review-grid" data-gutter={gutter || undefined}>
+            <div ref={list} className="deck-review-sections">
+              {sections.map((section) => (
+                <ReviewSectionView
+                  key={section.key}
+                  section={section}
+                  viewed={viewed}
+                  theme={theme}
+                  onToggleViewed={onToggleViewed}
+                  placed={bySection.get(section.key)}
+                  floating={gutter}
+                  hovered={hoveredSection === section.key ? hovered : undefined}
+                  onHover={onHover}
+                  onAnchor={onAnchor}
+                />
+              ))}
+            </div>
+            {gutter ? (
+              <ThreadGutter
+                placed={placed}
+                columnRef={list}
+                hovered={hovered}
+                onHover={onHover}
+                scheduleRef={scheduleRef}
               />
-            ))}
+            ) : null}
           </div>
           <GuideTree
             sections={sections}
@@ -157,13 +231,22 @@ function ReviewChanges({
   );
 }
 
-/** The pull request's changes: its guide, or its files A–Z, once the local API built them. */
+/**
+ * The pull request's changes: its guide, or its files A–Z, once the local
+ * API built them, with each review thread beside its line when `floating`,
+ * or after it.
+ */
 export function PullRequestChanges({
   pullRequest,
+  state,
+  retry,
+  threads,
 }: {
   pullRequest: LocalPullRequest;
+  state: PullRequestReadState<DeckOpenedPullRequest>;
+  retry: () => void;
+  threads: ReviewThreadsView;
 }) {
-  const { state, retry } = usePullRequestDiff(pullRequest);
   const { repositoryIdentity, headRef } = pullRequest.facts;
   // Where the repository is cloned from, so an ask can read the user's clone.
   const cloneSource = useMemo(
@@ -198,13 +281,14 @@ export function PullRequestChanges({
           connectionId={pullRequest.connectionId}
           repository={pullRequest.facts.repository}
           number={pullRequest.facts.number}
-          head={state.diff.headSha}
+          head={state.value.headSha}
           clone={cloneSource}
         >
           {/* A new diff, or another head, starts with no hunk marked viewed. */}
           <ReviewChanges
-            key={`${state.diff.baseSha}..${state.diff.headSha}`}
-            pullRequest={state.diff}
+            key={`${state.value.baseSha}..${state.value.headSha}`}
+            pullRequest={state.value}
+            threads={threads}
           />
         </DeckAskProvider>
       )}

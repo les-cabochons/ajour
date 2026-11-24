@@ -89,6 +89,26 @@ export const codeHostCheckStateSchema = z.enum([
 ]);
 export type CodeHostCheckState = z.infer<typeof codeHostCheckStateSchema>;
 
+/** One reviewer's current vote on a pull request. */
+export const codeHostApprovalVoteSchema = z.enum([
+  "approved",
+  "changes_requested",
+  /** Azure DevOps only: the reviewer rejected the pull request. */
+  "rejected",
+  /** Asked to review, and hasn't voted yet. */
+  "none",
+]);
+export type CodeHostApprovalVote = z.infer<typeof codeHostApprovalVoteSchema>;
+
+export const codeHostApprovalSchema = z.object({
+  /** A person, or a team or group asked to review. */
+  reviewer: codeHostUserSchema,
+  vote: codeHostApprovalVoteSchema,
+  /** The code host's policy requires this reviewer's approval. */
+  required: z.boolean().optional(),
+});
+export type CodeHostApproval = z.infer<typeof codeHostApprovalSchema>;
+
 export const codeHostMergeabilitySchema = z.enum([
   "mergeable",
   "conflicting",
@@ -169,6 +189,11 @@ export const codeHostPullRequestFactsSchema =
     comments: z.array(codeHostCommentFactSchema).max(2_000),
     checks: codeHostCheckStateSchema,
     mergeability: codeHostMergeabilitySchema,
+    /**
+     * Each reviewer's current vote, one entry per reviewer. Optional, so
+     * pull requests stored before it was added still read.
+     */
+    approvals: z.array(codeHostApprovalSchema).max(100).optional(),
   });
 export type CodeHostPullRequestFacts = z.infer<
   typeof codeHostPullRequestFactsSchema
@@ -322,6 +347,35 @@ export type CodeHostConversationResult = z.infer<
   typeof codeHostConversationResultSchema
 >;
 
+/** One check's state, a commit status or a policy, as the code host shows it. */
+export const codeHostCheckRunStateSchema = z.enum([
+  /** Queued, running or expected. */
+  "pending",
+  "success",
+  /** Failed, errored, timed out or cancelled. */
+  "failure",
+  /** Skipped, neutral or not applicable: it neither passed nor failed. */
+  "skipped",
+]);
+export type CodeHostCheckRunState = z.infer<typeof codeHostCheckRunStateSchema>;
+
+export const codeHostCheckSchema = z.object({
+  name: z.string().trim().min(1).max(500),
+  state: codeHostCheckRunStateSchema,
+  /** The check's page, on the code host or in its CI. */
+  url: z.string().url().max(2_000).optional(),
+});
+export type CodeHostCheck = z.infer<typeof codeHostCheckSchema>;
+
+export const codeHostChecksRequestSchema = codeHostPullRequestRefSchema;
+export type CodeHostChecksRequest = z.infer<typeof codeHostChecksRequestSchema>;
+
+/** The checks on the pull request's head, in the code host's order. */
+export const codeHostChecksResultSchema = z.object({
+  checks: z.array(codeHostCheckSchema).max(500),
+});
+export type CodeHostChecksResult = z.infer<typeof codeHostChecksResultSchema>;
+
 export const codeHostBrowseRequestSchema = z.object({
   repository: repositorySchema.optional(),
   state: z.enum(["open", "merged", "closed", "all"]).default("all"),
@@ -459,6 +513,10 @@ export const codeHostOperations = {
   getPullRequestConversation: {
     request: codeHostConversationRequestSchema,
     result: codeHostConversationResultSchema,
+  },
+  getChecks: {
+    request: codeHostChecksRequestSchema,
+    result: codeHostChecksResultSchema,
   },
   browsePullRequests: {
     request: codeHostBrowseRequestSchema,
