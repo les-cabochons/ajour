@@ -18,6 +18,7 @@ import {
 } from "../../../packages/review-deck/diff.ts";
 import {
   deckCacheKeyString,
+  type DeckCacheForgotten,
   type DeckCacheKey,
   type DeckCachedEntry,
   type DeckContentCache,
@@ -310,9 +311,12 @@ interface Entry {
   key: DeckCacheKey;
   id: string;
   diff: Promise<DeckPullRequestDiff>;
-  versions: Promise<DeckFileVersions>;
+  /** What its guide is built from: the diff and both versions of each file. */
+  input: Promise<GuideBuildInput>;
   /** Null when the pipeline failed. It rejects only when the build was cancelled. */
   guide: Promise<DeckGuide | null>;
+  /** The guide failed: the next open of the same pull request builds it again. */
+  guideFailed?: boolean;
   stop: AbortController;
 }
 
@@ -399,17 +403,34 @@ export function createDeckService(options: {
     facts: Omit<DeckOpened, "opened">,
   ): Promise<DeckOpened> => {
     const diff = await entry.diff;
+    const building = entry.guide;
     let guide: DeckGuide | null;
     try {
-      guide = await entry.guide;
+      guide = await building;
     } catch (error) {
       if (error instanceof GuideBuildCancelled) throw new DeckBuildReplaced();
       throw error;
     }
     if (entry.stop.signal.aborted) throw new DeckBuildReplaced();
-    // A failed guide isn't kept: opening it again builds it again, from the cache.
-    if (guide === null && onScreen === entry) show(undefined);
+    // The pull request stays on screen, and kept from eviction, without a
+    // guide; opening it again builds the guide again.
+    if (guide === null && entry.guide === building) entry.guideFailed = true;
     return { opened: { ...diff, guide }, ...facts };
+  };
+
+  /** The pull request on screen, opened again: a guide that failed is built again. */
+  const answerKept = (
+    entry: Entry,
+    facts: Omit<DeckOpened, "opened">,
+  ): Promise<DeckOpened> => {
+    if (entry.guideFailed) {
+      entry.guideFailed = false;
+      entry.guide = entry.input.then((input) =>
+        buildGuide(entry.key, input, "open", entry.stop.signal),
+      );
+      entry.guide.catch(() => {});
+    }
+    return answer(entry, facts);
   };
 
   /** Puts a cached pull request on screen, building its guide if it has none. */
@@ -423,7 +444,7 @@ export function createDeckService(options: {
       key: found.key,
       id: deckCacheKeyString(found.key),
       diff: Promise.resolve(found.diff),
-      versions: Promise.resolve(found.guideInput),
+      input: Promise.resolve(found.guideInput),
       guide: found.guide
         ? Promise.resolve(found.guide)
         : buildGuide(found.key, found.guideInput, "open", stop.signal),
@@ -464,6 +485,8 @@ export function createDeckService(options: {
   ): Promise<DeckOpened> {
     const open = ++lastOpen;
     const replaced = () => open !== lastOpen;
+    // A connection removed from here on caches nothing this open read.
+    const generation = cache.generation(source);
     const none = { fileReadCount: 0, kept: false, cached: false };
     const ref = { repository: request.repository, number: request.number };
 
@@ -472,7 +495,7 @@ export function createDeckService(options: {
       const at = { ...source, ...ref, headSha: request.headSha };
       if (onScreen && sameHead(onScreen.key, at)) {
         doneReading();
-        return answer(onScreen, { ...none, kept: true, listed: false });
+        return answerKept(onScreen, { ...none, kept: true, listed: false });
       }
       const found = await cache.find(at);
       if (replaced()) throw new DeckBuildReplaced();
@@ -495,7 +518,7 @@ export function createDeckService(options: {
     const listed = { ...none, listed: true };
     if (onScreen?.id === id) {
       doneReading();
-      return answer(onScreen, { ...listed, kept: true });
+      return answerKept(onScreen, { ...listed, kept: true });
     }
     const found = await cache.get(key);
     if (replaced()) throw new DeckBuildReplaced();
@@ -517,16 +540,16 @@ export function createDeckService(options: {
       key,
       id,
       diff: built.then((result) => result.diff),
-      versions: built.then((result) => result.guideInput),
+      input: built.then((result) => result.guideInput),
       guide: built.then((result) => {
-        void cache.put(key, result);
+        void cache.put(key, result, generation);
         return buildGuide(key, result.guideInput, "open", stop.signal);
       }),
       stop,
     };
     // A failure reaches this caller below. A second caller awaits it too.
     entry.diff.catch(() => {});
-    entry.versions.catch(() => {});
+    entry.input.catch(() => {});
     entry.guide.catch(() => {});
     show(entry);
     try {
@@ -546,6 +569,9 @@ export function createDeckService(options: {
   ): Promise<Omit<DeckPreloaded, "failed">> {
     const ref = { repository: request.repository, number: request.number };
     const skipped = { queued: 0, fileReadCount: 0 };
+    // A connection removed from here on caches nothing this preload read.
+    const generation = cache.generation(source);
+    const removed = () => cache.generation(source) !== generation;
     /**
      * A pull request cached at `key` isn't read again, and one cached
      * without its guide gets its build queued again. Undefined when it
@@ -574,6 +600,7 @@ export function createDeckService(options: {
       ref,
       () => false,
     );
+    if (removed()) return skipped;
     const key = keyOf(source, request, content);
     const cached = await fromCache(key);
     if (cached) return cached;
@@ -585,11 +612,12 @@ export function createDeckService(options: {
       stop.signal,
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
-    // An open of the same pull request may have read it meanwhile.
-    if (onScreen?.id === deckCacheKeyString(key)) {
+    // An open of the same pull request may have read it meanwhile, or its
+    // connection was removed.
+    if (onScreen?.id === deckCacheKeyString(key) || removed()) {
       return { queued: 0, fileReadCount: result.fileReadCount };
     }
-    await cache.put(key, result);
+    await cache.put(key, result, generation);
     void buildGuide(key, result.guideInput, "preload");
     return { queued: 1, fileReadCount: result.fileReadCount };
   }
@@ -609,7 +637,7 @@ export function createDeckService(options: {
       try {
         const [diff, versions, guide] = await Promise.all([
           onScreen.diff,
-          onScreen.versions,
+          onScreen.input,
           onScreen.guide,
         ]);
         return { diff, guide, versions };
@@ -669,7 +697,26 @@ export function createDeckService(options: {
       return run;
     },
 
-    /** The content cache, for Settings › Storage, syncs and removed connections. */
+    /**
+     * Forgets a removed connection, or every connection of a removed
+     * plugin: its pull request on screen goes, with its reads and guide
+     * build, and so do its cached entries. Reads still under way cache
+     * nothing when they end.
+     */
+    forgetConnection(source: DeckCacheForgotten) {
+      if (
+        onScreen &&
+        onScreen.key.pluginId === source.pluginId &&
+        (source.connectionId === undefined ||
+          onScreen.key.connectionId === source.connectionId)
+      ) {
+        onScreen.stop.abort();
+        show(undefined);
+      }
+      return cache.forgetConnection(source);
+    },
+
+    /** The content cache, for Settings › Storage and syncs. */
     cache,
 
     close: () => guides.close(),

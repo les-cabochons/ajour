@@ -497,6 +497,8 @@ interface AppApiRuntime {
   stopping: boolean;
   /** Finishes the content cache's writes under way, so a quit keeps them (#781). */
   flushDeckCache: () => Promise<void>;
+  /** Removes a plugin's connections and data, and what Deck cached of them. */
+  removePluginData: (pluginId: string) => Promise<void>;
   pluginDrainMs: number;
   /**
    * The requests being handled that run plugin operations: a stop lets
@@ -1854,6 +1856,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       onRemoved: (key) => deckGuides.evict(deckCacheKeyString(key)),
     }),
   });
+  /**
+   * Every path that removes connections goes through these, so Deck's
+   * cached pull requests of them go too, with the reads and guide builds
+   * still under way (#781).
+   */
+  const deleteConnection = async (pluginId: string, connectionId: string) => {
+    const deleted = await storage.deleteConnection(pluginId, connectionId);
+    if (deleted) void deckService.forgetConnection({ pluginId, connectionId });
+    return deleted;
+  };
+  const removePluginData = async (pluginId: string) => {
+    await storage.removePluginData(pluginId);
+    void deckService.forgetConnection({ pluginId });
+  };
   /** What Settings › Storage shows, and its event's fields. */
   const deckCacheStorage = async (unit: {
     set(fields: object): unknown;
@@ -2087,6 +2103,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   const runtime: AppApiRuntime = {
     flushDeckCache: () => deckService.cache.flush(),
+    removePluginData,
     folderResolver,
     events,
     openSockets: new Set(),
@@ -3986,7 +4003,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const deleted = await storage.deleteConnection(pluginId, connectionId);
+      const deleted = await deleteConnection(pluginId, connectionId);
       if (!deleted) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, {
@@ -3994,8 +4011,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      // Its pull requests' cached contents go with it.
-      void deckService.cache.forgetConnection({ pluginId, connectionId });
       // The handoffs that ran through it pause as unknown, with why. They
       // queue behind any running refresh, so the delete doesn't wait.
       void handoffs
@@ -4074,7 +4089,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // Refused before anything goes: a vault that can't drop the secrets
       // would leave them behind a connection that is already gone.
       await storage.assertSecretsChangeable();
-      await storage.removePluginData(pluginId);
+      await removePluginData(pluginId);
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
@@ -4870,11 +4885,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       await deckService.cache.evict();
       writeJson(response, 200, await deckCacheStorage(unit));
     },
+    // A file Windows holds stays, counted as a pending removal, and goes
+    // at a later pass.
     deckStorageClear: async ({ response, unit }) => {
-      const { entryCount } = await deckService.cache.usage();
+      const before = await deckService.cache.usage();
       await deckService.cache.clear();
-      unit.set({ deck: { removed_count: entryCount } });
-      writeJson(response, 200, await deckCacheStorage(unit));
+      const cleared = await deckCacheStorage(unit);
+      unit.set({
+        deck: { removed_count: before.entryCount - cleared.entryCount },
+      });
+      writeJson(response, 200, cleared);
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {
@@ -6388,7 +6408,7 @@ export async function uninstallPluginForServer(
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   runtime.sessionPackages.invalidate(removedPlugin.id);
   await runtime.processBroker.endSessions(removedPlugin.id);
-  await runtime.storage.removePluginData(removedPlugin.id);
+  await runtime.removePluginData(removedPlugin.id);
   await runtime.pluginManager.syncReadiness();
   return pluginUninstallResponseSchema.parse({
     pluginId: removedPlugin.id,

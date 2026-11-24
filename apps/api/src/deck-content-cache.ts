@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { CodeHostPullRequestState } from "../../../packages/shared/code-host.ts";
@@ -26,6 +26,8 @@ import type { GuideBuildInput } from "./deck-guide-builds.ts";
  * once its guide is built, and `<id>.meta.json`, written last, which says
  * the entry is whole. Every file is written whole or not at all. A file that
  * doesn't read back drops its entry, and the pull request is read again.
+ * An entry being removed leaves at once, but its files count until they are
+ * gone: one Windows holds is deleted again at the next pass, or start.
  *
  * No error leaves this module with a path in it: a cache that can't read or
  * write is a cache that misses, and Deck reads through the plugin instead.
@@ -33,6 +35,9 @@ import type { GuideBuildInput } from "./deck-guide-builds.ts";
 
 /** One pull request's connection. */
 export type DeckCacheSource = { pluginId: string; connectionId: string };
+
+/** A connection, or every connection of a plugin. */
+export type DeckCacheForgotten = { pluginId: string; connectionId?: string };
 
 /** A pull request at one base and head. */
 export interface DeckCacheKey extends DeckCacheSource {
@@ -55,9 +60,11 @@ export interface DeckCachedEntry extends DeckCachedContent {
 }
 
 export interface DeckCacheUsage {
-  /** The entries' contents and guides. */
+  /** The entries' contents and guides, those not deleted yet included. */
   sizeBytes: number;
   entryCount: number;
+  /** The entries removed whose files couldn't be deleted yet. */
+  pendingRemovalCount: number;
 }
 
 /** The format of the files below. Another version's files are dropped. */
@@ -150,6 +157,23 @@ async function deleteFile(file: string): Promise<boolean> {
 const sameKey = (a: DeckCacheKey, b: DeckCacheKey) =>
   deckCacheKeyString(a) === deckCacheKeyString(b);
 
+const ofSource = (key: DeckCacheKey, source: DeckCacheForgotten) =>
+  key.pluginId === source.pluginId &&
+  (source.connectionId === undefined ||
+    key.connectionId === source.connectionId);
+
+const PARTS: Part[] = ["content", "guide", "meta"];
+/** The bytes of an entry's contents and guide files, as counted. */
+type PartSizes = { content?: number; guide?: number };
+const bytesOf = (sizes: PartSizes) => (sizes.content ?? 0) + (sizes.guide ?? 0);
+
+/** A file's size, zero once it is gone. */
+const sizeOf = (file: string) =>
+  stat(file).then(
+    (found) => (found.isFile() ? found.size : 0),
+    () => 0,
+  );
+
 export function createDeckContentCache(options: {
   directory: string;
   /** The cap now: the user's, from Settings › Storage, or the default. */
@@ -165,8 +189,21 @@ export function createDeckContentCache(options: {
 
   /** The whole entries, by id, as their meta files say. */
   const entries = new Map<string, Meta>();
+  /**
+   * The files of removed entries not deleted yet, by id, with their bytes:
+   * they are never read again, and count until they are gone.
+   */
+  const leftovers = new Map<string, PartSizes>();
   /** The pull request on screen, which is never evicted. */
   let kept: string | undefined;
+  /**
+   * How often each plugin and each connection was forgotten. Work begun
+   * before writes nothing: its connection may be gone.
+   */
+  const forgotten = new Map<string, number>();
+  const generationOf = (pluginId: string, connectionId: string) =>
+    (forgotten.get(JSON.stringify([pluginId])) ?? 0) +
+    (forgotten.get(JSON.stringify([pluginId, connectionId])) ?? 0);
 
   /**
    * Every read and write runs one after the other, so an eviction never
@@ -179,24 +216,49 @@ export function createDeckContentCache(options: {
     return run;
   };
 
+  /** Each file's size, read on disk: zero for one that's gone. */
+  const sizesOnDisk = async (id: string): Promise<PartSizes> => ({
+    content: await sizeOf(fileOf(id, "content")),
+    guide: await sizeOf(fileOf(id, "guide")),
+  });
+
   /**
-   * Deletes an entry's files, the meta first: files left without one are
-   * dropped at the next start. False when the meta stays, so the entry
-   * would load again.
+   * Deletes an entry's files, its contents first and its meta last, trying
+   * each even when one stays, so a meta rarely outlives its contents: a
+   * start deletes what it finds without both. What stays is a leftover,
+   * counted at `sizes`, until a later pass deletes it.
    */
-  const removeFiles = async (id: string) => {
-    if (!(await deleteFile(fileOf(id, "meta")))) return false;
-    await deleteFile(fileOf(id, "content"));
-    await deleteFile(fileOf(id, "guide"));
-    return true;
+  const removeFiles = async (id: string, sizes: PartSizes) => {
+    const left: PartSizes = {};
+    let stays = false;
+    for (const part of PARTS) {
+      if (await deleteFile(fileOf(id, part))) continue;
+      stays = true;
+      if (part !== "meta") left[part] = sizes[part] ?? 0;
+    }
+    if (stays) leftovers.set(id, left);
+    else leftovers.delete(id);
   };
 
-  /** Removes an entry. One whose meta file Windows holds stays, and counts. */
+  /**
+   * Removes an entry, or deletes again what a removal left. The entry is
+   * never read again, even while a file of it stays.
+   */
   const remove = async (id: string) => {
     const meta = entries.get(id);
-    if (!(await removeFiles(id))) return;
-    entries.delete(id);
-    if (meta && id !== kept) options.onRemoved?.(meta.key);
+    const sizes = meta
+      ? { content: meta.contentBytes, guide: meta.guideBytes }
+      : (leftovers.get(id) ?? (await sizesOnDisk(id)));
+    if (meta) {
+      entries.delete(id);
+      if (id !== kept) options.onRemoved?.(meta.key);
+    }
+    await removeFiles(id, sizes);
+  };
+
+  /** Deletes again the files earlier removals left. */
+  const removeLeftovers = async () => {
+    for (const id of [...leftovers.keys()]) await remove(id);
   };
 
   /** Deletes the temp files an interrupted write left. */
@@ -243,7 +305,7 @@ export function createDeckContentCache(options: {
           }
         }
         if (!meta) {
-          await removeFiles(id);
+          await removeFiles(id, await sizesOnDisk(id));
           continue;
         }
         if (meta.guideBytes > 0 && !found.has("guide")) {
@@ -253,34 +315,36 @@ export function createDeckContentCache(options: {
       }
     })());
 
+  /** What the entries and the leftovers hold on disk. */
   const total = () =>
     [...entries.values()].reduce(
       (sum, meta) => sum + meta.contentBytes + meta.guideBytes,
       0,
-    );
+    ) + [...leftovers.values()].reduce((sum, sizes) => sum + bytesOf(sizes), 0);
 
   /**
-   * Closed pull requests first, then the least recently used. A cap that
-   * can't be read evicts nothing this time.
+   * Closed pull requests first, then the least recently used, once what
+   * earlier removals left is deleted again. A file that stays still
+   * counts, so the next entry goes. A cap that can't be read evicts nothing
+   * this time.
    */
   const evictNow = async () => {
+    await removeLeftovers();
     let cap: number;
     try {
       cap = await options.capBytes();
     } catch {
       return;
     }
-    let size = total();
-    if (size <= cap) return;
+    if (total() <= cap) return;
     const candidates = [...entries]
       .filter(([id]) => id !== kept)
       .sort(
         ([, a], [, b]) =>
           Number(b.closed) - Number(a.closed) || a.lastUsedAt - b.lastUsedAt,
       );
-    for (const [id, meta] of candidates) {
-      if (size <= cap) break;
-      size -= meta.contentBytes + meta.guideBytes;
+    for (const [id] of candidates) {
+      if (total() <= cap) break;
       await remove(id);
     }
   };
@@ -382,11 +446,16 @@ export function createDeckContentCache(options: {
      * Keeps a pull request's contents, then evicts down to the cap. A
      * pull request too large to write is simply not cached. One already
      * cached at this base and head stays as it is, with its guide: the
-     * contents of a key never change.
+     * contents of a key never change. `generation` is its connection's when
+     * the reads began: a connection removed since then writes nothing.
      */
-    put(key: DeckCacheKey, content: DeckCachedContent) {
+    put(key: DeckCacheKey, content: DeckCachedContent, generation: number) {
       return serial(async () => {
         await load();
+        // Its connection was removed since the reads began.
+        if (generationOf(key.pluginId, key.connectionId) !== generation) {
+          return;
+        }
         const id = idOf(key);
         if (entries.has(id)) return;
         try {
@@ -410,8 +479,11 @@ export function createDeckContentCache(options: {
             guideBytes: 0,
           };
           // A guide an older entry left, without its meta, isn't this one's.
-          await deleteFile(fileOf(id, "guide"));
+          if (!(await deleteFile(fileOf(id, "guide")))) {
+            throw new Error("An older guide stays.");
+          }
           await writeMeta(id, meta);
+          leftovers.delete(id);
           entries.set(id, meta);
         } catch {
           // Too large to serialize, or the disk refused: not cached.
@@ -440,6 +512,11 @@ export function createDeckContentCache(options: {
         }
         await evictNow();
       });
+    },
+
+    /** The connection's generation now, which forgetting it moves on. */
+    generation(source: DeckCacheSource) {
+      return generationOf(source.pluginId, source.connectionId);
     },
 
     /** The pull request on screen, never evicted; none once undefined. */
@@ -485,26 +562,37 @@ export function createDeckContentCache(options: {
       });
     },
 
-    /** Removes a deleted connection's entries. */
-    forgetConnection(source: DeckCacheSource) {
+    /**
+     * Removes a deleted connection's entries, or every connection's of a
+     * removed plugin. A put whose reads began before, at an older
+     * generation, writes nothing.
+     */
+    forgetConnection(source: DeckCacheForgotten) {
+      const at = JSON.stringify(
+        source.connectionId === undefined
+          ? [source.pluginId]
+          : [source.pluginId, source.connectionId],
+      );
+      forgotten.set(at, (forgotten.get(at) ?? 0) + 1);
       return serial(async () => {
         await load();
         for (const [id, meta] of [...entries]) {
-          if (
-            meta.key.pluginId === source.pluginId &&
-            meta.key.connectionId === source.connectionId
-          ) {
-            await remove(id);
-          }
+          if (ofSource(meta.key, source)) await remove(id);
         }
+        await removeLeftovers();
       });
     },
 
-    /** Removes every entry, the one on screen included. */
+    /**
+     * Removes every entry, the one on screen included. Files that stay
+     * count in `usage` as pending removals.
+     */
     clear() {
       return serial(async () => {
         await load();
-        for (const id of [...entries.keys()]) await remove(id);
+        for (const id of [...entries.keys(), ...leftovers.keys()]) {
+          await remove(id);
+        }
         // Anything else an older version or a crash left.
         let names: string[] = [];
         try {
@@ -513,11 +601,12 @@ export function createDeckContentCache(options: {
           return;
         }
         await removeTempFiles(names);
+        const others = new Set<string>();
         for (const name of names) {
-          if (ENTRY_FILE.test(name) && !entries.has(name.slice(0, 40))) {
-            await deleteFile(path.join(directory, name));
-          }
+          const id = ENTRY_FILE.exec(name)?.[1];
+          if (id && !leftovers.has(id)) others.add(id);
         }
+        for (const id of others) await removeFiles(id, await sizesOnDisk(id));
       });
     },
 
@@ -537,7 +626,11 @@ export function createDeckContentCache(options: {
     usage(): Promise<DeckCacheUsage> {
       return serial(async () => {
         await load();
-        return { sizeBytes: total(), entryCount: entries.size };
+        return {
+          sizeBytes: total(),
+          entryCount: entries.size + leftovers.size,
+          pendingRemovalCount: leftovers.size,
+        };
       });
     },
   };

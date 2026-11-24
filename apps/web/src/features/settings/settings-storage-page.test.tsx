@@ -31,6 +31,7 @@ const USED: DeckCacheStorage = {
   sizeBytes: 312.4 * MB,
   capBytes: GB,
   entryCount: 14,
+  pendingRemovalCount: 0,
 };
 
 beforeEach(() => {
@@ -81,6 +82,7 @@ it("saves a new size limit, and shows what eviction left", async () => {
     sizeBytes: 240 * MB,
     capBytes: 250 * MB,
     entryCount: 9,
+    pendingRemovalCount: 0,
   });
   await renderPage();
 
@@ -111,6 +113,7 @@ it("clears the cache", async () => {
     sizeBytes: 0,
     capBytes: GB,
     entryCount: 0,
+    pendingRemovalCount: 0,
   });
   await renderPage();
 
@@ -123,6 +126,27 @@ it("clears the cache", async () => {
   expect((await screen.findAllByText("Cache cleared")).length).toBeGreaterThan(
     0,
   );
+});
+
+it("says calmly what a clear left, while another program holds its files", async () => {
+  vi.mocked(api.clearDeckCache).mockResolvedValue({
+    sizeBytes: 247,
+    capBytes: GB,
+    entryCount: 1,
+    pendingRemovalCount: 1,
+  });
+  await renderPage();
+  expect(screen.queryByRole("status")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear cache" }));
+  await act(async () => {});
+
+  expect(screen.getByText("247 B of 1 GB")).toBeTruthy();
+  expect(screen.getByText("1 version of pull requests.")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe(
+    "Some cached files are in use by another program. Ajour removes them later.",
+  );
+  expect(screen.queryByText("Cache cleared")).toBeNull();
 });
 
 it("says so when the local API can't read the cache, with nothing to set", async () => {

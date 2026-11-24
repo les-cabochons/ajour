@@ -145,9 +145,15 @@ export type DeckCacheSettingsUpdate = z.infer<
 
 /** Settings › Storage: what the content cache holds, and its cap. */
 export const deckCacheStorageSchema = z.object({
+  /** What is on disk, the files not deleted yet included. */
   sizeBytes: z.number().int().nonnegative(),
   capBytes: z.number().int().positive(),
   entryCount: z.number().int().nonnegative(),
+  /**
+   * The entries removed whose files another program held, as an antivirus
+   * scan does on Windows: they count until a later pass deletes them.
+   */
+  pendingRemovalCount: z.number().int().nonnegative(),
 });
 export type DeckCacheStorage = z.infer<typeof deckCacheStorageSchema>;
 

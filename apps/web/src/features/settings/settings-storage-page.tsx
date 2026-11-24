@@ -92,7 +92,8 @@ export function SettingsStoragePage() {
       .then(
         (cleared) => {
           setStorage(cleared);
-          showToast("Cache cleared");
+          // Otherwise the section says what stays.
+          if (cleared.pendingRemovalCount === 0) showToast("Cache cleared");
         },
         () =>
           showErrorToast({
@@ -117,6 +118,12 @@ export function SettingsStoragePage() {
         {readFailed ? (
           <p role="alert" className="text-sm text-destructive">
             Couldn't read the content cache.
+          </p>
+        ) : null}
+        {storage && storage.pendingRemovalCount > 0 ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Some cached files are in use by another program. Ajour removes them
+            later.
           </p>
         ) : null}
         <AppPanel>

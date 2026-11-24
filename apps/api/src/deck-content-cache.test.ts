@@ -1,6 +1,13 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DeckGuide } from "../../../packages/shared/deck.ts";
 import {
@@ -68,6 +75,9 @@ const content = (number: number, headSha = "head"): DeckCachedContent => ({
   },
 });
 
+/** The generation of a cache that forgot no connection yet. */
+const FRESH = 0;
+
 const guide: DeckGuide = {
   madeWith: "code",
   concerns: [{ id: "g1", title: "Title", rationale: "", hunkIds: ["a#0"] }],
@@ -88,15 +98,40 @@ function start(
 /** The size of one entry with no guide, measured in its own folder. */
 async function entrySize() {
   const cache = start(await cacheFolder());
-  await cache.put(key(1), content(1));
+  await cache.put(key(1), content(1), FRESH);
   return (await cache.usage()).sizeBytes;
+}
+
+/**
+ * Holds an entry's content file as Windows does while another process has
+ * it open without delete sharing: a folder in its place can't be deleted as
+ * a file. `release` puts the file back, as it was, for a later delete.
+ */
+async function holdContent(directory: string, held?: DeckCacheKey) {
+  const names = (await readdir(directory)).filter((name) =>
+    name.endsWith(".content.json"),
+  );
+  let name: string | undefined;
+  for (const candidate of names) {
+    const text = await readFile(path.join(directory, candidate), "utf8");
+    if (!held || text.includes(`"number":${held.number},`)) name = candidate;
+  }
+  const file = path.join(directory, name!);
+  const text = await readFile(file, "utf8");
+  await rm(file);
+  await mkdir(file);
+  await writeFile(path.join(file, "held"), "", "utf8");
+  return async () => {
+    await rm(file, { recursive: true });
+    await writeFile(file, text, "utf8");
+  };
 }
 
 describe("the Deck content cache", () => {
   it("gives back what it holds, with its guide, at a base and head", async () => {
     const cache = start(await cacheFolder());
 
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
     expect(await cache.get(key(1))).toEqual({
       key: key(1),
       ...content(1),
@@ -109,15 +144,16 @@ describe("the Deck content cache", () => {
     expect(await cache.usage()).toEqual({
       sizeBytes: expect.any(Number),
       entryCount: 1,
+      pendingRemovalCount: 0,
     });
   });
 
   it("finds a pull request by its head alone, the one used last when several bases share it", async () => {
     const clock = { now: 1_000 };
     const cache = start(await cacheFolder(), undefined, clock);
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
     clock.now = 2_000;
-    await cache.put({ ...key(1), baseSha: "rebased" }, content(1));
+    await cache.put({ ...key(1), baseSha: "rebased" }, content(1), FRESH);
 
     const found = await cache.find({
       pluginId: "github",
@@ -136,8 +172,8 @@ describe("the Deck content cache", () => {
   it("keeps a new head as a new entry beside the old one", async () => {
     const cache = start(await cacheFolder());
 
-    await cache.put(key(1), content(1));
-    await cache.put(key(1, "pushed"), content(1, "pushed"));
+    await cache.put(key(1), content(1), FRESH);
+    await cache.put(key(1, "pushed"), content(1, "pushed"), FRESH);
 
     expect((await cache.usage()).entryCount).toBe(2);
     expect((await cache.get(key(1)))?.diff.headSha).toBe("head");
@@ -146,11 +182,11 @@ describe("the Deck content cache", () => {
 
   it("keeps an entry and its guide when the same base and head is put again", async () => {
     const cache = start(await cacheFolder());
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
     await cache.putGuide(key(1), guide);
 
     // A preload that read the pull request while an open built it.
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
 
     expect((await cache.get(key(1)))?.guide).toEqual(guide);
     expect((await cache.usage()).entryCount).toBe(1);
@@ -162,7 +198,7 @@ describe("the Deck content cache", () => {
       capBytes: () => Promise.reject(new Error("The state file is locked.")),
     });
 
-    await expect(cache.put(key(1), content(1))).resolves.toBeUndefined();
+    await expect(cache.put(key(1), content(1), FRESH)).resolves.toBeUndefined();
     await expect(cache.putGuide(key(1), guide)).resolves.toBeUndefined();
     expect((await cache.get(key(1)))?.guide).toEqual(guide);
   });
@@ -170,7 +206,7 @@ describe("the Deck content cache", () => {
   it("keeps its entries across a restart", async () => {
     const directory = await cacheFolder();
     const first = start(directory);
-    await first.put(key(1), content(1));
+    await first.put(key(1), content(1), FRESH);
     await first.putGuide(key(1), guide);
 
     const second = start(directory);
@@ -189,14 +225,14 @@ describe("the Deck content cache", () => {
     const cache = start(await cacheFolder(), cap, clock);
     for (const number of [1, 2, 3]) {
       clock.now += 1_000;
-      await cache.put(key(number), content(number));
+      await cache.put(key(number), content(number), FRESH);
     }
     // Opening 1 makes 2 the least recently used.
     clock.now += 1_000;
     await cache.get(key(1));
 
     clock.now += 1_000;
-    await cache.put(key(4), content(4));
+    await cache.put(key(4), content(4), FRESH);
 
     expect(await cache.get(key(2))).toBeUndefined();
     for (const number of [1, 3, 4]) {
@@ -211,14 +247,14 @@ describe("the Deck content cache", () => {
     const cache = start(await cacheFolder(), cap, clock);
     for (const number of [1, 2, 3]) {
       clock.now += 1_000;
-      await cache.put(key(number), content(number));
+      await cache.put(key(number), content(number), FRESH);
     }
     await cache.markClosed({ pluginId: "github", connectionId: "c1" }, [
       { repository: "acme/api", number: 3, state: "merged" },
       { repository: "acme/api", number: 1, state: "open" },
     ]);
 
-    await cache.put(key(4), content(4));
+    await cache.put(key(4), content(4), FRESH);
 
     expect(await cache.get(key(3))).toBeUndefined();
     expect(await cache.get(key(1))).toBeDefined();
@@ -229,8 +265,8 @@ describe("the Deck content cache", () => {
     const cache = start(await cacheFolder(), cap);
     cache.keep(key(1));
 
-    await cache.put(key(1), content(1));
-    await cache.put(key(2), content(2));
+    await cache.put(key(1), content(1), FRESH);
+    await cache.put(key(2), content(2), FRESH);
 
     expect(await cache.get(key(1))).toBeDefined();
     expect(await cache.get(key(2))).toBeUndefined();
@@ -243,20 +279,24 @@ describe("the Deck content cache", () => {
     const cache = start(await cacheFolder(), cap, clock);
     for (const number of [1, 2, 3]) {
       clock.now += 1_000;
-      await cache.put(key(number), content(number));
+      await cache.put(key(number), content(number), FRESH);
     }
 
     cap.bytes = size;
     await cache.evict();
 
-    expect(await cache.usage()).toEqual({ sizeBytes: size, entryCount: 1 });
+    expect(await cache.usage()).toEqual({
+      sizeBytes: size,
+      entryCount: 1,
+      pendingRemovalCount: 0,
+    });
     expect(await cache.get(key(3))).toBeDefined();
   });
 
   it("drops an entry whose files are cut short, and keeps working", async () => {
     const directory = await cacheFolder();
     const cache = start(directory);
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
     await cache.putGuide(key(1), guide);
     for (const name of await readdir(directory)) {
       const file = path.join(directory, name);
@@ -265,15 +305,19 @@ describe("the Deck content cache", () => {
     }
 
     expect(await cache.get(key(1))).toBeUndefined();
-    expect(await cache.usage()).toEqual({ sizeBytes: 0, entryCount: 0 });
-    await cache.put(key(1), content(1));
+    expect(await cache.usage()).toEqual({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    await cache.put(key(1), content(1), FRESH);
     expect(await cache.get(key(1))).toBeDefined();
   });
 
   it("drops an entry cut short while it was closed, when it starts again", async () => {
     const directory = await cacheFolder();
-    await start(directory).put(key(1), content(1));
-    await start(directory).put(key(2), content(2));
+    await start(directory).put(key(1), content(1), FRESH);
+    await start(directory).put(key(2), content(2), FRESH);
     for (const name of await readdir(directory)) {
       if (!name.endsWith(".meta.json")) continue;
       await writeFile(path.join(directory, name), "{", "utf8");
@@ -281,14 +325,18 @@ describe("the Deck content cache", () => {
 
     const cache = start(directory);
 
-    expect(await cache.usage()).toEqual({ sizeBytes: 0, entryCount: 0 });
+    expect(await cache.usage()).toEqual({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
     // The files of the dropped entries are gone too.
     expect(await readdir(directory)).toEqual([]);
   });
 
   it("removes the files an interrupted write left", async () => {
     const directory = await cacheFolder();
-    await start(directory).put(key(1), content(1));
+    await start(directory).put(key(1), content(1), FRESH);
     await writeFile(
       path.join(directory, "0123.content.json.0f0e-tmp.tmp"),
       "half",
@@ -307,14 +355,114 @@ describe("the Deck content cache", () => {
   it("clears every entry, and forgets a removed connection's", async () => {
     const directory = await cacheFolder();
     const cache = start(directory);
-    await cache.put(key(1), content(1));
-    await cache.put({ ...key(2), connectionId: "c2" }, content(2));
+    await cache.put(key(1), content(1), FRESH);
+    await cache.put({ ...key(2), connectionId: "c2" }, content(2), FRESH);
 
     await cache.forgetConnection({ pluginId: "github", connectionId: "c1" });
     expect(await cache.usage()).toMatchObject({ entryCount: 1 });
 
     await cache.clear();
-    expect(await cache.usage()).toEqual({ sizeBytes: 0, entryCount: 0 });
+    expect(await cache.usage()).toEqual({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("drops a put begun before its connection or its plugin was forgotten", async () => {
+    const cache = start(await cacheFolder());
+    const c1 = { pluginId: "github", connectionId: "c1" };
+    const before = cache.generation(c1);
+
+    await cache.forgetConnection(c1);
+    await cache.put(key(1), content(1), before);
+    expect(await cache.usage()).toMatchObject({ entryCount: 0 });
+
+    // Work begun after it is kept.
+    await cache.put(key(1), content(1), cache.generation(c1));
+    expect(await cache.usage()).toMatchObject({ entryCount: 1 });
+
+    const beforePlugin = cache.generation(c1);
+    await cache.forgetConnection({ pluginId: "github" });
+    expect(await cache.usage()).toMatchObject({ entryCount: 0 });
+    await cache.put(key(1), content(1), beforePlugin);
+    expect(await cache.usage()).toMatchObject({ entryCount: 0 });
+  });
+
+  it("keeps counting an entry whose file Windows holds, never gives it back, and removes it on a later pass", async () => {
+    const directory = await cacheFolder();
+    const cache = start(directory);
+    await cache.put(key(1), content(1), FRESH);
+    const size = (await cache.usage()).sizeBytes;
+    const release = await holdContent(directory);
+
+    await cache.clear();
+
+    expect(await cache.usage()).toEqual({
+      sizeBytes: size,
+      entryCount: 1,
+      pendingRemovalCount: 1,
+    });
+    expect(await cache.get(key(1))).toBeUndefined();
+    await release();
+    await cache.clear();
+    expect(await cache.usage()).toEqual({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("evicts past an entry it can't delete, counting only the bytes it removed", async () => {
+    const size = await entrySize();
+    const clock = { now: 1_000 };
+    const cap = { bytes: size * 2 };
+    const directory = await cacheFolder();
+    const cache = start(directory, cap, clock);
+    for (const number of [1, 2]) {
+      clock.now += 1_000;
+      await cache.put(key(number), content(number), FRESH);
+    }
+    // Entry 1, the least recently used, is held.
+    const release = await holdContent(directory, key(1));
+
+    clock.now += 1_000;
+    await cache.put(key(3), content(3), FRESH);
+
+    expect(await cache.usage()).toEqual({
+      sizeBytes: size * 2,
+      entryCount: 2,
+      pendingRemovalCount: 1,
+    });
+    expect(await cache.get(key(2))).toBeUndefined();
+    expect(await cache.get(key(3))).toBeDefined();
+    await release();
+    await cache.evict();
+    expect(await cache.usage()).toEqual({
+      sizeBytes: size,
+      entryCount: 1,
+      pendingRemovalCount: 0,
+    });
+  });
+
+  it("removes at its next start what a removal couldn't, once Windows lets go", async () => {
+    const directory = await cacheFolder();
+    const cache = start(directory);
+    await cache.put(key(1), content(1), FRESH);
+    const release = await holdContent(directory);
+    await cache.forgetConnection({ pluginId: "github", connectionId: "c1" });
+    await release();
+
+    const next = start(directory);
+
+    expect(await next.usage()).toMatchObject({
+      sizeBytes: 0,
+      entryCount: 0,
+      pendingRemovalCount: 0,
+    });
+    expect(await next.get(key(1))).toBeUndefined();
     expect(await readdir(directory)).toEqual([]);
   });
 
@@ -322,7 +470,7 @@ describe("the Deck content cache", () => {
     const directory = await cacheFolder();
     const cache = start(directory);
 
-    await cache.put(key(1), content(1));
+    await cache.put(key(1), content(1), FRESH);
 
     for (const name of await readdir(directory)) {
       expect(name).toMatch(/^[0-9a-f]{40}\.(meta|content|guide)\.json$/);
