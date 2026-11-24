@@ -71,6 +71,11 @@ export function failAsk(state: AskState, message: string): AskState {
   };
 }
 
+/** The ask stopped before its turn ended, such as by a revoked consent, keeping what came. */
+export function stopAsk(state: AskState): AskState {
+  return { kind: "stopped", ...withQuestion(state), text: askText(state) };
+}
+
 /** Moves the ask on with one event of its turn, about `head`. */
 export function applyTurnEvent(
   state: AskState,

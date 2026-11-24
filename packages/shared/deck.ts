@@ -102,12 +102,24 @@ export const deckGuideSchema = z.object({
 });
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 
+/** Why an opened pull request has no guide although nothing failed. */
+export const deckGuideSkippedSchema = z.object({
+  /** It has more hunks than a guide is built for. */
+  reason: z.literal("too_many_hunks"),
+  /** The most hunks a guide is built for (#790). */
+  hunkLimit: z.number().int().positive(),
+});
+export type DeckGuideSkipped = z.infer<typeof deckGuideSkippedSchema>;
+
 /**
  * An opened pull request: its diff and its guide. The guide is null when
- * the pipeline failed, so the page shows the files A–Z.
+ * the pipeline failed, or didn't run because the pull request has more
+ * hunks than a guide is built for, which `guideSkipped` says. Either way
+ * the page shows the files A–Z.
  */
 export const deckOpenedPullRequestSchema = deckPullRequestDiffSchema.extend({
   guide: deckGuideSchema.nullable(),
+  guideSkipped: deckGuideSkippedSchema.optional(),
 });
 export type DeckOpenedPullRequest = z.infer<typeof deckOpenedPullRequestSchema>;
 
