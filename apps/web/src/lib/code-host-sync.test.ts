@@ -296,4 +296,39 @@ describe("code host sync persistence", () => {
       }),
     ]);
   });
+  it("keeps a draft review when its pull request closes or leaves the list, and across a reload", async () => {
+    const { localStore } = await import("./local-store");
+    const ref = {
+      pluginId: "github",
+      connectionId: "work",
+      repository: facts.repository,
+      number: facts.number,
+    };
+    localStore.syncPullRequests(source, result);
+    const comment = localStore.addDraftComment(ref, {
+      headSha: "head",
+      anchor: { path: "src/api.ts", side: "head", line: 2 },
+      body: "Rename this.",
+      lineText: "B",
+    });
+    expect(comment).toBeDefined();
+
+    // Merged, then gone past the days a closed pull request is kept.
+    const closedAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    localStore.syncPullRequests(source, {
+      ...result,
+      pullRequests: [{ ...facts, state: "merged", closedAt }],
+    });
+    expect(localStore.snapshot().pullRequests).toEqual([]);
+
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+    expect(reloaded.snapshot().deckDraftReviews).toEqual([
+      expect.objectContaining({ ...ref, comments: [comment] }),
+    ]);
+
+    // A deleted connection takes its drafts with it.
+    reloaded.removeConnectionPullRequests("github", "work");
+    expect(reloaded.snapshot().deckDraftReviews).toEqual([]);
+  });
 });

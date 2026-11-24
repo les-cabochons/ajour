@@ -1143,6 +1143,12 @@ channel to read the event each emits.
 | `deck.consent`                       | command, request                        | route, client call                               |
 | `deck.consent_revoke`                | command, request                        | route, client call                               |
 | `deck.consents`                      | command, request                        | route, client call                               |
+| `deck.draft_comment_add`             | command                                 | store command                                    |
+| `deck.draft_comment_edit`            | command                                 | store command                                    |
+| `deck.draft_comment_remove`          | command                                 | store command                                    |
+| `deck.draft_review_complete`         | command                                 | store command                                    |
+| `deck.draft_review_discard`          | command                                 | store command                                    |
+| `deck.draft_review_refresh`          | command                                 | store command                                    |
 | `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
 | `deck.preload`                       | request                                 | route                                            |

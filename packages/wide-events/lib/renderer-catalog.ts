@@ -738,6 +738,20 @@ export const rendererEvents = {
   "pull_request.snooze": command(pullRequest),
   "pull_request.unsnooze": command(pullRequest),
 
+  // Deck's draft review (#784). Never a path, a line or a comment's words.
+  "deck.draft_comment_add": command({}),
+  "deck.draft_comment_edit": command({}),
+  "deck.draft_comment_remove": command({}),
+  /** The review page read a new head: the comments on lines it changed were marked outdated. */
+  "deck.draft_review_refresh": command({
+    deck: { outdated_count: operational<number>() },
+  }),
+  /** The code host accepted these comments, so they left the draft. */
+  "deck.draft_review_complete": command({
+    deck: { comment_count: operational<number>() },
+  }),
+  "deck.draft_review_discard": command({}),
+
   // The retired activity timeline, kept for stored data.
   "timeline.import": command({}),
   "timeline.update": command({}),
