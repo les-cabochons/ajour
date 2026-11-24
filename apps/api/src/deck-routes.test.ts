@@ -1631,7 +1631,7 @@ describe("the content cache", () => {
 
 /*
  * An Azure DevOps pull request (#780). The fake plugin answers what the Azure
- * DevOps plugin 2.3.0 answers for the changes below
+ * DevOps plugin 2.4.0 answers for the changes below
  * (les-cabochons/ajour-plugins, plugins/azure-devops): the latest iteration's
  * changes against its common commit, and each file read by commit and path.
  * Review Deck reads the same changes in the Azure DevOps web page, and each
