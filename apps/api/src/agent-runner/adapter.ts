@@ -49,8 +49,8 @@ export interface AgentCliAdapter {
   buildInvocation(input: AdapterInput): AdapterInvocation;
   /** Null for lines the runner does not need. */
   parseEvent(line: string): RunnerEvent | null;
-  /** How the CLI holds a conversation. Absent when it can't yet. */
-  conversation?: ConversationAdapter;
+  /** How the CLI holds a pull request's conversation. */
+  conversation: ConversationAdapter;
 }
 
 /** What an adapter needs to start a conversation's process. */
@@ -79,7 +79,9 @@ export type ConversationEvent =
   | { kind: "turn-done" }
   | { kind: "turn-interrupted" }
   | { kind: "turn-failed"; message: string }
-  | { kind: "mcp-failed"; server: string };
+  | { kind: "mcp-failed"; server: string }
+  /** The process can't take another turn: its turn fails and it ends. */
+  | { kind: "cli-failed"; message: string };
 
 /**
  * One process's side of the CLI's conversation protocol, over stdin and
@@ -94,6 +96,12 @@ export interface ConversationCodec {
   interrupt(): string[];
   /** What one stdout line says, and the lines to answer it with. */
   read(line: string): { events: ConversationEvent[]; reply: string[] };
+  /**
+   * What one stderr line says, and the lines to answer it with, for a CLI
+   * that reports some failures only in its log. Absent when stderr only
+   * shows the CLI is at work.
+   */
+  readError?(line: string): { events: ConversationEvent[]; reply: string[] };
 }
 
 /**
