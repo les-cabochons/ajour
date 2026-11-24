@@ -20,19 +20,23 @@ import { usePullRequestDiff } from "./use-pull-request-diff";
 /** Where a section scrolled to lands below the top of the page's scroller, as `scroll-margin-top` in styles/deck.css. */
 const SECTION_MARGIN = 16;
 
-/** The top of the element that scrolls `element`, or of the window. */
-function scrollerTop(element: HTMLElement) {
+/** The element that scrolls `element`, or undefined for the window. */
+function scrollerOf(element: HTMLElement) {
   for (
     let parent = element.parentElement;
     parent;
     parent = parent.parentElement
   ) {
     const { overflowY } = getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll") {
-      return parent.getBoundingClientRect().top;
-    }
+    if (overflowY === "auto" || overflowY === "scroll") return parent;
   }
-  return 0;
+  return undefined;
+}
+
+/** Whether `scroller`, or the window, is scrolled to its end. */
+function atEnd(scroller: HTMLElement | undefined) {
+  const box = scroller ?? document.scrollingElement;
+  return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
 }
 
 /**
@@ -60,12 +64,16 @@ function ReviewChanges({
   const [treeOpen, setTreeOpen] = useState(false);
   const list = useRef<HTMLDivElement>(null);
 
+  /** The section J, K or a tick went to last. */
+  const reached = useRef<number | undefined>(undefined);
   const reach = useCallback((index: number) => {
     const section = list.current?.querySelectorAll<HTMLElement>(
       `[${SECTION_ATTRIBUTE}]`,
     )[index];
     if (!section) return;
-    section.scrollIntoView({ block: "start" });
+    reached.current = index;
+    // Instant, so a second J reads where the first one landed.
+    section.scrollIntoView({ block: "start", behavior: "instant" });
     section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
   }, []);
   const step = (direction: 1 | -1) => {
@@ -75,10 +83,12 @@ function ReviewChanges({
     const tops = [
       ...element.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`),
     ].map((section) => section.getBoundingClientRect().top);
+    const scroller = scrollerOf(element);
     const target = sectionToReach(
       tops,
-      scrollerTop(element) + SECTION_MARGIN,
+      (scroller?.getBoundingClientRect().top ?? 0) + SECTION_MARGIN,
       direction,
+      atEnd(scroller) ? reached.current : undefined,
     );
     if (target !== undefined) reach(target);
   };

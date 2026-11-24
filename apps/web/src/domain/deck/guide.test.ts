@@ -148,6 +148,16 @@ describe("moving between concerns", () => {
     expect(sectionToReach([-400, 0], 0, 1)).toBeUndefined();
     expect(sectionToReach([], 0, 1)).toBeUndefined();
   });
+
+  it("counts the section last reached as read at the end of the page, where it can't scroll up to the line", () => {
+    // The page is scrolled to its end, with the first section reached
+    // but still below the line.
+    expect(sectionToReach([140, 300], 0, 1)).toBe(0);
+    expect(sectionToReach([140, 300], 0, 1, 0)).toBe(1);
+    expect(sectionToReach([140, 300], 0, -1, 1)).toBe(0);
+    // A section scrolled past the line still counts first.
+    expect(sectionToReach([-500, -40, 300], 0, 1, 0)).toBe(2);
+  });
 });
 
 describe("viewed marks", () => {

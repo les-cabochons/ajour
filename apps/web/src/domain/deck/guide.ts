@@ -99,24 +99,29 @@ export function reviewSections(
  * The section J (`step` 1) or K (`step` -1) scrolls to, from the sections'
  * tops relative to the page, in reading order, and `line`, where a section
  * scrolled to lands. The section being read is the last one whose top
- * reached the line. J goes to the one after it; K goes back to its top, or
- * to the one before when its top is at the line already. Undefined at
- * either end.
+ * reached the line. At the end of the page the last sections can't scroll
+ * up to it, so `reached`, the section J or K went to last, counts as read
+ * there too. J goes to the one after the section being read; K goes back
+ * to its top, or to the one before when its top is at the line already.
+ * Undefined at either end.
  */
 export function sectionToReach(
   tops: readonly number[],
   line: number,
   step: 1 | -1,
+  reached?: number,
 ): number | undefined {
   // Within a pixel counts as at the line, for rounding after a scroll.
   let reading = -1;
   tops.forEach((top, index) => {
     if (top <= line + 1) reading = index;
   });
+  const fromReached = reached !== undefined && reached > reading;
+  if (fromReached) reading = reached;
   const target =
     step === 1
       ? reading + 1
-      : reading >= 0 && tops[reading]! < line - 1
+      : reading >= 0 && !fromReached && tops[reading]! < line - 1
         ? reading
         : reading - 1;
   return target >= 0 && target < tops.length ? target : undefined;
