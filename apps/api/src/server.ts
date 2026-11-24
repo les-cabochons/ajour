@@ -2980,7 +2980,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           } catch (error) {
             if (!(error instanceof DeckAskRefused)) throw error;
             unit.refuse(
-              error.reason === "needs_consent" ? "needs_consent" : "not_open",
+              error.reason === "needs_consent"
+                ? "repository_not_allowed"
+                : "not_open",
             );
             writeJson(response, error.status, error.body);
             return;
@@ -4707,7 +4709,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
       } catch (error) {
         if (error instanceof DeckAskRefused) {
-          unit.refuse(error.reason);
+          unit.refuse(
+            error.reason === "needs_consent"
+              ? "repository_not_allowed"
+              : error.reason,
+          );
           writeJson(response, error.status, error.body);
           return;
         }

@@ -1,3 +1,7 @@
+import {
+  agentTurnEventSchema,
+  type AgentTurnEvent,
+} from "@ajour/shared/agent-runs";
 import { handoffsSnapshotSchema } from "@ajour/shared/handoffs";
 import { setHandoffs } from "./handoffs";
 import {
@@ -48,6 +52,8 @@ export interface McpBridgeHandlers {
   onStream?(stream: EventSource): void;
   /** The API's agents snapshot, on attach and after every change. */
   onAgents?(snapshot: AgentsSnapshot): void;
+  /** A turn's progress, such as an ask's answer streaming in (#791). */
+  onAgentTurn?(event: AgentTurnEvent): void;
 }
 
 /**
@@ -164,6 +170,16 @@ export function connectMcpBridge(
         JSON.parse((message as MessageEvent<string>).data),
       );
       if (parsed.success) handlers.onAgents?.(parsed.data);
+    });
+    stream.addEventListener("agent-turn", (message) => {
+      try {
+        const parsed = agentTurnEventSchema.safeParse(
+          JSON.parse((message as MessageEvent<string>).data),
+        );
+        if (parsed.success) handlers.onAgentTurn?.(parsed.data);
+      } catch {
+        /* Ignore an invalid event. */
+      }
     });
     stream.addEventListener("tool-call", (message) => {
       const parsed = bridgeToolCallSchema.safeParse(

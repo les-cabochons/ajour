@@ -72,13 +72,9 @@ const repositoryName = (repository: string) =>
   repository.slice(repository.lastIndexOf("/") + 1) || repository;
 
 /** The turn's words: the anchor as Ajour holds it, then the question. */
-function concernMessage(
-  concern: DeckConcern,
-  number: number,
-  question: string | undefined,
-) {
+function concernMessage(concern: DeckConcern, question: string | undefined) {
   return [
-    `The user reads concern ${number} of the guide, "${concern.title}".`,
+    `The user reads the guide's concern "${concern.title}".`,
     concern.rationale ? `Its rationale: ${concern.rationale}` : undefined,
     `Its hunks, in reading order: ${concern.hunkIds.join(", ")}. Read them with read_hunks.`,
     "",
@@ -197,10 +193,8 @@ export function createDeckAsks(options: DeckAsksOptions) {
         });
       }
       const concerns = held.guide?.concerns ?? [];
-      const index = concerns.findIndex(
-        (concern) => concern.id === request.anchor.id,
-      );
-      if (index < 0) {
+      const concern = concerns.find(({ id }) => id === request.anchor.id);
+      if (!concern) {
         throw new DeckAskRefused(404, "unknown_anchor", {
           error: "The guide has no such concern.",
           reason: "unknown_anchor",
@@ -210,7 +204,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         task: "deck.ask",
         pullRequest,
         head: request.head,
-        message: concernMessage(concerns[index]!, index + 1, request.question),
+        message: concernMessage(concern, request.question),
       });
       streaming.set(turn.id, { key, pieces: [] });
       return { kind: "turn", turn };

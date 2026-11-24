@@ -155,6 +155,9 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   no_origin:
     "The window's agent connection carried no origin, so it was refused.",
   no_route: "No route of the local API matches that address.",
+  not_found: "There was nothing of that name to change.",
+  not_open:
+    "Deck no longer held that pull request at that commit, so nothing was asked.",
   no_transport: "Plugins reach the network only from the desktop app.",
   no_window: "No Ajour window was open to ask whether the command may run.",
   not_allowed:
@@ -207,6 +210,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   redirect_refused:
     "The address redirected too often, or away from https, so the request stopped.",
   refresh_failed: "Reading the handoff tool's threads again failed.",
+  repository_not_allowed:
+    "You haven't allowed Deck's questions about this repository with this agent yet, so nothing was sent.",
   remove_failed: "Removing the ajour command failed.",
   renderer_integrity:
     "Plugins are off because a plugin's page failed Ajour's integrity check.",
@@ -271,6 +276,7 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The answer couldn't be checked for secrets within the broker's budget, so it was dropped.",
   undeclared: "The plugin asked for something its manifest doesn't declare.",
   uninstalled: "The plugin was uninstalled while it ran.",
+  unknown_anchor: "The guide has no such concern, so nothing was asked.",
   unknown_client: "The agent client isn't one Ajour knows.",
   unknown_distro: "That WSL distro isn't installed.",
   unknown_hook:

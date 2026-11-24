@@ -1,6 +1,7 @@
 import { memo, useId } from "react";
 import { RiCheckLine as Check } from "@remixicon/react";
 import { DiffHunk } from "@/components/diff-hunk";
+import { ConcernRationale } from "./deck-ask";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
@@ -119,7 +120,12 @@ export const ReviewSectionView = memo(function ReviewSectionView({
               <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
               {section.title}
             </h3>
-            {section.rationale ? (
+            {section.concernId ? (
+              <ConcernRationale
+                concernId={section.concernId}
+                rationale={section.rationale ?? ""}
+              />
+            ) : section.rationale ? (
               <p className="deck-concern-rationale">{section.rationale}</p>
             ) : null}
           </div>

@@ -653,7 +653,7 @@ export const catalog = defineCatalog({
         "no_agent_task",
         "blocked",
         /** A core turn about a repository the user hasn't allowed with this agent (#791). */
-        "needs_consent",
+        "repository_not_allowed",
         /** A core turn about something that isn't a Deck pull request. */
         "not_open",
         ...requestReasons,
@@ -3166,7 +3166,7 @@ export const catalog = defineCatalog({
       kinds: ["command", "request"],
       reasons: [
         /** The user hasn't allowed the repository with this agent yet. */
-        "needs_consent",
+        "repository_not_allowed",
         /** Ajour no longer holds the pull request at this head. */
         "not_open",
         /** The guide has no such concern. */
@@ -3203,7 +3203,7 @@ export const catalog = defineCatalog({
     },
     /** Settings › Agents reads the repositories the user allowed. */
     "deck.consents": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: [...requestReasons],
       fields: {
         ...requestFields,
