@@ -5723,7 +5723,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         if (error instanceof PluginExportMissing) {
-          // An older plugin (Azure DevOps before 2.3.0, GitHub before 0.4.0), or a code host Deck doesn't read.
+          // An older plugin, or a code host Deck doesn't read.
           unit.refuse("not_supported");
           writeJson(response, 404, {
             error: `${plugin.displayName} doesn't show a pull request's changes yet.`,

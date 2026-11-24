@@ -789,8 +789,22 @@ const AZURE_BLOBS: Record<string, string> = {
   a8a940627d132695a9769df883f85992f0ff4a43: "\u0089PNG\r\n\u001a\n\u0000\u0001",
 };
 
+/** A change as Azure DevOps lists it: only the blob ids of the sides it has. */
+interface AzureChange {
+  changeTrackingId: number;
+  item: {
+    objectId?: string;
+    originalObjectId?: string;
+    gitObjectType: string;
+    path: string;
+    isFolder?: boolean;
+  };
+  changeType: string;
+  originalPath?: string;
+}
+
 /** As `iterations/3/changes?$compareTo=0` lists them: `changeType` is a list of flags. */
-const AZURE_CHANGES = [
+const AZURE_CHANGES: AzureChange[] = [
   {
     changeTrackingId: 1,
     item: { gitObjectType: "tree", path: "/src", isFolder: true },
@@ -858,7 +872,12 @@ const AZURE_CHANGES = [
   },
 ];
 
-/** What the plugin answers for those changes: no folder, no line counted, nothing guessed binary. */
+/**
+ * What the plugin answers for those changes: no folder, no line counted,
+ * nothing guessed binary. The plugin's own test of the same changes is
+ * "lists the latest iteration's changes against its common commit" in
+ * les-cabochons/ajour-plugins `plugins/azure-devops/tests/pull-request-content.test.ts`.
+ */
 const AZURE_CONTENT = {
   headSha: AZURE_HEAD,
   baseSha: AZURE_BASE,
@@ -879,10 +898,7 @@ const AZURE_CONTENT = {
 /** The files the plugin reads through items, by `commit:path`: each change's blobs where they are. */
 const AZURE_FILES = Object.fromEntries(
   AZURE_CHANGES.flatMap((change) => {
-    const { objectId, originalObjectId } = change.item as {
-      objectId?: string;
-      originalObjectId?: string;
-    };
+    const { objectId, originalObjectId } = change.item;
     const path = change.item.path.slice(1);
     const basePath = change.originalPath?.slice(1) ?? path;
     return [
@@ -901,7 +917,7 @@ export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function getPullRequestContent(connection, request) {
-  if (request.repository !== "Mercury/api" || request.number !== 12) throw new Error("Azure DevOps could not find the pull request.");
+  if (request.repository !== ${JSON.stringify(AZURE_DEVOPS.repository)} || request.number !== 12) throw new Error("Azure DevOps could not find the pull request.");
   return CONTENT;
 }
 export async function getFileContent(connection, request) {
@@ -942,10 +958,7 @@ function reviewDeckHunks() {
             : flags & RENAME
               ? ("rename" as const)
               : ("edit" as const);
-      const item = change.item as {
-        objectId?: string;
-        originalObjectId?: string;
-      };
+      const { item } = change;
       return {
         path: change.item.path.replace(/^\//, ""),
         originalPath: change.originalPath?.replace(/^\//, ""),
@@ -968,14 +981,12 @@ function reviewDeckHunks() {
   );
 }
 
+const startAzureDevOpsDeck = () =>
+  startDeck(azureDevOpsSource, undefined, undefined, AZURE_DEVOPS);
+
 describe("opening an Azure DevOps pull request in Deck", () => {
   it("gives the hunk ids Review Deck gives for the same iteration pair", async () => {
-    const { open } = await startDeck(
-      azureDevOpsSource,
-      undefined,
-      undefined,
-      AZURE_DEVOPS,
-    );
+    const { open } = await startAzureDevOpsDeck();
 
     const opened = await open(12);
 
@@ -997,12 +1008,7 @@ describe("opening an Azure DevOps pull request in Deck", () => {
   });
 
   it("shows every file in path order, a rename at its previous path and a binary file without its lines", async () => {
-    const { open, fileReads } = await startDeck(
-      azureDevOpsSource,
-      undefined,
-      undefined,
-      AZURE_DEVOPS,
-    );
+    const { open, fileReads } = await startAzureDevOpsDeck();
 
     const opened = await open(12);
 

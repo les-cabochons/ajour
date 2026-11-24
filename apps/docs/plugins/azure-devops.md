@@ -102,7 +102,7 @@ Pull requests sync on the connection's interval while **Sync pull requests autom
 - Checks come from the branch's build and status policies.
 - Teams count only when they are Azure DevOps teams, not other security groups.
 
-When you open a pull request in [Deck](/deck/), the plugin reads the changed files of its latest iteration, then each one at that iteration's common commit, where its branch and the target branch met, and at its head: the same comparison Review Deck shows. Ajour builds the diff from them and keeps it in memory while the pull request is on screen. A file with a NUL byte, or over 5,000,000 characters, shows as not shown. Deck reads at most 3,000 changed files: a larger pull request doesn't open in Deck. Reading the changes needs only the read-only **Pull requests** access and **Code › Read**.
+When you open a pull request in [Deck](/deck/), the plugin reads the changed files of its latest iteration, then each one at that iteration's common commit, where its branch and the target branch met, and at its head: the same comparison Review Deck shows. Ajour builds the diff from them and keeps it in memory while the pull request is on screen. A file with a NUL byte, over 5,000,000 characters or over 8 MB shows without its lines. Folders and submodules aren't listed. Deck reads at most 3,000 changed files: a larger pull request doesn't open in Deck. Reading the changes needs only the read-only **Pull requests** access and **Code › Read**.
 
 Turn off **Backlog items** under **Capabilities** on the plugin's page to use only pull requests. The work item fields then hide, and the token needs no work item access.
 
