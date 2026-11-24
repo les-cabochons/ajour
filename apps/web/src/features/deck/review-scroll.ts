@@ -12,15 +12,20 @@ export const SECTION_MARGIN = 16;
 /** The versions bar the sections land below (#787), sticky within the changes. */
 const VERSIONS_BAR = ".deck-versions";
 
+/** The height of the sticky versions bar above `element`, which hides what scrolls under it; 0 without one. */
+function stickyHeight(element: HTMLElement) {
+  return (
+    element.closest(".deck-changes")?.querySelector<HTMLElement>(VERSIONS_BAR)
+      ?.offsetHeight ?? 0
+  );
+}
+
 /**
  * How far below the top of the page's scroller a section scrolled to lands:
  * below the sticky versions bar above `element`, when there is one.
  */
 export function readingOffset(element: HTMLElement) {
-  const bar = element
-    .closest(".deck-changes")
-    ?.querySelector<HTMLElement>(VERSIONS_BAR);
-  return (bar?.offsetHeight ?? 0) + SECTION_MARGIN;
+  return stickyHeight(element) + SECTION_MARGIN;
 }
 
 /** The sections J, K and the ticks move between. */

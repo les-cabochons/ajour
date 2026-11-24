@@ -25,6 +25,7 @@ import {
 import { hunkRowCount } from "@/domain/deck/review-diff";
 import type { PlacedThread } from "@/domain/deck/review-threads";
 import {
+  SECTION_MARGIN,
   readingOffset,
   scrollerOf,
   type SectionNavigator,
@@ -124,6 +125,8 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   /** How far below the top of the scroller's content the rows start. */
   const [margin, setMargin] = useState(0);
   const [lineHeight, setLineHeight] = useState(20);
+  /** How far below the scroller's top the reading line is: under the sticky versions bar, and 16px more. */
+  const readingLine = useRef(SECTION_MARGIN);
   const { rows, sectionRows } = useMemo(() => reviewRows(sections), [sections]);
   const { byHunk, renderAnnotation, hoveredEntry } = useThreadMarks({
     placed,
@@ -154,6 +157,8 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
       getComputedStyle(element).getPropertyValue("--diff-line-height"),
     );
     if (height > 0) setLineHeight(height);
+    // One read: the bar keeps its height.
+    readingLine.current = readingOffset(element);
     // The summary and the heading above the rows can change height.
     const measure = () => {
       const offset =
@@ -210,6 +215,19 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     // Rows measured a frame later, so their new heights never loop the observer.
     useAnimationFrameWithResizeObserver: true,
   });
+  // The library's own rule, with the fold moved down to the reading line,
+  // under the sticky versions bar: a row above it that resizes, ending there
+  // or measured for the first time, moves the page by as much, so a section
+  // J or a tick reached stays put as the hunks above it draw.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+    item,
+    _delta,
+    instance,
+  ) => {
+    const fold = (instance.scrollOffset ?? 0) + readingLine.current;
+    if (!instance.itemSizeCache.has(item.key)) return item.start < fold;
+    return item.end <= fold && instance.scrollDirection !== "backward";
+  };
 
   /**
    * Focuses section `index`'s title once its row has mounted, and holds it

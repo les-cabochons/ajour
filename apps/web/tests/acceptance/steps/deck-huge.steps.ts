@@ -115,6 +115,7 @@ Then(
     await expect(page.locator(":focus")).toHaveText(
       `Concern ${number}: ${CONCERNS[number - 1]}`,
     );
+    // Below the sticky versions bar, 16px down.
     await expect
       .poll(async () => Math.abs((await focusedOffset(page)) - 16) <= 2)
       .toBe(true);
@@ -180,7 +181,7 @@ Given(
 
 const changes = (page: Page) => page.getByRole("region", { name: "Changes" });
 
-/** How far the focused element's top sits below the top of the page's scroller. */
+/** How far the focus sits below the sticky versions bar (#787), or the scroller's top without one. */
 const focusedOffset = (page: Page) =>
   page.evaluate(() => {
     const focused = document.activeElement;
@@ -189,9 +190,11 @@ const focusedOffset = (page: Page) =>
       box = box.parentElement;
     }
     if (!focused || !box) return Number.NaN;
-    return (
-      focused.getBoundingClientRect().top - box.getBoundingClientRect().top
-    );
+    const bar = document.querySelector(".deck-versions");
+    const top = bar
+      ? bar.getBoundingClientRect().bottom
+      : box.getBoundingClientRect().top;
+    return focused.getBoundingClientRect().top - top;
   });
 
 Then(
@@ -229,7 +232,7 @@ Then(
   "file {int} is focused at the top of the changes",
   async ({ page }, number: number) => {
     await expect(page.locator(":focus")).toHaveText(pathOf(number - 1));
-    // J, K and the ticks land a section 16px below the scroller's top.
+    // J, K and the ticks land a section 16px below the sticky versions bar.
     await expect
       .poll(async () => Math.abs((await focusedOffset(page)) - 16) <= 2)
       .toBe(true);
