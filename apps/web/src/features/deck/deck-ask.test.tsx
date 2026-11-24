@@ -25,8 +25,9 @@ import {
 import { DeckPage } from "./deck-page";
 
 /*
- * "more ›" on a concern (#791): the first ask. It runs a turn in the pull
- * request's conversation; a quiet placeholder shows, then the answer streams
+ * "more ›" on a concern (#791): the first ask. It opens on the default
+ * question, which the user sends as is or edits; it runs a turn in the pull
+ * request's conversation, a quiet placeholder shows, then the answer streams
  * in under the rationale. The local API module is mocked, and the turn's
  * events reach the page as they come from the window's stream.
  */
@@ -189,6 +190,16 @@ async function renderGuide(shell = Shell) {
 const moreOn = (concern: HTMLElement) =>
   within(concern).getByRole("button", { name: "More detail" });
 
+/** The question `more ›` opens on. */
+const questionOn = (concern: HTMLElement) =>
+  within(concern).getByRole("textbox", { name: "Question" });
+
+/** Opens the concern's ask and sends its default question as is. */
+function askOn(concern: HTMLElement) {
+  fireEvent.click(moreOn(concern));
+  fireEvent.keyDown(questionOn(concern), { key: "Enter" });
+}
+
 it("puts one more › at the end of each concern's rationale, and nothing per line", async () => {
   const first = await renderGuide();
 
@@ -213,7 +224,7 @@ it("shows a quiet placeholder, streams the answer in under the rationale, then a
   });
   const concern = await renderGuide();
 
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
 
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
@@ -250,7 +261,7 @@ it("shows a quiet placeholder, streams the answer in under the rationale, then a
     text: "It reads the export.",
     head: HEAD,
   });
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const again = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -259,12 +270,64 @@ it("shows a quiet placeholder, streams the answer in under the rationale, then a
   expect(within(again).getByText("From the code at a41c9e2")).toBeTruthy();
 });
 
-it("asks a typed question in place of the default one", async () => {
-  vi.mocked(api.askDeck)
-    .mockResolvedValueOnce({ kind: "answer", text: "Default.", head: HEAD })
-    .mockResolvedValueOnce({ kind: "turn", turn: turn("t2") });
+it("opens on the default question, focused, and sends a typed one in its place", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t2"),
+  });
+  const concern = await renderGuide();
+
+  fireEvent.click(moreOn(concern));
+
+  const question = questionOn(concern) as HTMLTextAreaElement;
+  expect(question.value).toBe(
+    "Give more detail on this concern: what it changes, why, and what a reviewer should check.",
+  );
+  expect(document.activeElement).toBe(question);
+  expect(api.askDeck).not.toHaveBeenCalled();
+  expect(within(concern).queryByRole("status")).toBeNull();
+
+  fireEvent.change(question, { target: { value: "Is it tested?" } });
+  fireEvent.click(within(concern).getByRole("button", { name: "Ask" }));
+
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
+    repository: "acme/billing-api",
+    number: 1,
+    head: HEAD,
+    anchor: { kind: "concern", id: "g1" },
+    question: "Is it tested?",
+  });
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  expect(await within(answer).findByText("Is it tested?")).toBeTruthy();
+  started("t2");
+  text("t2", 0, "Yes, in api.test.ts.");
+  ended("t2");
+  expect(await within(answer).findByText("Yes, in api.test.ts.")).toBeTruthy();
+});
+
+it("closes the question on Escape, sending nothing", async () => {
   const concern = await renderGuide();
   fireEvent.click(moreOn(concern));
+
+  fireEvent.keyDown(questionOn(concern), { key: "Escape" });
+
+  expect(
+    within(concern).queryByRole("textbox", { name: "Question" }),
+  ).toBeNull();
+  expect(moreOn(concern).getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(moreOn(concern));
+  expect(api.askDeck).not.toHaveBeenCalled();
+});
+
+it("asks something else under an answer", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "answer", text: "Default.", head: HEAD })
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t8") });
+  const concern = await renderGuide();
+  askOn(concern);
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -272,9 +335,7 @@ it("asks a typed question in place of the default one", async () => {
 
   fireEvent.change(
     within(answer).getByRole("textbox", { name: "Ask something else" }),
-    {
-      target: { value: "Is it tested?" },
-    },
+    { target: { value: "And errors?" } },
   );
   fireEvent.submit(
     within(answer).getByRole("textbox", { name: "Ask something else" }),
@@ -286,15 +347,11 @@ it("asks a typed question in place of the default one", async () => {
       number: 1,
       head: HEAD,
       anchor: { kind: "concern", id: "g1" },
-      question: "Is it tested?",
+      question: "And errors?",
     }),
   );
-  expect(await within(answer).findByText("Is it tested?")).toBeTruthy();
+  expect(await within(answer).findByText("And errors?")).toBeTruthy();
   expect(within(answer).queryByText("Default.")).toBeNull();
-  started("t2");
-  text("t2", 0, "Yes, in api.test.ts.");
-  ended("t2");
-  expect(await within(answer).findByText("Yes, in api.test.ts.")).toBeTruthy();
 });
 
 it("stops a turn, keeping what came", async () => {
@@ -304,7 +361,7 @@ it("stops a turn, keeping what came", async () => {
   });
   vi.mocked(api.cancelAgentTurn).mockResolvedValue({ cancelled: true });
   const concern = await renderGuide();
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -326,7 +383,7 @@ it("waits while a timesheet task runs", async () => {
     turn: turn("t4", "waiting"),
   });
   const concern = await renderGuide();
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -365,7 +422,7 @@ it("asks once for the repository, naming the agent and what leaves the machine, 
   vi.mocked(api.grantDeckConsent).mockResolvedValue({ consents: [] });
   const concern = await renderGuide();
 
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
 
   const dialog = await screen.findByRole("alertdialog", {
     name: "Ajour asks once for billing-api",
@@ -400,7 +457,7 @@ it("sends nothing when the user declines", async () => {
     }),
   );
   const concern = await renderGuide();
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const dialog = await screen.findByRole("alertdialog");
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));
@@ -422,7 +479,7 @@ it("says why an ask failed, and tries again", async () => {
       head: HEAD,
     });
   const concern = await renderGuide();
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -447,7 +504,7 @@ it("streams the answer under React's development remount too", async () => {
     </StrictMode>
   ));
 
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -475,7 +532,7 @@ it("says why the consent couldn't be recorded", async () => {
     ),
   );
   const concern = await renderGuide();
-  fireEvent.click(moreOn(concern));
+  askOn(concern);
   fireEvent.click(
     within(await screen.findByRole("alertdialog")).getByRole("button", {
       name: "Allow",

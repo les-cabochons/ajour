@@ -521,7 +521,9 @@ export class AgentConversations {
     }
     turn.finish({
       outcome: "failed",
-      message: `Ajour no longer may send this repository's code to ${conversation.adapter.label}. Ask again to allow it.`,
+      // The page shows it, and nothing there names the agent.
+      message:
+        "Ajour may no longer send this repository's code. Ask again to allow it.",
       reason: "repository_not_allowed",
     });
     return false;

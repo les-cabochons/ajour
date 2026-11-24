@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DECK_CONCERN_DEFAULT_QUESTION,
   DECK_QUESTION_MAX,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
@@ -18,6 +19,7 @@ import {
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   answerAsk,
   applyTurnEvent,
@@ -39,11 +41,11 @@ import { DeckConsentDialog } from "./deck-consent-dialog";
 
 /*
  * Deck's quiet asks (#791): a faint `more ›` ends each concern's rationale.
- * It asks the concern's default question at once; the answer streams in
- * under the rationale, ending with the commit it is about, and accepts a
- * typed question in its place. The first ask in a repository opens the
- * consent dialog. Nothing names the agent. At rest a concern mounts one
- * button and no listener.
+ * It opens on the concern's default question, which Enter sends as is or as
+ * edited; the answer streams in under the rationale, ending with the commit
+ * it is about. The first ask in a repository opens the consent dialog.
+ * Nothing names the agent. At rest a concern mounts one button and no
+ * listener.
  */
 
 /** The pull request the page asks about, at the head it shows. */
@@ -161,7 +163,12 @@ export function ConcernRationale({
     () => ({ kind: "concern", id: concernId }),
     [concernId],
   );
-  const close = useCallback(() => setOpen(false), []);
+  const more = useRef<HTMLButtonElement>(null);
+  // Focus goes back to `more ›`, as it would from a closed popover.
+  const close = useCallback(() => {
+    setOpen(false);
+    more.current?.focus();
+  }, []);
   return (
     <>
       <p className="deck-concern-rationale">
@@ -170,6 +177,7 @@ export function ConcernRationale({
           <>
             {rationale ? " " : null}
             <button
+              ref={more}
               type="button"
               className="deck-more"
               aria-label="More detail"
@@ -195,9 +203,10 @@ export function ConcernRationale({
 }
 
 /**
- * The answer of an open ask: it asks the default question once mounted.
- * Nothing here depends on an unmount, so React's development remount keeps
- * the ask going, and a closed answer's turn ends on its own and is cached.
+ * An open ask: first its question, the default one to send as is or edit,
+ * then its answer. Nothing here depends on an unmount, so React's
+ * development remount keeps the ask going, and a closed answer's turn ends
+ * on its own and is cached.
  */
 function AskAnswer({
   id,
@@ -211,6 +220,8 @@ function AskAnswer({
   onClose: () => void;
 }) {
   const { target, requestConsent } = context;
+  /** Nothing is asked yet: the question shows, to send or edit. */
+  const [composing, setComposing] = useState(true);
   const [state, setState] = useState<AskState>(() => startAsk());
   const [draft, setDraft] = useState("");
   /** The consent dialog is open: nothing is asked yet, so nothing shows. */
@@ -223,6 +234,7 @@ function AskAnswer({
   const ask = useCallback(
     async (question?: string) => {
       const mine = ++generation.current;
+      setComposing(false);
       setTurnId(undefined);
       setState(startAsk(question));
       const current = () => generation.current === mine;
@@ -276,13 +288,6 @@ function AskAnswer({
     [anchor, onClose, requestConsent, target],
   );
 
-  // Opening asks the default question, once.
-  const asked = useRef(false);
-  useEffect(() => {
-    if (asked.current) return;
-    asked.current = true;
-    void ask();
-  }, [ask]);
   // Follows the running turn. Its events so far come first, so a remount
   // applies them again, which leaves the same state.
   const { head } = target;
@@ -294,6 +299,15 @@ function AskAnswer({
   }, [turnId, head]);
 
   if (awaitingConsent) return null;
+  if (composing) {
+    return (
+      <AskQuestion
+        id={id}
+        onAsk={(question) => void ask(question)}
+        onClose={onClose}
+      />
+    );
+  }
   const going = askGoing(state);
   const text = askText(state);
   const stop = () => {
@@ -366,5 +380,72 @@ function AskAnswer({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The question an ask opens on: the default one, focused and selected, so
+ * Enter sends it as is and typing replaces it. Escape closes the ask.
+ */
+function AskQuestion({
+  id,
+  onAsk,
+  onClose,
+}: {
+  id: string;
+  /** No question means the default one, so its answer is cached as such. */
+  onAsk: (question?: string) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(DECK_CONCERN_DEFAULT_QUESTION);
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    field.current?.focus();
+    field.current?.select();
+  }, []);
+  const send = () => {
+    const question = draft.trim();
+    if (!question) return;
+    onAsk(question === DECK_CONCERN_DEFAULT_QUESTION ? undefined : question);
+  };
+  return (
+    <form
+      id={id}
+      className="deck-ask deck-ask-compose"
+      aria-label="More detail"
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+    >
+      <Textarea
+        ref={field}
+        aria-label="Question"
+        rows={1}
+        className="min-h-0"
+        value={draft}
+        maxLength={DECK_QUESTION_MAX}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          } else if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            send();
+          }
+        }}
+      />
+      <div className="deck-ask-actions">
+        <Button type="submit" variant="ghost" size="sm">
+          Ask
+        </Button>
+      </div>
+    </form>
   );
 }

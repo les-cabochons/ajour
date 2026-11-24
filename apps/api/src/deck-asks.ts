@@ -6,6 +6,7 @@ import type {
   CoreTaskRunRequest,
 } from "../../../packages/shared/agent-runs.ts";
 import {
+  DECK_CONCERN_DEFAULT_QUESTION,
   deckPullRequestKey,
   parseDeckPullRequestKey,
   repositoryName,
@@ -32,10 +33,6 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /** Answers kept. Older ones are asked again. */
 const ANSWERS_KEPT = 200;
-
-/** The question an ask about a concern starts from. */
-export const CONCERN_DEFAULT_QUESTION =
-  "Give more detail on this concern: what it changes, why, and what a reviewer should check.";
 
 /** Why an ask, or a core turn, can't run: its status and the body the page reads. */
 export class DeckAskRefused extends Error {
@@ -82,7 +79,7 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
     concern.rationale ? `Its rationale: ${concern.rationale}` : undefined,
     `Its hunks, in reading order: ${concern.hunkIds.join(", ")}. Read them with read_hunks.`,
     "",
-    `The question: ${question ?? CONCERN_DEFAULT_QUESTION}`,
+    `The question: ${question ?? DECK_CONCERN_DEFAULT_QUESTION}`,
   ]
     .filter((line) => line !== undefined)
     .join("\n");

@@ -122,6 +122,13 @@ export type DeckPreloadRequest = z.infer<typeof deckPreloadRequestSchema>;
 export const DECK_QUESTION_MAX = 2_000;
 
 /**
+ * The question an ask about a concern opens on. Sent as is, the ask carries
+ * no question, so its answer is cached as the default one.
+ */
+export const DECK_CONCERN_DEFAULT_QUESTION =
+  "Give more detail on this concern: what it changes, why, and what a reviewer should check.";
+
+/**
  * Where a pull request is, as a conversation's key: its plugin, connection,
  * repository and number. The agent runner keys the conversation, and binds
  * its tools, by this string.
