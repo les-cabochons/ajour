@@ -774,6 +774,39 @@ it("shows a revoked repository's answer no more once its conversation closes, ba
   expect(moreOn(again).getAttribute("aria-expanded")).toBe("false");
 });
 
+it("keeps an answer asked after allowing the repository again, when the revoked conversation's close comes late", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "Asked again.",
+      head: HEAD,
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  // Settings › Agents revokes the repository, then it is allowed again and
+  // asked again, before the old conversation's close arrives.
+  act(() => announceDeckConsentRevoked(BILLING));
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  askOn(concern);
+  await within(concern).findByText("Asked again.");
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+
+  expect(within(concern).getByText("Asked again.")).toBeTruthy();
+});
+
 it("hides a cached answer as its repository is revoked in another window", async () => {
   vi.mocked(api.askDeck).mockResolvedValueOnce({
     kind: "answer",

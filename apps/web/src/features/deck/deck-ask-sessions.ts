@@ -234,6 +234,9 @@ export class DeckAskSessions {
    * written stays, and its ask opens the consent dialog again.
    */
   revoke() {
+    // Every conversation so far is the revoked consent's: a close of one that
+    // comes later, after the repository was allowed again, revokes nothing.
+    this.#conversations.clear();
     for (const [key, session] of [...this.#sessions]) {
       if (session.composing || session.awaitingConsent) continue;
       if (holdsAnswer(session)) {
