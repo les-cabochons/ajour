@@ -191,6 +191,8 @@ function AskAnswer({
   const { target, requestConsent } = context;
   const [state, setState] = useState<AskState>(() => startAsk());
   const [draft, setDraft] = useState("");
+  /** The consent dialog is open: nothing is asked yet, so nothing shows. */
+  const [awaitingConsent, setAwaitingConsent] = useState(false);
   /** The running turn, which Stop stops. */
   const [turnId, setTurnId] = useState<string>();
   /** Stops listening to the running turn's events. */
@@ -233,7 +235,10 @@ function AskAnswer({
               ? deckNeedsConsentSchema.safeParse(error.payload)
               : undefined;
           if (consent?.success && attempt === 0) {
-            if (await requestConsent(consent.data)) {
+            setAwaitingConsent(true);
+            const allowed = await requestConsent(consent.data);
+            setAwaitingConsent(false);
+            if (allowed) {
               if (!current()) return;
               continue;
             }
@@ -271,6 +276,7 @@ function AskAnswer({
     [],
   );
 
+  if (awaitingConsent) return null;
   const going = askGoing(state);
   const text = askText(state);
   const stop = () => {

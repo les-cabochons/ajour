@@ -370,6 +370,10 @@ it("asks once for the repository, naming the agent and what leaves the machine, 
   const dialog = await screen.findByRole("alertdialog", {
     name: "Ajour asks once for billing-api",
   });
+  // Nothing is asked yet, so nothing shows in place.
+  expect(
+    within(concern).queryByRole("region", { name: "More detail" }),
+  ).toBeNull();
   expect(dialog.textContent).toContain("Claude Code 2.1.318");
   expect(dialog.textContent).toContain("the changed lines");
   expect(dialog.textContent).toContain("the review threads");
