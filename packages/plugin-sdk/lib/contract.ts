@@ -1051,6 +1051,7 @@ export type CodeHostOperations = {
       repository: string;
       headSha: string;
       body?: string | undefined;
+      submissionId?: string | undefined;
     };
     result: { reviewId: string };
   };

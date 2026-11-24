@@ -23,7 +23,6 @@ import {
 import { showToast } from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  finishReviewRequest,
   lineAnchor,
   reviewVerdicts,
   type DeckDraftReview,
@@ -43,8 +42,9 @@ import { useShortcut } from "@/lib/shortcut-handlers";
  * submit dialog with Comment, Request changes ("Wait for author" on Azure
  * DevOps) and Approve; R then C, N or A opens it on that verdict, and R
  * then Y approves with no dialog. The review goes to the code host at
- * once. A failure keeps the draft review and shows the dialog with the
- * reason and Retry; nothing is queued.
+ * once, named by a submission id the draft keeps. A failure keeps the
+ * draft review and shows the dialog with the reason and Retry, which sends
+ * the same name; nothing is queued.
  */
 
 type Verdict = CodeHostSubmitReviewRequest["verdict"];
@@ -110,16 +110,16 @@ export function FinishReview({
     if (sending || !headSha) return;
     setSending(true);
     setFailure(undefined);
-    const review: DeckDraftReview = draft ?? {
+    const ref: DeckReviewRef = {
       pluginId: pullRequest.pluginId,
       connectionId: pullRequest.connectionId,
       repository: pullRequest.facts.repository,
       number: pullRequest.facts.number,
-      headSha,
-      comments: [],
-      updatedAt: 0,
     };
-    const { request, sent } = finishReviewRequest(review, {
+    // Named and stored before it's sent: Retry, after a restart too, sends
+    // the same name, and the plugin completes only what's missing.
+    const { request, sent } = localStore.prepareReviewSubmission(ref, {
+      headSha: draft?.headSha ?? headSha,
       verdict: next,
       body,
     });
@@ -129,7 +129,7 @@ export function FinishReview({
         pullRequest.connectionId,
         request,
       );
-      localStore.completeDraftComments(review, sent);
+      localStore.completeReviewSubmission(ref, sent);
       setOpen(false);
       setSummary("");
       showToast(next === "approve" ? "Approved" : "Review sent");

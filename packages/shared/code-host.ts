@@ -380,6 +380,15 @@ export const codeHostSubmitReviewRequestSchema =
     comments: z
       .array(codeHostLineAnchorSchema.extend({ body: bodySchema.min(1) }))
       .max(500),
+    /**
+     * Names this review across tries and restarts. A try with the identity
+     * of an earlier one sends only what the code host doesn't hold yet, so
+     * Retry after an uncertain failure posts nothing twice.
+     */
+    submissionId: z
+      .string()
+      .regex(/^[\w-]{1,100}$/)
+      .optional(),
   });
 export type CodeHostSubmitReviewRequest = z.infer<
   typeof codeHostSubmitReviewRequestSchema

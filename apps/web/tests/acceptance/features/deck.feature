@@ -120,6 +120,15 @@ Feature: Deck lists the pull requests on your plate
     When I submit the review
     Then the code host gets an approval with the comment "Cap the backoff."
 
+  Scenario: Comment on a line from the keyboard
+    Given the local API built the requested pull request's guide
+    And the code host takes reviews
+    When I open Deck
+    And I open the requested pull request summary
+    And I comment "Cap the backoff." on line 13 from the keyboard
+    And I add it to the review with Ctrl+Enter
+    Then the draft comment "Cap the backoff." sits beside its line
+
   Scenario: Read a pull request's guide on a narrow screen
     Given the local API built the requested pull request's guide
     When I open Deck on a narrow screen

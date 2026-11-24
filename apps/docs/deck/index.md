@@ -45,9 +45,13 @@ Point at a line and click the **+** beside its number to comment on it, or drag 
 
 Your draft review is saved on your computer, so it survives closing Ajour, and nothing in it is sent before you finish. The header's **Finish review · 2** counts its comments. It opens a dialog with an optional summary and the verdict: **Comment**, **Request changes** (**Wait for author** on Azure DevOps, where the verdict is your vote) or **Approve**. From the keyboard, press <kbd>R</kbd> then <kbd>C</kbd>, <kbd>N</kbd> or <kbd>A</kbd> to open it on that verdict, or <kbd>R</kbd> then <kbd>Y</kbd> to approve at once, with no dialog.
 
-The review goes to the code host as soon as you submit it. If it fails, your draft stays as it was, and the dialog says why, with **Retry**. Nothing waits to be sent later.
+The review goes to the code host as soon as you submit it. If it fails, your draft stays as it was, and the dialog says why, with **Retry**. Nothing waits to be sent later. Retry, also after you restart Ajour, never posts the review twice: Ajour names each review, and the plugin first looks on the code host for what an earlier try left there.
 
-When the author pushes and you open the pull request again, a draft comment whose line changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft, and stays under **Recently closed** until you post its comments with **Post as comments**, or **Discard** it.
+To comment from the keyboard, press <kbd>Tab</kbd> until a hunk's **Comment on line …** button shows, move it with <kbd>↑</kbd> and <kbd>↓</kbd>, and press <kbd>Enter</kbd>.
+
+On Azure DevOps, where your vote counts for the whole pull request, Ajour won't approve once new commits arrived after you read it: open it again to read them first.
+
+When the author pushes and you open the pull request again, a draft comment whose lines changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft, and stays under **Recently closed** until you post its comments with **Post as comments**, or **Discard** it.
 
 Commenting and reviewing need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
 

@@ -751,6 +751,14 @@ export const rendererEvents = {
     deck: { comment_count: operational<number>() },
   }),
   "deck.draft_review_discard": command({}),
+  /** Finish review named its request, a retry with the last try's name. */
+  "deck.review_submission_prepare": command({
+    deck: { comment_count: operational<number>() },
+  }),
+  /** The code host took the review, and its comments left the draft. */
+  "deck.review_submission_complete": command({
+    deck: { comment_count: operational<number>() },
+  }),
 
   // The retired activity timeline, kept for stored data.
   "timeline.import": command({}),

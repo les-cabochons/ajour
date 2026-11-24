@@ -128,7 +128,14 @@ export function PullRequestReview({
         side,
         line: lines.end,
         ...(lines.start < lines.end ? { startLine: lines.start } : {}),
-        lineText: lineTextOf(shown, { path, side, line: lines.end }) ?? "",
+        // Every line of the range, so a push to any of them outdates it.
+        lineText:
+          lineTextOf(shown, {
+            path,
+            side,
+            line: lines.end,
+            startLine: lines.start,
+          }) ?? "",
         body: "",
       });
     },
@@ -212,7 +219,7 @@ export function PullRequestReview({
         }
       />
       <PullRequestStatusLine pullRequest={pullRequest} checks={checks.state} />
-      {!open && draft ? (
+      {!open && draft?.comments.length ? (
         <ClosedDraftReview
           pullRequest={pullRequest}
           draft={draft}

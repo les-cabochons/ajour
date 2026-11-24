@@ -800,6 +800,54 @@
     margin-top: 0.25rem;
   }
 
+  /*
+   * The hunk's keyboard way to comment (#784): hidden until it has focus,
+   * then a pill at the hunk's top right naming the line it's on, which the
+   * hunk highlights. One per hunk, nothing per line.
+   */
+  .diff-hunk {
+    position: relative;
+  }
+
+  .diff-line-key {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    z-index: 5;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .diff-line-key:focus {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    clip-path: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--background);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  .diff-line-key svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .diff-line-key-hint {
+    color: var(--muted-foreground);
+  }
+
   /* Before it draws, a hunk holds the height of its rows, so the page doesn't move as hunks mount. */
   .diff-hunk:not([data-drawn]),
   .diff-hunk-placeholder {

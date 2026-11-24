@@ -13,10 +13,16 @@ import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
  * sent all at once with a verdict by Finish review. Nothing here is a
  * write to the code host: a submit that fails leaves the draft as it was.
  *
- * Each comment keeps the text of its line, so a refresh to a new head can
+ * Each comment keeps the text of its lines, so a refresh to a new head can
  * tell which lines changed: a comment on one is marked outdated, stays in
  * the draft and isn't sent on a line any more. A pull request that closes
  * keeps its draft, to post as comments or discard.
+ *
+ * Finish review names its request with a submission id kept in the draft
+ * before anything is sent, so Retry, after a restart too, sends the same
+ * name, and the plugin finds what an earlier try left on the code host
+ * instead of posting it twice. Changing what the review sends makes it a
+ * new submission; the code host taking it clears the name.
  */
 
 /** A pull request of a code host connection, as a draft review names it. */
@@ -35,7 +41,10 @@ export interface DeckDraftComment {
   /** The first line of a comment on several lines. */
   startLine?: number;
   body: string;
-  /** The line's text when the comment was written, to tell whether a push changed it. */
+  /**
+   * The text of its lines when the comment was written, from `startLine`
+   * to `line`, one per row, to tell whether a push changed any of them.
+   */
   lineText: string;
   createdAt: number;
   updatedAt: number;
@@ -43,10 +52,20 @@ export interface DeckDraftComment {
   outdated?: true;
 }
 
+/** A Finish review the code host hasn't confirmed yet: tried, and failed or still sending. */
+export interface DeckReviewSubmission {
+  /** The request's `submissionId`. */
+  id: string;
+  /** What it sends, its verdict, summary and comments: anything else is a new submission. */
+  key: string;
+}
+
 export interface DeckDraftReview extends DeckReviewRef {
   /** The head the current comments' lines are on. */
   headSha: string;
+  /** Empty only while a review without comments is being submitted. */
   comments: DeckDraftComment[];
+  submission?: DeckReviewSubmission;
   updatedAt: number;
 }
 
@@ -64,22 +83,43 @@ export function draftReviewOf(
   return reviews.find((review) => sameRef(review, ref));
 }
 
-/** The reviews with the pull request's draft replaced, or dropped once it has no comments. */
+/** The reviews with the pull request's draft replaced, or dropped once it has no comments and no submission. */
 function withDraft(
   reviews: readonly DeckDraftReview[],
   ref: DeckReviewRef,
   next: DeckDraftReview | undefined,
 ): DeckDraftReview[] {
   const others = reviews.filter((review) => !sameRef(review, ref));
-  return next && next.comments.length ? [...others, next] : others;
+  return next && (next.comments.length || next.submission)
+    ? [...others, next]
+    : others;
 }
 
-/** A line's text on the diff, after its `+`, `-` or space, or undefined when the diff doesn't show it. */
+/**
+ * The text of lines on the diff, from `startLine` to `line`, each after its
+ * `+`, `-` or space and one per row, or undefined when the diff doesn't
+ * show one of them.
+ */
 export function lineTextOf(
   diff: DeckPullRequestDiff,
-  anchor: { path: string; side: CodeHostDiffSide; line: number },
+  anchor: {
+    path: string;
+    side: CodeHostDiffSide;
+    line: number;
+    startLine?: number;
+  },
 ) {
-  return findLine(diff, anchor)?.text;
+  const first =
+    anchor.startLine !== undefined && anchor.startLine < anchor.line
+      ? anchor.startLine
+      : anchor.line;
+  const texts: string[] = [];
+  for (let line = first; line <= anchor.line; line += 1) {
+    const text = findLine(diff, { ...anchor, line })?.text;
+    if (text === undefined) return undefined;
+    texts.push(text);
+  }
+  return texts.join("\n");
 }
 
 /** Adds a comment on lines of `headSha`. A blank comment adds nothing. */
@@ -281,6 +321,81 @@ export function finishReviewRequest(
 }
 
 /**
+ * What a Finish review sends, as its submission's key. The head isn't part
+ * of it: a retry after a push is the same review.
+ */
+function submissionKey(
+  request: CodeHostSubmitReviewRequest,
+  draft: DeckDraftReview,
+  sent: readonly string[],
+) {
+  const edited = new Map(
+    draft.comments.map((comment) => [comment.id, comment.updatedAt]),
+  );
+  return JSON.stringify([
+    request.verdict,
+    request.body ?? "",
+    sent.map((id) => [id, edited.get(id)]),
+  ]);
+}
+
+/**
+ * Finish review's request, named: the draft's submission id when the
+ * review sends what the last try did, or a new one. The draft keeps it,
+ * a review without comments in a draft of its own, so the caller stores
+ * `reviews` before it sends `request`.
+ */
+export function prepareReviewSubmission(
+  reviews: readonly DeckDraftReview[],
+  ref: DeckReviewRef,
+  input: {
+    headSha: string;
+    verdict: CodeHostSubmitReviewRequest["verdict"];
+    body: string;
+  },
+  { now, createId }: { now: number; createId: () => string },
+): {
+  reviews: DeckDraftReview[];
+  request: CodeHostSubmitReviewRequest;
+  sent: string[];
+} {
+  const draft: DeckDraftReview = draftReviewOf(reviews, ref) ?? {
+    pluginId: ref.pluginId,
+    connectionId: ref.connectionId,
+    repository: ref.repository,
+    number: ref.number,
+    headSha: input.headSha,
+    comments: [],
+    updatedAt: now,
+  };
+  const { request, sent } = finishReviewRequest(draft, input);
+  const key = submissionKey(request, draft, sent);
+  const submission =
+    draft.submission?.key === key ? draft.submission : { id: createId(), key };
+  return {
+    reviews: withDraft(reviews, ref, { ...draft, submission }),
+    request: { ...request, submissionId: submission.id },
+    sent,
+  };
+}
+
+/** After the code host took the review: its comments leave the draft, and so does its submission. */
+export function completeReviewSubmission(
+  reviews: readonly DeckDraftReview[],
+  ref: DeckReviewRef,
+  sent: readonly string[],
+): readonly DeckDraftReview[] {
+  const draft = draftReviewOf(reviews, ref);
+  if (!draft) return reviews;
+  const done = new Set(sent);
+  const { submission: _confirmed, ...rest } = draft;
+  return withDraft(reviews, ref, {
+    ...rest,
+    comments: draft.comments.filter((comment) => !done.has(comment.id)),
+  });
+}
+
+/**
  * Each verdict's name on the pull request's code host. Azure DevOps votes,
  * so a request for changes is its "Wait for author" vote there.
  */
@@ -322,15 +437,20 @@ const storedCommentSchema = z.object({
   outdated: z.literal(true).optional(),
 });
 
-const storedDraftSchema = z.object({
-  pluginId: z.string().min(1),
-  connectionId: z.string().min(1),
-  repository: z.string().min(1),
-  number: z.number().int().positive(),
-  headSha: z.string().min(1),
-  comments: z.array(storedCommentSchema).min(1),
-  updatedAt: z.number().int().nonnegative(),
-});
+const storedDraftSchema = z
+  .object({
+    pluginId: z.string().min(1),
+    connectionId: z.string().min(1),
+    repository: z.string().min(1),
+    number: z.number().int().positive(),
+    headSha: z.string().min(1),
+    comments: z.array(storedCommentSchema),
+    submission: z
+      .object({ id: z.string().regex(/^[\w-]{1,100}$/), key: z.string() })
+      .optional(),
+    updatedAt: z.number().int().nonnegative(),
+  })
+  .refine((draft) => draft.comments.length > 0 || draft.submission);
 
 /** The stored draft reviews it can read. */
 export function normalizeDraftReviews(value: unknown): DeckDraftReview[] {

@@ -34,12 +34,40 @@ When(
   async ({ page }, comment: string, line: string) => {
     const code = changes(page).getByText(line, { exact: true });
     await code.hover();
-    // The library's one "+" follows the pointer, beside the line's number.
-    await changes(page).locator("[data-utility-button]").click();
+    // The one "+" follows the pointer, beside the line's number.
+    await changes(page)
+      .getByRole("button", { name: "Comment on this line" })
+      .click();
     const field = page.getByRole("textbox", { name: "Comment" });
     await field.fill(comment);
     await field.scrollIntoViewIfNeeded();
     await page.screenshot({ path: "test-results/deck-composer.png" });
+  },
+);
+
+When(
+  "I comment {string} on line {int} from the keyboard",
+  async ({ page }, comment: string, line: number) => {
+    // Tab from the hunk's Viewed mark reaches its keyboard button, hidden
+    // until it has focus.
+    await changes(page)
+      .getByRole("button", { name: /^Viewed: src\/client\/retry\.ts/ })
+      .focus();
+    await page.keyboard.press("Tab");
+    const key = page.locator(":focus");
+    await expect(key).toBeVisible();
+    await expect(key).toHaveAccessibleName(/^Comment on (removed )?line \d+$/);
+    const name = `Comment on line ${line}`;
+    for (let step = 0; step < 60; step += 1) {
+      if ((await key.innerText()).includes(name)) break;
+      await page.keyboard.press("ArrowDown");
+    }
+    await expect(key).toHaveAccessibleName(name);
+    await page.screenshot({ path: "test-results/deck-line-key.png" });
+    await page.keyboard.press("Enter");
+    const field = page.getByRole("textbox", { name: "Comment" });
+    await expect(field).toBeFocused();
+    await page.keyboard.type(comment);
   },
 );
 
@@ -99,6 +127,8 @@ Then(
             body: comment,
           },
         ],
+        // Its name, so a retry doesn't post it twice.
+        submissionId: expect.stringMatching(/^review_submission_/),
       },
     ]);
   },

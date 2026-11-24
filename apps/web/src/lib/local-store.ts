@@ -64,10 +64,12 @@ import {
 import {
   addDraftComment,
   completeDraftComments,
+  completeReviewSubmission,
   discardDraftReview,
   draftReviewOf,
   editDraftComment,
   normalizeDraftReviews,
+  prepareReviewSubmission,
   refreshDraftReview,
   removeDraftComment,
   type DeckDraftComment,
@@ -1847,6 +1849,36 @@ const store = {
   },
   discardDraftReview(ref: DeckReviewRef) {
     return updateDraftReviews((reviews) => discardDraftReview(reviews, ref));
+  },
+  /**
+   * Finish review's request, with the submission id it keeps in the draft
+   * before anything is sent: a retry, after a restart too, sends the same.
+   */
+  prepareReviewSubmission(
+    ref: DeckReviewRef,
+    input: Parameters<typeof prepareReviewSubmission>[2],
+  ) {
+    return updateStateWithResult((state) => {
+      const prepared = prepareReviewSubmission(
+        state.deckDraftReviews ?? [],
+        ref,
+        input,
+        {
+          now: Date.now(),
+          createId: () => createId("review_submission"),
+        },
+      );
+      return {
+        state: { ...state, deckDraftReviews: prepared.reviews },
+        result: { request: prepared.request, sent: prepared.sent },
+      };
+    });
+  },
+  /** The code host took the review: its comments and its submission leave the draft. */
+  completeReviewSubmission(ref: DeckReviewRef, sent: readonly string[]) {
+    return updateDraftReviews((reviews) =>
+      completeReviewSubmission(reviews, ref, sent),
+    );
   },
   /**
    * Adds calendar suggestions as time entries in one action. Returns the new
@@ -3941,6 +3973,16 @@ export const STORE_COMMANDS = {
     fields: { deck: { comment_count: ([, ids]) => ids.length } },
   },
   discardDraftReview: "deck.draft_review_discard",
+  prepareReviewSubmission: {
+    name: "deck.review_submission_prepare",
+    resultFields: {
+      deck: { comment_count: (prepared) => prepared.sent.length },
+    },
+  },
+  completeReviewSubmission: {
+    name: "deck.review_submission_complete",
+    fields: { deck: { comment_count: ([, sent]) => sent.length } },
+  },
   acceptCalendarSuggestions: "suggestion.add",
   dismissCalendarSuggestions: {
     name: "suggestion.dismiss",

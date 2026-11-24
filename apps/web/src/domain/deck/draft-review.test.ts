@@ -3,6 +3,7 @@ import type { DeckFile, DeckPullRequestDiff } from "@ajour/shared/deck";
 import {
   addDraftComment,
   completeDraftComments,
+  completeReviewSubmission,
   discardDraftReview,
   draftReviewOf,
   editDraftComment,
@@ -10,6 +11,7 @@ import {
   lineTextOf,
   normalizeDraftReviews,
   placeDrafts,
+  prepareReviewSubmission,
   refreshDraftReview,
   removeDraftComment,
   reviewVerdicts,
@@ -358,5 +360,145 @@ describe("stored drafts", () => {
     expect(
       normalizeDraftReviews([{ ...reviews[0], comments: "broken" }, 4]),
     ).toEqual([]);
+  });
+});
+
+describe("a comment on several lines", () => {
+  /** A comment on lines `start` to `end` of the head, as the composer adds it. */
+  function onLines(start: number, end: number, side: "head" | "base" = "head") {
+    const anchor = { path: "src/api.ts", side, line: end, startLine: start };
+    return addDraftComment(
+      [],
+      REF,
+      {
+        headSha: FIRST.headSha,
+        anchor,
+        body: "These.",
+        lineText: lineTextOf(FIRST, anchor) ?? "",
+      },
+      options(),
+    );
+  }
+
+  it("keeps the text of every line it's on", () => {
+    expect(onLines(2, 3).comment?.lineText).toBe("B\nc");
+    expect(
+      lineTextOf(FIRST, {
+        path: "src/api.ts",
+        side: "head",
+        line: 4,
+        startLine: 3,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("is outdated when a push changes its first line, not only its last", () => {
+    const refreshed = refreshDraftReview(onLines(2, 3).reviews, REF, SECOND);
+    expect(refreshed.outdated).toBe(1);
+  });
+
+  it("stays current while all its lines read the same", () => {
+    // The base's lines 1 and 2, "a" and "b", are the same after the push.
+    const refreshed = refreshDraftReview(
+      onLines(1, 2, "base").reviews,
+      REF,
+      SECOND,
+    );
+    expect(refreshed.outdated).toBe(0);
+  });
+});
+
+describe("a review's submission", () => {
+  const press = (
+    reviews: readonly DeckDraftReview[],
+    verdict: "approve" | "comment" = "approve",
+    body = "Ship it.",
+  ) =>
+    prepareReviewSubmission(
+      reviews,
+      REF,
+      { headSha: "head-1", verdict, body },
+      options(),
+    );
+
+  it("names the request, and keeps the name with the draft before it's sent", () => {
+    const { reviews, comment } = withComment([], 2);
+    const first = press(reviews);
+    const id = first.request.submissionId;
+    expect(id).toMatch(/^[\w-]+$/);
+    expect(draftReviewOf(first.reviews, REF)?.submission?.id).toBe(id);
+    expect(first.sent).toEqual([comment!.id]);
+    // Stored, it reads back: a retry after a restart sends the same name.
+    const stored = normalizeDraftReviews(
+      JSON.parse(JSON.stringify(first.reviews)),
+    );
+    expect(press(stored).request.submissionId).toBe(id);
+  });
+
+  it("names a review with no comments too, in a draft of its own until it's sent", () => {
+    const first = press([]);
+    const draft = draftReviewOf(first.reviews, REF);
+    expect(draft).toMatchObject({ headSha: "head-1", comments: [] });
+    expect(press(first.reviews).request.submissionId).toBe(
+      first.request.submissionId,
+    );
+    expect(completeReviewSubmission(first.reviews, REF, first.sent)).toEqual(
+      [],
+    );
+  });
+
+  it("is a new submission once what it sends changes", () => {
+    const { reviews } = withComment([], 2);
+    const first = press(reviews);
+    const id = first.request.submissionId;
+    expect(press(first.reviews, "comment").request.submissionId).not.toBe(id);
+    expect(
+      press(first.reviews, "approve", "Ship it now.").request.submissionId,
+    ).not.toBe(id);
+    const added = withComment(first.reviews, 3, "And this.");
+    expect(press(added.reviews).request.submissionId).not.toBe(id);
+    const draft = draftReviewOf(first.reviews, REF)!;
+    const edited = editDraftComment(
+      first.reviews,
+      REF,
+      draft.comments[0]!.id,
+      "Rename it.",
+      2_000,
+    );
+    expect(press(edited).request.submissionId).not.toBe(id);
+  });
+
+  it("keeps its name when the draft moves to a new head", () => {
+    const { reviews } = withComment([], 3);
+    const first = press(reviews);
+    const moved = refreshDraftReview(first.reviews, REF, SECOND).reviews;
+    expect(
+      prepareReviewSubmission(
+        moved,
+        REF,
+        { headSha: "head-2", verdict: "approve", body: "Ship it." },
+        options(),
+      ).request.submissionId,
+    ).toBe(first.request.submissionId);
+  });
+
+  it("once the code host took it, clears the comments it sent and its name", () => {
+    const changed = withComment([], 2);
+    const kept = withComment(changed.reviews, 3, "Fine.");
+    const refreshed = refreshDraftReview(kept.reviews, REF, SECOND).reviews;
+    const first = prepareReviewSubmission(
+      refreshed,
+      REF,
+      { headSha: "head-2", verdict: "comment", body: "" },
+      options(),
+    );
+    const after = draftReviewOf(
+      completeReviewSubmission(first.reviews, REF, first.sent),
+      REF,
+    );
+    expect(after?.comments.map((comment) => comment.id)).toEqual([
+      changed.comment!.id,
+    ]);
+    expect(after?.submission).toBeUndefined();
   });
 });

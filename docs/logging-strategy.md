@@ -1152,6 +1152,8 @@ channel to read the event each emits.
 | `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
 | `deck.preload`                       | request, job                            | route, client call, renderer                     |
+| `deck.review_submission_complete`    | command                                 | store command                                    |
+| `deck.review_submission_prepare`     | command                                 | store command                                    |
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
 | `deck.storage_update`                | request, command                        | route, client call                               |

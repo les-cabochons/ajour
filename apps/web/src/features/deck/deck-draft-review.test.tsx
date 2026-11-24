@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 import {
   act,
   cleanup,
@@ -89,10 +89,19 @@ vi.mock("@pierre/diffs/react", () => ({
                   })
                 }
               >
-                {`Comment on line ${number}`}
+                {`Gutter + line ${number}`}
               </button>
             ))
           : null}
+        {/* The "+" the library moves beside the hovered line, on line 3. */}
+        {createElement("diffs-container", {
+          ref: (host: HTMLElement | null) => {
+            if (!host || host.shadowRoot) return;
+            const button = document.createElement("button");
+            button.setAttribute("data-utility-button", "");
+            host.attachShadow({ mode: "open" }).append(button);
+          },
+        })}
         {lineAnnotations?.map((annotation) => (
           <div key={annotation.metadata.key}>
             {renderAnnotation?.(annotation)}
@@ -240,7 +249,7 @@ async function renderReviewPage(id = itemId) {
     path: `/deck/${id}`,
     routes: { "/deck/$itemId": () => <DeckPage itemId={id} /> },
   });
-  await screen.findByRole("button", { name: "Comment on line 2" });
+  await screen.findByRole("button", { name: "Gutter + line 2" });
   return rendered;
 }
 
@@ -250,7 +259,7 @@ const draftComments = () =>
 
 /** Opens the composer on line 2 and types. */
 function compose(text: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Comment on line 2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 2" }));
   const form = screen.getByRole("form", { name: "New comment" });
   fireEvent.change(within(form).getByRole("textbox", { name: "Comment" }), {
     target: { value: text },
@@ -291,6 +300,43 @@ it("adds a comment to the draft review from the composer on its line", async () 
     }),
   ]);
   expect(api.postPullRequestComment).not.toHaveBeenCalled();
+});
+
+it("opens the composer from the keyboard: the hunk's button, its arrow keys, then Enter", async () => {
+  await renderReviewPage();
+  const key = within(changes()).getByRole("button", {
+    name: "Comment on line 1",
+  });
+  key.focus();
+  fireEvent.keyDown(key, { key: "ArrowDown" });
+  expect(key.textContent).toContain("Comment on removed line 2");
+  fireEvent.keyDown(key, { key: "ArrowDown" });
+  fireEvent.keyDown(key, { key: "ArrowDown" });
+  fireEvent.keyDown(key, { key: "ArrowUp" });
+  expect(key.textContent).toContain("Comment on line 2");
+  // Enter on a button clicks it.
+  fireEvent.click(key);
+  const form = await screen.findByRole("form", { name: "New comment" });
+  fireEvent.change(within(form).getByRole("textbox", { name: "Comment" }), {
+    target: { value: "From the keys." },
+  });
+  fireEvent.click(within(form).getByRole("button", { name: "Add to review" }));
+  expect(draftComments()).toEqual([
+    expect.objectContaining({ side: "head", line: 2, body: "From the keys." }),
+  ]);
+});
+
+it("names the library's + once the pointer brings it out, and keeps it out of the tab order", async () => {
+  await renderReviewPage();
+  const hunk = changes().querySelector<HTMLElement>(".diff-hunk")!;
+  const plus = hunk
+    .querySelector("diffs-container")!
+    .shadowRoot!.querySelector("[data-utility-button]")!;
+  expect(plus.getAttribute("aria-label")).toBeNull();
+  fireEvent.pointerMove(hunk);
+  expect(plus.getAttribute("aria-label")).toBe("Comment on this line");
+  // The pointer's way in: the keyboard has the hunk's button.
+  expect(plus.getAttribute("tabindex")).toBe("-1");
 });
 
 it("adds to the review with Ctrl+Enter, and edits and removes a draft comment", async () => {
@@ -377,9 +423,9 @@ it("starts a composer of its own for other lines or another comment to edit, in 
       "On c.",
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Comment on line 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
     fireEvent.change(field(), { target: { value: "On a." } });
-    fireEvent.click(screen.getByRole("button", { name: "Comment on line 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 2" }));
     expect(field().value).toBe("");
   } finally {
     window.matchMedia = original;
@@ -456,10 +502,13 @@ it("sends the draft review with Finish review and its verdict, then clears it", 
     comments: [
       { path: "src/api.ts", side: "head", line: 2, body: "Rename this." },
     ],
+    submissionId: expect.stringMatching(/^review_submission_/),
   });
   await waitFor(() =>
     expect(screen.queryByRole("dialog", { name: "Finish review" })).toBeNull(),
   );
+  // The code host took it: nothing of it stays.
+  expect(localStore.snapshot().deckDraftReviews).toEqual([]);
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
 });
 
@@ -490,6 +539,7 @@ it("approves at once with R then Y, with no dialog", async () => {
       headSha: "one",
       verdict: "approve",
       comments: [],
+      submissionId: expect.stringMatching(/^review_submission_/),
     }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -513,10 +563,40 @@ it("keeps the draft when the submit fails, and shows why with Retry", async () =
     "This GitHub connection can't review pull requests. Turn on Review pull requests for Work in Settings › Plugins, then retry. Your draft review is kept.",
   );
   expect(draftComments()).toHaveLength(1);
+  // The draft names the review before it's sent, for a retry after a restart.
+  const first = vi.mocked(api.submitPullRequestReview).mock.calls[0]![2];
+  expect(localStore.snapshot().deckDraftReviews?.[0]?.submission?.id).toBe(
+    first.submissionId,
+  );
 
   fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
   await waitFor(() => expect(draftComments() ?? []).toEqual([]));
   expect(api.submitPullRequestReview).toHaveBeenCalledTimes(2);
+  // Retry sends the same name, so the plugin finds what the first try left.
+  expect(
+    vi.mocked(api.submitPullRequestReview).mock.calls[1]![2].submissionId,
+  ).toBe(first.submissionId);
+});
+
+it("names a failed approval with no comments, and Retry sends the same name", async () => {
+  vi.mocked(api.submitPullRequestReview).mockRejectedValueOnce(
+    new Error("GitHub request failed (502)."),
+  );
+  await renderReviewPage();
+  press("r");
+  press("y");
+  const dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(api.submitPullRequestReview).toHaveBeenCalledTimes(2),
+  );
+  const [first, second] = vi
+    .mocked(api.submitPullRequestReview)
+    .mock.calls.map((call) => call[2].submissionId);
+  expect(second).toBe(first);
+  await waitFor(() =>
+    expect(localStore.snapshot().deckDraftReviews).toEqual([]),
+  );
 });
 
 it("marks outdated a draft comment whose line a push changed, and keeps it out of the review", async () => {
@@ -574,7 +654,7 @@ it("keeps a closed pull request's draft, to post as comments or discard", async 
     "This pull request was merged. Your draft review is kept: post its comments, or discard it.",
   );
   expect(screen.queryByRole("button", { name: /Finish review/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Comment on line/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /line \d/ })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Post as comments · 1" }));
   await waitFor(() => expect(draftComments() ?? []).toEqual([]));
