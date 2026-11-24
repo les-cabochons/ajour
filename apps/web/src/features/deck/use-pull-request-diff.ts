@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import type { DeckPullRequestDiff } from "@ajour/shared/deck";
+import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { AppApiError, openDeckPullRequest } from "@/lib/app-api";
 
 export type PullRequestDiffState =
   | { status: "loading" }
-  | { status: "ready"; diff: DeckPullRequestDiff }
+  | { status: "ready"; diff: DeckOpenedPullRequest }
   /** The code host's plugin doesn't read a pull request's changes. Retrying won't help. */
   | { status: "unavailable"; message: string }
   | { status: "error"; message: string };
 
 /**
- * The diff of the pull request on screen, read once when it opens. A sync
+ * The diff and guide of the pull request on screen, read once when it opens. A sync
  * that finds a new push doesn't move it: Retry, or opening the pull request
  * again, reads it again.
  */

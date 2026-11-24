@@ -45,10 +45,13 @@ export function isDigitChord(chord: ShortcutChord): chord is DigitChord {
 }
 
 /**
- * Where a shortcut works: anywhere in the app, only on the Time page, or on the
- * focused row, card or Grid cell ("item").
+ * Where a shortcut works: anywhere in the app, only on the Time page, only on
+ * Deck's review page ("deck"), or on the focused row, card or Grid cell
+ * ("item"). A page's keys win over the app's only on that page; elsewhere
+ * nothing handles them, so they keep their meaning there, such as F on a
+ * focused task.
  */
-export type ShortcutScope = "global" | "time" | "item";
+export type ShortcutScope = "global" | "time" | "deck" | "item";
 
 export type ShortcutActionId =
   | "entry.new"
@@ -70,6 +73,9 @@ export type ShortcutActionId =
   | "app.shortcuts"
   | "pinned.new-entry"
   | "pinned.start"
+  | "deck.next-concern"
+  | "deck.previous-concern"
+  | "deck.guide-tree"
   | "item.edit"
   | "item.settle"
   | "item.settle-ask"
@@ -216,6 +222,27 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Start a pinned task",
     scope: "global",
     keys: [{ digit: true, shift: true }],
+  },
+  // Deck's review page (#782). S stays the timer key and E Settle, so the
+  // review page takes letters the app doesn't use, and F, which only a
+  // focused task or project reads.
+  {
+    id: "deck.next-concern",
+    label: "Next concern",
+    scope: "deck",
+    keys: [{ key: "j" }],
+  },
+  {
+    id: "deck.previous-concern",
+    label: "Previous concern",
+    scope: "deck",
+    keys: [{ key: "k" }],
+  },
+  {
+    id: "deck.guide-tree",
+    label: "Open or close the guide tree",
+    scope: "deck",
+    keys: [{ key: "f" }],
   },
   // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
   // Enter goes one level deeper: Edit on entries, tasks and projects, the

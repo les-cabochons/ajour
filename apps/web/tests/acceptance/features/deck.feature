@@ -90,3 +90,24 @@ Feature: Deck lists the pull requests on your plate
     When I deactivate the code host plugin
     And I go back to the app from Settings
     Then the sidebar has no Pull requests section and backlog controls are visible
+
+  Scenario: Read a pull request in its guide's order
+    Given the local API built the requested pull request's guide
+    When I open Deck
+    And I open the requested pull request summary
+    Then its changes show the guide's concerns in reading order
+    When I press the "j" key
+    And I press the "j" key
+    Then the second concern is focused
+    When I mark the second concern's first hunk viewed
+    Then the guide tree shows the second concern half viewed
+    When I press the "f" key
+    Then the guide tree lists the concerns' titles
+    When I switch to Files A–Z
+    Then the changed files show in path order
+
+  Scenario: Read a pull request's guide on a narrow screen
+    Given the local API built the requested pull request's guide
+    When I open Deck on a narrow screen
+    And I open the requested pull request summary
+    Then the guide fits the narrow viewport

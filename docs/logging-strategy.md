@@ -586,6 +586,7 @@ The local API emits these (#305, #306):
 | `agent.session`                       | `AgentSessions`, from begin to end                                                                                                                      |
 | `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
 | `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
+| `deck.guide_build`                    | `createGuideBuilds` in `apps/api/src/deck-guide-builds.ts`, for each guide build, from its start in the worker to its end                               |
 
 ### Requests
 
@@ -1138,7 +1139,9 @@ channel to read the event each emits.
 | `connection.remove_secrets`          | command, request                        | route, client call                               |
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
+| `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
+| `deck.preload`                       | request                                 | route                                            |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |
 | `description.write`                  | command, request, plugin_operation      | route, plugin method, client call                |
 | `dev_plugins.configure`              | command, ipc                            | IPC channel                                      |

@@ -188,7 +188,7 @@ import {
   type SwitchableCapability,
 } from "@ajour/shared";
 import {
-  deckPullRequestDiffSchema,
+  deckOpenedPullRequestSchema,
   type DeckOpenRequest,
 } from "@ajour/shared/deck";
 import {
@@ -211,7 +211,8 @@ export function connectionGeneration(pluginId: string, connectionId: string) {
 
 /**
  * Opens a pull request in Deck: its diff from the merge base to the head,
- * which the local API builds from both versions of each changed file.
+ * which the local API builds from both versions of each changed file, and
+ * its guide, built from the code by Review Deck's pipeline.
  */
 export function openDeckPullRequest(
   pluginId: string,
@@ -226,7 +227,7 @@ export function openDeckPullRequest(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(pullRequest),
     },
-    deckPullRequestDiffSchema,
+    deckOpenedPullRequestSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );

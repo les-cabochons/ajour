@@ -22,6 +22,7 @@ const platform = getShortcutPlatform();
 const SCOPE_HEADINGS: Record<ShortcutScope, string> = {
   global: "Anywhere",
   time: "Time page",
+  deck: "Deck review page",
   item: "Focused row or card",
 };
 

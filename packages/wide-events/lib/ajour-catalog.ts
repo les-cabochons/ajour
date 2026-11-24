@@ -3091,6 +3091,64 @@ export const catalog = defineCatalog({
           file_read_count: operational<number>(),
           /** The diff was the one kept for the pull request on screen. */
           kept: operational<boolean>(),
+          /** The diff was one a preload read. */
+          preloaded: operational<boolean>(),
+          /** The guide's concerns. Absent when no guide was built. */
+          concern_count: operational<number>(),
+          /** False when the pipeline failed, and the page shows the files A–Z. */
+          guide_built: operational<boolean>(),
+        },
+      },
+    },
+    /**
+     * Preloading pull requests in Deck: each one's file list and files read
+     * through the code host plugin, one file at a time, and its guide build
+     * queued at low priority.
+     */
+    "deck.preload": {
+      kinds: ["request"],
+      reasons: [
+        ...pluginRequestReasons,
+        /** Never thrown by a preload; shared with `deck.open`'s prelude. */
+        "replaced",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        deck: {
+          pull_request_count: operational<number>(),
+          /** The guide builds queued. A pull request already kept is not read again. */
+          queued_count: operational<number>(),
+          file_read_count: operational<number>(),
+          /** Pull requests that couldn't be read, and were skipped. */
+          failed_count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * One guide build: Review Deck's pipeline run on a pull request's diff
+     * in the local API's worker thread, one at a time.
+     */
+    "deck.guide_build": {
+      kinds: ["job"],
+      reasons: [
+        /** Another pull request opened before it was built. */
+        "replaced",
+        /** A preload pushed out of the ones kept before it was built. */
+        "evicted",
+        /** The local API stopped. */
+        "closed",
+        /** A preload stopped for an opened pull request's build; it runs again after. */
+        "preempted",
+      ],
+      fields: {
+        deck: {
+          /** `open` for the pull request on screen, `preload` otherwise. */
+          priority: operational<"open" | "preload">(),
+          /** How long it waited in the queue. */
+          wait_ms: operational<number>(),
+          build_ms: operational<number>(),
+          concern_count: operational<number>(),
         },
       },
     },
