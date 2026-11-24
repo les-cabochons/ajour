@@ -13,6 +13,7 @@ import {
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
+import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
 import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
 import { usePullRequestDiff } from "./use-pull-request-diff";
@@ -183,11 +184,19 @@ export function PullRequestChanges({
           </Button>
         </MessagePanel>
       ) : (
-        // A new diff, or another head, starts with no hunk marked viewed.
-        <ReviewChanges
-          key={`${state.diff.baseSha}..${state.diff.headSha}`}
-          pullRequest={state.diff}
-        />
+        <DeckAskProvider
+          pluginId={pullRequest.pluginId}
+          connectionId={pullRequest.connectionId}
+          repository={pullRequest.facts.repository}
+          number={pullRequest.facts.number}
+          head={state.diff.headSha}
+        >
+          {/* A new diff, or another head, starts with no hunk marked viewed. */}
+          <ReviewChanges
+            key={`${state.diff.baseSha}..${state.diff.headSha}`}
+            pullRequest={state.diff}
+          />
+        </DeckAskProvider>
       )}
     </section>
   );

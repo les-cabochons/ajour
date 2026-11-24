@@ -1183,6 +1183,8 @@ describe("state files from earlier versions", () => {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },
       pluginValues: {},
       pluginSecrets: {},
+      // Added to version 8 without a new version (#791): none.
+      deckConsents: [],
     },
     pluginBrokerActivity: {},
     pluginProcesses: {},

@@ -23,6 +23,8 @@ export interface ReviewHunk {
 export interface ReviewSection {
   /** The concern's id, or the file's path. */
   key: string;
+  /** The guide's concern it shows, which an ask names. Absent for a file and for hunks in no concern. */
+  concernId?: string;
   /** The concern's place in reading order, from 1. Absent for a file. */
   number?: number;
   /** The concern's title, or the file's path. */
@@ -75,6 +77,7 @@ export function reviewSections(
     if (!entries.length) continue;
     sections.push({
       key: concern.id,
+      concernId: concern.id,
       number: sections.length + 1,
       title: concern.title,
       rationale: concern.rationale,

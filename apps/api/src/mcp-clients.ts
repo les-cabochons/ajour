@@ -54,6 +54,7 @@ export async function createMcpClient(
           pullRequest: {
             pullRequest: pullRequest.pullRequest,
             head: pullRequest.head,
+            cli: pullRequest.cli,
           },
         }
       : {}),

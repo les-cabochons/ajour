@@ -1,5 +1,6 @@
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { CoreAgentTask } from "../../../../packages/shared/agent-runs.ts";
+import { deckPullRequestLabel } from "../../../../packages/shared/deck.ts";
 
 /** Ajour's rules for every run. The task prompt follows it. */
 export const RUNNER_PROMPT = `You are running a task for Ajour, the user's time tracker. You have two MCP servers: "ajour" for the user's Ajour data and "playwright" for a Chrome window.
@@ -30,10 +31,11 @@ export function buildPrompt({
  * A pull request conversation's own instructions. Each turn adds its task's.
  * No timesheet rules: the conversation sees only its pull request's tools.
  */
-export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only. When the head changes, a message says so, and the tools then answer for the new head only.
+export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only: read_hunks, read_file, read_threads and read_guide. When the head changes, a message says so, and the tools then answer for the new head only.
 
 Rules:
-- Answer in short Markdown, about the code at this head.
+- Answer in short Markdown, about the code at this head. Read the code before you answer, and cite files and lines as \`path:line\`.
+- Answer as part of the page the user reads: never name yourself, your model or your provider.
 - Do not run shell commands and do not edit files.
 `;
 
@@ -41,7 +43,8 @@ Rules:
 export const CORE_TASK_PROMPTS: Readonly<Record<CoreAgentTask, string>> = {
   "deck.guide":
     "Group this pull request's changes into concerns, in the order a reviewer should read them.",
-  "deck.ask": "Answer the user's question about this pull request.",
+  "deck.ask":
+    "Answer the user's question about this pull request in a few short paragraphs, below the part of the page it names. Start with the answer itself, without repeating the question.",
   "deck.chat": "Reply to the user's message about this pull request.",
 };
 
@@ -50,7 +53,10 @@ export function buildConversationPrompt(binding: {
   pullRequest: string;
   head: string;
 }): string {
-  return fillTemplate(CONVERSATION_PROMPT, binding);
+  return fillTemplate(CONVERSATION_PROMPT, {
+    pullRequest: deckPullRequestLabel(binding.pullRequest),
+    head: binding.head,
+  });
 }
 
 /**
