@@ -77,29 +77,32 @@ export const voteLabels: Record<CodeHostApproval["vote"], string> = {
 /**
  * Each reviewer's vote: the plugin's, or, from a plugin that doesn't send
  * them, each author's latest approval or change request, then each person
- * asked who hasn't given one.
+ * asked who hasn't given one. The reviews count in time order: a later
+ * dismissal, such as Azure DevOps resetting votes on a push, clears the
+ * vote before it, and a later comment keeps it.
  */
 export function approvalsOf(
   facts: CodeHostPullRequestFacts,
 ): readonly CodeHostApproval[] {
   if (facts.approvals) return facts.approvals;
-  const latest = new Map<string, CodeHostApproval & { at: number }>();
-  for (const review of facts.reviews) {
-    if (review.verdict !== "approved" && review.verdict !== "changes_requested")
-      continue;
+  const latest = new Map<string, CodeHostApproval>();
+  const inTimeOrder = [...facts.reviews].sort(
+    (a, b) => a.submittedAt - b.submittedAt,
+  );
+  for (const review of inTimeOrder) {
     const key = review.author.login.toLowerCase();
-    const known = latest.get(key);
-    if (known && known.at > review.submittedAt) continue;
-    latest.set(key, {
-      reviewer: review.author,
-      vote: review.verdict,
-      at: review.submittedAt,
-    });
+    if (review.verdict === "dismissed") {
+      const known = latest.get(key);
+      if (known) latest.set(key, { ...known, vote: "none" });
+    } else if (
+      review.verdict === "approved" ||
+      review.verdict === "changes_requested"
+    ) {
+      latest.set(key, { reviewer: review.author, vote: review.verdict });
+    }
   }
   // In the order the reviewers first gave one.
-  const approvals: CodeHostApproval[] = [...latest.values()].map(
-    ({ at: _at, ...approval }) => approval,
-  );
+  const approvals: CodeHostApproval[] = [...latest.values()];
   for (const request of facts.reviewRequests) {
     if (request.kind !== "user" || latest.has(request.name.toLowerCase()))
       continue;

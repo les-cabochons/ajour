@@ -160,4 +160,33 @@ describe("each reviewer's vote", () => {
       { reviewer: { login: "dave", isBot: false }, vote: "none" },
     ]);
   });
+
+  it("clears a vote a later dismissal resets, in time order, while a later comment keeps it", () => {
+    const review = (
+      id: string,
+      login: string,
+      verdict: CodeHostPullRequestFacts["reviews"][number]["verdict"],
+      submittedAt: number,
+    ) => ({ id, author: { login, isBot: false }, verdict, submittedAt });
+    // As Azure DevOps sends them: an approval, then the vote reset by a
+    // push. Listed out of time order, as a plugin may.
+    const reset = facts({
+      reviews: [
+        review("2", "alice", "dismissed", 5),
+        review("1", "alice", "approved", 3),
+        review("3", "bob", "approved", 2),
+        review("4", "bob", "commented", 6),
+        review("5", "carol", "changes_requested", 1),
+        review("6", "carol", "dismissed", 2),
+        review("7", "carol", "approved", 4),
+      ],
+    });
+
+    expect(approvalsOf(reset)).toEqual([
+      { reviewer: { login: "carol", isBot: false }, vote: "approved" },
+      { reviewer: { login: "bob", isBot: false }, vote: "approved" },
+      { reviewer: { login: "alice", isBot: false }, vote: "none" },
+    ]);
+    expect(approvalsSummary(approvalsOf(reset))).toBe("2 approvals");
+  });
 });
