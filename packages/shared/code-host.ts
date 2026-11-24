@@ -108,7 +108,10 @@ export type CodeHostPullRequestRef = z.infer<
   typeof codeHostPullRequestRefSchema
 >;
 
-/** A clone address, HTTPS or SSH, never one that carries a credential. */
+/**
+ * A clone address, HTTPS or SSH. Deck never matches or fetches one that
+ * carries a password, a query or a transport helper (`clone-identity.ts`).
+ */
 const cloneUrlSchema = z.string().trim().min(1).max(2_000);
 
 /**

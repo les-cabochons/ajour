@@ -1510,7 +1510,7 @@ window asks before a `delete` close, never before an `archive` one.
 A hand off can start in a git worktree Ajour makes for the backlog item (spec
 #857, ticket #860, ADR 0022). `apps/api/src/worktrees.ts` and Deck's local
 clones (see below, ADR 0023) are the modules of Ajour that run git
-themselves, both through `apps/api/src/git-process.ts`. Its `Worktrees` class makes worktrees (`create`),
+themselves, both through `apps/api/src/git-process.ts`. The `Worktrees` class of `worktrees.ts` makes worktrees (`create`),
 lists them (`list`, `liveOf`, `newestLive`, `branches`), and since ticket #862
 reads their status and removes them (`statuses`, `deletePreview`, `delete`,
 `forget`, `folderOf`, see "Status, delete and forget" below). Since ticket
@@ -1979,7 +1979,8 @@ ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
   another root is ended, and the turn goes to a new one that resumes the
   conversation.
 - **Lifetime.** The worktree and its ref go when the Deck service's entry
-  leaves (`onRemoved`); at start, `releaseExcept` removes what no entry holds.
+  leaves (`onRemoved`); at the first prepare after a start, `releaseExcept`
+  removes what no entry holds.
   `git worktree prune` runs only when every stale registration is Deck's.
 - **Failure.** Any failure leaves the ask on the pull request alone, with a
   reason in the response's `clone` (`deckCloneUseSchema`) and a code in

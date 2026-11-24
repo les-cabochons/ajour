@@ -230,6 +230,8 @@ export function askDeck(
   pluginId: string,
   connectionId: string,
   ask: DeckAskRequest,
+  /** Stops the ask before its turn starts, as while the clone is fetched. */
+  signal?: AbortSignal,
 ) {
   return appApiRequest(
     "askDeck",
@@ -238,6 +240,7 @@ export function askDeck(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ask),
+      ...(signal ? { signal } : {}),
     },
     deckAskResponseSchema,
     (unit) =>

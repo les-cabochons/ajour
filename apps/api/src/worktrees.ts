@@ -2603,7 +2603,8 @@ function asRefusal(
   if (error instanceof WorktreeRefused) return error;
   if (error instanceof GitFailure)
     return new WorktreeRefused(
-      error.reason,
+      // A hand off's git is never stopped by its caller.
+      error.reason === "cancelled" ? "git_failed" : error.reason,
       error.reason === "timeout"
         ? `Ajour couldn't ${doing}: git took too long to answer.`
         : `Ajour couldn't ${doing}. Git said: ${error.message}`,

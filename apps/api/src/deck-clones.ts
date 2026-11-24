@@ -13,6 +13,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import {
   cloneIdentityOf,
+  fetchableHostOf,
   isSshAddress,
   sameRepository,
 } from "./clone-identity.ts";
@@ -22,6 +23,7 @@ import {
   GitFailure,
   WSL_DISTRO_NAME,
   WslGit,
+  type GitResult,
 } from "./git-process.ts";
 import { childEnvironment, gitEnvironment } from "./process-broker.ts";
 
@@ -40,8 +42,9 @@ import { childEnvironment, gitEnvironment } from "./process-broker.ts";
  *   submodules. A WSL clone's worktree stays in its distribution.
  *
  * The worktree goes with its cache entry: `release` removes it and its ref,
- * and `releaseExcept` removes what an earlier run left, with `git worktree
- * prune` only when every stale registration in the clone is Deck's.
+ * and what an earlier run left in a clone goes the first time that clone is
+ * prepared, with `git worktree prune` only when every stale registration in
+ * it is Deck's.
  *
  * A clone that can't be prepared never stops an ask: `prepare` answers why,
  * and the agent reads the pull request alone. No reason holds a path, a
@@ -76,7 +79,8 @@ export type DeckCloneFailure =
   | "fetch_failed"
   | "fetch_timeout"
   | "head_not_found"
-  | "checkout_failed";
+  | "checkout_failed"
+  | "cancelled";
 
 export type DeckClonePrepared =
   | { state: "read"; root: string }
@@ -93,6 +97,11 @@ export interface DeckCloneTimeouts {
   checkoutMs: number;
 }
 
+/**
+ * Longer than a hand off's (ADR 0022): a pull request's head can bring many
+ * objects, and a checkout writes the whole tree. The ask waits, and Stop
+ * ends git at once.
+ */
 const DEFAULT_TIMEOUTS: DeckCloneTimeouts = {
   localMs: 15_000,
   fetchMs: 120_000,
@@ -152,10 +161,6 @@ export function wslFolderOf(
   return { distro: match[1]!, path: linux };
 }
 
-/** The Windows path a WSL folder is read through, for the agent's own file tools. */
-const windowsPathOfWsl = (distro: string, linux: string) =>
-  `\\\\wsl.localhost\\${distro}${linux.replace(/\//g, "\\")}`;
-
 const sameKey = (a: DeckCloneRepository, b: DeckCloneRepository) =>
   a.pluginId === b.pluginId &&
   a.connectionId === b.connectionId &&
@@ -186,6 +191,45 @@ function checkedBranch(branch: string): string {
 
 const FULL_COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 
+/** Git as Deck runs it in a clone. */
+interface DeckGit {
+  run(args: readonly string[], timeoutMs: number): Promise<GitResult>;
+  read(args: readonly string[], timeoutMs: number): Promise<string>;
+}
+
+/**
+ * Git with what every Deck call runs with: none of the clone's hooks, no
+ * file system monitor, and no background maintenance or garbage collection.
+ * Every call stops when `signal` aborts.
+ */
+function quietGit(git: Git, hooksPath: string, signal?: AbortSignal): DeckGit {
+  const settings = [
+    "-c",
+    `core.hooksPath=${hooksPath}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "gc.auto=0",
+  ];
+  const run = (args: readonly string[], timeoutMs: number) =>
+    git.run([...settings, ...args], timeoutMs, signal);
+  return {
+    run,
+    async read(args, timeoutMs) {
+      const result = await run(args, timeoutMs);
+      if (result.timedOut || result.code !== 0) {
+        throw new GitFailure(
+          result.timedOut ? "timeout" : "git_failed",
+          "Git failed.",
+        );
+      }
+      return result.stdout.trim();
+    },
+  };
+}
+
 /** A prepared worktree, kept while its cache entry is. */
 interface Prepared {
   clone: DeckClone;
@@ -201,42 +245,22 @@ interface Prepared {
 interface Opened {
   git: DeckGit;
   environment: DeckCloneEnvironment;
+  /** The path style of the clone's environment. */
+  style: typeof path.posix;
   /** The clone's top folder, in its environment. */
   top: string;
   /** Where its worktrees go, in its environment. */
   worktrees: string;
-  /** The same, as this computer reads it. */
-  worktreesHere: string;
-}
-
-/** Git as Deck runs it in a clone. */
-type DeckGit = Pick<Git, "run" | "read">;
-
-/**
- * Git with what every Deck call runs with: none of the clone's hooks, no
- * file system monitor, and no background maintenance or garbage collection.
- */
-function quietGit(git: Git, hooksPath: string): DeckGit {
-  const settings = [
-    "-c",
-    `core.hooksPath=${hooksPath}`,
-    "-c",
-    "core.fsmonitor=false",
-    "-c",
-    "maintenance.auto=false",
-    "-c",
-    "gc.auto=0",
-  ];
-  return {
-    run: (args, timeoutMs) => git.run([...settings, ...args], timeoutMs),
-    read: (args, timeoutMs) => git.read([...settings, ...args], timeoutMs),
-  };
+  /** A folder of its environment, as this computer and the agent read it. */
+  here(folder: string): string;
 }
 
 const unavailable = (
   failure: DeckCloneFailure,
   reason: string,
 ): DeckClonePrepared => ({ state: "unavailable", failure, reason });
+
+const CANCELLED = unavailable("cancelled", "The ask was stopped.");
 
 export function createDeckClones(options: DeckClonesOptions) {
   const timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
@@ -247,11 +271,19 @@ export function createDeckClones(options: DeckClonesOptions) {
   const now = options.now ?? Date.now;
   /** Prepared worktrees by cache entry key. */
   const prepared = new Map<string, Prepared>();
+  /** The preparations under way, by cache entry key, which a release waits for. */
+  const preparing = new Map<string, Promise<unknown>>();
+  /** The clones whose earlier runs' worktrees are swept, by `cloneKey`. */
+  const swept = new Set<string>();
   /** Writes to one clone run one at a time. */
   const locks = new Map<string, Promise<unknown>>();
+  const hooksFolder = path.join(options.worktreesFolder, ".no-hooks");
+
+  const cloneKey = (clone: DeckClone) =>
+    JSON.stringify([clone.environment, clone.path]);
 
   function locked<T>(clone: DeckClone, run: () => Promise<T>): Promise<T> {
-    const key = JSON.stringify([clone.environment, clone.path]);
+    const key = cloneKey(clone);
     const before = locks.get(key) ?? Promise.resolve();
     const next = before.then(run, run);
     const tail = next.catch(() => undefined);
@@ -262,19 +294,26 @@ export function createDeckClones(options: DeckClonesOptions) {
     return next;
   }
 
-  /** Native git in `folder`, with no hooks; undefined without git. */
-  async function nativeIn(folder: string): Promise<DeckGit | undefined> {
+  /** Git in a folder of the environment, with no hooks; undefined without git. */
+  async function gitIn(
+    environment: DeckCloneEnvironment,
+    folder: string,
+    signal?: AbortSignal,
+  ): Promise<DeckGit | undefined> {
+    if (environment.kind === "wsl") {
+      return quietGit(wslGit(environment.distro, folder), "/dev/null", signal);
+    }
     const git = await nativeGit(folder);
     if (!git) return undefined;
-    const hooks = path.join(options.worktreesFolder, ".no-hooks");
-    await fs.mkdir(hooks, { recursive: true });
-    return quietGit(git, hooks);
+    await fs.mkdir(hooksFolder, { recursive: true });
+    return quietGit(git, hooksFolder, signal);
   }
 
   /** The clone's environment, folder and git, or why it can't be read. */
   async function open(
     environment: DeckCloneEnvironment,
     folder: string,
+    signal?: AbortSignal,
   ): Promise<Opened | DeckCloneFailure> {
     if (environment.kind === "native") {
       try {
@@ -283,10 +322,7 @@ export function createDeckClones(options: DeckClonesOptions) {
         return "clone_missing";
       }
     }
-    const git =
-      environment.kind === "wsl"
-        ? quietGit(wslGit(environment.distro, folder), "/dev/null")
-        : await nativeIn(folder);
+    const git = await gitIn(environment, folder, signal);
     if (!git) return "no_git";
     let top: string;
     try {
@@ -299,6 +335,7 @@ export function createDeckClones(options: DeckClonesOptions) {
       if (bare !== "false" || !shown) return "clone_missing";
       top = shown;
     } catch {
+      if (signal?.aborted) return "cancelled";
       if (environment.kind === "wsl" && !(await wslAnswers(environment.distro)))
         return "wsl_unavailable";
       return "clone_missing";
@@ -306,22 +343,25 @@ export function createDeckClones(options: DeckClonesOptions) {
     if (environment.kind === "wsl") {
       const home = await wslHome(environment.distro);
       if (!home) return "wsl_unavailable";
-      const worktrees = path.posix.join(home, WSL_WORKTREES);
+      const { distro } = environment;
       return {
-        git: quietGit(wslGit(environment.distro, top), "/dev/null"),
+        git: (await gitIn(environment, top, signal))!,
         environment,
+        style: path.posix,
         top,
-        worktrees,
-        worktreesHere: windowsPathOfWsl(environment.distro, worktrees),
+        worktrees: path.posix.join(home, WSL_WORKTREES),
+        here: (linux) =>
+          `\\\\wsl.localhost\\${distro}${linux.replace(/\//g, "\\")}`,
       };
     }
     const nativeTop = path.resolve(top);
     return {
-      git: (await nativeIn(nativeTop)) ?? git,
+      git: (await gitIn(environment, nativeTop, signal)) ?? git,
       environment,
+      style: path as typeof path.posix,
       top: nativeTop,
       worktrees: options.worktreesFolder,
-      worktreesHere: options.worktreesFolder,
+      here: (native) => native,
     };
   }
 
@@ -396,11 +436,11 @@ export function createDeckClones(options: DeckClonesOptions) {
     );
   }
 
-  /** Whether the repository's host is Azure DevOps, which keeps no head ref of a pull request. */
-  const isAzure = (source: DeckCloneSource) =>
-    source.repositoryIdentity.cloneUrls.some((url) =>
-      /^(azure|server):/.test(cloneIdentityOf(url) ?? ""),
-    );
+  /** Removes a private ref Deck made, whatever is left of it. */
+  const dropRef = (git: DeckGit, ref: string) =>
+    git
+      .run(["update-ref", "-d", "--", ref], timeouts.localMs)
+      .catch(() => undefined);
 
   async function choose(
     repository: DeckCloneRepository,
@@ -474,39 +514,39 @@ export function createDeckClones(options: DeckClonesOptions) {
     folder: string,
     ref: string | undefined,
   ) {
-    const { git } = opened;
-    const removed = await git
+    const removed = await opened.git
       .run(
         ["worktree", "remove", "--force", "--force", "--", folder],
         timeouts.checkoutMs,
       )
       .catch(() => undefined);
-    if (removed?.code !== 0 && opened.environment.kind === "native") {
-      // A folder git no longer knows, or one half made: only Deck's own.
-      if (isUnder(opened.worktreesHere, folder)) {
-        await fs
-          .rm(folder, { recursive: true, force: true, maxRetries: 5 })
-          .catch(() => undefined);
-      }
-    }
-    if (ref) {
-      await git
-        .run(["update-ref", "-d", "--", ref], timeouts.localMs)
+    // A folder git no longer knows, or one half made: only Deck's own.
+    if (removed?.code !== 0 && isUnder(opened, opened.worktrees, folder)) {
+      await fs
+        .rm(opened.here(folder), {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+        })
         .catch(() => undefined);
     }
+    if (ref) await dropRef(opened.git, ref);
     await pruneDeckOnly(opened);
   }
 
-  /** Whether `folder` is inside `root`, compared in the folder's own path style. */
-  function isUnder(root: string, folder: string) {
-    const style = root.startsWith("/") ? path.posix : path;
-    const relative = style.relative(root, folder);
+  /** Whether `folder` is inside `root`, both in the clone's environment. */
+  function isUnder(opened: Opened, root: string, folder: string) {
+    const relative = opened.style.relative(root, folder);
     return (
       relative !== "" &&
       !relative.startsWith("..") &&
-      !style.isAbsolute(relative)
+      !opened.style.isAbsolute(relative)
     );
   }
+
+  /** A folder git printed, in the clone environment's own form. */
+  const normalized = (opened: Opened, folder: string) =>
+    opened.style.resolve(folder);
 
   /** The clone's worktrees: each folder, its head, and whether git can prune it. */
   async function worktreesOf(git: DeckGit) {
@@ -542,7 +582,7 @@ export function createDeckClones(options: DeckClonesOptions) {
       if (!prunable.length) return;
       if (
         prunable.every((tree) =>
-          isUnder(opened.worktrees, normalized(opened, tree.folder)),
+          isUnder(opened, opened.worktrees, normalized(opened, tree.folder)),
         )
       ) {
         await opened.git.run(
@@ -554,10 +594,6 @@ export function createDeckClones(options: DeckClonesOptions) {
       // Left for the next time.
     }
   }
-
-  /** A folder git printed, in the clone environment's own path style. */
-  const normalized = (opened: Opened, folder: string) =>
-    opened.environment.kind === "wsl" ? folder : path.resolve(folder);
 
   /** The filter drivers the clone configures, each turned off for the checkout. */
   async function filterOverrides(git: DeckGit): Promise<string[]> {
@@ -580,57 +616,68 @@ export function createDeckClones(options: DeckClonesOptions) {
     ]);
   }
 
+  /**
+   * Where the head comes from, as the clone's own remote says: Azure DevOps
+   * keeps no head ref of a pull request, so its source branch, from the
+   * fork when it comes from one. The window's facts only name the branch
+   * and the fork; the host is the clone's.
+   */
+  async function sourceOf(
+    git: DeckGit,
+    clone: DeckClone,
+    entry: DeckCloneEntry,
+  ): Promise<{ from: string; ref: string } | DeckCloneFailure> {
+    const remotes = await remotesOf(git);
+    const own = remotes.get(clone.remote) ?? [];
+    const azure = own.some((address) =>
+      /^(azure|server):/.test(cloneIdentityOf(address) ?? ""),
+    );
+    if (!azure) {
+      // GitHub keeps every pull request's head, a fork's too, in the repository.
+      return { from: clone.remote, ref: `refs/pull/${entry.number}/head` };
+    }
+    if (!entry.clone.headRef) return "no_head_ref";
+    const ref = `refs/heads/${checkedBranch(entry.clone.headRef)}`;
+    const fork = entry.clone.repositoryIdentity.source;
+    if (!fork) return { from: clone.remote, ref };
+    // A fork's branch comes from a remote of the clone that names it, or
+    // from its HTTPS or SSH address on the clone's own host and transport.
+    const forkRemote = matchingRemote(remotes, fork.cloneUrls);
+    if (forkRemote) return { from: forkRemote, ref };
+    const ssh = own.some(isSshAddress);
+    const hosts = new Set(own.map(fetchableHostOf).filter(Boolean));
+    const address = fork.cloneUrls.find((url) => {
+      const host = fetchableHostOf(url);
+      return host && hosts.has(host) && isSshAddress(url) === ssh;
+    });
+    return address ? { from: address, ref } : "no_fork_remote";
+  }
+
   /** Fetches the head into `ref`, or answers why it couldn't. */
   async function fetchHead(
-    opened: Opened,
+    git: DeckGit,
     clone: DeckClone,
     entry: DeckCloneEntry,
     ref: string,
   ): Promise<DeckCloneFailure | undefined> {
-    const { git } = opened;
-    let from = clone.remote;
-    let source: string;
-    if (isAzure(entry.clone)) {
-      if (!entry.clone.headRef) return "no_head_ref";
-      source = `refs/heads/${checkedBranch(entry.clone.headRef)}`;
-      const fork = entry.clone.repositoryIdentity.source;
-      if (fork) {
-        // A fork's branch comes from the fork: a remote of the clone, or its
-        // address with the same transport as the clone's own remote.
-        const remotes = await remotesOf(git);
-        const forkRemote = matchingRemote(remotes, fork.cloneUrls);
-        const ssh = (remotes.get(clone.remote) ?? []).some(isSshAddress);
-        const address = fork.cloneUrls.find(
-          (url) =>
-            cloneIdentityOf(url) !== undefined && isSshAddress(url) === ssh,
-        );
-        if (forkRemote) from = forkRemote;
-        else if (address && !address.startsWith("-")) from = address;
-        else return "no_fork_remote";
-      }
-    } else {
-      // GitHub keeps every pull request's head, a fork's too, in the repository.
-      source = `refs/pull/${entry.number}/head`;
-    }
-    const result = await git
-      .run(
-        [
-          "fetch",
-          "--quiet",
-          "--no-tags",
-          "--no-write-fetch-head",
-          "--no-recurse-submodules",
-          "--no-auto-maintenance",
-          "--no-show-forced-updates",
-          "--refmap=",
-          "--",
-          from,
-          `+${checkedRef(source)}:${checkedRef(ref)}`,
-        ],
-        timeouts.fetchMs,
-      )
-      .catch(() => undefined);
-    if (!result) return "fetch_failed";
+    const source = await sourceOf(git, clone, entry);
+    if (typeof source === "string") return source;
+    const result = await git.run(
+      [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--no-recurse-submodules",
+        "--no-auto-maintenance",
+        "--no-show-forced-updates",
+        "--refmap=",
+        "--",
+        checkedRef(source.from),
+        `+${checkedRef(source.ref)}:${checkedRef(ref)}`,
+      ],
+      timeouts.fetchMs,
+    );
     if (result.timedOut) return "fetch_timeout";
     return result.code === 0 ? undefined : "fetch_failed";
   }
@@ -644,27 +691,66 @@ export function createDeckClones(options: DeckClonesOptions) {
   }
 
   /**
-   * The worktree of the entry's pull request at its head, prepared now
-   * unless it already is.
+   * Removes what an earlier run left in one clone: worktrees and refs of
+   * Deck's whose entries aren't in `liveIds`.
    */
-  async function prepare(entry: DeckCloneEntry): Promise<DeckClonePrepared> {
-    const clone = (await options.storage.getDeckClones()).find((candidate) =>
-      sameKey(candidate, entry),
-    );
-    if (!clone) return { state: "not_chosen" };
-    return locked(clone, () => prepareIn(clone, entry));
+  async function sweep(opened: Opened, liveIds: ReadonlySet<string>) {
+    try {
+      for (const tree of await worktreesOf(opened.git)) {
+        const folder = normalized(opened, tree.folder);
+        if (!isUnder(opened, opened.worktrees, folder)) continue;
+        if (liveIds.has(opened.style.basename(folder))) continue;
+        await removeWorktree(opened, folder, undefined);
+      }
+      const refs = await opened.git.read(
+        ["for-each-ref", "--format=%(refname)", "refs/ajour/deck/"],
+        timeouts.localMs,
+      );
+      for (const ref of refs.split(/\r?\n/).filter(Boolean)) {
+        const id = /^refs\/ajour\/deck\/([0-9a-f]+)\/head$/.exec(ref)?.[1];
+        if (id && liveIds.has(id)) continue;
+        await dropRef(opened.git, ref);
+      }
+      await pruneDeckOnly(opened);
+    } catch {
+      // Left for the next sweep.
+    }
+  }
+
+  /**
+   * The worktree of the entry's pull request at its head, prepared now
+   * unless it already is. `signal` stops it, and git with it.
+   */
+  function prepare(
+    entry: DeckCloneEntry,
+    signal?: AbortSignal,
+  ): Promise<DeckClonePrepared> {
+    // Known at once, so a release that comes before the first await waits.
+    const run = (async (): Promise<DeckClonePrepared> => {
+      const clone = (await options.storage.getDeckClones()).find((candidate) =>
+        sameKey(candidate, entry),
+      );
+      if (!clone) return { state: "not_chosen" };
+      return locked(clone, () => prepareIn(clone, entry, signal));
+    })();
+    preparing.set(entry.key, run);
+    return run.finally(() => {
+      if (preparing.get(entry.key) === run) preparing.delete(entry.key);
+    });
   }
 
   async function prepareIn(
     clone: DeckClone,
     entry: DeckCloneEntry,
+    signal?: AbortSignal,
   ): Promise<DeckClonePrepared> {
+    if (signal?.aborted) return CANCELLED;
     const missing = unavailable(
       "clone_missing",
       `Ajour can't find your clone of ${entry.repository} any more. Choose it again in Settings › Agents.`,
     );
-    const opened = await open(clone.environment, clone.path);
-    if (opened === "clone_missing") return missing;
+    const opened = await open(clone.environment, clone.path, signal);
+    if (opened === "cancelled") return CANCELLED;
     if (opened === "no_git") {
       return unavailable(
         "no_git",
@@ -681,12 +767,15 @@ export function createDeckClones(options: DeckClonesOptions) {
     const { git } = opened;
     const id = idOf(entry.key);
     const ref = `refs/ajour/deck/${id}/head`;
-    const style = opened.environment.kind === "wsl" ? path.posix : path;
-    const folder = style.join(opened.worktrees, id);
-    const root =
-      opened.environment.kind === "wsl"
-        ? windowsPathOfWsl(opened.environment.distro, folder)
-        : folder;
+    const folder = opened.style.join(opened.worktrees, id);
+    const root = opened.here(folder);
+
+    // What an earlier run left in this clone goes the first time: no Deck
+    // entry outlives the API that made it.
+    if (!swept.has(cloneKey(clone))) {
+      swept.add(cloneKey(clone));
+      await sweep(opened, new Set([...prepared.keys()].map(idOf)));
+    }
 
     // The remote still names the repository: a clone whose remote changed is chosen again.
     try {
@@ -704,12 +793,11 @@ export function createDeckClones(options: DeckClonesOptions) {
         );
       }
     } catch {
-      return missing;
+      return signal?.aborted ? CANCELLED : missing;
     }
 
     const kept = prepared.get(entry.key);
-    if (kept && kept.head === entry.head)
-      return { state: "read", root: kept.root };
+    if (kept && kept.head === entry.head) return { state: "read", root };
 
     // A worktree an earlier run left for this entry, still at its head.
     try {
@@ -722,7 +810,7 @@ export function createDeckClones(options: DeckClonesOptions) {
       }
       if (listed) await removeWorktree(opened, folder, undefined);
     } catch {
-      return missing;
+      return signal?.aborted ? CANCELLED : missing;
     }
 
     if (!FULL_COMMIT.test(entry.head)) {
@@ -731,19 +819,17 @@ export function createDeckClones(options: DeckClonesOptions) {
         "Ajour doesn't know this pull request's full head commit.",
       );
     }
-    const short = entry.head.slice(0, 7);
     const notFound = unavailable(
       "head_not_found",
-      `Your clone's remote doesn't have this pull request's head commit, ${short}.`,
+      `Your clone's remote doesn't have this pull request's head commit, ${entry.head.slice(0, 7)}.`,
     );
+    const failed = async (outcome: DeckClonePrepared) => {
+      await dropRef(git, ref);
+      return signal?.aborted ? CANCELLED : outcome;
+    };
     try {
       if (!(await hasCommit(git, entry.head))) {
-        let failure: DeckCloneFailure | undefined;
-        try {
-          failure = await fetchHead(opened, clone, entry, ref);
-        } catch {
-          failure = "fetch_failed";
-        }
+        const failure = await fetchHead(git, clone, entry, ref);
         if (failure === "no_head_ref") {
           return unavailable(
             failure,
@@ -757,39 +843,33 @@ export function createDeckClones(options: DeckClonesOptions) {
           );
         }
         if (failure === "fetch_timeout") {
-          await git
-            .run(["update-ref", "-d", "--", ref], timeouts.localMs)
-            .catch(() => undefined);
-          return unavailable(
-            failure,
-            "Fetching this pull request into your clone took too long.",
+          return failed(
+            unavailable(
+              failure,
+              "Fetching this pull request into your clone took too long.",
+            ),
           );
         }
         if (failure) {
-          // A ref the host doesn't have is a head it doesn't have.
-          await git
-            .run(["update-ref", "-d", "--", ref], timeouts.localMs)
-            .catch(() => undefined);
-          return unavailable(
-            "fetch_failed",
-            "Ajour couldn't fetch this pull request into your clone. Check that git fetch works there.",
+          return failed(
+            unavailable(
+              "fetch_failed",
+              "Ajour couldn't fetch this pull request into your clone. Check that git fetch works there.",
+            ),
           );
         }
         // The fetched tip may be a newer push: the head must be the exact commit.
-        if (!(await hasCommit(git, entry.head))) {
-          await git
-            .run(["update-ref", "-d", "--", ref], timeouts.localMs)
-            .catch(() => undefined);
-          return notFound;
-        }
+        if (!(await hasCommit(git, entry.head))) return failed(notFound);
       }
       // The ref names the head itself, so git keeps the commit while Deck reads it.
       await git.read(["update-ref", "--", ref, entry.head], timeouts.localMs);
     } catch {
-      await git
-        .run(["update-ref", "-d", "--", ref], timeouts.localMs)
-        .catch(() => undefined);
-      return notFound;
+      return failed(
+        unavailable(
+          "fetch_failed",
+          "Ajour couldn't fetch this pull request into your clone. Check that git fetch works there.",
+        ),
+      );
     }
 
     try {
@@ -816,18 +896,27 @@ export function createDeckClones(options: DeckClonesOptions) {
       if (added.code !== 0 || added.timedOut)
         throw new Error("Not checked out.");
     } catch {
-      await removeWorktree(opened, folder, ref);
-      return unavailable(
-        "checkout_failed",
-        "Ajour couldn't check out this pull request's head from your clone.",
-      );
+      // Taken back with git that no stop cuts short.
+      const cleanup = await open(clone.environment, clone.path);
+      if (typeof cleanup !== "string")
+        await removeWorktree(cleanup, folder, ref);
+      return signal?.aborted
+        ? CANCELLED
+        : unavailable(
+            "checkout_failed",
+            "Ajour couldn't check out this pull request's head from your clone.",
+          );
     }
     prepared.set(entry.key, { clone, folder, root, ref, head: entry.head });
     return { state: "read", root };
   }
 
-  /** Removes an entry's worktree and ref: its cache entry left the cache. */
+  /**
+   * Removes an entry's worktree and ref: its cache entry left the cache. A
+   * preparation under way finishes first, so what it makes goes too.
+   */
   async function release(key: string) {
+    await preparing.get(key)?.catch(() => undefined);
     const kept = prepared.get(key);
     if (!kept) return;
     prepared.delete(key);
@@ -843,38 +932,16 @@ export function createDeckClones(options: DeckClonesOptions) {
    * refs of Deck's whose entries aren't in `live` any more.
    */
   async function releaseExcept(live: ReadonlySet<string>) {
-    const liveIds = new Set([...live].map(idOf));
     for (const [key] of [...prepared]) {
       if (!live.has(key)) await release(key);
     }
+    const liveIds = new Set([...live].map(idOf));
     for (const clone of await options.storage.getDeckClones()) {
       await locked(clone, async () => {
         const opened = await open(clone.environment, clone.path);
         if (typeof opened === "string") return;
-        try {
-          for (const tree of await worktreesOf(opened.git)) {
-            const folder = normalized(opened, tree.folder);
-            if (!isUnder(opened.worktrees, folder)) continue;
-            const style = opened.environment.kind === "wsl" ? path.posix : path;
-            if (liveIds.has(style.basename(folder))) continue;
-            await removeWorktree(opened, folder, undefined);
-          }
-          const refs = await opened.git.read(
-            ["for-each-ref", "--format=%(refname)", "refs/ajour/deck/"],
-            timeouts.localMs,
-          );
-          for (const ref of refs.split(/\r?\n/).filter(Boolean)) {
-            const id = /^refs\/ajour\/deck\/([0-9a-f]+)\/head$/.exec(ref)?.[1];
-            if (id && liveIds.has(id)) continue;
-            await opened.git.run(
-              ["update-ref", "-d", "--", ref],
-              timeouts.localMs,
-            );
-          }
-          await pruneDeckOnly(opened);
-        } catch {
-          // Left for the next start.
-        }
+        swept.add(cloneKey(clone));
+        await sweep(opened, liveIds);
       });
     }
   }
@@ -895,11 +962,10 @@ export function createDeckClones(options: DeckClonesOptions) {
       );
     },
 
-    /** Forgets a repository's clone, and removes its worktrees. */
+    /** Forgets a repository's clone, and removes its worktrees. False when it had none. */
     async forget(repository: DeckCloneRepository) {
       await releaseWhere((kept) => sameKey(kept.clone, repository));
-      await options.storage.forgetDeckClone(repository);
-      return options.storage.getDeckClones();
+      return options.storage.forgetDeckClone(repository);
     },
 
     /**
@@ -920,7 +986,7 @@ export function createDeckClones(options: DeckClonesOptions) {
           const index = next++;
           const folder = folders[index]!;
           try {
-            const git = await nativeIn(folder.path);
+            const git = await gitIn({ kind: "native" }, folder.path);
             if (!git) return;
             const remote = matchingRemote(
               await remotesOf(git),

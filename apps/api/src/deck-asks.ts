@@ -47,6 +47,13 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
 /** Answers kept. Older ones are asked again. */
 const ANSWERS_KEPT = 200;
 
+/** The ask was stopped before its turn started: nobody waits for an answer. */
+export class DeckAskStopped extends Error {
+  constructor() {
+    super("The ask was stopped.");
+  }
+}
+
 /** Why an ask, or a core turn, can't run: its status and the body the page reads. */
 export class DeckAskRefused extends Error {
   readonly status: 404 | 409;
@@ -89,7 +96,11 @@ export interface DeckAsksOptions {
   /** The user's local clones. Without them, asks read the pull request alone. */
   clones?: {
     isChosen(repository: DeckCloneRepository): Promise<boolean>;
-    prepare(entry: DeckCloneEntry): Promise<DeckClonePrepared>;
+    prepare(
+      entry: DeckCloneEntry,
+      signal?: AbortSignal,
+    ): Promise<DeckClonePrepared>;
+    release(key: string): Promise<void>;
   };
   /** Whether the agent can read a folder with read-only file tools. */
   readsFiles?: (cli: AgentCliId) => boolean;
@@ -127,9 +138,26 @@ export function createDeckAsks(options: DeckAsksOptions) {
     { key: string; pieces: string[]; clone?: DeckCloneUse }
   >();
 
+  /** The pull request's repository, as Deck keys its clone. */
+  const repositoryOf = (
+    source: DeckPullRequestSource,
+  ): DeckCloneRepository => ({
+    pluginId: source.pluginId,
+    connectionId: source.connectionId,
+    repository: source.repository,
+  });
+
+  /** Whether the agent Settings › Agents picks can read a folder with read-only file tools. */
+  async function agentReadsFiles() {
+    const { cli } = await options.storage.getAgentRunnerSettings();
+    return cli !== null && (!options.readsFiles || options.readsFiles(cli));
+  }
+
   /**
-   * Whether a cached answer that didn't read the clone could read it now:
-   * the user chose a clone since, so the ask runs again.
+   * Whether a cached answer asked before any clone was chosen could read
+   * one now: the user chose a clone since, so the ask runs again. An answer
+   * that couldn't read the clone stays cached: asking again would pay for
+   * the same failure.
    */
   async function couldReadClone(
     cached: Answer,
@@ -137,34 +165,26 @@ export function createDeckAsks(options: DeckAsksOptions) {
     source: DeckPullRequestSource,
   ) {
     if (!options.clones || !request.clone) return false;
-    if (cached.clone?.state === "read") return false;
-    const { cli } = await options.storage.getAgentRunnerSettings();
-    if (!cli || (options.readsFiles && !options.readsFiles(cli))) return false;
-    return options.clones.isChosen({
-      pluginId: source.pluginId,
-      connectionId: source.connectionId,
-      repository: source.repository,
-    });
+    if (cached.clone?.state !== "not_chosen") return false;
+    if (!(await agentReadsFiles())) return false;
+    return options.clones.isChosen(repositoryOf(source));
   }
 
   /**
    * The user's clone at the pull request's head, when they chose one and
    * the agent can read it: the folder the turn reads, or why it can't.
+   * `signal` stops the preparation, and git with it.
    */
   async function cloneFor(
     source: DeckPullRequestSource,
     held: DeckHeldPullRequest,
     request: DeckAskRequest,
+    signal?: AbortSignal,
   ): Promise<{ use?: DeckCloneUse; root?: string; fact?: DeckAskCloneFact }> {
     const { clones } = options;
     if (!clones || !request.clone) return {};
-    const repository = {
-      pluginId: source.pluginId,
-      connectionId: source.connectionId,
-      repository: source.repository,
-    };
-    const { cli } = await options.storage.getAgentRunnerSettings();
-    if (cli && options.readsFiles && !options.readsFiles(cli)) {
+    const repository = repositoryOf(source);
+    if (!(await agentReadsFiles())) {
       if (!(await clones.isChosen(repository))) return {};
       return {
         use: {
@@ -175,13 +195,17 @@ export function createDeckAsks(options: DeckAsksOptions) {
         fact: "agent_reads_no_files",
       };
     }
-    const prepared = await clones.prepare({
-      ...repository,
-      key: held.key,
-      number: source.number,
-      head: request.head,
-      clone: request.clone,
-    });
+    const prepared = await clones.prepare(
+      {
+        ...repository,
+        key: held.key,
+        number: source.number,
+        head: request.head,
+        clone: request.clone,
+      },
+      signal,
+    );
+    if (signal?.aborted) throw new DeckAskStopped();
     if (prepared.state === "read") {
       return { use: { state: "read" }, root: prepared.root, fact: "read" };
     }
@@ -281,6 +305,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     async ask(
       source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
       request: DeckAskRequest,
+      signal?: AbortSignal,
     ): Promise<DeckAskResponse & { cloneFact?: DeckAskCloneFact }> {
       const pullRequestSource: DeckPullRequestSource = {
         ...source,
@@ -296,7 +321,10 @@ export function createDeckAsks(options: DeckAsksOptions) {
         request.question,
       );
       const cached = answers.get(key);
-      if (cached !== undefined && !(await couldReadClone(cached, request, pullRequestSource))) {
+      if (
+        cached !== undefined &&
+        !(await couldReadClone(cached, request, pullRequestSource))
+      ) {
         answers.delete(key);
         answers.set(key, cached);
         return {
@@ -322,7 +350,17 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "unknown_anchor",
         });
       }
-      const clone = await cloneFor(pullRequestSource, held, request);
+      const clone = await cloneFor(pullRequestSource, held, request, signal);
+      // The pull request may have left while the clone was prepared: its
+      // worktree goes with it, and the ask asks to open it again.
+      if (clone.root && !(await options.deck.held(pullRequest, request.head))) {
+        void options.clones?.release(held.key).catch(() => undefined);
+        throw new DeckAskRefused(409, {
+          error:
+            "Open the pull request again: Ajour no longer holds it at this commit.",
+          reason: "not_open",
+        });
+      }
       const turn = await options.startTurn(
         {
           task: "deck.ask",

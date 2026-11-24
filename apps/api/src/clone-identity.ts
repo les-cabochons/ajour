@@ -152,6 +152,20 @@ export function sameRepository(a: string, b: string): boolean {
   return left !== undefined && left === cloneIdentityOf(b);
 }
 
+/**
+ * The host of an HTTPS or SSH address, its port included, or undefined for
+ * any other: a folder, `file://`, plain `http://` or `git://`. Deck fetches
+ * a fork only from such an address, on its clone's own host.
+ */
+export function fetchableHostOf(address: string): string | undefined {
+  const trimmed = address.trim();
+  if (/^(?:http|git|file):\/\//i.test(trimmed)) return undefined;
+  const parts = partsOf(trimmed);
+  if (!parts || "local" in parts || cloneIdentityOf(trimmed) === undefined)
+    return undefined;
+  return parts.host;
+}
+
 /** Whether an address uses SSH, which decides which of a fork's addresses Deck fetches. */
 export function isSshAddress(address: string): boolean {
   const parts = partsOf(address);

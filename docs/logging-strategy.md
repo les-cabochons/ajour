@@ -1140,6 +1140,10 @@ channel to read the event each emits.
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
 | `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.clone_choose`                  | command, request, ipc                   | route, IPC channel, client call                  |
+| `deck.clone_forget`                  | command, request                        | route, client call                               |
+| `deck.clone_suggestions`             | command, request                        | route, client call                               |
+| `deck.clones`                        | command, request                        | route, client call                               |
 | `deck.consent`                       | command, request                        | route, client call                               |
 | `deck.consent_revoke`                | command, request                        | route, client call                               |
 | `deck.consents`                      | command, request                        | route, client call                               |

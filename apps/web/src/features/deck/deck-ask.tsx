@@ -29,6 +29,7 @@ import {
   askText,
   failAsk,
   startAsk,
+  stopAsk,
   withClone,
   type AskState,
 } from "@/domain/deck/ask";
@@ -284,6 +285,11 @@ function AskAnswer({
   const [turnId, setTurnId] = useState<string>();
   /** Counts the asks, so an answer for an earlier one is dropped. */
   const generation = useRef(0);
+  /**
+   * Stops the ask before its turn starts, as while Ajour fetches the pull
+   * request into the clone. Set while the ask's request runs.
+   */
+  const [starting, setStarting] = useState<AbortController>();
 
   const ask = useCallback(
     async (question?: string) => {
@@ -293,15 +299,23 @@ function AskAnswer({
       setState(startAsk(question));
       const current = () => generation.current === mine;
       for (let attempt = 0; attempt < 2; attempt += 1) {
+        const controller = new AbortController();
+        setStarting(controller);
         try {
-          const asked = await askDeck(target.pluginId, target.connectionId, {
-            repository: target.repository,
-            number: target.number,
-            head: target.head,
-            anchor,
-            ...(question === undefined ? {} : { question }),
-            ...(target.clone ? { clone: target.clone } : {}),
-          });
+          const asked = await askDeck(
+            target.pluginId,
+            target.connectionId,
+            {
+              repository: target.repository,
+              number: target.number,
+              head: target.head,
+              anchor,
+              ...(question === undefined ? {} : { question }),
+              ...(target.clone ? { clone: target.clone } : {}),
+            },
+            controller.signal,
+          );
+          setStarting((now) => (now === controller ? undefined : now));
           if (!current()) return;
           if (asked.kind === "answer") {
             setState((state) =>
@@ -313,6 +327,7 @@ function AskAnswer({
           setTurnId(asked.turn.id);
           return;
         } catch (error) {
+          setStarting((now) => (now === controller ? undefined : now));
           if (!current()) return;
           const consent =
             error instanceof AppApiError
@@ -369,7 +384,16 @@ function AskAnswer({
   const going = askGoing(state);
   const text = askText(state);
   const stop = () => {
-    if (turnId) void cancelAgentTurn(turnId).catch(() => undefined);
+    if (turnId) {
+      void cancelAgentTurn(turnId).catch(() => undefined);
+      return;
+    }
+    if (!starting) return;
+    // Before its turn: the request stops, and git with it.
+    generation.current += 1;
+    starting.abort();
+    setStarting(undefined);
+    setState((state) => stopAsk(state));
   };
   return (
     <section id={id} className="deck-ask" aria-label="More detail">
@@ -405,7 +429,12 @@ function AskAnswer({
       ) : null}
       <div className="deck-ask-actions">
         {going ? (
-          <Button variant="ghost" size="sm" onClick={stop} disabled={!turnId}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={stop}
+            disabled={!turnId && !starting}
+          >
             Stop
           </Button>
         ) : (

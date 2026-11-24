@@ -103,6 +103,11 @@ export function answerFooter(state: Extract<AskState, { kind: "answered" }>): {
   return { source, offersClone: clone?.state === "not_chosen" };
 }
 
+/** The user stopped the ask, keeping what came so far. */
+export function stopAsk(state: AskState): AskState {
+  return { kind: "stopped", ...withQuestion(state), text: askText(state) };
+}
+
 /** The ask couldn't start or its turn failed, with what came so far. */
 export function failAsk(state: AskState, message: string): AskState {
   return {
@@ -138,13 +143,7 @@ export function applyTurnEvent(
       if (event.outcome === "done") {
         return answerAsk(state, askText(state), head);
       }
-      if (event.outcome === "cancelled") {
-        return {
-          kind: "stopped",
-          ...withQuestion(state),
-          text: askText(state),
-        };
-      }
+      if (event.outcome === "cancelled") return stopAsk(state);
       return failAsk(state, event.error ?? "The answer couldn't be finished.");
     case "conversation-closed":
       return state;

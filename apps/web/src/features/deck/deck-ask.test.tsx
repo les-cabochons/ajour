@@ -236,12 +236,17 @@ it("shows a quiet placeholder, streams the answer in under the rationale, then a
   expect(within(answer).getByRole("status").textContent).toBe(
     "Getting more detail…",
   );
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: { kind: "concern", id: "g1" },
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+    },
+    expect.any(AbortSignal),
+  );
   expect(moreOn(concern).getAttribute("aria-expanded")).toBe("true");
 
   started("t1");
@@ -295,13 +300,18 @@ it("opens on the default question, focused, and sends a typed one in its place",
   fireEvent.click(within(concern).getByRole("button", { name: "Ask" }));
 
   expect(api.askDeck).toHaveBeenCalledTimes(1);
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: { kind: "concern", id: "g1" },
-    question: "Is it tested?",
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+      question: "Is it tested?",
+    },
+    expect.any(AbortSignal),
+  );
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -346,13 +356,18 @@ it("asks something else under an answer", async () => {
   );
 
   await waitFor(() =>
-    expect(api.askDeck).toHaveBeenLastCalledWith("github", "work", {
-      repository: "acme/billing-api",
-      number: 1,
-      head: HEAD,
-      anchor: { kind: "concern", id: "g1" },
-      question: "And errors?",
-    }),
+    expect(api.askDeck).toHaveBeenLastCalledWith(
+      "github",
+      "work",
+      {
+        repository: "acme/billing-api",
+        number: 1,
+        head: HEAD,
+        anchor: { kind: "concern", id: "g1" },
+        question: "And errors?",
+      },
+      expect.any(AbortSignal),
+    ),
   );
   expect(await within(answer).findByText("And errors?")).toBeTruthy();
   expect(within(answer).queryByText("Default.")).toBeNull();
@@ -596,13 +611,18 @@ it("sends where the repository is cloned from, and ends an answer that read the 
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: { kind: "concern", id: "g1" },
-    clone: IDENTITY,
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+      clone: IDENTITY,
+    },
+    expect.any(AbortSignal),
+  );
   started("c1");
   text("c1", 0, "It reads the whole module.");
   ended("c1");
@@ -757,4 +777,32 @@ it("shows why a folder can't be the clone, and keeps the dialog open", async () 
     "None of this folder's remotes is acme/billing-api.",
   );
   expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+it("stops an ask while Ajour still prepares the clone, before its turn starts", async () => {
+  syncWithIdentity();
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.askDeck).mockImplementationOnce(
+    (_plugin, _connection, _ask, given) =>
+      new Promise((_resolve, reject) => {
+        signal = given;
+        given?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      }),
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  const stop = within(answer).getByRole("button", { name: "Stop" });
+  await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false));
+
+  fireEvent.click(stop);
+
+  expect(signal?.aborted).toBe(true);
+  expect(await within(answer).findByText("Stopped.")).toBeTruthy();
+  expect(within(answer).queryByRole("alert")).toBeNull();
+  expect(api.cancelAgentTurn).not.toHaveBeenCalled();
 });

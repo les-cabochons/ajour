@@ -28,8 +28,8 @@ export interface GitResult {
 
 /** A git call that failed, with what git said, for the user's message. */
 export class GitFailure extends Error {
-  readonly reason: "git_failed" | "timeout";
-  constructor(reason: "git_failed" | "timeout", said: string) {
+  readonly reason: "git_failed" | "timeout" | "cancelled";
+  constructor(reason: GitFailure["reason"], said: string) {
     super(said);
     this.reason = reason;
   }
@@ -91,7 +91,13 @@ export class Git {
    * and answers `timedOut`. Otherwise the hand off would hang, and hold the
    * repository's lock over every later operation there.
    */
-  run(args: readonly string[], timeoutMs: number): Promise<GitResult> {
+  run(
+    args: readonly string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<GitResult> {
+    if (signal?.aborted)
+      return Promise.reject(new GitFailure("cancelled", "Git was stopped."));
     const plan = this.plan(args);
     if ("refused" in plan)
       return Promise.reject(
@@ -121,6 +127,7 @@ export class Git {
         settled = true;
         clearTimeout(timer);
         clearTimeout(draining);
+        signal?.removeEventListener("abort", cancel);
         child.stdout.destroy();
         child.stderr.destroy();
         if (answer instanceof GitFailure) reject(answer);
@@ -137,6 +144,12 @@ export class Git {
         stop();
         settle({ code: null });
       }, timeoutMs);
+      // Stopped by its caller: git ends with everything it started.
+      const cancel = () => {
+        stop();
+        settle(new GitFailure("cancelled", "Git was stopped."));
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
       for (const stream of ["stdout", "stderr"] as const)
         child[stream].on("data", (chunk: Buffer) => {
           size += chunk.length;
@@ -215,7 +228,10 @@ export class WslGit extends Git {
   constructor(
     distro: string,
     linuxCwd: string,
-    windowsEnv: Record<string, string | undefined> = process.env,
+    // Ajour's own variables, such as its tokens, never reach the distribution.
+    windowsEnv: Record<string, string | undefined> = Object.fromEntries(
+      Object.entries(process.env).filter(([name]) => !/^AJOUR_/i.test(name)),
+    ),
   ) {
     super(wslExecutable(windowsEnv), windowsEnv, os.tmpdir());
     if (!WSL_DISTRO_NAME.test(distro)) {

@@ -281,6 +281,17 @@ async function startCloneApi() {
   };
 }
 
+/** The first event named `name`, as the sink recorded it. */
+function eventNamed(events: readonly AjourEvent[], name: string) {
+  const found = events.find((one) => one.name === name);
+  if (!found) throw new Error(`No ${name} event.`);
+  return found as unknown as {
+    outcome?: string;
+    outcome_reason?: string;
+    deck?: Record<string, unknown>;
+  };
+}
+
 const exists = (file: string) =>
   access(file).then(
     () => true,
@@ -330,8 +341,8 @@ describe("an ask that reads the user's clone", () => {
         `you can also read the whole repository at the pull request's head, in ${root}`,
       );
       expect(await fixture.userState()).toEqual(before);
-      const event = api.events.find((one) => one.name === "deck.ask") as any;
-      expect(event.deck.clone).toBe("read");
+      const event = eventNamed(api.events, "deck.ask");
+      expect(event.deck?.clone).toBe("read");
       expect(JSON.stringify(event)).not.toContain(fixture.root);
 
       // The cached answer says it read the clone too.
@@ -438,8 +449,8 @@ describe("an ask that reads the user's clone", () => {
       });
       await api.ended(asked.body.turn.id);
       expect((await api.launches())[0]).not.toContain("--add-dir");
-      const event = api.events.find((one) => one.name === "deck.ask") as any;
-      expect(event.deck.clone).toBe("head_not_found");
+      const event = eventNamed(api.events, "deck.ask");
+      expect(event.deck?.clone).toBe("head_not_found");
     },
   );
 
@@ -487,6 +498,68 @@ describe("an ask that reads the user's clone", () => {
       expect(chosen.body).toEqual({
         reason: "clone_refused",
         error: "None of this folder's remotes is acme/api.",
+      });
+    },
+  );
+});
+
+describe("the clone routes' events", () => {
+  it(
+    "record counts and the clone's environment, never a path or a remote",
+    { timeout: 60_000 },
+    async () => {
+      const api = await startCloneApi();
+      const folder = await api.addFolder();
+      await api.suggestions();
+      await api.choose(folder.id);
+      await apiRequest(api.baseUrl, "/api/deck/clones");
+      await apiRequest(api.baseUrl, "/api/deck/clones/forget", {
+        pluginId: "github",
+        connectionId:
+          (await apiRequest(api.baseUrl, "/api/deck/clones")).body.clones[0]
+            ?.connectionId ?? "none",
+        repository: REPOSITORY,
+      });
+
+      expect(eventNamed(api.events, "deck.clone_suggestions")).toMatchObject({
+        outcome: "ok",
+        deck: { folder_count: 1, suggestion_count: 1, clone_chosen: false },
+      });
+      expect(eventNamed(api.events, "deck.clone_choose")).toMatchObject({
+        outcome: "ok",
+        deck: { clone_environment: "native" },
+      });
+      expect(eventNamed(api.events, "deck.clones")).toMatchObject({
+        outcome: "ok",
+        deck: { clone_count: 1 },
+      });
+      expect(eventNamed(api.events, "deck.clone_forget")).toMatchObject({
+        outcome: "ok",
+      });
+      const recorded = JSON.stringify(
+        api.events.filter((one) => one.name.startsWith("deck.clone")),
+      );
+      expect(recorded).not.toContain(fixture.root);
+      expect(recorded).not.toContain(fixture.root.replaceAll("\\", "/"));
+    },
+  );
+
+  it(
+    "records a refused choice with its reason",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startCloneApi();
+      git(
+        fixture.clone,
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/acme/other.git",
+      );
+      await api.choose((await api.addFolder()).id);
+      expect(eventNamed(api.events, "deck.clone_choose")).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "clone_refused",
       });
     },
   );

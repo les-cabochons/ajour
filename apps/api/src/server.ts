@@ -163,10 +163,11 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
-import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import { createDeckAsks, DeckAskRefused, DeckAskStopped } from "./deck-asks.ts";
 import {
   createDeckClones,
   DeckCloneRefused,
+  type DeckCloneRepository,
   type DeckClones,
 } from "./deck-clones.ts";
 import {
@@ -1860,7 +1861,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   /**
    * The user's local clones (#795, ADR 0023): each chosen once per
    * repository, read at a pull request's head through a worktree that goes
-   * with its Deck entry. What an earlier run left goes at start.
+   * with its Deck entry. What an earlier run left goes at the first use.
    */
   const deckClones = createDeckClones({
     storage,
@@ -1870,7 +1871,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       "worktrees",
     ),
   });
-  void deckClones.releaseExcept(new Set()).catch(() => undefined);
   const deckService = createDeckService({
     guides: createGuideBuilds({
       runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
@@ -4752,10 +4752,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           typed_question: payload.question !== undefined,
         },
       });
+      // The window stopped the ask while its clone was prepared: git stops too.
+      const stop = new AbortController();
+      response.once("close", () => {
+        if (!response.writableFinished) stop.abort();
+      });
       try {
         const { cloneFact, ...asked } = await deckAsks.ask(
           { pluginId, connectionId },
           payload,
+          stop.signal,
         );
         unit.set({
           deck: {
@@ -4768,6 +4774,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
       } catch (error) {
+        if (error instanceof DeckAskStopped) {
+          unit.refuse("client_closed");
+          return;
+        }
         if (error instanceof DeckAskRefused) {
           unit.refuse(error.eventReason);
           writeJson(response, error.status, error.body);
@@ -4855,25 +4865,26 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      await chooseDeckClone(
-        deckClones,
-        { pluginId, connectionId, repository: payload.repository },
-        payload.clone,
-        folder.path,
-      ).then(
-        (clone) => {
-          unit.set({ deck: { clone_environment: clone.environment.kind } });
-          writeJson(response, 200, { clone });
-        },
-        (error: unknown) => {
-          if (!(error instanceof DeckCloneRefused)) throw error;
-          unit.refuse("clone_refused");
-          writeJson(response, 400, {
-            reason: "clone_refused",
-            error: error.message,
-          });
-        },
-      );
+      await deckClones
+        .choose(
+          { pluginId, connectionId, repository: payload.repository },
+          payload.clone,
+          folder.path,
+        )
+        .then(
+          (clone) => {
+            unit.set({ deck: { clone_environment: clone.environment.kind } });
+            writeJson(response, 200, { clone });
+          },
+          (error: unknown) => {
+            if (!(error instanceof DeckCloneRefused)) throw error;
+            unit.refuse("clone_refused");
+            writeJson(response, 400, {
+              reason: "clone_refused",
+              error: error.message,
+            });
+          },
+        );
     },
 
     deckClones: async ({ response, unit }) => {
@@ -4888,8 +4899,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         plugin: { id: payload.pluginId },
         connection: { id: payload.connectionId },
       });
-      if (!(await deckClones.isChosen(payload))) unit.refuse("not_found");
-      writeJson(response, 200, { clones: await deckClones.forget(payload) });
+      // As Revoke does: the list comes back whether or not one was forgotten.
+      if (!(await deckClones.forget(payload))) unit.refuse("not_found");
+      writeJson(response, 200, { clones: await deckClones.clones() });
     },
 
     deckConsents: async ({ response, unit }) => {
@@ -6632,29 +6644,15 @@ export async function stopAppApiServer(server: Server): Promise<void> {
   }
 }
 
-/** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
-/**
- * Chooses a repository's clone, keeping the folder only once git says it
- * is a clone whose remote names the repository. Throws DeckCloneRefused
- * with a sentence for the picker.
- */
-function chooseDeckClone(
-  deckClones: DeckClones,
-  repository: { pluginId: string; connectionId: string; repository: string },
-  source: DeckCloneSource,
-  chosenPath: string,
-) {
-  return deckClones.choose(repository, source, chosenPath);
-}
-
 /**
  * The desktop's chooser picked a folder as a repository's clone (#795). Only
  * Electron main calls this, with a path from the native dialog: the window
- * can't name a folder Ajour doesn't already know.
+ * can't name a folder Ajour doesn't already know. The folder is kept only
+ * once git says it is a clone whose remote names the repository.
  */
 export async function chooseDeckCloneForServer(
   server: Server,
-  repository: { pluginId: string; connectionId: string; repository: string },
+  repository: DeckCloneRepository,
   source: unknown,
   chosenPath: string,
 ): Promise<{ clone: DeckClone } | { refused: string }> {
@@ -6665,8 +6663,7 @@ export async function chooseDeckCloneForServer(
   if (!parsed.success) throw new Error("Choose a repository.");
   try {
     return {
-      clone: await chooseDeckClone(
-        runtime.deckClones,
+      clone: await runtime.deckClones.choose(
         repository,
         parsed.data,
         chosenPath,
@@ -6678,6 +6675,7 @@ export async function chooseDeckCloneForServer(
   }
 }
 
+/** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
 export async function addRepositoryFolderForServer(
   server: Server,
   projectId: string,

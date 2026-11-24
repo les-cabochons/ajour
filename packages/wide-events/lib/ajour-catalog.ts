@@ -3218,6 +3218,7 @@ export const catalog = defineCatalog({
             | "fetch_timeout"
             | "head_not_found"
             | "checkout_failed"
+            | "cancelled"
           >(),
         },
         agent: { turn_id: operational() },
