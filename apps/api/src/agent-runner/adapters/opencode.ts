@@ -3,6 +3,7 @@ import type {
   AgentCliAdapter,
   ConversationAdapter,
   ConversationCodec,
+  ConversationEvent,
   RunnerEvent,
 } from "../adapter.ts";
 
@@ -62,6 +63,41 @@ function ajourServer(url: string) {
 }
 
 /**
+ * The config file: Ajour's agent, whose prompt is read relative to the file
+ * so it stays out of the arguments, and every tool denied but those of the
+ * given MCP servers.
+ */
+function configFile(
+  mcp: Record<string, unknown>,
+  extra: {
+    default_agent?: string;
+    model?: string;
+    agents?: Record<string, unknown>;
+  } = {},
+): string {
+  const { agents, ...settings } = extra;
+  const config = {
+    $schema: "https://opencode.ai/config.json",
+    autoupdate: false,
+    share: "disabled",
+    ...settings,
+    agent: {
+      ajour: { mode: "primary", prompt: "{file:./prompt.md}" },
+      ...agents,
+    },
+    // MCP tools are named <server>_<tool>.
+    permission: {
+      "*": "deny",
+      ...Object.fromEntries(
+        Object.keys(mcp).map((name) => [`${name}_*`, "allow"]),
+      ),
+    },
+    mcp,
+  };
+  return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+/**
  * A pull request's conversation on OpenCode: one `opencode acp` process,
  * which speaks the Agent Client Protocol on stdin and stdout, kept warm
  * across turns and streaming its answers. A later process continues the
@@ -72,21 +108,6 @@ const opencodeConversation: ConversationAdapter = {
   mode: "warm",
 
   buildInvocation(input) {
-    const config = {
-      $schema: "https://opencode.ai/config.json",
-      autoupdate: false,
-      share: "disabled",
-      default_agent: "ajour",
-      ...(input.model ? { model: input.model } : {}),
-      agent: {
-        ajour: { mode: "primary", prompt: "{file:./prompt.md}" },
-        // Titling a session sends its first message in a request of its own.
-        title: { disable: true },
-      },
-      // MCP tools are named <server>_<tool>.
-      permission: { "*": "deny", "ajour_*": "allow" },
-      mcp: { ajour: ajourServer(input.ajourMcpUrl) },
-    };
     return {
       command: input.executable,
       // ACP reports neither a failed MCP server nor a provider error, but
@@ -94,7 +115,15 @@ const opencodeConversation: ConversationAdapter = {
       args: ["acp", "--pure", "--print-logs", "--log-level", "WARN"],
       env: isolatedEnv(input.baseEnv, input.workDirectory, input.token),
       files: {
-        "opencode.json": `${JSON.stringify(config, null, 2)}\n`,
+        "opencode.json": configFile(
+          { ajour: ajourServer(input.ajourMcpUrl) },
+          {
+            default_agent: "ajour",
+            ...(input.model ? { model: input.model } : {}),
+            // Titling a session sends its first message in a request of its own.
+            agents: { title: { disable: true } },
+          },
+        ),
         "prompt.md": input.prompt,
       },
     };
@@ -158,10 +187,15 @@ function providerFailure(line: string): string | undefined {
   );
 }
 
+type Read = { events: ConversationEvent[]; reply: string[] };
+const NOTHING: Read = { events: [], reply: [] };
+const said = (...events: ConversationEvent[]): Read => ({ events, reply: [] });
+
 /**
  * The client side of one `opencode acp` process. It initializes, opens a
  * session, or loads the one to resume, and holds the first turn until the
- * session is ready. A failed load names no session, so the runner starts
+ * session is ready. A process whose session didn't open can't take a turn,
+ * so it ends; a failed load names no session instead, so the runner starts
  * the turn over on a new one.
  */
 function createAcpCodec(
@@ -217,6 +251,94 @@ function createAcpCodec(
           },
     );
 
+  /** A notification: only the running turn's own updates count. */
+  const readUpdate = (message: JsonRpcMessage): Read => {
+    // A load replays the session's history before it answers.
+    if (
+      message.method !== "session/update" ||
+      promptId === undefined ||
+      message.params?.sessionId !== sessionId
+    ) {
+      return NOTHING;
+    }
+    const update = message.params?.update as
+      | {
+          sessionUpdate?: unknown;
+          content?: { type?: unknown; text?: unknown };
+        }
+      | undefined;
+    if (
+      update?.sessionUpdate === "agent_message_chunk" &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string" &&
+      update.content.text
+    ) {
+      return said({ kind: "text", text: update.content.text });
+    }
+    // Its later updates, tool_call_update, are the same call.
+    if (update?.sessionUpdate === "tool_call")
+      return said({ kind: "tool-call" });
+    return NOTHING;
+  };
+
+  const readInitialized = (message: JsonRpcMessage): Read => {
+    initializeId = undefined;
+    if (message.error) {
+      return said({ kind: "cli-failed", message: errorMessage(message.error) });
+    }
+    const sent = resume
+      ? request("session/load", {
+          sessionId: resume,
+          cwd: workDirectory,
+          mcpServers: [],
+        })
+      : request("session/new", { cwd: workDirectory, mcpServers: [] });
+    sessionRequestId = sent.id;
+    return { events: [], reply: [sent.line] };
+  };
+
+  const readOpened = (message: JsonRpcMessage): Read => {
+    sessionRequestId = undefined;
+    const opened =
+      resume ?? (message.result as { sessionId?: unknown })?.sessionId;
+    if (message.error || typeof opened !== "string" || !opened) {
+      const failed = errorMessage(message.error);
+      // OpenCode 1.19.6 answers a load of a session it doesn't have with a
+      // bare -32603 "service failure", like its other failures. Naming no
+      // session lets the runner start over, saying the history is lost.
+      return resume
+        ? said({ kind: "turn-failed", message: failed })
+        : said({ kind: "cli-failed", message: failed });
+    }
+    sessionId = opened;
+    const reply = held === undefined ? [] : prompt(held);
+    held = undefined;
+    return { events: [{ kind: "session", id: opened }], reply };
+  };
+
+  const readAnswered = (message: JsonRpcMessage): Read => {
+    promptId = undefined;
+    const failed = failure;
+    failure = undefined;
+    if (failed !== undefined)
+      return said({ kind: "turn-failed", message: failed });
+    if (message.error) {
+      return said({
+        kind: "turn-failed",
+        message: errorMessage(message.error),
+      });
+    }
+    const { stopReason } = (message.result ?? {}) as { stopReason?: unknown };
+    if (stopReason === "cancelled") return said({ kind: "turn-interrupted" });
+    if (stopReason === "refusal") {
+      return said({
+        kind: "turn-failed",
+        message: "The model refused to answer.",
+      });
+    }
+    return said({ kind: "turn-done" });
+  };
+
   return {
     open() {
       const sent = request("initialize", {
@@ -238,126 +360,27 @@ function createAcpCodec(
       return prompt(text);
     },
 
+    // Before the session is ready there is nothing to cancel: the runner ends the process.
     interrupt: () => (promptId === undefined ? [] : cancel()),
 
     read(line) {
       const message = parseMessage(line);
-      if (!message) return { events: [], reply: [] };
-
+      if (!message) return NOTHING;
       if (typeof message.method === "string") {
-        if (message.id !== undefined) {
-          return { events: [], reply: [answerRequest(message)] };
-        }
-        // A load replays the session's history first: only a turn's own updates count.
-        if (
-          message.method !== "session/update" ||
-          promptId === undefined ||
-          message.params?.sessionId !== sessionId
-        ) {
-          return { events: [], reply: [] };
-        }
-        const update = message.params?.update as
-          | {
-              sessionUpdate?: unknown;
-              content?: { type?: unknown; text?: unknown };
-            }
-          | undefined;
-        if (
-          update?.sessionUpdate === "agent_message_chunk" &&
-          update.content?.type === "text" &&
-          typeof update.content.text === "string" &&
-          update.content.text
-        ) {
-          return {
-            events: [{ kind: "text", text: update.content.text }],
-            reply: [],
-          };
-        }
-        if (update?.sessionUpdate === "tool_call") {
-          return { events: [{ kind: "tool-call" }], reply: [] };
-        }
-        return { events: [], reply: [] };
+        return message.id === undefined
+          ? readUpdate(message)
+          : { events: [], reply: [answerRequest(message)] };
       }
-
-      if (message.id === initializeId) {
-        initializeId = undefined;
-        if (message.error) {
-          return {
-            events: [
-              { kind: "turn-failed", message: errorMessage(message.error) },
-            ],
-            reply: [],
-          };
-        }
-        const sent = resume
-          ? request("session/load", {
-              sessionId: resume,
-              cwd: workDirectory,
-              mcpServers: [],
-            })
-          : request("session/new", { cwd: workDirectory, mcpServers: [] });
-        sessionRequestId = sent.id;
-        return { events: [], reply: [sent.line] };
-      }
-
-      if (message.id === sessionRequestId) {
-        sessionRequestId = undefined;
-        const opened =
-          resume ?? (message.result as { sessionId?: unknown })?.sessionId;
-        if (message.error || typeof opened !== "string" || !opened) {
-          return {
-            events: [
-              { kind: "turn-failed", message: errorMessage(message.error) },
-            ],
-            reply: [],
-          };
-        }
-        sessionId = opened;
-        const reply = held === undefined ? [] : prompt(held);
-        held = undefined;
-        return { events: [{ kind: "session", id: opened }], reply };
-      }
-
-      if (message.id !== undefined && message.id === promptId) {
-        promptId = undefined;
-        const failed = failure;
-        failure = undefined;
-        if (failed !== undefined) {
-          return {
-            events: [{ kind: "turn-failed", message: failed }],
-            reply: [],
-          };
-        }
-        if (message.error) {
-          return {
-            events: [
-              { kind: "turn-failed", message: errorMessage(message.error) },
-            ],
-            reply: [],
-          };
-        }
-        const stopReason = (message.result as { stopReason?: unknown })
-          ?.stopReason;
-        if (stopReason === "cancelled") {
-          return { events: [{ kind: "turn-interrupted" }], reply: [] };
-        }
-        if (stopReason === "refusal") {
-          return {
-            events: [
-              { kind: "turn-failed", message: "The model refused to answer." },
-            ],
-            reply: [],
-          };
-        }
-        return { events: [{ kind: "turn-done" }], reply: [] };
-      }
-      return { events: [], reply: [] };
+      if (message.id === undefined) return NOTHING;
+      if (message.id === initializeId) return readInitialized(message);
+      if (message.id === sessionRequestId) return readOpened(message);
+      if (message.id === promptId) return readAnswered(message);
+      return NOTHING;
     },
 
     readError(line) {
       const server = failedMcpServer(line);
-      if (server)
-        return { events: [{ kind: "mcp-failed", server }], reply: [] };
+      if (server) return said({ kind: "mcp-failed", server });
       const provider = providerFailure(line);
       // ACP never answers a prompt its provider failed: cancelling frees it.
       if (
@@ -368,7 +391,7 @@ function createAcpCodec(
         failure = provider;
         return { events: [], reply: cancel() };
       }
-      return { events: [], reply: [] };
+      return NOTHING;
     },
   };
 }
@@ -389,32 +412,6 @@ export const opencodeAdapter: AgentCliAdapter = {
   },
 
   buildInvocation(input) {
-    const config = {
-      $schema: "https://opencode.ai/config.json",
-      autoupdate: false,
-      share: "disabled",
-      agent: {
-        ajour: {
-          mode: "primary",
-          // Read relative to this config file, so the prompt stays out of the arguments.
-          prompt: "{file:./prompt.md}",
-        },
-      },
-      // MCP tools are named <server>_<tool>.
-      permission: {
-        "*": "deny",
-        "ajour_*": "allow",
-        "playwright_*": "allow",
-      },
-      mcp: {
-        ajour: ajourServer(input.ajourMcpUrl),
-        playwright: {
-          type: "local",
-          command: [input.playwright.command, ...input.playwright.args],
-          environment: input.playwright.env,
-        },
-      },
-    };
     return {
       command: input.executable,
       args: [
@@ -429,7 +426,14 @@ export const opencodeAdapter: AgentCliAdapter = {
       ],
       env: isolatedEnv(input.baseEnv, input.workDirectory, input.token),
       files: {
-        "opencode.json": `${JSON.stringify(config, null, 2)}\n`,
+        "opencode.json": configFile({
+          ajour: ajourServer(input.ajourMcpUrl),
+          playwright: {
+            type: "local",
+            command: [input.playwright.command, ...input.playwright.args],
+            environment: input.playwright.env,
+          },
+        }),
         "prompt.md": input.prompt,
       },
     };

@@ -166,6 +166,12 @@ interface ConversationProcess {
    * turn waits for that, then starts a new process.
    */
   ending: boolean;
+  /**
+   * Set when Ajour ended it for another reason than a failed resume, such
+   * as a cancel or a failed MCP server: one that named no session yet may
+   * still have found it, so the conversation keeps it.
+   */
+  stoppedByAjour: boolean;
 }
 
 interface Conversation {
@@ -234,12 +240,6 @@ export class AgentConversations {
     if (!adapter) {
       throw new AgentRunError(
         "Pick an installed agent in Settings > Agents.",
-        400,
-      );
-    }
-    if (!adapter.conversation) {
-      throw new AgentRunError(
-        `${adapter.label} can't hold a conversation about a pull request. Pick another agent in Settings > Agents.`,
         400,
       );
     }
@@ -663,6 +663,7 @@ export class AgentConversations {
       resumed: resume !== undefined,
       namedSession: false,
       ending: false,
+      stoppedByAjour: false,
     };
     const started = cli;
     conversation.launchCount += 1;
@@ -741,14 +742,26 @@ export class AgentConversations {
         if (running) running.toolCalls += 1;
         return;
       case "mcp-failed":
+      case "cli-failed":
         // Ended first, so the turn ends once the process finished.
         this.terminate(cli);
         if (running) {
-          this.reportEnding(conversation, cli, running, {
-            outcome: "failed",
-            message: `The ${event.server} MCP server did not start.`,
-            reason: "mcp_failed",
-          });
+          this.reportEnding(
+            conversation,
+            cli,
+            running,
+            event.kind === "mcp-failed"
+              ? {
+                  outcome: "failed",
+                  message: `The ${event.server} MCP server did not start.`,
+                  reason: "mcp_failed",
+                }
+              : {
+                  outcome: "failed",
+                  message: event.message,
+                  reason: "cli_failed",
+                },
+          );
         }
         return;
       case "turn-done":
@@ -773,9 +786,12 @@ export class AgentConversations {
     }
   }
 
-  /** A resumed process that never named its session found no conversation to resume. */
+  /**
+   * A resumed process that never named its session found no conversation to
+   * resume, unless Ajour ended it before it could.
+   */
   private resumeFailed(cli: ConversationProcess) {
-    return cli.resumed && !cli.namedSession;
+    return cli.resumed && !cli.namedSession && !cli.stoppedByAjour;
   }
 
   /**
@@ -800,7 +816,7 @@ export class AgentConversations {
       return;
     }
     turn.reported ??= ending;
-    if (this.resumeFailed(cli)) this.terminate(cli);
+    if (this.resumeFailed(cli)) this.terminate(cli, { resumeFailed: true });
   }
 
   private onClose(
@@ -1034,8 +1050,12 @@ export class AgentConversations {
     conversation.unit.end(reason === "failed" ? "error" : "ok");
   }
 
-  private terminate(cli: ConversationProcess) {
+  private terminate(
+    cli: ConversationProcess,
+    { resumeFailed = false }: { resumeFailed?: boolean } = {},
+  ) {
     cli.ending = true;
+    if (!resumeFailed) cli.stoppedByAjour = true;
     cli.proc.terminate();
   }
 }

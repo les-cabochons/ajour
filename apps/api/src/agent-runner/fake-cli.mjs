@@ -37,7 +37,9 @@
 // OpenCode's `acp` process speaks the Agent Client Protocol: it answers
 // initialize, session/new with the ID { "acpSession": "<id>" } names (or
 // "ses-fake"), and session/load, which replays an earlier answer first, or
-// fails when a step is { "acpLoadFails": true }. { "acpReadTurn": true }
+// fails when a step is { "acpLoadFails": true }. { "acpNewFails": "<message>" }
+// fails session/new, and { "acpHoldSession": true } answers neither, as a
+// session that takes long to open. { "acpReadTurn": true }
 // waits for the next session/prompt and reports its text as { acpTurn }, and
 // exits 0 once stdin ends; { "acpStream": ["Hel", "lo"] } sends each piece as
 // a message chunk; { "acpToolCall": true } sends a tool call;
@@ -122,15 +124,31 @@ const acpChunk = (text) =>
     sessionUpdate: "agent_message_chunk",
     content: { type: "text", text },
   });
+const acpStep = (name) =>
+  steps.find((step) => step[name] !== undefined)?.[name];
 /** Answers initialize, session/new and session/load. True when it did. */
 function answerAcpSetup(message) {
   const answer = (result) => print({ jsonrpc: "2.0", id: message.id, result });
+  const opening =
+    message?.method === "session/new" || message?.method === "session/load";
   if (message?.method === "initialize") {
     answer({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
+  } else if (opening && acpStep("acpHoldSession")) {
+    // Never answered.
+  } else if (message?.method === "session/new" && acpStep("acpNewFails")) {
+    print({
+      jsonrpc: "2.0",
+      id: message.id,
+      error: {
+        code: -32603,
+        message: "Internal error",
+        data: { message: acpStep("acpNewFails") },
+      },
+    });
   } else if (message?.method === "session/new") {
     answer({ sessionId: acpSessionId });
   } else if (message?.method === "session/load") {
-    if (steps.some((step) => step.acpLoadFails)) {
+    if (acpStep("acpLoadFails")) {
       print({
         jsonrpc: "2.0",
         id: message.id,

@@ -393,6 +393,31 @@ describe("OpenCode conversation", () => {
     );
   });
 
+  it("ends a process whose session didn't open, since it can't take a turn", () => {
+    const failed = {
+      code: -32603,
+      message: "Internal error",
+      data: { message: "Model not found" },
+    };
+    const notInitialized = acp();
+    expect(
+      notInitialized.read({
+        jsonrpc: "2.0",
+        id: notInitialized.last().id,
+        error: failed,
+      }),
+    ).toEqual([{ kind: "cli-failed", message: "Model not found" }]);
+    const notOpened = acp();
+    notOpened.read(answer(notOpened.last().id, { protocolVersion: 1 }));
+    expect(
+      notOpened.read({
+        jsonrpc: "2.0",
+        id: notOpened.last().id,
+        error: failed,
+      }),
+    ).toEqual([{ kind: "cli-failed", message: "Model not found" }]);
+  });
+
   it("refuses every permission and client request the agent makes", () => {
     const { read, last } = opened();
     expect(

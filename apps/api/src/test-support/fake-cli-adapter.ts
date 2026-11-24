@@ -96,7 +96,7 @@ export function fakeCliAdapter(
       files: { "prompt.md": input.prompt },
     }),
     conversation: fakeConversation(
-      claudeCodeAdapter.conversation!,
+      claudeCodeAdapter.conversation,
       report,
       mcpUrl,
       conversation,
@@ -117,7 +117,7 @@ export function fakeCodexAdapter(
   return {
     ...codexAdapter,
     conversation: fakeConversation(
-      codexAdapter.conversation!,
+      codexAdapter.conversation,
       report,
       mcpUrl,
       conversation,
@@ -138,7 +138,7 @@ export function fakeOpencodeAdapter(
   return {
     ...opencodeAdapter,
     conversation: fakeConversation(
-      opencodeAdapter.conversation!,
+      opencodeAdapter.conversation,
       report,
       mcpUrl,
       conversation,

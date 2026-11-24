@@ -1589,6 +1589,100 @@ describe("a conversation on OpenCode", () => {
     },
   );
 
+  it.each([
+    {
+      ending: "its MCP server fails",
+      script: [{ acpHoldSession: true }, { stderr: OPENCODE_MCP_FAILED }],
+      cancel: false,
+      outcome: {
+        outcome: "failed",
+        error: "The ajour MCP server did not start.",
+      },
+    },
+    {
+      ending: "the user cancels",
+      script: [{ acpHoldSession: true }],
+      cancel: true,
+      outcome: { outcome: "cancelled" },
+    },
+  ])(
+    "keeps the session to load when $ending while it loads",
+    { timeout: 30_000 },
+    async ({ script, cancel, outcome }) => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 1
+            ? [...script, { hang: true }]
+            : [
+                { acpSession: `ses-${index}` },
+                ...acpAnswer(`Answer ${index}`),
+                { acpReadTurn: true },
+              ],
+        { cli: "opencode", idleMs: 300, killGraceMs: 300 },
+      );
+      const first = (await api.startTurn()).body;
+      await api.waitForTurnEvent("ended", (event) => event.turnId === first.id);
+      await api.waitForTurnEvent("conversation-closed");
+
+      const loading = (await api.startTurn()).body;
+      if (cancel) {
+        await vi.waitFor(async () =>
+          expect(await api.acpLoads()).toHaveLength(1),
+        );
+        await api.cancel(loading.id);
+      }
+      const ended = await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === loading.id,
+      );
+      expect(ended).toMatchObject(outcome);
+      expect(ended).not.toHaveProperty("historyLost");
+      const next = (await api.startTurn()).body;
+      const nextEnded = await api.waitForTurnEvent(
+        "ended",
+        (event) => event.turnId === next.id,
+      );
+
+      // The process that was loading it never said the session was gone,
+      // so the next one loads it again.
+      expect(nextEnded).toMatchObject({ outcome: "done" });
+      expect(nextEnded).not.toHaveProperty("historyLost");
+      expect(await api.launches()).toHaveLength(3);
+      expect((await api.acpLoads()).at(-1)).toBe("ses-0");
+    },
+  );
+
+  it(
+    "ends a process whose session didn't open, and runs the next turn on a new one",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startConversationApi(
+        ({ index }) =>
+          index === 0
+            ? [{ acpNewFails: "Model not found" }, { hang: true }]
+            : [...acpAnswer("Opened"), { acpReadTurn: true }],
+        { cli: "opencode", killGraceMs: 300 },
+      );
+
+      const turn = (await api.startTurn()).body;
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === turn.id,
+        ),
+      ).toMatchObject({ outcome: "failed", error: "Model not found" });
+      const next = (await api.startTurn()).body;
+
+      expect(
+        await api.waitForTurnEvent(
+          "ended",
+          (event) => event.turnId === next.id,
+        ),
+      ).toMatchObject({ outcome: "done" });
+      expect(await api.launches()).toHaveLength(2);
+    },
+  );
+
   it(
     "fails a turn whose Ajour MCP server didn't start, which OpenCode only logs",
     { timeout: 20_000 },
