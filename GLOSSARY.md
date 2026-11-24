@@ -164,6 +164,10 @@ _Avoid_: AI review, walkthrough, guided view
 One group of hunks in a guide that change the same thing.
 _Avoid_: Group, cluster, section
 
+**Hunk**:
+One run of changed lines in a file of a pull request, with up to 3 lines of context, cut from both versions of the file as Review Deck cuts it. Its id is the file's path and its place in the file, `path#index`, so Ajour and Review Deck name it the same.
+_Avoid_: Chunk, change block, patch
+
 **Summary**:
 What Deck shows in place of a pull request's description: the problem it fixes, written from its linked ticket, the kinds of change, breaking changes, risky areas, test coverage and leftovers.
 _Avoid_: Description, overview, AI summary

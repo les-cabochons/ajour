@@ -3066,6 +3066,35 @@ export const catalog = defineCatalog({
       },
     },
 
+    // Deck. A pull request's paths and lines are content, so only counts.
+
+    /**
+     * Opening a pull request in Deck: its file list and both versions of
+     * each changed file read through the code host plugin, each its own
+     * `pull_request.load` or `pull_request.load_file` run, and the diff
+     * built from them.
+     */
+    "deck.open": {
+      kinds: ["command", "request"],
+      reasons: [
+        ...pluginRequestReasons,
+        /** Another pull request opened before this one's diff was built. */
+        "replaced",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        deck: {
+          file_count: operational<number>(),
+          hunk_count: operational<number>(),
+          /** Files read through the plugin, both versions counted. */
+          file_read_count: operational<number>(),
+          /** The diff was the one kept for the pull request on screen. */
+          kept: operational<boolean>(),
+        },
+      },
+    },
+
     // Teams and schemas.
 
     "team.create": {

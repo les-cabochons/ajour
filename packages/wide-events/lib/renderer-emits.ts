@@ -62,6 +62,7 @@ export const APP_API_CLIENT = {
   getProjectStartIn: "worktree.project_settings_read",
   saveProjectStartIn: "worktree.project_settings_update",
   syncCodeHostConnection: "pull_request.sync",
+  openDeckPullRequest: "deck.open",
   getProjectDataShapePlugins: "schema.list",
   exportProjectsWithDataShape: "project.export",
   importProjectsWithDataShape: "project.import",

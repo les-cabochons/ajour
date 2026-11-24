@@ -468,6 +468,11 @@ export const ROUTES = {
     path: "/api/code-hosts/:pluginId/connections/:connectionId/:operation",
     name: { param: "operation", names: CODE_HOST_EVENTS },
   },
+  deckOpen: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/open",
+    name: "deck.open",
+  },
   backlogComment: {
     method: "POST",
     path: "/api/backlog-comments/:pluginId/connections/:connectionId/:operation",

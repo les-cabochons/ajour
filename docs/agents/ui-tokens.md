@@ -29,6 +29,7 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 
 - `--control-height: 28px` for buttons, toggles, segmented controls and icon buttons. The narrow view's touch controls are the exception: the floating navigation has 44px targets in a `--narrow-nav-height` (54px) bar, and Day and Backlog rows' commands are 32px (council rounds 14 and 15).
 - `--control-height-lg: 32px` for primary actions and every input, textarea and select.
+- `--diff-line-height: 20px`: one row of a diff in Deck, the 12px mono line with room to read it. A hunk holds that height per row before it draws.
 - `--control-font-size` is the body size.
 - Button sizes: `xs` 20px, `sm` 24px, default 28px, `lg` 32px; icon buttons `icon-xs` 20px, `icon-sm` 24px, `icon` 28px, `icon-lg` 32px.
 
@@ -46,10 +47,10 @@ Semantic variables, light and dark under `:root` and `:root.dark`. Dark text run
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
 - `--primary-fill`: the accent behind white text, on filled buttons, badges and checked checkboxes. It equals `--primary` in light; in dark it is a deeper indigo, because the bright dark accent would leave white labels under 4.5:1.
-- `--success`: the running indicator, the running Day row's 2px edge, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page. Nothing else.
+- `--success`: the running indicator, the running Day row's 2px edge, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page, and an added line's mark in a Deck diff. Nothing else.
 - `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states whose count rose since the last visit, an agent question and a description timelog's missing project or task, the Updated change symbol, and the Urgent priority square, whose "!" is in the page color so it holds in both themes.
 - `--source-link`: deep blue, for a synced item's number in its source section, the link that opens the item in its source tool. Lighter in dark to keep 4.5:1 on the side cards.
-- `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot), and the Deleted change symbol.
+- `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot), and the Deleted change symbol, and a removed line's mark in a Deck diff.
 - `--field-border`: an input's border at rest; in dark, white at 18%, so fields read as editable (council round 9).
 - `--border-row`: the hairline between rows of a list (Time entries, Backlog rows, Commit changes, project tasks and entries). In light it is `--border` at 70%, in dark white at 6.5% against the border's 9%, so a long list does not read as ruled. Group headers, table headers and fields keep `--border`.
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.

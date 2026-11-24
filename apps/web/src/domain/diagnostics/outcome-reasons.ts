@@ -205,6 +205,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   remove_failed: "Removing the ajour command failed.",
   renderer_integrity:
     "Plugins are off because a plugin's page failed Ajour's integrity check.",
+  replaced:
+    "Another pull request opened in Deck before this one's changes were read.",
   renderer_not_sandboxed:
     "Plugins are off because a plugin's page ran outside the sandbox.",
   renderer_unknown:

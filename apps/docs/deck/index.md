@@ -35,10 +35,10 @@ Settling a pull request never writes to the code host.
 
 ## Open a pull request
 
-Click a pull request for its state, author, checks and last update. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
+Click a pull request for its state, author, checks and last update, then its changes: every changed file, in path order, with its hunks. Long lines wrap. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both. The diff is read when you open the pull request: new commits show the next time you open it. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Reviews happen in your code host for now
-Deck lists pull requests and tracks what needs you. Reading the diff, commenting and merging still happen on GitHub or Azure DevOps.
+Deck shows a GitHub pull request's changes. Azure DevOps pull requests show theirs in a later version. Commenting and merging still happen on GitHub or Azure DevOps.
 :::
