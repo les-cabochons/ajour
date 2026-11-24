@@ -107,6 +107,15 @@ The schemas are in [`packages/shared/code-host.ts`](https://github.com/les-caboc
 
 The contract also defines operations for reviewing in Ajour: `getPullRequestContent`, `getFileContent`, `getPullRequestConversation`, `browsePullRequests`, `submitReview`, `postComment`, `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` and `mergePullRequest`. Each takes `(connection, request)`.
 
+### What Deck reads
+
+When the user opens a pull request in Deck, Ajour calls `getPullRequestContent`, then `getFileContent` for each changed file: at `baseSha` with `previousPath` (or `path`) unless the file was added, and at `headSha` with `path` unless it was removed. It builds the diff itself, with Review Deck's `buildDiff`, so its hunk ids are Review Deck's.
+
+- `getPullRequestContent` returns `headSha`, `baseSha` and at most 3,000 `files`. `baseSha` is the commit the head's diff starts from, the merge base of the base branch and the head, not the base branch's tip. Ajour reads each file's `path`, `previousPath` and `status` only, and ignores `patch`, which you may leave out.
+- `getFileContent` returns `{ kind: "text", content }` with at most 5,000,000 characters, `{ kind: "binary" }` for a binary file or one too long to send, or `{ kind: "missing" }` when the file isn't at that commit.
+
+Ajour reads three files at a time. The GitHub plugin implements both.
+
 ::: info Not used yet
-Ajour does not call the review operations yet, and the GitHub plugin does not export them. Implement `syncPullRequests` only. The operations and their schemas may change before Ajour uses them.
+Ajour does not call the other review operations yet. The operations and their schemas may change before Ajour uses them.
 :::

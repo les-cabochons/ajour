@@ -2,6 +2,7 @@ const {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -26,6 +27,12 @@ const copyTargets = [
   {
     from: path.resolve(repoRoot, "packages/wide-events"),
     to: path.join(outputRoot, "packages/wide-events"),
+    excludePackageNodeModules: true,
+  },
+  // Review Deck's vendored pipeline, which Deck runs in the local API (#779).
+  {
+    from: path.resolve(repoRoot, "packages/review-deck"),
+    to: path.join(outputRoot, "packages/review-deck"),
     excludePackageNodeModules: true,
   },
 ];
@@ -67,6 +74,21 @@ copyRuntimePackage("@modelcontextprotocol/sdk", [
 // acceptance tests. findPackageJson looks inside the package's own folder first,
 // so its pinned playwright and playwright-core are the ones copied.
 copyRuntimePackage("@playwright/mcp", [path.resolve(repoRoot, "apps/api")]);
+// Review Deck's pipeline: jsdiff, graphology and web-tree-sitter, and each
+// grammar's wasm. A grammar package also holds its C sources and native
+// prebuilds, tens of megabytes the wasm doesn't need, so only its manifest,
+// licence and wasm are copied.
+const reviewDeckRoot = path.resolve(repoRoot, "packages/review-deck");
+const reviewDeckPackage = JSON.parse(
+  readFileSync(path.join(reviewDeckRoot, "package.json"), "utf8"),
+);
+for (const dependencyName of Object.keys(reviewDeckPackage.dependencies)) {
+  if (dependencyName.startsWith("tree-sitter-")) {
+    copyGrammarPackage(dependencyName, [reviewDeckRoot]);
+  } else {
+    copyRuntimePackage(dependencyName, [reviewDeckRoot]);
+  }
+}
 
 /**
  * Finds a package's own package.json from `searchPaths`, walking up the
@@ -116,5 +138,27 @@ function copyRuntimePackage(packageName, searchPaths) {
 
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
     copyRuntimePackage(dependencyName, [packageRoot]);
+  }
+}
+
+/** A tree-sitter grammar package: its package.json, licence and wasm files only. */
+function copyGrammarPackage(packageName, searchPaths) {
+  const packageJsonPath = findPackageJson(packageName, searchPaths);
+  const packageRoot = path.dirname(packageJsonPath);
+  const targetRoot = path.join(outputRoot, "node_modules", packageName);
+  mkdirSync(targetRoot, { recursive: true });
+  const files = readdirSync(packageRoot).filter(
+    (name) =>
+      name === "package.json" ||
+      name.endsWith(".wasm") ||
+      /^licen[cs]e/i.test(name),
+  );
+  if (!files.some((name) => name.endsWith(".wasm"))) {
+    throw new Error(`Missing grammar wasm in ${packageName}`);
+  }
+  for (const name of files) {
+    cpSync(path.join(packageRoot, name), path.join(targetRoot, name), {
+      dereference: true,
+    });
   }
 }

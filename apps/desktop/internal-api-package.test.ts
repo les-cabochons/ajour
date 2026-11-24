@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -286,4 +286,68 @@ it("ships the pinned Playwright MCP with the internal API", () => {
       mcpPackage.dependencies[name],
     );
   }
+}, 120_000);
+
+it("ships Review Deck's pipeline with every grammar's wasm, and the pipeline loads them from there", async () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-runtime-resources-"),
+  );
+  temporaryDirectories.push(root);
+  // One changed file per grammar, run through the shipped pipeline. Each
+  // grammar loads when its first file parses, from the shipped package.
+  const script = path.join(root, "pipeline.mjs");
+  await writeFile(
+    script,
+    `
+const pipeline = await import(${JSON.stringify(
+      pathToFileURL(path.join(runtimeRoot, "packages/review-deck/pipeline.ts"))
+        .href,
+    )});
+const errors = [];
+const deps = await pipeline.createPipelineDeps({
+  onGrammarError: (id, error) => errors.push(id + ": " + error.message),
+});
+const paths = Object.values(pipeline.GRAMMARS).map((grammar) => "src/sample." + grammar.extensions[0]);
+const diff = paths
+  .map((file) => ["diff --git a/" + file + " b/" + file, "--- a/" + file, "+++ b/" + file, "@@ -1 +1 @@", "-a", "+b", ""].join("\\n"))
+  .join("");
+const result = await pipeline.runPipeline(
+  { title: "Touch every language", description: "", diff, files: { get: async () => "b\\n" } },
+  pipeline.mergeConfig(),
+  deps,
+);
+console.log(JSON.stringify({ errors, hunks: result.hunks.size, grammars: Object.keys(pipeline.GRAMMARS).length }));
+`,
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "--no-warnings", script],
+    { encoding: "utf8", cwd: root },
+  );
+
+  expect(result.stderr.trim()).toBe("");
+  expect(JSON.parse(result.stdout.trim())).toEqual({
+    errors: [],
+    hunks: 10,
+    grammars: 10,
+  });
+  // A grammar package ships its wasm, not its sources or native builds.
+  expect(
+    readdirSync(
+      path.join(runtimeRoot, "node_modules/tree-sitter-typescript"),
+    ).sort(),
+  ).toEqual([
+    "LICENSE",
+    "package.json",
+    "tree-sitter-tsx.wasm",
+    "tree-sitter-typescript.wasm",
+  ]);
 }, 120_000);

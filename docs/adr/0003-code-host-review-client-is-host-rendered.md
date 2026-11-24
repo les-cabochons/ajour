@@ -11,5 +11,6 @@ Ajour includes a full pull request review experience: file tree, diff, comments,
 
 - Plugin capabilities replace plugin kinds. One package can be a connector and a code host, and the catalog lists capabilities instead of a single type.
 - Pull request content is too large for browser storage. The local API caches it on disk, with a size limit set by the user.
+- Ajour builds a pull request's diff from both versions of each changed file, with Review Deck's vendored `buildDiff` (#774, #779), never from the code host's patch, so its hunk ids match Review Deck's on both hosts. A code host plugin gives the file list and the files' contents; the patch it may send is ignored.
 
 Partly superseded by ADR 0007: plugins move from the stateless worker sandbox to sandboxed renderers. Ajour still renders every screen.

@@ -1090,7 +1090,7 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 ### Where Deck lives
 
-- Deck is at `/deck`, and a pull request's summary at `/deck/$itemId`. `/pull-requests` is gone, with no redirect.
+- Deck is at `/deck`, and a pull request's review page, its summary and its changes, at `/deck/$itemId`. `/pull-requests` is gone, with no redirect.
 - Deck shows only while a plugin with the code host capability is enabled and its Pull requests switch is on. Turning either off hides the nav row, the narrow switcher's Deck and the sidebar section at once. The local list and every settle, snooze and Returned mark stay, so turning it back on restores them.
 - In wide windows, Deck is the nav's row between Backlog and Projects (see App shell). Its count is the number of pull requests that need the user, as a filled badge when any returned.
 - In the narrow view, Deck sits in the bottom switcher between Backlog and Settings (see Narrow view). The Settings list has no Deck entry.
@@ -1114,6 +1114,16 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 - The summary shows the title, the repository, number and connection, then State (Open, Draft, Merged or Closed), Author, On your plate (its reason, Settled or Snoozed), Checks and Last updated. Its header holds the row's actions.
 - Opening it clears the Returned mark. A pull request that left the local list says "This pull request is no longer in the local list."
+
+### Changes
+
+Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-cabochons/ajour/issues/779).
+
+- Below the summary, the page shows the pull request's changes: every changed file in path order, each with its path and a quiet note for an added, deleted or renamed file ("Renamed from …"), then its hunks in order. A hunk keeps 3 lines of context, and its long lines wrap rather than scroll sideways.
+- Ajour builds the diff itself, from the version of each changed file where the pull request's branch started (the merge base) and the version at its head, the way Review Deck does, so each hunk has Review Deck's id. The code host's own patch is never shown.
+- A binary file, one too large to read (over 5,000,000 characters), a file renamed without changes and an empty file show a line saying so instead of hunks.
+- While the changes load, the page says "Loading the changes…". A failure shows its reason with **Retry**.
+- The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff of the pull request on screen is kept in memory until another one opens, so coming back to it at the same head reads no file again.
 
 ### On your plate
 

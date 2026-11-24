@@ -25,6 +25,7 @@ Use this file as the local index for important library choices. Check official d
 - react-markdown with remark-gfm and remark-breaks
 - decode-named-character-reference, for character references in description frontmatter
 - CodeMirror 6 (`@codemirror/state`, `view`, `language`, `commands`, `lang-markdown` and `@lezer/highlight`) for Markdown editing
+- `@pierre/diffs` for Deck's diffs, with Shiki highlighting
 
 ## Web UI Usage
 
@@ -37,6 +38,7 @@ Use this file as the local index for important library choices. Check official d
 - Render markdown text, such as backlog item descriptions, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.
 - Edit Markdown text through `MarkdownEditor` in `apps/web/src/components/markdown-editor.tsx`. It lazy-loads CodeMirror from `markdown-editor-view.tsx`, so do not import `@codemirror/*` elsewhere. It uses `markdownLanguage` without the `markdown()` helper, which would also load HTML, CSS and JavaScript highlighting. The text stays Markdown: markers are dimmed and the marked-up text is styled, and the editor never rewrites text the user did not touch. `preloadMarkdownEditor()` starts the download from an Edit button's pointer or focus.
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for app checkboxes, including indeterminate selection states.
+- Render a diff's hunk through `DiffHunk` in `apps/web/src/components/diff-hunk.tsx`, a thin wrapper over `@pierre/diffs`'s `PatchDiff`. It mounts each hunk when it nears the screen, through one shared `IntersectionObserver`, and lazy-loads the library with the first one, so do not import `@pierre/diffs` elsewhere. Lines wrap (`overflow: "wrap"`), and `styles/deck.css` gives them the app's mono face and change colors through the library's CSS variables.
 
 ## Web Domain Modules
 
@@ -49,6 +51,7 @@ Use this file as the local index for important library choices. Check official d
 - Backlog item status (settle, unsettle, archive, restore), priority changes and their source writes, snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
 - Description frontmatter, the YAML-like block Ajour reads (decoding character references with `decode-named-character-reference`), its fields and its `timelog`: `apps/web/src/domain/backlog/description-frontmatter.ts`. Applying a timelog to an item's project and task, on save and when the user asks, and how an item differs from its timelog: `apps/web/src/domain/backlog/description-timelog.ts`. Which frontmatter sections are open lives in `lib/frontmatter-sections.ts`, outside the local state.
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
+- Deck's review page rules: a hunk as the unified diff `DiffHunk` draws, its accessible name, and why a file shows no lines: `apps/web/src/domain/deck/review-diff.ts`. The page's changes are `features/deck/pull-request-changes.tsx`, read through `features/deck/use-pull-request-diff.ts`.
 - Synced work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-sync.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`. Every hours field reads its text with `readDurationInput` and one of its limits (`ENTRY_DURATION_LIMIT`, `DAY_CAPACITY_LIMIT`, `PLANNED_HOURS_LIMIT`); no field parses hours on its own.
 - Timesheet entry creation, editing, deletion and tombstones, ordering, marking as committed, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
@@ -156,6 +159,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Project data-shape discovery and operation orchestration, for the data-shape plugins in development folders and those installed through the plugin host: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
 - Standalone Workday shape plugin: `plugins/workday-project-data` in `les-cabochons/ajour-plugins`
 - `@modelcontextprotocol/sdk`: the MCP server over Streamable HTTP in stateless mode, at `/mcp/ajour`. Transport, authentication and the tool table: `apps/api/src/mcp-server.ts`. Client tokens: `apps/api/src/mcp-clients.ts`. Sessions, questions and activity: `apps/api/src/agent-sessions.ts`. Tool schemas: `packages/shared/agent-tools.ts`. The renderer side: `apps/web/src/lib/mcp-bridge.ts` holds the bridge connection and `features/agents/agent-tool-runner.ts` runs the tools.
+- Deck's service (#779): `apps/api/src/deck-service.ts` reads a pull request's file list and both versions of each changed file through the code host plugin, three files at a time with a retry while the plugin host is at its four operations, and cuts the hunks with `buildDiff` and `parseDiff` from `packages/review-deck/diff.ts`. It keeps the diff of the pull request on screen in memory until another one opens. Its route is `POST /api/deck/:pluginId/connections/:connectionId/open`, and its wire shape `packages/shared/deck.ts`.
 - `@playwright/mcp`: the browser tools the agent runner gives a coding agent. Pinned to an exact version, never fetched with `npx @latest`. Owned by `apps/api/src/agent-runner/playwright-mcp.ts`.
 
 ## Plugins
@@ -307,7 +311,8 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## Review Deck
 
 - Package: `packages/review-deck` (`@ajour/review-deck`), a copy of Review Deck's grouping pipeline (#595). `VENDORED.md` records the upstream commit, the layout and every local change. Change the copied files only to carry an upstream change or a change listed there.
-- Entry points: `pipeline.ts` (`runPipeline`, `buildDiff`, `mergeConfig`, the result types, and `createPipelineDeps`, Ajour's `PipelineDeps`), `saved.ts` (the `saved-reviews` format 4) and `stack.ts` (stack detection and trunk patterns). `pipeline.ts` runs in Node only; `saved.ts` and `stack.ts` also run in the browser.
+- Entry points: `pipeline.ts` (`runPipeline`, `buildDiff`, `mergeConfig`, the result types, and `createPipelineDeps`, Ajour's `PipelineDeps`), `diff.ts` (`buildDiff` and `parseDiff` alone, without the parsers), `saved.ts` (the `saved-reviews` format 4) and `stack.ts` (stack detection and trunk patterns). `pipeline.ts` runs in Node only; `diff.ts`, `saved.ts` and `stack.ts` also run in the browser. The local API imports `diff.ts`: its stricter `noUncheckedIndexedAccess` doesn't accept the pipeline's copied files, which the package's own tsconfig checks.
+- The desktop app ships the package in its internal API runtime, with jsdiff, graphology, `web-tree-sitter` and only the `package.json`, licence and wasm of each grammar package (`apps/desktop/scripts/prepare-internal-api.cjs`). `apps/desktop/internal-api-package.test.ts` runs the shipped pipeline on a file of every language and expects every grammar to load.
 - Every diff is built with `buildDiff` from both versions of each file, so hunk ids are Review Deck's `path#index`, with 3 lines of context.
 - Dependencies:
   - `web-tree-sitter` parses source files, with one grammar wasm per language from `tree-sitter-typescript` (TypeScript and TSX), `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-java`, `tree-sitter-c-sharp`, `tree-sitter-ruby`, `tree-sitter-php` and `tree-sitter-cpp` (C and C++). `createPipelineDeps` resolves each wasm from its npm package. Only the wasm files are used: the grammars' native bindings are never built.
