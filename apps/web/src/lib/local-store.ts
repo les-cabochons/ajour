@@ -69,6 +69,7 @@ import {
   draftReviewOf,
   editDraftComment,
   normalizeDraftReviews,
+  prepareCommentPost,
   prepareReviewSubmission,
   refreshDraftReview,
   removeDraftComment,
@@ -1872,6 +1873,35 @@ const store = {
         state: { ...state, deckDraftReviews: prepared.reviews },
         result: { request: prepared.request, sent: prepared.sent },
       };
+    });
+  },
+  /**
+   * A closed pull request's comment as a post of its own, named and kept
+   * with the comment before it's sent: a retry, after a restart too, sends
+   * the same name. Undefined when the comment is gone.
+   */
+  prepareCommentPost(
+    ref: DeckReviewRef,
+    commentId: string,
+    options: { again?: boolean } = {},
+  ) {
+    return updateStateWithResult((state) => {
+      const prepared = prepareCommentPost(
+        state.deckDraftReviews ?? [],
+        ref,
+        commentId,
+        options,
+        {
+          now: Date.now(),
+          createId: () => createId("comment_submission"),
+        },
+      );
+      return prepared.request
+        ? {
+            state: { ...state, deckDraftReviews: prepared.reviews },
+            result: prepared.request,
+          }
+        : { state, result: undefined };
     });
   },
   /** The code host took the review: its comments and its submission leave the draft. */
@@ -3979,6 +4009,7 @@ export const STORE_COMMANDS = {
       deck: { comment_count: (prepared) => prepared.sent.length },
     },
   },
+  prepareCommentPost: "deck.comment_submission_prepare",
   completeReviewSubmission: {
     name: "deck.review_submission_complete",
     fields: { deck: { comment_count: ([, sent]) => sent.length } },

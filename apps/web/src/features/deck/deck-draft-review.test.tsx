@@ -456,16 +456,20 @@ it("posts a comment at once with Comment now, and keeps its words with Retry whe
   await waitFor(() =>
     expect(screen.queryByRole("form", { name: "New comment" })).toBeNull(),
   );
-  expect(api.postPullRequestComment).toHaveBeenLastCalledWith(
-    "github",
-    "work",
-    {
-      repository: "acme/api",
-      number: 1,
-      body: "Look here.",
-      anchor: { path: "src/api.ts", side: "head", line: 2, headSha: "one" },
-    },
-  );
+  const [first, retry] = vi
+    .mocked(api.postPullRequestComment)
+    .mock.calls.map((call) => call[2]);
+  expect(retry).toEqual({
+    repository: "acme/api",
+    number: 1,
+    body: "Look here.",
+    anchor: { path: "src/api.ts", side: "head", line: 2, headSha: "one" },
+    // The same name as the first try: the plugin finds it if it landed.
+    submissionId: first!.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+  expect(first!.submissionId).toMatch(/^comment_submission_/);
+  expect(first).not.toHaveProperty("firstTriedAt");
   // The page reads the threads again, to show the new one.
   expect(api.readPullRequestConversation).toHaveBeenCalledTimes(2);
   expect(draftComments() ?? []).toEqual([]);
@@ -663,7 +667,117 @@ it("keeps a closed pull request's draft, to post as comments or discard", async 
     number: 1,
     body: "Rename this.",
     anchor: { path: "src/api.ts", side: "head", line: 2, headSha: "one" },
+    submissionId: expect.stringMatching(/^comment_submission_/),
   });
+});
+
+/** A merged pull request whose draft holds these comments, its page open. */
+async function renderClosedDraft(...bodies: string[]) {
+  for (const [index, body] of bodies.entries())
+    localStore.addDraftComment(REF, {
+      headSha: "one",
+      anchor: { path: "src/api.ts", side: "head", line: index + 1 },
+      body,
+      lineText: "B",
+    });
+  sync({ state: "merged", closedAt: Date.now() });
+  await renderRoutes({
+    shell: Shell,
+    path: `/deck/${itemId}`,
+    routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+  });
+}
+
+it("names each closed pull request comment before posting it, and Retry posts only the rest, by the same names", async () => {
+  // The second post's answer is lost after the code host took it.
+  vi.mocked(api.postPullRequestComment)
+    .mockResolvedValueOnce({ commentId: "c1" })
+    .mockRejectedValueOnce(new Error("The connection dropped."));
+  await renderClosedDraft("One.", "Two.", "Three.");
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Post as comments · 3" }),
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "The connection dropped.",
+  );
+  const calls = () =>
+    vi.mocked(api.postPullRequestComment).mock.calls.map((call) => call[2]);
+  const failed = calls()[1]!;
+  // Its name is kept with the comment, for a retry after a restart too.
+  expect(
+    draftComments()?.find((comment) => comment.body === "Two.")?.submission?.id,
+  ).toBe(failed.submissionId);
+  expect(draftComments()?.map((comment) => comment.body)).toEqual([
+    "Two.",
+    "Three.",
+  ]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(draftComments() ?? []).toEqual([]));
+  const [, , retry, third] = calls();
+  expect(retry).toMatchObject({
+    body: "Two.",
+    submissionId: failed.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+  expect(third).toMatchObject({ body: "Three." });
+  expect(third!.submissionId).not.toBe(failed.submissionId);
+});
+
+it("asks before posting a closed pull request comment again when the code host can't tell whether it has it", async () => {
+  vi.mocked(api.postPullRequestComment)
+    .mockRejectedValueOnce(new Error("The connection dropped."))
+    .mockResolvedValueOnce({ uncertain: true });
+  await renderClosedDraft("One.");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Post as comments · 1" }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "This comment may already be on GitHub: something you posted since may be it. Check the pull request, then post again if it's not there.",
+  );
+  expect(draftComments()).toHaveLength(1);
+  const [first] = vi
+    .mocked(api.postPullRequestComment)
+    .mock.calls.map((call) => call[2]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Post again" }));
+  await waitFor(() => expect(draftComments() ?? []).toEqual([]));
+  const again = vi.mocked(api.postPullRequestComment).mock.calls[2]![2];
+  expect(again.submissionId).not.toBe(first!.submissionId);
+  expect(again).not.toHaveProperty("firstTriedAt");
+});
+
+it("asks before submitting a review again when the code host can't tell whether it has it", async () => {
+  vi.mocked(api.submitPullRequestReview)
+    .mockRejectedValueOnce(new Error("The connection dropped."))
+    .mockResolvedValueOnce({ uncertain: true });
+  await renderReviewPage();
+  press("r");
+  press("y");
+  const dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+
+  await waitFor(() =>
+    expect(within(dialog).getByRole("alert").textContent).toBe(
+      "This review may already be on GitHub: something you posted since may be it. Check the pull request, then post again if it's not there. Your draft review is kept.",
+    ),
+  );
+  const calls = () =>
+    vi.mocked(api.submitPullRequestReview).mock.calls.map((call) => call[2]);
+  expect(calls()[1]).toMatchObject({
+    submissionId: calls()[0]!.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Post again" }));
+  await waitFor(() =>
+    expect(localStore.snapshot().deckDraftReviews).toEqual([]),
+  );
+  expect(calls()[2]!.submissionId).not.toBe(calls()[0]!.submissionId);
+  expect(calls()[2]).not.toHaveProperty("firstTriedAt");
 });
 
 it("discards a closed pull request's draft after asking", async () => {

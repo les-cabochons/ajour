@@ -11,6 +11,7 @@ import {
   lineTextOf,
   normalizeDraftReviews,
   placeDrafts,
+  prepareCommentPost,
   prepareReviewSubmission,
   refreshDraftReview,
   removeDraftComment,
@@ -424,7 +425,7 @@ describe("a review's submission", () => {
   it("names the request, and keeps the name with the draft before it's sent", () => {
     const { reviews, comment } = withComment([], 2);
     const first = press(reviews);
-    const id = first.request.submissionId;
+    const id = first.request!.submissionId;
     expect(id).toMatch(/^[\w-]+$/);
     expect(draftReviewOf(first.reviews, REF)?.submission?.id).toBe(id);
     expect(first.sent).toEqual([comment!.id]);
@@ -440,7 +441,7 @@ describe("a review's submission", () => {
     const draft = draftReviewOf(first.reviews, REF);
     expect(draft).toMatchObject({ headSha: "head-1", comments: [] });
     expect(press(first.reviews).request.submissionId).toBe(
-      first.request.submissionId,
+      first.request!.submissionId,
     );
     expect(completeReviewSubmission(first.reviews, REF, first.sent)).toEqual(
       [],
@@ -450,7 +451,7 @@ describe("a review's submission", () => {
   it("is a new submission once what it sends changes", () => {
     const { reviews } = withComment([], 2);
     const first = press(reviews);
-    const id = first.request.submissionId;
+    const id = first.request!.submissionId;
     expect(press(first.reviews, "comment").request.submissionId).not.toBe(id);
     expect(
       press(first.reviews, "approve", "Ship it now.").request.submissionId,
@@ -479,7 +480,7 @@ describe("a review's submission", () => {
         { headSha: "head-2", verdict: "approve", body: "Ship it." },
         options(),
       ).request.submissionId,
-    ).toBe(first.request.submissionId);
+    ).toBe(first.request!.submissionId);
   });
 
   it("once the code host took it, clears the comments it sent and its name", () => {
@@ -500,5 +501,95 @@ describe("a review's submission", () => {
       changed.comment!.id,
     ]);
     expect(after?.submission).toBeUndefined();
+  });
+});
+
+describe("a retry of a review", () => {
+  const press = (
+    reviews: readonly DeckDraftReview[],
+    now: number,
+    again = false,
+  ) =>
+    prepareReviewSubmission(
+      reviews,
+      REF,
+      { headSha: "head-1", verdict: "approve", body: "Ship it.", again },
+      options(now),
+    );
+
+  it("says when the first try was sent, so the plugin looks back to then", () => {
+    const first = press(withComment([], 2).reviews, 5_000);
+    expect(first.request.firstTriedAt).toBeUndefined();
+    const stored = normalizeDraftReviews(
+      JSON.parse(JSON.stringify(first.reviews)),
+    );
+    const retry = press(stored, 9_000);
+    expect(retry.request).toMatchObject({
+      submissionId: first.request!.submissionId,
+      firstTriedAt: 5_000,
+    });
+  });
+
+  it("posts again as a new submission when the user chooses to", () => {
+    const first = press(withComment([], 2).reviews, 5_000);
+    const again = press(first.reviews, 9_000, true);
+    expect(again.request!.submissionId).not.toBe(first.request!.submissionId);
+    expect(again.request.firstTriedAt).toBeUndefined();
+    expect(press(again.reviews, 12_000).request.firstTriedAt).toBe(9_000);
+  });
+});
+
+describe("posting a closed pull request's comments", () => {
+  const post = (
+    reviews: readonly DeckDraftReview[],
+    commentId: string,
+    now: number,
+    again = false,
+  ) => prepareCommentPost(reviews, REF, commentId, { again }, options(now));
+
+  it("names each comment's post and keeps the name with it before it's sent", () => {
+    const { reviews, comment } = withComment([], 2, "Rename this.");
+    const first = post(reviews, comment!.id, 5_000);
+    expect(first.request).toEqual({
+      repository: "acme/api",
+      number: 482,
+      body: "Rename this.",
+      anchor: { path: "src/api.ts", side: "head", line: 2, headSha: "head-1" },
+      submissionId: expect.stringMatching(/^[\w-]+$/),
+    });
+    const stored = normalizeDraftReviews(
+      JSON.parse(JSON.stringify(first.reviews)),
+    );
+    // Retry, after a restart too: the same name, and when it was first tried.
+    expect(post(stored, comment!.id, 9_000).request).toMatchObject({
+      submissionId: first.request!.submissionId,
+      firstTriedAt: 5_000,
+    });
+  });
+
+  it("gives each comment a name of its own", () => {
+    const one = withComment([], 2, "One.");
+    const two = withComment(one.reviews, 3, "Two.");
+    const first = post(two.reviews, one.comment!.id, 5_000);
+    const second = post(first.reviews, two.comment!.id, 5_000);
+    expect(second.request!.submissionId).not.toBe(first.request!.submissionId);
+  });
+
+  it("is a new post once the comment's words change, or when the user posts again", () => {
+    const { reviews, comment } = withComment([], 2);
+    const first = post(reviews, comment!.id, 5_000);
+    const edited = editDraftComment(
+      first.reviews,
+      REF,
+      comment!.id,
+      "Rename it.",
+      6_000,
+    );
+    expect(post(edited, comment!.id, 7_000).request).not.toHaveProperty(
+      "firstTriedAt",
+    );
+    const again = post(first.reviews, comment!.id, 7_000, true);
+    expect(again.request!.submissionId).not.toBe(first.request!.submissionId);
+    expect(again.request).not.toHaveProperty("firstTriedAt");
   });
 });

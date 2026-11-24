@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   CodeHostDiffSide,
   CodeHostLineAnchor,
+  CodeHostPostCommentRequest,
   CodeHostSubmitReviewRequest,
 } from "@ajour/shared";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
@@ -22,7 +23,13 @@ import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
  * before anything is sent, so Retry, after a restart too, sends the same
  * name, and the plugin finds what an earlier try left on the code host
  * instead of posting it twice. Changing what the review sends makes it a
- * new submission; the code host taking it clears the name.
+ * new submission; the code host taking it clears the name. A retry says
+ * when the first try was sent, so the plugin looks back to then. When the
+ * plugin can't tell whether an earlier try reached the code host, the user
+ * chooses to post again, as a new submission.
+ *
+ * A closed pull request's comments post one at a time, each named the same
+ * way and kept with its comment before it's sent.
  */
 
 /** A pull request of a code host connection, as a draft review names it. */
@@ -50,6 +57,8 @@ export interface DeckDraftComment {
   updatedAt: number;
   /** A push changed or removed the line: the comment isn't sent on it. */
   outdated?: true;
+  /** Its post on its own, from a closed pull request, until the code host confirms it. */
+  submission?: DeckReviewSubmission;
 }
 
 /** A Finish review the code host hasn't confirmed yet: tried, and failed or still sending. */
@@ -58,6 +67,32 @@ export interface DeckReviewSubmission {
   id: string;
   /** What it sends, its verdict, summary and comments: anything else is a new submission. */
   key: string;
+  /** When its first try was sent, in milliseconds since the epoch. */
+  triedAt: number;
+}
+
+/**
+ * The submission for what `key` names: the stored one when it sends the
+ * same and the user didn't ask to post again, or a new one tried `now`.
+ * `firstTriedAt` is set on a retry.
+ */
+export function nameSubmission(
+  stored: DeckReviewSubmission | undefined,
+  key: string,
+  again: boolean,
+  { now, createId }: { now: number; createId: () => string },
+) {
+  const submission =
+    !again && stored?.key === key
+      ? stored
+      : { id: createId(), key, triedAt: now };
+  return {
+    submission,
+    fields: {
+      submissionId: submission.id,
+      ...(submission === stored ? { firstTriedAt: submission.triedAt } : {}),
+    },
+  };
 }
 
 export interface DeckDraftReview extends DeckReviewRef {
@@ -352,6 +387,8 @@ export function prepareReviewSubmission(
     headSha: string;
     verdict: CodeHostSubmitReviewRequest["verdict"];
     body: string;
+    /** The user chose to post again after an uncertain try: a new submission. */
+    again?: boolean;
   },
   { now, createId }: { now: number; createId: () => string },
 ): {
@@ -369,13 +406,55 @@ export function prepareReviewSubmission(
     updatedAt: now,
   };
   const { request, sent } = finishReviewRequest(draft, input);
-  const key = submissionKey(request, draft, sent);
-  const submission =
-    draft.submission?.key === key ? draft.submission : { id: createId(), key };
+  const { submission, fields } = nameSubmission(
+    draft.submission,
+    submissionKey(request, draft, sent),
+    input.again ?? false,
+    { now, createId },
+  );
   return {
     reviews: withDraft(reviews, ref, { ...draft, submission }),
-    request: { ...request, submissionId: submission.id },
+    request: { ...request, ...fields },
     sent,
+  };
+}
+
+/**
+ * A closed pull request's comment as a post of its own, named: its stored
+ * name when its words are what the last try sent, or a new one. The draft
+ * keeps it, so the caller stores `reviews` before it sends `request`, and
+ * `completeDraftComments` takes the comment out once the code host has it.
+ */
+export function prepareCommentPost(
+  reviews: readonly DeckDraftReview[],
+  ref: DeckReviewRef,
+  commentId: string,
+  { again = false }: { again?: boolean },
+  { now, createId }: { now: number; createId: () => string },
+): { reviews: DeckDraftReview[]; request?: CodeHostPostCommentRequest } {
+  const draft = draftReviewOf(reviews, ref);
+  const comment = draft?.comments.find(({ id }) => id === commentId);
+  if (!draft || !comment) return { reviews: [...reviews] };
+  const { submission, fields } = nameSubmission(
+    comment.submission,
+    JSON.stringify([comment.body, comment.updatedAt]),
+    again,
+    { now, createId },
+  );
+  return {
+    reviews: withDraft(reviews, ref, {
+      ...draft,
+      comments: draft.comments.map((each) =>
+        each.id === commentId ? { ...comment, submission } : each,
+      ),
+    }),
+    request: {
+      repository: draft.repository,
+      number: draft.number,
+      body: comment.body,
+      anchor: { ...lineAnchor(comment), headSha: draft.headSha },
+      ...fields,
+    },
   };
 }
 
@@ -424,6 +503,15 @@ export function completeDraftComments(
   return withDraft(reviews, ref, { ...draft, comments });
 }
 
+const storedSubmissionSchema = z
+  .object({
+    id: z.string().regex(/^[\w-]{1,100}$/),
+    key: z.string(),
+    // Absent in drafts named before retries said when they began: look back fully.
+    triedAt: z.number().int().nonnegative().default(0),
+  })
+  .optional();
+
 const storedCommentSchema = z.object({
   id: z.string().min(1),
   path: z.string().min(1),
@@ -435,6 +523,7 @@ const storedCommentSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   outdated: z.literal(true).optional(),
+  submission: storedSubmissionSchema,
 });
 
 const storedDraftSchema = z
@@ -445,9 +534,7 @@ const storedDraftSchema = z
     number: z.number().int().positive(),
     headSha: z.string().min(1),
     comments: z.array(storedCommentSchema),
-    submission: z
-      .object({ id: z.string().regex(/^[\w-]{1,100}$/), key: z.string() })
-      .optional(),
+    submission: storedSubmissionSchema,
     updatedAt: z.number().int().nonnegative(),
   })
   .refine((draft) => draft.comments.length > 0 || draft.submission);

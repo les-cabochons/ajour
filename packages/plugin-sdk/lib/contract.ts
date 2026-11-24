@@ -1052,8 +1052,9 @@ export type CodeHostOperations = {
       headSha: string;
       body?: string | undefined;
       submissionId?: string | undefined;
+      firstTriedAt?: number | undefined;
     };
-    result: { reviewId: string };
+    result: { uncertain: true } | { reviewId: string };
   };
   readonly postComment: {
     request: {
@@ -1069,8 +1070,10 @@ export type CodeHostOperations = {
             startLine?: number | undefined;
           }
         | undefined;
+      submissionId?: string | undefined;
+      firstTriedAt?: number | undefined;
     };
-    result: { commentId: string };
+    result: { uncertain: true } | { commentId: string };
   };
   readonly replyToThread: {
     request: {

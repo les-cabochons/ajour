@@ -751,6 +751,8 @@ export const rendererEvents = {
     deck: { comment_count: operational<number>() },
   }),
   "deck.draft_review_discard": command({}),
+  /** A closed pull request's comment named its post, a retry with the last try's name. */
+  "deck.comment_submission_prepare": command({}),
   /** Finish review named its request, a retry with the last try's name. */
   "deck.review_submission_prepare": command({
     deck: { comment_count: operational<number>() },

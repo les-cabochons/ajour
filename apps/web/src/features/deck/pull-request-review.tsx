@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionHeading } from "@/components/section-heading";
 import {
   draftReviewOf,
   lineAnchor,
   lineTextOf,
+  nameSubmission,
   placeDrafts,
   type DeckDraftComment,
   type DeckReviewRef,
+  type DeckReviewSubmission,
 } from "@/domain/deck/draft-review";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
 import { placeThreads } from "@/domain/deck/review-threads";
@@ -16,7 +18,12 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { ClosedDraftReview, FinishReview, writeFailure } from "./finish-review";
+import {
+  ClosedDraftReview,
+  FinishReview,
+  mayAlreadyBeThere,
+  writeFailure,
+} from "./finish-review";
 import { PullRequestChanges } from "./pull-request-changes";
 import {
   DescriptionDrawer,
@@ -142,6 +149,12 @@ export function PullRequestReview({
     [shown],
   );
   const headSha = shown?.headSha;
+  /**
+   * Comment now's last try, named: Retry with the same words and lines sends
+   * the same name. Like the composer's words, it lives only while the page
+   * is open. Undefined after an uncertain answer, so Retry posts anew.
+   */
+  const commentNowTry = useRef<DeckReviewSubmission | undefined>(undefined);
   const actions = useMemo(
     (): ReviewNoteActions => ({
       onHover: setHovered,
@@ -160,16 +173,33 @@ export function PullRequestReview({
       },
       commentNow: async (target, body) => {
         if (!headSha) return;
+        const anchor = { ...lineAnchor(target), headSha };
+        const { submission, fields } = nameSubmission(
+          commentNowTry.current,
+          JSON.stringify([anchor, body]),
+          false,
+          {
+            now: Date.now(),
+            createId: () => `comment_submission_${crypto.randomUUID()}`,
+          },
+        );
+        commentNowTry.current = submission;
+        let result;
         try {
-          await postPullRequestComment(pluginId, connectionId, {
+          result = await postPullRequestComment(pluginId, connectionId, {
             repository,
             number,
             body,
-            anchor: { ...lineAnchor(target), headSha },
+            anchor,
+            ...fields,
           });
         } catch (error) {
           throw new Error(writeFailure(error, pullRequest));
         }
+        // Taken, or unsettled: the next try is a new post.
+        commentNowTry.current = undefined;
+        if ("uncertain" in result)
+          throw new Error(mayAlreadyBeThere("comment", pullRequest));
         setComposer(undefined);
         retryConversation();
       },

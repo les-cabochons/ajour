@@ -23,7 +23,6 @@ import {
 import { showToast } from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  lineAnchor,
   reviewVerdicts,
   type DeckDraftReview,
   type DeckReviewRef,
@@ -44,7 +43,9 @@ import { useShortcut } from "@/lib/shortcut-handlers";
  * then Y approves with no dialog. The review goes to the code host at
  * once, named by a submission id the draft keeps. A failure keeps the
  * draft review and shows the dialog with the reason and Retry, which sends
- * the same name; nothing is queued.
+ * the same name; nothing is queued. When the code host can't tell whether
+ * an earlier try reached it, the dialog says so and the user chooses to
+ * post again, as a new submission.
  */
 
 type Verdict = CodeHostSubmitReviewRequest["verdict"];
@@ -54,6 +55,18 @@ export function writeFailure(error: unknown, pullRequest: LocalPullRequest) {
   if (isAccessOffError(error))
     return `This ${pullRequest.pluginName} connection can't review pull requests. Turn on Review pull requests for ${pullRequest.connectionLabel} in Settings › Plugins, then retry.`;
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A retry the code host couldn't settle: something the user posted since the
+ * first try may be it, but nothing there names it. The user checks, and
+ * chooses whether to post again.
+ */
+export function mayAlreadyBeThere(
+  what: "review" | "comment",
+  pullRequest: LocalPullRequest,
+) {
+  return `This ${what} may already be on ${pullRequest.pluginName}: something you posted since may be it. Check the pull request, then post again if it's not there.`;
 }
 
 /** The dialog's line on what goes with the review, and what stays in the draft. */
@@ -94,6 +107,8 @@ export function FinishReview({
   const [summary, setSummary] = useState("");
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
+  /** The last try couldn't be settled: submitting again posts it anew. */
+  const [uncertain, setUncertain] = useState(false);
   const summaryId = useId();
   const verdicts = reviewVerdicts(pullRequest.pluginId);
   const count = draft?.comments.length ?? 0;
@@ -106,10 +121,11 @@ export function FinishReview({
     setFailure(undefined);
     setOpen(true);
   }
-  async function submit(next: Verdict, body: string) {
+  async function submit(next: Verdict, body: string, again = false) {
     if (sending || !headSha) return;
     setSending(true);
     setFailure(undefined);
+    setUncertain(false);
     const ref: DeckReviewRef = {
       pluginId: pullRequest.pluginId,
       connectionId: pullRequest.connectionId,
@@ -122,13 +138,21 @@ export function FinishReview({
       headSha: draft?.headSha ?? headSha,
       verdict: next,
       body,
+      again,
     });
     try {
-      await submitPullRequestReview(
+      const result = await submitPullRequestReview(
         pullRequest.pluginId,
         pullRequest.connectionId,
         request,
       );
+      if ("uncertain" in result) {
+        setVerdict(next);
+        setFailure(mayAlreadyBeThere("review", pullRequest));
+        setUncertain(true);
+        setOpen(true);
+        return;
+      }
       localStore.completeReviewSubmission(ref, sent);
       setOpen(false);
       setSummary("");
@@ -171,7 +195,7 @@ export function FinishReview({
             className="contents"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!empty) void submit(verdict, summary);
+              if (!empty) void submit(verdict, summary, uncertain);
             }}
           >
             <DialogHeader>
@@ -222,7 +246,13 @@ export function FinishReview({
                 Cancel
               </Button>
               <Button type="submit" disabled={empty || sending || !ready}>
-                {sending ? "Sending…" : failure ? "Retry" : "Submit review"}
+                {sending
+                  ? "Sending…"
+                  : uncertain
+                    ? "Post again"
+                    : failure
+                      ? "Retry"
+                      : "Submit review"}
               </Button>
             </DialogFooter>
           </form>
@@ -236,6 +266,8 @@ export function FinishReview({
  * A closed pull request's draft review, kept: **Post as comments** posts
  * each current comment on its line, one at a time, taking each out of the
  * draft once posted, and **Discard** deletes the draft after a confirmation.
+ * Each post is named and the name kept with its comment before it's sent,
+ * so Retry, after a restart too, posts none of them twice.
  */
 export function ClosedDraftReview({
   pullRequest,
@@ -248,33 +280,43 @@ export function ClosedDraftReview({
 }) {
   const [posting, setPosting] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
+  /** The comment whose last try couldn't be settled: Post again posts it anew. */
+  const [uncertain, setUncertain] = useState<string | undefined>();
   const [confirming, setConfirming] = useState(false);
   const ref: DeckReviewRef = draft;
   const current = draft.comments.filter((comment) => !comment.outdated);
   const state = pullRequest.facts.state === "merged" ? "merged" : "closed";
 
-  async function post() {
+  async function post(again?: string) {
     if (posting) return;
     setPosting(true);
     setFailure(undefined);
+    setUncertain(undefined);
     try {
       for (const comment of current) {
-        await postPullRequestComment(
+        // Named and stored before it's sent.
+        const request = localStore.prepareCommentPost(ref, comment.id, {
+          again: comment.id === again,
+        });
+        if (!request) continue;
+        const result = await postPullRequestComment(
           pullRequest.pluginId,
           pullRequest.connectionId,
-          {
-            repository: draft.repository,
-            number: draft.number,
-            body: comment.body,
-            anchor: { ...lineAnchor(comment), headSha: draft.headSha },
-          },
+          request,
         );
+        if ("uncertain" in result) {
+          setFailure(mayAlreadyBeThere("comment", pullRequest));
+          setUncertain(comment.id);
+          return;
+        }
         // Posted ones leave at once, so a retry sends only the rest.
         localStore.completeDraftComments(ref, [comment.id]);
       }
       onPosted();
     } catch (error) {
-      setFailure(writeFailure(error, pullRequest));
+      setFailure(
+        `Couldn't post the comments: ${writeFailure(error, pullRequest)}`,
+      );
     } finally {
       setPosting(false);
     }
@@ -288,17 +330,23 @@ export function ClosedDraftReview({
       </p>
       {failure ? (
         <p role="alert" className="deck-composer-error">
-          Couldn't post the comments: {failure}
+          {failure}
         </p>
       ) : null}
       <div className="deck-note-actions">
         {current.length ? (
-          <Button size="sm" disabled={posting} onClick={() => void post()}>
+          <Button
+            size="sm"
+            disabled={posting}
+            onClick={() => void post(uncertain)}
+          >
             {posting
               ? "Posting…"
-              : failure
-                ? "Retry"
-                : `Post as comments · ${current.length}`}
+              : uncertain
+                ? "Post again"
+                : failure
+                  ? "Retry"
+                  : `Post as comments · ${current.length}`}
           </Button>
         ) : null}
         <Button

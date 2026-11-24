@@ -184,7 +184,7 @@ import {
 } from "@ajour/shared";
 import {
   codeHostChecksResultSchema,
-  codeHostCommentResultSchema,
+  codeHostPostCommentResultSchema,
   codeHostConversationResultSchema,
   codeHostSubmitReviewResultSchema,
   type CodeHostPostCommentRequest,
@@ -431,7 +431,7 @@ export function postPullRequestComment(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(comment),
     },
-    codeHostCommentResultSchema,
+    codeHostPostCommentResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
