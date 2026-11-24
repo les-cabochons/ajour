@@ -853,6 +853,7 @@ export type CodeHostOperations = {
         checks: "none" | "pending" | "success" | "failure";
         mergeability: "unknown" | "mergeable" | "conflicting";
         closedAt?: number | undefined;
+        baseRef?: string | undefined;
         lastPushActor?:
           | {
               login: string;
@@ -1004,6 +1005,24 @@ export type CodeHostOperations = {
         name: string;
         state: "pending" | "success" | "failure" | "skipped";
         url?: string | undefined;
+      }[];
+    };
+  };
+  readonly getPullRequestVersions: {
+    request: { number: number; repository: string };
+    result: {
+      versions: {
+        number: number;
+        pushedAt: number;
+        headSha: string;
+        commits: {
+          createdAt: number;
+          sha: string;
+          headline: string;
+          authorName: string;
+        }[];
+        baseSha?: string | undefined;
+        forced?: boolean | undefined;
       }[];
     };
   };

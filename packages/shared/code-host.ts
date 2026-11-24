@@ -148,6 +148,11 @@ export const codeHostPullRequestFactsSchema =
   codeHostPullRequestSummarySchema.extend({
     viewerIsAuthor: z.boolean(),
     headSha: shaSchema,
+    /**
+     * The branch the pull request merges into, such as `main`. Optional,
+     * so pull requests stored before it was added still read.
+     */
+    baseRef: z.string().trim().min(1).max(400).optional(),
     lastPushedAt: timeSchema,
     /** Missing attribution must not trigger a return for a possibly own push. */
     lastPushActor: codeHostUserSchema.optional(),
@@ -348,6 +353,58 @@ export const codeHostChecksResultSchema = z.object({
 });
 export type CodeHostChecksResult = z.infer<typeof codeHostChecksResultSchema>;
 
+/** A commit a version brought, as its timeline or iteration lists it. */
+export const codeHostVersionCommitSchema = z.object({
+  sha: shaSchema,
+  headline: z.string().max(1_000),
+  authorName: z.string().max(240),
+  createdAt: timeSchema,
+});
+export type CodeHostVersionCommit = z.infer<typeof codeHostVersionCommitSchema>;
+
+/**
+ * One version of a pull request: a push on GitHub, an iteration on Azure
+ * DevOps. Deck's versions bar lists them, and compares the one the user
+ * reviewed with the latest.
+ */
+export const codeHostVersionSchema = z.object({
+  /** From 1, in push order: v1, v2… An iteration keeps its own number. */
+  number: z.number().int().positive(),
+  /** The pull request's head once the version was pushed. */
+  headSha: shaSchema,
+  /**
+   * Where this head met the target branch, the base its diff is read from.
+   * Absent when the code host doesn't say: Deck then uses the base of the
+   * pull request's head.
+   */
+  baseSha: shaSchema.optional(),
+  pushedAt: timeSchema,
+  /** The push rewrote the branch: a force push, or a rebase. */
+  forced: z.boolean().optional(),
+  /**
+   * The commits the version brought, oldest first. A rewrite brings the
+   * commits of its new head that no earlier version had.
+   */
+  commits: z.array(codeHostVersionCommitSchema).max(250),
+});
+export type CodeHostVersion = z.infer<typeof codeHostVersionSchema>;
+
+export const codeHostVersionsRequestSchema = codeHostPullRequestRefSchema;
+export type CodeHostVersionsRequest = z.infer<
+  typeof codeHostVersionsRequestSchema
+>;
+
+/**
+ * The pull request's versions, oldest first, numbered in that order. The
+ * last is the pull request's head.
+ */
+export const codeHostVersionsResultSchema = z.object({
+  versions: z.array(codeHostVersionSchema).max(500),
+});
+export type CodeHostVersionsResult = z.infer<
+  typeof codeHostVersionsResultSchema
+>;
+
 export const codeHostBrowseRequestSchema = z.object({
   repository: repositorySchema.optional(),
   state: z.enum(["open", "merged", "closed", "all"]).default("all"),
@@ -489,6 +546,10 @@ export const codeHostOperations = {
   getChecks: {
     request: codeHostChecksRequestSchema,
     result: codeHostChecksResultSchema,
+  },
+  getPullRequestVersions: {
+    request: codeHostVersionsRequestSchema,
+    result: codeHostVersionsResultSchema,
   },
   browsePullRequests: {
     request: codeHostBrowseRequestSchema,

@@ -6,6 +6,7 @@ import {
   codeHostOperations,
   codeHostSyncResultSchema,
   codeHostUpdatePullRequestRequestSchema,
+  codeHostVersionsResultSchema,
 } from "../code-host";
 
 const user = { login: "octocat", isBot: false };
@@ -141,6 +142,85 @@ describe("code host contract", () => {
         checks: [{ name: "build", state: "none" }],
       }),
     ).toThrow();
+  });
+
+  it("reads each version with its head, base, time and commits, oldest first", () => {
+    const commit = {
+      sha: "c1",
+      headline: "Add the route",
+      authorName: "Samir",
+      createdAt: 1_700_000_000_000,
+    };
+    const result = codeHostVersionsResultSchema.parse({
+      versions: [
+        {
+          number: 1,
+          headSha: "h1",
+          baseSha: "b1",
+          pushedAt: 1_700_000_000_000,
+          commits: [commit],
+        },
+        {
+          number: 2,
+          headSha: "h2",
+          pushedAt: 1_700_000_100_000,
+          forced: true,
+          commits: [],
+        },
+      ],
+    });
+    expect(result.versions.map((version) => version.headSha)).toEqual([
+      "h1",
+      "h2",
+    ]);
+    expect(codeHostOperations.getPullRequestVersions.result).toBe(
+      codeHostVersionsResultSchema,
+    );
+    expect(() =>
+      codeHostVersionsResultSchema.parse({
+        versions: [
+          { number: 0, headSha: "h1", pushedAt: 1, commits: [] },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      codeHostVersionsResultSchema.parse({
+        versions: [{ number: 1, pushedAt: 1, commits: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it("keeps the base branch's name on the facts, optional so stored pull requests still read", () => {
+    const facts = codeHostSyncResultSchema.parse({
+      viewer: user,
+      pullRequests: [
+        {
+          id: "PR_1",
+          repository: "acme/api",
+          number: 42,
+          url: "https://github.com/acme/api/pull/42",
+          title: "Add rate limits",
+          author: user,
+          state: "open",
+          draft: false,
+          createdAt: 1,
+          updatedAt: 1,
+          viewerIsAuthor: false,
+          headSha: "abc123",
+          lastPushedAt: 1,
+          reviewRequests: [],
+          reviews: [],
+          comments: [],
+          checks: "none",
+          mergeability: "unknown",
+        },
+      ],
+    }).pullRequests[0]!;
+    expect(facts.baseRef).toBeUndefined();
+    expect(
+      codeHostPullRequestFactsSchema.parse({ ...facts, baseRef: "main" })
+        .baseRef,
+    ).toBe("main");
   });
 
   it("names every operation in the operation schema", () => {

@@ -3040,6 +3040,15 @@ export const catalog = defineCatalog({
         pull_request: { check_count: operational<number>() },
       },
     },
+    "pull_request.load_versions": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { version_count: operational<number>() },
+      },
+    },
     "pull_request.browse": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,

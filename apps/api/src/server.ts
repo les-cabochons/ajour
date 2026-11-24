@@ -1008,7 +1008,7 @@ function codeHostRequestFields(
   return {};
 }
 
-/** A code host result's catalog fields: how many pull requests, files, threads or checks. */
+/** A code host result's catalog fields: how many pull requests, files, threads, checks or versions. */
 function codeHostResultFields(
   result: CodeHostOperationResult<CodeHostOperation>,
 ): FieldsOf<
@@ -1017,6 +1017,7 @@ function codeHostResultFields(
   | "pull_request.load"
   | "pull_request.load_conversation"
   | "pull_request.load_checks"
+  | "pull_request.load_versions"
 > {
   if ("pullRequests" in result && "viewer" in result) {
     return { pull_request: { received_count: result.pullRequests.length } };
@@ -1029,6 +1030,9 @@ function codeHostResultFields(
   }
   if ("checks" in result && Array.isArray(result.checks)) {
     return { pull_request: { check_count: result.checks.length } };
+  }
+  if ("versions" in result) {
+    return { pull_request: { version_count: result.versions.length } };
   }
   return {};
 }
