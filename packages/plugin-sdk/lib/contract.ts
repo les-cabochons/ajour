@@ -874,6 +874,18 @@ export type CodeHostOperations = {
               includesViewer: boolean;
             }[]
           | undefined;
+        approvals?:
+          | {
+              reviewer: {
+                login: string;
+                isBot: boolean;
+                displayName?: string | undefined;
+                avatarUrl?: string | undefined;
+              };
+              vote: "none" | "rejected" | "approved" | "changes_requested";
+              required?: boolean | undefined;
+            }[]
+          | undefined;
       }[];
       viewer: {
         login: string;
@@ -983,6 +995,16 @@ export type CodeHostOperations = {
       )[];
       viewedPaths: string[];
       mergeMethods: ("merge" | "squash" | "rebase")[];
+    };
+  };
+  readonly getChecks: {
+    request: { number: number; repository: string };
+    result: {
+      checks: {
+        name: string;
+        state: "pending" | "success" | "failure" | "skipped";
+        url?: string | undefined;
+      }[];
     };
   };
   readonly browsePullRequests: {

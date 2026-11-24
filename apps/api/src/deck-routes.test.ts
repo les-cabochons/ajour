@@ -833,6 +833,67 @@ describe("opening a pull request in Deck", () => {
   });
 });
 
+describe("the checks of a pull request in Deck", () => {
+  const withChecks = `${pluginSource}
+export async function getChecks(connection, request) {
+  return {
+    checks: [
+      { name: "build", state: "success", url: "https://ci.example.test/build" },
+      { name: "test", state: "pending" },
+    ],
+  };
+}
+`;
+  const readChecks = (baseUrl: string, connectionId: string) =>
+    apiRequest(
+      baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/getChecks`,
+      { repository: "acme/api", number: 7 },
+    );
+
+  it("reads each check's name, state and url through the code host plugin", async () => {
+    const { api, connectionId } = await startDeck(withChecks);
+
+    await expect(readChecks(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 200,
+      body: {
+        checks: [
+          {
+            name: "build",
+            state: "success",
+            url: "https://ci.example.test/build",
+          },
+          { name: "test", state: "pending" },
+        ],
+      },
+    });
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_checks" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", pull_request: { check_count: 2 } });
+  });
+
+  it("says the plugin doesn't offer them when it has no getChecks", async () => {
+    const { api, connectionId } = await startDeck();
+
+    await expect(readChecks(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 404,
+      body: {
+        error: "GitHub doesn't offer this yet.",
+        reason: "not_supported",
+      },
+    });
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_checks" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "not_supported" });
+  });
+});
+
 describe("the guide of a pull request opened in Deck", () => {
   it("is built by Review Deck's pipeline from the same diff, its concerns in reading order", async () => {
     const { api, open } = await startDeck();

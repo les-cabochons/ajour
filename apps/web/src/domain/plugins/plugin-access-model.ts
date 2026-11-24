@@ -130,6 +130,7 @@ const OPERATION_LABELS: Record<string, string> = {
   getPullRequestContent: "read pull request changes",
   getFileContent: "read files",
   getPullRequestConversation: "read pull request conversations",
+  getChecks: "read pull request checks",
   browsePullRequests: "browse pull requests",
   submitReview: "submit reviews",
   postComment: "comment on pull requests",

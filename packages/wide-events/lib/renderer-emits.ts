@@ -67,6 +67,8 @@ export const APP_API_CLIENT = {
   getDeckCacheStorage: "deck.storage_read",
   saveDeckCacheCap: "deck.storage_update",
   clearDeckCache: "deck.storage_clear",
+  readPullRequestConversation: "pull_request.load_conversation",
+  readPullRequestChecks: "pull_request.load_checks",
   askDeck: "deck.ask",
   grantDeckConsent: "deck.consent",
   getDeckConsents: "deck.consents",

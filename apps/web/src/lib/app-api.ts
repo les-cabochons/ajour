@@ -183,6 +183,8 @@ import {
   type CalendarListEventsResult,
 } from "@ajour/shared";
 import {
+  codeHostChecksResultSchema,
+  codeHostConversationResultSchema,
   codeHostSyncResultSchema,
   isCapabilityActive,
   type CodeHostSyncResult,
@@ -323,6 +325,58 @@ export function openDeckPullRequest(
       body: JSON.stringify(pullRequest),
     },
     deckOpenedPullRequestSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** A code host operation's address in the local API. */
+const codeHostPath = (
+  pluginId: string,
+  connectionId: string,
+  operation: string,
+) =>
+  `/api/code-hosts/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/${operation}`;
+
+/**
+ * A pull request's conversation for Deck's review page: its description,
+ * timeline and review threads. A plugin without the operation answers 404
+ * with the reason `not_supported`.
+ */
+export function readPullRequestConversation(
+  pluginId: string,
+  connectionId: string,
+  pullRequest: DeckOpenRequest,
+) {
+  return appApiRequest(
+    "readPullRequestConversation",
+    codeHostPath(pluginId, connectionId, "getPullRequestConversation"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pullRequest),
+    },
+    codeHostConversationResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** The checks on a pull request's head, for Deck's status line. */
+export function readPullRequestChecks(
+  pluginId: string,
+  connectionId: string,
+  pullRequest: DeckOpenRequest,
+) {
+  return appApiRequest(
+    "readPullRequestChecks",
+    codeHostPath(pluginId, connectionId, "getChecks"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pullRequest),
+    },
+    codeHostChecksResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
