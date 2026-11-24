@@ -154,6 +154,7 @@ import {
   deckConsentRevokeRequestSchema,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
+  deckSinceReviewRequestSchema,
   parseDeckPullRequestKey,
   type DeckCacheStorage,
   type DeckPullRequestSource,
@@ -173,6 +174,7 @@ import {
   createDeckService,
   DeckBuildReplaced,
   DeckConnectionRemoved,
+  DeckSinceReviewRefused,
   type DeckCodeHost,
 } from "./deck-service.ts";
 import {
@@ -1008,7 +1010,7 @@ function codeHostRequestFields(
   return {};
 }
 
-/** A code host result's catalog fields: how many pull requests, files, threads or checks. */
+/** A code host result's catalog fields: how many pull requests, files, threads, checks or versions. */
 function codeHostResultFields(
   result: CodeHostOperationResult<CodeHostOperation>,
 ): FieldsOf<
@@ -1017,6 +1019,7 @@ function codeHostResultFields(
   | "pull_request.load"
   | "pull_request.load_conversation"
   | "pull_request.load_checks"
+  | "pull_request.load_versions"
 > {
   if ("pullRequests" in result && "viewer" in result) {
     return { pull_request: { received_count: result.pullRequests.length } };
@@ -1029,6 +1032,9 @@ function codeHostResultFields(
   }
   if ("checks" in result && Array.isArray(result.checks)) {
     return { pull_request: { check_count: result.checks.length } };
+  }
+  if ("versions" in result) {
+    return { pull_request: { version_count: result.versions.length } };
   }
   return {};
 }
@@ -4772,6 +4778,51 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
     },
 
+    deckSinceReview: async (context) => {
+      const { response, unit } = context;
+      const deck = await deckRequest(
+        context,
+        (body) => deckSinceReviewRequestSchema.parse(body),
+        ["getPullRequestVersions"],
+      );
+      if (!deck) return;
+      try {
+        const compared = await deckService.sinceReview(
+          deck.source,
+          deck.ref,
+          deck.codeHost,
+        );
+        unit.set({
+          deck: {
+            hunk_count: compared.hunkCount,
+            changed_count: compared.result.changed.length,
+            cached: compared.cached,
+            file_read_count: compared.fileReadCount,
+            compared_count: compared.comparedCount,
+          },
+        });
+        writeJson(response, 200, compared.result);
+      } catch (error) {
+        if (error instanceof DeckSinceReviewRefused) {
+          unit.refuse(error.reason);
+          writeJson(response, 409, {
+            error: error.message,
+            reason: error.reason,
+          });
+          return;
+        }
+        if (error instanceof PluginExportMissing) {
+          unit.refuse("not_supported");
+          writeJson(response, 404, {
+            error: "This code host doesn't list a pull request's versions yet.",
+            reason: "not_supported",
+          });
+          return;
+        }
+        await deck.failed(error);
+      }
+    },
+
     deckAsk: async ({ request, response, params, unit }) => {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
@@ -5779,8 +5830,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       response,
       params,
       unit,
-    }: RouteContext<"deckOpen" | "deckPreload">,
+    }: RouteContext<"deckOpen" | "deckPreload" | "deckSinceReview">,
     parse: (body: unknown) => Ref,
+    /** The operations it calls beside the file list and the files. */
+    operations: string[] = [],
   ) {
     const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
     const { connectionId } = params;
@@ -5799,7 +5852,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     const { plugin, connection } = found;
     const body = await readJsonBody(request);
     const ref = readInput(() => parse(body));
-    for (const operation of ["getPullRequestContent", "getFileContent"]) {
+    for (const operation of [
+      "getPullRequestContent",
+      "getFileContent",
+      ...operations,
+    ]) {
       if (refuseAccessOff(response, unit, plugin, connection, operation)) {
         return undefined;
       }
