@@ -1145,6 +1145,20 @@ Decided in [Read a GitHub pull request's diff in Deck](https://github.com/les-ca
 - The diff is read when the page opens. A sync that finds new commits doesn't change it; opening the pull request again, or Retry, reads it again. The diff and guide of the pull request on screen are kept in memory until another one opens, so coming back to it at the same head reads no file again.
 - Guides are built one at a time, off the window. The guide of the pull request just opened is built before any preloaded one, and stops a preloaded one being built, which is built again after. The changes show once both the diff and the guide are ready. A guide that takes over two minutes, or fails, gives Files A–Z, and opening the pull request again builds it again.
 
+### More detail on a concern
+
+Decided in [More detail on a concern: the first ask](https://github.com/les-cabochons/ajour/issues/791), from [#642](https://github.com/les-cabochons/ajour/issues/642) and [#643](https://github.com/les-cabochons/ajour/issues/643).
+
+- A faint `more ›` ends each concern's rationale, in the tertiary text color, and turns the text color on hover, on focus and while its answer is open. It is one button per concern, named "More detail", and nothing is added per line. Files A–Z and the "Not in the guide" section have none.
+- `more ›` asks the concern's default question at once: what it changes, why, and what a reviewer should check. The answer goes under the rationale, in a block named "More detail" with a hairline on its left. While nothing came yet it says "Getting more detail…" in tertiary text, then the answer streams in as Markdown and ends with "From the code at a41c9e2", the first 7 characters of the head it is about.
+- **Ask something else…**, a field under the answer, asks a typed question in place of the default one, for the same concern. The question shows above its answer in italic secondary text.
+- An answer asked before, for the same concern, question and head, shows at once with no placeholder. The local API keeps answers in memory until Ajour quits; a stopped or failed answer isn't kept.
+- **Stop** shows while the answer is asked or streams. A stopped answer keeps what came and says "Stopped.". While a timesheet agent task runs, the block says "Waiting for the timesheet task to finish", with Stop. **Dismiss** closes the block; asking again shows the cached answer.
+- A failure says why, in the block, with **Try again**.
+- No answer, placeholder or footer names the agent. The agent is told not to name itself.
+- The first ask in a repository opens a dialog titled "Ajour asks once for billing-api" (the repository's own name). It names the agent and its version from Settings › Agents, and lists what leaves the computer for each question: the changed lines the question is about, any other hunks and changed files the agent reads, the review threads and their comments, and the typed question. **Allow** records the repository's consent and runs the ask. **Not now** sends nothing and closes the ask. The consent is for that agent: picking another agent in Settings › Agents asks again.
+- The agent reads the pull request through four tools bound to it and its head: `read_hunks`, `read_file` (a changed file at the base or the head), `read_threads` and `read_guide`. It sees none of the user's other data, and MCP doesn't need to be on (ADR 0021).
+
 ### On your plate
 
 - A pull request is active or settled, and an active one can be snoozed. Returned marks one that came back on its own and was not opened since. These mean the same as for backlog items.
@@ -1255,6 +1269,8 @@ Decided in [the time sync spec](https://github.com/les-cabochons/ajour/issues/68
 ## Settings
 
 When a CLI version probe is refused, Settings > Agents shows the selected CLI's plain-English refusal reason beside the Agent control.
+
+Settings > Agents > Questions about pull requests lists the repositories whose pull requests the user allowed Deck to send to an agent (#791): each row is the repository, with the agent and its version and the day it was allowed, and an outline **Revoke**. Revoke takes the consent back at once: the repository's next ask opens the consent dialog again, and its cached answers aren't shown. With none, it says "None yet. Deck asks the first time you ask about a repository's pull request."
 
 Settings > Agents > Agent instructions lists the global Codex, OpenCode, Claude Code,
 Gemini CLI and Copilot CLI instruction files. Each shows its resolved path and Missing file,

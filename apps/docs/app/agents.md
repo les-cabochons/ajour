@@ -77,6 +77,8 @@ In **Settings › Agents**, pick:
 
 A plugin's task settings are on its page in **Settings › Plugins**, once for all its tasks. One task runs at a time. Its session shows in the agent panel with **Stop**.
 
+The same agent answers your questions about a pull request in [Deck](/deck/#ask-for-more-detail). Those need no MCP: the agent reads only that pull request. **Questions about pull requests** lists the repositories you allowed it to read, with **Revoke**. A question waits while an agent task runs, and an agent task waits while an answer is written.
+
 ## Watch your agents
 
 While MCP is on, an indicator at the bottom right of the window shows what agents are doing: **Working**, **Needs input** when one asks you a question, or **Error**, **Failed** or **Stalled** when something goes wrong. **Agents idle** shows as a dot until you point at it. Click the indicator for the agent panel, with each session's activity and a field to answer questions.

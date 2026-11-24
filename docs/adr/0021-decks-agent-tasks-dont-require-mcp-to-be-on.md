@@ -25,3 +25,4 @@ The conversation is keyed by the pull request, not by its head. A push to the pu
 - When the provider can't find the conversation to resume, the turn is sent once more to a new one, and the window is told the history was lost.
 - Turn events reach the window on the event stream that needs no MCP (`/api/handoffs/bridge`). They carry the answer's text, which the page shows, and wide events for turns never do (ADR 0011).
 - Settings > MCP keeps describing what MCP clients reach. Deck's consent dialog, not MCP, tells the user what a Deck turn sends.
+- Every core turn, whether Deck's ask starts it or the runner's own route does, is refused until the user allowed its repository with the agent picked in Settings > Agents (#791). A consent names that agent, so picking another one asks again, and Revoke stops the next turn.
