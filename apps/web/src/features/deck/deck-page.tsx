@@ -122,7 +122,8 @@ export function DeckPage({ itemId }: { itemId?: string }) {
                     : reasonLabels[item.reason ?? "manual"]}
               </p>
             </header>
-            <PullRequestReview pullRequest={item} />
+            {/* Another pull request starts with its drawer closed, nothing viewed and no ask open. */}
+            <PullRequestReview key={item._id} pullRequest={item} />
           </>
         )}
       </div>

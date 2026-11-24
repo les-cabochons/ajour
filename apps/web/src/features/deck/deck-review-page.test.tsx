@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useParams } from "@tanstack/react-router";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type {
   CodeHostConversationResult,
@@ -248,7 +249,10 @@ beforeEach(() => {
       pullRequests: [pullRequestFacts],
     },
   );
-  itemId = localStore.snapshot().pullRequests![0]!._id;
+  // A test that synced a second pull request leaves it in the store.
+  itemId = localStore
+    .snapshot()
+    .pullRequests!.find((item) => item.facts.id === pullRequestFacts.id)!._id;
   observed.clear();
 });
 
@@ -512,6 +516,78 @@ it("keeps the description in a drawer, closed until the user opens it", async ()
 
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(await screen.findByText(/Retries stop on/)).toBeTruthy();
+});
+
+it("opens the next pull request with its drawer closed and nothing viewed, after the last one's were open", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(GUIDED);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    description: "Retries stop on **410**.",
+  });
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [
+        pullRequestFacts,
+        {
+          ...pullRequestFacts,
+          id: "pr2",
+          number: 2,
+          url: "https://github.com/acme/api/pull/2",
+          title: "Stop on 410",
+        },
+      ],
+    },
+  );
+  const second = localStore
+    .snapshot()
+    .pullRequests!.find((item) => item.facts.number === 2)!._id;
+  const { router } = await renderRoutes({
+    shell: Shell,
+    path: `/deck/${itemId}`,
+    routes: {
+      "/deck/$itemId": function ReviewPage() {
+        const { itemId: shown } = useParams({ strict: false });
+        return <DeckPage itemId={shown} />;
+      },
+    },
+  });
+  await screen.findByRole("heading", { name: "Concern 1: Handle the request" });
+  fireEvent.click(screen.getByRole("button", { name: "Description" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" }),
+  );
+  expect(await screen.findByText(/Retries stop on/)).toBeTruthy();
+
+  await act(() =>
+    router.navigate({ to: "/deck/$itemId", params: { itemId: second } }),
+  );
+
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Stop on 410" }),
+  ).toBeTruthy();
+  await screen.findByRole("heading", { name: "Concern 1: Handle the request" });
+  expect(
+    screen
+      .getByRole("button", { name: "Description" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.queryByText(/Retries stop on/)).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
+    repository: "acme/api",
+    number: 2,
+  });
 });
 
 const reviewThread = (
