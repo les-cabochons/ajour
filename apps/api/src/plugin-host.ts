@@ -914,6 +914,22 @@ export class PluginManager {
     const parsed = contract.request.parse(
       request,
     ) as CodeHostOperationRequest<Operation>;
+    if (operation === "mergePullRequest") {
+      // One merge of a pull request at a time (#786): the plugin first reads
+      // whether it merged, so a second window's merge finds the first's.
+      const { repository, number } =
+        parsed as CodeHostOperationRequest<"mergePullRequest">;
+      return await this.submissions.run(
+        JSON.stringify([
+          pluginId,
+          connection.id,
+          operation,
+          repository.toLowerCase(),
+          number,
+        ]),
+        () => run(parsed),
+      );
+    }
     const submissionId =
       "submissionId" in parsed ? parsed.submissionId : undefined;
     if (typeof submissionId !== "string") return await run(parsed);
