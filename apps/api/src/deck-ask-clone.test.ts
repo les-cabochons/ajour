@@ -38,6 +38,7 @@ import {
   openEventStream,
   TEST_ORIGIN,
 } from "./test-support/local-api.ts";
+import { builtFrom } from "./test-support/deck-guides.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { TEST_WINDOW_TOKEN } from "./test-support/window-token.ts";
 
@@ -53,14 +54,15 @@ const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 const REPOSITORY = "acme/api";
 
 const guideRuntime: DeckGuideRuntime = {
-  build: async () => [
-    {
-      id: "g1",
-      title: "The answer changes",
-      rationale: "It is 42 now.",
-      hunkIds: ["app.ts#0"],
-    },
-  ],
+  build: async (input) =>
+    builtFrom(input, [
+      {
+        id: "g1",
+        title: "The answer changes",
+        rationale: "It is 42 now.",
+        hunkIds: ["app.ts#0"],
+      },
+    ]),
   close: async () => {},
 };
 
