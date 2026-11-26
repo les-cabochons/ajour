@@ -888,6 +888,137 @@
     border-radius: 50%;
   }
 
+  .deck-status-text {
+    padding: 0 0.25rem;
+    white-space: nowrap;
+  }
+
+  /*
+   * The stack strip (#788), under the status line: `Stack 2 of 3 · main ←
+   * #479 ← #482 this ← #485` with ‹ ›, then the quiet stale-base line and,
+   * on Azure DevOps, Restack in Review Deck. Nothing on it takes a color.
+   */
+  .deck-stack {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.125rem 0.75rem;
+    margin: 0.25rem 0 0 -0.25rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-stack-strip {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.125rem;
+  }
+
+  .deck-stack-name,
+  .deck-stack-link,
+  .deck-stack-restack {
+    display: inline-flex;
+    height: 1.375rem;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0 0.25rem;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+  }
+
+  .deck-stack-name {
+    color: var(--foreground);
+    font-weight: 500;
+  }
+
+  .deck-stack-name:hover,
+  .deck-stack-name[data-popup-open],
+  .deck-stack-link:hover,
+  .deck-stack-restack:hover {
+    background: var(--hover-bg);
+    color: var(--foreground);
+  }
+
+  .deck-stack-name:focus-visible,
+  .deck-stack-link:focus-visible,
+  .deck-stack-restack:focus-visible,
+  .deck-stack-layer:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  .deck-stack-base {
+    font-family: var(--font-mono);
+  }
+
+  .deck-stack-this {
+    padding: 0 0.25rem;
+    color: var(--foreground);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .deck-stack-restack {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .deck-stack-stale {
+    padding: 0 0.25rem;
+  }
+
+  /* The full stack, in the popover or the narrow view's sheet. */
+  .deck-stack-merge-order {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .deck-stack-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0 -0.5rem;
+  }
+
+  .deck-stack-layer {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+
+  a.deck-stack-layer:hover {
+    background: var(--hover-bg);
+  }
+
+  .deck-stack-layer[aria-current="page"] {
+    background: var(--hover-bg);
+    font-weight: 500;
+  }
+
+  .deck-stack-number {
+    flex: none;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .deck-stack-layer-status,
+  .deck-stack-layer-stale {
+    flex: none;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+
+  .deck-stack-layer-stale {
+    display: block;
+    padding: 0 0.5rem 0.375rem;
+  }
+
   /* A check's mark, ring or icon, in one 14px box so names line up. */
   .deck-check-mark {
     display: inline-grid;

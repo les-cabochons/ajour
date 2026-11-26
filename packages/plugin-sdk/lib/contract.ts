@@ -854,6 +854,8 @@ export type CodeHostOperations = {
         mergeability: "unknown" | "mergeable" | "conflicting";
         closedAt?: number | undefined;
         baseRef?: string | undefined;
+        headRef?: string | undefined;
+        baseSha?: string | undefined;
         lastPushActor?:
           | {
               login: string;

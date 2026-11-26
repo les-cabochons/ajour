@@ -648,11 +648,12 @@ Page-scoped keys, decided in [#774](https://github.com/les-cabochons/ajour/issue
 | ------------------------------- | ------------------------------------------------------------------------ |
 | J / K                           | Next or previous concern                                                 |
 | F                               | Open or close the guide tree's titles                                    |
+| L                               | Open or close the full stack, on a layer of a stack (#788)               |
 | R then C, N or A                | Open Finish review on Comment, Request changes or Approve (#784)         |
 | R then Y                        | Approve at once, with no dialog                                          |
 | Ctrl+Enter (Cmd+Enter on macOS) | Add the composer's comment to the review, or save a draft comment's edit |
 
-R takes no app key, and the letter after it only counts after R, so N still starts an entry. Ctrl+Enter works while a composer is open, in its field too.
+R takes no app key, and the letter after it only counts after R, so N still starts an entry. Nor does L, anywhere in the app, so it opens the full stack with no collision; S stays the timer key. Ctrl+Enter works while a composer is open, in its field too.
 
 The "?" overlay lists them under "Deck review page", and the command palette offers them while the page shows.
 
@@ -1139,6 +1140,7 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 - Without an enabled code host, the page says "Activate a code host plugin in Settings to use Deck." Without a connection, it says to add one in Plugins settings, and Sync is disabled.
 - **Sync** syncs every connection now. Each connection also syncs on its interval while its automatic sync is on. A failed sync shows its reason above the groups.
 - With more than one connection, rows name their connection.
+- A stack's layers stay together in their group, bottom first, where the first of them would show by time (see Stacks). Each says its place after its number: `acme/api #482 · Stack 2/3`.
 
 ### Pull request rows
 
@@ -1155,11 +1157,23 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 Decided in [Threads, status line and the description drawer](https://github.com/les-cabochons/ajour/issues/783).
 
-- Under the meta line, the status line reads the state (Open, Draft, Merged or Closed), the checks and the approvals: `Open · 2 checks pending · 1 approval`.
+- Under the meta line, the status line reads the state (Open, Draft, Merged or Closed), the checks and the approvals: `Open · 2 checks pending · 1 approval`. A layer of a stack adds the merge order, the layer below, which merges first: `· Merges after #479`.
 - The checks read a failure first ("1 check failed"), then what's pending ("2 checks pending"), then what passed ("3 checks passed"); "No checks" when none ran. Until the code host lists each check, the line reads the synced rollup: "Checks pending", "Checks passed" or "Checks failed". Pending checks show a ring in the warning color and passed checks a tick in the success color. Nothing else on the line is colored.
 - Clicking the checks opens a small menu, "Checks on the head": each check's name and state (Passed, Pending, Failed or Skipped). Choosing one opens its page, or the pull request when it has none. A code host that doesn't list its checks says "This code host doesn't list its checks yet."
 - The approvals count the reviewers who approved ("1 approval", or "No approvals yet"). Clicking them opens a small menu, "Reviewers": each reviewer with their vote (Approved, Changes requested, Rejected or No vote yet), and "Required" when the code host requires them. A plugin that doesn't send votes gets them from each reviewer's latest approval or change request, in time order, where a later dismissal (such as Azure DevOps resetting votes on a push) clears it to No vote yet and a later comment keeps it, and from each person asked who hasn't given one.
 - Below it, **Description** is a drawer, closed when the page opens, also when going straight from one pull request's page to another's, which starts with nothing viewed and no answer open either. Opening it shows the author's description as markdown, or "No description.".
+
+### Stacks
+
+Decided in [Stacks](https://github.com/les-cabochons/ajour/issues/788), from [#774](https://github.com/les-cabochons/ajour/issues/774)'s stories 32 to 37.
+
+- A stack is pull requests that build on each other: each layer targets the branch of the one below it, in the same repository of the same connection, down to the branch the bottom layer merges into. Deck finds them with Review Deck's stack code, among the open pull requests it lists, from the branches the code host names (`baseRef` and `headRef`). A pull request synced before Ajour read its branches is in no stack until its next sync.
+- The usual trunk branches end a stack: `main`, `master`, `develop`, `development`, `dev`, `trunk` and `release/…`. A stack needs two open layers, so one pull request into a branch with no open pull request is alone. Where a layer has two layers on top of it, its stack follows the lower-numbered one, and the other one's stack goes through it too.
+- Under the status line, the stack strip reads `Stack 2 of 3 · main ← #479 ← #482 this ← #485`: the base branch in mono, then each layer bottom to top, a link to its review page but for this one. ‹ and › before and after it open the layer below and above, named "Layer below, #479" and "Layer above, #485", and are disabled past the ends.
+- When the layer below moved since this one was based on it, a quiet line under the strip says "#479 changed since this layer was based on it." Deck compares the base commit the code host gives this layer (`baseSha`) with the head the last sync saw for the layer below: on Azure DevOps the latest iteration's common commit with its target, on GitHub the pull request's base commit (`baseRefOid`), so on GitHub the check is best effort. The bottom layer has no such line: its base moving is the trunk moving.
+- On Azure DevOps, the strip ends with **Restack in Review Deck**, a link that opens the pull request in Review Deck's hub on the same server, where its Restack is. On GitHub it's text only. Ajour never restacks.
+- **Stack 2 of 3** and L open the full stack, a popover: "Merges into main, bottom first.", then each layer bottom first, its number, title, and its Draft mark and checks, or "This layer"; under a layer whose layer below moved, "#479 changed since it was based on it". Choosing a layer opens it. L or Escape closes it.
+- In the narrow view the strip folds to `Stack 2/3 ▾`, which opens the full stack in a bottom sheet, as L does. The stale line and Restack in Review Deck stay under it.
 
 ### The summary
 
@@ -1196,7 +1210,7 @@ Decided in [Draft review and Finish review](https://github.com/les-cabochons/ajo
 - A comment of the draft review shows beside or after its line like a thread, with a dashed border, "Draft", its words, **Edit** and **Remove**. Edit opens the composer in its place, with **Save**. Removing the last comment ends the draft.
 - The draft review is kept in local state, per pull request, apart from the synced list, so it survives restarts and syncs. Deleting the connection deletes its drafts.
 - The header's **Finish review**, then **Finish review · N** once the draft has N comments, opens the submit dialog: "Finish review", a line counting what goes with it ("1 comment goes with it.", or "No comments."), an optional summary, and the verdict: Comment, Request changes ("Wait for author" on Azure DevOps, where it is the vote) and Approve. **Submit review** sends it; Request changes and Comment need a summary or a comment. R then C, N or A opens it on that verdict; R then Y approves at once, with no dialog, sending the draft's comments.
-- The review goes to the code host at once, with no Undo window and nothing queued (ADR 0002). Once it is sent, its comments leave the draft and a toast says "Approved", or "Review sent". A failure, R then Y's included, keeps the draft and shows the dialog with the reason, "Your draft review is kept.", and **Retry**. A connection without Review pull requests says so and points to Settings › Plugins.
+- The review goes to the code host at once, with no Undo window and nothing queued (ADR 0002). Once it is sent, its comments leave the draft and a toast says "Approved", or "Review sent". On a layer with a layer above it (see Stacks), the dialog stays instead, titled "Approved" or "Review sent", with "Next in stack: #485 Per user" and **Close** and **Next in stack**, focused, which opens the layer above; after R then Y, the toast carries Next in stack for eight seconds. A failure, R then Y's included, keeps the draft and shows the dialog with the reason, "Your draft review is kept.", and **Retry**. A connection without Review pull requests says so and points to Settings › Plugins.
 - A review posts once. Before it is sent, the draft keeps a name for it, also for an approval with no comments; **Retry**, after a restart too, sends the same name, and the plugin finds what an earlier try left on the code host, such as a review GitHub took before its answer was lost, or the comments Azure DevOps took before the vote failed, and sends only the rest. Changing the verdict, the summary or the comments makes it a new review. Retry is always the user's: nothing retries on its own. Two windows retrying the same draft at once post it once: the local API runs the tries of one name one at a time.
 - When the plugin can't tell whether an earlier try reached the code host, such as when a review of the user's since then names no submission because someone edited the hidden name out on GitHub, nothing is posted and the dialog says "This review may already be on GitHub: something you posted since may be it. Check the pull request, then post again if it's not there. Your draft review is kept.", with **Post again**, which sends it as a new review. A comment says the same with "This comment may already be on …".
 - On Azure DevOps, where a vote counts for the whole pull request, approving after new commits arrived fails with "The pull request has new commits since you read it. Open it again to approve its latest changes." and posts nothing. Comments, and Wait for author, still go on the lines the user read.

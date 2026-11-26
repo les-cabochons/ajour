@@ -153,6 +153,14 @@ export const codeHostPullRequestFactsSchema =
      * so pull requests stored before it was added still read.
      */
     baseRef: z.string().trim().min(1).max(400).optional(),
+    /** The branch the pull request comes from, such as `feature/login`. */
+    headRef: z.string().trim().min(1).max(400).optional(),
+    /**
+     * The commit of `baseRef` the head was based on, so Deck sees a lower
+     * layer of a stack that moved since (#788). Optional, so pull requests
+     * stored before it was added still read.
+     */
+    baseSha: shaSchema.optional(),
     lastPushedAt: timeSchema,
     /** Missing attribution must not trigger a return for a possibly own push. */
     lastPushActor: codeHostUserSchema.optional(),

@@ -26,6 +26,7 @@ import {
   pushesSince,
   reviewedVersion,
 } from "@/domain/deck/versions";
+import type { DeckStackPosition } from "@/domain/deck/stacks";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import {
   AppApiError,
@@ -58,6 +59,7 @@ import {
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
 import { PullRequestSummary, type ReachHunk } from "./pull-request-summary";
+import { StackStrip } from "./stack-strip";
 import { ReviewComposerState } from "./review-composer-state";
 import {
   DraftCommentCard,
@@ -91,14 +93,19 @@ const notSupported = (error: unknown) =>
  * the versions are read at once when the page opens, and again on Refresh
  * after a push came in. A "+" beside a line opens the composer there (#784);
  * a thread takes replies and resolves, and the viewed marks last, a file's
- * synced with the code host where it keeps them (#785).
+ * synced with the code host where it keeps them (#785). A layer of a stack
+ * shows the stack strip under the status line, and its Finish review offers
+ * the layer above once sent (#788).
  */
 export function PullRequestReview({
   pullRequest,
   now,
+  stack,
 }: {
   pullRequest: LocalPullRequest;
   now: number;
+  /** Its place in its stack, when it's a layer of one. */
+  stack?: DeckStackPosition;
 }) {
   const diff = usePullRequestDiff(pullRequest);
   const conversation = usePullRequestConversation(pullRequest);
@@ -579,6 +586,7 @@ export function PullRequestReview({
                 draft={draft}
                 headSha={headSha}
                 onSubmitted={retryConversation}
+                next={stack?.above}
               />
             ) : null
           }
@@ -586,7 +594,9 @@ export function PullRequestReview({
         <PullRequestStatusLine
           pullRequest={pullRequest}
           checks={checks.state}
+          mergesAfter={stack?.below}
         />
+        {stack ? <StackStrip pullRequest={pullRequest} stack={stack} /> : null}
         {!open && draft?.comments.length ? (
           <ClosedDraftReview
             pullRequest={pullRequest}

@@ -10,6 +10,7 @@ import {
 } from "@/components/object-actions-menu";
 import { Chip } from "@/components/ui/chip";
 import type { ObjectAction } from "@/domain/actions/object-actions";
+import type { DeckStackRow } from "@/domain/deck/stacks";
 import {
   isPullRequestReturned,
   isPullRequestSnoozed,
@@ -125,12 +126,15 @@ export function PullRequestRow({
   compact = false,
   showConnection = false,
   selected = false,
+  stack,
 }: {
   item: LocalPullRequest;
   now: number;
   compact?: boolean;
   showConnection?: boolean;
   selected?: boolean;
+  /** Its place in its stack, which Deck's list shows as "Stack 2/3" (#788). */
+  stack?: DeckStackRow;
 }) {
   const navigate = useNavigate();
   const actions = pullRequestActions(item, now);
@@ -237,6 +241,7 @@ export function PullRequestRow({
             <p className="mt-1 truncate text-xs text-muted-foreground">
               {item.facts.repository} #{item.facts.number}
               {showConnection ? ` · ${item.connectionLabel}` : ""}
+              {stack ? ` · Stack ${stack.index}/${stack.size}` : ""}
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>
