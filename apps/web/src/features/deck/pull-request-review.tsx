@@ -145,7 +145,7 @@ export function PullRequestReview({
 
   const retryConversation = conversation.retry;
   const onAddComment = useCallback<AddComment>(
-    (path, _hunkId, lines) => {
+    (path, _hunkId, lines, body = "") => {
       if (!shown) return;
       const side = lines.side === "deletions" ? "base" : "head";
       setComposer({
@@ -161,7 +161,7 @@ export function PullRequestReview({
             line: lines.end,
             startLine: lines.start,
           }) ?? "",
-        body: "",
+        body,
       });
     },
     [shown],

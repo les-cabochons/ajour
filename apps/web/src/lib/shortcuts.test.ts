@@ -96,6 +96,9 @@ describe("shortcut registry", () => {
       "R then A",
       "R then Y",
       "⌘↩",
+      "E",
+      "C",
+      "A",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
       SHORTCUTS.length,
@@ -104,9 +107,14 @@ describe("shortcut registry", () => {
 
   it("gives no two app keys that work at once the same keys, Deck's review page keys included", () => {
     // Global keys work with every page's; the Time page and Deck's review
-    // page never show together.
+    // page never show together. The keys of selected lines work on the
+    // review page with its own keys, and win over the app's while lines
+    // are selected: those are listed below.
+    const page = (scope: ShortcutScope) => (scope === "lines" ? "deck" : scope);
     const together = (left: ShortcutScope, right: ShortcutScope) =>
-      left === right || left === "global" || right === "global";
+      left === "lines" || right === "lines"
+        ? page(left) === page(right)
+        : left === right || left === "global" || right === "global";
     const sequence = (shortcut: (typeof APP_SHORTCUTS)[number]) =>
       formatShortcutKeys(shortcut, "other");
     const startsWith = (long: string[], short: string[]) =>
@@ -137,11 +145,31 @@ describe("shortcut registry", () => {
       ["deck.review-quick-approve", "R then Y"],
       ["deck.add-to-review", "Ctrl+Enter"],
     ]);
+    const lines = APP_SHORTCUTS.filter(
+      (shortcut) => shortcut.scope === "lines",
+    );
+    expect(
+      lines.map((shortcut) => [shortcut.id, sequence(shortcut).join(" then ")]),
+    ).toEqual([
+      ["deck.lines-explain", "E"],
+      ["deck.lines-comment", "C"],
+      ["deck.lines-ask", "A"],
+    ]);
+    // While lines are selected, C is Comment rather than Continue.
+    expect(
+      lines.flatMap((shortcut) =>
+        APP_SHORTCUTS.filter(
+          (other) =>
+            other.scope === "global" &&
+            sequence(other).join() === sequence(shortcut).join(),
+        ).map((other) => `${shortcut.id} over ${other.id}`),
+      ),
+    ).toEqual(["deck.lines-comment over entry.continue"]);
   });
 
   it("keeps E, F and S for the app and the focused row outside Deck's review page", () => {
     const outsideDeck = SHORTCUTS.filter(
-      (shortcut) => shortcut.scope !== "deck",
+      (shortcut) => shortcut.scope !== "deck" && shortcut.scope !== "lines",
     );
     const meaning = (key: string) =>
       outsideDeck
@@ -151,6 +179,7 @@ describe("shortcut registry", () => {
     expect(meaning("E")).toEqual(["item.settle"]);
     expect(meaning("F")).toEqual(["item.favorite"]);
     expect(meaning("S")).toEqual(["entry.stop-or-start"]);
+    expect(meaning("C")).toEqual(["entry.continue"]);
     // Only the review page's own keys are new there, and S and E aren't.
     expect(
       SHORTCUTS.filter(
@@ -394,6 +423,37 @@ describe("resolveShortcut", () => {
   it("starts over when the next key does not continue the sequence", () => {
     expect(resolvedId(press("n"), [{ key: "g" }])).toBe("entry.new");
     expect(resolvedId(press("x"), [{ key: "g" }])).toEqual({ kind: "none" });
+  });
+
+  it("gives C to selected lines only while their toolbar handles it", () => {
+    const resolved = (key: string, handled: string[]) => {
+      const resolution = resolveShortcut(
+        APP_SHORTCUTS,
+        [],
+        press(key),
+        "mac",
+        (id) => handled.includes(id),
+      );
+      return resolution.kind === "action" ? resolution.shortcut.id : null;
+    };
+
+    expect(resolved("c", ["entry.continue"])).toBe("entry.continue");
+    expect(resolved("c", ["entry.continue", "deck.lines-comment"])).toBe(
+      "deck.lines-comment",
+    );
+    expect(resolved("e", ["deck.lines-explain"])).toBe("deck.lines-explain");
+    expect(resolved("a", ["deck.lines-ask"])).toBe("deck.lines-ask");
+    // R then C still finishes the review on Comment while lines are selected.
+    const second = resolveShortcut(
+      APP_SHORTCUTS,
+      [{ key: "r" }],
+      press("c"),
+      "mac",
+      () => true,
+    );
+    expect(second.kind === "action" && second.shortcut.id).toBe(
+      "deck.review-comment",
+    );
   });
 });
 

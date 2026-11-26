@@ -14,9 +14,15 @@ const MarkdownRenderer = lazy(() => import("@/components/markdown-renderer"));
 export function Markdown({
   children,
   className,
+  onCitation,
 }: {
   children: string;
   className?: string;
+  /**
+   * Shows each `citation:` link, such as an answer's `path:line`, as a
+   * button that calls this with its address. Without it they stay text.
+   */
+  onCitation?: (href: string) => void;
 }) {
   return (
     <div
@@ -40,7 +46,7 @@ export function Markdown({
       )}
     >
       <Suspense fallback={<p className="whitespace-pre-line">{children}</p>}>
-        <MarkdownRenderer>{children}</MarkdownRenderer>
+        <MarkdownRenderer onCitation={onCitation}>{children}</MarkdownRenderer>
       </Suspense>
     </div>
   );

@@ -46,12 +46,14 @@ export function isDigitChord(chord: ShortcutChord): chord is DigitChord {
 
 /**
  * Where a shortcut works: anywhere in the app, only on the Time page, only on
- * Deck's review page ("deck"), or on the focused row, card or Grid cell
- * ("item"). A page's keys win over the app's only on that page; elsewhere
- * nothing handles them, so they keep their meaning there, such as F on a
- * focused task.
+ * Deck's review page ("deck"), only while lines are selected there
+ * ("lines"), or on the focused row, card or Grid cell ("item"). A page's
+ * keys win over the app's only on that page; elsewhere nothing handles
+ * them, so they keep their meaning there, such as F on a focused task.
+ * The keys of selected lines win over the app's only while lines are
+ * selected, so C continues an entry otherwise.
  */
-export type ShortcutScope = "global" | "time" | "deck" | "item";
+export type ShortcutScope = "global" | "time" | "deck" | "lines" | "item";
 
 export type ShortcutActionId =
   | "entry.new"
@@ -81,6 +83,9 @@ export type ShortcutActionId =
   | "deck.review-approve"
   | "deck.review-quick-approve"
   | "deck.add-to-review"
+  | "deck.lines-explain"
+  | "deck.lines-comment"
+  | "deck.lines-ask"
   | "item.edit"
   | "item.settle"
   | "item.settle-ask"
@@ -280,6 +285,26 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Add the comment to the review",
     scope: "deck",
     keys: [{ key: "Enter", mod: true }],
+  },
+  // Selected lines on the review page (#793): only their toolbar handles
+  // these, so E and C keep their meanings while no line is selected.
+  {
+    id: "deck.lines-explain",
+    label: "Explain the selected lines",
+    scope: "lines",
+    keys: [{ key: "e" }],
+  },
+  {
+    id: "deck.lines-comment",
+    label: "Comment on the selected lines",
+    scope: "lines",
+    keys: [{ key: "c" }],
+  },
+  {
+    id: "deck.lines-ask",
+    label: "Ask about the selected lines",
+    scope: "lines",
+    keys: [{ key: "a" }],
   },
   // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
   // Enter goes one level deeper: Edit on entries, tasks and projects, the
@@ -543,6 +568,7 @@ export function resolveShortcut(
   prefix: readonly ShortcutChord[],
   event: ShortcutKeyEvent,
   platform: ShortcutPlatform,
+  handled?: (id: ShortcutActionId) => boolean,
 ): ShortcutResolution {
   const candidates = shortcuts.filter(
     (shortcut) =>
@@ -551,13 +577,21 @@ export function resolveShortcut(
       matchesChord(event, shortcut.keys[prefix.length]!, platform),
   );
 
+  // The keys of selected lines count only while their toolbar handles
+  // them, and then win over the app's: C is Comment, and Continue again
+  // once no line is selected.
   const completes = candidates.filter(
-    (shortcut) => shortcut.keys.length === prefix.length + 1,
+    (shortcut) =>
+      shortcut.keys.length === prefix.length + 1 &&
+      (shortcut.scope !== "lines" || !handled || handled(shortcut.id)),
   );
   // Shift+digit always starts a pinned task, even where it types "?", such as
   // Shift+6 on Canadian French layouts. "?" still works on other layouts.
   const complete =
     completes.find((shortcut) => isDigitChord(shortcut.keys[prefix.length]!)) ??
+    (handled
+      ? completes.find((shortcut) => shortcut.scope === "lines")
+      : undefined) ??
     completes[0] ??
     (prefix.length === 0
       ? shortcuts.find((shortcut) =>
@@ -579,7 +613,7 @@ export function resolveShortcut(
   }
 
   return prefix.length > 0
-    ? resolveShortcut(shortcuts, [], event, platform)
+    ? resolveShortcut(shortcuts, [], event, platform, handled)
     : { kind: "none" };
 }
 

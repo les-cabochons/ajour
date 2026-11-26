@@ -28,6 +28,11 @@ import type {
  * the library moves beside the line under the pointer, and, for the
  * keyboard, one button per hunk, "Comment on line N", whose arrow keys move
  * it from line to line and whose Enter opens the composer there.
+ *
+ * A hunk whose lines can be selected (#793) reports what the library picks
+ * on its line numbers, a drag, Shift and a click, or a tap, as it changes
+ * and once it ends; Shift and the arrows on the keyboard button pick lines
+ * too. Its highlight is then the page's: it shows the lines the page says.
  */
 
 /** What a line annotation carries: the key of what it shows. */
@@ -102,6 +107,20 @@ function diffOptions(
 /** Which side of the unified diff a line is on: the head's lines are additions, the base's deletions. */
 export type DiffLineSide = "additions" | "deletions";
 
+/** Lines highlighted in the hunk, from `start` on `side` to `end` on `endSide`, or on `side` too. */
+export interface DiffLineHighlight {
+  side: DiffLineSide;
+  start: number;
+  end: number;
+  endSide?: DiffLineSide;
+}
+
+/** How a selection of lines came: still dragged or picked, and by a tap rather than a mouse. */
+export interface DiffSelectionChange {
+  settled: boolean;
+  tap: boolean;
+}
+
 /** Something shown after a line of the hunk, such as a review thread. */
 export interface DiffHunkAnnotation {
   key: string;
@@ -125,6 +144,20 @@ export interface DiffHunkProps {
   /** Lines to highlight, such as the line of a hovered comment. */
   highlight?: { side: DiffLineSide; start: number; end: number } | null;
   /**
+   * The lines the page selected in the hunk, or the line a citation went
+   * to, highlighted over the keyboard's line and `highlight`.
+   */
+  selected?: DiffLineHighlight | null;
+  /**
+   * Reports the lines selected on the hunk's line numbers, or by Shift and
+   * the arrows on its keyboard button, as they change and once picked, or
+   * null once none are. The hunk then highlights only what the page says.
+   */
+  onSelectLines?: (
+    range: DiffLineHighlight | null,
+    change: DiffSelectionChange,
+  ) => void;
+  /**
    * Shows a "+" beside the line under the pointer, which comments on that
    * line, or on the lines dragged over from it, and a keyboard button on
    * one line at a time. One of each per hunk, moved from line to line:
@@ -141,7 +174,7 @@ export interface DiffLineRange {
 }
 
 /** A line of the hunk as a comment names it: a removed line by the base's number, any other by the head's. */
-interface HunkLine {
+export interface HunkLine {
   side: DiffLineSide;
   line: number;
 }
@@ -183,6 +216,24 @@ function nameGutterButton(hunk: HTMLElement) {
   return true;
 }
 
+/**
+ * The drawn line of `point` in a hunk's box, which the library draws in its
+ * shadow root, or null before it draws.
+ */
+export function lineElement(box: Element, { side, line }: HunkLine) {
+  const kind =
+    side === "deletions"
+      ? '[data-line-type="change-deletion"]'
+      : ':not([data-line-type="change-deletion"])';
+  return (
+    box
+      .querySelector("diffs-container")
+      ?.shadowRoot?.querySelector<HTMLElement>(
+        `[data-line="${line}"]${kind}`,
+      ) ?? null
+  );
+}
+
 const lineName = ({ side, line }: HunkLine) =>
   side === "deletions"
     ? `Comment on removed line ${line}`
@@ -192,18 +243,24 @@ const lineName = ({ side, line }: HunkLine) =>
  * The hunk's keyboard way to comment: one button, hidden until it has
  * focus, on one line at a time. Up and Down, Home and End move it, and
  * the hunk highlights its line; Enter or Space opens the composer there.
- * The hunk's lines are read on its first key, not at rest.
+ * With `onSelect`, Shift and Up or Down select the lines from where it
+ * was to where it goes, for the page's toolbar. The hunk's lines are read
+ * on its first key, not at rest.
  */
 function LineCommentKey({
   patch,
   onAddComment,
   onLine,
+  onSelect,
 }: {
   patch: string;
   onAddComment: (lines: DiffLineRange) => void;
   onLine: (line: HunkLine | null) => void;
+  onSelect?: (from: HunkLine | null, to?: HunkLine) => void;
 }) {
   const lines = useRef<HunkLine[] | undefined>(undefined);
+  /** Where Shift started selecting from, until a key without it. */
+  const anchor = useRef<HunkLine | undefined>(undefined);
   const [current, setCurrent] = useState<HunkLine | undefined>();
   const [focused, setFocused] = useState(false);
   const shown = current ?? hunkLines(patch, true)[0];
@@ -226,6 +283,14 @@ function LineCommentKey({
     );
     const next = all[step(Math.max(index, 0), all.length - 1)];
     if (!next) return;
+    if (event.shiftKey && onSelect) {
+      anchor.current ??= shown;
+      onSelect(anchor.current ?? null, next);
+    } else if (anchor.current) {
+      // A key without Shift leaves the lines Shift picked.
+      anchor.current = undefined;
+      onSelect?.(null);
+    }
     setCurrent(next);
     onLine(next);
   }
@@ -234,7 +299,11 @@ function LineCommentKey({
       <button
         type="button"
         className="diff-line-key"
-        aria-keyshortcuts="ArrowUp ArrowDown Home End"
+        aria-keyshortcuts={
+          onSelect
+            ? "ArrowUp ArrowDown Home End Shift+ArrowUp Shift+ArrowDown"
+            : "ArrowUp ArrowDown Home End"
+        }
         onFocus={() => {
           setFocused(true);
           onLine(shown);
@@ -274,6 +343,8 @@ export const DiffHunk = memo(function DiffHunk({
   annotations,
   renderAnnotation,
   highlight,
+  selected,
+  onSelectLines,
   onAddComment,
 }: DiffHunkProps) {
   const box = useRef<HTMLDivElement>(null);
@@ -284,6 +355,10 @@ export const DiffHunk = memo(function DiffHunk({
   const [keyed, setKeyed] = useState(false);
   // Whether the library's "+" has its name: it keeps one button per hunk.
   const named = useRef(false);
+  // The pointer that last pressed the hunk, so a tap tells itself from a click.
+  const pointer = useRef("mouse");
+  // The "+" was dragged: the lines it picked go to the composer, not the page.
+  const commenting = useRef(false);
   useEffect(() => {
     const element = box.current;
     if (!element || mounted) return;
@@ -299,26 +374,60 @@ export const DiffHunk = memo(function DiffHunk({
     [annotations],
   );
   const selectedLines = useMemo((): SelectedLineRange | null | undefined => {
-    const lines = keyLine
-      ? { side: keyLine.side, start: keyLine.line, end: keyLine.line }
-      : highlight;
-    // A hunk without annotations leaves the selection to the library.
-    if (!annotations?.length && !keyed) return undefined;
+    const lines: DiffLineHighlight | null | undefined =
+      selected ??
+      (keyLine
+        ? { side: keyLine.side, start: keyLine.line, end: keyLine.line }
+        : highlight);
+    // A hunk without annotations or selectable lines leaves the selection to the library.
+    if (!annotations?.length && !keyed && !onSelectLines) return undefined;
     if (!lines) return null;
     return {
       start: lines.start,
       end: lines.end,
       side: lines.side,
-      endSide: lines.side,
+      endSide: lines.endSide ?? lines.side,
     };
-  }, [annotations, highlight, keyLine, keyed]);
-  const hunkOptions = useMemo(
-    (): FileDiffOptions<AnnotationData, undefined> =>
-      onAddComment
+  }, [annotations, highlight, keyLine, keyed, selected, onSelectLines]);
+  const hunkOptions = useMemo((): FileDiffOptions<
+    AnnotationData,
+    undefined
+  > => {
+    const report = (settled: boolean) => (range: SelectedLineRange | null) => {
+      if (!onSelectLines) return;
+      // The "+" drag ended: its lines went to the composer.
+      if (commenting.current) {
+        if (!settled) return;
+        commenting.current = false;
+        onSelectLines(null, { settled, tap: false });
+        return;
+      }
+      onSelectLines(
+        range
+          ? {
+              side: range.side ?? "additions",
+              start: range.start,
+              end: range.end,
+              endSide: range.endSide ?? range.side ?? "additions",
+            }
+          : null,
+        { settled, tap: pointer.current !== "mouse" },
+      );
+    };
+    return {
+      ...options[theme],
+      ...(onSelectLines
         ? {
-            ...options[theme],
+            enableLineSelection: true,
+            onLineSelectionChange: report(false),
+            onLineSelectionEnd: report(true),
+          }
+        : {}),
+      ...(onAddComment
+        ? {
             enableGutterUtility: true,
-            onGutterUtilityClick: (range) => {
+            onGutterUtilityClick: (range: SelectedLineRange) => {
+              commenting.current = true;
               const side = range.endSide ?? range.side ?? "additions";
               // Lines from both sides keep only the line the drag ended on.
               if ((range.side ?? side) !== side)
@@ -331,9 +440,9 @@ export const DiffHunk = memo(function DiffHunk({
                 });
             },
           }
-        : options[theme],
-    [onAddComment, theme],
-  );
+        : {}),
+    };
+  }, [onAddComment, onSelectLines, theme]);
   // Until it draws, the box is `--diff-line-height` tall per row (styles/deck.css).
   const rowCount = { "--diff-hunk-rows": rows } as CSSProperties;
   return (
@@ -345,6 +454,14 @@ export const DiffHunk = memo(function DiffHunk({
       data-hunk={hunkId}
       data-drawn={mounted || undefined}
       style={rowCount}
+      onPointerDown={
+        onSelectLines
+          ? (event) => {
+              pointer.current = event.pointerType || "mouse";
+              commenting.current = false;
+            }
+          : undefined
+      }
       onPointerMove={
         onAddComment
           ? (event) => {
@@ -362,6 +479,22 @@ export const DiffHunk = memo(function DiffHunk({
             setKeyLine(line);
             if (line) setKeyed(true);
           }}
+          onSelect={
+            onSelectLines
+              ? (from, to) =>
+                  onSelectLines(
+                    from && to
+                      ? {
+                          side: from.side,
+                          start: from.line,
+                          end: to.line,
+                          endSide: to.side,
+                        }
+                      : null,
+                    { settled: true, tap: false },
+                  )
+              : undefined
+          }
         />
       ) : null}
       {mounted ? (

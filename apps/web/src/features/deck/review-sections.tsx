@@ -1,4 +1,11 @@
-import { memo, useCallback, useId, useMemo, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckHunk } from "@ajour/shared/deck";
 import {
@@ -6,7 +13,7 @@ import {
   type DiffHunkAnnotation,
   type DiffLineRange,
 } from "@/components/diff-hunk";
-import { ConcernRationale } from "./deck-ask";
+import { ConcernRationale, HunkAsks } from "./deck-ask";
 import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
@@ -21,6 +28,9 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
+import { useHunkLines } from "./review-line-selection";
+import { highlightOfSelection, LinesToolbar } from "./review-lines";
+import { useReviewLines } from "./review-lines-context";
 import { renderNoteCard } from "./review-notes";
 
 /*
@@ -30,14 +40,17 @@ import { renderNoteCard } from "./review-notes";
  * and fills its concern's tick in the guide tree. A hunk's review threads
  * (#783), draft comments and the composer (#784) sit after their lines, or
  * only mark them when the gutter beside the sections holds the cards. A
- * "+" beside a line opens the composer on it.
+ * "+" beside a line opens the composer on it. Lines selected in a hunk
+ * (#793) show the toolbar above them, and the answers about them follow
+ * the hunk's lines.
  */
 
-/** Opens the composer on lines of a hunk of the file at `path`. */
+/** Opens the composer on lines of a hunk of the file at `path`, holding `body` when given. */
 export type AddComment = (
   path: string,
   hunkId: string,
   lines: DiffLineRange,
+  body?: string,
 ) => void;
 
 /** Marks the section element J and K move between. */
@@ -89,8 +102,36 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
   const label = hunk.header ? hunkLabel(file, hunk) : file.path;
   const note = inConcern ? fileNote(file) : undefined;
+  // The page's selected lines and cited line, when they are in this hunk.
+  const lines = useReviewLines();
+  const shown = useHunkLines(lines?.selection, hunk.id);
+  const onSelectLines = useMemo(
+    () =>
+      lines
+        ? (
+            range: Parameters<typeof lines.select>[1],
+            change: Parameters<typeof lines.select>[2],
+          ) => lines.select(hunk.id, range, change)
+        : undefined,
+    [lines, hunk.id],
+  );
+  const selected = useMemo(
+    () =>
+      shown?.selection
+        ? highlightOfSelection(shown.selection)
+        : shown?.cited
+          ? {
+              side: shown.cited.side,
+              start: shown.cited.line,
+              end: shown.cited.line,
+            }
+          : undefined,
+    [shown],
+  );
+  const box = useRef<HTMLDivElement>(null);
+  const drawn = !viewed && !withoutLines;
   return (
-    <div className="deck-hunk" data-viewed={viewed || undefined}>
+    <div ref={box} className="deck-hunk" data-viewed={viewed || undefined}>
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
@@ -110,6 +151,9 @@ export const ReviewHunkView = memo(function ReviewHunkView({
           Viewed
         </button>
       </div>
+      {drawn && shown?.selection && shown.settled ? (
+        <LinesToolbar selection={shown.selection} hunk={box} />
+      ) : null}
       {viewed ? null : withoutLines ? (
         <p className="deck-file-empty">{withoutLines}</p>
       ) : (
@@ -122,9 +166,12 @@ export const ReviewHunkView = memo(function ReviewHunkView({
           annotations={annotations}
           renderAnnotation={annotations ? renderAnnotation : undefined}
           highlight={annotations ? highlightOf(hunk, hovered) : undefined}
+          selected={selected}
+          onSelectLines={onSelectLines}
           onAddComment={addComment}
         />
       )}
+      {drawn ? <HunkAsks hunkId={hunk.id} /> : null}
     </div>
   );
 });
