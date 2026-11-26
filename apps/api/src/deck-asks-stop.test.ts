@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DeckAgentConsent, DeckAskRequest } from "@ajour/shared/deck";
+import type {
+  DeckAgentConsent,
+  DeckAskRequest,
+} from "../../../packages/shared/deck.ts";
 import {
   createDeckAsks,
   DeckAskStopped,
   type DeckAsksOptions,
-} from "./deck-asks";
-import type { DeckHeldPullRequest } from "./deck-service";
+} from "./deck-asks.ts";
+import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
  * Stop on an ask (#795 review): a stop that comes before the turn starts
@@ -37,7 +40,7 @@ const consent = {
   pluginId: SOURCE.pluginId,
   connectionId: SOURCE.connectionId,
   repository: "acme/api",
-  cli: "claude",
+  cli: "claude-code",
 } as unknown as DeckAgentConsent;
 
 function asks(overrides: Partial<DeckAsksOptions>) {
@@ -45,7 +48,7 @@ function asks(overrides: Partial<DeckAsksOptions>) {
   const options: DeckAsksOptions = {
     storage: {
       getDeckConsents: async () => [consent],
-      getAgentRunnerSettings: async () => ({ cli: "claude" }),
+      getAgentRunnerSettings: async () => ({ cli: "claude-code" }),
     },
     selectedCli: async () => null,
     deck: { held: async () => held },
