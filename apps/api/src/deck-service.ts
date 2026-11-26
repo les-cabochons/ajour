@@ -22,6 +22,8 @@ import {
   type FileChange,
   type FileContents,
 } from "../../../packages/review-deck/diff.ts";
+import type { GuideJobBuilt } from "../../../packages/review-deck/guide-job.ts";
+import type { GroupedConcern } from "../../../packages/review-deck/summary.ts";
 import {
   deckCacheKeyString,
   type DeckCacheForgotten,
@@ -409,7 +411,10 @@ export interface DeckHeldPullRequest {
    */
   key: string;
   diff: DeckPullRequestDiff;
+  /** The guide the page shows: the agent's when it regrouped one (#794), else the built one. */
   guide: DeckGuide | null;
+  /** The guide built from the code. */
+  builtGuide: DeckGuide | null;
   versions: DeckFileVersions;
 }
 
@@ -538,6 +543,8 @@ interface Entry {
    * rejects only when the build was cancelled.
    */
   guide: Promise<DeckGuide | null>;
+  /** The guide an agent regrouped (#794), shown in place of the built one. */
+  agentGuide: DeckGuide | null;
   /** The guide failed: the next open of the same pull request builds it again. */
   guideFailed?: boolean;
   stop: AbortController;
@@ -742,7 +749,11 @@ export function createDeckService(options: {
       entry.guideFailed = true;
     }
     return {
-      opened: { ...diff, guide, ...(guideSkipped ? { guideSkipped } : {}) },
+      opened: {
+        ...diff,
+        guide: entry.agentGuide ?? guide,
+        ...(guideSkipped ? { guideSkipped } : {}),
+      },
       ...facts,
     };
   };
@@ -797,6 +808,7 @@ export function createDeckService(options: {
               tickets,
               stop.signal,
             ),
+      agentGuide: found.agentGuide,
       stop,
     };
     entry.guide.catch(() => {});
@@ -909,6 +921,7 @@ export function createDeckService(options: {
           ? null
           : buildGuide(key, result.guideInput, "open", tickets, stop.signal);
       }),
+      agentGuide: null,
       stop,
     };
     // A failure reaches this caller below. A second caller awaits it too.
@@ -1012,11 +1025,13 @@ export function createDeckService(options: {
     const found = await heldAt({ ...source, headSha: head });
     if (!found) return undefined;
     try {
+      const builtGuide = await found.guide;
       return {
         key: deckCacheKeyString(found.key),
         diff: found.diff,
         versions: found.versions,
-        guide: await found.guide,
+        guide: found.agentGuide() ?? builtGuide,
+        builtGuide,
       };
     } catch {
       // Its guide build was cancelled: another pull request opened.
@@ -1030,7 +1045,14 @@ export function createDeckService(options: {
       const entry = onScreen;
       try {
         const [diff, versions] = await Promise.all([entry.diff, entry.input]);
-        return { key: entry.key, diff, versions, guide: entry.guide };
+        return {
+          key: entry.key,
+          diff,
+          versions,
+          guide: entry.guide,
+          agentGuide: () => entry.agentGuide,
+          entry,
+        };
       } catch {
         return undefined;
       }
@@ -1042,8 +1064,79 @@ export function createDeckService(options: {
           diff: found.diff,
           versions: found.guideInput,
           guide: Promise.resolve(found.guide),
+          agentGuide: () => found.agentGuide,
+          entry: undefined,
         }
       : undefined;
+  }
+
+  /** Counts the regroups' rule runs, so two never share a build. */
+  let regroups = 0;
+
+  /**
+   * The summary's rules run on concerns an agent grouped (#794), in the
+   * guide worker, ahead of preloads: each concern's kinds, its test
+   * coverage, the risky areas and the leftovers. Undefined when Deck no
+   * longer holds the pull request at `head`; once `signal` aborts, the
+   * build stops and rejects with `GuideBuildCancelled`.
+   */
+  async function rulesFor(
+    pullRequest: string,
+    head: string,
+    concerns: GroupedConcern[],
+    signal?: AbortSignal,
+  ): Promise<GuideJobBuilt | undefined> {
+    const source = parseDeckPullRequestKey(pullRequest);
+    if (!source) return undefined;
+    const found = await heldAt({ ...source, headSha: head });
+    if (!found) return undefined;
+    return guides.build(
+      `${deckCacheKeyString(found.key)} regroup ${++regroups}`,
+      { ...found.versions, concerns },
+      "open",
+      signal,
+    );
+  }
+
+  /**
+   * Shows `guide`, an agent's, or the built guide again when null, for the
+   * pull request at `head`, on screen and in the content cache. Returns the
+   * guide shown now, or undefined when Deck no longer holds it there.
+   * `refusalNow` is asked last, once Deck read the pull request and its
+   * built guide: when it gives a refusal, nothing is written and the
+   * result carries it.
+   */
+  async function setAgentGuide<Refusal = never>(
+    pullRequest: string,
+    head: string,
+    guide: DeckGuide | null,
+    refusalNow?: () => Promise<Refusal | undefined>,
+  ): Promise<{ guide: DeckGuide | null } | { refused: Refusal } | undefined> {
+    const source = parseDeckPullRequestKey(pullRequest);
+    if (!source) return undefined;
+    const found = await heldAt({ ...source, headSha: head });
+    if (!found) return undefined;
+    let built: DeckGuide | null;
+    try {
+      built = await found.guide;
+    } catch {
+      return undefined;
+    }
+    // Once the guard answers, nothing awaits before the write below.
+    const refused = await refusalNow?.();
+    if (refused !== undefined) return { refused };
+    // The one on screen may have been opened again meanwhile.
+    for (const entry of [found.entry, onScreen]) {
+      if (
+        entry &&
+        deckCacheKeyString(entry.key) === deckCacheKeyString(found.key)
+      ) {
+        entry.agentGuide = guide;
+      }
+    }
+    if (guide) await cache.putAgentGuide(found.key, guide);
+    else await cache.dropAgentGuide(found.key);
+    return { guide: guide ?? built };
   }
 
   /** The comparisons under way, by version pair, which a second ask shares. */
@@ -1215,6 +1308,8 @@ export function createDeckService(options: {
 
   return {
     held,
+    rulesFor,
+    setAgentGuide,
 
     /**
      * Compares the pull request Deck holds at `head` with the version whose

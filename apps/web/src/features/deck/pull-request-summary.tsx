@@ -16,12 +16,15 @@ import {
   type SummaryEntry,
 } from "@/domain/deck/summary";
 import { openSourceUrl } from "@/lib/source-navigation";
+import { SummaryLineAsk } from "./deck-ask";
 
 /*
  * The summary at the top of Deck's review page (#789, from #662), above
  * the description drawer and the guide: the problem from the linked
- * ticket, the kinds of change, then the risky areas, the tests by concern
- * and the leftovers, each line a link to its first hunk.
+ * ticket, the kinds of change, then the breaking changes, the risky areas,
+ * the tests by concern and the leftovers, each line a link to its first
+ * hunk ended by `more ›`. After a regroup (#794), the agent's guide carries
+ * the agent's problem, kinds and lines with the rules'.
  */
 
 /** Scrolls the changes to a hunk and focuses it. `PullRequestChanges` provides it. */
@@ -41,7 +44,7 @@ export function ChangeKinds({ kinds }: { kinds: readonly DeckChangeKind[] }) {
   );
 }
 
-/** One line, a link to its first hunk. #793 ends it with `more ›`. */
+/** One line, a link to its first hunk, ended by its `more ›` (#794). */
 function SummaryLineView({
   entry: { line, concern },
   onReach,
@@ -52,28 +55,30 @@ function SummaryLineView({
   const count = line.hunkIds.length;
   return (
     <li className="deck-summary-line">
-      {concern !== undefined ? (
-        <Value tone="muted" className="deck-summary-concern" aria-hidden>
-          {concern}
-        </Value>
-      ) : null}
-      <button
-        type="button"
-        className="deck-summary-link"
-        onClick={() => onReach(line.hunkIds[0]!)}
-      >
+      <SummaryLineAsk lineId={line.id}>
         {concern !== undefined ? (
-          <>
-            <span className="sr-only">{`Concern ${concern}:`}</span>{" "}
-          </>
+          <Value tone="muted" className="deck-summary-concern" aria-hidden>
+            {concern}
+          </Value>
         ) : null}
-        {line.text}
-      </button>
-      {count > 1 ? (
-        <Value tone="muted" className="deck-summary-count">
-          {count} hunks
-        </Value>
-      ) : null}
+        <button
+          type="button"
+          className="deck-summary-link"
+          onClick={() => onReach(line.hunkIds[0]!)}
+        >
+          {concern !== undefined ? (
+            <>
+              <span className="sr-only">{`Concern ${concern}:`}</span>{" "}
+            </>
+          ) : null}
+          {line.text}
+        </button>
+        {count > 1 ? (
+          <Value tone="muted" className="deck-summary-count">
+            {count} hunks
+          </Value>
+        ) : null}
+      </SummaryLineAsk>
     </li>
   );
 }

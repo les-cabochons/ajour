@@ -10,11 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import {
-  DECK_CONCERN_DEFAULT_QUESTION,
   DECK_LINES_DEFAULT_QUESTION,
   DECK_QUESTION_MAX,
   deckLinesLabel,
   type DeckAskAnchor,
+  type DeckConsentCovers,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -36,6 +36,7 @@ import { DeckConsentDialog } from "./deck-consent-dialog";
 import {
   askKey,
   DeckAskSessions,
+  defaultQuestionOf,
   useAskSession,
   useHunkAsks,
   type AskSession,
@@ -45,13 +46,14 @@ import {
 import { useReviewLines } from "./review-lines-context";
 
 /*
- * Deck's quiet asks (#791, #793): a faint `more ›` ends each concern's
- * rationale, and the toolbar above selected lines asks about them. An ask
- * opens on its anchor's default question, which Enter sends as is or as
- * edited; the answer streams in under the rationale, or after the hunk of
- * the lines, ending with the commit it is about, and its `path:line`
- * citations scroll to their lines. The first ask in a repository opens the
- * consent dialog. Nothing names the agent. At rest a concern mounts one
+ * Deck's quiet asks (#791, #793, #794): a faint `more ›` ends each
+ * concern's rationale and each line of the summary, and the toolbar above
+ * selected lines asks about them. An ask opens on its anchor's default
+ * question, which Enter sends as is or as edited; the answer streams in
+ * under the rationale or the line, or after the hunk of the lines, ending
+ * with the commit it is about, and its `path:line` citations scroll to
+ * their lines. The first ask in a repository opens the consent dialog.
+ * Nothing names the agent. At rest a concern or a summary line mounts one
  * button and no listener, and a hunk nothing for its asks. The asks live
  * in the page's `DeckAskSessions`, so a concern or a hunk that unmounts,
  * as a huge pull request's rows do off screen (#790), finds its ask as it
@@ -71,12 +73,18 @@ interface DeckAskContextValue {
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
 
-/** The page's asks and the pull request they are about, or null outside the review page's changes. */
+/**
+ * The page's asks and the pull request they are about, or null while its
+ * changes don't show. Regroup asks for consent through them too (#794).
+ */
 export function useDeckAsks() {
   return useContext(DeckAskContext);
 }
 
-/** Gives the page's asks their pull request at `head`, and its one consent dialog. */
+/**
+ * Gives the page's asks their pull request at `head`, and its one consent
+ * dialog. Without a head, while the changes load or fail, nothing is asked.
+ */
 export function DeckAskProvider({
   pluginId,
   connectionId,
@@ -85,16 +93,22 @@ export function DeckAskProvider({
   head,
   clone,
   children,
-}: DeckAskTarget & { children: ReactNode }) {
+}: Omit<DeckAskTarget, "head"> & {
+  head: string | undefined;
+  children: ReactNode;
+}) {
   const target = useMemo(
-    () => ({
-      pluginId,
-      connectionId,
-      repository,
-      number,
-      head,
-      ...(clone ? { clone } : {}),
-    }),
+    () =>
+      head === undefined
+        ? undefined
+        : {
+            pluginId,
+            connectionId,
+            repository,
+            number,
+            head,
+            ...(clone ? { clone } : {}),
+          },
     [pluginId, connectionId, repository, number, head, clone],
   );
   const [picking, setPicking] = useState<{
@@ -104,7 +118,7 @@ export function DeckAskProvider({
   const pickClone = useCallback(
     () =>
       new Promise<boolean>((resolve) => {
-        if (!target.clone) {
+        if (!target?.clone) {
           resolve(false);
           return;
         }
@@ -156,7 +170,9 @@ export function DeckAskProvider({
     sessions.attach();
     return () => sessions.detach();
   }, [sessions]);
-  useEffect(() => sessions.keepHead(head), [sessions, head]);
+  useEffect(() => {
+    if (head !== undefined) sessions.keepHead(head);
+  }, [sessions, head]);
   // A revoked repository's answers show no more, in this window or another.
   useEffect(() => {
     const stopRevocations = watchDeckConsentRevocations((revoked) => {
@@ -175,21 +191,22 @@ export function DeckAskProvider({
       stopClosed();
     };
   }, [sessions, pluginId, connectionId, repository]);
-  const answer = async (allowed: boolean) => {
+  const answer = async (covers: DeckConsentCovers | null) => {
     const current = asking;
     if (!current) return;
     setAsking(undefined);
-    if (!allowed) {
+    if (!covers) {
       current.resolve(false);
       return;
     }
     try {
-      // Only for the agent the dialog named.
+      // Only for the agent the dialog named, and what it said leaves.
       await grantDeckConsent(
-        target.pluginId,
-        target.connectionId,
+        pluginId,
+        connectionId,
         current.request.repository,
         current.request.provider.cli,
+        covers,
       );
       current.resolve(true);
     } catch (error) {
@@ -202,7 +219,7 @@ export function DeckAskProvider({
     }
   };
   const value = useMemo(
-    () => ({ target, sessions, pickClone }),
+    () => (target ? { target, sessions, pickClone } : null),
     [target, sessions, pickClone],
   );
   return (
@@ -210,7 +227,7 @@ export function DeckAskProvider({
       {children}
       <DeckConsentDialog
         request={asking?.request}
-        onAnswer={(allowed) => void answer(allowed)}
+        onAnswer={(covers) => void answer(covers)}
       />
       <DeckClonePicker
         target={picking?.target}
@@ -223,6 +240,51 @@ export function DeckAskProvider({
   );
 }
 
+/**
+ * The ask about `anchor`: its `more ›` and, once open, its question or
+ * answer. Null while the page asks nothing.
+ */
+function useMore(anchor: DeckAskAnchor) {
+  const context = useContext(DeckAskContext);
+  const key = context ? askKey(context.target.head, anchor) : "";
+  const session = useAskSession(context?.sessions, key);
+  const open = session !== undefined;
+  const answerId = useId();
+  const more = useRef<HTMLButtonElement>(null);
+  // Focus goes back to `more ›`, as it would from a closed popover.
+  const focusMore = useCallback(() => more.current?.focus(), []);
+  if (!context) return null;
+  return {
+    button: (
+      <button
+        ref={more}
+        type="button"
+        className="deck-more"
+        aria-label="More detail"
+        aria-expanded={open}
+        aria-controls={open ? answerId : undefined}
+        onClick={() => {
+          if (!open) context.sessions.open(context.target.head, anchor);
+        }}
+      >
+        more ›
+      </button>
+    ),
+    answer: session ? (
+      <AskAnswer
+        id={answerId}
+        askKey={key}
+        session={session}
+        context={context}
+        onClosed={focusMore}
+        label="More detail"
+        placeholder="Getting more detail…"
+        defaultQuestion={defaultQuestionOf(anchor)}
+      />
+    ) : null,
+  };
+}
+
 /** A concern's rationale, ended by its `more ›`, and the answer under it. */
 export function ConcernRationale({
   concernId,
@@ -231,53 +293,48 @@ export function ConcernRationale({
   concernId: string;
   rationale: string;
 }) {
-  const context = useContext(DeckAskContext);
   const anchor = useMemo(
     (): DeckAskAnchor => ({ kind: "concern", id: concernId }),
     [concernId],
   );
-  const key = context ? askKey(context.target.head, anchor) : "";
-  const session = useAskSession(context?.sessions, key);
-  const open = session !== undefined;
-  const answerId = useId();
-  const more = useRef<HTMLButtonElement>(null);
-  // Focus goes back to `more ›`, as it would from a closed popover.
-  const focusMore = useCallback(() => more.current?.focus(), []);
+  const more = useMore(anchor);
   return (
     <>
       <p className="deck-concern-rationale">
         {rationale}
-        {context ? (
+        {more ? (
           <>
             {rationale ? " " : null}
-            <button
-              ref={more}
-              type="button"
-              className="deck-more"
-              aria-label="More detail"
-              aria-expanded={open}
-              aria-controls={open ? answerId : undefined}
-              onClick={() => {
-                if (!open) context.sessions.open(context.target.head, anchor);
-              }}
-            >
-              more ›
-            </button>
+            {more.button}
           </>
         ) : null}
       </p>
-      {context && session ? (
-        <AskAnswer
-          id={answerId}
-          askKey={key}
-          session={session}
-          context={context}
-          onClosed={focusMore}
-          label="More detail"
-          placeholder="Getting more detail…"
-          defaultQuestion={DECK_CONCERN_DEFAULT_QUESTION}
-        />
-      ) : null}
+      {more?.answer}
+    </>
+  );
+}
+
+/**
+ * A summary line, ended by its `more ›` (#794), then the answer under it.
+ * `children` is what the line shows before it.
+ */
+export function SummaryLineAsk({
+  lineId,
+  children,
+}: {
+  lineId: string;
+  children: ReactNode;
+}) {
+  const anchor = useMemo(
+    (): DeckAskAnchor => ({ kind: "summary", id: lineId }),
+    [lineId],
+  );
+  const more = useMore(anchor);
+  return (
+    <>
+      {children}
+      {more?.button}
+      {more?.answer}
     </>
   );
 }

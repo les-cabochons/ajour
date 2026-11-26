@@ -16,6 +16,7 @@ import type {
   AgentTaskStatus,
   AgentTurn,
   AgentTurnEvent,
+  CoreAgentTask,
   CoreTaskRunRequest,
   PluginTaskRunRequest,
 } from "../../../../packages/shared/agent-runs.ts";
@@ -156,6 +157,14 @@ export interface AgentRunnerOptions {
    * asked before each turn is sent to it. Without it, no turn is sent.
    */
   admitsTurn?: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
+  /**
+   * Why a turn its CLI ended as done failed all the same, such as a guide
+   * turn that saved no guide (#794). Undefined lets it end done.
+   */
+  turnDoneFailure?: (turn: {
+    id: string;
+    task: CoreAgentTask;
+  }) => string | undefined;
   /** How long a conversation with no turn stays open. Defaults to 5 minutes. */
   conversationIdleMs?: number;
   /** How long an interrupted turn has before its process is ended. Defaults to 5 seconds. */
@@ -258,6 +267,9 @@ export class AgentRunner {
       events: options.events,
       publish: options.publishTurnEvent ?? (() => undefined),
       admits: options.admitsTurn ?? (async () => false),
+      ...(options.turnDoneFailure
+        ? { doneFailure: options.turnDoneFailure }
+        : {}),
       ...(options.conversationIdleMs === undefined
         ? {}
         : { idleMs: options.conversationIdleMs }),
@@ -282,6 +294,23 @@ export class AgentRunner {
     options?: TurnOptions,
   ): Promise<AgentTurn> {
     return this.conversations.startTurn(request, options);
+  }
+
+  /**
+   * The turn running in the conversation whose client is `clientId`, as a
+   * call of its tools reads it (#794), or undefined between turns and once
+   * it is being stopped.
+   */
+  runningTurnOf(clientId: string) {
+    return this.conversations.runningTurnOf(clientId);
+  }
+
+  /**
+   * Ends a running turn that gave back what its task asks for (#794): it
+   * ends done. False when it isn't running.
+   */
+  completeTurn(turnId: string): boolean {
+    return this.conversations.completeTurn(turnId);
   }
 
   /** Stops a turn that waits or runs. False when it isn't going. */
