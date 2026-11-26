@@ -28,9 +28,12 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import type { ShortcutActionId } from "@/lib/shortcuts";
 import { useDeckAsks } from "./deck-ask";
 import { ReviewLineSelection } from "./review-line-selection";
-import { useReviewLines, type ReviewLines } from "./review-lines-context";
+import {
+  useReviewLines,
+  type AddComment,
+  type ReviewLines,
+} from "./review-lines-context";
 import type { SectionNavigator } from "./review-scroll";
-import type { AddComment } from "./review-sections";
 
 /*
  * Selected lines on Deck's review page (#793). The hunks report what the

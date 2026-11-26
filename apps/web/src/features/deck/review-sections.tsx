@@ -30,7 +30,7 @@ import {
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { useHunkLines } from "./review-line-selection";
 import { highlightOfSelection, LinesToolbar } from "./review-lines";
-import { useReviewLines } from "./review-lines-context";
+import { useReviewLines, type AddComment } from "./review-lines-context";
 import { renderNoteCard } from "./review-notes";
 
 /*
@@ -45,13 +45,7 @@ import { renderNoteCard } from "./review-notes";
  * the hunk's lines.
  */
 
-/** Opens the composer on lines of a hunk of the file at `path`, holding `body` when given. */
-export type AddComment = (
-  path: string,
-  hunkId: string,
-  lines: DiffLineRange,
-  body?: string,
-) => void;
+export type { AddComment };
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";

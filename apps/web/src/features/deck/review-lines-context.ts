@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type {
   DiffLineHighlight,
+  DiffLineRange,
   DiffSelectionChange,
 } from "@/components/diff-hunk";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
@@ -11,6 +12,14 @@ import type { ReviewLineSelection } from "./review-line-selection";
  * What the review page gives its hunks and answers about selected lines
  * (#793), apart from the toolbar so the asks' module reads it too.
  */
+
+/** Opens the composer on lines of a hunk of the file at `path`, holding `body` when given. */
+export type AddComment = (
+  path: string,
+  hunkId: string,
+  lines: DiffLineRange,
+  body?: string,
+) => void;
 
 export interface ReviewLines {
   selection: ReviewLineSelection;
