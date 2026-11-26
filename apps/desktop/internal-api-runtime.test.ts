@@ -15,6 +15,7 @@ const {
 const {
   protectedRepositoryFolders,
   createFolderChooser,
+  createCloneChooser,
 } = require("./electron/repository-folders.cjs");
 const { pluginInstallResultOf } = require("./electron/plugin-install.cjs");
 
@@ -104,6 +105,7 @@ async function runtime(
   const context = vm.createContext({
     protectedRepositoryFolders,
     createFolderChooser,
+    createCloneChooser,
     mainEventSink: Promise.resolve(mainSink),
     http,
     path,

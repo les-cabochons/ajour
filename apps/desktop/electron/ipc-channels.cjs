@@ -28,6 +28,7 @@
  */
 const IPC_CHANNELS = {
   "ajour:choose-folder": { event: "repository_folder.choose", mode: "invoke" },
+  "ajour:choose-deck-clone": { event: "deck.clone_choose", mode: "invoke" },
   "ajour:get-bootstrap-local-state": {
     event: "local_state.recover",
     mode: "sync",

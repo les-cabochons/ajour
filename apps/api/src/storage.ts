@@ -130,7 +130,10 @@ import {
   type AgentCliId,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
-import type { DeckAgentConsent } from "../../../packages/shared/deck.ts";
+import type {
+  DeckAgentConsent,
+  DeckClone,
+} from "../../../packages/shared/deck.ts";
 import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
   ConnectionPausedError,
@@ -962,6 +965,7 @@ function createDefaultState(): AppApiState {
       pluginValues: {},
       pluginSecrets: {},
       deckConsents: [],
+      deckClones: [],
     },
     pluginBrokerActivity: {},
     pluginProcesses: {},
@@ -1721,6 +1725,11 @@ export class AppApiStorage {
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private loading?: Promise<AppApiState>;
+  /** Settles once a reader first loads the state file, never on its own. */
+  private stateLoaded!: () => void;
+  private readonly loaded = new Promise<void>((resolve) => {
+    this.stateLoaded = resolve;
+  });
   /**
    * The last Sync review dismissal, for Undo. Only the last one can be undone,
    * and it lives in memory, so it does not survive a restart.
@@ -3057,6 +3066,48 @@ export class AppApiStorage {
           agentRunner: { ...state.agentRunner, deckConsents: kept },
         },
         result: kept.length !== state.agentRunner.deckConsents.length,
+      };
+    });
+  }
+
+  /** The local clone the user chose for each repository (#795). */
+  async getDeckClones(): Promise<DeckClone[]> {
+    return (await this.readState()).agentRunner.deckClones;
+  }
+
+  /** Keeps a repository's clone, replacing the one chosen before. */
+  async saveDeckClone(clone: DeckClone): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        agentRunner: {
+          ...state.agentRunner,
+          deckClones: [
+            ...state.agentRunner.deckClones.filter(
+              (entry) => !sameDeckRepository(entry, clone),
+            ),
+            clone,
+          ],
+        },
+      },
+      result: undefined,
+    }));
+  }
+
+  /** Forgets a repository's clone. False when it had none. */
+  async forgetDeckClone(
+    repository: Pick<DeckClone, "pluginId" | "connectionId" | "repository">,
+  ): Promise<boolean> {
+    return this.mutate((state) => {
+      const kept = state.agentRunner.deckClones.filter(
+        (entry) => !sameDeckRepository(entry, repository),
+      );
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, deckClones: kept },
+        },
+        result: kept.length !== state.agentRunner.deckClones.length,
       };
     });
   }
@@ -4842,7 +4893,17 @@ export class AppApiStorage {
       this.loading = undefined;
     });
     const loaded = await this.loading;
+    this.stateLoaded();
     return this.cache ?? loaded;
+  }
+
+  /**
+   * Resolves once the state is first loaded, by whichever request needs it
+   * first, without loading it: a task at start that reads it then leaves
+   * the load, and its `storage.load` event, to that request.
+   */
+  whenStateLoaded(): Promise<void> {
+    return this.loaded;
   }
 
   /**

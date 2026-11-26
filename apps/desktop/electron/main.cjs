@@ -1,6 +1,7 @@
 const {
   protectedRepositoryFolders,
   createFolderChooser,
+  createCloneChooser,
 } = require("./repository-folders.cjs");
 const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
@@ -1010,6 +1011,33 @@ async function installPluginArchive(unit, archive, ...options) {
   });
   return result;
 }
+
+ipc.handle(
+  "ajour:choose-deck-clone",
+  createCloneChooser({
+    window: () => mainWindow,
+    assertSender: (event) => {
+      assertActiveDesktopWindow(event, "choose a clone");
+      if (event.senderFrame !== mainWindow.webContents.mainFrame)
+        throw refusedSender("Only the main Ajour frame can choose a clone.");
+    },
+    show: (owner, options) => dialog.showOpenDialog(owner, options),
+    cancel: () => events.current()?.cancel(),
+    choose: async (repository, source, chosenPath) => {
+      if (!internalAppApiServer)
+        throw new Error("Choosing a clone needs the desktop app.");
+      const { chooseDeckCloneForServer } = await internalAppApiModulePromise;
+      const chosen = await chooseDeckCloneForServer(
+        internalAppApiServer,
+        repository,
+        source,
+        chosenPath,
+      );
+      if ("refused" in chosen) events.current()?.refuse("clone_refused");
+      return chosen;
+    },
+  }),
+);
 
 ipc.handle(
   "ajour:choose-folder",

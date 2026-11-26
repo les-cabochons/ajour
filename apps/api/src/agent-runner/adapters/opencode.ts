@@ -73,9 +73,10 @@ function configFile(
     default_agent?: string;
     model?: string;
     agents?: Record<string, unknown>;
+    readRoot?: string;
   } = {},
 ): string {
-  const { agents, ...settings } = extra;
+  const { agents, readRoot, ...settings } = extra;
   const config = {
     $schema: "https://opencode.ai/config.json",
     autoupdate: false,
@@ -91,10 +92,27 @@ function configFile(
       ...Object.fromEntries(
         Object.keys(mcp).map((name) => [`${name}_*`, "allow"]),
       ),
+      ...(readRoot ? readOnlyIn(readRoot) : {}),
     },
     mcp,
   };
   return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+/**
+ * The read-only file tools, in one folder only (#795): editing and the
+ * shell stay denied by `*`, and a read outside the run's folder is refused
+ * unless it is in `root`. OpenCode resolves a path before it matches it, so
+ * `..` can't step out, and a later rule wins over an earlier one.
+ */
+function readOnlyIn(root: string) {
+  return {
+    read: "allow",
+    grep: "allow",
+    glob: "allow",
+    list: "allow",
+    external_directory: { "*": "deny", [path.join(root, "*")]: "allow" },
+  };
 }
 
 /**
@@ -106,6 +124,7 @@ function configFile(
  */
 const opencodeConversation: ConversationAdapter = {
   mode: "warm",
+  readsFiles: true,
 
   buildInvocation(input) {
     return {
@@ -122,6 +141,7 @@ const opencodeConversation: ConversationAdapter = {
             ...(input.model ? { model: input.model } : {}),
             // Titling a session sends its first message in a request of its own.
             agents: { title: { disable: true } },
+            ...(input.readRoot ? { readRoot: input.readRoot } : {}),
           },
         ),
         "prompt.md": input.prompt,

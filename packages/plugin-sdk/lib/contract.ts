@@ -854,6 +854,13 @@ export type CodeHostOperations = {
         mergeability: "unknown" | "mergeable" | "conflicting";
         closedAt?: number | undefined;
         baseRef?: string | undefined;
+        headRef?: string | undefined;
+        repositoryIdentity?:
+          | {
+              cloneUrls: string[];
+              source?: { repository: string; cloneUrls: string[] } | undefined;
+            }
+          | undefined;
         lastPushActor?:
           | {
               login: string;

@@ -2,7 +2,7 @@
 
 Every hand off of a project started in the same repository folder, so two coding tools working on two backlog items edited one checkout. Ajour now makes a git worktree for the item and starts the tool in it (spec #857, first built in #860). Something has to run `git worktree add`, and until now nothing in Ajour's own code ran git.
 
-ADR 0019 covers plugins only: a plugin asks the process broker for a command, behind the user's consent, the gates and the command mode. That path doesn't fit here. A worktree is made before any tool is asked, for every tool alike, and its folder is one a plugin may never name. So Ajour's local API runs git itself, in one module, `apps/api/src/worktrees.ts`. Nothing else in Ajour runs git.
+ADR 0019 covers plugins only: a plugin asks the process broker for a command, behind the user's consent, the gates and the command mode. That path doesn't fit here. A worktree is made before any tool is asked, for every tool alike, and its folder is one a plugin may never name. So Ajour's local API runs git itself, in one module, `apps/api/src/worktrees.ts`. Nothing else in Ajour ran git until Deck's local clones ([ADR 0023](0023-ajour-fetches-pull-requests-into-the-users-clone-with-the-users-git-setup.md)), which run it under the same rules through the same runner, now `apps/api/src/git-process.ts`.
 
 **The rules of every git call.**
 
@@ -30,7 +30,7 @@ ADR 0019 covers plugins only: a plugin asks the process broker for a command, be
 
 ## Consequences
 
-- Ajour's own code now starts a program outside the process broker. The module is the only place that runs git, and its tests run real git in a temporary repository through the routes. A worktree's Open in terminal (#862) is the one other start: the local API opens the user's terminal app in the worktree's folder, with the launch a plugin's terminal command already gets and no command of a plugin.
+- Ajour's own code now starts a program outside the process broker. The module, and since ADR 0023 Deck's local clones, are the only places that run git, and its tests run real git in a temporary repository through the routes. A worktree's Open in terminal (#862) is the one other start: the local API opens the user's terminal app in the worktree's folder, with the launch a plugin's terminal command already gets and no command of a plugin.
 - Git runs with the repository's own configuration and hooks, as ADR 0019 already accepts for a plugin's git: `.git/config` and `.git/hooks` are the user's, never committed. A `post-checkout` hook runs when a worktree is added.
 - A test runner, linter or search tool that walks the repository folder may read the copies under `.ajour/worktrees`, although git ignores them.
 - A development build protects its own checkout, so it can't be a repository folder. Developers handing off Ajour's own tickets keep mapping another clone.

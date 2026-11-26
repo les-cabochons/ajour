@@ -95,6 +95,12 @@ Each concern's reason ends with a faint **more ›**. Click it and the question 
 
 The first time you ask about a repository's pull request, Ajour asks once whether to send its code to that agent, and lists what leaves your computer: the changed lines, any other changed files the agent reads, and the review threads. Nothing is sent before you ask. **Settings › Agents › Questions about pull requests** lists the repositories you allowed, with **Revoke**, which also stops an answer being written for that repository. The agent reads only that pull request, at that commit, and none of your other Ajour data, so MCP doesn't need to be on. While a timesheet agent task runs, the answer waits for it to finish.
 
+### Let answers read your clone
+
+With your own clone of the repository, an answer can read the whole codebase at the pull request's latest commit, not only the changed files. Under an answer, click **Read your clone too**. Ajour lists the repository folders of your projects whose remote is that repository; pick one and click **Use clone**, or click **Choose a folder…** to pick another, a WSL folder included (through `\\wsl.localhost\…`). The question is asked again, and the answer then ends with **From the code at a41c9e2, and your clone**.
+
+To get the pull request's commit, Ajour runs `git fetch` in your clone with your own Git sign-in, into references of its own, and checks it out in a separate folder it removes later. Your branches, staged changes and files stay as they are, and nothing runs in your clone. The agent only reads there, and sends what it reads to its provider. When Ajour can't read your clone, for example when the fetch fails, the answer comes from the pull request alone and says why under it. Codex reads files only through a shell, which Ajour keeps off, so its answers read the pull request alone. **Settings › Agents › Local clones** lists your clones, with **Forget**.
+
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Merging happens in your code host for now
