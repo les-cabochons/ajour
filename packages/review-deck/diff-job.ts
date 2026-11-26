@@ -1,20 +1,22 @@
 // Entry point: the messages between Ajour and `diff-worker.ts`, the worker thread that writes a pull request's
-// diff with `fileDiff`, one file at a time within a time budget, off the local API's main thread (#774's
+// diff with `fileDiff`, one file at a time within its budget, off the local API's main thread (#774's
 // council). It imports only types, so a caller that starts the worker by its URL loads no diff code itself.
-import type { FileChange, FileContents } from "./review/analysis.ts";
+import type {
+  DiffBudget,
+  FileChange,
+  FileContents,
+} from "./review/analysis.ts";
 
 /** A job for the worker: the changed files, both versions of each by its path, and each file's budget. */
 export interface DiffJob {
   id: number;
   changes: FileChange[];
   contents: Map<string, FileContents>;
-  /** The most one file's diff may take, in milliseconds: jsdiff's `timeout`. */
-  fileBudgetMs: number;
   /**
-   * The most lines one file's diff may add and remove, jsdiff's `maxEditLength`, when both its versions have
-   * lines: an added, deleted or emptied file costs only its length.
+   * Each file's budget: the most it may take, in milliseconds, and the most lines it may add and remove, which
+   * holds only when both its versions have lines: an added, deleted or emptied file costs only its length.
    */
-  fileMaxEditLines: number;
+  fileBudget: Required<DiffBudget>;
 }
 
 /** A file whose diff passed its budget: its lines in each version, 0 for a version it has none in. */

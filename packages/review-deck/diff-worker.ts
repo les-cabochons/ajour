@@ -33,12 +33,12 @@ function write(job: DiffJob): DiffJobResult {
     const tooLarge = new Map<string, DiffTooLarge>();
     for (const change of job.changes) {
       const content = job.contents.get(change.path)!;
-      const part = fileDiff(change, content, {
-        timeout: job.fileBudgetMs,
-        ...(content.old && content.new
-          ? { maxEditLength: job.fileMaxEditLines }
-          : {}),
-      });
+      const { timeout, maxEditLength } = job.fileBudget;
+      const part = fileDiff(
+        change,
+        content,
+        content.old && content.new ? { timeout, maxEditLength } : { timeout },
+      );
       if (part !== undefined) {
         parts.push(part);
         continue;

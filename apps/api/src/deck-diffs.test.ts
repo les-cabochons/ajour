@@ -77,7 +77,7 @@ describe("Deck's diff workers", () => {
   it("writes a rewritten lockfile as too large by its edits, however long the clock allows", async () => {
     // A minute per file: only the edit limit can stop it.
     const { changes, contents } = lockfile();
-    const written = await diffsOf({ timeoutMs: 60_000 }).write(
+    const written = await diffsOf({ timeout: 60_000 }).write(
       changes,
       contents,
       "open",
@@ -107,7 +107,7 @@ describe("Deck's diff workers", () => {
       tooLarge: false,
     });
 
-    const written = await diffsOf({ timeoutMs: 60_000 }).write(
+    const written = await diffsOf({ timeout: 60_000 }).write(
       changes,
       contents,
       "open",

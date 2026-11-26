@@ -6,6 +6,7 @@ import {
   type DiffJobWritten,
 } from "../../../packages/review-deck/diff-job.ts";
 import type {
+  DiffBudget,
   FileChange,
   FileContents,
 } from "../../../packages/review-deck/diff.ts";
@@ -37,15 +38,10 @@ export const DECK_FILE_MAX_EDIT_LINES = 2_000;
  */
 export const DECK_FILE_DIFF_BUDGET_MS = 500;
 
-/** One file's diff budget: its time, and its added and removed lines. */
-export interface DeckFileBudget {
-  timeoutMs: number;
-  maxEditLines: number;
-}
-
-const FILE_BUDGET: DeckFileBudget = {
-  timeoutMs: DECK_FILE_DIFF_BUDGET_MS,
-  maxEditLines: DECK_FILE_MAX_EDIT_LINES,
+/** One file's diff budget, in jsdiff's terms. */
+const FILE_BUDGET: Required<DiffBudget> = {
+  timeout: DECK_FILE_DIFF_BUDGET_MS,
+  maxEditLength: DECK_FILE_MAX_EDIT_LINES,
 };
 
 /** A worker idle this long ends. */
@@ -86,7 +82,7 @@ type Pending = Map<
  * diff can't stop halfway, and the diffs queued behind it go to a new one.
  * Each worker answers only its own jobs.
  */
-function workerLane(workerUrl: URL, budget: DeckFileBudget) {
+function workerLane(workerUrl: URL, fileBudget: Required<DiffBudget>) {
   type Held = { worker: Worker; pending: Pending };
   let current: Held | undefined;
   let idle: NodeJS.Timeout | undefined;
@@ -148,8 +144,7 @@ function workerLane(workerUrl: URL, budget: DeckFileBudget) {
         id,
         changes,
         contents,
-        fileBudgetMs: budget.timeoutMs,
-        fileMaxEditLines: budget.maxEditLines,
+        fileBudget,
       };
       const onAbort = () => {
         const holder = holders.get(id);
@@ -197,7 +192,7 @@ function workerLane(workerUrl: URL, budget: DeckFileBudget) {
  */
 export function createWorkerDeckDiffs(
   workerUrl = DIFF_WORKER_URL,
-  budget: Partial<DeckFileBudget> = {},
+  budget: DiffBudget = {},
 ): DeckDiffs {
   const fileBudget = { ...FILE_BUDGET, ...budget };
   const lanes = {
