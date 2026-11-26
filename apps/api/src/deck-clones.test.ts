@@ -1,8 +1,10 @@
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import {
   access,
   lstat,
+  mkdir,
   readFile,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -623,6 +625,212 @@ describe(
 
       expect(await exists(gone!)).toBe(false);
       expect(await exists(kept!)).toBe(true);
+    });
+
+    it("an eviction during the first sweep still removes that entry's worktree", async () => {
+      const [evicted, kept] = await preparedByEarlierRun(entry(), other());
+      let live = [entry(), other()];
+      let opened!: () => void;
+      const gate = new Promise<void>((resolve) => (opened = resolve));
+      let read!: () => void;
+      const sweepRead = new Promise<void>((resolve) => (read = resolve));
+      let first = true;
+      const next = clones(fixture.worktrees, async () => {
+        const now = live;
+        if (!first) return now;
+        first = false;
+        read();
+        await gate;
+        return now;
+      });
+
+      // The sweep has read the cache, with the entry still in it, when the
+      // entry is evicted.
+      const sweeping = next.sweepAtStart();
+      await sweepRead;
+      live = [other()];
+      const releasing = next.release(entry().key, repository);
+      opened();
+      await Promise.all([sweeping, releasing]);
+
+      expect(await exists(evicted!)).toBe(false);
+      expect(await exists(kept!)).toBe(true);
+      expect(refs()).toMatch(/^refs\/ajour\/deck\/[0-9a-f]+\/head$/);
+    });
+  },
+);
+
+describe(
+  "cleanup removes only what Deck made, under its own folder",
+  { timeout: 60_000 },
+  () => {
+    const worktreeList = () =>
+      git(fixture.clone, "worktree", "list", "--porcelain");
+    const refs = () =>
+      git(fixture.clone, "for-each-ref", "--format=%(refname)", "refs/ajour");
+
+    /** The entry's worktree, prepared by an API that then stopped. */
+    async function preparedByEarlierRun() {
+      const first = clones();
+      await first.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const prepared = await first.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      return prepared.root;
+    }
+
+    /**
+     * Moves the worktree out of the cache and puts a junction (a symbolic
+     * link off Windows) to it where it was, with a file of the user's in it.
+     */
+    async function linkedOutside(root: string) {
+      const outside = path.join(fixture.root, "moved out");
+      await rename(root, outside);
+      await symlink(outside, root, "junction");
+      const marker = path.join(outside, "my file.txt");
+      await writeFile(marker, "mine\n");
+      return { outside, marker };
+    }
+
+    it("at start, removes a junction where its worktree was, never what it points to", async () => {
+      const root = await preparedByEarlierRun();
+      const { outside, marker } = await linkedOutside(root);
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await readFile(marker, "utf8")).toBe("mine\n");
+      expect(await exists(path.join(outside, "head only.ts"))).toBe(true);
+      await expect(lstat(root)).rejects.toThrow();
+      expect(refs()).toBe("");
+    });
+
+    it("a release removes a junction where its worktree was, never what it points to", async () => {
+      const deck = clones();
+      await deck.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const prepared = await deck.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      const { marker } = await linkedOutside(prepared.root);
+
+      await deck.release(entry().key);
+
+      expect(await readFile(marker, "utf8")).toBe("mine\n");
+      await expect(lstat(prepared.root)).rejects.toThrow();
+    });
+
+    it("at start, a gone clone's junction goes, never what it points to", async () => {
+      const root = await preparedByEarlierRun();
+      const { marker } = await linkedOutside(root);
+      await rm(fixture.clone, { recursive: true, force: true, maxRetries: 5 });
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await readFile(marker, "utf8")).toBe("mine\n");
+      await expect(lstat(root)).rejects.toThrow();
+    });
+
+    it("never removes the user's own worktrees or folders under the cache", async () => {
+      await preparedByEarlierRun();
+      // A worktree the user made there, with work of theirs, and another
+      // with a name like Deck's.
+      const named = path.join(fixture.worktrees, "my-own-worktree");
+      const hashed = path.join(fixture.worktrees, "0123456789abcdef");
+      for (const folder of [named, hashed]) {
+        git(fixture.clone, "worktree", "add", "--quiet", "--detach", folder);
+        await writeFile(path.join(folder, "unsaved.txt"), "mine\n");
+      }
+      // A folder of theirs with a name like Deck's, and a link to another.
+      const plain = path.join(fixture.worktrees, "fedcba9876543210");
+      await mkdir(plain);
+      await writeFile(path.join(plain, "notes.txt"), "mine\n");
+      const elsewhere = path.join(fixture.root, "elsewhere");
+      await mkdir(elsewhere);
+      await writeFile(path.join(elsewhere, "notes.txt"), "mine\n");
+      await symlink(
+        elsewhere,
+        path.join(fixture.worktrees, "00112233aabbccdd"),
+        "junction",
+      );
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      for (const folder of [named, hashed]) {
+        expect(await readFile(path.join(folder, "unsaved.txt"), "utf8")).toBe(
+          "mine\n",
+        );
+        expect(worktreeList()).toContain(path.basename(folder));
+      }
+      expect(await readFile(path.join(plain, "notes.txt"), "utf8")).toBe(
+        "mine\n",
+      );
+      expect(await readFile(path.join(elsewhere, "notes.txt"), "utf8")).toBe(
+        "mine\n",
+      );
+      // Deck's own leftover still went.
+      expect(worktreeList()).not.toMatch(/[\\/][0-9a-f]{16}\n.*\nHEAD/);
+      expect(refs()).toBe("");
+    });
+
+    it("never prunes while a registration that isn't Deck's would go with it", async () => {
+      const root = await preparedByEarlierRun();
+      const hashed = path.join(fixture.worktrees, "0123456789abcdef");
+      git(fixture.clone, "worktree", "add", "--quiet", "--detach", hashed);
+      // Both folders are away: git would prune both registrations at once.
+      await rm(hashed, { recursive: true, force: true, maxRetries: 5 });
+      await rm(root, { recursive: true, force: true, maxRetries: 5 });
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(worktreeList()).toContain("0123456789abcdef");
+    });
+
+    it("checks out every file when the user's clone is sparse, and leaves it sparse", async () => {
+      git(fixture.clone, "sparse-checkout", "set", "src");
+      const sparse = () => ({
+        patterns: git(fixture.clone, "sparse-checkout", "list"),
+        config: git(fixture.clone, "config", "--list", "--show-scope"),
+        files: git(fixture.clone, "ls-files", "-t"),
+        guide: existsSync(path.join(fixture.clone, "docs", "guide.md")),
+      });
+      const before = { ...(await fixture.userState()), ...sparse() };
+      expect(before.guide).toBe(false);
+      const deck = clones();
+      await deck.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+
+      const prepared = await deck.prepare(entry());
+
+      expect(prepared.state).toBe("read");
+      if (prepared.state !== "read") return;
+      expect(
+        await readFile(path.join(prepared.root, "docs", "guide.md"), "utf8"),
+      ).toBe("# Guide\n");
+      expect(
+        await readFile(path.join(prepared.root, "head only.ts"), "utf8"),
+      ).toBe("export const fresh = true;\n");
+      expect(git(prepared.root, "ls-files", "-t")).not.toMatch(/^S /m);
+      // Git copies the clone's own worktree settings: the worktree's say it
+      // isn't sparse, so git run there later checks out every file too.
+      expect(
+        git(
+          prepared.root,
+          "config",
+          "--type=bool",
+          "--default=false",
+          "--get",
+          "core.sparseCheckout",
+        ),
+      ).toBe("false");
+      expect({ ...(await fixture.userState()), ...sparse() }).toEqual(before);
     });
   },
 );

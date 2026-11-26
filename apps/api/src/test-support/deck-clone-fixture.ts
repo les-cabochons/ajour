@@ -36,6 +36,9 @@ export async function deckCloneFixture(): Promise<DeckCloneFixture> {
   await newRepository(seed);
   await writeFile(path.join(seed, "app.ts"), "export const answer = 1;\n");
   await writeFile(path.join(seed, "notes.md"), "base\n");
+  // A file in a folder, which a sparse checkout of the user's can leave out.
+  await mkdir(path.join(seed, "docs"));
+  await writeFile(path.join(seed, "docs", "guide.md"), "# Guide\n");
   const base = commit(seed, ".", "base");
   git(root, "clone", "--quiet", "--bare", seed, host);
   git(root, "clone", "--quiet", host, clone);

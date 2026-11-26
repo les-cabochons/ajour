@@ -1725,6 +1725,11 @@ export class AppApiStorage {
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private loading?: Promise<AppApiState>;
+  /** Settles once a reader first loads the state file, never on its own. */
+  private stateLoaded!: () => void;
+  private readonly loaded = new Promise<void>((resolve) => {
+    this.stateLoaded = resolve;
+  });
   /**
    * The last Sync review dismissal, for Undo. Only the last one can be undone,
    * and it lives in memory, so it does not survive a restart.
@@ -4888,7 +4893,17 @@ export class AppApiStorage {
       this.loading = undefined;
     });
     const loaded = await this.loading;
+    this.stateLoaded();
     return this.cache ?? loaded;
+  }
+
+  /**
+   * Resolves once the state is first loaded, by whichever request needs it
+   * first, without loading it: a task at start that reads it then leaves
+   * the load, and its `storage.load` event, to that request.
+   */
+  whenStateLoaded(): Promise<void> {
+    return this.loaded;
   }
 
   /**

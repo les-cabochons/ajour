@@ -6656,9 +6656,12 @@ export async function startAppApiServer(
     runtime.stopWatchingCrashes = watchProcessCrashes(runtime.events);
   }
   // What an earlier run left of Deck's worktrees in the user's clones goes
-  // once the API listens (#795).
-  runtime.deckClonesSwept = runtime.deckClones
-    .sweepAtStart()
+  // once the API listens (#795), and once the first request has loaded the
+  // state that says which clones the user chose: the sweep never loads it
+  // itself, so the load stays that request's, with its one event.
+  runtime.deckClonesSwept = runtime.storage
+    .whenStateLoaded()
+    .then(() => runtime.deckClones.sweepAtStart())
     .catch(() => undefined);
 
   return server;
@@ -6821,9 +6824,14 @@ export async function chooseDeckCloneForServer(
 }
 
 /** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
-/** Resolves once the start's sweep of Deck's worktrees has finished. */
+/**
+ * Resolves once the start's sweep of Deck's worktrees has finished. It
+ * loads the state first, as the window's first request would.
+ */
 export async function deckClonesSweptForServer(server: Server) {
-  await appApiRuntimesByServer.get(server)?.deckClonesSwept;
+  const runtime = appApiRuntimesByServer.get(server);
+  await runtime?.storage.getDeckClones();
+  await runtime?.deckClonesSwept;
 }
 
 export async function addRepositoryFolderForServer(
