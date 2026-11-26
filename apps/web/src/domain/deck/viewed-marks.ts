@@ -74,9 +74,9 @@ function hash(text: string) {
 /**
  * A hunk's changed lines with their exact bytes, from its patch: each `+`
  * and `-` line after the `@@` line, `\r` kept, and the "\" marker of a
- * changed line with no final newline. A file shown without hunks, binary
- * or too large to read, shows nothing that tells a change, so it is signed
- * with the head too: a new head clears its mark.
+ * changed line with no final newline. A file shown without hunks, binary,
+ * too large to read or too large to compare, shows nothing that tells a
+ * change, so it is signed with the head too: a new head clears its mark.
  */
 function signatureOf(file: DeckFile, hunk: DeckHunk, headSha: string) {
   if (!hunk.header)

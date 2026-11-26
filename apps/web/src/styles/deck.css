@@ -873,6 +873,13 @@
     font-size: var(--text-xs);
   }
 
+  /* Links take the accent (ui-rules). */
+  .deck-file-empty a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
   /*
    * One hunk, drawn by @pierre/diffs in its shadow root, which these
    * properties reach. Its lines take the app's mono face, and its added and

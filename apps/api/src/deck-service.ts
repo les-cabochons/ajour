@@ -6,6 +6,7 @@ import type {
 } from "../../../packages/shared/code-host.ts";
 import type {
   DeckFile,
+  DeckFileTooLarge,
   DeckGuide,
   DeckGuideSkipped,
   DeckOpenedPullRequest,
@@ -16,7 +17,7 @@ import type {
 } from "../../../packages/shared/deck.ts";
 import { parseDeckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
-  buildDiff,
+  fileDiff,
   hunkToPatch,
   parseDiff,
   type FileChange,
@@ -228,6 +229,63 @@ function guideSkippedFor(
     : undefined;
 }
 
+/**
+ * The most one file's diff may block the local API, in milliseconds (#774's
+ * council). jsdiff's work grows with the square of the lines changed: a
+ * lockfile of 4,200 lines with 4,000 replaced took 2.5 s, as one hunk, and
+ * every request waited behind it. Past the budget the file is too large to
+ * diff, and the diff yields between files. With the reads around it, a
+ * request then waits at most about 65 ms behind an open, under the 75 ms of
+ * a store write in the performance budgets of `docs/agents/code-standards.md`.
+ */
+export const DECK_FILE_DIFF_BUDGET_MS = 40;
+
+/** The lines of a version of a file: its newlines, and a last line without one. */
+function lineCount(text: string | null) {
+  if (!text) return 0;
+  let count = 0;
+  for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1))
+    count += 1;
+  return text.endsWith("\n") ? count : count + 1;
+}
+
+/** Lets the requests waiting behind the diff run. */
+const yieldToRequests = () =>
+  new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Review Deck's `buildDiff`, one file at a time within
+ * `DECK_FILE_DIFF_BUDGET_MS`, yielding between files. A file past the budget
+ * is written as one too large to read, so it has no hunks for the guide
+ * either, and is answered with its line counts.
+ */
+async function boundedDiff(
+  changes: readonly FileChange[],
+  contents: ReadonlyMap<string, FileContents>,
+  signal: AbortSignal,
+) {
+  const parts: string[] = [];
+  const tooLarge = new Map<string, DeckFileTooLarge>();
+  for (const change of changes) {
+    await yieldToRequests();
+    if (signal.aborted) throw stopped(signal);
+    const content = contents.get(change.path)!;
+    const part = fileDiff(change, content, {
+      timeout: DECK_FILE_DIFF_BUDGET_MS,
+    });
+    if (part !== undefined) {
+      parts.push(part);
+      continue;
+    }
+    tooLarge.set(change.path, {
+      oldLines: lineCount(content.old),
+      newLines: lineCount(content.new),
+    });
+    parts.push(fileDiff(change, { ...content, tooLarge: true })!);
+  }
+  return { text: parts.join(""), tooLarge };
+}
+
 /** One version of a changed file: its text, or that it is binary. */
 type Side = { text: string | null; binary: boolean };
 const ABSENT: Side = { text: null, binary: false };
@@ -320,7 +378,11 @@ async function buildPullRequestDiff(
       ];
     }),
   );
-  const diffText = buildDiff(changes, contents);
+  const { text: diffText, tooLarge } = await boundedDiff(
+    changes,
+    contents,
+    signal,
+  );
   // The pipeline reads a file's base version by its base path.
   const guideInput: GuideBuildInput = {
     diff: diffText,
@@ -340,7 +402,8 @@ async function buildPullRequestDiff(
       ? { previousPath: file.oldPath }
       : {}),
     status: file.status,
-    binary: file.binary,
+    binary: file.binary && !tooLarge.has(file.path),
+    ...(tooLarge.has(file.path) ? { tooLarge: tooLarge.get(file.path) } : {}),
     hunks: file.hunks.map((hunk) => ({
       id: hunk.id,
       header: hunk.header,
@@ -528,7 +591,7 @@ async function versionDiff(
       tooLarge: false,
     });
   });
-  return buildDiff(changes, contents);
+  return (await boundedDiff(changes, contents, signal)).text;
 }
 
 /** The pull request on screen at one base and head: its diff and its guide. */

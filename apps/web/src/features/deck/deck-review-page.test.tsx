@@ -369,6 +369,40 @@ it("says the guide isn't built for a pull request with too many hunks, and shows
   expect(within(changes).queryByRole("group", { name: "Order" })).toBeNull();
 });
 
+it("shows a file too large to compare with its line counts and a link to it on the code host", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...DIFF,
+    files: [
+      {
+        path: "pnpm-lock.yaml",
+        status: "modified",
+        binary: false,
+        tooLarge: { oldLines: 4_200, newLines: 4_210 },
+        hunks: [hunk("pnpm-lock.yaml#0", "", [])],
+      },
+      DIFF.files[1]!,
+    ],
+  });
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  await within(changes).findByRole("heading", { name: "pnpm-lock.yaml" });
+  expect(
+    within(changes).getByText(
+      "Not shown: too large to compare here, 4,200 lines before and 4,210 after.",
+    ),
+  ).toBeTruthy();
+  const link = within(changes).getByRole("link", { name: "Open in GitHub" });
+  expect(link.getAttribute("href")).toBe(
+    "https://github.com/acme/api/blob/head/pnpm-lock.yaml",
+  );
+  // The rest of the pull request shows as usual.
+  expect(
+    within(changes).getByRole("group", { name: "src/api.ts, lines 1 to 3" }),
+  ).toBeTruthy();
+});
+
 it("mounts nothing per line at rest, and draws a hunk with wrapped lines once it nears the screen", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
   await renderReviewPage();

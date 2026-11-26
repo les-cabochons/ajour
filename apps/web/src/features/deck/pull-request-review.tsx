@@ -47,6 +47,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { cn } from "@/lib/utils";
+import { CodeHostFilesContext } from "./code-host-files";
 import { DeckChatContext, DeckChatPanel } from "./deck-chat";
 import { useDeckConsent } from "./deck-consent-dialog";
 import { DeckChatSession, type DeckChatTarget } from "./deck-chat-session";
@@ -557,6 +558,10 @@ export function PullRequestReview({
   }, [chat]);
   const author = authorActions(pullRequest.facts);
   const pullRequestUrl = pullRequest.facts.url;
+  const codeHostFiles = useMemo(
+    () => ({ pluginName: pullRequest.pluginName, pullRequestUrl }),
+    [pullRequest.pluginName, pullRequestUrl],
+  );
   const chatTarget = useMemo(
     (): DeckChatTarget | undefined =>
       headSha
@@ -781,20 +786,22 @@ export function PullRequestReview({
                   state={conversation.state}
                   retry={conversation.retry}
                 />
-                <PullRequestChanges
-                  state={diff.state}
-                  retry={diff.retry}
-                  onGuide={diff.replaceGuide}
-                  notes={{
-                    notes,
-                    floating,
-                    hovered,
-                    onAddComment: open ? onAddComment : undefined,
-                  }}
-                  reachHunkRef={reachHunk}
-                  versions={versionsView}
-                  viewing={viewing}
-                />
+                <CodeHostFilesContext.Provider value={codeHostFiles}>
+                  <PullRequestChanges
+                    state={diff.state}
+                    retry={diff.retry}
+                    onGuide={diff.replaceGuide}
+                    notes={{
+                      notes,
+                      floating,
+                      hovered,
+                      onAddComment: open ? onAddComment : undefined,
+                    }}
+                    reachHunkRef={reachHunk}
+                    versions={versionsView}
+                    viewing={viewing}
+                  />
+                </CodeHostFilesContext.Provider>
               </DeckAskProvider>
               {outdated.length ? (
                 <section

@@ -9,6 +9,7 @@ import {
   mergeConfig,
   runPipeline,
 } from "../pipeline.ts";
+import { fileDiff } from "../diff.ts";
 
 // Two files of Review Deck's fixture pull request `pr1` (upstream
 // fixtures/sample-repo and fixtures/prs/pr1/files). The expected hunks are
@@ -43,6 +44,18 @@ function files(contents: Map<string, FileContents>): FileProvider {
     },
   };
 }
+
+test("Given a budget its diff passes, then fileDiff answers nothing, and without one it cuts the hunks", () => {
+  const old = Array.from({ length: 400 }, (_, index) => `a ${index}\n`).join(
+    "",
+  );
+  const next = old.replace(/a /g, "b ");
+  const change: FileChange = { path: "lock.json", changeType: "edit" };
+  const content = { old, new: next, binary: false, tooLarge: false };
+
+  expect(fileDiff(change, content, { maxEditLength: 100 })).toBeUndefined();
+  expect(fileDiff(change, content)).toContain("@@ -1,400 +1,400 @@");
+});
 
 test("Given both versions of each changed file, then buildDiff cuts the hunks git cuts with 3 lines of context", () => {
   const contents = new Map(

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeckFile, DeckHunk } from "@ajour/shared/deck";
 import {
   fileNote,
+  fileOnCodeHost,
   fileWithoutLines,
   hunkLabel,
   hunkRowCount,
@@ -57,6 +58,29 @@ describe("fileNote", () => {
 });
 
 describe("fileWithoutLines", () => {
+  it("says a file is too large to compare, with its lines in each version", () => {
+    const tooLarge = (
+      status: DeckFile["status"],
+      oldLines: number,
+      newLines: number,
+    ) =>
+      fileWithoutLines(
+        file({ status, tooLarge: { oldLines, newLines }, hunks: [pseudo] }),
+      );
+    expect(tooLarge("modified", 4_200, 4_210)).toBe(
+      "Not shown: too large to compare here, 4,200 lines before and 4,210 after.",
+    );
+    expect(tooLarge("renamed", 1, 4_210)).toBe(
+      "Not shown: too large to compare here, 1 line before and 4,210 after.",
+    );
+    expect(tooLarge("added", 0, 120_000)).toBe(
+      "Not shown: too large to compare here, 120,000 lines.",
+    );
+    expect(tooLarge("deleted", 1, 0)).toBe(
+      "Not shown: too large to compare here, 1 line.",
+    );
+  });
+
   it("says why a file shows no lines", () => {
     expect(fileWithoutLines(file({ binary: true, hunks: [pseudo] }))).toBe(
       "Not shown: a binary file, or one too large to read.",
@@ -106,5 +130,44 @@ describe("hunkLabel", () => {
 describe("hunkRowCount", () => {
   it("counts the rows after the @@ line", () => {
     expect(hunkRowCount(hunk())).toBe(4);
+  });
+});
+
+describe("fileOnCodeHost", () => {
+  const versions = { headSha: "head1", baseSha: "base1" };
+
+  it("links a GitHub file at the head, or a deleted one at the base", () => {
+    expect(
+      fileOnCodeHost(
+        "https://github.com/acme/api/pull/12",
+        file({ path: "src/a b#.ts" }),
+        versions,
+      ),
+    ).toBe("https://github.com/acme/api/blob/head1/src/a%20b%23.ts");
+    expect(
+      fileOnCodeHost(
+        "https://git.acme.test/acme/api/pull/12/",
+        file({ path: "old.ts", status: "deleted" }),
+        versions,
+      ),
+    ).toBe("https://git.acme.test/acme/api/blob/base1/old.ts");
+  });
+
+  it("links an Azure DevOps file in the pull request's files", () => {
+    expect(
+      fileOnCodeHost(
+        "https://dev.azure.com/acme/Web/_git/api/pullrequest/7",
+        file({ path: "src/a b.ts" }),
+        versions,
+      ),
+    ).toBe(
+      "https://dev.azure.com/acme/Web/_git/api/pullrequest/7?_a=files&path=%2Fsrc%2Fa%20b.ts",
+    );
+  });
+
+  it("links the pull request itself on a code host it doesn't know", () => {
+    expect(
+      fileOnCodeHost("https://code.acme.test/reviews/7", file(), versions),
+    ).toBe("https://code.acme.test/reviews/7");
   });
 });

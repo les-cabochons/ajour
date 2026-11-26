@@ -87,6 +87,12 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
    `FileContents`. The worker job, progress and Azure DevOps backend stay
    upstream. `FileChange` and `ChangeType` come from upstream
    `extension/src/data/model.ts`, without the Azure DevOps object ids.
+   `fileDiff` is exported and takes an optional `DiffBudget`, jsdiff's own
+   `timeout` and `maxEditLength`, passed to `structuredPatch` as they are.
+   Past it, `structuredPatch` gives nothing and `fileDiff` answers
+   `undefined`, so Deck's service writes the file as one too large to read
+   (#774's council: one rewritten lockfile blocked the local API for
+   seconds). `buildDiff` passes no budget, so it is unchanged.
 6. **`ajour/deps.ts`** is new. `createPipelineDeps` gives the parsers, with
    each grammar's wasm resolved from its npm package in this package's install
    folder, the heuristic titler and no embedder. The parsers are made once per

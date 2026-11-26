@@ -18,6 +18,7 @@ import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
+  fileOnCodeHost,
   fileWithoutLines,
   hunkLabel,
   hunkRowCount,
@@ -29,6 +30,7 @@ import {
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
+import { useCodeHostFiles } from "./code-host-files";
 import { useHunkLines } from "./review-line-selection";
 import { highlightOfSelection, LinesToolbar } from "./review-lines";
 import { useReviewLines, type AddComment } from "./review-lines-context";
@@ -106,6 +108,7 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const note = inConcern ? fileNote(file) : undefined;
   // The page's selected lines and cited line, when they are in this hunk.
   const lines = useReviewLines();
+  const codeHost = useCodeHostFiles();
   const shown = useHunkLines(lines?.selection, hunk.id);
   const onSelectLines = useMemo(
     () =>
@@ -170,7 +173,21 @@ export const ReviewHunkView = memo(function ReviewHunkView({
         <LinesToolbar selection={shown.selection} hunk={box} />
       ) : null}
       {viewed ? null : withoutLines ? (
-        <p className="deck-file-empty">{withoutLines}</p>
+        <p className="deck-file-empty">
+          {withoutLines}
+          {file.tooLarge && codeHost && lines ? (
+            <>
+              {" "}
+              <a
+                href={fileOnCodeHost(codeHost.pullRequestUrl, file, lines.diff)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {`Open in ${codeHost.pluginName}`}
+              </a>
+            </>
+          ) : null}
+        </p>
       ) : (
         <DiffHunk
           hunkId={hunk.id}

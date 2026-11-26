@@ -17,7 +17,10 @@ import {
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import { builtFrom } from "./test-support/deck-guides.ts";
-import { DECK_GUIDE_HUNK_LIMIT } from "./deck-service.ts";
+import {
+  DECK_FILE_DIFF_BUDGET_MS,
+  DECK_GUIDE_HUNK_LIMIT,
+} from "./deck-service.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import {
@@ -109,6 +112,14 @@ const SUMMARY_CHANGED_FILES = ${JSON.stringify(SUMMARY_CHANGED_FILES)};
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
+// So many hunks, 100 a file: a file of more would pass the diff's time budget.
+function hugeFiles(hunks) {
+  const files = [];
+  for (let left = hunks, index = 0; left > 0; left -= 100, index += 1) {
+    files.push({ path: "huge" + hunks + "/" + index + "-" + Math.min(left, 100) + ".ts", status: "modified" });
+  }
+  return files;
+}
 export async function getPullRequestContent(connection, request) {
   if (request.number === 404) throw new Error("GitHub request failed (404): Not Found.");
   if (request.number === 12) {
@@ -128,8 +139,10 @@ export async function getPullRequestContent(connection, request) {
     : request.number >= 20 && request.number < 30
       ? [{ path: "pr" + request.number + "/a.ts", status: "added" }]
     : request.number === 30 ? SUMMARY_CHANGED_FILES
-    : request.number === 40 ? [{ path: "huge1000/a.ts", status: "modified" }]
-    : request.number === 41 ? [{ path: "huge1001/a.ts", status: "modified" }]
+    : request.number === 40 ? hugeFiles(1000)
+    : request.number === 41 ? hugeFiles(1001)
+    : request.number === 42
+      ? [{ path: "rewritten/lock.json", status: "modified" }, { path: "src/api.ts", status: "modified" }]
     : CHANGED_FILES;
   return {
     headSha: globalThis.deckHeads?.[request.number] ?? "head",
@@ -175,9 +188,15 @@ export async function getFileContent(connection, request) {
   }
   if (request.path.startsWith("huge")) {
     // One changed line in every 8, far enough apart for a hunk each.
-    const hunks = Number(request.path.slice(4, request.path.indexOf("/")));
+    const hunks = Number(request.path.slice(request.path.lastIndexOf("-") + 1, -".ts".length));
     const lines = Array.from({ length: hunks * 8 }, (_, index) =>
       request.sha === "head" && index % 8 === 0 ? "changed " + index : "line " + index);
+    return { kind: "text", content: lines.join("\\n") + "\\n" };
+  }
+  if (request.path.startsWith("rewritten/")) {
+    // A lockfile regenerated: 4,000 of its 4,200 lines replaced, 133 KB.
+    const lines = Array.from({ length: 4200 }, (_, index) =>
+      '  "' + (request.sha === "head" && index >= 100 && index < 4100 ? "b" : "a") + "-" + index + '": "value number ' + index + '",');
     return { kind: "text", content: lines.join("\\n") + "\\n" };
   }
   if (request.path.startsWith("pr")) {
@@ -413,6 +432,10 @@ function push(number: number, headSha: string) {
  * pull request's build running until its release is called. `started` and
  * `built` list the builds in the order they started and ended.
  */
+/** The hunks of an opened pull request's files. */
+const hunkCount = (files: { hunks: unknown[] }[]) =>
+  files.reduce((count, file) => count + file.hunks.length, 0);
+
 function heldGuides() {
   const started: string[] = [];
   const built: string[] = [];
@@ -704,6 +727,55 @@ describe("opening a pull request in Deck", () => {
       opened.body.files as { hunks: { id: string; header: string }[] }[]
     ).flatMap((file) => file.hunks.map((hunk) => [hunk.id, hunk.header]));
     expect(served.sort()).toEqual(expected.sort());
+  });
+
+  it("shows a file whose diff would take too long as too large to diff, without stalling the API, and opens the rest", async () => {
+    // Without a budget, diffing this lockfile blocks the API for seconds
+    // and gives one hunk of 8,000 lines.
+    const { api, open } = await startDeck();
+    let longestStall = 0;
+    let last = performance.now();
+    const ticks = setInterval(() => {
+      const now = performance.now();
+      longestStall = Math.max(longestStall, now - last);
+      last = now;
+    }, 5);
+
+    const started = performance.now();
+    const opened = await open(42);
+    const took = performance.now() - started;
+    clearInterval(ticks);
+
+    expect(opened.status).toBe(200);
+    const [lockfile, other] = opened.body.files as Record<string, unknown>[];
+    expect(lockfile).toEqual({
+      path: "rewritten/lock.json",
+      status: "modified",
+      binary: false,
+      tooLarge: { oldLines: 4_200, newLines: 4_200 },
+      hunks: [
+        expect.objectContaining({
+          id: "rewritten/lock.json#0",
+          header: "",
+          oldLines: 0,
+          newLines: 0,
+        }),
+      ],
+    });
+    expect(other).toMatchObject({ path: "src/api.ts" });
+    expect(other).not.toHaveProperty("tooLarge");
+    expect((other!.hunks as unknown[]).length).toBe(2);
+    // Its guide is built from the rest.
+    expect(opened.body.guide).toMatchObject({ madeWith: "code" });
+    // The budget is DECK_FILE_DIFF_BUDGET_MS a file; the margin is a slow
+    // CI runner's.
+    expect(longestStall).toBeLessThan(DECK_FILE_DIFF_BUDGET_MS * 4);
+    expect(took).toBeLessThan(2_000);
+    expect(
+      api.events.find(
+        (event) => event.name === "deck.open" && event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", deck: { file_count: 2, hunk_count: 3 } });
   });
 
   it("keeps the pull request on screen, and reads no file again of one opened before, from the content cache", async () => {
@@ -1553,9 +1625,7 @@ describe("the guide of a pull request opened in Deck", () => {
     const opened = await open(40);
 
     expect(opened.status).toBe(200);
-    expect(
-      (opened.body.files as { hunks: unknown[] }[])[0]!.hunks,
-    ).toHaveLength(DECK_GUIDE_HUNK_LIMIT);
+    expect(hunkCount(opened.body.files)).toBe(DECK_GUIDE_HUNK_LIMIT);
     expect(guides.started).toEqual(["huge1000"]);
     expect(opened.body.guide.concerns[0].title).toBe("huge1000");
     expect(opened.body.guideSkipped).toBeUndefined();
@@ -1568,9 +1638,7 @@ describe("the guide of a pull request opened in Deck", () => {
     const opened = await open(41);
 
     expect(opened.status).toBe(200);
-    expect(
-      (opened.body.files as { hunks: unknown[] }[])[0]!.hunks,
-    ).toHaveLength(DECK_GUIDE_HUNK_LIMIT + 1);
+    expect(hunkCount(opened.body.files)).toBe(DECK_GUIDE_HUNK_LIMIT + 1);
     expect(opened.body.guide).toBeNull();
     expect(opened.body.guideSkipped).toEqual({
       reason: "too_many_hunks",
@@ -1596,7 +1664,8 @@ describe("the guide of a pull request opened in Deck", () => {
     // It isn't a failed guide: the diff stays kept for the next open.
     const again = await open(41);
     expect(again.body.guideSkipped).toEqual(opened.body.guideSkipped);
-    expect(fileReads()).toBe(2);
+    // Both versions of its 11 files, once.
+    expect(fileReads()).toBe(22);
   });
 
   it("queues no guide build for a preload above the limit, and opens it at once", async () => {
@@ -1623,7 +1692,7 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(opened.body.guideSkipped).toMatchObject({
       reason: "too_many_hunks",
     });
-    expect(fileReads()).toBe(2);
+    expect(fileReads()).toBe(22);
     expect(guides.started).toEqual([]);
 
     // Preloaded again, it is cached without a guide, which it never gets:
