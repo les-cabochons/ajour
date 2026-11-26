@@ -106,6 +106,7 @@ function setup(path = "src/api.ts") {
   const hostCalls: string[] = [];
   const drafts: DeckDraftCommentCall[] = [];
   let answerDraft: (draftId: string) => void = () => {};
+  let failDraft: (message: string) => void = () => {};
   /** The bridge's claim of the latest draft comment, as the window asks for it. */
   let claimDraft: () => ReturnType<DraftCommentClaimCheck> = () => undefined;
   const held = {
@@ -139,8 +140,9 @@ function setup(path = "src/api.ts") {
     addDraftComment(call, claimCheck) {
       drafts.push(call);
       claimDraft = claimCheck;
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         answerDraft = (draftId) => resolve({ draftId });
+        failDraft = (message) => reject(new DeckChatRefused(message));
       });
     },
     publish: (event) => published.push(agentTurnEventSchema.parse(event)),
@@ -163,6 +165,7 @@ function setup(path = "src/api.ts") {
     hostRequests,
     drafts,
     answerDraft: (draftId: string) => answerDraft(draftId),
+    failDraft: (message: string) => failDraft(message),
     claimDraft: () => claimDraft(),
     actions: () =>
       published.flatMap((event) =>
@@ -739,6 +742,60 @@ describe("a chat write tried again (council round 1)", () => {
     });
     await expect(second).rejects.toThrow("didn't add it again");
     expect(chat.drafts).toHaveLength(1);
+    expect(chat.actions()).toHaveLength(1);
+  });
+
+  it("adds no draft comment again when the window took the first but never confirmed it", async () => {
+    const chat = setup();
+    const comment = { ...onLine(), body: "Lower case?" };
+    const first = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(chat.claimDraft()).toBeUndefined();
+    // The window claimed it, then its answer never came back.
+    chat.failDraft(
+      "The Ajour window took the draft comment but never confirmed it.",
+    );
+    await expect(first).rejects.toThrow("never confirmed");
+
+    await expect(
+      chat.writes.run("add_draft_comment", "client-1", binding, comment),
+    ).rejects.toThrow("may already be in their draft review");
+    expect(chat.drafts).toHaveLength(1);
+    expect(chat.actions()).toEqual([]);
+  });
+
+  it("adds a draft comment afresh when the window didn't take the first", async () => {
+    const chat = setup();
+    const comment = { ...onLine(), body: "Lower case?" };
+    const first = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    // The bridge failed before the window claimed it.
+    chat.failDraft("The Ajour window didn't answer.");
+    await expect(first).rejects.toThrow("didn't answer");
+
+    const again = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    chat.answerDraft("draft-1");
+
+    await expect(again).resolves.toMatchObject({
+      action: "Added a draft comment on src/api.ts:2",
+    });
+    expect(chat.drafts).toHaveLength(2);
     expect(chat.actions()).toHaveLength(1);
   });
 

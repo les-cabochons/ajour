@@ -155,7 +155,7 @@ Deck writes through these operations, each sent as soon as the user acts, with n
 - Ajour runs the writes of one `submissionId` on a connection one at a time, so two windows retrying the same draft don't both find nothing and both post. A try that waited behind another runs as a retry, with that one's `firstTriedAt`.
 - Check the head before writing: refuse a `headSha` the pull request doesn't have, and an approval that a vote on the whole pull request would give to commits the user didn't read.
 - When new commits arrive after an approval's comments posted and before its vote, as they can on a host that posts each comment first, send no vote and return the `reviewId` with `voteWithheld: { reason: "new_commits" }`. Don't throw: what you posted is on the pull request, and Ajour takes it out of the draft, so a later review doesn't post it again. Ajour tells the user the vote wasn't sent, and they review the new commits and vote again. The Azure DevOps plugin answers it; GitHub binds a review to its head, so its plugin never does.
-- An Ajour build older than `voteWithheld` drops it and says the vote was sent. Release a plugin that answers it only after an Ajour build that reads it: Azure DevOps 2.14.0 and GitHub 0.15.0 wait for that build. An older build still posts nothing twice and sends no vote; only its message is wrong.
+- An Ajour build older than `voteWithheld` drops it and says the vote was sent. Release a plugin that answers it only after an Ajour build that reads it: Azure DevOps 2.14.0, which answers it, and GitHub 0.15.0, released with it, wait for that build. An older build still posts nothing twice and sends no vote; only its message is wrong.
 
 ### What the author writes
 

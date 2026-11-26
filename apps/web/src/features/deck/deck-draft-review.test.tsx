@@ -858,6 +858,36 @@ it("keeps the summary read-only while the review sends, so what it sends is what
   );
 });
 
+it("keeps a summary it didn't send when R then Y approves", async () => {
+  await renderReviewPage();
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  let dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Summary" }), {
+    target: { value: "Still thinking." },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Finish review" })).toBeNull(),
+  );
+
+  press("r");
+  press("y");
+  await waitFor(() => expect(toasts.show).toHaveBeenCalledWith("Approved"));
+  expect(
+    vi.mocked(api.submitPullRequestReview).mock.calls[0]![2],
+  ).not.toHaveProperty("body");
+
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  expect(
+    (
+      within(dialog).getByRole("textbox", {
+        name: "Summary",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Still thinking.");
+});
+
 it("keeps a draft comment edited while the review was sending, with its new words", async () => {
   let answer!: (result: { reviewId: string }) => void;
   vi.mocked(api.submitPullRequestReview).mockImplementationOnce(

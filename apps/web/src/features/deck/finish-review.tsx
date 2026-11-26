@@ -214,7 +214,9 @@ export function FinishReview({
         return;
       }
       localStore.completeReviewSubmission(ref, sent);
-      setSummary("");
+      // Only the words sent go: R then Y sends no summary, and keeps one
+      // typed and cancelled for the next Finish review.
+      setSummary((current) => (current === body ? "" : current));
       if (result.voteWithheld) {
         // Posted, all but the vote: the dialog says so, after R then Y too,
         // and the user reviews the new commits before voting again.

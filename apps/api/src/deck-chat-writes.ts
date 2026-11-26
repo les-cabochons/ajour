@@ -216,6 +216,13 @@ interface ChatSubmission {
   trying?: Promise<void>;
 }
 
+/** A draft comment the window is adding or added in a turn. */
+interface DraftAdd {
+  adding: Promise<DeckChatToolOutput>;
+  /** The window claimed the call: it may have added it, whatever its answer. */
+  claim: { claimed: boolean };
+}
+
 export function createDeckChatWrites(options: DeckChatWritesOptions) {
   const createId = options.createId ?? (() => randomUUID());
   const now = options.now ?? Date.now;
@@ -231,9 +238,11 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
    * Each draft comment the window is adding or added, by the same identity:
    * the agent repeating one whose answer was lost waits for it, or hears
    * it's in the draft already, and the window doesn't add it twice. One the
-   * window didn't add is forgotten, so a repeat adds it afresh.
+   * window claimed may be there though it never confirmed it, so it isn't
+   * added again either. One the window never claimed is forgotten, so a
+   * repeat adds it afresh.
    */
-  const draftAdds = new Map<string, Promise<DeckChatToolOutput>>();
+  const draftAdds = new Map<string, DraftAdd>();
 
   /** A write's identity: its turn, pull request, operation and content. */
   const identityOf = (
@@ -518,9 +527,10 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         body,
       });
       // A repeat waits for the same comment the window is adding, and
-      // tries afresh only when that try didn't add it.
-      for (let earlier; (earlier = draftAdds.get(identity));) {
-        const shown = await earlier.then(
+      // tries afresh only once a try the window never claimed is forgotten.
+      let earlier = draftAdds.get(identity);
+      while (earlier) {
+        const shown = await earlier.adding.then(
           ({ action }) => action,
           () => undefined,
         );
@@ -529,31 +539,21 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
             `Ajour added this draft comment earlier in this turn ("${shown}"), so it didn't add it again. Tell the user it's in their draft review.`,
           );
         }
+        if (earlier.claim.claimed) {
+          throw new DeckChatRefused(
+            "The Ajour window took this draft comment earlier in this turn but never confirmed it, so Ajour didn't add it again. Tell the user it may already be in their draft review.",
+          );
+        }
+        earlier = draftAdds.get(identity);
       }
-      const adding = addDraft();
-      draftAdds.set(identity, adding);
-      if (draftAdds.size > DRAFT_ADDS_KEPT) {
-        draftAdds.delete(draftAdds.keys().next().value!);
-      }
-      adding.catch(() => {
-        if (draftAdds.get(identity) === adding) draftAdds.delete(identity);
-      });
-      return adding;
 
-      async function addDraft() {
+      const claim = { claimed: false };
+      const addToWindow = async () => {
         const lineText = await linesOf(binding, lines);
-        const line = (draftId: string) =>
-          done(turn, facts, {
-            kind: "draft_comment",
-            text: `Added a draft comment on ${placeName(lines)}`,
-            at: { path: lines.path, side: lines.side, line: lines.line },
-            posted: { kind: "draft_comment", draftId },
-          });
         confirm();
         // The window hears of it in this tick, and adds it only once it
         // claimed it, which the same check grants. A claim granted before
         // Stop finishes: the draft comment is added and its line shows.
-        let claimed = false;
         const asked = options.addDraftComment(
           {
             turnId: turn.id,
@@ -567,13 +567,33 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
           },
           () => {
             const refusal = refusalNow();
-            if (!refusal) claimed = true;
+            if (!refusal) claim.claimed = true;
             return refusal;
           },
         );
-        const { draftId } = await untilTurnEnds(turn.id, asked, () => claimed);
-        return line(draftId);
+        const { draftId } = await untilTurnEnds(
+          turn.id,
+          asked,
+          () => claim.claimed,
+        );
+        return done(turn, facts, {
+          kind: "draft_comment",
+          text: `Added a draft comment on ${placeName(lines)}`,
+          at: { path: lines.path, side: lines.side, line: lines.line },
+          posted: { kind: "draft_comment", draftId },
+        });
+      };
+      const add: DraftAdd = { adding: addToWindow(), claim };
+      draftAdds.set(identity, add);
+      if (draftAdds.size > DRAFT_ADDS_KEPT) {
+        draftAdds.delete(draftAdds.keys().next().value!);
       }
+      add.adding.catch(() => {
+        if (!claim.claimed && draftAdds.get(identity) === add) {
+          draftAdds.delete(identity);
+        }
+      });
+      return add.adding;
     },
 
     async post_comment(clientId, binding, { body, lines }) {
