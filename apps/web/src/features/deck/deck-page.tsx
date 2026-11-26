@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RiRefreshLine as Refresh } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
+import {
+  deckStackIndex,
+  deckStackOf,
+  groupByStack,
+} from "@/domain/deck/stacks";
 import {
   isPullRequestSnoozed,
   selectSidebarPullRequests,
@@ -25,12 +30,21 @@ export function DeckPage({ itemId }: { itemId?: string }) {
   const state = useLocalState();
   const { overview, groups } = useCodeHostConnections();
   const now = useNow();
-  const items = selectVisiblePullRequests(
-    state.pullRequests ?? [],
-    overview,
-    now,
+  const pullRequests = state.pullRequests;
+  const items = useMemo(
+    () => selectVisiblePullRequests(pullRequests ?? [], overview, now),
+    [pullRequests, overview, now],
   );
   const item = itemId ? items.find((entry) => entry._id === itemId) : undefined;
+  // Stacks are found once per change of the list, never per render (#788).
+  const stack = useMemo(
+    () => (item ? deckStackOf(item, items) : undefined),
+    [item, items],
+  );
+  const stackRows = useMemo(
+    () => (itemId ? undefined : deckStackIndex(items)),
+    [itemId, items],
+  );
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const visibleItemId = item?._id;
@@ -84,7 +98,12 @@ export function DeckPage({ itemId }: { itemId?: string }) {
       // Another pull request starts with its drawer closed, its own viewed
       // marks, no ask, no composer open and an empty chat. The review page
       // lays itself out, beside its chat panel.
-      <PullRequestReview key={item._id} pullRequest={item} now={now} />
+      <PullRequestReview
+        key={item._id}
+        pullRequest={item}
+        now={now}
+        stack={stack}
+      />
     );
   const sections = [
     {
@@ -147,11 +166,12 @@ export function DeckPage({ itemId }: { itemId?: string }) {
             {section.title}
           </SectionHeading>
           {section.items.length ? (
-            section.items.map((entry) => (
+            groupByStack(section.items, stackRows ?? new Map()).map((entry) => (
               <PullRequestRow
                 key={entry._id}
                 item={entry}
                 now={now}
+                stack={stackRows?.get(entry._id)}
                 showConnection={
                   groups.reduce(
                     (count, group) => count + group.connections.length,

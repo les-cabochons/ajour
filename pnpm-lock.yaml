@@ -139,6 +139,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ajour/review-deck':
+        specifier: workspace:*
+        version: link:../../packages/review-deck
       '@ajour/shared':
         specifier: workspace:*
         version: link:../../packages/shared

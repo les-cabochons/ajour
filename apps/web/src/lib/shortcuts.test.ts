@@ -91,6 +91,7 @@ describe("shortcut registry", () => {
       "J",
       "K",
       "F",
+      "L",
       "A",
       "R then C",
       "R then N",
@@ -143,6 +144,7 @@ describe("shortcut registry", () => {
       ["deck.next-concern", "J"],
       ["deck.previous-concern", "K"],
       ["deck.guide-tree", "F"],
+      ["deck.stack", "L"],
       ["deck.chat", "A"],
       ["deck.review-comment", "R then C"],
       ["deck.review-request-changes", "R then N"],
@@ -186,6 +188,8 @@ describe("shortcut registry", () => {
     expect(meaning("F")).toEqual(["item.favorite"]);
     expect(meaning("S")).toEqual(["entry.stop-or-start"]);
     expect(meaning("C")).toEqual(["entry.continue"]);
+    // L opens the full stack on the review page, and nothing else takes it.
+    expect(meaning("L")).toEqual([]);
     // Only the review page's own keys are new there, and S and E aren't.
     expect(
       SHORTCUTS.filter(

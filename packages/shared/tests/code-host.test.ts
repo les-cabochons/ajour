@@ -267,6 +267,43 @@ describe("code host contract", () => {
     ).toBe("main");
   });
 
+  it("keeps the branches and base commit stacks are found from, optional so stored pull requests still read", () => {
+    const stored = {
+      id: "PR_2",
+      repository: "acme/api",
+      number: 43,
+      url: "https://github.com/acme/api/pull/43",
+      title: "Rate limits per route",
+      author: user,
+      state: "open",
+      draft: false,
+      createdAt: 1,
+      updatedAt: 1,
+      viewerIsAuthor: false,
+      headSha: "def456",
+      baseRef: "rate-limits",
+      lastPushedAt: 1,
+      reviewRequests: [],
+      reviews: [],
+      comments: [],
+      checks: "none",
+      mergeability: "unknown",
+    };
+    const facts = codeHostPullRequestFactsSchema.parse(stored);
+    expect(facts.headRef).toBeUndefined();
+    expect(facts.baseSha).toBeUndefined();
+    const stacked = codeHostPullRequestFactsSchema.parse({
+      ...stored,
+      headRef: "rate-limits-per-route",
+      baseSha: "abc123",
+    });
+    expect(stacked.headRef).toBe("rate-limits-per-route");
+    expect(stacked.baseSha).toBe("abc123");
+    expect(() =>
+      codeHostPullRequestFactsSchema.parse({ ...stored, headRef: "" }),
+    ).toThrow();
+  });
+
   it("names every operation in the operation schema", () => {
     expect(codeHostOperationSchema.options).toEqual(
       Object.keys(codeHostOperations),

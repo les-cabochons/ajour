@@ -54,7 +54,7 @@ export function stackFor<T extends StackPr>(pr: T, all: readonly T[], trunkPatte
     above.push(p);
   }
   const layers = [...below, pr, ...above];
-  const bottom = layers[0];
+  const bottom = layers[0]!;
   const base = { branch: shortBranch(bottom.targetBranch), trunk: isTrunk(bottom.targetBranch, trunkPatterns) };
   const children = childrenOf(pr);
   // Alone: one layer straight into a trunk. A single PR into a non-trunk branch is shown as a stack,
@@ -71,7 +71,7 @@ export function stackIndex<T extends StackPr>(all: readonly T[], trunkPatterns: 
     const position = stackFor(pr, all, trunkPatterns);
     if (!position) continue;
     position.layers.forEach((layer, i) => {
-      if (!out.has(layer.id)) out.set(layer.id, { index: i + 1, size: position.layers.length, bottomId: position.layers[0].id });
+      if (!out.has(layer.id)) out.set(layer.id, { index: i + 1, size: position.layers.length, bottomId: position.layers[0]!.id });
     });
   }
   return out;

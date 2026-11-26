@@ -78,6 +78,7 @@ export type ShortcutActionId =
   | "deck.next-concern"
   | "deck.previous-concern"
   | "deck.guide-tree"
+  | "deck.stack"
   | "deck.chat"
   | "deck.review-comment"
   | "deck.review-request-changes"
@@ -255,6 +256,13 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Open or close the guide tree",
     scope: "deck",
     keys: [{ key: "f" }],
+  },
+  // Stacks (#788): L opens the full stack. No app key takes L.
+  {
+    id: "deck.stack",
+    label: "Open the full stack",
+    scope: "deck",
+    keys: [{ key: "l" }],
   },
   // The chat (#796): A opens and closes it. No app key takes A; while lines
   // are selected, their toolbar's A asks about them instead.
