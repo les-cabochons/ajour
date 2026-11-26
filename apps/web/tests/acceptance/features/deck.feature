@@ -114,6 +114,29 @@ Feature: Deck lists the pull requests on your plate
     When I follow the summary's line about the test
     Then the test's hunk is in view and focused
 
+  Scenario: Draft a review beside the lines and finish it
+    Given the local API built the requested pull request's guide
+    And the code host takes reviews
+    When I open Deck
+    And I open the requested pull request summary
+    And I comment "Cap the backoff." on the line that reads "  const delay = backoff(attempt);"
+    And I add it to the review with Ctrl+Enter
+    Then the draft comment "Cap the backoff." sits beside its line
+    When I press the "r" key
+    And I press the "a" key
+    Then Finish review opens on Approve
+    When I submit the review
+    Then the code host gets an approval with the comment "Cap the backoff."
+
+  Scenario: Comment on a line from the keyboard
+    Given the local API built the requested pull request's guide
+    And the code host takes reviews
+    When I open Deck
+    And I open the requested pull request summary
+    And I comment "Cap the backoff." on line 13 from the keyboard
+    And I add it to the review with Ctrl+Enter
+    Then the draft comment "Cap the backoff." sits beside its line
+
   Scenario: Read a pull request too large for a guide
     Given the local API answers a pull request with too many hunks for a guide
     When I open Deck

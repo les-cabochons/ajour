@@ -55,6 +55,8 @@ Enabling MCP or starting an agent task can give an agent access to workspace dat
 
 Asking for more detail about a pull request in Deck sends parts of that repository's code and review threads to the agent you picked and its AI provider, once you allow the repository. Allow a repository only when your organisation lets its code go to that provider. Answers can be wrong: check them against the code before you rely on them.
 
+Comments and reviews you send from Deck go to the code host at once, under your account, as your own: an approval or a request for changes counts there like one made on GitHub or Azure DevOps. Ajour keeps your draft review on your device until you send it, and can't take back what the code host received.
+
 We do not promise the availability, security or accuracy of independent services, and we do not offer an Ajour-hosted team service under these terms.
 
 ## Updates and support

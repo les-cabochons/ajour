@@ -23,7 +23,7 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import { hunkRowCount } from "@/domain/deck/review-diff";
-import type { PlacedThread } from "@/domain/deck/review-threads";
+import type { ReviewNote } from "@/domain/deck/review-notes";
 import {
   SECTION_MARGIN,
   readingOffset,
@@ -34,7 +34,8 @@ import {
   HUNK_ATTRIBUTE,
   ReviewHunkView,
   ReviewSectionHeader,
-  useThreadMarks,
+  useNoteMarks,
+  type AddComment,
 } from "./review-sections";
 
 /*
@@ -44,8 +45,10 @@ import {
  * mounts, and again as its hunk draws or folds, so the rows above the
  * screen never move what is read. Each row is placed at its own offset,
  * and the row holding the focus stays mounted however far it scrolls away,
- * so Tab goes on from where the reader was. The gutter holds only the
- * cards of the threads on mounted hunks, and places them as they change.
+ * so Tab goes on from where the reader was; so does the hunk of a gutter
+ * card holding it, such as the composer being typed in. The gutter holds
+ * only the cards of the notes (threads, draft comments, the composer) on
+ * mounted hunks, and places them as they change.
  */
 
 /** Rows mounted beyond each edge of the screen. */
@@ -93,12 +96,13 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   onToggleViewed,
   navigator,
   listRef: list,
-  placed,
+  notes,
   floating,
   hovered,
-  onHover,
   onAnchor,
-  onThreadRowsChange,
+  onAddComment,
+  onNoteRowsChange,
+  focusedHunk,
   changed,
 }: {
   sections: readonly ReviewSection[];
@@ -108,16 +112,20 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   navigator: Ref<SectionNavigator>;
   /** The rows' box, which the gutter beside it follows. */
   listRef: RefObject<HTMLDivElement | null>;
-  /** The review threads on the pull request's lines. */
-  placed: readonly PlacedThread[];
-  /** Threads float in the gutter, so a line only marks where its thread is. */
+  /** The threads, draft comments and composer on the pull request's lines. */
+  notes: readonly ReviewNote[];
+  /** Notes float in the gutter, so a line only marks where its note is. */
   floating: boolean;
+  /** The hovered note's key. */
   hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
-  /** Called with each mark after a thread's line as it's drawn. */
+  /** Called with each mark after a note's line as it's drawn. */
   onAnchor: (element: HTMLElement | null) => void;
-  /** Called with the mounted hunks holding threads as they change, the first time too: the gutter holds only their cards. */
-  onThreadRowsChange: (hunkIds: ReadonlySet<string>) => void;
+  /** Opens the composer; undefined when the pull request takes no comments. */
+  onAddComment: AddComment | undefined;
+  /** Called with the mounted hunks holding notes as they change, the first time too: the gutter holds only their cards. */
+  onNoteRowsChange: (hunkIds: ReadonlySet<string>) => void;
+  /** The hunk of the gutter's card holding the focus, kept mounted off screen like the row holding it. */
+  focusedHunk?: string;
   /** The hunks changed since the review, with the version each last changed in. */
   changed: ReadonlyMap<string, number> | undefined;
 }) {
@@ -137,11 +145,10 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     });
     return byId;
   }, [rows]);
-  const { byHunk, renderAnnotation, hoveredEntry } = useThreadMarks({
-    placed,
+  const { byHunk, renderAnnotation, hoveredEntry } = useNoteMarks({
+    notes,
     floating,
     hovered,
-    onHover,
     onAnchor,
   });
   // Counted once: the virtualizer asks again for every row not measured yet
@@ -195,15 +202,27 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
 
   /** The row holding the focus, kept mounted off screen. */
   const [focusedRow, setFocusedRow] = useState<number>();
+  /** The row of the hunk whose card in the gutter holds the focus. */
+  const focusedCardRow = useMemo(
+    () =>
+      focusedHunk === undefined
+        ? undefined
+        : rows.findIndex(
+            (row) => row.kind === "hunk" && row.entry.hunk.id === focusedHunk,
+          ),
+    [rows, focusedHunk],
+  );
   const rangeExtractor = useCallback(
     (range: Range) => {
       const indexes = defaultRangeExtractor(range);
-      if (focusedRow === undefined || indexes.includes(focusedRow)) {
-        return indexes;
-      }
-      return [...indexes, focusedRow].sort((a, b) => a - b);
+      const kept = [focusedRow, focusedCardRow].filter(
+        (index): index is number =>
+          index !== undefined && index >= 0 && !indexes.includes(index),
+      );
+      if (!kept.length) return indexes;
+      return [...new Set([...indexes, ...kept])].sort((a, b) => a - b);
     },
-    [focusedRow],
+    [focusedRow, focusedCardRow],
   );
   const getItemKey = useCallback((index: number) => rows[index]!.key, [rows]);
 
@@ -285,9 +304,9 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   };
 
   const items = virtualizer.getVirtualItems();
-  // The mounted hunks holding threads, compared in a word: a row mounting
-  // or unmounting without threads costs the gutter nothing.
-  const threadRows = items
+  // The mounted hunks holding notes, compared in a word: a row mounting
+  // or unmounting without notes costs the gutter nothing.
+  const noteRows = items
     .flatMap((item) => {
       const row = rows[item.index]!;
       return row.kind === "hunk" && byHunk.has(row.entry.hunk.id)
@@ -295,12 +314,12 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
         : [];
     })
     .join("\n");
-  const shownThreadRows = useRef<string>(undefined);
+  const shownNoteRows = useRef<string>(undefined);
   useLayoutEffect(() => {
-    if (shownThreadRows.current === threadRows) return;
-    shownThreadRows.current = threadRows;
-    onThreadRowsChange(new Set(threadRows ? threadRows.split("\n") : []));
-  }, [threadRows, onThreadRowsChange]);
+    if (shownNoteRows.current === noteRows) return;
+    shownNoteRows.current = noteRows;
+    onNoteRowsChange(new Set(noteRows ? noteRows.split("\n") : []));
+  }, [noteRows, onNoteRowsChange]);
 
   useImperativeHandle(navigator, () => ({
     tops() {
@@ -390,6 +409,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
                     ? hoveredEntry
                     : undefined
                 }
+                onAddComment={onAddComment}
                 changedIn={changed?.get(row.entry.hunk.id)}
               />
             )}

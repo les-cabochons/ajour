@@ -740,6 +740,30 @@ export const rendererEvents = {
   /** Deck remembers the version the user reviewed (#787). */
   "pull_request.remember_review": command(pullRequest),
 
+  // Deck's draft review (#784). Never a path, a line or a comment's words.
+  "deck.draft_comment_add": command({}),
+  "deck.draft_comment_edit": command({}),
+  "deck.draft_comment_remove": command({}),
+  /** The review page read a new head: the comments on lines it changed were marked outdated. */
+  "deck.draft_review_refresh": command({
+    deck: { outdated_count: operational<number>() },
+  }),
+  /** The code host accepted these comments, so they left the draft. */
+  "deck.draft_review_complete": command({
+    deck: { comment_count: operational<number>() },
+  }),
+  "deck.draft_review_discard": command({}),
+  /** A closed pull request's comment named its post, a retry with the last try's name. */
+  "deck.comment_submission_prepare": command({}),
+  /** Finish review named its request, a retry with the last try's name. */
+  "deck.review_submission_prepare": command({
+    deck: { comment_count: operational<number>() },
+  }),
+  /** The code host took the review, and its comments left the draft. */
+  "deck.review_submission_complete": command({
+    deck: { comment_count: operational<number>() },
+  }),
+
   // The retired activity timeline, kept for stored data.
   "timeline.import": command({}),
   "timeline.update": command({}),

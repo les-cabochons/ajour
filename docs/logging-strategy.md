@@ -1140,12 +1140,21 @@ channel to read the event each emits.
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
 | `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.comment_submission_prepare`    | command                                 | store command                                    |
 | `deck.consent`                       | command, request                        | route, client call                               |
 | `deck.consent_revoke`                | command, request                        | route, client call                               |
 | `deck.consents`                      | command, request                        | route, client call                               |
+| `deck.draft_comment_add`             | command                                 | store command                                    |
+| `deck.draft_comment_edit`            | command                                 | store command                                    |
+| `deck.draft_comment_remove`          | command                                 | store command                                    |
+| `deck.draft_review_complete`         | command                                 | store command                                    |
+| `deck.draft_review_discard`          | command                                 | store command                                    |
+| `deck.draft_review_refresh`          | command                                 | store command                                    |
 | `deck.guide_build`                   | job                                     | local API                                        |
 | `deck.open`                          | command, request                        | route, client call                               |
 | `deck.preload`                       | request, job                            | route, client call, renderer                     |
+| `deck.review_submission_complete`    | command                                 | store command                                    |
+| `deck.review_submission_prepare`     | command                                 | store command                                    |
 | `deck.since_review`                  | command, request                        | route, client call                               |
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
@@ -1235,7 +1244,7 @@ channel to read the event each emits.
 | `pull_request.apply_sync`            | command                                 | store command                                    |
 | `pull_request.browse`                | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.change`                | command                                 | store command                                    |
-| `pull_request.comment`               | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.comment`               | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load`                  | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.load_checks`           | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load_conversation`     | command, request, plugin_operation      | route, plugin method, client call                |
@@ -1250,7 +1259,7 @@ channel to read the event each emits.
 | `pull_request.resolve_thread`        | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.settle`                | command                                 | store command                                    |
 | `pull_request.snooze`                | command                                 | store command                                    |
-| `pull_request.submit_review`         | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.submit_review`         | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.sync`                  | job, request, plugin_operation          | route, plugin method, client call, renderer      |
 | `pull_request.unsettle`              | command                                 | store command                                    |
 | `pull_request.unsnooze`              | command                                 | store command                                    |

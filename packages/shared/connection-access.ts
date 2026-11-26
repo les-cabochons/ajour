@@ -37,7 +37,9 @@ export const EDIT_WORK_ITEMS_ACCESS = "editWorkItems";
 
 /**
  * The choices of the Azure DevOps plugin while it runs on plugin API 3,
- * whose manifest can't declare them. Its API 4 manifest declares the same.
+ * whose manifest can't declare them. Its API 4 manifest declares the same
+ * ids, and from 2.4.0 adds Review pull requests for the writes (#784),
+ * which an API 3 plugin doesn't make.
  */
 const AZURE_DEVOPS_API_3_ACCESS: readonly ConnectionAccessChoice[] = [
   {

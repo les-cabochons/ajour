@@ -6,16 +6,13 @@ import {
   useRef,
   type RefObject,
 } from "react";
-import {
-  connectorPath,
-  stackCards,
-  type PlacedThread,
-} from "@/domain/deck/review-threads";
-import { ReviewThreadCard } from "./review-thread-card";
+import { connectorPath, stackCards } from "@/domain/deck/review-threads";
+import type { ReviewNote } from "@/domain/deck/review-notes";
+import { renderNoteCard } from "./review-notes";
 
 /*
- * The gutter beside the diff, from 1,100px up: each review thread floats
- * level with its line, joined to it by a connector, and cards that would
+ * The gutter beside the diff, from 1,100px up: each review thread, draft
+ * comment and the composer floats level with its line, joined to it by a connector, and cards that would
  * overlap stack, their connectors stepping down at an elbow. One read pass
  * measures every line and card, then one write pass moves them: the cost
  * follows the number of threads, not hunks. The cards are placed again
@@ -45,25 +42,24 @@ const cancelFrame = (frame: number) =>
     : window.clearTimeout(frame);
 
 export function ThreadGutter({
-  placed,
+  notes,
   columnRef,
   hovered,
-  onHover,
   scheduleRef,
 }: {
-  placed: readonly PlacedThread[];
+  notes: readonly ReviewNote[];
   /** The diff's column, whose size changes move the lines. */
   columnRef: RefObject<HTMLElement | null>;
+  /** The key of the note hovered. */
   hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
   /** Set to this gutter's `schedule`, for each line's mark to call once it's drawn. */
   scheduleRef: { current: (() => void) | undefined };
 }) {
   const gutterRef = useRef<HTMLElement>(null);
   const connectorsRef = useRef<SVGSVGElement>(null);
-  const byId = useMemo(
-    () => new Map(placed.map((entry) => [entry.thread.id, entry])),
-    [placed],
+  const byKey = useMemo(
+    () => new Map(notes.map((note) => [note.key, note])),
+    [notes],
   );
 
   const place = useCallback(() => {
@@ -90,12 +86,12 @@ export function ThreadGutter({
       if (id !== null) boxes.set(id, box);
     }
     const measured = cards.flatMap((card) => {
-      const entry = byId.get(card.dataset.card ?? "");
+      const entry = byKey.get(card.dataset.card ?? "");
       const box = entry ? boxes.get(entry.hunkId) : undefined;
       if (!entry || !box) return [];
       const boxRect = box.getBoundingClientRect();
       const anchor = box.querySelector(
-        `[data-thread-anchor=${quoted(entry.thread.id)}]`,
+        `[data-thread-anchor=${quoted(entry.key)}]`,
       );
       // Drawn, the anchor sits right after the line; before, the line is
       // its row's height down the hunk's box, inside its 1px border.
@@ -109,7 +105,7 @@ export function ThreadGutter({
             lineHeight / 2;
       return [
         {
-          key: entry.thread.id,
+          key: entry.key,
           y,
           height: card.offsetHeight,
           fromX: boxRect.right - gridRect.left,
@@ -161,7 +157,7 @@ export function ThreadGutter({
     if (gutter.style.minHeight !== `${bottom}px`) {
       gutter.style.setProperty("min-height", `${bottom}px`);
     }
-  }, [byId]);
+  }, [byKey]);
 
   const frame = useRef(0);
   const schedule = useCallback(() => {
@@ -194,7 +190,7 @@ export function ThreadGutter({
     for (const card of gutterRef.current?.querySelectorAll("[data-card]") ?? [])
       observer.observe(card);
     return () => observer.disconnect();
-  }, [columnRef, placed, schedule]);
+  }, [columnRef, notes, schedule]);
 
   return (
     <>
@@ -203,26 +199,18 @@ export function ThreadGutter({
         className="deck-gutter"
         aria-label="Review threads"
       >
-        {placed.map((entry) => (
-          <div
-            key={entry.thread.id}
-            className="deck-gutter-card"
-            data-card={entry.thread.id}
-          >
-            <ReviewThreadCard
-              thread={entry.thread}
-              hot={hovered === entry.thread.id}
-              onHover={onHover}
-            />
+        {notes.map((note) => (
+          <div key={note.key} className="deck-gutter-card" data-card={note.key}>
+            {renderNoteCard(note, hovered === note.key)}
           </div>
         ))}
       </aside>
       <svg ref={connectorsRef} className="deck-connectors" aria-hidden="true">
-        {placed.map((entry) => (
+        {notes.map((note) => (
           <path
-            key={entry.thread.id}
-            data-connector={entry.thread.id}
-            data-hot={hovered === entry.thread.id || undefined}
+            key={note.key}
+            data-connector={note.key}
+            data-hot={hovered === note.key || undefined}
           />
         ))}
       </svg>
