@@ -121,7 +121,15 @@ export function PullRequestReview({
   }, [composerState]);
 
   const { pluginId, connectionId } = pullRequest;
-  const { repository, number } = pullRequest.facts;
+  const { repository, number, repositoryIdentity, headRef } = pullRequest.facts;
+  // Where the repository is cloned from, so an ask can read the user's clone.
+  const cloneSource = useMemo(
+    () =>
+      repositoryIdentity
+        ? { repositoryIdentity, ...(headRef ? { headRef } : {}) }
+        : undefined,
+    [repositoryIdentity, headRef],
+  );
   const ref = useMemo(
     (): DeckReviewRef => ({ pluginId, connectionId, repository, number }),
     [pluginId, connectionId, repository, number],
@@ -602,6 +610,7 @@ export function PullRequestReview({
           repository={repository}
           number={number}
           head={shown?.headSha}
+          clone={cloneSource}
         >
           {shown ? (
             <PullRequestSummary

@@ -396,7 +396,9 @@
    * A concern's quiet ask (#791): faint at the end of its rationale, clear
    * on hover and focus. It is a word, not an icon, and names no agent.
    */
-  .deck-more {
+  /* A footer's offer to read the user's clone too: as quiet as `more ›`. */
+  .deck-more,
+  .deck-ask-clone {
     padding: 0;
     border: 0;
     background: none;
@@ -407,11 +409,14 @@
 
   .deck-more:hover,
   .deck-more:focus-visible,
-  .deck-more[aria-expanded="true"] {
+  .deck-more[aria-expanded="true"],
+  .deck-ask-clone:hover,
+  .deck-ask-clone:focus-visible {
     color: var(--text);
   }
 
-  .deck-more:focus-visible {
+  .deck-more:focus-visible,
+  .deck-ask-clone:focus-visible {
     border-radius: var(--radius-sm);
     outline: 2px solid var(--ring);
     outline-offset: 1px;

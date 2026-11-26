@@ -21,11 +21,17 @@ import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { askGoing, askText, shortHead } from "@/domain/deck/ask";
+import {
+  answerFooter,
+  askGoing,
+  askText,
+  type AskState,
+} from "@/domain/deck/ask";
 import { anchorSelection, linkCitations } from "@/domain/deck/line-selection";
 import { watchClosedConversations } from "@/lib/agent-turns";
 import { grantDeckConsent } from "@/lib/app-api";
 import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
+import { DeckClonePicker, type DeckCloneTarget } from "./deck-clone-picker";
 import { DeckConsentDialog } from "./deck-consent-dialog";
 import {
   askKey,
@@ -52,11 +58,17 @@ import { useReviewLines } from "./review-lines-context";
  * in the page's `DeckAskSessions`, so a concern or a hunk that unmounts,
  * as a huge pull request's rows do off screen (#790), finds its ask as it
  * left it.
+ *
+ * When the code host says where the repository is cloned from, an ask can
+ * read the user's local clone too (#795): its footer says so, says why it
+ * couldn't, or offers to choose the clone.
  */
 
 interface DeckAskContextValue {
   target: DeckAskTarget;
   sessions: DeckAskSessions;
+  /** Opens the clone picker. Resolves true once a clone is chosen. */
+  pickClone(): Promise<boolean>;
 }
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
@@ -79,6 +91,7 @@ export function DeckAskProvider({
   repository,
   number,
   head,
+  clone,
   children,
 }: Omit<DeckAskTarget, "head"> & {
   head: string | undefined;
@@ -88,9 +101,44 @@ export function DeckAskProvider({
     () =>
       head === undefined
         ? undefined
-        : { pluginId, connectionId, repository, number, head },
-    [pluginId, connectionId, repository, number, head],
+        : {
+            pluginId,
+            connectionId,
+            repository,
+            number,
+            head,
+            ...(clone ? { clone } : {}),
+          },
+    [pluginId, connectionId, repository, number, head, clone],
   );
+  const [picking, setPicking] = useState<{
+    target: DeckCloneTarget;
+    resolve: (chosen: boolean) => void;
+  }>();
+  const pickClone = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        if (!target?.clone) {
+          resolve(false);
+          return;
+        }
+        const cloneTarget = {
+          pluginId: target.pluginId,
+          connectionId: target.connectionId,
+          repository: target.repository,
+          clone: target.clone,
+        };
+        setPicking((current) => {
+          current?.resolve(false);
+          return { target: cloneTarget, resolve };
+        });
+      }),
+    [target],
+  );
+  const closePicker = (chosen: boolean) => {
+    picking?.resolve(chosen);
+    setPicking(undefined);
+  };
   const [asking, setAsking] = useState<{
     request: DeckNeedsConsent;
     resolve: (answer: ConsentAnswer) => void;
@@ -171,8 +219,8 @@ export function DeckAskProvider({
     }
   };
   const value = useMemo(
-    () => (target ? { target, sessions } : null),
-    [target, sessions],
+    () => (target ? { target, sessions, pickClone } : null),
+    [target, sessions, pickClone],
   );
   return (
     <DeckAskContext.Provider value={value}>
@@ -180,6 +228,13 @@ export function DeckAskProvider({
       <DeckConsentDialog
         request={asking?.request}
         onAnswer={(covers) => void answer(covers)}
+      />
+      <DeckClonePicker
+        target={picking?.target}
+        onOpenChange={(open) => {
+          if (!open) closePicker(false);
+        }}
+        onChosen={() => closePicker(true)}
       />
     </DeckAskContext.Provider>
   );
@@ -316,8 +371,8 @@ function AskAnswer({
   /** More actions on an answer, before Dismiss, given its text. */
   actions?: (text: string) => ReactNode;
 }) {
-  const { target, sessions } = context;
-  const { state, turnId } = session;
+  const { target, sessions, pickClone } = context;
+  const { state, turnId, starting } = session;
   const lines = useReviewLines();
   const ask = (question?: string) =>
     void sessions.ask(target, session.anchor, question, onClosed);
@@ -368,9 +423,17 @@ function AskAnswer({
         </Markdown>
       ) : null}
       {state.kind === "answered" ? (
-        <p className="deck-ask-footer">
-          From the code at {shortHead(state.head)}
-        </p>
+        <AnswerFooter
+          state={state}
+          // Without where the repository is cloned from, there's nothing to choose.
+          canChooseClone={target.clone !== undefined}
+          onChooseClone={() =>
+            void pickClone().then((chosen) => {
+              // Asked again, the answer reads the clone.
+              if (chosen) ask(state.question);
+            })
+          }
+        />
       ) : state.kind === "stopped" ? (
         <p className="deck-ask-footer">Stopped.</p>
       ) : state.kind === "failed" ? (
@@ -384,7 +447,7 @@ function AskAnswer({
             variant="ghost"
             size="sm"
             onClick={() => sessions.stop(key)}
-            disabled={!turnId}
+            disabled={!turnId && !starting}
           >
             Stop
           </Button>
@@ -427,6 +490,44 @@ function AskAnswer({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The head the answer read, with `, and your clone` when it read the
+ * user's clone too; why it couldn't, quietly; or the offer to choose one.
+ */
+function AnswerFooter({
+  state,
+  canChooseClone,
+  onChooseClone,
+}: {
+  state: Extract<AskState, { kind: "answered" }>;
+  canChooseClone: boolean;
+  onChooseClone: () => void;
+}) {
+  const footer = answerFooter(state);
+  return (
+    <>
+      <p className="deck-ask-footer">
+        {footer.source}
+        {footer.offersClone && canChooseClone ? (
+          <>
+            {" · "}
+            <button
+              type="button"
+              className="deck-ask-clone"
+              onClick={onChooseClone}
+            >
+              Read your clone too
+            </button>
+          </>
+        ) : null}
+      </p>
+      {footer.cloneReason ? (
+        <p className="deck-ask-footer">{footer.cloneReason}</p>
+      ) : null}
+    </>
   );
 }
 

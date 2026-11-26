@@ -57,6 +57,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   cli_failed: "The agent's command-line program reported an error.",
   client_closed:
     "The caller went away before the answer reached it, such as a closed window or a cancelled request.",
+  clone_refused:
+    "The folder isn't a Git clone of the pull request's repository, so it wasn't kept.",
   closed: "The local API stopped before the work ended.",
   concurrency: "The plugin already runs as many commands at once as it may.",
   connection_changed_during_sync:

@@ -91,6 +91,12 @@ The first time you ask about a repository's pull request, Ajour asks once whethe
 
 When you'd group the changes another way, press **Regroup…** after the guide's label (in the **…** menu on a narrow window). A short instruction shows, ready to send as is, or type your own, such as "Put tests with what they test", and press Enter. The agent you picked in **Settings › Agents** regroups the changes into concerns and writes the summary's problem, breaking changes and risky areas; Ajour checks that every change is in exactly one concern before it shows the new guide. The label then reads **Grouped by Claude Code**, with **Built from the code** after it: click that to go back to the guide Ajour built. With no ticket linked, the agent infers the problem, and the summary says so.
 
+### Let answers read your clone
+
+With your own clone of the repository, an answer can read the whole codebase at the pull request's latest commit, not only the changed files. Under an answer, click **Read your clone too**. Ajour lists the repository folders of your projects whose remote is that repository; pick one and click **Use clone**, or click **Choose a folder…** to pick another, a WSL folder included (through `\\wsl.localhost\…`). The question is asked again, and the answer then ends with **From the code at a41c9e2, and your clone**.
+
+To get the pull request's commit, Ajour runs `git fetch` in your clone with your own Git sign-in, into references of its own, and checks it out in a separate folder it removes later. Your branches, staged changes and files stay as they are, and nothing runs in your clone. The agent only reads there, and sends what it reads to its provider. When Ajour can't read your clone, for example when the fetch fails, the answer comes from the pull request alone and says why under it. Codex reads files only through a shell, which Ajour keeps off, so its answers read the pull request alone. **Settings › Agents › Local clones** lists your clones, with **Forget**.
+
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Merging happens in your code host for now

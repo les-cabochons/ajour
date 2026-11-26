@@ -51,6 +51,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   askDeck: vi.fn(),
   grantDeckConsent: vi.fn(),
   cancelAgentTurn: vi.fn(),
+  getDeckCloneSuggestions: vi.fn(),
+  chooseDeckCloneFolder: vi.fn(),
 }));
 vi.mock("@pierre/diffs/react", () => ({
   PatchDiff: ({ patch }: { patch: string }) => <pre>{patch}</pre>,
@@ -189,6 +191,8 @@ afterEach(() => {
   vi.mocked(api.askDeck).mockReset();
   vi.mocked(api.grantDeckConsent).mockReset();
   vi.mocked(api.cancelAgentTurn).mockReset();
+  vi.mocked(api.getDeckCloneSuggestions).mockReset();
+  vi.mocked(api.chooseDeckCloneFolder).mockReset();
 });
 
 /** The review page, with its guide shown. */
@@ -248,12 +252,17 @@ it("shows a quiet placeholder, streams the answer in under the rationale, then a
   expect(within(answer).getByRole("status").textContent).toBe(
     "Getting more detail…",
   );
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: { kind: "concern", id: "g1" },
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+    },
+    expect.any(AbortSignal),
+  );
   expect(moreOn(concern).getAttribute("aria-expanded")).toBe("true");
 
   started("t1");
@@ -307,13 +316,18 @@ it("opens on the default question, focused, and sends a typed one in its place",
   fireEvent.click(within(concern).getByRole("button", { name: "Ask" }));
 
   expect(api.askDeck).toHaveBeenCalledTimes(1);
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: { kind: "concern", id: "g1" },
-    question: "Is it tested?",
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+      question: "Is it tested?",
+    },
+    expect.any(AbortSignal),
+  );
   const answer = await within(concern).findByRole("region", {
     name: "More detail",
   });
@@ -358,13 +372,18 @@ it("asks something else under an answer", async () => {
   );
 
   await waitFor(() =>
-    expect(api.askDeck).toHaveBeenLastCalledWith("github", "work", {
-      repository: "acme/billing-api",
-      number: 1,
-      head: HEAD,
-      anchor: { kind: "concern", id: "g1" },
-      question: "And errors?",
-    }),
+    expect(api.askDeck).toHaveBeenLastCalledWith(
+      "github",
+      "work",
+      {
+        repository: "acme/billing-api",
+        number: 1,
+        head: HEAD,
+        anchor: { kind: "concern", id: "g1" },
+        question: "And errors?",
+      },
+      expect.any(AbortSignal),
+    ),
   );
   expect(await within(answer).findByText("And errors?")).toBeTruthy();
   expect(within(answer).queryByText("Default.")).toBeNull();
@@ -922,10 +941,14 @@ it("hides a cached answer as its repository is revoked in another window", async
 
 it("stops an ask still waiting for its answer when its repository is revoked, and drops the answer that comes after", async () => {
   let answerLate: (answer: DeckAskResponse) => void = () => {};
-  vi.mocked(api.askDeck).mockReturnValueOnce(
-    new Promise((resolve) => {
-      answerLate = resolve;
-    }),
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.askDeck).mockImplementationOnce(
+    (_plugin, _connection, _ask, given) => {
+      signal = given;
+      return new Promise((resolve) => {
+        answerLate = resolve;
+      });
+    },
   );
   const concern = await renderGuide();
   askOn(concern);
@@ -936,9 +959,252 @@ it("stops an ask still waiting for its answer when its repository is revoked, an
 
   act(() => announceDeckConsentRevoked(BILLING));
   expect(within(answer).getByText("Stopped.")).toBeTruthy();
+  // Its request stops too, as while Ajour prepares the clone.
+  expect(signal?.aborted).toBe(true);
   await act(async () => {
     answerLate({ kind: "answer", text: "Sent before the revoke.", head: HEAD });
   });
   expect(screen.queryByText("Sent before the revoke.")).toBeNull();
   expect(within(answer).getByText("Stopped.")).toBeTruthy();
+});
+
+/*
+ * The user's local clone (#795): when the code host says where the
+ * repository is cloned from, an ask sends it, and the answer's footer says
+ * whether it read the clone, why it couldn't, or offers to choose one.
+ */
+
+const IDENTITY = {
+  repositoryIdentity: {
+    cloneUrls: ["https://github.com/acme/billing-api.git"],
+  },
+  headRef: "feature/login",
+};
+
+/** The pull request as a sync with its clone addresses stores it. */
+function syncWithIdentity() {
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [
+        { ...pullRequestFacts, repository: "acme/billing-api", ...IDENTITY },
+      ],
+    },
+  );
+}
+
+it("sends where the repository is cloned from, and ends an answer that read the clone with , and your clone", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("c1"),
+    clone: { state: "read" },
+  });
+  const concern = await renderGuide();
+
+  askOn(concern);
+
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: { kind: "concern", id: "g1" },
+      clone: IDENTITY,
+    },
+    expect.any(AbortSignal),
+  );
+  started("c1");
+  text("c1", 0, "It reads the whole module.");
+  ended("c1");
+  expect(
+    await within(answer).findByText("From the code at a41c9e2, and your clone"),
+  ).toBeTruthy();
+  expect(answer.textContent).not.toMatch(/Claude|Codex|OpenCode/i);
+});
+
+it("says why the clone wasn't read, quietly, under the answer", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "From the pull request alone.",
+    head: HEAD,
+    clone: {
+      state: "unavailable",
+      reason:
+        "Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
+    },
+  });
+  const concern = await renderGuide();
+
+  askOn(concern);
+
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  await within(answer).findByText("From the pull request alone.");
+  expect(within(answer).getByText("From the code at a41c9e2")).toBeTruthy();
+  expect(
+    within(answer).getByText(
+      "Your clone's remote doesn't have this pull request's head commit, a41c9e2.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(answer).queryByRole("button", { name: "Read your clone too" }),
+  ).toBeNull();
+});
+
+it("offers to choose the clone, lists the folders Ajour knows, and asks again reading it", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "From the pull request alone.",
+      head: HEAD,
+      clone: { state: "not_chosen" },
+    })
+    .mockResolvedValueOnce({
+      kind: "turn",
+      turn: turn("c2"),
+      clone: { state: "read" },
+    });
+  vi.mocked(api.getDeckCloneSuggestions).mockResolvedValue({
+    suggestions: [
+      { folderId: "f1", name: "billing-api", path: "/src/billing-api" },
+    ],
+  });
+  vi.mocked(api.chooseDeckCloneFolder).mockResolvedValue({
+    clone: {
+      pluginId: "github",
+      connectionId: "work",
+      repository: "acme/billing-api",
+      environment: { kind: "native" },
+      path: "/src/billing-api",
+      remote: "origin",
+      chosenAt: 1,
+    },
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  await within(answer).findByText("From the pull request alone.");
+
+  fireEvent.click(
+    within(answer).getByRole("button", { name: "Read your clone too" }),
+  );
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your clone of billing-api",
+  });
+  expect(api.getDeckCloneSuggestions).toHaveBeenCalledWith(
+    "github",
+    "work",
+    "acme/billing-api",
+    IDENTITY,
+  );
+  const folder = await within(dialog).findByRole("radio", {
+    name: "billing-api /src/billing-api",
+  });
+  expect((folder as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use clone" }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Your clone of billing-api" }),
+    ).toBeNull(),
+  );
+  expect(api.chooseDeckCloneFolder).toHaveBeenCalledWith(
+    "github",
+    "work",
+    "acme/billing-api",
+    IDENTITY,
+    "f1",
+  );
+  await waitFor(() => expect(api.askDeck).toHaveBeenCalledTimes(2));
+  started("c2");
+  text("c2", 0, "Now with the clone.");
+  ended("c2");
+  expect(
+    await within(concern).findByText(
+      "From the code at a41c9e2, and your clone",
+    ),
+  ).toBeTruthy();
+});
+
+it("shows why a folder can't be the clone, and keeps the dialog open", async () => {
+  syncWithIdentity();
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "From the pull request alone.",
+    head: HEAD,
+    clone: { state: "not_chosen" },
+  });
+  vi.mocked(api.getDeckCloneSuggestions).mockResolvedValue({
+    suggestions: [{ folderId: "f1", name: "web", path: "/src/web" }],
+  });
+  vi.mocked(api.chooseDeckCloneFolder).mockRejectedValue(
+    new AppApiError("Refused", 400, undefined, {
+      reason: "clone_refused",
+      error: "None of this folder's remotes is acme/billing-api.",
+    }),
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  fireEvent.click(
+    await within(answer).findByRole("button", { name: "Read your clone too" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your clone of billing-api",
+  });
+  await within(dialog).findByRole("radio", { name: "web /src/web" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Use clone" }));
+
+  expect((await within(dialog).findByRole("alert")).textContent).toBe(
+    "None of this folder's remotes is acme/billing-api.",
+  );
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+it("stops an ask while Ajour still prepares the clone, before its turn starts", async () => {
+  syncWithIdentity();
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.askDeck).mockImplementationOnce(
+    (_plugin, _connection, _ask, given) =>
+      new Promise((_resolve, reject) => {
+        signal = given;
+        given?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      }),
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  const stop = within(answer).getByRole("button", { name: "Stop" });
+  await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false));
+
+  fireEvent.click(stop);
+
+  expect(signal?.aborted).toBe(true);
+  expect(await within(answer).findByText("Stopped.")).toBeTruthy();
+  expect(within(answer).queryByRole("alert")).toBeNull();
+  expect(api.cancelAgentTurn).not.toHaveBeenCalled();
 });

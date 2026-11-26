@@ -56,7 +56,7 @@ import {
 import { buildPrompt } from "./prompts.ts";
 import { editableValues } from "../connection-credentials.ts";
 import { AgentRunError, childEnv, versionOnly } from "./launch.ts";
-import { AgentConversations } from "./conversations.ts";
+import { AgentConversations, type TurnOptions } from "./conversations.ts";
 import type { McpClientPullRequestBinding } from "../storage.ts";
 import { TurnSlot, TurnSlotAbortedError, type TurnLease } from "./turn-slot.ts";
 
@@ -289,8 +289,11 @@ export class AgentRunner {
    * Starts a turn of a core task in its pull request's conversation. It
    * runs, or waits for the slot; its events go to `publishTurnEvent`.
    */
-  startTurn(request: CoreTaskRunRequest): Promise<AgentTurn> {
-    return this.conversations.startTurn(request);
+  startTurn(
+    request: CoreTaskRunRequest,
+    options?: TurnOptions,
+  ): Promise<AgentTurn> {
+    return this.conversations.startTurn(request, options);
   }
 
   /**

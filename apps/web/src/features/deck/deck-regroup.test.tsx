@@ -453,10 +453,12 @@ it("ends each summary line with more ›, which asks about that line", async () 
   expect(
     await within(line).findByText("The token check guards every route."),
   ).toBeTruthy();
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    ...REF,
-    anchor: { kind: "summary", id: "risk:auth" },
-  });
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    { ...REF, anchor: { kind: "summary", id: "risk:auth" } },
+    expect.any(AbortSignal),
+  );
 });
 
 it("puts Regroup… in the guide's … menu in the narrow view", async () => {

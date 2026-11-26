@@ -3288,6 +3288,19 @@ export const catalog = defineCatalog({
       },
     },
     /**
+     * Settings › Storage: the file manager shows the folder of the clone
+     * worktrees Deck kept (ADR 0023). The API knows the folder; never a path.
+     */
+    "deck.storage_open_kept": {
+      kinds: ["request", "command"],
+      reasons: [
+        ...requestReasons,
+        /** The file manager didn't open it, or this is not the desktop app. */
+        "open_failed",
+      ],
+      fields: { ...requestFields },
+    },
+    /**
      * An ask in Deck (#791): "more detail" on a concern, answered from the
      * cache or by a `deck.ask` turn of the pull request's conversation. The
      * question and the answer are content, so neither is here.
@@ -3318,6 +3331,27 @@ export const catalog = defineCatalog({
           typed_question: operational<boolean>(),
           /** Answered from the cache, with no turn. */
           cached: operational<boolean>(),
+          /**
+           * What the turn did with the user's local clone (#795): read it,
+           * none chosen, or why it couldn't. Never its path or a reason's words.
+           */
+          clone: operational<
+            | "read"
+            | "not_chosen"
+            | "agent_reads_no_files"
+            | "clone_missing"
+            | "remote_changed"
+            | "no_git"
+            | "wsl_unavailable"
+            | "head_not_full"
+            | "no_head_ref"
+            | "no_fork_remote"
+            | "fetch_failed"
+            | "fetch_timeout"
+            | "head_not_found"
+            | "checkout_failed"
+            | "cancelled"
+          >(),
         },
         agent: { turn_id: operational() },
       },
@@ -3377,6 +3411,81 @@ export const catalog = defineCatalog({
         "not_open",
         ...requestReasons,
       ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+      },
+    },
+    /** The picker asks for a repository's clone and the known folders that could be it (#795). */
+    "deck.clone_suggestions": {
+      kinds: ["command", "request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          folder_count: operational<number>(),
+          suggestion_count: operational<number>(),
+          clone_chosen: operational<boolean>(),
+        },
+      },
+    },
+    /** The user chose a repository's clone, a suggested folder or one from the chooser. */
+    "deck.clone_choose": {
+      kinds: ["command", "request", "ipc"],
+      reasons: [
+        /** The folder isn't a clone of the repository, or Ajour can't read it. */
+        "clone_refused",
+        /** The suggested folder is no longer one Ajour knows. */
+        "not_found",
+        "foreign_sender",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        ipc: ipcFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: { clone_environment: operational<"native" | "wsl">() },
+      },
+    },
+    /**
+     * Cleanup of Deck's worktrees left one where it was (#795, ADR 0023):
+     * no clone's git could check it, or git showed something in it. Once
+     * per folder and run, never a path.
+     */
+    "deck.clone_kept": {
+      kinds: ["job"],
+      reasons: [],
+      fields: {
+        deck: {
+          clone_kept: operational<
+            | "linked"
+            | "clone_gone"
+            | "not_listed"
+            | "not_clean"
+            | "check_failed"
+            | "git_refused"
+          >(),
+          clone_environment: operational<"native" | "wsl">(),
+        },
+      },
+    },
+    /** Settings › Agents reads the clones the user chose. */
+    "deck.clones": {
+      kinds: ["command", "request"],
+      reasons: [...requestReasons],
+      fields: {
+        ...requestFields,
+        deck: { clone_count: operational<number>() },
+      },
+    },
+    /** The user forgot a repository's clone. */
+    "deck.clone_forget": {
+      kinds: ["command", "request"],
+      reasons: ["not_found", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },

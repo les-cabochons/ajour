@@ -1508,8 +1508,9 @@ window asks before a `delete` close, never before an `archive` one.
 ### Hand-off worktrees
 
 A hand off can start in a git worktree Ajour makes for the backlog item (spec
-#857, ticket #860, ADR 0022). `apps/api/src/worktrees.ts` is the one module of
-Ajour that runs git itself. Its `Worktrees` class makes worktrees (`create`),
+#857, ticket #860, ADR 0022). `apps/api/src/worktrees.ts` and Deck's local
+clones (see below, ADR 0023) are the modules of Ajour that run git
+themselves, both through `apps/api/src/git-process.ts`. The `Worktrees` class of `worktrees.ts` makes worktrees (`create`),
 lists them (`list`, `liveOf`, `newestLive`, `branches`), and since ticket #862
 reads their status and removes them (`statuses`, `deletePreview`, `delete`,
 `forget`, `folderOf`, see "Status, delete and forget" below). Since ticket
@@ -1933,6 +1934,82 @@ opens, and `domain/handoffs/start-in.ts` words the choice
 the first time a handoff with a `worktreeId` shows, and a start adds its
 worktree. `hasWorktrees` says whether this window hands off at all, which is
 what lists Settings › Worktrees.
+
+### Deck's local clones
+
+Deck's asks can read the user's local clone at a pull request's head (#795,
+ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
+
+- **Facts.** Code host facts carry optional `repositoryIdentity` (the
+  repository's clone addresses, and the fork a pull request comes from) and
+  `headRef`. The window sends them with an ask and to the clone picker.
+  `apps/api/src/clone-identity.ts` reads a remote address as one identity
+  (GitHub-style `host/owner/repo`, Azure DevOps `org/project/repo` across
+  its HTTPS, SSH and `visualstudio.com` forms, a server's collection kept),
+  and refuses one with a password, a query or a transport helper.
+- **Choosing.** One clone per repository (plugin, connection, repository),
+  kept in the API state file's `agentRunner.deckClones`, never synced. A
+  suggestion is a project's repository folder whose remote names the
+  repository; Ajour reads only those folders' remotes and never scans the
+  disk. A suggested folder is chosen by its id
+  (`POST /api/deck/:pluginId/connections/:connectionId/clone`); any other comes
+  from the desktop's chooser (`ajour:choose-deck-clone`, which calls
+  `chooseDeckCloneForServer`), so the window never names a path. A folder is
+  kept only when git says it is a non-bare clone whose remote names the
+  repository; that remote is the one fetched from. A
+  `\\wsl.localhost\<distro>\…` folder is a WSL clone.
+- **Preparing.** `prepare` runs before the ask's turn: it checks the clone and
+  its remote again, fetches the head into `refs/ajour/deck/<id>/head` unless
+  the clone has the commit (`refs/pull/N/head` on GitHub, the source branch on
+  Azure DevOps, never `refs/pull/N/merge`), checks the exact head, and adds a
+  detached worktree at `deck-cache/worktrees/<id>` under the API's data folder
+  (a WSL clone's under `~/.cache/ajour/deck-worktrees/<id>` in its
+  distribution, read as `\\wsl.localhost\…`). `<id>` hashes the cache entry's
+  key. Every call has no hooks, no fsmonitor, no maintenance; the checkout
+  turns filters, LFS, submodules and symbolic links off, and sparse checkout:
+  it has every file even when the user's clone is sparse, and when the clone
+  keeps per-worktree settings, the worktree's own say it isn't sparse. Before
+  git makes the folder, Deck writes its mark beside it, `<id>.deck`. Writes to
+  one clone run one at a time. A WSL clone runs `wsl.exe -d <distro> --exec env … git`
+  (`WslGit`).
+- **The turn.** `AgentConversations.startTurn` takes `readRoot` as an option
+  Ajour sets, never from the window. An adapter whose conversation
+  `readsFiles` gets it in `ConversationInput`: Claude Code adds
+  `--tools Read,Grep,Glob` and `--add-dir <root>` (and a `Read(//…)` rule for a
+  network folder), OpenCode allows `read`, `grep`, `glob` and `list` with
+  `external_directory` only for the root. Codex doesn't read files without
+  its shell, so its asks read the pull request alone. A process started with
+  another root is ended, and the turn goes to a new one that resumes the
+  conversation.
+- **Lifetime.** The worktree and its ref go when the content cache removes
+  its entry, the one on screen included (`onLeft`, from eviction, Clear
+  cache or a deleted connection), an earlier run's too: `release` takes the
+  entry's repository and finds the worktree through the saved clone. Once
+  the API listens, `sweepAtStart` removes, in every clone on this computer,
+  Deck's worktrees and refs whose entries the cache no longer holds
+  (`liveEntries`), and reports the folders under `deck-cache/worktrees/`
+  that no live entry owns and no clone's git removed; a WSL clone is swept
+  at its first use, so a start never wakes WSL. Forgetting or replacing a clone removes its worktrees first, while
+  its mapping says where they are. The start's sweep waits for the state's
+  first load rather than loading it, so the load stays the first request's.
+- **What cleanup may remove.** Nothing of the user's (ADR 0023). Deck never
+  deletes a worktree folder itself. It runs `git worktree remove <path>`,
+  without `--force`, in the clone that lists the worktree, and only right
+  after `git status --porcelain --ignored --untracked-files=all` inside it
+  printed nothing. A folder whose clone is gone, one no clone lists, a link
+  or junction, a linked worktrees folder, or a check that can't finish:
+  it stays, and `deck.clone_kept` says why (`onKept`), once a run per
+  folder. `git worktree prune`, which is repository-wide, runs only when
+  every stale registration is named like Deck's under the worktrees folder
+  and its folder is gone. A kept folder never blocks an ask: the next
+  checkout goes to `<id>-<8 hex>` beside it. `keptFolderCount` counts the
+  kept folders on this computer for Settings › Storage, whose **Open
+  folder** (`deck.storage_open_kept`) shows the worktrees folder through
+  the desktop's `openFolder`; the page never gets a path. A sweep counts as done once it
+  finishes, so a removal that comes during it waits for it.
+- **Failure.** Any failure leaves the ask on the pull request alone, with a
+  reason in the response's `clone` (`deckCloneUseSchema`) and a code in
+  `deck.ask`'s `deck.clone`, never a path or git's words.
 
 ## Handoff hooks
 

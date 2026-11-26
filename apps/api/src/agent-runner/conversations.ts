@@ -160,6 +160,8 @@ interface Turn {
   head: string;
   /** The head the conversation was bound to before this turn, when it changed. */
   headChangedFrom?: string;
+  /** The worktree of the user's clone the turn may read, when one is prepared (#795). */
+  readRoot?: string;
   unit: TurnUnit;
   /** Aborts the wait for the slot. */
   wait: AbortController;
@@ -205,6 +207,17 @@ interface ConversationProcess {
    * still have found it, so the conversation keeps it.
    */
   stoppedByAjour: boolean;
+  /** The folder its own read-only file tools read, when it was given one. */
+  readRoot?: string;
+}
+
+/** What a turn brings besides its request, from Ajour itself, never from the window. */
+export interface TurnOptions {
+  /**
+   * The worktree of the user's clone at the turn's head, which the CLI may
+   * read with its read-only file tools (#795). Ignored by a CLI that can't.
+   */
+  readRoot?: string;
 }
 
 interface Conversation {
@@ -262,7 +275,10 @@ export class AgentConversations {
    * replacing another pull request's, as needed. Answers at once: the turn
    * runs, or waits for the slot, and its events stream to the window.
    */
-  async startTurn(request: CoreTaskRunRequest): Promise<AgentTurn> {
+  async startTurn(
+    request: CoreTaskRunRequest,
+    options: TurnOptions = {},
+  ): Promise<AgentTurn> {
     if (this.stopping) {
       throw new AgentRunError("Ajour is quitting.", 409);
     }
@@ -308,7 +324,7 @@ export class AgentConversations {
     );
 
     const free = conversation.turns.length === 0 && this.options.slot.isFree();
-    const turn = this.addTurn(conversation, request);
+    const turn = this.addTurn(conversation, request, options);
     if (conversation.turns[0] === turn) {
       // Takes the slot in this tick when it is free.
       conversation.draining = this.runTurns(conversation);
@@ -438,7 +454,11 @@ export class AgentConversations {
     return conversation;
   }
 
-  private addTurn(conversation: Conversation, request: CoreTaskRunRequest) {
+  private addTurn(
+    conversation: Conversation,
+    request: CoreTaskRunRequest,
+    options: TurnOptions,
+  ) {
     clearTimeout(conversation.idleTimer);
     const id = randomUUID();
     const unit = conversation.unit.enter(() =>
@@ -465,6 +485,9 @@ export class AgentConversations {
       task: request.task,
       ...(request.message === undefined ? {} : { message: request.message }),
       head: request.head,
+      ...(options.readRoot && conversation.protocol.readsFiles
+        ? { readRoot: options.readRoot }
+        : {}),
       unit,
       wait: new AbortController(),
       waitedFrom: Date.now(),
@@ -598,6 +621,12 @@ export class AgentConversations {
         step = "rebind_client";
         await this.rebind(conversation, turn);
       }
+      const running = conversation.process;
+      if (running && !running.ending && running.readRoot !== turn.readRoot) {
+        // Its file tools read another worktree, or none: the turn goes to a
+        // new process, which continues the conversation with the turn's.
+        this.terminate(running);
+      }
       const dying = conversation.process;
       if (dying?.ending) {
         // An earlier turn's process that Ajour ended. The turn goes to a new
@@ -608,9 +637,13 @@ export class AgentConversations {
       }
       if (!conversation.process) {
         step = "find_executable";
-        const launched = await this.launch(conversation, (next) => {
-          step = next;
-        });
+        const launched = await this.launch(
+          conversation,
+          (next) => {
+            step = next;
+          },
+          turn.readRoot,
+        );
         // The turn was stopped while the process started. A closing
         // conversation ends it, and so does a per-turn process, which would
         // wait for its turn forever.
@@ -643,6 +676,7 @@ export class AgentConversations {
                 }
               : {}),
             ...(turn.historyLost ? { historyLost: true } : {}),
+            ...(turn.readRoot ? { readRoot: turn.readRoot } : {}),
           }),
         ),
       );
@@ -681,6 +715,7 @@ export class AgentConversations {
   private async launch(
     conversation: Conversation,
     reached: (step: LaunchStep) => void,
+    readRoot: string | undefined,
   ): Promise<ConversationProcess> {
     const { adapter, protocol } = conversation;
     const pathValue = await this.options.loginShellPath();
@@ -737,6 +772,7 @@ export class AgentConversations {
       baseEnv: { ...childEnv(process.env), PATH: pathValue },
       token: conversation.client.token,
       ...(resume ? { resume } : {}),
+      ...(readRoot ? { readRoot } : {}),
     };
     const invocation = protocol.buildInvocation(input);
 
@@ -773,6 +809,7 @@ export class AgentConversations {
       namedSession: false,
       ending: false,
       stoppedByAjour: false,
+      ...(readRoot ? { readRoot } : {}),
     };
     const started = cli;
     conversation.launchCount += 1;

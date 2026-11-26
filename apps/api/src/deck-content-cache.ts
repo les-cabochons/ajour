@@ -223,6 +223,12 @@ export function createDeckContentCache(options: {
   now?: () => number;
   /** An entry left the cache: its guide build, if one waits, needn't run. */
   onRemoved?: (key: DeckCacheKey) => void;
+  /**
+   * Any entry left the cache, the one on screen included, as a clear or a
+   * deleted connection removes it: what lives with it, such as the worktree
+   * of the user's clone (#795), goes too.
+   */
+  onLeft?: (key: DeckCacheKey) => void;
 }) {
   const { directory } = options;
   const now = options.now ?? Date.now;
@@ -317,6 +323,7 @@ export function createDeckContentCache(options: {
     if (meta) {
       entries.delete(id);
       if (id !== kept) options.onRemoved?.(meta.key);
+      options.onLeft?.(meta.key);
     }
     await removeFiles(id, sizes);
   };
@@ -843,6 +850,14 @@ export function createDeckContentCache(options: {
       return serial(async () => {
         await load();
         await evictNow();
+      });
+    },
+
+    /** The keys of the entries the cache holds now. */
+    keys(): Promise<DeckCacheKey[]> {
+      return serial(async () => {
+        await load();
+        return [...entries.values()].map((meta) => meta.key);
       });
     },
 

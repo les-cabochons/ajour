@@ -165,3 +165,60 @@ it("lists the repositories Deck may ask about, and revokes one", async () => {
     ),
   ).toBeTruthy();
 });
+
+it("lists the local clones Deck's answers read, and forgets one", async () => {
+  installDomShims();
+  const overview: AgentRunnerOverview = {
+    settings: { cli: "claude-code", browserMode: "ajour-chrome", model: "" },
+    clis: [],
+    tasks: [],
+    currentRun: null,
+  };
+  const clone = {
+    pluginId: "github",
+    connectionId: "work",
+    repository: "acme/billing-api",
+    environment: { kind: "wsl", distro: "Ubuntu" },
+    path: "/home/alex/src/billing-api",
+    remote: "origin",
+    chosenAt: 1,
+  };
+  const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/deck/clones/forget"))
+      return Response.json({ clones: [] });
+    if (url.endsWith("/api/deck/clones"))
+      return Response.json({ clones: [clone] });
+    if (url.endsWith("/api/deck/consents"))
+      return Response.json({ consents: [] });
+    return Response.json(overview);
+  });
+  vi.stubGlobal("fetch", fetch);
+  await renderRoutes({ routes: { "/": SettingsAgentsPage } });
+
+  const section = (
+    await screen.findByRole("heading", { name: "Local clones" })
+  ).closest("section")!;
+  const row = await within(section).findByText("acme/billing-api");
+  expect(row.closest(".settings-row")?.textContent).toContain(
+    "/home/alex/src/billing-api · WSL Ubuntu",
+  );
+
+  fireEvent.click(
+    within(section).getByRole("button", {
+      name: "Forget the clone of acme/billing-api",
+    }),
+  );
+
+  await waitFor(() =>
+    expect(within(section).queryByText("acme/billing-api")).toBeNull(),
+  );
+  const forget = fetch.mock.calls.find(([url]) =>
+    String(url).endsWith("/api/deck/clones/forget"),
+  )!;
+  expect(JSON.parse(String(forget[1]?.body))).toEqual({
+    pluginId: "github",
+    connectionId: "work",
+    repository: "acme/billing-api",
+  });
+});
