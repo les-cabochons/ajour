@@ -10,14 +10,26 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { AgentTurn, AgentTurnEvent } from "@ajour/shared/agent-runs";
-import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
+import type {
+  DeckAskResponse,
+  DeckOpenedPullRequest,
+} from "@ajour/shared/deck";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { receiveAgentTurnEvent } from "@/lib/agent-turns";
+import {
+  announceDeckConsentRevoked,
+  DECK_CONSENT_REVOKED_STORAGE_KEY,
+} from "@/lib/deck-consent-revocations";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
+import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
 import {
   codeHostOverview,
   pullRequestFacts,
@@ -536,6 +548,169 @@ it("streams the answer under React's development remount too", async () => {
   expect(api.askDeck).toHaveBeenCalledTimes(1);
 });
 
+/** A guide of one concern with 600 hunks, so its rows mount only near the screen (#790). */
+const HUGE: DeckOpenedPullRequest = {
+  headSha: HEAD,
+  baseSha: "b52d0f3a11",
+  files: [
+    {
+      path: "src/big.ts",
+      status: "modified",
+      binary: false,
+      hunks: Array.from({ length: 600 }, (_, index) => ({
+        ...hunk(
+          `src/big.ts#${index}`,
+          `@@ -${index + 1},1 +${index + 1},1 @@`,
+          ["-a", "+A"],
+        ),
+        oldStart: index + 1,
+        newStart: index + 1,
+      })),
+    },
+  ],
+  guide: {
+    madeWith: "code",
+    concerns: [
+      {
+        id: "big",
+        title: "Rewrite the big file",
+        rationale: "Every line of it changes.",
+        hunkIds: Array.from(
+          { length: 600 },
+          (_, index) => `src/big.ts#${index}`,
+        ),
+      },
+    ],
+  },
+};
+
+/** The page inside a 900px scroller whose rows are 100px high. */
+async function renderHugeGuide() {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
+  restoreSizes = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  await renderRoutes({
+    shell: ({ children }) => (
+      <Shell>
+        <div
+          data-testid="scroller"
+          style={{ overflowY: "auto" }}
+          ref={(element) => {
+            if (element) makeScrollable(element);
+          }}
+        >
+          {children}
+        </div>
+      </Shell>
+    ),
+    path: `/deck/${itemId}`,
+    routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+  });
+  await screen.findByRole("heading", {
+    name: "Concern 1: Rewrite the big file",
+  });
+  return screen.getByTestId("scroller");
+}
+let restoreSizes: (() => void) | undefined;
+afterEach(() => {
+  restoreSizes?.();
+  restoreSizes = undefined;
+});
+
+/** Moves the focus to a hunk's Viewed mark, as a reader moving on would. */
+function focusFirstHunk() {
+  const viewed = screen.getByRole("button", {
+    name: "Viewed: src/big.ts, line 1",
+  });
+  act(() => viewed.focus());
+  return viewed;
+}
+
+it("keeps an ask and its running turn while a huge pull request scrolls its concern away", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t9"),
+  });
+  const scroller = await renderHugeGuide();
+  fireEvent.click(screen.getByRole("button", { name: "More detail" }));
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Question" }), {
+    key: "Enter",
+  });
+  const answer = await screen.findByRole("region", { name: "More detail" });
+  started("t9");
+  text("t9", 0, "It reads ");
+  await within(answer).findByText("It reads");
+
+  const viewed = focusFirstHunk();
+  scrollElement(scroller, { top: 20_000 });
+  expect(screen.queryByRole("button", { name: "More detail" })).toBeNull();
+  // The turn goes on while its concern is away.
+  text("t9", 1, "the whole file.");
+  scrollElement(scroller, { top: 0 });
+
+  const back = await screen.findByRole("region", { name: "More detail" });
+  expect(within(back).getByText("It reads the whole file.")).toBeTruthy();
+  expect(within(back).getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(document.activeElement).toBe(viewed);
+  ended("t9");
+  expect(
+    await within(back).findByText("From the code at a41c9e2"),
+  ).toBeTruthy();
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the question being written while a huge pull request scrolls its concern away", async () => {
+  const scroller = await renderHugeGuide();
+  fireEvent.click(screen.getByRole("button", { name: "More detail" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Question" }), {
+    target: { value: "Is it tested?" },
+  });
+
+  const viewed = focusFirstHunk();
+  scrollElement(scroller, { top: 20_000 });
+  expect(screen.queryByRole("textbox", { name: "Question" })).toBeNull();
+  scrollElement(scroller, { top: 0 });
+
+  const question = (await screen.findByRole("textbox", {
+    name: "Question",
+  })) as HTMLTextAreaElement;
+  expect(question.value).toBe("Is it tested?");
+  // Coming back into view doesn't take the focus from where the reader is.
+  expect(document.activeElement).toBe(viewed);
+  expect(
+    screen
+      .getByRole("button", { name: "More detail" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(api.askDeck).not.toHaveBeenCalled();
+});
+
+it("keeps an answer behind Files A–Z", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t10"),
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  await within(concern).findByRole("region", { name: "More detail" });
+  started("t10");
+  text("t10", 0, "Kept.");
+
+  fireEvent.click(screen.getByRole("button", { name: "Files A–Z" }));
+  ended("t10");
+  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+
+  const again = await screen.findByRole("region", {
+    name: "Concern 1: Handle the request",
+  });
+  const answer = within(again).getByRole("region", { name: "More detail" });
+  expect(within(answer).getByText("Kept.")).toBeTruthy();
+  expect(within(answer).getByText("From the code at a41c9e2")).toBeTruthy();
+  expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
 it("says why the consent couldn't be recorded", async () => {
   vi.mocked(api.askDeck).mockRejectedValueOnce(
     new AppApiError("Ajour asks once for billing-api.", 409, undefined, {
@@ -564,6 +739,222 @@ it("says why the consent couldn't be recorded", async () => {
     ),
   ).toBeTruthy();
   expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+const BILLING = {
+  pluginId: "github",
+  connectionId: "work",
+  repository: "acme/billing-api",
+};
+
+/** Settings › Agents revokes `repository` in another window, at `at`, which this one hears through storage. */
+function revokeInAnotherWindow(repository: typeof BILLING, at = Date.now()) {
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: DECK_CONSENT_REVOKED_STORAGE_KEY,
+        newValue: JSON.stringify({ ...repository, at }),
+      }),
+    );
+  });
+}
+
+it("shows a revoked repository's answer no more once its conversation closes, back from Files A–Z", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "turn",
+    turn: turn("t12"),
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  fireEvent.click(screen.getByRole("button", { name: "Files A–Z" }));
+  // Settings › Agents revokes the repository: its conversation closes.
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+
+  const again = await screen.findByRole("region", {
+    name: "Concern 1: Handle the request",
+  });
+  expect(within(again).queryByRole("region", { name: "More detail" })).toBe(
+    null,
+  );
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  expect(moreOn(again).getAttribute("aria-expanded")).toBe("false");
+});
+
+it("keeps an answer asked after allowing the repository again, when the revoked conversation's close comes late", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "Asked again.",
+      head: HEAD,
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  // Settings › Agents revokes the repository, then it is allowed again and
+  // asked again, before the old conversation's close arrives.
+  act(() => announceDeckConsentRevoked(BILLING));
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  askOn(concern);
+  await within(concern).findByText("Asked again.");
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+
+  expect(within(concern).getByText("Asked again.")).toBeTruthy();
+});
+
+it("keeps an answer asked after allowing the repository again, when another window's revocation reaches this one late", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "answer",
+      text: "Asked again.",
+      head: HEAD,
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  // Revoked in another window: the conversation's close comes first, then
+  // the repository is allowed and asked again, then that window's signal.
+  const revokedAt = Date.now() - 1_000;
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  expect(screen.queryByText("The old answer.")).toBeNull();
+  askOn(concern);
+  await within(concern).findByText("Asked again.");
+  revokeInAnotherWindow(BILLING, revokedAt);
+
+  expect(within(concern).getByText("Asked again.")).toBeTruthy();
+});
+
+it("still hides an answer asked after allowing again once its own conversation is revoked, after the old revocation's late signal", async () => {
+  vi.mocked(api.askDeck)
+    .mockResolvedValueOnce({ kind: "turn", turn: turn("t12") })
+    .mockResolvedValueOnce({
+      kind: "turn",
+      turn: { ...turn("t13"), conversationId: "c2" },
+    });
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t12");
+  text("t12", 0, "The old answer.");
+  ended("t12");
+  await within(answer).findByText("From the code at a41c9e2");
+
+  const revokedAt = Date.now() - 1_000;
+  send({
+    type: "conversation-closed",
+    conversationId: "c1",
+    reason: "revoked",
+  });
+  askOn(concern);
+  const fresh = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  started("t13");
+  text("t13", 0, "The fresh answer.");
+  ended("t13");
+  await within(fresh).findByText("The fresh answer.");
+  // The old revocation's signal comes late, and changes nothing.
+  revokeInAnotherWindow(BILLING, revokedAt);
+  expect(within(concern).getByText("The fresh answer.")).toBeTruthy();
+
+  // The new consent is revoked in turn: its conversation closes.
+  send({
+    type: "conversation-closed",
+    conversationId: "c2",
+    reason: "revoked",
+  });
+  expect(within(concern).queryByText("The fresh answer.")).toBeNull();
+});
+
+it("hides a cached answer as its repository is revoked in another window", async () => {
+  vi.mocked(api.askDeck).mockResolvedValueOnce({
+    kind: "answer",
+    text: "Cached long ago.",
+    head: HEAD,
+  });
+  const concern = await renderGuide();
+  askOn(concern);
+  await within(concern).findByText("Cached long ago.");
+
+  // Another repository's revocation leaves it.
+  revokeInAnotherWindow({ ...BILLING, repository: "acme/other" });
+  expect(within(concern).getByText("Cached long ago.")).toBeTruthy();
+
+  revokeInAnotherWindow(BILLING);
+  expect(within(concern).queryByText("Cached long ago.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Files A–Z" }));
+  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+  const again = await screen.findByRole("region", {
+    name: "Concern 1: Handle the request",
+  });
+  expect(within(again).queryByText("Cached long ago.")).toBeNull();
+});
+
+it("stops an ask still waiting for its answer when its repository is revoked, and drops the answer that comes after", async () => {
+  let answerLate: (answer: DeckAskResponse) => void = () => {};
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.askDeck).mockImplementationOnce(
+    (_plugin, _connection, _ask, given) => {
+      signal = given;
+      return new Promise((resolve) => {
+        answerLate = resolve;
+      });
+    },
+  );
+  const concern = await renderGuide();
+  askOn(concern);
+  const answer = await within(concern).findByRole("region", {
+    name: "More detail",
+  });
+  expect(within(answer).getByText("Getting more detail…")).toBeTruthy();
+
+  act(() => announceDeckConsentRevoked(BILLING));
+  expect(within(answer).getByText("Stopped.")).toBeTruthy();
+  // Its request stops too, as while Ajour prepares the clone.
+  expect(signal?.aborted).toBe(true);
+  await act(async () => {
+    answerLate({ kind: "answer", text: "Sent before the revoke.", head: HEAD });
+  });
+  expect(screen.queryByText("Sent before the revoke.")).toBeNull();
+  expect(within(answer).getByText("Stopped.")).toBeTruthy();
 });
 
 /*

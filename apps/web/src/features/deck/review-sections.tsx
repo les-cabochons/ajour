@@ -3,6 +3,7 @@ import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckHunk } from "@ajour/shared/deck";
 import { DiffHunk, type DiffHunkAnnotation } from "@/components/diff-hunk";
 import { ConcernRationale } from "./deck-ask";
+import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
@@ -39,7 +40,7 @@ function highlightOf(hunk: DeckHunk, entry: PlacedThread | undefined) {
 }
 
 /** One hunk: in a concern, its file's path first; then its Viewed mark and its lines. */
-const ReviewHunkView = memo(function ReviewHunkView({
+export const ReviewHunkView = memo(function ReviewHunkView({
   entry,
   inConcern,
   viewed,
@@ -48,6 +49,7 @@ const ReviewHunkView = memo(function ReviewHunkView({
   annotations,
   renderAnnotation,
   hovered,
+  changedIn,
 }: {
   entry: ReviewHunk;
   inConcern: boolean;
@@ -59,6 +61,8 @@ const ReviewHunkView = memo(function ReviewHunkView({
   renderAnnotation: ((key: string) => ReactNode) | undefined;
   /** The hovered thread, when it's on this hunk. */
   hovered: PlacedThread | undefined;
+  /** The version the hunk last changed in, when it changed since the review (#787). */
+  changedIn: number | undefined;
 }) {
   const { file, hunk } = entry;
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
@@ -69,6 +73,9 @@ const ReviewHunkView = memo(function ReviewHunkView({
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
+        {changedIn ? (
+          <Chip className="deck-hunk-changed">{`Changed in v${changedIn}`}</Chip>
+        ) : null}
         <button
           type="button"
           className="deck-hunk-viewed"
@@ -100,33 +107,90 @@ const ReviewHunkView = memo(function ReviewHunkView({
   );
 });
 
-/** A concern of the guide, or a file of Files A–Z, with its hunks in order. */
-export const ReviewSectionView = memo(function ReviewSectionView({
+/**
+ * A section's header: a file's path and note, or a concern's number, title,
+ * rationale and viewed count. Its `h3` has `headingId`, and J and K focus it.
+ */
+export function ReviewSectionHeader({
   section,
-  viewed,
-  theme,
-  onToggleViewed,
+  seen,
+  headingId,
+}: {
+  section: ReviewSection;
+  /** Its hunks marked viewed. */
+  seen: number;
+  headingId: string;
+}) {
+  const { file } = section;
+  const note = file ? fileNote(file) : undefined;
+  const total = section.hunks.length;
+  return file ? (
+    <header className="deck-file-header">
+      <h3 id={headingId} tabIndex={-1} className="deck-file-path">
+        {file.path}
+      </h3>
+      {note ? <span className="deck-file-note">{note}</span> : null}
+      {section.of ? (
+        <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+      ) : null}
+    </header>
+  ) : (
+    <header className="deck-concern-header">
+      <span
+        className="deck-concern-number"
+        data-done={seen === total || undefined}
+        aria-hidden
+      >
+        {section.number}
+      </span>
+      <div className="deck-concern-text">
+        <h3 id={headingId} tabIndex={-1} className="deck-concern-title">
+          <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
+          {section.title}
+        </h3>
+        {section.concernId ? (
+          <ConcernRationale
+            concernId={section.concernId}
+            rationale={section.rationale ?? ""}
+          />
+        ) : section.rationale ? (
+          <p className="deck-concern-rationale">{section.rationale}</p>
+        ) : null}
+      </div>
+      {section.of ? (
+        <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+      ) : null}
+      <Value tone="muted" className="deck-concern-progress">
+        {seen}/{total}
+      </Value>
+    </header>
+  );
+}
+
+/** Where the threads on some hunks show, as `useThreadMarks` takes them. */
+export interface ThreadMarksInput {
+  /** The review threads on these hunks' lines, or none. */
+  placed: readonly PlacedThread[] | undefined;
+  /** Threads float in the gutter, so a line only marks where its thread is. */
+  floating: boolean;
+  /** The hovered thread, when it's on these hunks. */
+  hovered: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+  /** Called with each mark after a thread's line as it's drawn, so the gutter can place its card. */
+  onAnchor: (element: HTMLElement | null) => void;
+}
+
+/**
+ * What the hunks draw after their threads' lines: each hunk's annotations,
+ * the mark or card for each, and the hovered thread's entry.
+ */
+export function useThreadMarks({
   placed,
   floating,
   hovered,
   onHover,
   onAnchor,
-}: {
-  section: ReviewSection;
-  viewed: ReadonlySet<string>;
-  theme: "light" | "dark";
-  onToggleViewed: (hunkId: string) => void;
-  /** The section's review threads on its lines, or none. */
-  placed: readonly PlacedThread[] | undefined;
-  /** Threads float in the gutter, so a line only marks where its thread is. */
-  floating: boolean;
-  /** The hovered thread, when it's in this section. */
-  hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
-  /** Called with each mark after a thread's line as it's drawn, so the gutter can place its card. */
-  onAnchor: (element: HTMLElement | null) => void;
-}) {
-  const headingId = useId();
+}: ThreadMarksInput) {
   const byHunk = useMemo(() => {
     const map = new Map<string, DiffHunkAnnotation[]>();
     for (const entry of placed ?? []) {
@@ -167,57 +231,63 @@ export const ReviewSectionView = memo(function ReviewSectionView({
     [byId, floating, hot, onAnchor, onHover],
   );
   const hoveredEntry = hovered ? byId.get(hovered) : undefined;
-  const { file } = section;
-  const note = file ? fileNote(file) : undefined;
-  const seen = viewedCount(section, viewed);
-  const total = section.hunks.length;
+  return { byHunk, renderAnnotation, hoveredEntry };
+}
+
+/** A concern of the guide, or a file of Files A–Z, with its hunks in order. */
+export const ReviewSectionView = memo(function ReviewSectionView({
+  section,
+  viewed,
+  theme,
+  onToggleViewed,
+  placed,
+  floating,
+  hovered,
+  onHover,
+  onAnchor,
+  changed,
+}: {
+  section: ReviewSection;
+  viewed: ReadonlySet<string>;
+  theme: "light" | "dark";
+  onToggleViewed: (hunkId: string) => void;
+  /** The section's review threads on its lines, or none. */
+  placed: readonly PlacedThread[] | undefined;
+  /** Threads float in the gutter, so a line only marks where its thread is. */
+  floating: boolean;
+  /** The hovered thread, when it's in this section. */
+  hovered: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+  /** Called with each mark after a thread's line as it's drawn, so the gutter can place its card. */
+  onAnchor: (element: HTMLElement | null) => void;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
+}) {
+  const headingId = useId();
+  const { byHunk, renderAnnotation, hoveredEntry } = useThreadMarks({
+    placed,
+    floating,
+    hovered,
+    onHover,
+    onAnchor,
+  });
   const attribute = { [SECTION_ATTRIBUTE]: "" };
   return (
     <section
-      className={file ? "deck-file" : "deck-concern"}
+      className={section.file ? "deck-file" : "deck-concern"}
       aria-labelledby={headingId}
       {...attribute}
     >
-      {file ? (
-        <header className="deck-file-header">
-          <h3 id={headingId} tabIndex={-1} className="deck-file-path">
-            {file.path}
-          </h3>
-          {note ? <span className="deck-file-note">{note}</span> : null}
-        </header>
-      ) : (
-        <header className="deck-concern-header">
-          <span
-            className="deck-concern-number"
-            data-done={seen === total || undefined}
-            aria-hidden
-          >
-            {section.number}
-          </span>
-          <div className="deck-concern-text">
-            <h3 id={headingId} tabIndex={-1} className="deck-concern-title">
-              <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
-              {section.title}
-            </h3>
-            {section.concernId ? (
-              <ConcernRationale
-                concernId={section.concernId}
-                rationale={section.rationale ?? ""}
-              />
-            ) : section.rationale ? (
-              <p className="deck-concern-rationale">{section.rationale}</p>
-            ) : null}
-          </div>
-          <Value tone="muted" className="deck-concern-progress">
-            {seen}/{total}
-          </Value>
-        </header>
-      )}
+      <ReviewSectionHeader
+        section={section}
+        seen={viewedCount(section, viewed)}
+        headingId={headingId}
+      />
       {section.hunks.map((entry) => (
         <ReviewHunkView
           key={entry.hunk.id}
           entry={entry}
-          inConcern={!file}
+          inConcern={!section.file}
           viewed={viewed.has(entry.hunk.id)}
           theme={theme}
           onToggleViewed={onToggleViewed}
@@ -226,6 +296,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
           hovered={
             hoveredEntry?.hunkId === entry.hunk.id ? hoveredEntry : undefined
           }
+          changedIn={changed?.get(entry.hunk.id)}
         />
       ))}
     </section>

@@ -8,6 +8,7 @@ import {
   isPluginApiMissing,
   revokeDeckConsent,
 } from "@/lib/app-api";
+import { announceDeckConsentRevoked } from "@/lib/deck-consent-revocations";
 
 /**
  * Settings › Agents › Questions about pull requests (#791): the repositories
@@ -57,6 +58,8 @@ export function DeckConsentsSetting() {
         repository: consent.repository,
       });
       setConsents(answer.consents);
+      // A review page asking about it, here or in another window, hides its answers.
+      announceDeckConsentRevoked(consent);
     } catch {
       setError(`Couldn't revoke ${consent.repository}.`);
     }

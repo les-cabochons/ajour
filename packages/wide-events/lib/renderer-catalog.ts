@@ -737,6 +737,8 @@ export const rendererEvents = {
   "pull_request.unsettle": command(pullRequest),
   "pull_request.snooze": command(pullRequest),
   "pull_request.unsnooze": command(pullRequest),
+  /** Deck remembers the version the user reviewed (#787). */
+  "pull_request.remember_review": command(pullRequest),
 
   // The retired activity timeline, kept for stored data.
   "timeline.import": command({}),

@@ -105,12 +105,24 @@ export const deckGuideSchema = z.object({
 });
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 
+/** Why an opened pull request has no guide although nothing failed. */
+export const deckGuideSkippedSchema = z.object({
+  /** It has more hunks than a guide is built for. */
+  reason: z.literal("too_many_hunks"),
+  /** The most hunks a guide is built for (#790). */
+  hunkLimit: z.number().int().positive(),
+});
+export type DeckGuideSkipped = z.infer<typeof deckGuideSkippedSchema>;
+
 /**
  * An opened pull request: its diff and its guide. The guide is null when
- * the pipeline failed, so the page shows the files A–Z.
+ * the pipeline failed, or didn't run because the pull request has more
+ * hunks than a guide is built for, which `guideSkipped` says. Either way
+ * the page shows the files A–Z.
  */
 export const deckOpenedPullRequestSchema = deckPullRequestDiffSchema.extend({
   guide: deckGuideSchema.nullable(),
+  guideSkipped: deckGuideSkippedSchema.optional(),
 });
 export type DeckOpenedPullRequest = z.infer<typeof deckOpenedPullRequestSchema>;
 
@@ -128,6 +140,47 @@ export type DeckPreloadRequest = z.infer<typeof deckPreloadRequestSchema>;
 export const deckPreloadResultSchema = z.object({
   queued: z.number().int().nonnegative(),
 });
+
+/*
+ * Changes since your review (#787): the hunks on screen that changed since
+ * the version the user last reviewed, each with the version it last
+ * changed in. A hunk whose added and removed lines are the same bytes in
+ * the reviewed version is unchanged, wherever a rebase moved it.
+ */
+
+const deckCommitSchema = z.string().trim().min(1).max(120);
+
+/** Compares the diff at `head`, the one on screen, with the version reviewed. */
+export const deckSinceReviewRequestSchema = codeHostPullRequestRefSchema.extend(
+  {
+    head: deckCommitSchema,
+    /** The head of the version the user last reviewed. */
+    reviewedHead: deckCommitSchema,
+  },
+);
+export type DeckSinceReviewRequest = z.infer<
+  typeof deckSinceReviewRequestSchema
+>;
+
+export const deckSinceReviewSchema = z.object({
+  head: deckCommitSchema,
+  reviewedHead: deckCommitSchema,
+  /** The numbers of both versions, as the code host numbers them. */
+  version: z.number().int().positive(),
+  reviewedVersion: z.number().int().positive(),
+  /**
+   * The hunks of the diff at `head` changed since the version reviewed, in
+   * the diff's order, each with the version it last changed in. Every other
+   * hunk is unchanged.
+   */
+  changed: z.array(
+    z.object({
+      hunkId: z.string().min(1).max(1_100),
+      version: z.number().int().positive(),
+    }),
+  ),
+});
+export type DeckSinceReview = z.infer<typeof deckSinceReviewSchema>;
 
 /** The content cache's cap until the user sets one in Settings › Storage: 1 GB. */
 export const DECK_CACHE_DEFAULT_CAP_BYTES = 1024 ** 3;

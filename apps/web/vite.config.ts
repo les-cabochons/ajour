@@ -198,6 +198,9 @@ export default defineConfig(({ command, mode }) => {
       tailwindcss(),
       ...(shouldStartInternalAppApi ? [internalAppApiPlugin()] : []),
     ],
+    // Module workers, split like the page: Deck's highlighter worker
+    // (components/diff-highlighter.ts) loads each grammar when it needs it.
+    worker: { format: "es" as const },
     build: {
       outDir: isDesktopMode ? "dist-desktop" : "dist",
       chunkSizeWarningLimit: 1000,

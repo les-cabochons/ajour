@@ -103,11 +103,6 @@ export function answerFooter(state: Extract<AskState, { kind: "answered" }>): {
   return { source, offersClone: clone?.state === "not_chosen" };
 }
 
-/** The user stopped the ask, keeping what came so far. */
-export function stopAsk(state: AskState): AskState {
-  return { kind: "stopped", ...withQuestion(state), text: askText(state) };
-}
-
 /** The ask couldn't start or its turn failed, with what came so far. */
 export function failAsk(state: AskState, message: string): AskState {
   return {
@@ -116,6 +111,11 @@ export function failAsk(state: AskState, message: string): AskState {
     text: askText(state),
     message,
   };
+}
+
+/** The ask stopped before its turn ended, by Stop or a revoked consent, keeping what came. */
+export function stopAsk(state: AskState): AskState {
+  return { kind: "stopped", ...withQuestion(state), text: askText(state) };
 }
 
 /** Moves the ask on with one event of its turn, about `head`. */

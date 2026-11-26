@@ -12,9 +12,6 @@ import {
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
   DECK_QUESTION_MAX,
-  deckNeedsConsentSchema,
-  type DeckAskAnchor,
-  type DeckCloneSource,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -22,26 +19,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  answerAsk,
   answerFooter,
-  applyTurnEvent,
   askGoing,
   askText,
-  failAsk,
-  startAsk,
-  stopAsk,
-  withClone,
   type AskState,
 } from "@/domain/deck/ask";
-import { watchAgentTurn } from "@/lib/agent-turns";
-import {
-  AppApiError,
-  askDeck,
-  cancelAgentTurn,
-  grantDeckConsent,
-} from "@/lib/app-api";
+import { watchClosedConversations } from "@/lib/agent-turns";
+import { grantDeckConsent } from "@/lib/app-api";
+import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
 import { DeckClonePicker, type DeckCloneTarget } from "./deck-clone-picker";
 import { DeckConsentDialog } from "./deck-consent-dialog";
+import {
+  askKey,
+  DeckAskSessions,
+  useAskSession,
+  type AskSession,
+  type ConsentAnswer,
+  type DeckAskTarget,
+} from "./deck-ask-sessions";
 
 /*
  * Deck's quiet asks (#791): a faint `more ›` ends each concern's rationale.
@@ -49,36 +44,21 @@ import { DeckConsentDialog } from "./deck-consent-dialog";
  * edited; the answer streams in under the rationale, ending with the commit
  * it is about. The first ask in a repository opens the consent dialog.
  * Nothing names the agent. At rest a concern mounts one button and no
- * listener.
+ * listener. The asks live in the page's `DeckAskSessions`, so a concern
+ * that unmounts, as a huge pull request's rows do off screen (#790), finds
+ * its ask as it left it.
  *
  * When the code host says where the repository is cloned from, an ask can
  * read the user's local clone too (#795): its footer says so, says why it
  * couldn't, or offers to choose the clone.
  */
 
-/** The pull request the page asks about, at the head it shows. */
-export interface DeckAskTarget {
-  pluginId: string;
-  connectionId: string;
-  repository: string;
-  number: number;
-  head: string;
-  /** Where the repository is cloned from, from the pull request's facts. */
-  clone?: DeckCloneSource;
-}
-
 interface DeckAskContextValue {
   target: DeckAskTarget;
+  sessions: DeckAskSessions;
   /** Opens the clone picker. Resolves true once a clone is chosen. */
   pickClone(): Promise<boolean>;
-  /**
-   * Opens the consent dialog. Resolves true once the repository is allowed,
-   * false for Not now, or why recording the consent failed.
-   */
-  requestConsent(request: DeckNeedsConsent): Promise<ConsentAnswer>;
 }
-
-type ConsentAnswer = boolean | { error: string };
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
 
@@ -155,6 +135,32 @@ export function DeckAskProvider({
       ),
     [],
   );
+  const [sessions] = useState(() => new DeckAskSessions(requestConsent));
+  // The asks follow their turns while the page shows. React's development
+  // remount detaches them and attaches them again.
+  useEffect(() => {
+    sessions.attach();
+    return () => sessions.detach();
+  }, [sessions]);
+  useEffect(() => sessions.keepHead(head), [sessions, head]);
+  // A revoked repository's answers show no more, in this window or another.
+  useEffect(() => {
+    const stopRevocations = watchDeckConsentRevocations((revoked) => {
+      if (
+        revoked.pluginId === pluginId &&
+        revoked.connectionId === connectionId &&
+        revoked.repository === repository
+      )
+        sessions.revoke(revoked.at);
+    });
+    const stopClosed = watchClosedConversations((event) =>
+      sessions.conversationClosed(event.conversationId, event.reason),
+    );
+    return () => {
+      stopRevocations();
+      stopClosed();
+    };
+  }, [sessions, pluginId, connectionId, repository]);
   const answer = async (allowed: boolean) => {
     const current = asking;
     if (!current) return;
@@ -182,8 +188,8 @@ export function DeckAskProvider({
     }
   };
   const value = useMemo(
-    () => ({ target, requestConsent, pickClone }),
-    [target, requestConsent, pickClone],
+    () => ({ target, sessions, pickClone }),
+    [target, sessions, pickClone],
   );
   return (
     <DeckAskContext.Provider value={value}>
@@ -212,18 +218,13 @@ export function ConcernRationale({
   rationale: string;
 }) {
   const context = useContext(DeckAskContext);
-  const [open, setOpen] = useState(false);
+  const key = context ? askKey(context.target.head, concernId) : "";
+  const session = useAskSession(context?.sessions, key);
+  const open = session !== undefined;
   const answerId = useId();
-  const anchor = useMemo<DeckAskAnchor>(
-    () => ({ kind: "concern", id: concernId }),
-    [concernId],
-  );
   const more = useRef<HTMLButtonElement>(null);
   // Focus goes back to `more ›`, as it would from a closed popover.
-  const close = useCallback(() => {
-    setOpen(false);
-    more.current?.focus();
-  }, []);
+  const focusMore = useCallback(() => more.current?.focus(), []);
   return (
     <>
       <p className="deck-concern-rationale">
@@ -238,19 +239,23 @@ export function ConcernRationale({
               aria-label="More detail"
               aria-expanded={open}
               aria-controls={open ? answerId : undefined}
-              onClick={() => setOpen(true)}
+              onClick={() => {
+                if (!open) context.sessions.open(key);
+              }}
             >
               more ›
             </button>
           </>
         ) : null}
       </p>
-      {context && open ? (
+      {context && session ? (
         <AskAnswer
           id={answerId}
-          anchor={anchor}
+          askKey={key}
+          concernId={concernId}
+          session={session}
           context={context}
-          onClose={close}
+          onClosed={focusMore}
         />
       ) : null}
     </>
@@ -259,142 +264,55 @@ export function ConcernRationale({
 
 /**
  * An open ask: first its question, the default one to send as is or edit,
- * then its answer. Nothing here depends on an unmount, so React's
- * development remount keeps the ask going, and a closed answer's turn ends
- * on its own and is cached.
+ * then its answer. It only shows its session, so it can unmount and mount
+ * again, scrolled away or by React's development remount, and the ask goes
+ * on. A closed answer's turn ends on its own and is cached.
  */
 function AskAnswer({
   id,
-  anchor,
+  askKey: key,
+  concernId,
+  session,
   context,
-  onClose,
+  onClosed,
 }: {
   id: string;
-  anchor: DeckAskAnchor;
+  askKey: string;
+  concernId: string;
+  session: AskSession;
   context: DeckAskContextValue;
-  onClose: () => void;
+  /** After the ask closes. */
+  onClosed: () => void;
 }) {
-  const { target, requestConsent, pickClone } = context;
-  /** Nothing is asked yet: the question shows, to send or edit. */
-  const [composing, setComposing] = useState(true);
-  const [state, setState] = useState<AskState>(() => startAsk());
-  const [draft, setDraft] = useState("");
-  /** The consent dialog is open: nothing is asked yet, so nothing shows. */
-  const [awaitingConsent, setAwaitingConsent] = useState(false);
-  /** The running turn, which Stop stops and whose events the ask follows. */
-  const [turnId, setTurnId] = useState<string>();
-  /** Counts the asks, so an answer for an earlier one is dropped. */
-  const generation = useRef(0);
-  /**
-   * Stops the ask before its turn starts, as while Ajour fetches the pull
-   * request into the clone. Set while the ask's request runs.
-   */
-  const [starting, setStarting] = useState<AbortController>();
-
-  const ask = useCallback(
-    async (question?: string) => {
-      const mine = ++generation.current;
-      setComposing(false);
-      setTurnId(undefined);
-      setState(startAsk(question));
-      const current = () => generation.current === mine;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const controller = new AbortController();
-        setStarting(controller);
-        try {
-          const asked = await askDeck(
-            target.pluginId,
-            target.connectionId,
-            {
-              repository: target.repository,
-              number: target.number,
-              head: target.head,
-              anchor,
-              ...(question === undefined ? {} : { question }),
-              ...(target.clone ? { clone: target.clone } : {}),
-            },
-            controller.signal,
-          );
-          setStarting((now) => (now === controller ? undefined : now));
-          if (!current()) return;
-          if (asked.kind === "answer") {
-            setState((state) =>
-              answerAsk(withClone(state, asked.clone), asked.text, asked.head),
-            );
-            return;
-          }
-          setState((state) => withClone(state, asked.clone));
-          setTurnId(asked.turn.id);
-          return;
-        } catch (error) {
-          setStarting((now) => (now === controller ? undefined : now));
-          if (!current()) return;
-          const consent =
-            error instanceof AppApiError
-              ? deckNeedsConsentSchema.safeParse(error.payload)
-              : undefined;
-          if (consent?.success && attempt === 0) {
-            setAwaitingConsent(true);
-            const answer = await requestConsent(consent.data);
-            setAwaitingConsent(false);
-            if (!current()) return;
-            if (answer === true) continue;
-            if (answer === false) {
-              onClose();
-              return;
-            }
-            setState((state) => failAsk(state, answer.error));
-            return;
-          }
-          setState((state) =>
-            failAsk(
-              state,
-              error instanceof Error
-                ? error.message
-                : "Ajour couldn't get more detail.",
-            ),
-          );
-          return;
-        }
-      }
-    },
-    [anchor, onClose, requestConsent, target],
+  const { target, sessions, pickClone } = context;
+  const { state, turnId, starting } = session;
+  const ask = (question?: string) =>
+    void sessions.ask(target, concernId, question, onClosed);
+  const close = () => {
+    sessions.close(key);
+    onClosed();
+  };
+  const focused = useCallback(
+    () => sessions.edit(key, { focusQuestion: false }),
+    [sessions, key],
   );
 
-  // Follows the running turn. Its events so far come first, so a remount
-  // applies them again, which leaves the same state.
-  const { head } = target;
-  useEffect(() => {
-    if (!turnId) return;
-    return watchAgentTurn(turnId, (event) =>
-      setState((state) => applyTurnEvent(state, event, head)),
-    );
-  }, [turnId, head]);
-
-  if (awaitingConsent) return null;
-  if (composing) {
+  if (session.awaitingConsent) return null;
+  if (session.composing) {
     return (
       <AskQuestion
         id={id}
-        onAsk={(question) => void ask(question)}
-        onClose={onClose}
+        draft={session.question}
+        focus={session.focusQuestion}
+        onFocused={focused}
+        onDraft={(question) => sessions.edit(key, { question })}
+        onAsk={ask}
+        onClose={close}
       />
     );
   }
   const going = askGoing(state);
   const text = askText(state);
-  const stop = () => {
-    if (turnId) {
-      void cancelAgentTurn(turnId).catch(() => undefined);
-      return;
-    }
-    if (!starting) return;
-    // Before its turn: the request stops, and git with it.
-    generation.current += 1;
-    starting.abort();
-    setStarting(undefined);
-    setState((state) => stopAsk(state));
-  };
   return (
     <section id={id} className="deck-ask" aria-label="More detail">
       {state.question !== undefined ? (
@@ -418,7 +336,7 @@ function AskAnswer({
           onChooseClone={() =>
             void pickClone().then((chosen) => {
               // Asked again, the answer reads the clone.
-              if (chosen) void ask(state.question);
+              if (chosen) ask(state.question);
             })
           }
         />
@@ -434,7 +352,7 @@ function AskAnswer({
           <Button
             variant="ghost"
             size="sm"
-            onClick={stop}
+            onClick={() => sessions.stop(key)}
             disabled={!turnId && !starting}
           >
             Stop
@@ -445,30 +363,32 @@ function AskAnswer({
               className="deck-ask-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                const question = draft.trim();
+                const question = session.followUp.trim();
                 if (!question) return;
-                setDraft("");
-                void ask(question);
+                sessions.edit(key, { followUp: "" });
+                ask(question);
               }}
             >
               <Input
                 aria-label="Ask something else"
                 placeholder="Ask something else…"
-                value={draft}
+                value={session.followUp}
                 maxLength={DECK_QUESTION_MAX}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) =>
+                  sessions.edit(key, { followUp: event.target.value })
+                }
               />
             </form>
             {state.kind === "failed" ? (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => void ask(state.question)}
+                onClick={() => ask(state.question)}
               >
                 Try again
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={close}>
               Dismiss
             </Button>
           </>
@@ -517,25 +437,36 @@ function AnswerFooter({
 }
 
 /**
- * The question an ask opens on: the default one, focused and selected, so
- * Enter sends it as is and typing replaces it. Escape closes the ask.
+ * The question an ask opens on: the default one, focused and selected right
+ * after `more ›`, so Enter sends it as is and typing replaces it. Escape
+ * closes the ask.
  */
 function AskQuestion({
   id,
+  draft,
+  focus,
+  onFocused,
+  onDraft,
   onAsk,
   onClose,
 }: {
   id: string;
+  draft: string;
+  /** Takes the focus as it mounts. Coming back on screen, it doesn't. */
+  focus: boolean;
+  onFocused: () => void;
+  onDraft: (question: string) => void;
   /** No question means the default one, so its answer is cached as such. */
   onAsk: (question?: string) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState(DECK_CONCERN_DEFAULT_QUESTION);
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
+    if (!focus) return;
     field.current?.focus();
     field.current?.select();
-  }, []);
+    onFocused();
+  }, [focus, onFocused]);
   const send = () => {
     const question = draft.trim();
     if (!question) return;
@@ -558,7 +489,7 @@ function AskQuestion({
         className="min-h-0"
         value={draft}
         maxLength={DECK_QUESTION_MAX}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => onDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
