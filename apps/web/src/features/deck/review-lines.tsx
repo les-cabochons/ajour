@@ -66,14 +66,7 @@ export function useReviewLinesValue({
       selection,
       diff,
       select(hunkId, range, { settled, tap }) {
-        const picked = range
-          ? selectLines(diff, hunkId, {
-              start: range.start,
-              side: range.side,
-              end: range.end,
-              endSide: range.endSide ?? range.side,
-            })
-          : undefined;
+        const picked = range ? selectLines(diff, hunkId, range) : undefined;
         if (!settled) {
           selection.change(picked);
           return;
@@ -135,8 +128,9 @@ function ShortcutKey({ id, run }: { id: ShortcutActionId; run: () => void }) {
  * The toolbar above the selected lines of a hunk: Explain asks the default
  * question at once, Comment opens the composer on them, and Ask… opens
  * the question to send as is or edit. Each answer goes under the hunk.
- * Escape leaves the lines. It is placed once, as it mounts, on the first
- * selected line: `hunk` is the hunk's box, which the library draws in.
+ * Escape leaves the lines. It is placed on the first selected line as it
+ * mounts, and again as its hunk resizes: `hunk` is the hunk's box, which
+ * the library draws in.
  */
 export function LinesToolbar({
   selection,
@@ -154,20 +148,20 @@ export function LinesToolbar({
     const box = hunk.current;
     const parent = bar.current?.offsetParent;
     if (!box || !parent) return;
-    const line = lineElement(box, start) ?? box;
-    // One read as it is placed.
-    setTop(
-      line.getBoundingClientRect().top - parent.getBoundingClientRect().top,
-    );
-  }, [hunk, start]);
-  useEffect(() => {
-    const leave = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented)
-        lines?.selection.clear();
+    // One read as it is placed, and again only as its hunk resizes, such
+    // as a thread opening or lines wrapping above the selection.
+    const place = () => {
+      const line = lineElement(box, start) ?? box;
+      setTop(
+        line.getBoundingClientRect().top - parent.getBoundingClientRect().top,
+      );
     };
-    window.addEventListener("keydown", leave);
-    return () => window.removeEventListener("keydown", leave);
-  }, [lines]);
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(place);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [hunk, start]);
   if (!lines) return null;
   const anchor = linesAnchor(selection);
   const label = deckLinesLabel(anchor);
@@ -204,6 +198,7 @@ export function LinesToolbar({
       <span className="sr-only" role="status">
         {`${capitalized(label)} selected.`}
       </span>
+      <ShortcutKey id="deck.lines-leave" run={() => lines.selection.clear()} />
       {asks ? (
         <>
           <ToolbarButton label="Explain" shortcut="E" onClick={explain} />

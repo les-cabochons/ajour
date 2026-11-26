@@ -1,8 +1,9 @@
-import type {
-  DeckHunk,
-  DeckLinePoint,
-  DeckLinesAnchor,
-  DeckPullRequestDiff,
+import {
+  deckHunkRows,
+  type DeckHunk,
+  type DeckLinePoint,
+  type DeckLinesAnchor,
+  type DeckPullRequestDiff,
 } from "@ajour/shared/deck";
 import { findLine, type AnnotationSide } from "./review-threads";
 
@@ -28,37 +29,22 @@ export interface LineSelection {
   end: LinePoint;
 }
 
-/** Lines from one side to another as the diff library reports a selection. */
+/** Lines from one side to another, as the diff library reports and highlights them. */
 export interface LibraryRange {
+  side: AnnotationSide;
   start: number;
   end: number;
-  side?: AnnotationSide;
   endSide?: AnnotationSide;
 }
 
-/** Each row of a hunk, after its `@@` line: the point it is on and the numbers it has on each side. */
-function hunkRows(hunk: DeckHunk) {
-  const rows = hunk.patch.split("\n");
-  const at = rows.indexOf(hunk.header);
-  const out: { point: LinePoint; base?: number; head?: number }[] = [];
-  if (!hunk.header || at < 0) return out;
-  let base = hunk.oldStart;
-  let head = hunk.newStart;
-  for (const text of rows.slice(at + 1)) {
-    if (text.startsWith("-")) {
-      out.push({ point: { side: "deletions", line: base }, base: base++ });
-    } else if (text.startsWith("+")) {
-      out.push({ point: { side: "additions", line: head }, head: head++ });
-    } else if (text.startsWith(" ")) {
-      out.push({
-        point: { side: "additions", line: head },
-        base: base++,
-        head: head++,
-      });
-    }
-  }
-  return out;
-}
+const fromPoint = ({ side, line }: DeckLinePoint): LinePoint => ({
+  side: side === "base" ? "deletions" : "additions",
+  line,
+});
+
+/** Each row of a hunk with the point it is on, as the diff library names it. */
+const hunkRows = (hunk: DeckHunk) =>
+  deckHunkRows(hunk).map((row) => ({ ...row, point: fromPoint(row.point) }));
 
 /** The row `point` is on: a context line is found from either side, a removed one first. */
 function rowOf(rows: ReturnType<typeof hunkRows>, point: LinePoint) {
@@ -92,9 +78,11 @@ export function selectLines(
   const found = hunkOf(diff, hunkId);
   if (!found) return undefined;
   const rows = hunkRows(found.hunk);
-  const side = range.side ?? "additions";
-  const a = rowOf(rows, { side, line: range.start });
-  const b = rowOf(rows, { side: range.endSide ?? side, line: range.end });
+  const a = rowOf(rows, { side: range.side, line: range.start });
+  const b = rowOf(rows, {
+    side: range.endSide ?? range.side,
+    line: range.end,
+  });
   if (a < 0 || b < 0) return undefined;
   return {
     hunkId,
@@ -158,10 +146,6 @@ export function anchorSelection(
   hunkId: string,
   anchor: DeckLinesAnchor,
 ): LineSelection {
-  const fromPoint = ({ side, line }: DeckLinePoint): LinePoint => ({
-    side: side === "base" ? "deletions" : "additions",
-    line,
-  });
   return {
     hunkId,
     path: anchor.path,

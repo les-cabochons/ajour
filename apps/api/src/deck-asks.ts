@@ -8,17 +8,18 @@ import type {
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
   DECK_LINES_DEFAULT_QUESTION,
+  deckHunkRows,
   deckLinesLabel,
   deckPullRequestKey,
   parseDeckPullRequestKey,
   repositoryName,
+  sameLinePoint,
   type DeckAgentConsent,
   type DeckAskAnchor,
   type DeckAskRequest,
   type DeckAskResponse,
   type DeckAskRefusal,
   type DeckConcern,
-  type DeckLinePoint,
   type DeckLinesAnchor,
   type DeckPullRequestDiff,
   type DeckPullRequestSource,
@@ -91,42 +92,23 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
     .join("\n");
 }
 
-/** A hunk's rows, each with the line it is on: a removed row by the base's number, any other by the head's. */
-function hunkRows(patch: string) {
-  const rows = patch.split("\n");
-  const at = rows.findIndex((row) => row.startsWith("@@"));
-  const [, oldStart = 1, newStart = 1] =
-    /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(rows[at] ?? "")?.map(Number) ?? [];
-  let base = oldStart;
-  let head = newStart;
-  const lines: { point: DeckLinePoint; row: string }[] = [];
-  for (const row of rows.slice(at + 1)) {
-    if (row.startsWith("-")) {
-      lines.push({ point: { side: "base", line: base++ }, row });
-    } else if (row.startsWith("+") || row.startsWith(" ")) {
-      lines.push({ point: { side: "head", line: head++ }, row });
-      if (row.startsWith(" ")) base += 1;
-    }
-  }
-  return lines;
-}
-
-const samePoint = (a: DeckLinePoint, b: DeckLinePoint) =>
-  a.side === b.side && a.line === b.line;
-
 /** The selected rows of the hunk that shows them, in its order, or undefined when none does. */
 function selectedRows(diff: DeckPullRequestDiff, anchor: DeckLinesAnchor) {
   const file = diff.files.find((entry) => entry.path === anchor.path);
   for (const hunk of file?.hunks ?? []) {
-    const rows = hunkRows(hunk.patch);
-    const first = rows.findIndex(({ point }) => samePoint(point, anchor.start));
-    const last = rows.findIndex(({ point }) => samePoint(point, anchor.end));
+    const rows = deckHunkRows(hunk);
+    const first = rows.findIndex(({ point }) =>
+      sameLinePoint(point, anchor.start),
+    );
+    const last = rows.findIndex(({ point }) =>
+      sameLinePoint(point, anchor.end),
+    );
     if (first < 0 || last < 0) continue;
     return {
       hunkId: hunk.id,
       rows: rows
         .slice(Math.min(first, last), Math.max(first, last) + 1)
-        .map(({ row }) => row),
+        .map(({ text }) => text),
     };
   }
   return undefined;

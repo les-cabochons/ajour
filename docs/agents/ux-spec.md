@@ -656,13 +656,14 @@ R takes no app key, and the letter after it only counts after R, so N still star
 
 The "?" overlay lists them under "Deck review page", and the command palette offers them while the page shows.
 
-While lines are selected on the review page ([#793](https://github.com/les-cabochons/ajour/issues/793)), three more keys work, and only then: the toolbar above the lines handles them, and once no line is selected they keep their meanings. C is the only one an app key takes, Continue, which it wins over only while lines are selected. A doesn't open the chat then ([#796](https://github.com/les-cabochons/ajour/issues/796)): it asks about the lines.
+While lines are selected on the review page ([#793](https://github.com/les-cabochons/ajour/issues/793)), four more keys work, and only then: the toolbar above the lines handles them, and once no line is selected they keep their meanings. C is the only one an app key takes, Continue, which it wins over only while lines are selected. A doesn't open the chat then ([#796](https://github.com/les-cabochons/ajour/issues/796)): it asks about the lines.
 
 | Key | Action                                                |
 | --- | ----------------------------------------------------- |
 | E   | Explain the selected lines                            |
 | C   | Comment on the selected lines, in the composer        |
 | A   | Ask about the selected lines, on the question to edit |
+| Esc | Leave the selected lines                              |
 
 The "?" overlay lists them under "Selected lines on Deck review page". The shortcut tests check that they collide with no review page key, and that C is the only app key they win over.
 

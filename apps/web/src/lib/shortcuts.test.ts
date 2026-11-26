@@ -99,6 +99,7 @@ describe("shortcut registry", () => {
       "E",
       "C",
       "A",
+      "Escape",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
       SHORTCUTS.length,
@@ -154,6 +155,7 @@ describe("shortcut registry", () => {
       ["deck.lines-explain", "E"],
       ["deck.lines-comment", "C"],
       ["deck.lines-ask", "A"],
+      ["deck.lines-leave", "Escape"],
     ]);
     // While lines are selected, C is Comment rather than Continue.
     expect(

@@ -86,6 +86,7 @@ export type ShortcutActionId =
   | "deck.lines-explain"
   | "deck.lines-comment"
   | "deck.lines-ask"
+  | "deck.lines-leave"
   | "item.edit"
   | "item.settle"
   | "item.settle-ask"
@@ -305,6 +306,12 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Ask about the selected lines",
     scope: "lines",
     keys: [{ key: "a" }],
+  },
+  {
+    id: "deck.lines-leave",
+    label: "Leave the selected lines",
+    scope: "lines",
+    keys: [{ key: "Escape" }],
   },
   // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
   // Enter goes one level deeper: Edit on entries, tasks and projects, the

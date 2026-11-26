@@ -321,6 +321,49 @@ export const deckAskAnchorSchema = z.discriminatedUnion("kind", [
 export type DeckAskAnchor = z.infer<typeof deckAskAnchorSchema>;
 export type DeckLinesAnchor = Extract<DeckAskAnchor, { kind: "lines" }>;
 
+/** Whether two points are the same line of a hunk. */
+export const sameLinePoint = (a: DeckLinePoint, b: DeckLinePoint) =>
+  a.side === b.side && a.line === b.line;
+
+/**
+ * One row of a hunk after its `@@` line: the line it is on, its numbers on
+ * each side (a context row has both), and its text with its `+`, `-` or
+ * space.
+ */
+export interface DeckHunkRow {
+  point: DeckLinePoint;
+  base?: number;
+  head?: number;
+  text: string;
+}
+
+/** A hunk's rows in order, numbered from its `@@` line; none for a file shown without hunks. */
+export function deckHunkRows(
+  hunk: Pick<DeckHunk, "header" | "oldStart" | "newStart" | "patch">,
+): DeckHunkRow[] {
+  const rows = hunk.patch.split("\n");
+  const at = rows.indexOf(hunk.header);
+  if (!hunk.header || at < 0) return [];
+  let base = hunk.oldStart;
+  let head = hunk.newStart;
+  const out: DeckHunkRow[] = [];
+  for (const text of rows.slice(at + 1)) {
+    if (text.startsWith("-")) {
+      out.push({ point: { side: "base", line: base }, base: base++, text });
+    } else if (text.startsWith("+")) {
+      out.push({ point: { side: "head", line: head }, head: head++, text });
+    } else if (text.startsWith(" ")) {
+      out.push({
+        point: { side: "head", line: head },
+        base: base++,
+        head: head++,
+        text,
+      });
+    }
+  }
+  return out;
+}
+
 const pointName = (point: DeckLinePoint) =>
   point.side === "base" ? `removed line ${point.line}` : `line ${point.line}`;
 
