@@ -51,7 +51,8 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * keeps one submission across the agent's tries, named by its turn, the
  * user's message, with its pull request and content, so the plugin finds
  * what an earlier try left; the same post asked for in a later message is
- * a new one.
+ * a new one. A draft comment keeps the same identity: one the window added
+ * isn't added again in that turn, though the agent lost the answer.
  */
 
 /** The chat's writes that post: each keeps its submission across tries. */
@@ -166,6 +167,8 @@ const THREADS_UNREAD =
 
 /** The chat posts whose submission Ajour remembers; the oldest go first. */
 const SUBMISSIONS_KEPT = 500;
+/** The draft comments added whose identity Ajour remembers; the oldest go first. */
+const DRAFT_ADDS_KEPT = 500;
 
 /** How much of a path an action line names: its start, then its end. */
 const PATH_SHOWN = 120;
@@ -224,6 +227,26 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
    * message posts again.
    */
   const submissions = new Map<string, ChatSubmission>();
+  /**
+   * Each draft comment the window is adding or added, by the same identity:
+   * the agent repeating one whose answer was lost waits for it, or hears
+   * it's in the draft already, and the window doesn't add it twice. One the
+   * window didn't add is forgotten, so a repeat adds it afresh.
+   */
+  const draftAdds = new Map<string, Promise<DeckChatToolOutput>>();
+
+  /** A write's identity: its turn, pull request, operation and content. */
+  const identityOf = (
+    turn: RunningTurn,
+    binding: McpClientPullRequestBinding,
+    operation: PostOperation | "addDraftComment",
+    content: unknown,
+  ) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([turn.id, binding.pullRequest, operation, content]),
+      )
+      .digest("base64url");
 
   function submissionOf(
     turn: RunningTurn,
@@ -231,11 +254,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     operation: PostOperation,
     content: unknown,
   ) {
-    const key = createHash("sha256")
-      .update(
-        JSON.stringify([turn.id, binding.pullRequest, operation, content]),
-      )
-      .digest("base64url");
+    const key = identityOf(turn, binding, operation, content);
     let submission = submissions.get(key);
     if (!submission) {
       submission = {
@@ -493,38 +512,68 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         clientId,
         binding,
       );
-      const lineText = await linesOf(binding, lines);
-      const line = (draftId: string) =>
-        done(turn, facts, {
-          kind: "draft_comment",
-          text: `Added a draft comment on ${placeName(lines)}`,
-          at: { path: lines.path, side: lines.side, line: lines.line },
-          posted: { kind: "draft_comment", draftId },
-        });
-      confirm();
-      // The window hears of it in this tick, and adds it only once it
-      // claimed it, which the same check grants. A claim granted before
-      // Stop finishes: the draft comment is added and its line shows.
-      let claimed = false;
-      const adding = options.addDraftComment(
-        {
-          turnId: turn.id,
-          pluginId: source.pluginId,
-          connectionId: source.connectionId,
-          ...ref(source),
-          headSha: binding.head,
-          anchor: lines,
-          body,
-          lineText,
-        },
-        () => {
-          const refusal = refusalNow();
-          if (!refusal) claimed = true;
-          return refusal;
-        },
-      );
-      const { draftId } = await untilTurnEnds(turn.id, adding, () => claimed);
-      return line(draftId);
+      const identity = identityOf(turn, binding, "addDraftComment", {
+        headSha: binding.head,
+        anchor: lines,
+        body,
+      });
+      // A repeat waits for the same comment the window is adding, and
+      // tries afresh only when that try didn't add it.
+      for (let earlier; (earlier = draftAdds.get(identity));) {
+        const shown = await earlier.then(
+          ({ action }) => action,
+          () => undefined,
+        );
+        if (shown !== undefined) {
+          throw new DeckChatRefused(
+            `Ajour added this draft comment earlier in this turn ("${shown}"), so it didn't add it again. Tell the user it's in their draft review.`,
+          );
+        }
+      }
+      const adding = addDraft();
+      draftAdds.set(identity, adding);
+      if (draftAdds.size > DRAFT_ADDS_KEPT) {
+        draftAdds.delete(draftAdds.keys().next().value!);
+      }
+      adding.catch(() => {
+        if (draftAdds.get(identity) === adding) draftAdds.delete(identity);
+      });
+      return adding;
+
+      async function addDraft() {
+        const lineText = await linesOf(binding, lines);
+        const line = (draftId: string) =>
+          done(turn, facts, {
+            kind: "draft_comment",
+            text: `Added a draft comment on ${placeName(lines)}`,
+            at: { path: lines.path, side: lines.side, line: lines.line },
+            posted: { kind: "draft_comment", draftId },
+          });
+        confirm();
+        // The window hears of it in this tick, and adds it only once it
+        // claimed it, which the same check grants. A claim granted before
+        // Stop finishes: the draft comment is added and its line shows.
+        let claimed = false;
+        const asked = options.addDraftComment(
+          {
+            turnId: turn.id,
+            pluginId: source.pluginId,
+            connectionId: source.connectionId,
+            ...ref(source),
+            headSha: binding.head,
+            anchor: lines,
+            body,
+            lineText,
+          },
+          () => {
+            const refusal = refusalNow();
+            if (!refusal) claimed = true;
+            return refusal;
+          },
+        );
+        const { draftId } = await untilTurnEnds(turn.id, asked, () => claimed);
+        return line(draftId);
+      }
     },
 
     async post_comment(clientId, binding, { body, lines }) {

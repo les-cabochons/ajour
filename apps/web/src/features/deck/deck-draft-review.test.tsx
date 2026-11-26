@@ -826,6 +826,38 @@ it("sends the draft review with Finish review and its verdict, then clears it", 
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
 });
 
+it("keeps the summary read-only while the review sends, so what it sends is what completes", async () => {
+  let answer!: (result: { reviewId: string }) => void;
+  vi.mocked(api.submitPullRequestReview).mockImplementationOnce(
+    () => new Promise((resolve) => (answer = resolve)),
+  );
+  await renderReviewPage();
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  const dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  const summary = () =>
+    within(dialog).getByRole("textbox", {
+      name: "Summary",
+    }) as HTMLTextAreaElement;
+  fireEvent.change(summary(), { target: { value: "A few things." } });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Submit review" }),
+  );
+  await waitFor(() => expect(api.submitPullRequestReview).toHaveBeenCalled());
+
+  // It stays readable and focusable, and takes no typing until it's sent.
+  expect(summary().readOnly).toBe(true);
+  expect(summary().disabled).toBe(false);
+  expect(summary().value).toBe("A few things.");
+  await act(async () => answer({ reviewId: "review-1" }));
+
+  expect(vi.mocked(api.submitPullRequestReview).mock.calls[0]![2].body).toBe(
+    "A few things.",
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Finish review" })).toBeNull(),
+  );
+});
+
 it("keeps a draft comment edited while the review was sending, with its new words", async () => {
   let answer!: (result: { reviewId: string }) => void;
   vi.mocked(api.submitPullRequestReview).mockImplementationOnce(

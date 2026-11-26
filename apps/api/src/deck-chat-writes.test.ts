@@ -687,4 +687,86 @@ describe("a chat write tried again (council round 1)", () => {
 
     expect(chat.hostRequests[1]!.request.firstTriedAt).toBeUndefined();
   });
+
+  it("adds a draft comment once, with one line, when the agent repeats one the window already added in this turn", async () => {
+    const chat = setup();
+    const comment = { ...onLine(), body: "Lower case?" };
+    const adding = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(chat.claimDraft()).toBeUndefined();
+    chat.answerDraft("draft-1");
+    // The window added it; the agent lost the answer and asks again.
+    await adding;
+
+    await expect(
+      chat.writes.run("add_draft_comment", "client-1", binding, comment),
+    ).rejects.toThrow("didn't add it again");
+    expect(chat.drafts).toHaveLength(1);
+    expect(chat.actions()).toEqual([
+      expect.objectContaining({
+        kind: "draft_comment",
+        posted: { kind: "draft_comment", draftId: "draft-1" },
+      }),
+    ]);
+  });
+
+  it("adds a draft comment once when the agent repeats it while the window adds it", async () => {
+    const chat = setup();
+    const comment = { ...onLine(), body: "Lower case?" };
+    const first = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = chat.writes.run(
+      "add_draft_comment",
+      "client-1",
+      binding,
+      comment,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    chat.answerDraft("draft-1");
+
+    await expect(first).resolves.toMatchObject({
+      action: "Added a draft comment on src/api.ts:2",
+    });
+    await expect(second).rejects.toThrow("didn't add it again");
+    expect(chat.drafts).toHaveLength(1);
+    expect(chat.actions()).toHaveLength(1);
+  });
+
+  it("adds a draft comment on other lines, with other words, or in a later turn, as a new one", async () => {
+    const chat = setup();
+    const add = async (input: ReturnType<typeof onLine> & { body: string }) => {
+      const adding = chat.writes.run(
+        "add_draft_comment",
+        "client-1",
+        binding,
+        input,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      chat.answerDraft(`draft-${chat.drafts.length}`);
+      return adding;
+    };
+    await add({ ...onLine(), body: "Lower case?" });
+    await add({ ...onLine(), body: "Lower case, maybe?" });
+    await add({ ...onLine(), line: 1, body: "Lower case?" });
+    const next: RunningTurn = { ...chat.state.running!, id: "turn-2" };
+    chat.state.running = next;
+    chat.writes.chatStarted(next.id, {
+      author: true,
+      pullRequestUrl: PULL_REQUEST_URL,
+    });
+    await add({ ...onLine(), body: "Lower case?" });
+
+    expect(chat.drafts).toHaveLength(4);
+    expect(chat.actions()).toHaveLength(4);
+  });
 });

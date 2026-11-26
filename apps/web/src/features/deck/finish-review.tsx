@@ -333,6 +333,10 @@ export function FinishReview({
                 placeholder="Leave a summary (optional)"
                 rows={4}
                 value={summary}
+                // Read-only, not disabled, while it sends: it stays
+                // readable and focusable, and what was sent is what
+                // completes, so no word typed meanwhile is cleared.
+                readOnly={sending}
                 onChange={(event) => setSummary(event.target.value)}
               />
               <fieldset className="deck-verdicts">
