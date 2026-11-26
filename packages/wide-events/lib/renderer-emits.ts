@@ -69,6 +69,8 @@ export const APP_API_CLIENT = {
   clearDeckCache: "deck.storage_clear",
   readPullRequestConversation: "pull_request.load_conversation",
   readPullRequestChecks: "pull_request.load_checks",
+  submitPullRequestReview: "pull_request.submit_review",
+  postPullRequestComment: "pull_request.comment",
   readPullRequestVersions: "pull_request.load_versions",
   readDeckSinceReview: "deck.since_review",
   askDeck: "deck.ask",

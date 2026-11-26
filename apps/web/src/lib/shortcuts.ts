@@ -76,6 +76,11 @@ export type ShortcutActionId =
   | "deck.next-concern"
   | "deck.previous-concern"
   | "deck.guide-tree"
+  | "deck.review-comment"
+  | "deck.review-request-changes"
+  | "deck.review-approve"
+  | "deck.review-quick-approve"
+  | "deck.add-to-review"
   | "item.edit"
   | "item.settle"
   | "item.settle-ask"
@@ -243,6 +248,38 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Open or close the guide tree",
     scope: "deck",
     keys: [{ key: "f" }],
+  },
+  // Finish review (#784): R, then the verdict. R takes no app key, and the
+  // second letter only counts after it, so N still starts an entry.
+  {
+    id: "deck.review-comment",
+    label: "Finish review: comment",
+    scope: "deck",
+    keys: [{ key: "r" }, { key: "c" }],
+  },
+  {
+    id: "deck.review-request-changes",
+    label: "Finish review: request changes",
+    scope: "deck",
+    keys: [{ key: "r" }, { key: "n" }],
+  },
+  {
+    id: "deck.review-approve",
+    label: "Finish review: approve",
+    scope: "deck",
+    keys: [{ key: "r" }, { key: "a" }],
+  },
+  {
+    id: "deck.review-quick-approve",
+    label: "Approve at once, with no dialog",
+    scope: "deck",
+    keys: [{ key: "r" }, { key: "y" }],
+  },
+  {
+    id: "deck.add-to-review",
+    label: "Add the comment to the review",
+    scope: "deck",
+    keys: [{ key: "Enter", mod: true }],
   },
   // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
   // Enter goes one level deeper: Edit on entries, tasks and projects, the

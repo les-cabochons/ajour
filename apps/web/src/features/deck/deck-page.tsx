@@ -14,20 +14,12 @@ import { useLocalState } from "@/lib/local-hooks";
 import { syncCodeHostConnection } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { useNow } from "@/lib/use-now";
-import {
-  PullRequestRow,
-  pullRequestActions,
-  reasonLabels,
-  runPullRequestAction,
-} from "./pull-request-row";
-import { personName } from "@/domain/deck/review-status";
+import { PullRequestRow } from "./pull-request-row";
 import { PullRequestReview } from "./pull-request-review";
 
 /**
  * Deck: the pull requests the user authored or was asked to review, and one
- * pull request's review page at `/deck/$itemId`: its title, status line,
- * description, every file's hunks with their review threads, and its
- * conversation. The view is called Deck; what it lists are pull requests.
+ * pull request's review page at `/deck/$itemId` (`PullRequestReview`). The view is called Deck; what it lists are pull requests.
  */
 export function DeckPage({ itemId }: { itemId?: string }) {
   const state = useLocalState();
@@ -83,48 +75,16 @@ export function DeckPage({ itemId }: { itemId?: string }) {
   if (itemId)
     return (
       <div className="backlog-item-page">
-        <PageHeader
-          backLink={{ label: "Deck", to: "/deck" }}
-          actions={
-            item
-              ? pullRequestActions(item, now).map((action) => (
-                  <Button
-                    key={action.id}
-                    variant="outline"
-                    onClick={() =>
-                      runPullRequestAction(
-                        item,
-                        action.id as Parameters<typeof runPullRequestAction>[1],
-                      )
-                    }
-                  >
-                    {action.label}
-                  </Button>
-                ))
-              : null
-          }
-        />
         {!item ? (
-          <MessagePanel>
-            This pull request is no longer in the local list.
-          </MessagePanel>
-        ) : (
           <>
-            <header>
-              <h1 className="backlog-item-page-title">{item.facts.title}</h1>
-              <p className="backlog-item-page-meta">
-                {item.facts.repository} #{item.facts.number} ·{" "}
-                {item.connectionLabel} · {personName(item.facts.author)} ·{" "}
-                {item.status === "settled"
-                  ? "Settled"
-                  : isPullRequestSnoozed(item, now)
-                    ? "Snoozed"
-                    : reasonLabels[item.reason ?? "manual"]}
-              </p>
-            </header>
-            {/* Another pull request starts with its drawer closed, nothing viewed and no ask open. */}
-            <PullRequestReview key={item._id} pullRequest={item} />
+            <PageHeader backLink={{ label: "Deck", to: "/deck" }} />
+            <MessagePanel>
+              This pull request is no longer in the local list.
+            </MessagePanel>
           </>
+        ) : (
+          // Another pull request starts with its drawer closed, nothing viewed, no ask and no composer open.
+          <PullRequestReview key={item._id} pullRequest={item} now={now} />
         )}
       </div>
     );

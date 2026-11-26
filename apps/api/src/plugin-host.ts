@@ -135,6 +135,7 @@ import {
   type TimeSyncAnswer,
   type TimeSyncRequest,
 } from "../../../packages/shared/time-sync.ts";
+import { SubmissionQueue } from "./submission-queue.ts";
 import {
   codeHostOperations,
   type CodeHostOperation,
@@ -459,6 +460,7 @@ export class PluginManager {
   private shutdownPromise?: Promise<void>;
   private mutatingPluginPackage = false;
   private shuttingDown = false;
+  private readonly submissions = new SubmissionQueue();
 
   constructor(options: PluginHostOptions) {
     this.installedPluginDirectory = path.resolve(
@@ -897,16 +899,33 @@ export class PluginManager {
     const resultSchema = contract.result as {
       parse: (value: unknown) => CodeHostOperationResult<Operation>;
     };
-    return await this.invokePlugin(
-      pluginId,
-      operation,
-      {
-        connection: pluginInvocationConnectionSchema.parse(connection),
-        request: contract.request.parse(request),
-      },
-      resultSchema,
-      admit,
-      requireCapability("codeHost"),
+    const run = (parsed: CodeHostOperationRequest<Operation>) =>
+      this.invokePlugin(
+        pluginId,
+        operation,
+        {
+          connection: pluginInvocationConnectionSchema.parse(connection),
+          request: parsed,
+        },
+        resultSchema,
+        admit,
+        requireCapability("codeHost"),
+      );
+    const parsed = contract.request.parse(
+      request,
+    ) as CodeHostOperationRequest<Operation>;
+    const submissionId =
+      "submissionId" in parsed ? parsed.submissionId : undefined;
+    if (typeof submissionId !== "string") return await run(parsed);
+    // One write of a submission at a time; one that waited is a retry.
+    return await this.submissions.run(
+      JSON.stringify([pluginId, connection.id, operation, submissionId]),
+      (earlierTryAt) =>
+        run(
+          earlierTryAt === undefined || "firstTriedAt" in parsed
+            ? parsed
+            : { ...parsed, firstTriedAt: earlierTryAt },
+        ),
     );
   }
 

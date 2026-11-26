@@ -91,6 +91,11 @@ describe("shortcut registry", () => {
       "J",
       "K",
       "F",
+      "R then C",
+      "R then N",
+      "R then A",
+      "R then Y",
+      "⌘↩",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
       SHORTCUTS.length,
@@ -126,6 +131,11 @@ describe("shortcut registry", () => {
       ["deck.next-concern", "J"],
       ["deck.previous-concern", "K"],
       ["deck.guide-tree", "F"],
+      ["deck.review-comment", "R then C"],
+      ["deck.review-request-changes", "R then N"],
+      ["deck.review-approve", "R then A"],
+      ["deck.review-quick-approve", "R then Y"],
+      ["deck.add-to-review", "Ctrl+Enter"],
     ]);
   });
 
@@ -253,6 +263,7 @@ describe("shortcut registry", () => {
       "app.settings",
       "app.toggle-sidebar",
       "app.command-palette",
+      "deck.add-to-review",
       "item.duplicate",
     ]);
     expect(ids("BACKLOG")).toEqual([
