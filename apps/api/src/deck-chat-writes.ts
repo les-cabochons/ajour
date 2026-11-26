@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   AGENT_TURN_ACTION_TEXT_MAX,
   type AgentTurnAction,
@@ -42,10 +42,44 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * diff or while the plugin is admitted. A draft comment checks them once
  * more when the window claims it, just before the window adds it: the
  * window may hear of the call late, or after a Stop it never heard.
+ *
+ * A reply or a resolve acts only on one of the pull request's own threads,
+ * read again through the plugin: a thread's id alone names it on the code
+ * host, so an id the agent was handed could reach another pull request. The
+ * chat submits a comment review only: approving and requesting changes stay
+ * the user's, with Finish review, so no text the agent read can vote. A post
+ * keeps one submission across the agent's tries, named by its turn, the
+ * user's message, with its pull request and content, so the plugin finds
+ * what an earlier try left; the same post asked for in a later message is
+ * a new one. A draft comment keeps the same identity: one the window added
+ * isn't added again in that turn, though the agent lost the answer.
  */
 
+/** The chat's writes that post: each keeps its submission across tries. */
+export const CHAT_POST_OPERATIONS = [
+  "postComment",
+  "replyToThread",
+  "submitReview",
+] as const satisfies readonly CodeHostOperation[];
+type PostOperation = (typeof CHAT_POST_OPERATIONS)[number];
+
+/** Whether a chat write posts: a lost answer may then have left a post. */
+export const isChatPost = (operation: CodeHostOperation) =>
+  (CHAT_POST_OPERATIONS as readonly CodeHostOperation[]).includes(operation);
+
 /** A write the chat can't make, with a sentence for the agent. */
-export class DeckChatRefused extends Error {}
+export class DeckChatRefused extends Error {
+  /**
+   * The code host may have taken it: the request went out, and its answer
+   * didn't come back. A refusal before anything was sent leaves it unset.
+   */
+  readonly maybeSent: boolean;
+
+  constructor(message: string, { maybeSent = false } = {}) {
+    super(message);
+    this.maybeSent = maybeSent;
+  }
+}
 
 /**
  * A draft comment's claim check, which the bridge runs when the window
@@ -79,11 +113,14 @@ export interface DeckChatWritesOptions {
       head: string,
     ): Promise<DeckHeldPullRequest | undefined>;
   };
+  /** The ids of the pull request's review threads, read through its plugin. */
+  threadIds(source: DeckPullRequestSource): Promise<ReadonlySet<string>>;
   /**
    * Runs a code host write through the pull request's plugin and
    * connection, calling `beforeStart` right before the plugin starts, after
    * its admission: what it throws starts nothing. Throws a
-   * `DeckChatRefused` the agent can read.
+   * `DeckChatRefused` the agent can read, `maybeSent` once the request
+   * may have reached the code host.
    */
   codeHost<Operation extends CodeHostOperation>(
     source: DeckPullRequestSource,
@@ -103,6 +140,7 @@ export interface DeckChatWritesOptions {
   /** Sends a turn event to the window. */
   publish(event: AgentTurnEvent): void;
   createId?: () => string;
+  now?: () => number;
 }
 
 /** What the user told Deck about a chat turn when they sent its message. */
@@ -120,11 +158,17 @@ const REVOKED =
 const TURN_ENDED =
   "This chat turn ended before Ajour made the write, so it wasn't made. Stop.";
 
-const VERDICT_TEXT = {
-  approve: "Approved the pull request",
-  request_changes: "Requested changes",
-  comment: "Submitted a review",
-} as const;
+const NO_VERDICT =
+  "Ajour doesn't let the chat approve a pull request or request changes: that stays the user's, with Finish review on the review page. Ajour submitted nothing. Submit a review with only a summary, or tell the user to finish the review themselves.";
+const FOREIGN_THREAD =
+  "That thread isn't one of this pull request's threads, so Ajour wrote nothing. Use only the ids read_threads gives.";
+const THREADS_UNREAD =
+  "Ajour couldn't read this pull request's threads to check that one, so it wrote nothing. Tell the user it wasn't done.";
+
+/** The chat posts whose submission Ajour remembers; the oldest go first. */
+const SUBMISSIONS_KEPT = 500;
+/** The draft comments added whose identity Ajour remembers; the oldest go first. */
+const DRAFT_ADDS_KEPT = 500;
 
 /** How much of a path an action line names: its start, then its end. */
 const PATH_SHOWN = 120;
@@ -156,8 +200,166 @@ function placeName(lines: { path: string; line: number; startLine?: number }) {
     : `${path}:${lines.line}`;
 }
 
+/** A post's submission across the agent's tries (#784's look-back). */
+interface ChatSubmission {
+  submissionId: string;
+  /**
+   * When the first try that may have reached the code host was sent; later
+   * tries send it. A try refused before it was sent doesn't count.
+   */
+  firstTriedAt: number;
+  /** Whether a try may have reached the code host: a retry looks back only then. */
+  sent: boolean;
+  /** What the code host posted and the line that showed it, once one did. */
+  shown?: { id: string; output: DeckChatToolOutput };
+  /** The try under way, which the next one waits for. */
+  trying?: Promise<void>;
+}
+
+/** A draft comment the window is adding or added in a turn. */
+interface DraftAdd {
+  adding: Promise<DeckChatToolOutput>;
+  /** The window claimed the call: it may have added it, whatever its answer. */
+  claim: { claimed: boolean };
+}
+
 export function createDeckChatWrites(options: DeckChatWritesOptions) {
   const createId = options.createId ?? (() => randomUUID());
+  const now = options.now ?? Date.now;
+  /**
+   * Each post's submission, by its turn, pull request and content: the
+   * agent repeating a post whose answer was lost names the same one, and
+   * the plugin finds the earlier post instead of posting it twice. A turn
+   * is one message of the user's, so a post they ask for again in a later
+   * message posts again.
+   */
+  const submissions = new Map<string, ChatSubmission>();
+  /**
+   * Each draft comment the window is adding or added, by the same identity:
+   * the agent repeating one whose answer was lost waits for it, or hears
+   * it's in the draft already, and the window doesn't add it twice. One the
+   * window claimed may be there though it never confirmed it, so it isn't
+   * added again either. One the window never claimed is forgotten, so a
+   * repeat adds it afresh.
+   */
+  const draftAdds = new Map<string, DraftAdd>();
+
+  /** A write's identity: its turn, pull request, operation and content. */
+  const identityOf = (
+    turn: RunningTurn,
+    binding: McpClientPullRequestBinding,
+    operation: PostOperation | "addDraftComment",
+    content: unknown,
+  ) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([turn.id, binding.pullRequest, operation, content]),
+      )
+      .digest("base64url");
+
+  function submissionOf(
+    turn: RunningTurn,
+    binding: McpClientPullRequestBinding,
+    operation: PostOperation,
+    content: unknown,
+  ) {
+    const key = identityOf(turn, binding, operation, content);
+    let submission = submissions.get(key);
+    if (!submission) {
+      submission = {
+        submissionId: `chat_${key}`,
+        firstTriedAt: now(),
+        sent: false,
+      };
+      submissions.set(key, submission);
+      if (submissions.size > SUBMISSIONS_KEPT) {
+        submissions.delete(submissions.keys().next().value!);
+      }
+    }
+    return submission;
+  }
+
+  /**
+   * Posts through the code host under the post's submission: a try after
+   * one that may have reached the code host sends the first try's time, so
+   * the plugin looks for what it left. A refusal before anything was sent
+   * leaves the next try a first one.
+   */
+  async function post<Operation extends PostOperation>(
+    turn: RunningTurn,
+    binding: McpClientPullRequestBinding,
+    source: DeckPullRequestSource,
+    operation: Operation,
+    request: Omit<
+      CodeHostOperationRequest<Operation>,
+      "submissionId" | "firstTriedAt"
+    >,
+    confirm: () => void,
+  ) {
+    const submission = submissionOf(turn, binding, operation, request);
+    // One try of a post at a time: the same post sent twice at once goes
+    // out once, and the second looks for it.
+    const earlier = submission.trying;
+    let tried!: () => void;
+    submission.trying = new Promise<void>((resolve) => (tried = resolve));
+    await earlier;
+    const retry = submission.sent;
+    if (!retry) submission.firstTriedAt = now();
+    try {
+      const result = await options.codeHost(
+        source,
+        operation,
+        {
+          ...request,
+          submissionId: submission.submissionId,
+          ...(retry ? { firstTriedAt: submission.firstTriedAt } : {}),
+        } as CodeHostOperationRequest<Operation>,
+        confirm,
+      );
+      submission.sent = true;
+      return { result, submission };
+    } catch (error) {
+      if (!(error instanceof DeckChatRefused) || error.maybeSent) {
+        submission.sent = true;
+      }
+      throw error;
+    } finally {
+      tried();
+    }
+  }
+
+  /**
+   * The action line of what a post made, once: a repeat that found the
+   * same post tells the agent it's there already, with no second line.
+   */
+  function shownOnce(
+    submission: ChatSubmission,
+    id: string,
+    show: () => DeckChatToolOutput,
+  ) {
+    if (submission.shown && submission.shown.id === id) {
+      throw new DeckChatRefused(
+        `Ajour made this post earlier in this turn ("${submission.shown.output.action}"), and the code host still has it, so Ajour didn't post it again. Tell the user it's there.`,
+      );
+    }
+    const output = show();
+    submission.shown = { id, output };
+    return output;
+  }
+
+  /** Refuses a thread that isn't one of the pull request's own. */
+  async function requireThread(
+    source: DeckPullRequestSource,
+    threadId: string,
+  ) {
+    let ids: ReadonlySet<string>;
+    try {
+      ids = await options.threadIds(source);
+    } catch {
+      throw new DeckChatRefused(THREADS_UNREAD);
+    }
+    if (!ids.has(threadId)) throw new DeckChatRefused(FOREIGN_THREAD);
+  }
   /** The chat turns started from the page, until they end. */
   const chatTurns = new Map<string, ChatTurnFacts>();
   /** Stops waiting for the window's draft comments, by turn, once it ends. */
@@ -319,38 +521,79 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         clientId,
         binding,
       );
-      const lineText = await linesOf(binding, lines);
-      const line = (draftId: string) =>
-        done(turn, facts, {
+      const identity = identityOf(turn, binding, "addDraftComment", {
+        headSha: binding.head,
+        anchor: lines,
+        body,
+      });
+      // A repeat waits for the same comment the window is adding, and
+      // tries afresh only once a try the window never claimed is forgotten.
+      let earlier = draftAdds.get(identity);
+      while (earlier) {
+        const shown = await earlier.adding.then(
+          ({ action }) => action,
+          () => undefined,
+        );
+        if (shown !== undefined) {
+          throw new DeckChatRefused(
+            `Ajour added this draft comment earlier in this turn ("${shown}"), so it didn't add it again. Tell the user it's in their draft review.`,
+          );
+        }
+        if (earlier.claim.claimed) {
+          throw new DeckChatRefused(
+            "The Ajour window took this draft comment earlier in this turn but never confirmed it, so Ajour didn't add it again. Tell the user it may already be in their draft review.",
+          );
+        }
+        earlier = draftAdds.get(identity);
+      }
+
+      const claim = { claimed: false };
+      const addToWindow = async () => {
+        const lineText = await linesOf(binding, lines);
+        confirm();
+        // The window hears of it in this tick, and adds it only once it
+        // claimed it, which the same check grants. A claim granted before
+        // Stop finishes: the draft comment is added and its line shows.
+        const asked = options.addDraftComment(
+          {
+            turnId: turn.id,
+            pluginId: source.pluginId,
+            connectionId: source.connectionId,
+            ...ref(source),
+            headSha: binding.head,
+            anchor: lines,
+            body,
+            lineText,
+          },
+          () => {
+            const refusal = refusalNow();
+            if (!refusal) claim.claimed = true;
+            return refusal;
+          },
+        );
+        const { draftId } = await untilTurnEnds(
+          turn.id,
+          asked,
+          () => claim.claimed,
+        );
+        return done(turn, facts, {
           kind: "draft_comment",
           text: `Added a draft comment on ${placeName(lines)}`,
           at: { path: lines.path, side: lines.side, line: lines.line },
           posted: { kind: "draft_comment", draftId },
         });
-      confirm();
-      // The window hears of it in this tick, and adds it only once it
-      // claimed it, which the same check grants. A claim granted before
-      // Stop finishes: the draft comment is added and its line shows.
-      let claimed = false;
-      const adding = options.addDraftComment(
-        {
-          turnId: turn.id,
-          pluginId: source.pluginId,
-          connectionId: source.connectionId,
-          ...ref(source),
-          headSha: binding.head,
-          anchor: lines,
-          body,
-          lineText,
-        },
-        () => {
-          const refusal = refusalNow();
-          if (!refusal) claimed = true;
-          return refusal;
-        },
-      );
-      const { draftId } = await untilTurnEnds(turn.id, adding, () => claimed);
-      return line(draftId);
+      };
+      const add: DraftAdd = { adding: addToWindow(), claim };
+      draftAdds.set(identity, add);
+      if (draftAdds.size > DRAFT_ADDS_KEPT) {
+        draftAdds.delete(draftAdds.keys().next().value!);
+      }
+      add.adding.catch(() => {
+        if (!claim.claimed && draftAdds.get(identity) === add) {
+          draftAdds.delete(identity);
+        }
+      });
+      return add.adding;
     },
 
     async post_comment(clientId, binding, { body, lines }) {
@@ -360,29 +603,32 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
       );
       if (lines) await linesOf(binding, lines);
       confirm();
-      const result = await options.codeHost(
+      const { result, submission } = await post(
+        turn,
+        binding,
         source,
         "postComment",
         {
           ...ref(source),
           body,
           ...(lines ? { anchor: { ...lines, headSha: binding.head } } : {}),
-          submissionId: `chat_${createId()}`,
         },
         confirm,
       );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, facts, {
-        kind: "comment",
-        text: lines
-          ? `Commented on ${placeName(lines)}`
-          : "Commented on the pull request",
-        ...(result.url ? { url: result.url } : {}),
-        ...(lines
-          ? { at: { path: lines.path, side: lines.side, line: lines.line } }
-          : {}),
-        posted: { kind: "comment", commentId: result.commentId },
-      });
+      return shownOnce(submission, result.commentId, () =>
+        done(turn, facts, {
+          kind: "comment",
+          text: lines
+            ? `Commented on ${placeName(lines)}`
+            : "Commented on the pull request",
+          ...(result.url ? { url: result.url } : {}),
+          ...(lines
+            ? { at: { path: lines.path, side: lines.side, line: lines.line } }
+            : {}),
+          posted: { kind: "comment", commentId: result.commentId },
+        }),
+      );
     },
 
     async reply_to_thread(clientId, binding, { threadId, body }) {
@@ -390,25 +636,25 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         clientId,
         binding,
       );
+      await requireThread(source, threadId);
       confirm();
-      const result = await options.codeHost(
+      const { result, submission } = await post(
+        turn,
+        binding,
         source,
         "replyToThread",
-        {
-          ...ref(source),
-          threadId,
-          body,
-          submissionId: `chat_${createId()}`,
-        },
+        { ...ref(source), threadId, body },
         confirm,
       );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, facts, {
-        kind: "reply",
-        text: "Replied in a thread",
-        ...(result.url ? { url: result.url } : {}),
-        posted: { kind: "comment", commentId: result.commentId },
-      });
+      return shownOnce(submission, result.commentId, () =>
+        done(turn, facts, {
+          kind: "reply",
+          text: "Replied in a thread",
+          ...(result.url ? { url: result.url } : {}),
+          posted: { kind: "comment", commentId: result.commentId },
+        }),
+      );
     },
 
     async resolve_thread(clientId, binding, { threadId, resolved }) {
@@ -416,6 +662,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         clientId,
         binding,
       );
+      await requireThread(source, threadId);
       confirm();
       const result = await options.codeHost(
         source,
@@ -432,37 +679,42 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
       );
     },
 
-    async submit_review(clientId, binding, { verdict, body }) {
+    async submit_review(clientId, binding, input) {
+      // Its schema has no verdict; one sent all the same is refused, not
+      // dropped: no text the agent read may approve (ADR 0024).
+      const { verdict } = input as { verdict?: unknown };
+      if (verdict !== undefined && verdict !== "comment") {
+        throw new DeckChatRefused(NO_VERDICT);
+      }
       const { turn, source, facts, confirm } = await chatTurnOf(
         clientId,
         binding,
       );
       confirm();
-      // The draft review stays the user's, sent with Finish review: a
-      // chat's review is its verdict and summary.
-      const result = await options.codeHost(
+      // The draft review and the verdict stay the user's, sent with Finish
+      // review: the chat's review is a summary.
+      const { result, submission } = await post(
+        turn,
+        binding,
         source,
         "submitReview",
         {
           ...ref(source),
           headSha: binding.head,
-          verdict,
-          ...(body ? { body } : {}),
+          verdict: "comment",
+          body: input.body,
           comments: [],
-          submissionId: `chat_${createId()}`,
         },
         confirm,
       );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, facts, {
-        kind: "review",
-        // Azure DevOps calls request changes "Wait for author" (#784).
-        text:
-          verdict === "request_changes" && source.pluginId === "azure_devops"
-            ? "Voted Wait for author"
-            : VERDICT_TEXT[verdict],
-        ...(result.url ? { url: result.url } : {}),
-      });
+      return shownOnce(submission, result.reviewId, () =>
+        done(turn, facts, {
+          kind: "review",
+          text: "Submitted a review",
+          ...(result.url ? { url: result.url } : {}),
+        }),
+      );
     },
 
     async edit_title(clientId, binding, { title }) {

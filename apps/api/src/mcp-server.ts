@@ -472,7 +472,7 @@ const TOOL_DESCRIPTIONS: Record<
   resolve_thread:
     "Resolves the review thread `threadId` names, or opens it again with `resolved: false`, at once.",
   submit_review:
-    "Submits a review of this head at once, in the user's name: its `verdict` (approve, request_changes or comment) and an optional summary `body`. The user's draft comments stay in their draft.",
+    "Submits a comment review of this head at once, in the user's name: its summary `body`, with no verdict. Approving and requesting changes stay the user's, with Finish review; Ajour refuses them. The user's draft comments stay in their draft.",
   edit_title:
     "Renames the pull request at once. Only for the pull request's author; Ajour refuses it otherwise.",
   set_draft:
@@ -961,7 +961,9 @@ function registerDeckReads(
       name,
       {
         description: TOOL_DESCRIPTIONS[name],
-        inputSchema: deckChatToolInputSchemas[name].shape,
+        // The whole schema, not its shape: submit_review's keeps a verdict
+        // for the local API to refuse.
+        inputSchema: deckChatToolInputSchemas[name],
         outputSchema: deckChatToolOutputSchema.shape,
       },
       async (input: unknown, extra: { requestId: unknown }) => {

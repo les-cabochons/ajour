@@ -550,7 +550,18 @@ export type CodeHostSubmitReviewRequest = z.infer<
 const postedUrlSchema = z.string().url().max(2_000).optional();
 
 export const codeHostSubmitReviewResultSchema = z.union([
-  z.object({ reviewId: idSchema, url: postedUrlSchema }),
+  z.object({
+    reviewId: idSchema,
+    url: postedUrlSchema,
+    /**
+     * The comments and the summary were posted, and the vote wasn't: new
+     * commits arrived while the review was sending, and an approval counts
+     * for code the user didn't read. The user reviews them and votes again.
+     * A code host whose vote is bound to a head, as GitHub's is, never
+     * answers it.
+     */
+    voteWithheld: z.object({ reason: z.literal("new_commits") }).optional(),
+  }),
   uncertainSchema,
 ]);
 export type CodeHostSubmitReviewResult = z.infer<

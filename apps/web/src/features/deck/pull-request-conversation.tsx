@@ -11,6 +11,7 @@ import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { personName } from "@/domain/deck/review-status";
 import { conversationEntries } from "@/domain/deck/review-threads";
+import { PluginUpdateLink } from "./plugin-update-link";
 import { EventTime, ReviewThreadCard } from "./review-thread-card";
 import type { PullRequestReadState } from "./use-pull-request-read";
 
@@ -18,16 +19,20 @@ type ConversationState = PullRequestReadState<CodeHostConversationResult>;
 
 function ReadProblem({
   state,
-  what,
   retry,
 }: {
   state: Extract<ConversationState, { status: "unavailable" | "error" }>;
-  what: string;
   retry: () => void;
 }) {
   return state.status === "unavailable" ? (
     <p className="deck-file-empty">
-      This code host doesn't share a pull request's {what} yet.
+      {state.message}
+      {state.update ? (
+        <>
+          {" "}
+          <PluginUpdateLink />
+        </>
+      ) : null}
     </p>
   ) : (
     <MessagePanel role="alert" className="flex items-center gap-3">
@@ -74,7 +79,7 @@ export const DescriptionDrawer = memo(function DescriptionDrawer({
               <p className="deck-file-empty">No description.</p>
             )
           ) : (
-            <ReadProblem state={state} what="description" retry={retry} />
+            <ReadProblem state={state} retry={retry} />
           )}
         </div>
       ) : null}
@@ -153,7 +158,7 @@ export const PullRequestConversation = memo(function PullRequestConversation({
           ))}
         </ol>
       ) : (
-        <ReadProblem state={state} what="conversation" retry={retry} />
+        <ReadProblem state={state} retry={retry} />
       )}
     </section>
   );

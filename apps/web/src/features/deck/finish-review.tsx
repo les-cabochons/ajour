@@ -48,7 +48,12 @@ import { useShortcut } from "@/lib/shortcut-handlers";
  * an earlier try reached it, the dialog says so and the user chooses to
  * post again, as a new submission. On a layer of a stack, sending the
  * review offers **Next in stack**, the layer above (#788): the dialog stays
- * on what was sent, and R then Y's toast carries it.
+ * on what was sent, and R then Y's toast carries it. When new commits
+ * arrived before the vote, the code host may post the comments and the
+ * summary and withhold the vote (Azure DevOps, whose vote isn't bound to a
+ * head): what it posted leaves the draft as on success, so nothing posts
+ * twice, and the dialog opens on why the vote wasn't sent, after R then Y
+ * too, as on a failure.
  */
 
 type Verdict = CodeHostSubmitReviewRequest["verdict"];
@@ -75,6 +80,38 @@ export function mayAlreadyBeThere(
 /** What a sent review is called, in the toast and the sent dialog. */
 const sentTitle = (verdict: Verdict) =>
   verdict === "approve" ? "Approved" : "Review sent";
+
+/**
+ * What the dialog says once the code host took the review: that it was
+ * sent, offering the layer above, or that new commits held back its vote,
+ * with how many comments and whether a summary were posted.
+ */
+type Outcome =
+  | { kind: "sent"; verdict: Verdict }
+  | { kind: "withheld"; comments: number; summary: boolean };
+
+/** What a review whose vote new commits held back left on the pull request, and what to do. */
+function withheldDescription({
+  comments,
+  summary,
+}: {
+  comments: number;
+  summary: boolean;
+}) {
+  const posted =
+    comments && summary
+      ? `Your ${comments === 1 ? "comment" : "comments"} and summary are`
+      : comments
+        ? comments === 1
+          ? "Your comment is"
+          : "Your comments are"
+        : summary
+          ? "Your summary is"
+          : undefined;
+  return posted
+    ? `New commits arrived while your review was sending. ${posted} on the pull request; review the new commits, then vote again.`
+    : "New commits arrived while your review was sending. Review them, then vote again.";
+}
 
 /** The line that names the layer above, offered once a review is sent. */
 const nextInStack = (layer: LocalPullRequest) =>
@@ -124,8 +161,8 @@ export function FinishReview({
   const [failure, setFailure] = useState<string | undefined>();
   /** The last try couldn't be settled: submitting again posts it anew. */
   const [uncertain, setUncertain] = useState(false);
-  /** What the dialog sent, while it offers the next layer. */
-  const [sent, setSent] = useState<Verdict | undefined>();
+  /** What the dialog says was done, while it offers the next layer or says why the vote wasn't sent. */
+  const [sent, setSent] = useState<Outcome | undefined>();
   const summaryId = useId();
   const verdicts = reviewVerdicts(pullRequest.pluginId);
   const count = draft?.comments.length ?? 0;
@@ -177,14 +214,28 @@ export function FinishReview({
         return;
       }
       localStore.completeReviewSubmission(ref, sent);
-      setSummary("");
+      // Only the words sent go: R then Y sends no summary, and keeps one
+      // typed and cancelled for the next Finish review.
+      setSummary((current) => (current === body ? "" : current));
+      if (result.voteWithheld) {
+        // Posted, all but the vote: the dialog says so, after R then Y too,
+        // and the user reviews the new commits before voting again.
+        setSent({
+          kind: "withheld",
+          comments: sent.length,
+          summary: request.body !== undefined,
+        });
+        setOpen(true);
+        onSubmitted();
+        return;
+      }
       const done = sentTitle(chosen);
       if (!nextLayer) {
         setOpen(false);
         showToast(done);
       } else if (open) {
         // The dialog says what was sent, and offers the layer above.
-        setSent(chosen);
+        setSent({ kind: "sent", verdict: chosen });
       } else
         showActionToast({
           title: done,
@@ -233,11 +284,17 @@ export function FinishReview({
             // takes Next in stack away, never back to the form.
             <>
               <DialogHeader>
-                <DialogTitle>{sentTitle(sent)}</DialogTitle>
+                <DialogTitle>
+                  {sent.kind === "withheld"
+                    ? "Your vote wasn't sent"
+                    : sentTitle(sent.verdict)}
+                </DialogTitle>
                 <DialogDescription>
-                  {nextLayer
-                    ? nextInStack(nextLayer)
-                    : "The layer above left the stack."}
+                  {sent.kind === "withheld"
+                    ? withheldDescription(sent)
+                    : nextLayer
+                      ? nextInStack(nextLayer)
+                      : "The layer above left the stack."}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -251,7 +308,7 @@ export function FinishReview({
                 >
                   Close
                 </Button>
-                {nextLayer ? (
+                {nextLayer && sent.kind === "sent" ? (
                   <Button type="button" autoFocus onClick={openNext}>
                     Next in stack
                   </Button>
@@ -278,6 +335,10 @@ export function FinishReview({
                 placeholder="Leave a summary (optional)"
                 rows={4}
                 value={summary}
+                // Read-only, not disabled, while it sends: it stays
+                // readable and focusable, and what was sent is what
+                // completes, so no word typed meanwhile is cleared.
+                readOnly={sending}
                 onChange={(event) => setSummary(event.target.value)}
               />
               <fieldset className="deck-verdicts">

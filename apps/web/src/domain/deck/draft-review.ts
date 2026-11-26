@@ -308,10 +308,17 @@ export function lineAnchor(lines: {
   };
 }
 
+/** A comment a review sent, with the words it sent. */
+export interface DeckSentComment {
+  id: string;
+  body: string;
+}
+
 /**
  * What Finish review sends: the verdict, the summary when there is one, and
  * every current comment on its line at the draft's head. Outdated comments
- * stay in the draft (`kept`). `sent` names the comments the request holds.
+ * stay in the draft (`kept`). `sent` names the comments the request holds,
+ * with their words.
  */
 export function finishReviewRequest(
   draft: DeckDraftReview,
@@ -321,7 +328,7 @@ export function finishReviewRequest(
   }: { verdict: CodeHostSubmitReviewRequest["verdict"]; body: string },
 ): {
   request: CodeHostSubmitReviewRequest;
-  sent: string[];
+  sent: DeckSentComment[];
   kept: string[];
 } {
   const current = draft.comments.filter((comment) => !comment.outdated);
@@ -338,7 +345,7 @@ export function finishReviewRequest(
         body: comment.body,
       })),
     },
-    sent: current.map((comment) => comment.id),
+    sent: current.map(({ id, body }) => ({ id, body })),
     kept: draft.comments
       .filter((comment) => comment.outdated)
       .map((comment) => comment.id),
@@ -352,7 +359,7 @@ export function finishReviewRequest(
 function submissionKey(
   request: CodeHostSubmitReviewRequest,
   draft: DeckDraftReview,
-  sent: readonly string[],
+  sent: readonly DeckSentComment[],
 ) {
   const edited = new Map(
     draft.comments.map((comment) => [comment.id, comment.updatedAt]),
@@ -360,7 +367,7 @@ function submissionKey(
   return JSON.stringify([
     request.verdict,
     request.body ?? "",
-    sent.map((id) => [id, edited.get(id)]),
+    sent.map(({ id }) => [id, edited.get(id)]),
   ]);
 }
 
@@ -384,7 +391,7 @@ export function prepareReviewSubmission(
 ): {
   reviews: DeckDraftReview[];
   request: CodeHostSubmitReviewRequest;
-  sent: string[];
+  sent: DeckSentComment[];
 } {
   const draft: DeckDraftReview = draftReviewOf(reviews, ref) ?? {
     pluginId: ref.pluginId,
@@ -448,19 +455,25 @@ export function prepareCommentPost(
   };
 }
 
-/** After the code host took the review: its comments leave the draft, and so does its submission. */
+/**
+ * After the code host took the review: the comments it sent leave the
+ * draft, and so does its submission. A comment the user edited while the
+ * review was sending stays, with its new words, as a draft to send again.
+ */
 export function completeReviewSubmission(
   reviews: readonly DeckDraftReview[],
   ref: DeckReviewRef,
-  sent: readonly string[],
+  sent: readonly DeckSentComment[],
 ): readonly DeckDraftReview[] {
   const draft = draftReviewOf(reviews, ref);
   if (!draft) return reviews;
-  const done = new Set(sent);
+  const done = new Map(sent.map(({ id, body }) => [id, body]));
   const { submission: _confirmed, ...rest } = draft;
   return withDraft(reviews, ref, {
     ...rest,
-    comments: draft.comments.filter((comment) => !done.has(comment.id)),
+    comments: draft.comments.filter(
+      (comment) => done.get(comment.id) !== comment.body,
+    ),
   });
 }
 
@@ -516,24 +529,30 @@ const storedCommentSchema = z.object({
   submission: storedSubmissionSchema,
 });
 
-const storedDraftSchema = z
-  .object({
-    pluginId: z.string().min(1),
-    connectionId: z.string().min(1),
-    repository: z.string().min(1),
-    number: z.number().int().positive(),
-    headSha: z.string().min(1),
-    comments: z.array(storedCommentSchema),
-    submission: storedSubmissionSchema,
-    updatedAt: z.number().int().nonnegative(),
-  })
-  .refine((draft) => draft.comments.length > 0 || draft.submission);
+/** A stored draft, its comments read one by one: one it can't read drops alone. */
+const storedDraftSchema = z.object({
+  pluginId: z.string().min(1),
+  connectionId: z.string().min(1),
+  repository: z.string().min(1),
+  number: z.number().int().positive(),
+  headSha: z.string().min(1),
+  comments: z.array(z.unknown()),
+  submission: storedSubmissionSchema,
+  updatedAt: z.number().int().nonnegative(),
+});
 
-/** The stored draft reviews it can read. */
+/** The stored draft reviews it can read, each with the comments it can read. */
 export function normalizeDraftReviews(value: unknown): DeckDraftReview[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw): DeckDraftReview[] => {
     const parsed = storedDraftSchema.safeParse(raw);
-    return parsed.success ? [parsed.data as DeckDraftReview] : [];
+    if (!parsed.success) return [];
+    const comments = parsed.data.comments.flatMap((comment) => {
+      const read = storedCommentSchema.safeParse(comment);
+      return read.success ? [read.data] : [];
+    });
+    // A draft left with nothing to send goes.
+    if (comments.length === 0 && !parsed.data.submission) return [];
+    return [{ ...parsed.data, comments } as DeckDraftReview];
   });
 }

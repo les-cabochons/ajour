@@ -16,6 +16,7 @@ import {
 import { Toggle } from "@/components/ui/toggle";
 import { Value } from "@/components/ui/value";
 import { scopeLine, versionNames } from "@/domain/deck/versions";
+import { PluginUpdateLink } from "./plugin-update-link";
 import { EventTime } from "./review-thread-card";
 import type {
   PullRequestReadState,
@@ -178,6 +179,11 @@ export function VersionsBar({
               <Button variant="ghost" size="xs" onClick={retryVersions}>
                 Retry
               </Button>
+            ) : versions.update ? (
+              <>
+                {" "}
+                <PluginUpdateLink />
+              </>
             ) : null}
           </span>
         ) : (

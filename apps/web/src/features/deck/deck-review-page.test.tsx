@@ -436,14 +436,15 @@ it("shows why the changes could not be read, and tries again on Retry", async ()
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("says the code host doesn't show changes yet, with nothing to retry", async () => {
+it("says to update a plugin that doesn't read changes, links Settings › Plugins, and offers nothing to retry", async () => {
   vi.mocked(api.openDeckPullRequest).mockRejectedValue(
     new AppApiError(
-      "Azure DevOps doesn't show a pull request's changes yet.",
+      "Update the Azure DevOps plugin in Settings › Plugins to review pull requests in Deck.",
       404,
       undefined,
       {
-        error: "Azure DevOps doesn't show a pull request's changes yet.",
+        error:
+          "Update the Azure DevOps plugin in Settings › Plugins to review pull requests in Deck.",
         reason: "not_supported",
       },
     ),
@@ -454,11 +455,46 @@ it("says the code host doesn't show changes yet, with nothing to retry", async (
   const changes = screen.getByRole("region", { name: "Changes" });
   expect(
     await within(changes).findByText(
-      "Azure DevOps doesn't show a pull request's changes yet.",
+      "Update the Azure DevOps plugin in Settings › Plugins to review pull requests in Deck.",
     ),
+  ).toBeTruthy();
+  expect(
+    within(changes).getByRole("link", { name: "Open Settings › Plugins" }),
   ).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(within(changes).queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+it("says to update a plugin that doesn't read the conversation, with Settings › Plugins", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  vi.mocked(api.readPullRequestConversation).mockRejectedValue(
+    new AppApiError(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's conversation in Deck.",
+      404,
+      undefined,
+      {
+        error:
+          "Update the GitHub plugin in Settings › Plugins to see a pull request's conversation in Deck.",
+        reason: "not_supported",
+      },
+    ),
+  );
+
+  await renderReviewPage();
+
+  const conversation = await screen.findByRole("region", {
+    name: "Conversation",
+  });
+  expect(
+    await within(conversation).findByText(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's conversation in Deck.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(conversation).getByRole("link", {
+      name: "Open Settings › Plugins",
+    }),
+  ).toBeTruthy();
 });
 
 it("reads the status line, with the checks and the approvals each in a small menu", async () => {
@@ -527,10 +563,16 @@ it("reads the status line, with the checks and the approvals each in a small men
 it("reads the synced checks until the code host lists each one, and says when it can't", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
   vi.mocked(api.readPullRequestChecks).mockRejectedValue(
-    new AppApiError("GitHub doesn't offer this yet.", 404, undefined, {
-      error: "GitHub doesn't offer this yet.",
-      reason: "not_supported",
-    }),
+    new AppApiError(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's checks in Deck.",
+      404,
+      undefined,
+      {
+        error:
+          "Update the GitHub plugin in Settings › Plugins to see a pull request's checks in Deck.",
+        reason: "not_supported",
+      },
+    ),
   );
 
   await renderReviewPage();
@@ -540,7 +582,12 @@ it("reads the synced checks until the code host lists each one, and says when it
   });
   fireEvent.click(checks);
   expect(
-    await screen.findByText("This code host doesn't list its checks yet."),
+    await screen.findByText(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's checks in Deck.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("menuitem", { name: "Open Settings › Plugins" }),
   ).toBeTruthy();
 });
 

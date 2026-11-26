@@ -64,6 +64,7 @@ import type {
 } from "./use-pull-request-read";
 import { NewPushesBanner, VersionsBar } from "./versions-bar";
 import { VirtualReviewSections } from "./virtual-review-sections";
+import { PluginUpdateLink } from "./plugin-update-link";
 
 /** Every section mounted, for a pull request that isn't huge. */
 function MountedReviewSections({
@@ -632,7 +633,15 @@ export function PullRequestChanges({
           Loading the changes…
         </p>
       ) : state.status === "unavailable" ? (
-        <p className="deck-file-empty">{state.message}</p>
+        <p className="deck-file-empty">
+          {state.message}
+          {state.update ? (
+            <>
+              {" "}
+              <PluginUpdateLink />
+            </>
+          ) : null}
+        </p>
       ) : state.status === "error" ? (
         <MessagePanel role="alert" className="flex items-center gap-3">
           <span className="flex-1">{state.message}</span>

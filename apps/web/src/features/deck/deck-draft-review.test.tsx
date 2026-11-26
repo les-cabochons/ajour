@@ -50,6 +50,11 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   submitPullRequestReview: vi.fn(),
   postPullRequestComment: vi.fn(),
 }));
+const toasts = vi.hoisted(() => ({ show: vi.fn() }));
+vi.mock("@/components/ui/toast", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ui/toast")>()),
+  showToast: toasts.show,
+}));
 // Highlighting runs in the window here: jsdom has no workers.
 vi.mock("@/components/diff-highlighter", () => ({
   diffWorkerPool: () => undefined,
@@ -250,6 +255,7 @@ afterEach(() => {
   vi.mocked(api.readPullRequestChecks).mockReset();
   vi.mocked(api.submitPullRequestReview).mockReset();
   vi.mocked(api.postPullRequestComment).mockReset();
+  toasts.show.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -820,6 +826,109 @@ it("sends the draft review with Finish review and its verdict, then clears it", 
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
 });
 
+it("keeps the summary read-only while the review sends, so what it sends is what completes", async () => {
+  let answer!: (result: { reviewId: string }) => void;
+  vi.mocked(api.submitPullRequestReview).mockImplementationOnce(
+    () => new Promise((resolve) => (answer = resolve)),
+  );
+  await renderReviewPage();
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  const dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  const summary = () =>
+    within(dialog).getByRole("textbox", {
+      name: "Summary",
+    }) as HTMLTextAreaElement;
+  fireEvent.change(summary(), { target: { value: "A few things." } });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Submit review" }),
+  );
+  await waitFor(() => expect(api.submitPullRequestReview).toHaveBeenCalled());
+
+  // It stays readable and focusable, and takes no typing until it's sent.
+  expect(summary().readOnly).toBe(true);
+  expect(summary().disabled).toBe(false);
+  expect(summary().value).toBe("A few things.");
+  await act(async () => answer({ reviewId: "review-1" }));
+
+  expect(vi.mocked(api.submitPullRequestReview).mock.calls[0]![2].body).toBe(
+    "A few things.",
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Finish review" })).toBeNull(),
+  );
+});
+
+it("keeps a summary it didn't send when R then Y approves", async () => {
+  await renderReviewPage();
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  let dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Summary" }), {
+    target: { value: "Still thinking." },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Finish review" })).toBeNull(),
+  );
+
+  press("r");
+  press("y");
+  await waitFor(() => expect(toasts.show).toHaveBeenCalledWith("Approved"));
+  expect(
+    vi.mocked(api.submitPullRequestReview).mock.calls[0]![2],
+  ).not.toHaveProperty("body");
+
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  expect(
+    (
+      within(dialog).getByRole("textbox", {
+        name: "Summary",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Still thinking.");
+});
+
+it("keeps a draft comment edited while the review was sending, with its new words", async () => {
+  let answer!: (result: { reviewId: string }) => void;
+  vi.mocked(api.submitPullRequestReview).mockImplementationOnce(
+    () => new Promise((resolve) => (answer = resolve)),
+  );
+  await renderReviewPage();
+  fireEvent.click(
+    within(compose("Rename this.")).getByRole("button", {
+      name: "Add to review",
+    }),
+  );
+  press("r");
+  press("y");
+  await waitFor(() => expect(api.submitPullRequestReview).toHaveBeenCalled());
+
+  const card = within(changes()).getByRole("article", {
+    name: "Draft comment on src/api.ts, line 2",
+  });
+  fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
+  const editing = screen.getByRole("form", { name: "Edit the draft comment" });
+  fireEvent.change(within(editing).getByRole("textbox", { name: "Comment" }), {
+    target: { value: "Rename it to run." },
+  });
+  fireEvent.click(within(editing).getByRole("button", { name: "Save" }));
+  await act(async () => answer({ reviewId: "review-1" }));
+
+  await waitFor(() =>
+    expect(
+      localStore.snapshot().deckDraftReviews?.[0]?.submission,
+    ).toBeUndefined(),
+  );
+  expect(draftComments()).toEqual([
+    expect.objectContaining({ body: "Rename it to run." }),
+  ]);
+  expect(
+    within(changes()).getByRole("article", {
+      name: "Draft comment on src/api.ts, line 2",
+    }).textContent,
+  ).toContain("Rename it to run.");
+});
+
 it.each([
   ["c", "Comment"],
   ["n", "Request changes"],
@@ -1085,6 +1194,93 @@ it("asks before submitting a review again when the code host can't tell whether 
   );
   expect(calls()[2]!.submissionId).not.toBe(calls()[0]!.submissionId);
   expect(calls()[2]).not.toHaveProperty("firstTriedAt");
+});
+
+it("takes what was posted out of the draft when new commits held back the vote, and says to vote again", async () => {
+  const overview: PluginsOverview = structuredClone(codeHostOverview);
+  overview.connectionGroups[0]!.plugin.id = "azure_devops";
+  overview.connectionGroups[0]!.connections[0]!.pluginId = "azure_devops";
+  overview.plugins = overview.connectionGroups.map((group) => group.plugin);
+  cachePluginsOverview(overview);
+  const id = sync({}, "azure_devops");
+  vi.mocked(api.submitPullRequestReview).mockResolvedValueOnce({
+    reviewId: "1-alex",
+    voteWithheld: { reason: "new_commits" },
+  });
+  await renderReviewPage(id);
+  fireEvent.click(
+    within(compose("Rename this.")).getByRole("button", {
+      name: "Add to review",
+    }),
+  );
+  const reads = vi.mocked(api.readPullRequestConversation).mock.calls.length;
+
+  fireEvent.click(screen.getByRole("button", { name: "Finish review · 1" }));
+  let dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Summary" }), {
+    target: { value: "Looks good." },
+  });
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Approve" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Submit review" }),
+  );
+
+  const withheld = await screen.findByRole("dialog", {
+    name: "Your vote wasn't sent",
+  });
+  expect(withheld.textContent).toContain(
+    "New commits arrived while your review was sending. Your comment and summary are on the pull request; review the new commits, then vote again.",
+  );
+  // They're on the pull request: the draft lets go of them, and the page
+  // reads the conversation again to show them.
+  expect(draftComments() ?? []).toEqual([]);
+  await waitFor(() =>
+    expect(
+      vi.mocked(api.readPullRequestConversation).mock.calls.length,
+    ).toBeGreaterThan(reads),
+  );
+  fireEvent.click(
+    within(withheld)
+      .getAllByRole("button", { name: "Close" })
+      .find((button) => button.textContent === "Close")!,
+  );
+
+  // Approving again sends the vote alone: no thread is posted twice.
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  expect(within(dialog).getByText("No comments.")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Approve" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Submit review" }),
+  );
+  await waitFor(() =>
+    expect(api.submitPullRequestReview).toHaveBeenCalledTimes(2),
+  );
+  const [first, second] = vi
+    .mocked(api.submitPullRequestReview)
+    .mock.calls.map((call) => call[2]);
+  expect(second).toMatchObject({ verdict: "approve", comments: [] });
+  expect(second).not.toHaveProperty("body");
+  expect(second!.submissionId).not.toBe(first!.submissionId);
+});
+
+it("opens the dialog on why the vote wasn't sent after R then Y, when new commits held it back", async () => {
+  vi.mocked(api.submitPullRequestReview).mockResolvedValueOnce({
+    reviewId: "1-alex",
+    voteWithheld: { reason: "new_commits" },
+  });
+  await renderReviewPage();
+  press("r");
+  press("y");
+  // As a failure does, it opens the dialog on why.
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your vote wasn't sent",
+  });
+  expect(dialog.textContent).toContain(
+    "New commits arrived while your review was sending. Review them, then vote again.",
+  );
+  expect(toasts.show).not.toHaveBeenCalled();
+  expect(localStore.snapshot().deckDraftReviews).toEqual([]);
 });
 
 it("discards a closed pull request's draft after asking", async () => {
