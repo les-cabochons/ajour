@@ -1098,13 +1098,49 @@ describe(
       );
       const mine = path.join(root, "private-notes.txt");
       await writeFile(mine, "my own notes\n");
-      // A plain status hides it, and a plain `git worktree remove` deletes it.
-      expect(git(root, "status", "--porcelain")).toBe("");
+      // A plain status hides it, and a plain `git worktree remove` deletes
+      // it. (Links read as plain files, as Deck checked them out.)
+      expect(
+        git(root, "-c", "core.symlinks=false", "status", "--porcelain"),
+      ).toBe("");
 
       await deck.release(entry().key);
 
       expect(await readFile(mine, "utf8")).toBe("my own notes\n");
       expect(worktreeList()).toContain(path.basename(root));
+      expect(kept).toEqual(["not_clean"]);
+    });
+
+    /** What the user writes over a file of Deck's checkout. */
+    const MINE = "export const mine = true;\n";
+
+    it("keeps a file changed under an index flag that hides it from git status", async () => {
+      for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+        kept.length = 0;
+        const { deck, root } = await prepared();
+        git(root, "update-index", flag, "head only.ts");
+        const changed = path.join(root, "head only.ts");
+        await writeFile(changed, MINE);
+
+        await deck.release(entry().key);
+
+        expect(await readFile(changed, "utf8")).toBe(MINE);
+        expect(kept).toEqual(["not_clean"]);
+        git(root, "update-index", flag.replace("--", "--no-"), "head only.ts");
+        git(root, "checkout", "--", "head only.ts");
+        await deck.release(entry().key);
+      }
+    });
+
+    it("keeps a file changed in a checkout of a clone that sets core.ignorestat", async () => {
+      git(fixture.clone, "config", "core.ignorestat", "true");
+      const { deck, root } = await prepared();
+      const changed = path.join(root, "head only.ts");
+      await writeFile(changed, MINE);
+
+      await deck.release(entry().key);
+
+      expect(await readFile(changed, "utf8")).toBe(MINE);
       expect(kept).toEqual(["not_clean"]);
     });
 

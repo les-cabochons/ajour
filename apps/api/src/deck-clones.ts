@@ -724,6 +724,31 @@ export function createDeckClones(options: DeckClonesOptions) {
   }
 
   /**
+   * Whether any file of the worktree's index is marked assume-unchanged or
+   * skip-worktree, which hides a change from `git status`: such a worktree
+   * never counts as clean. Undefined when git can't tell.
+   */
+  async function hidesChanges(
+    opened: Opened,
+    folder: string,
+  ): Promise<boolean | undefined> {
+    try {
+      const inside = await gitIn(opened.environment, folder);
+      if (!inside) return undefined;
+      const result = await inside.run(
+        [...AS_CHECKED_OUT, "ls-files", "-v", "-z"],
+        timeouts.checkoutMs,
+      );
+      if (result.code !== 0 || result.timedOut) return undefined;
+      // Each entry starts with its tag: lower case for assume-unchanged,
+      // S for skip-worktree.
+      return result.stdout.split("\0").some((line) => /^([a-z]|S) /.test(line));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Removes one worktree folder of Deck's, and only with git: Deck never
    * deletes a worktree's files itself. The clone must list the folder, and
    * `git status --ignored --untracked-files=all`, run inside it, must print
@@ -759,6 +784,9 @@ export function createDeckClones(options: DeckClonesOptions) {
     ]);
     if (status === undefined) return kept("check_failed");
     if (status) return kept("not_clean");
+    const hidden = await hidesChanges(opened, folder);
+    if (hidden === undefined) return kept("check_failed");
+    if (hidden) return kept("not_clean");
     const removed = await filterOverrides(opened.git)
       .then((filters) =>
         opened.git.run(
@@ -1261,6 +1289,10 @@ export function createDeckClones(options: DeckClonesOptions) {
           "core.sparseCheckoutCone=false",
           "-c",
           "submodule.recurse=false",
+          // A clone's core.ignorestat would mark every file assume-unchanged,
+          // hiding the user's changes from the status a removal runs.
+          "-c",
+          "core.ignorestat=false",
           ...(await filterOverrides(git)),
           "worktree",
           "add",
@@ -1308,7 +1340,7 @@ export function createDeckClones(options: DeckClonesOptions) {
       (await statusIn(opened, folder, [
         "--ignored",
         "--untracked-files=all",
-      ])) === ""
+      ])) === "" && (await hidesChanges(opened, folder)) === false
     );
   }
 
