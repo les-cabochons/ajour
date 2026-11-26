@@ -197,22 +197,38 @@ const CITATION = "citation:";
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/**
- * The answer's Markdown with each `path:line` (or `path:first-last`) of a
- * file in `paths` made a citation link, in inline code or in the text, so
- * it reads as written and scrolls to its line. Code blocks, and paths the
- * diff doesn't change, stay as they are.
- */
-export function linkCitations(text: string, paths: readonly string[]): string {
-  if (!paths.length) return text;
-  const alternatives = [...paths]
+/** Each diff's citation pattern, built once: a pull request can change 3,000 files. */
+const patterns = new WeakMap<DeckPullRequestDiff, RegExp | null>();
+
+function citationPattern(diff: DeckPullRequestDiff) {
+  if (patterns.has(diff)) return patterns.get(diff)!;
+  const alternatives = diff.files
+    .map((file) => file.path)
     .sort((a, b) => b.length - a.length)
     .map(escape)
     .join("|");
-  const pattern = new RegExp(
-    `(?<![\\w./\\-\\[])(\`?)(${alternatives}):(\\d+)(?:[-–](\\d+))?\\1(?![\\w(\\]])`,
-    "g",
-  );
+  const pattern = alternatives
+    ? new RegExp(
+        `(?<![\\w./\\-\\[])(\`?)(${alternatives}):(\\d+)(?:[-–](\\d+))?\\1(?![\\w(\\]])`,
+        "g",
+      )
+    : null;
+  patterns.set(diff, pattern);
+  return pattern;
+}
+
+/**
+ * The answer's Markdown with each `path:line` (or `path:first-last`) of a
+ * file the diff changes made a citation link, in inline code or in the
+ * text, so it reads as written and scrolls to its line. Code blocks, other
+ * paths, and lines no hunk shows stay as they are.
+ */
+export function linkCitations(text: string, diff: DeckPullRequestDiff): string {
+  const pattern = citationPattern(diff);
+  if (!pattern) return text;
+  const shown = (path: string, line: number) =>
+    findLine(diff, { path, side: "head", line }) !== undefined ||
+    findLine(diff, { path, side: "base", line }) !== undefined;
   let fenced = false;
   return text
     .split("\n")
@@ -225,7 +241,9 @@ export function linkCitations(text: string, paths: readonly string[]): string {
       return line.replace(
         pattern,
         (whole, _tick: string, path: string, first: string, last?: string) =>
-          `[${whole}](${CITATION}${encodeURI(path)}:${first}${last ? `-${last}` : ""})`,
+          shown(path, Number(first))
+            ? `[${whole}](${CITATION}${encodeURI(path)}:${first}${last ? `-${last}` : ""})`
+            : whole,
       );
     })
     .join("\n");

@@ -3,6 +3,7 @@ import type {
   DiffLineHighlight,
   DiffSelectionChange,
 } from "@/components/diff-hunk";
+import type { DeckPullRequestDiff } from "@ajour/shared/deck";
 import type { LineSelection } from "@/domain/deck/line-selection";
 import type { ReviewLineSelection } from "./review-line-selection";
 
@@ -13,8 +14,8 @@ import type { ReviewLineSelection } from "./review-line-selection";
 
 export interface ReviewLines {
   selection: ReviewLineSelection;
-  /** The changed files' paths, which an answer's citations name. */
-  paths: readonly string[];
+  /** The diff on screen, whose lines an answer's citations name. */
+  diff: DeckPullRequestDiff;
   /** A hunk's library picked lines, or none. */
   select: (
     hunkId: string,

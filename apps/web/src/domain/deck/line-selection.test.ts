@@ -168,19 +168,19 @@ describe("what selected lines become", () => {
 });
 
 describe("citations in an answer", () => {
-  it("links the diff's paths with a line, in code or in the text, and leaves the rest", () => {
+  it("links the diff's lines, in code or in the text, and leaves the rest", () => {
     const text = [
       "See `src/api.ts:2` and src/api.ts:3-4.",
-      "Not `src/gone.ts:2`, nor api.ts:2.",
+      "Not `src/gone.ts:2`, nor api.ts:2, nor src/api.ts:9 that no hunk shows.",
       "```ts",
       "src/api.ts:2",
       "```",
     ].join("\n");
 
-    expect(linkCitations(text, ["src/api.ts"])).toBe(
+    expect(linkCitations(text, DIFF)).toBe(
       [
         "See [`src/api.ts:2`](citation:src/api.ts:2) and [src/api.ts:3-4](citation:src/api.ts:3-4).",
-        "Not `src/gone.ts:2`, nor api.ts:2.",
+        "Not `src/gone.ts:2`, nor api.ts:2, nor src/api.ts:9 that no hunk shows.",
         "```ts",
         "src/api.ts:2",
         "```",

@@ -304,7 +304,7 @@ function AskAnswer({
       ) : null}
       {text ? (
         <Markdown className="deck-ask-text" onCitation={lines?.cite}>
-          {lines ? linkCitations(text, lines.paths) : text}
+          {lines ? linkCitations(text, lines.diff) : text}
         </Markdown>
       ) : null}
       {state.kind === "answered" ? (

@@ -62,10 +62,9 @@ export function useReviewLinesValue({
     viewedNow.current = viewed;
   }, [viewed]);
   return useMemo((): ReviewLines => {
-    const paths = diff.files.map((file) => file.path);
     return {
       selection,
-      paths,
+      diff,
       select(hunkId, range, { settled, tap }) {
         const picked = range
           ? selectLines(diff, hunkId, {
@@ -242,7 +241,9 @@ function ToolbarButton({
       onClick={onClick}
     >
       {label}
-      <kbd aria-hidden="true">{shortcut}</kbd>
+      <kbd aria-hidden="true" className="touch-or-narrow:hidden">
+        {shortcut}
+      </kbd>
     </button>
   );
 }
