@@ -14,6 +14,7 @@ import {
   DECK_QUESTION_MAX,
   deckLinesLabel,
   type DeckAskAnchor,
+  type DeckConsentCovers,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -142,21 +143,22 @@ export function DeckAskProvider({
       stopClosed();
     };
   }, [sessions, pluginId, connectionId, repository]);
-  const answer = async (allowed: boolean) => {
+  const answer = async (covers: DeckConsentCovers | null) => {
     const current = asking;
     if (!current) return;
     setAsking(undefined);
-    if (!allowed) {
+    if (!covers) {
       current.resolve(false);
       return;
     }
     try {
-      // Only for the agent the dialog named.
+      // Only for the agent the dialog named, and what it said leaves.
       await grantDeckConsent(
         pluginId,
         connectionId,
         current.request.repository,
         current.request.provider.cli,
+        covers,
       );
       current.resolve(true);
     } catch (error) {
@@ -177,7 +179,7 @@ export function DeckAskProvider({
       {children}
       <DeckConsentDialog
         request={asking?.request}
-        onAnswer={(allowed) => void answer(allowed)}
+        onAnswer={(covers) => void answer(covers)}
       />
     </DeckAskContext.Provider>
   );

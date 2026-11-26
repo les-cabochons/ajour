@@ -352,11 +352,13 @@ it("asks for the repository's consent before the first regroup", async () => {
   fireEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
 
   await waitFor(() => expect(api.regroupDeckGuide).toHaveBeenCalledTimes(2));
+  // The dialog lists what a regroup sends, so the consent covers it.
   expect(api.grantDeckConsent).toHaveBeenCalledWith(
     "github",
     "work",
     "acme/billing-api",
     "claude-code",
+    "context",
   );
 });
 

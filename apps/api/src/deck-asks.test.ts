@@ -222,10 +222,12 @@ async function startAskApi(conversation: FakeConversation) {
         ...body,
       });
     },
-    consent(cli = "claude-code") {
+    /** Allows the repository, as the dialog that says what `covers` names. */
+    consent(cli = "claude-code", covers?: "code" | "context") {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
         cli,
+        ...(covers ? { covers } : {}),
       });
     },
     /** Picks the agent in Settings › Agents. */
@@ -367,7 +369,7 @@ describe("consent", () => {
     async () => {
       const api = await startAskApi(() => [...answer("It ", "shouts.")]);
 
-      expect((await api.consent()).status).toBe(200);
+      expect((await api.consent("claude-code", "context")).status).toBe(200);
       const asked = await api.ask();
 
       expect(asked.status).toBe(201);
@@ -380,7 +382,7 @@ describe("consent", () => {
           connectionId: api.connectionId,
           repository: REPOSITORY,
           cli: "claude-code",
-          // The dialog says a regroup sends the description and tickets too.
+          // The dialog said a regroup sends the description and tickets too.
           covers: "context",
         }),
       ]);
@@ -404,6 +406,54 @@ describe("consent", () => {
     expect((await api.consents()).body.consents).toEqual([]);
     expect(await api.turnsRead()).toHaveLength(1);
   });
+});
+
+describe("what a consent covers", () => {
+  it(
+    "records the code only for a dialog that didn't say what a regroup sends",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      // An older page's dialog, which listed the code alone, sends no scope.
+      expect((await api.consent()).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "claude-code", covers: "code" }),
+      ]);
+    },
+  );
+
+  it(
+    "keeps a consent that covers the context when an older dialog allows the code later",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      await api.consent("claude-code", "context");
+      expect((await api.consent("claude-code", "code")).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "claude-code", covers: "context" }),
+      ]);
+    },
+  );
+
+  it(
+    "doesn't carry the context over to another agent",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      await api.consent("claude-code", "context");
+      await api.pick("codex");
+      expect((await api.consent("codex")).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "codex", covers: "code" }),
+      ]);
+    },
+  );
 });
 
 describe("consent for one agent", () => {

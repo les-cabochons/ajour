@@ -211,6 +211,7 @@ import {
   deckPreloadResultSchema,
   deckSinceReviewSchema,
   type DeckAskRequest,
+  type DeckConsentCovers,
   type DeckConsentRevokeRequest,
   type DeckGuideRequest,
   type DeckOpenRequest,
@@ -329,14 +330,15 @@ export function revertDeckGuide(
 
 /**
  * Allows Deck's asks about a repository's pull requests with `cli`, the
- * agent the consent dialog named. Refused when Settings › Agents picks
- * another one now.
+ * agent the consent dialog named, for what `covers` says it listed.
+ * Refused when Settings › Agents picks another one now.
  */
 export function grantDeckConsent(
   pluginId: string,
   connectionId: string,
   repository: string,
   cli: AgentCliId,
+  covers: DeckConsentCovers,
 ) {
   return appApiRequest(
     "grantDeckConsent",
@@ -344,7 +346,7 @@ export function grantDeckConsent(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository, cli }),
+      body: JSON.stringify({ repository, cli, covers }),
     },
     deckConsentsSchema,
     (unit) =>

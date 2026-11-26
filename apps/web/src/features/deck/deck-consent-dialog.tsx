@@ -1,4 +1,8 @@
-import { repositoryName, type DeckNeedsConsent } from "@ajour/shared/deck";
+import {
+  repositoryName,
+  type DeckConsentCovers,
+  type DeckNeedsConsent,
+} from "@ajour/shared/deck";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,10 +15,18 @@ import {
 } from "@/components/ui/alert-dialog";
 
 /**
+ * What the dialog's list says leaves the machine: the code, and the
+ * description and linked tickets a regroup sends (#794). Allow records
+ * this, so a change to the list changes it too.
+ */
+const COVERS: DeckConsentCovers = "context";
+
+/**
  * The once-per-repository consent of Deck's asks (#791): it names the agent
- * and its version and says what leaves the machine. Allow records it; Not
- * now sends nothing. A repository allowed before Regroup sent more asks
- * again before its first regroup (#794), and says why.
+ * and its version and says what leaves the machine. Allow records it, for
+ * what the list names; Not now sends nothing. A repository allowed before
+ * Regroup sent more asks again before its first regroup (#794), and says
+ * why.
  */
 export function DeckConsentDialog({
   request,
@@ -22,7 +34,8 @@ export function DeckConsentDialog({
 }: {
   /** The refusal that asks, or undefined while closed. */
   request: DeckNeedsConsent | undefined;
-  onAnswer: (allowed: boolean) => void;
+  /** What Allow covers, or null for Not now. */
+  onAnswer: (covers: DeckConsentCovers | null) => void;
 }) {
   const provider = request
     ? [request.provider.label, request.provider.version]
@@ -33,7 +46,7 @@ export function DeckConsentDialog({
     <AlertDialog
       open={request !== undefined}
       onOpenChange={(open) => {
-        if (!open) onAnswer(false);
+        if (!open) onAnswer(null);
       }}
     >
       <AlertDialogContent>
@@ -71,7 +84,7 @@ export function DeckConsentDialog({
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel>Not now</AlertDialogCancel>
-          <AlertDialogAction onClick={() => onAnswer(true)}>
+          <AlertDialogAction onClick={() => onAnswer(COVERS)}>
             Allow
           </AlertDialogAction>
         </AlertDialogFooter>

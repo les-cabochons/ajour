@@ -5023,8 +5023,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         repository: payload.repository,
         cli: cli.id,
         ...(cli.version ? { cliVersion: cli.version } : {}),
-        // The dialog lists the description and tickets a regroup sends.
-        covers: "context",
+        // What the dialog listed: only a dialog that says a regroup sends
+        // the description and tickets covers them.
+        covers: payload.covers,
         consentedAt: Date.now(),
       });
       writeJson(response, 200, { consents: await storage.getDeckConsents() });

@@ -4,7 +4,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import type { DeckSubmitGuideInput } from "../../../packages/shared/deck.ts";
-import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
+import { createDeckContentCache } from "./deck-content-cache.ts";
+import {
+  createGuideBuilds,
+  type DeckGuideRuntime,
+} from "./deck-guide-builds.ts";
+import { createDeckGuideRuns } from "./deck-guide-runs.ts";
+import { createDeckService, type DeckCodeHost } from "./deck-service.ts";
 import { builtFrom } from "./test-support/deck-guides.ts";
 import {
   fakeCliAdapter,
@@ -263,6 +270,7 @@ async function startGuideApi(
         await apiRequest(api.baseUrl, `${deck}/consent`, {
           repository: REPOSITORY,
           cli: "claude-code",
+          covers: "context",
         })
       ).status,
     ).toBe(200);
@@ -702,17 +710,13 @@ describe("a regroup", () => {
       expect((await api.revoke()).status).toBe(200);
       held.release();
 
-      // The revoke ended the CLI, so its call is never answered: the
-      // regroup's build ends, then what the submission does after it.
+      // The revoke ended the CLI, so the call's answer reaches no one, but
+      // Ajour still settles the submission: its event says so.
       await api.endingOf(started.body.turn.id);
-      await vi.waitFor(
-        () =>
-          expect(
-            api.events.filter((event) => event.name === "deck.guide_build"),
-          ).toHaveLength(2),
-        { timeout: 10_000, interval: 20 },
-      );
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(await api.submitAnswered()).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "tool_refused",
+      });
       expect((await api.guide()).madeWith).toBe("code");
     },
   );
@@ -764,4 +768,172 @@ describe("more detail on a summary line", () => {
       expect(turn).toContain("Give more detail on this line of the summary");
     },
   );
+});
+
+/*
+ * The save's last moment (#794): Deck reads the pull request again, and its
+ * built guide, before it writes the agent's. A stop or a revoke while it
+ * reads, here from the content cache, must still save nothing.
+ */
+describe("a guide saved while Deck reads the pull request again", () => {
+  const SOURCE = { pluginId: "github", connectionId: "c1" };
+  const ref = { repository: "acme/api", number: 20 };
+  const pullRequest = deckPullRequestKey({ ...SOURCE, ...ref });
+  const binding = { pullRequest, head: "a41c9e2", cli: "claude-code" as const };
+  const turn = {
+    id: "t1",
+    task: "deck.guide" as const,
+    pullRequest,
+    head: binding.head,
+  };
+  const codeHost: DeckCodeHost = {
+    async run(operation) {
+      if (operation === "getPullRequestContent") {
+        return {
+          headSha: binding.head,
+          baseSha: "b52d0f3",
+          files: [
+            {
+              path: "a.ts",
+              status: "added",
+              additions: 1,
+              deletions: 0,
+              binary: false,
+            },
+          ],
+        } as never;
+      }
+      return { kind: "text", content: "export const a = 1;\n" } as never;
+    },
+  };
+  const submission: DeckSubmitGuideInput = {
+    concerns: [
+      {
+        title: "Add a",
+        rationale: "The module starts.",
+        hunkIds: ["a.ts#0"],
+        kinds: ["feature"],
+      },
+    ],
+    summary: {
+      problem: { text: "There is no module.", source: "inferred" },
+      breaking: [],
+      risks: [],
+    },
+  };
+
+  /**
+   * Pull request #20 cached, not on screen, and its guide's runs with the
+   * turn running and the repository allowed until the test says otherwise.
+   * Once a submission's rules are built, the content cache's reads hold
+   * until `release`: `holding` resolves when the save's own read waits.
+   */
+  async function startHeldSave() {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-save-"));
+    stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
+    const cache = createDeckContentCache({
+      directory: path.join(root, "deck-cache"),
+      capBytes: async () => 1_000_000_000,
+    });
+    let hold: Promise<void> | undefined;
+    let release!: () => void;
+    let held!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const service = createDeckService({
+      guides: createGuideBuilds({
+        runtime: {
+          build: async (input) =>
+            builtFrom(
+              input,
+              input.concerns ?? [
+                { id: "g1", title: "A", rationale: "", hunkIds: ["a.ts#0"] },
+              ],
+            ),
+          close: async () => {},
+        },
+      }),
+      cache: {
+        ...cache,
+        async find(at) {
+          if (hold) {
+            held();
+            await hold;
+          }
+          return cache.find(at);
+        },
+      },
+    });
+    await service.preloadPullRequests(SOURCE, [ref], codeHost);
+    await cache.flush();
+    const state = { running: true, allowed: true };
+    const runs = createDeckGuideRuns({
+      deck: {
+        held: service.held,
+        setAgentGuide: service.setAgentGuide,
+        async rulesFor(...args) {
+          const built = await service.rulesFor(...args);
+          hold = new Promise<void>((resolve) => (release = resolve));
+          return built;
+        },
+      },
+      requireConsent: async () => {},
+      allowed: async () => state.allowed,
+      runningTurnOf: () => (state.running ? turn : undefined),
+      startTurn: () => Promise.reject(new Error("No turn starts here.")),
+      completeTurn: () => {},
+      labelOf: () => "Claude Code",
+      readContext: async () => ({}),
+    });
+    return {
+      state,
+      holding,
+      submit: () => runs.submit("client", binding, submission),
+      release: () => release(),
+      async agentGuide() {
+        hold = undefined;
+        return (await cache.find({ ...SOURCE, ...ref, headSha: binding.head }))
+          ?.agentGuide;
+      },
+    };
+  }
+
+  it("saves nothing when the turn is stopped while Deck reads it", async () => {
+    const save = await startHeldSave();
+    const submitted = save.submit();
+    await save.holding;
+
+    save.state.running = false;
+    save.release();
+
+    await expect(submitted).rejects.toThrow(
+      "This regroup ended before Ajour saved its guide",
+    );
+    expect(await save.agentGuide()).toBeNull();
+  });
+
+  it("saves nothing when the repository is revoked while Deck reads it", async () => {
+    const save = await startHeldSave();
+    const submitted = save.submit();
+    await save.holding;
+
+    // The turn still runs: the consent alone refuses the save.
+    save.state.allowed = false;
+    save.release();
+
+    await expect(submitted).rejects.toThrow(
+      "The user no longer allows Ajour to send this repository's code",
+    );
+    expect(await save.agentGuide()).toBeNull();
+  });
+
+  it("saves the guide when nothing changed while Deck read it", async () => {
+    const save = await startHeldSave();
+    const submitted = save.submit();
+    await save.holding;
+
+    save.release();
+
+    await expect(submitted).resolves.toEqual({ saved: true, concernCount: 1 });
+    expect((await save.agentGuide())?.madeWith).toBe("agent");
+  });
 });

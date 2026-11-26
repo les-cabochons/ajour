@@ -621,11 +621,14 @@ export type DeckAgentConsent = z.infer<typeof deckAgentConsentSchema>;
 
 /**
  * Allows asks about a repository's pull requests with the agent the consent
- * dialog named. It is refused when Settings › Agents picks another one now.
+ * dialog named, for what it said leaves the machine. It is refused when
+ * Settings › Agents picks another one now.
  */
 export const deckConsentRequestSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
   cli: agentCliIdSchema,
+  /** What the dialog listed. A page from before Regroup sends none: the code. */
+  covers: deckConsentCoversSchema.default("code"),
 });
 
 /** Takes a repository's consent back. */

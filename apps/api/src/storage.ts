@@ -3022,22 +3022,35 @@ export class AppApiStorage {
   }
 
   /** Records a repository's consent, replacing an earlier one for it. */
+  /**
+   * Records a repository's consent in place of the one it had. One for the
+   * code alone keeps what the same agent's consent covered: an older page
+   * asking again never takes the context back.
+   */
   async addDeckConsent(consent: DeckAgentConsent): Promise<void> {
-    await this.mutate((state) => ({
-      nextState: {
-        ...state,
-        agentRunner: {
-          ...state.agentRunner,
-          deckConsents: [
-            ...state.agentRunner.deckConsents.filter(
-              (entry) => !sameDeckRepository(entry, consent),
-            ),
-            consent,
-          ],
+    await this.mutate((state) => {
+      const kept = state.agentRunner.deckConsents.find(
+        (entry) =>
+          sameDeckRepository(entry, consent) && entry.cli === consent.cli,
+      );
+      const covers =
+        kept?.covers === "context" ? ("context" as const) : consent.covers;
+      return {
+        nextState: {
+          ...state,
+          agentRunner: {
+            ...state.agentRunner,
+            deckConsents: [
+              ...state.agentRunner.deckConsents.filter(
+                (entry) => !sameDeckRepository(entry, consent),
+              ),
+              { ...consent, covers },
+            ],
+          },
         },
-      },
-      result: undefined,
-    }));
+        result: undefined,
+      };
+    });
   }
 
   /** Takes a repository's consent back. False when it had none. */
