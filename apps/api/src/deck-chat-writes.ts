@@ -53,7 +53,16 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  */
 
 /** The chat's writes that post: each keeps its submission across tries. */
-type PostOperation = "postComment" | "replyToThread" | "submitReview";
+export const CHAT_POST_OPERATIONS = [
+  "postComment",
+  "replyToThread",
+  "submitReview",
+] as const satisfies readonly CodeHostOperation[];
+type PostOperation = (typeof CHAT_POST_OPERATIONS)[number];
+
+/** Whether a chat write posts: a lost answer may then have left a post. */
+export const isChatPost = (operation: CodeHostOperation) =>
+  (CHAT_POST_OPERATIONS as readonly CodeHostOperation[]).includes(operation);
 
 /** A write the chat can't make, with a sentence for the agent. */
 export class DeckChatRefused extends Error {
@@ -189,7 +198,10 @@ function placeName(lines: { path: string; line: number; startLine?: number }) {
 /** A post's submission across the agent's tries (#784's look-back). */
 interface ChatSubmission {
   submissionId: string;
-  /** When its first try was sent; later tries send it. */
+  /**
+   * When the first try that may have reached the code host was sent; later
+   * tries send it. A try refused before it was sent doesn't count.
+   */
   firstTriedAt: number;
   /** Whether a try may have reached the code host: a retry looks back only then. */
   sent: boolean;
@@ -265,6 +277,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     submission.trying = new Promise<void>((resolve) => (tried = resolve));
     await earlier;
     const retry = submission.sent;
+    if (!retry) submission.firstTriedAt = now();
     try {
       const result = await options.codeHost(
         source,
@@ -290,7 +303,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
 
   /**
    * The action line of what a post made, once: a repeat that found the
-   * same post answers with the line it already showed.
+   * same post tells the agent it's there already, with no second line.
    */
   function shownOnce(
     submission: ChatSubmission,
@@ -298,7 +311,9 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     show: () => DeckChatToolOutput,
   ) {
     if (submission.shown && submission.shown.id === id) {
-      return submission.shown.output;
+      throw new DeckChatRefused(
+        `Ajour made this post earlier in this conversation ("${submission.shown.output.action}"), and the code host still has it, so Ajour didn't post it again. Tell the user it's there.`,
+      );
     }
     const output = show();
     submission.shown = { id, output };

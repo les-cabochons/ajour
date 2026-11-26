@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { cn } from "@/lib/utils";
 import {
   SettingsLink,
   useOpenSettings,
@@ -10,14 +9,11 @@ import {
  * a link to Settings › Plugins, after the read's own message that says
  * which plugin and what for.
  */
-export function PluginUpdateLink({ className }: { className?: string }) {
+export function PluginUpdateLink() {
   return (
     <SettingsLink
       page="plugins"
-      className={cn(
-        "text-primary underline-offset-2 hover:underline",
-        className,
-      )}
+      className="text-primary underline-offset-2 hover:underline"
     >
       Open Settings › Plugins
     </SettingsLink>

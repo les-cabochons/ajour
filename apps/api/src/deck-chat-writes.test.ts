@@ -91,6 +91,8 @@ function setup(path = "src/api.ts") {
     url: `${PULL_REQUEST_URL}#c1` as string | undefined,
     /** The pull request's review threads, by id. */
     threads: new Set(["t1"]) as ReadonlySet<string>,
+    /** This computer's clock. */
+    now: 1_700_000_000_000,
     /** How the code host answers each write; by default it takes it. */
     answer: undefined as
       | ((operation: string, request: Record<string, unknown>) => unknown)
@@ -142,7 +144,7 @@ function setup(path = "src/api.ts") {
       });
     },
     publish: (event) => published.push(agentTurnEventSchema.parse(event)),
-    now: () => 1_700_000_000_000,
+    now: () => state.now,
     createId: (() => {
       let next = 0;
       return () => `id-${(next += 1)}`;
@@ -541,13 +543,11 @@ describe("a chat write tried again (council round 1)", () => {
       binding,
       comment,
     );
-    // Once more after it showed: the same post, and no second line.
-    const thrice = await chat.writes.run(
-      "post_comment",
-      "client-1",
-      binding,
-      comment,
-    );
+    // Once more after it showed: the code host finds the same post, and
+    // the agent hears it's there already, with no second line.
+    await expect(
+      chat.writes.run("post_comment", "client-1", binding, comment),
+    ).rejects.toThrow("didn't post it again");
 
     const [first, second, third] = chat.hostRequests;
     expect(first!.request.submissionId).toMatch(/^chat_[\w-]+$/);
@@ -564,7 +564,37 @@ describe("a chat write tried again (council round 1)", () => {
         posted: { kind: "comment", commentId: "c-1" },
       }),
     ]);
-    expect(thrice).toEqual(again);
+    expect(again.action).toBe("Commented on src/api.ts:2");
+  });
+
+  it("sends the time of the first try that may have reached the code host, not of one refused before it", async () => {
+    const chat = setup();
+    let tries = 0;
+    chat.state.answer = () => {
+      tries += 1;
+      if (tries === 1) throw new DeckChatRefused("GitHub didn't take it.");
+      if (tries === 2) {
+        throw new DeckChatRefused("It may already be there.", {
+          maybeSent: true,
+        });
+      }
+      return { commentId: "c-1", url: PULL_REQUEST_URL };
+    };
+    const comment = { body: "Here." };
+
+    await expect(
+      chat.writes.run("post_comment", "client-1", binding, comment),
+    ).rejects.toThrow("didn't take it");
+    chat.state.now += 60_000;
+    await expect(
+      chat.writes.run("post_comment", "client-1", binding, comment),
+    ).rejects.toThrow("may already be there");
+    chat.state.now += 60_000;
+    await chat.writes.run("post_comment", "client-1", binding, comment);
+
+    expect(
+      chat.hostRequests.map(({ request }) => request.firstTriedAt),
+    ).toEqual([undefined, undefined, 1_700_000_060_000]);
   });
 
   it("names another body, or another thread, as a new write", async () => {
@@ -602,13 +632,19 @@ describe("a chat write tried again (council round 1)", () => {
     };
     const comment = { body: "Why upper case?" };
 
-    const [first, second] = await Promise.all([
+    const [first, second] = await Promise.allSettled([
       chat.writes.run("post_comment", "client-1", binding, comment),
       chat.writes.run("post_comment", "client-1", binding, comment),
     ]);
 
     expect(posted.size).toBe(1);
-    expect(second).toEqual(first);
+    expect(first.status).toBe("fulfilled");
+    expect(second).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({
+        message: expect.stringContaining("didn't post it again"),
+      }),
+    });
     expect(chat.actions()).toHaveLength(1);
   });
 

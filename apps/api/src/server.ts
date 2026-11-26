@@ -172,7 +172,11 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
-import { createDeckChatWrites, DeckChatRefused } from "./deck-chat-writes.ts";
+import {
+  createDeckChatWrites,
+  DeckChatRefused,
+  isChatPost,
+} from "./deck-chat-writes.ts";
 import {
   createDeckAsks,
   DeckAskStopped,
@@ -2338,9 +2342,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // The request may have reached the code host, whose answer was lost:
       // a post tried again keeps its submission, so the plugin finds it.
       throw new DeckChatRefused(
-        operation === "postComment" ||
-          operation === "replyToThread" ||
-          operation === "submitReview"
+        isChatPost(operation)
           ? `${name} may have taken it, but its answer didn't reach Ajour. Tell the user it may already be there; don't post it again.`
           : `${name} may have done it, but its answer didn't reach Ajour. Tell the user to check the pull request on ${name}.`,
         { maybeSent: true },
