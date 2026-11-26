@@ -3119,7 +3119,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           // user allowed its repository (#791).
           unit.set({ agent: { task_id: payload.task } });
           try {
-            await deckAsks.requireTurnConsent(payload.pullRequest);
+            // A guide turn needs what a regroup's consent covers.
+            await deckAsks.requireTurnConsent(
+              payload.pullRequest,
+              payload.task === "deck.guide" ? "context" : "code",
+            );
           } catch (error) {
             if (!(error instanceof DeckTurnRefused)) throw error;
             // A turn has no anchor, so only these two refuse it.

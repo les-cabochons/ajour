@@ -352,8 +352,9 @@ export class AgentConversations {
     if (conversation.client?.id !== clientId) return undefined;
     const turn = conversation.turns[0];
     if (!turn?.started || turn.settled || !turn.process) return undefined;
-    // A turn the user stopped, or that stalled, runs only until its CLI
-    // ends; one completed is done already.
+    // A turn being stopped, by the user or a stall, runs only until its
+    // CLI ends: its calls aren't part of it any more. A completed one still
+    // is, so a guide turn's late call hears its guide is saved.
     if (turn.stopReason && turn.stopReason !== "completed") return undefined;
     return {
       id: turn.id,

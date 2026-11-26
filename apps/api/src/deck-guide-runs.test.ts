@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import type { DeckSubmitGuideInput } from "../../../packages/shared/deck.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
@@ -351,8 +351,14 @@ async function startGuideApi(
             (event as { agent_tool?: { name?: string } }).agent_tool?.name ===
               "submit_guide",
         );
-      while (!called()) await new Promise((resolve) => setTimeout(resolve, 20));
-      return called()!;
+      return vi.waitFor(
+        () => {
+          const event = called();
+          if (!event) throw new Error("submit_guide isn't answered yet.");
+          return event;
+        },
+        { timeout: 10_000, interval: 20 },
+      );
     },
     async mcpReplies() {
       return (await reportLines()).flatMap((line) =>
@@ -634,11 +640,12 @@ describe("a regroup", () => {
         (reply) => reply.result.structuredContent?.saved === true,
       );
       expect(saved).toHaveLength(1);
-      const refused = replies.find((reply) => reply.result.isError);
-      expect(replyText({ reply: refused })).toContain("already saved");
-      const savedTitle =
-        replies.indexOf(saved[0]!) === 0 ? "Shout the second line" : "Shout it";
-      expect((await api.guide()).concerns[0].title).toBe(savedTitle);
+      // Checked in the order sent: the first is saved, the second refused.
+      expect(replies[0]!.result.structuredContent?.saved).toBe(true);
+      expect(replyText({ reply: replies[1] })).toContain("already saved");
+      expect((await api.guide()).concerns[0].title).toBe(
+        "Shout the second line",
+      );
     },
   );
 
@@ -666,6 +673,12 @@ describe("a regroup", () => {
       await api.submitAnswered();
       await api.endingOf(started.body.turn.id);
       expect((await api.guide()).madeWith).toBe("code");
+      const [refused] = await api.mcpReplies();
+      if (refused) {
+        expect(replyText(refused)).toContain(
+          "This regroup ended before Ajour saved its guide",
+        );
+      }
     },
   );
 
@@ -692,12 +705,13 @@ describe("a regroup", () => {
       // The revoke ended the CLI, so its call is never answered: the
       // regroup's build ends, then what the submission does after it.
       await api.endingOf(started.body.turn.id);
-      while (
-        api.events.filter((event) => event.name === "deck.guide_build").length <
-        2
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
+      await vi.waitFor(
+        () =>
+          expect(
+            api.events.filter((event) => event.name === "deck.guide_build"),
+          ).toHaveLength(2),
+        { timeout: 10_000, interval: 20 },
+      );
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect((await api.guide()).madeWith).toBe("code");
     },

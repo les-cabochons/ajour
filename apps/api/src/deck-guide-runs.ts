@@ -272,7 +272,7 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       };
       submissions.set(turn.id, tried);
       const answer = tried.queue.then(() =>
-        check(clientId, turn.id, tried, binding, input),
+        answerSubmission(clientId, turn.id, tried, binding, input),
       );
       tried.queue = answer.catch(() => {});
       return answer;
@@ -299,7 +299,7 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
   };
 
   /** One `submit_guide` call, once the turn's earlier ones are answered. */
-  async function check(
+  async function answerSubmission(
     clientId: string,
     turnId: string,
     tried: Submissions,
