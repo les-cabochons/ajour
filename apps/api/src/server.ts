@@ -150,8 +150,14 @@ import {
 import {
   deckAskRequestSchema,
   deckCacheSettingsUpdateSchema,
+  deckCloneChooseRequestSchema,
+  deckCloneForgetRequestSchema,
+  deckCloneSuggestionsRequestSchema,
   deckConsentRequestSchema,
   deckConsentRevokeRequestSchema,
+  deckCloneSourceSchema,
+  type DeckClone,
+  type DeckCloneSource,
   deckOpenRequestSchema,
   deckPreloadRequestSchema,
   deckSinceReviewRequestSchema,
@@ -160,7 +166,13 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
-import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import { createDeckAsks, DeckAskRefused, DeckAskStopped } from "./deck-asks.ts";
+import {
+  createDeckClones,
+  DeckCloneRefused,
+  type DeckCloneRepository,
+  type DeckClones,
+} from "./deck-clones.ts";
 import {
   createDeckContentCache,
   deckCacheKeyString,
@@ -490,6 +502,9 @@ interface AppApiRuntime {
   /** Stops recording the process's crashes, when the API was asked to. */
   stopWatchingCrashes?: () => void;
   folderResolver: FolderResolver;
+  deckClones: DeckClones;
+  /** The sweep of Deck's worktrees an earlier run left, once the API listens. */
+  deckClonesSwept?: Promise<void>;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
@@ -1859,6 +1874,53 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
    * their diffs built from both file versions and their guides by the
    * vendored pipeline.
    */
+  const agentCliAdapters = options.agentCliAdapters ?? [
+    claudeCodeAdapter,
+    codexAdapter,
+    opencodeAdapter,
+  ];
+  /** The repository folders of every project, which Deck suggests as clones. */
+  const knownFolders = async () => {
+    const seen = new Set<string>();
+    return (await storage.listRepositoryFolders()).filter((folder) => {
+      if (seen.has(folder.path)) return false;
+      seen.add(folder.path);
+      return true;
+    });
+  };
+  /**
+   * The user's local clones (#795, ADR 0023): each chosen once per
+   * repository, read at a pull request's head through a worktree that goes
+   * with its Deck entry. What an earlier run left goes at the first use.
+   */
+  const deckClones = createDeckClones({
+    storage,
+    worktreesFolder: path.join(
+      storage.dataDirectory,
+      "deck-cache",
+      "worktrees",
+    ),
+    // An earlier run's worktrees of entries the cache still holds stay.
+    liveEntries: async () =>
+      (await deckService.cache.keys()).map((key) => ({
+        key: deckCacheKeyString(key),
+        pluginId: key.pluginId,
+        connectionId: key.connectionId,
+        repository: key.repository,
+      })),
+    // What cleanup leaves because it can't prove it Deck's, never a path.
+    onKept: ({ reason, environment }) =>
+      events
+        .start("deck.clone_kept", {
+          kind: "job",
+          trigger: "system",
+          detached: true,
+        })
+        .set({
+          deck: { clone_kept: reason, clone_environment: environment },
+        })
+        .end(),
+  });
   const deckGuides = createGuideBuilds({
     runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),
     events,
@@ -1871,6 +1933,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       capBytes: () => storage.getDeckCacheCapBytes(),
       // A preload whose entry left the cache needn't build its guide.
       onRemoved: (key) => deckGuides.evict(deckCacheKeyString(key)),
+      // The worktree of the user's clone goes with its entry (#795), an
+      // earlier run's too.
+      onLeft: (key) => {
+        void deckClones
+          .release(deckCacheKeyString(key), {
+            pluginId: key.pluginId,
+            connectionId: key.connectionId,
+            repository: key.repository,
+          })
+          .catch(() => undefined);
+      },
     }),
   });
   /**
@@ -1891,9 +1964,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const deckCacheStorage = async (unit: {
     set(fields: object): unknown;
   }): Promise<DeckCacheStorage> => {
-    const [usage, capBytes] = await Promise.all([
+    const [usage, capBytes, keptCloneFolderCount] = await Promise.all([
       deckService.cache.usage(),
       storage.getDeckCacheCapBytes(),
+      deckClones.keptFolderCount(),
     ]);
     unit.set({
       deck: {
@@ -1902,7 +1976,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         entry_count: usage.entryCount,
       },
     });
-    return { ...usage, capBytes };
+    return { ...usage, capBytes, keptCloneFolderCount };
   };
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
@@ -2024,11 +2098,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       readAgentTaskPrompt: (pluginId, taskId) =>
         pluginManager.readAgentTaskPrompt(pluginId, taskId),
     },
-    adapters: options.agentCliAdapters ?? [
-      claudeCodeAdapter,
-      codexAdapter,
-      opencodeAdapter,
-    ],
+    adapters: agentCliAdapters,
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
     loginShellPath:
       options.agentCliPath === undefined
@@ -2069,7 +2139,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     storage,
     selectedCli: () => agentRunner.selectedCli(),
     deck: deckService,
-    startTurn: (request) => agentRunner.startTurn(request),
+    startTurn: (request, turnOptions) =>
+      agentRunner.startTurn(request, turnOptions),
+    clones: deckClones,
+    readsFiles: (cli) =>
+      agentCliAdapters.find((adapter) => adapter.id === cli)?.conversation
+        .readsFiles ?? false,
   });
 
   /** A Deck pull request's threads, for the agent's `read_threads`. */
@@ -2122,6 +2197,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     flushDeckCache: () => deckService.cache.flush(),
     removePluginData,
     folderResolver,
+    deckClones,
     events,
     openSockets: new Set(),
     cutOffSockets: new WeakSet(),
@@ -4838,14 +4914,32 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           typed_question: payload.question !== undefined,
         },
       });
+      // The window stopped the ask while its clone was prepared: git stops too.
+      const stop = new AbortController();
+      response.once("close", () => {
+        if (!response.writableFinished) stop.abort();
+      });
       try {
-        const asked = await deckAsks.ask({ pluginId, connectionId }, payload);
-        unit.set({ deck: { cached: asked.kind === "answer" } });
+        const { cloneFact, ...asked } = await deckAsks.ask(
+          { pluginId, connectionId },
+          payload,
+          stop.signal,
+        );
+        unit.set({
+          deck: {
+            cached: asked.kind === "answer",
+            ...(cloneFact ? { clone: cloneFact } : {}),
+          },
+        });
         if (asked.kind === "turn") {
           unit.set({ agent: { turn_id: asked.turn.id } });
         }
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
       } catch (error) {
+        if (error instanceof DeckAskStopped) {
+          unit.refuse("client_closed");
+          return;
+        }
         if (error instanceof DeckAskRefused) {
           unit.refuse(error.eventReason);
           writeJson(response, error.status, error.body);
@@ -4888,6 +4982,88 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         consentedAt: Date.now(),
       });
       writeJson(response, 200, { consents: await storage.getDeckConsents() });
+    },
+
+    deckCloneSuggestions: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(
+        request,
+        deckCloneSuggestionsRequestSchema,
+      );
+      const clone = (await deckClones.clones()).find(
+        (candidate) =>
+          candidate.pluginId === pluginId &&
+          candidate.connectionId === connectionId &&
+          candidate.repository === payload.repository,
+      );
+      const folders = await knownFolders();
+      const suggestions = await deckClones.suggest(payload.clone, folders);
+      unit.set({
+        deck: {
+          folder_count: folders.length,
+          suggestion_count: suggestions.length,
+          clone_chosen: clone !== undefined,
+        },
+      });
+      writeJson(response, 200, { ...(clone ? { clone } : {}), suggestions });
+    },
+
+    deckCloneChoose: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckCloneChooseRequestSchema);
+      // Only a folder Ajour already knows: another comes from the chooser.
+      const folder = (await knownFolders()).find(
+        (candidate) => candidate.id === payload.folderId,
+      );
+      if (!folder) {
+        unit.refuse("not_found");
+        writeJson(response, 404, {
+          reason: "clone_refused",
+          error: "Ajour no longer knows that folder.",
+        });
+        return;
+      }
+      await deckClones
+        .choose(
+          { pluginId, connectionId, repository: payload.repository },
+          payload.clone,
+          folder.path,
+        )
+        .then(
+          (clone) => {
+            unit.set({ deck: { clone_environment: clone.environment.kind } });
+            writeJson(response, 200, { clone });
+          },
+          (error: unknown) => {
+            if (!(error instanceof DeckCloneRefused)) throw error;
+            unit.refuse("clone_refused");
+            writeJson(response, 400, {
+              reason: "clone_refused",
+              error: error.message,
+            });
+          },
+        );
+    },
+
+    deckClones: async ({ response, unit }) => {
+      const clones = await deckClones.clones();
+      unit.set({ deck: { clone_count: clones.length } });
+      writeJson(response, 200, { clones });
+    },
+
+    deckCloneForget: async ({ request, response, unit }) => {
+      const payload = await readRequest(request, deckCloneForgetRequestSchema);
+      unit.set({
+        plugin: { id: payload.pluginId },
+        connection: { id: payload.connectionId },
+      });
+      // As Revoke does: the list comes back whether or not one was forgotten.
+      if (!(await deckClones.forget(payload))) unit.refuse("not_found");
+      writeJson(response, 200, { clones: await deckClones.clones() });
     },
 
     deckConsents: async ({ response, unit }) => {
@@ -4968,6 +5144,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         deck: { removed_count: before.entryCount - cleared.entryCount },
       });
       writeJson(response, 200, cleared);
+    },
+    // The page never names the folder: the API opens its own.
+    deckStorageOpenKept: async ({ response, unit }) => {
+      const shown = await (options.openFolder
+        ? options.openFolder(deckClones.worktreesFolder).then(
+            () => true,
+            () => false,
+          )
+        : false);
+      if (!shown) {
+        unit.refuse("open_failed");
+        writeJson(response, 409, {
+          error: "Ajour couldn't show this folder in the file manager.",
+        });
+        return;
+      }
+      writeJson(response, 200, { ok: true });
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {
@@ -6555,6 +6748,14 @@ export async function startAppApiServer(
   if (options.reportProcessCrashes) {
     runtime.stopWatchingCrashes = watchProcessCrashes(runtime.events);
   }
+  // What an earlier run left of Deck's worktrees in the user's clones goes
+  // once the API listens (#795), and once the first request has loaded the
+  // state that says which clones the user chose: the sweep never loads it
+  // itself, so the load stays that request's, with its one event.
+  runtime.deckClonesSwept = runtime.storage
+    .whenStateLoaded()
+    .then(() => runtime.deckClones.sweepAtStart())
+    .catch(() => undefined);
 
   return server;
 }
@@ -6684,7 +6885,48 @@ export async function stopAppApiServer(server: Server): Promise<void> {
   }
 }
 
+/**
+ * The desktop's chooser picked a folder as a repository's clone (#795). Only
+ * Electron main calls this, with a path from the native dialog: the window
+ * can't name a folder Ajour doesn't already know. The folder is kept only
+ * once git says it is a clone whose remote names the repository.
+ */
+export async function chooseDeckCloneForServer(
+  server: Server,
+  repository: DeckCloneRepository,
+  source: unknown,
+  chosenPath: string,
+): Promise<{ clone: DeckClone } | { refused: string }> {
+  const runtime = appApiRuntimesByServer.get(server);
+  if (!runtime || runtime.stopping)
+    throw new Error("Choosing a clone needs the active desktop app.");
+  const parsed = deckCloneSourceSchema.safeParse(source);
+  if (!parsed.success) throw new Error("Choose a repository.");
+  try {
+    return {
+      clone: await runtime.deckClones.choose(
+        repository,
+        parsed.data,
+        chosenPath,
+      ),
+    };
+  } catch (error) {
+    if (error instanceof DeckCloneRefused) return { refused: error.message };
+    throw error;
+  }
+}
+
 /** Main-owned chooser entry point. No HTTP endpoint accepts a path. */
+/**
+ * Resolves once the start's sweep of Deck's worktrees has finished. It
+ * loads the state first, as the window's first request would.
+ */
+export async function deckClonesSweptForServer(server: Server) {
+  const runtime = appApiRuntimesByServer.get(server);
+  await runtime?.storage.getDeckClones();
+  await runtime?.deckClonesSwept;
+}
+
 export async function addRepositoryFolderForServer(
   server: Server,
   projectId: string,

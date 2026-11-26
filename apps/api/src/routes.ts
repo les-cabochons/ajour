@@ -499,6 +499,12 @@ export const ROUTES = {
     path: "/api/deck/storage/clear",
     name: "deck.storage_clear",
   },
+  // The folder of the clone worktrees Deck kept, in the file manager.
+  deckStorageOpenKept: {
+    method: "POST",
+    path: "/api/deck/storage/kept/open",
+    name: "deck.storage_open_kept",
+  },
   deckAsk: {
     method: "POST",
     path: "/api/deck/:pluginId/connections/:connectionId/ask",
@@ -513,6 +519,26 @@ export const ROUTES = {
     method: "GET",
     path: "/api/deck/consents",
     name: "deck.consents",
+  },
+  deckCloneSuggestions: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/clone/suggestions",
+    name: "deck.clone_suggestions",
+  },
+  deckCloneChoose: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/clone",
+    name: "deck.clone_choose",
+  },
+  deckClones: {
+    method: "GET",
+    path: "/api/deck/clones",
+    name: "deck.clones",
+  },
+  deckCloneForget: {
+    method: "POST",
+    path: "/api/deck/clones/forget",
+    name: "deck.clone_forget",
   },
   deckConsentRevoke: {
     method: "POST",

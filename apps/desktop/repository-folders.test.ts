@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const {
   protectedRepositoryFolders,
   createFolderChooser,
+  createCloneChooser,
 } = require("./electron/repository-folders.cjs");
 it.each(["win32", "darwin", "development"])(
   "protects data, install, CLI and override locations for %s",
@@ -141,6 +142,50 @@ it("refuses foreign senders and invalid projects before opening, records cancel 
   show.mockResolvedValue({ canceled: false, filePaths: ["/work/repo"] });
   await choose(window, "p");
   expect(add).toHaveBeenCalledWith("p", "/work/repo");
+});
+
+it("chooses a Deck clone: refuses foreign senders and unnamed repositories, records cancel and passes only the chosen path", async () => {
+  const show = vi.fn().mockResolvedValue({ canceled: true, filePaths: [] });
+  const choose = vi.fn().mockResolvedValue({ clone: { path: "/work/api" } });
+  const cancel = vi.fn();
+  const window = { webContents: { mainFrame: {} } };
+  const chooser = createCloneChooser({
+    window: () => window,
+    assertSender: (event: unknown) => {
+      if (event !== window) throw new Error("refused");
+    },
+    show,
+    choose,
+    cancel,
+  });
+  const request = {
+    pluginId: "github",
+    connectionId: "c1",
+    repository: "acme/api",
+    clone: {
+      repositoryIdentity: { cloneUrls: ["https://github.com/acme/api.git"] },
+    },
+  };
+  await expect(chooser({}, request)).rejects.toThrow("refused");
+  await expect(chooser(window, { ...request, repository: 42 })).rejects.toThrow(
+    "repository",
+  );
+  expect(show).not.toHaveBeenCalled();
+  expect(await chooser(window, request)).toBeNull();
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(show).toHaveBeenCalledWith(window, {
+    title: "Choose your clone of acme/api",
+    properties: ["openDirectory"],
+  });
+  show.mockResolvedValue({ canceled: false, filePaths: ["/work/api"] });
+  expect(await chooser(window, { ...request, path: "/elsewhere" })).toEqual({
+    clone: { path: "/work/api" },
+  });
+  expect(choose).toHaveBeenCalledWith(
+    { pluginId: "github", connectionId: "c1", repository: "acme/api" },
+    request.clone,
+    "/work/api",
+  );
 });
 
 it("Given the registered main handler, refuses other senders and frames, validates projects and records cancellation", async () => {

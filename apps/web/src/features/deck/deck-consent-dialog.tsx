@@ -54,6 +54,9 @@ export function DeckConsentDialog({
             <li>the changed lines the question is about;</li>
             <li>any other hunks and changed files it reads;</li>
             <li>the review threads and their comments;</li>
+            <li>
+              the files it reads in your local clone, when you choose one;
+            </li>
             <li>your question, when you type one.</li>
           </ul>
           <p className="mt-2 text-muted-foreground">

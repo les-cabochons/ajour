@@ -856,6 +856,12 @@ export type CodeHostOperations = {
         baseRef?: string | undefined;
         headRef?: string | undefined;
         baseSha?: string | undefined;
+        repositoryIdentity?:
+          | {
+              cloneUrls: string[];
+              source?: { repository: string; cloneUrls: string[] } | undefined;
+            }
+          | undefined;
         lastPushActor?:
           | {
               login: string;
