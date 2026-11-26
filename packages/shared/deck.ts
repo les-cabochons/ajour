@@ -536,6 +536,11 @@ export const deckNeedsConsentSchema = z.object({
   reason: z.literal("needs_consent"),
   repository: z.string(),
   provider: deckAgentProviderSchema,
+  /**
+   * The repository is allowed for questions only, and a regroup sends more:
+   * the dialog says why it asks again.
+   */
+  again: z.literal("regroup").optional(),
 });
 export type DeckNeedsConsent = z.infer<typeof deckNeedsConsentSchema>;
 
@@ -591,6 +596,15 @@ export const deckGuideResponseSchema = z.object({
 });
 export type DeckGuideResponse = z.infer<typeof deckGuideResponseSchema>;
 
+/**
+ * What a repository's consent covers (#794). `code`: the changed lines, the
+ * hunks and files the agent reads, the review threads and the question, all
+ * the dialog said before Regroup. `context`: those, and the pull request's
+ * description and linked tickets a regroup sends, as the dialog says now.
+ */
+export const deckConsentCoversSchema = z.enum(["code", "context"]);
+export type DeckConsentCovers = z.infer<typeof deckConsentCoversSchema>;
+
 /** The user allowed asks about a repository's pull requests, with one agent. */
 export const deckAgentConsentSchema = z.object({
   pluginId: z.string().min(1),
@@ -598,6 +612,8 @@ export const deckAgentConsentSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
   /** The agent allowed. Another one asks again. */
   cli: agentCliIdSchema,
+  /** One recorded before Regroup has none, and covers the code. */
+  covers: deckConsentCoversSchema.default("code"),
   cliVersion: z.string().max(120).optional(),
   consentedAt: z.number().int().nonnegative(),
 });

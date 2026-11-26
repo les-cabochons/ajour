@@ -295,7 +295,8 @@ export class AgentRunner {
 
   /**
    * The turn running in the conversation whose client is `clientId`, as a
-   * call of its tools reads it (#794), or undefined between turns.
+   * call of its tools reads it (#794), or undefined between turns and once
+   * it is being stopped.
    */
   runningTurnOf(clientId: string) {
     return this.conversations.runningTurnOf(clientId);

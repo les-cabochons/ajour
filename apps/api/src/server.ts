@@ -2162,7 +2162,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
    */
   const deckGuideRuns = createDeckGuideRuns({
     deck: deckService,
-    requireConsent: (pullRequest) => deckAsks.requireTurnConsent(pullRequest),
+    requireConsent: (pullRequest) =>
+      deckAsks.requireTurnConsent(pullRequest, "context"),
     allowed: (binding) =>
       deckAsks.allowedWith(binding.pullRequest, binding.cli),
     runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
@@ -5018,6 +5019,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         repository: payload.repository,
         cli: cli.id,
         ...(cli.version ? { cliVersion: cli.version } : {}),
+        // The dialog lists the description and tickets a regroup sends.
+        covers: "context",
         consentedAt: Date.now(),
       });
       writeJson(response, 200, { consents: await storage.getDeckConsents() });

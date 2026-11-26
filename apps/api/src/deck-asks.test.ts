@@ -6,8 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import {
   DECK_LINES_DEFAULT_QUESTION,
+  deckAgentConsentSchema,
   deckPullRequestKey,
 } from "../../../packages/shared/deck.ts";
+import { createDeckAsks } from "./deck-asks.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import {
   fakeCliAdapter,
@@ -378,6 +380,8 @@ describe("consent", () => {
           connectionId: api.connectionId,
           repository: REPOSITORY,
           cli: "claude-code",
+          // The dialog says a regroup sends the description and tickets too.
+          covers: "context",
         }),
       ]);
     },
@@ -707,6 +711,87 @@ describe("answers", () => {
       expect(await api.launches()).toEqual([]);
     },
   );
+});
+
+describe("a consent's scope", () => {
+  const pullRequest = deckPullRequestKey({
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    number: 482,
+  });
+  /** A consent as the dialog before Regroup recorded it: no scope. */
+  const before = {
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    cli: "claude-code",
+    consentedAt: 1_795_600_000_000,
+  };
+  const asksWith = (stored: unknown[]) =>
+    createDeckAsks({
+      storage: {
+        getDeckConsents: async () =>
+          stored.map((consent) => deckAgentConsentSchema.parse(consent)),
+        getAgentRunnerSettings: async () => ({ cli: "claude-code" }),
+      },
+      selectedCli: async () => ({
+        id: "claude-code",
+        label: "Claude Code",
+        supported: true,
+        installed: true,
+        version: "2.1.0",
+      }),
+      deck: { held: async () => undefined },
+      startTurn: async () => {
+        throw new Error("No turn starts here.");
+      },
+    });
+
+  it("reads a consent stored before Regroup as covering the code only", () => {
+    expect(deckAgentConsentSchema.parse(before).covers).toBe("code");
+  });
+
+  it("lets asks through with it, and asks again before a regroup sends more", async () => {
+    const asks = asksWith([before]);
+
+    await expect(asks.requireTurnConsent(pullRequest)).resolves.toBeUndefined();
+    await expect(
+      asks.requireTurnConsent(pullRequest, "context"),
+    ).rejects.toMatchObject({
+      status: 409,
+      body: {
+        reason: "needs_consent",
+        repository: REPOSITORY,
+        provider: {
+          cli: "claude-code",
+          label: "Claude Code",
+          version: "2.1.0",
+        },
+        again: "regroup",
+      },
+    });
+  });
+
+  it("lets a regroup through once the consent covers the context", async () => {
+    const asks = asksWith([{ ...before, covers: "context" }]);
+
+    await expect(
+      asks.requireTurnConsent(pullRequest, "context"),
+    ).resolves.toBeUndefined();
+    await expect(asks.requireTurnConsent(pullRequest)).resolves.toBeUndefined();
+  });
+
+  it("asks a repository never allowed without saying it asks again", async () => {
+    const asks = asksWith([]);
+
+    const refused = await asks
+      .requireTurnConsent(pullRequest, "context")
+      .catch((error: unknown) => error);
+
+    expect(refused).toMatchObject({ body: { reason: "needs_consent" } });
+    expect((refused as { body: object }).body).not.toHaveProperty("again");
+  });
 });
 
 describe("the agent's reads", () => {

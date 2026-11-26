@@ -13,7 +13,8 @@ import {
 /**
  * The once-per-repository consent of Deck's asks (#791): it names the agent
  * and its version and says what leaves the machine. Allow records it; Not
- * now sends nothing.
+ * now sends nothing. A repository allowed before Regroup sent more asks
+ * again before its first regroup (#794), and says why.
  */
 export function DeckConsentDialog({
   request,
@@ -39,10 +40,13 @@ export function DeckConsentDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>
             {request
-              ? `Ajour asks once for ${repositoryName(request.repository)}`
+              ? `Ajour asks ${request.again ? "again" : "once"} for ${repositoryName(request.repository)}`
               : null}
           </AlertDialogTitle>
           <AlertDialogDescription>
+            {request?.again
+              ? "You allowed questions about this repository. A regroup also sends the pull request's description and its linked tickets, so Ajour asks again. "
+              : null}
             To answer, Ajour sends this repository's pull requests to {provider}
             , which runs on your computer and sends what it reads to its
             provider.

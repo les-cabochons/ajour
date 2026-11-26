@@ -85,7 +85,7 @@ Each concern's reason ends with a faint **more ›**. Click it and the question 
 
 Each line of the summary ends with the same **more ›**, which asks about that line.
 
-The first time you ask about a repository's pull request, Ajour asks once whether to send its code to that agent, and lists what leaves your computer: the changed lines, any other changed files the agent reads, the review threads, and for a regroup the pull request's description and linked tickets. Nothing is sent before you ask. **Settings › Agents › Questions about pull requests** lists the repositories you allowed, with **Revoke**, which also stops an answer being written for that repository. The agent reads only that pull request, at that commit, and none of your other Ajour data, so MCP doesn't need to be on. While a timesheet agent task runs, the answer waits for it to finish.
+The first time you ask about a repository's pull request, Ajour asks once whether to send its code to that agent, and lists what leaves your computer: the changed lines, any other changed files the agent reads, the review threads, and for a regroup the pull request's description and linked tickets. A repository you allowed before Deck could regroup a guide asks again before its first regroup. Nothing is sent before you ask. **Settings › Agents › Questions about pull requests** lists the repositories you allowed, with **Revoke**, which also stops an answer being written for that repository. The agent reads only that pull request, at that commit, and none of your other Ajour data, so MCP doesn't need to be on. While a timesheet agent task runs, the answer waits for it to finish.
 
 ## Regroup the guide
 

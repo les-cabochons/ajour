@@ -1070,12 +1070,14 @@ export function createDeckService(options: {
    * The summary's rules run on concerns an agent grouped (#794), in the
    * guide worker, ahead of preloads: each concern's kinds, its test
    * coverage, the risky areas and the leftovers. Undefined when Deck no
-   * longer holds the pull request at `head`.
+   * longer holds the pull request at `head`; once `signal` aborts, the
+   * build stops and rejects with `GuideBuildCancelled`.
    */
   async function rulesFor(
     pullRequest: string,
     head: string,
     concerns: GroupedConcern[],
+    signal?: AbortSignal,
   ): Promise<GuideJobBuilt | undefined> {
     const source = parseDeckPullRequestKey(pullRequest);
     if (!source) return undefined;
@@ -1085,6 +1087,7 @@ export function createDeckService(options: {
       `${deckCacheKeyString(found.key)} regroup ${++regroups}`,
       { ...found.versions, concerns },
       "open",
+      signal,
     );
   }
 

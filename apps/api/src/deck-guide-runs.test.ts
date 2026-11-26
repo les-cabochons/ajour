@@ -140,12 +140,33 @@ async function createCodeHostPlugin(
   return directory;
 }
 
-const submit = (input: unknown) => ({
-  mcp: {
-    method: "tools/call",
-    params: { name: "submit_guide", arguments: input },
-  },
+const submitCall = (input: unknown) => ({
+  method: "tools/call",
+  params: { name: "submit_guide", arguments: input },
 });
+const submit = (input: unknown) => ({ mcp: submitCall(input) });
+
+/**
+ * The guide runtime with each regroup's build held until `release`:
+ * `regrouping` resolves once one is asked for.
+ */
+function heldRegroupRuntime() {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let started!: () => void;
+  const regrouping = new Promise<void>((resolve) => (started = resolve));
+  const runtime: DeckGuideRuntime = {
+    async build(input, signal) {
+      if (input.concerns) {
+        started();
+        await released;
+      }
+      return guideRuntime.build(input, signal);
+    },
+    close: async () => {},
+  };
+  return { runtime, regrouping, release };
+}
 
 /** A guide that keeps every rule: the code, then its test. */
 const regrouped = (
@@ -188,6 +209,7 @@ async function startGuideApi(
     consent = true,
     /** The guide's build can't read the tickets; the regroup's read can. */
     ticketsFailFirst = false,
+    runtime = guideRuntime,
   } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-guide-"));
@@ -206,7 +228,7 @@ async function startGuideApi(
     developmentPluginDirectories: [
       await createCodeHostPlugin(root, tickets, ticketsFailFirst),
     ],
-    deckGuideRuntime: guideRuntime,
+    deckGuideRuntime: runtime,
     agentCliPath: bin,
     agentCliAdapters: [
       fakeCliAdapter([{ exit: 0 }], report, () => mcpUrl, conversation),
@@ -269,6 +291,16 @@ async function startGuideApi(
         await apiRequest(api.baseUrl, `${deck}/guide`, { ...ref, head: HEAD })
       ).body.guide;
     },
+    stop(turnId: string) {
+      return apiRequest(api.baseUrl, `/api/agent-turns/${turnId}/cancel`, {});
+    },
+    revoke() {
+      return apiRequest(api.baseUrl, "/api/deck/consents/revoke", {
+        pluginId: "github",
+        connectionId,
+        repository: REPOSITORY,
+      });
+    },
     revert() {
       return apiRequest(api.baseUrl, `${deck}/guide/revert`, {
         ...ref,
@@ -309,6 +341,18 @@ async function startGuideApi(
       return (await reportLines()).filter(
         (line) => typeof line.pid === "number",
       );
+    },
+    /** Waits for the `submit_guide` call's event: its call answered. */
+    async submitAnswered() {
+      const called = () =>
+        api.events.find(
+          (event) =>
+            event.name === "agent_tool.call" &&
+            (event as { agent_tool?: { name?: string } }).agent_tool?.name ===
+              "submit_guide",
+        );
+      while (!called()) await new Promise((resolve) => setTimeout(resolve, 20));
+      return called()!;
     },
     async mcpReplies() {
       return (await reportLines()).flatMap((line) =>
@@ -554,6 +598,107 @@ describe("a regroup", () => {
       expect(replyText(refused!)).toContain(
         "submit_guide answers only while Ajour regroups",
       );
+      expect((await api.guide()).madeWith).toBe("code");
+    },
+  );
+
+  it(
+    "saves one guide of two submitted at once",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startGuideApi(() => [
+        { readTurn: true },
+        {
+          mcp: [
+            submitCall(regrouped()),
+            submitCall(
+              regrouped((input) => {
+                input.concerns[0]!.title = "Shout it";
+              }),
+            ),
+          ],
+        },
+        { waitForInterrupt: true },
+        { result: true },
+        { readTurn: true },
+      ]);
+
+      const started = await api.regroup();
+
+      expect(await api.endingOf(started.body.turn.id)).toMatchObject({
+        outcome: "done",
+      });
+      const [batch] = await api.mcpReplies();
+      const replies = batch!.reply as { result: any }[];
+      const saved = replies.filter(
+        (reply) => reply.result.structuredContent?.saved === true,
+      );
+      expect(saved).toHaveLength(1);
+      const refused = replies.find((reply) => reply.result.isError);
+      expect(replyText({ reply: refused })).toContain("already saved");
+      const savedTitle =
+        replies.indexOf(saved[0]!) === 0 ? "Shout the second line" : "Shout it";
+      expect((await api.guide()).concerns[0].title).toBe(savedTitle);
+    },
+  );
+
+  it(
+    "saves nothing once the turn is stopped while the guide is built, though the user went back to the built one meanwhile",
+    { timeout: 30_000 },
+    async () => {
+      const held = heldRegroupRuntime();
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(regrouped()),
+          { result: true },
+          { readTurn: true },
+        ],
+        { runtime: held.runtime },
+      );
+      const started = await api.regroup();
+      await held.regrouping;
+
+      expect((await api.stop(started.body.turn.id)).status).toBe(200);
+      expect((await api.revert()).status).toBe(200);
+      held.release();
+
+      await api.submitAnswered();
+      await api.endingOf(started.body.turn.id);
+      expect((await api.guide()).madeWith).toBe("code");
+    },
+  );
+
+  it(
+    "saves nothing once the repository's consent is revoked while the guide is built",
+    { timeout: 30_000 },
+    async () => {
+      const held = heldRegroupRuntime();
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(regrouped()),
+          { result: true },
+          { readTurn: true },
+        ],
+        { runtime: held.runtime },
+      );
+      const started = await api.regroup();
+      await held.regrouping;
+
+      expect((await api.revoke()).status).toBe(200);
+      held.release();
+
+      // The revoke ended the CLI, so its call is never answered: the
+      // regroup's build ends, then what the submission does after it.
+      await api.endingOf(started.body.turn.id);
+      while (
+        api.events.filter((event) => event.name === "deck.guide_build").length <
+        2
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
       expect((await api.guide()).madeWith).toBe("code");
     },
   );

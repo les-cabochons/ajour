@@ -16,6 +16,7 @@ import {
   repositoryName,
   sameLinePoint,
   type DeckAgentConsent,
+  type DeckConsentCovers,
   type DeckAskAnchor,
   type DeckAskRequest,
   type DeckAskResponse,
@@ -232,10 +233,14 @@ export function createDeckAsks(options: DeckAsksOptions) {
   ) =>
     JSON.stringify([pullRequest, head, ...anchorKey(anchor), question ?? null]);
 
-  /** Whether the user allowed the repository with this agent. */
+  /**
+   * Whether the user allowed the repository with this agent, for what
+   * `covers` names: a consent that covers the context covers the code too.
+   */
   async function consentedWith(
     source: DeckPullRequestSource,
     cli: AgentCliId | null,
+    covers: DeckConsentCovers = "code",
   ) {
     if (!cli) return false;
     const consents = await options.storage.getDeckConsents();
@@ -244,27 +249,37 @@ export function createDeckAsks(options: DeckAsksOptions) {
         consent.pluginId === source.pluginId &&
         consent.connectionId === source.connectionId &&
         consent.repository === source.repository &&
-        consent.cli === cli,
+        consent.cli === cli &&
+        (covers === "code" || consent.covers === "context"),
     );
   }
 
   /**
    * Refuses unless the user allowed the pull request's repository with the
-   * agent Settings › Agents picks. The check reads only the saved choices, so
-   * a cached answer shows at once; the refusal names the agent and its
-   * version. Throws an AgentRunError when no agent is picked or installed,
-   * as the turn's start would.
+   * agent Settings › Agents picks, for what `covers` names. The check reads
+   * only the saved choices, so a cached answer shows at once; the refusal
+   * names the agent and its version, and says when the repository is
+   * allowed for the code only. Throws an AgentRunError when no agent is
+   * picked or installed, as the turn's start would.
    */
-  async function requireConsent(source: DeckPullRequestSource) {
+  async function requireConsent(
+    source: DeckPullRequestSource,
+    covers: DeckConsentCovers,
+  ) {
     const { cli: picked } = await options.storage.getAgentRunnerSettings();
-    if (await consentedWith(source, picked)) return;
+    if (await consentedWith(source, picked, covers)) return;
     const cli = await options.selectedCli();
     if (!cli) throw new AgentRunError(PICK_AN_AGENT, 400);
     if (!cli.installed) {
       throw new AgentRunError(`${cli.label} is not installed.`, 400);
     }
+    const again =
+      covers === "context" && (await consentedWith(source, cli.id, "code"));
+    const name = repositoryName(source.repository);
     throw new DeckTurnRefused(409, {
-      error: `Ajour asks once for ${repositoryName(source.repository)} before it sends its code to ${cli.label}.`,
+      error: again
+        ? `Ajour asks again for ${name} before a regroup sends its description and linked tickets to ${cli.label}.`
+        : `Ajour asks once for ${name} before it sends its code to ${cli.label}.`,
       reason: "needs_consent",
       repository: source.repository,
       provider: {
@@ -272,14 +287,16 @@ export function createDeckAsks(options: DeckAsksOptions) {
         label: cli.label,
         ...(cli.version ? { version: cli.version } : {}),
       },
+      ...(again ? { again: "regroup" as const } : {}),
     });
   }
 
   return {
     /**
      * Whether a pull request's repository is allowed now with `cli`, the
-     * agent a conversation runs: asked before each turn is sent to it, and
-     * at each of its reads. Another agent's consent never counts.
+     * agent a conversation runs, whatever the consent covers: asked before
+     * each turn is sent to it, and at each of its reads. Another agent's
+     * consent never counts.
      */
     async allowedWith(pullRequest: string, cli: AgentCliId | undefined) {
       const source = parseDeckPullRequestKey(pullRequest);
@@ -288,9 +305,13 @@ export function createDeckAsks(options: DeckAsksOptions) {
 
     /**
      * The gate of every core turn, whoever starts it: a turn about anything
-     * but a Deck pull request whose repository the user allowed is refused.
+     * but a Deck pull request whose repository the user allowed, for what
+     * `covers` names, is refused. A regroup's turn needs the context.
      */
-    async requireTurnConsent(pullRequest: string) {
+    async requireTurnConsent(
+      pullRequest: string,
+      covers: DeckConsentCovers = "code",
+    ) {
       const source = parseDeckPullRequestKey(pullRequest);
       if (!source) {
         throw new DeckTurnRefused(404, {
@@ -298,7 +319,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "not_open",
         });
       }
-      await requireConsent(source);
+      await requireConsent(source, covers);
     },
 
     /** Answers an ask from the cache, or starts the turn that answers it. */
@@ -311,7 +332,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         repository: request.repository,
         number: request.number,
       };
-      await requireConsent(pullRequestSource);
+      await requireConsent(pullRequestSource, "code");
       const pullRequest = deckPullRequestKey(pullRequestSource);
       const key = cacheKey(
         pullRequest,

@@ -360,6 +360,38 @@ it("asks for the repository's consent before the first regroup", async () => {
   );
 });
 
+it("asks again in a repository allowed before Regroup, saying a regroup sends more", async () => {
+  vi.mocked(api.regroupDeckGuide)
+    .mockRejectedValueOnce(
+      new AppApiError("Ajour asks again.", 409, undefined, {
+        error: "Ajour asks again.",
+        reason: "needs_consent",
+        repository: "acme/billing-api",
+        provider: { cli: "claude-code", label: "Claude Code", version: "2.1" },
+        again: "regroup",
+      }),
+    )
+    .mockResolvedValueOnce({ turn: turnOf("r4") });
+  vi.mocked(api.grantDeckConsent).mockResolvedValue({ consents: [] });
+  await renderPage();
+
+  fireEvent.click(within(changes()).getByRole("button", { name: "Regroup…" }));
+  fireEvent.submit(
+    within(changes())
+      .getByRole("textbox", { name: "Instruction" })
+      .closest("form")!,
+  );
+  const dialog = await screen.findByRole("alertdialog", {
+    name: "Ajour asks again for billing-api",
+  });
+  expect(dialog.textContent).toContain(
+    "You allowed questions about this repository. A regroup also sends the pull request's description and its linked tickets, so Ajour asks again.",
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
+
+  await waitFor(() => expect(api.regroupDeckGuide).toHaveBeenCalledTimes(2));
+});
+
 it("labels the agent's guide, and its link goes back to the guide built from the code", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(opened(AGENT));
   vi.mocked(api.revertDeckGuide).mockResolvedValue({ guide: BUILT });

@@ -339,7 +339,8 @@ export class AgentConversations {
   /**
    * The turn running now in the conversation whose client is `clientId`,
    * once it is sent to its CLI: what a call of that client's tools is part
-   * of. Undefined between turns, and for any other client.
+   * of. Undefined between turns, once the turn is being stopped, and for
+   * any other client.
    */
   runningTurnOf(
     clientId: string,
@@ -351,6 +352,9 @@ export class AgentConversations {
     if (conversation.client?.id !== clientId) return undefined;
     const turn = conversation.turns[0];
     if (!turn?.started || turn.settled || !turn.process) return undefined;
+    // A turn the user stopped, or that stalled, runs only until its CLI
+    // ends; one completed is done already.
+    if (turn.stopReason && turn.stopReason !== "completed") return undefined;
     return {
       id: turn.id,
       task: turn.task,
