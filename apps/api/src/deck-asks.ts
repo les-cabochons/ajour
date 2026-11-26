@@ -430,6 +430,8 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "not_open",
         });
       }
+      // A stop that came while the ask waited starts no turn.
+      if (signal?.aborted) throw new DeckAskStopped();
       const turn = await options.startTurn(
         {
           task: "deck.ask",
