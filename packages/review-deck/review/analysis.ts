@@ -22,11 +22,23 @@ export interface FileContents {
 }
 
 export function buildDiff(changes: FileChange[], contents: Map<string, FileContents>): string {
-  return changes.map((c) => fileDiff(c, contents.get(c.path)!)).join("");
+  return changes.map((c) => fileDiff(c, contents.get(c.path)!)!).join("");
 }
 
-/** One file's section of a `git diff -M` style patch, so the shared diff parser can consume it. */
-function fileDiff(change: FileChange, content: FileContents): string {
+/**
+ * Ajour: the most one file's diff may cost, passed to jsdiff as is (VENDORED.md). `timeout` is in milliseconds,
+ * `maxEditLength` in added and removed lines.
+ */
+export interface DiffBudget {
+  timeout?: number;
+  maxEditLength?: number;
+}
+
+/**
+ * One file's section of a `git diff -M` style patch, so the shared diff parser can consume it.
+ * Ajour: exported, and undefined once its diff passes `budget` (VENDORED.md).
+ */
+export function fileDiff(change: FileChange, content: FileContents, budget: DiffBudget = {}): string | undefined {
   const oldPath = change.originalPath ?? change.path;
   const head = [`diff --git a/${oldPath} b/${change.path}`];
   if (change.changeType === "add") head.push("new file mode 100644");
@@ -39,7 +51,8 @@ function fileDiff(change: FileChange, content: FileContents): string {
   }
   if (content.old === content.new) return `${head.join("\n")}\n`;
 
-  const patch = structuredPatch(oldPath, change.path, content.old ?? "", content.new ?? "", "", "", { context: 3 });
+  const patch = structuredPatch(oldPath, change.path, content.old ?? "", content.new ?? "", "", "", { context: 3, ...budget });
+  if (!patch) return undefined;
   const lines = [
     ...head,
     `--- ${change.changeType === "add" ? "/dev/null" : `a/${oldPath}`}`,

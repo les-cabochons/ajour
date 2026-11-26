@@ -46,6 +46,16 @@ export const deckFileStatusSchema = z.enum([
 ]);
 export type DeckFileStatus = z.infer<typeof deckFileStatusSchema>;
 
+/**
+ * A file whose diff would take longer than Deck gives one file: its lines
+ * in each version, 0 for a version it has none in.
+ */
+export const deckFileTooLargeSchema = z.object({
+  oldLines: lineNumberSchema,
+  newLines: lineNumberSchema,
+});
+export type DeckFileTooLarge = z.infer<typeof deckFileTooLargeSchema>;
+
 export const deckFileSchema = z.object({
   /** The head's path, or the base's for a deleted file. */
   path: pathSchema,
@@ -57,6 +67,8 @@ export const deckFileSchema = z.object({
    * shown without its lines.
    */
   binary: z.boolean(),
+  /** Too large to diff: shown without its lines, with their counts. */
+  tooLarge: deckFileTooLargeSchema.optional(),
   /** At least one. */
   hunks: z.array(deckHunkSchema).min(1),
 });

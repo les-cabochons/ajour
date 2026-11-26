@@ -15,6 +15,10 @@ The Azure DevOps plugin syncs your work items into Ajour's backlog, with their c
 3. In Ajour, open the plugin, turn it on if it is off, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 4. Press **Sync**. The items wait in [Sync review](/plugins/sync-review). Pick the ones you want and press **Sync selected to backlog**.
 
+::: info Azure DevOps Server
+On your own server, the Organization URL is the collection, such as `https://ado.contoso.com/tfs/DefaultCollection`. The plugin needs Azure DevOps Server 2022.1 or later; on an older server it says so instead of syncing.
+:::
+
 ::: tip
 Set an expiry date on the token. When it expires, the connection shows an error, and you paste a new token with **Edit**.
 :::

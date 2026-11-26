@@ -29,7 +29,7 @@ Not copied: `src/node/` (CLI, embedder, CLI titler), `src/render/`,
 off.
 
 Ajour's own files are the entry points `saved.ts`, `stack.ts`, `diff.ts`,
-`summary.ts`, `guide-job.ts` and `guide-worker.ts`, the block
+`summary.ts`, `guide-job.ts`, `guide-worker.ts`, `diff-job.ts` and `diff-worker.ts`, the block
 at the end of `pipeline.ts`, `ajour/deps.ts` and `ajour/summary.ts`, and the tests
 `build-diff.test.ts`, `deps-grammar.test.ts`, `deps-init.test.ts`,
 `description.test.ts` and `languages.test.ts`, which Ajour rewrote. The
@@ -40,8 +40,9 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
 - `pipeline.ts`: `runPipeline` and `buildDiff`, the config, the result types,
   and `createPipelineDeps`, Ajour's side of `PipelineDeps`.
 - `diff.ts`: `buildDiff` and `parseDiff`, which cut a pull request's hunks
-  with Review Deck's `path#index` ids, `hunkToPatch`, which writes one hunk
-  back as a patch for rendering, and their types. It loads no parser,
+  with Review Deck's `path#index` ids, `fileDiff` and its `DiffBudget`,
+  which write one file's part within a budget, `hunkToPatch`, which writes
+  one hunk back as a patch for rendering, and their types. It loads no parser,
   so Deck's service in the local API builds a diff without the pipeline
   (#779).
 - `summary.ts`: `summarizeRules`, Ajour's summary rules (#789). From the
@@ -54,6 +55,12 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   the pipeline in, one pull request at a time, with Ajour's `PipelineDeps`
   (#782), then the summary's rules (#789). It answers each job with the
   groups in reading order, their kinds, and the summary's lines.
+- `diff-worker.ts`: the worker thread Deck's service writes diffs in, off
+  the local API's main thread, each file with `fileDiff` within its budget:
+  its added and removed lines when both versions have lines, then its time.
+  A file past it is written as one too large to read, with git's
+  `index` line of its versions' hashes, and answered with its line counts.
+- `diff-job.ts`: that worker's messages and `DIFF_WORKER_URL`, types only.
 - `guide-job.ts`: the worker's messages and `GUIDE_WORKER_URL`. It imports only types,
   so the local API starts the worker without loading the pipeline,
   or type-checking it with its own settings.
@@ -87,6 +94,13 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
    `FileContents`. The worker job, progress and Azure DevOps backend stay
    upstream. `FileChange` and `ChangeType` come from upstream
    `extension/src/data/model.ts`, without the Azure DevOps object ids.
+   `fileDiff` is exported and takes an optional `DiffBudget`, jsdiff's own
+   `timeout` and `maxEditLength`, passed to `structuredPatch` as they are.
+   Past it, `structuredPatch` gives nothing and `fileDiff` answers
+   `undefined`, so Deck's diff worker writes the file as one too large to
+   read (#774's council: one rewritten lockfile blocked the local API for
+   seconds). `buildDiff` passes no budget, so it writes what it wrote
+   before; it only asserts `fileDiff`'s answer is there.
 6. **`ajour/deps.ts`** is new. `createPipelineDeps` gives the parsers, with
    each grammar's wasm resolved from its npm package in this package's install
    folder, the heuristic titler and no embedder. The parsers are made once per

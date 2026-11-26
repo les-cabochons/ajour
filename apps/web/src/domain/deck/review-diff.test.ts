@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeckFile, DeckHunk } from "@ajour/shared/deck";
 import {
   fileNote,
+  fileOnCodeHost,
   fileWithoutLines,
   hunkLabel,
   hunkRowCount,
@@ -57,6 +58,29 @@ describe("fileNote", () => {
 });
 
 describe("fileWithoutLines", () => {
+  it("says a file is too large to compare, with its lines in each version", () => {
+    const tooLarge = (
+      status: DeckFile["status"],
+      oldLines: number,
+      newLines: number,
+    ) =>
+      fileWithoutLines(
+        file({ status, tooLarge: { oldLines, newLines }, hunks: [pseudo] }),
+      );
+    expect(tooLarge("modified", 4_200, 4_210)).toBe(
+      "Not shown: too large to compare here, 4,200 lines before and 4,210 after.",
+    );
+    expect(tooLarge("renamed", 1, 4_210)).toBe(
+      "Not shown: too large to compare here, 1 line before and 4,210 after.",
+    );
+    expect(tooLarge("added", 0, 120_000)).toBe(
+      "Not shown: too large to compare here, 120,000 lines.",
+    );
+    expect(tooLarge("deleted", 1, 0)).toBe(
+      "Not shown: too large to compare here, 1 line.",
+    );
+  });
+
   it("says why a file shows no lines", () => {
     expect(fileWithoutLines(file({ binary: true, hunks: [pseudo] }))).toBe(
       "Not shown: a binary file, or one too large to read.",
@@ -106,5 +130,53 @@ describe("hunkLabel", () => {
 describe("hunkRowCount", () => {
   it("counts the rows after the @@ line", () => {
     expect(hunkRowCount(hunk())).toBe(4);
+  });
+});
+
+describe("fileOnCodeHost", () => {
+  it("links a GitHub file in the pull request's files, at GitHub's anchor for its path", async () => {
+    // GitHub's anchor is "diff-" and the SHA-256 of the path, in hex.
+    expect(
+      await fileOnCodeHost(
+        "https://github.com/acme/api/pull/12",
+        file({ path: "abc" }),
+      ),
+    ).toBe(
+      "https://github.com/acme/api/pull/12/files#diff-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    // A renamed file by its new path, a deleted one by its own.
+    expect(
+      await fileOnCodeHost(
+        "https://git.acme.test/acme/api/pull/12/",
+        file({ path: "abc", previousPath: "old.ts", status: "renamed" }),
+      ),
+    ).toBe(
+      "https://git.acme.test/acme/api/pull/12/files#diff-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    expect(
+      await fileOnCodeHost(
+        "https://github.com/acme/api/pull/12",
+        file({ path: "", status: "deleted" }),
+      ),
+    ).toBe(
+      "https://github.com/acme/api/pull/12/files#diff-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
+  });
+
+  it("links an Azure DevOps file in the pull request's files", async () => {
+    expect(
+      await fileOnCodeHost(
+        "https://dev.azure.com/acme/Web/_git/api/pullrequest/7",
+        file({ path: "src/a b.ts" }),
+      ),
+    ).toBe(
+      "https://dev.azure.com/acme/Web/_git/api/pullrequest/7?_a=files&path=%2Fsrc%2Fa%20b.ts",
+    );
+  });
+
+  it("links the pull request itself on a code host it doesn't know", async () => {
+    expect(
+      await fileOnCodeHost("https://code.acme.test/reviews/7", file()),
+    ).toBe("https://code.acme.test/reviews/7");
   });
 });

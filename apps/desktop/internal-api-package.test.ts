@@ -351,3 +351,54 @@ console.log(JSON.stringify({ errors, hunks: result.hunks.size, grammars: Object.
     "tree-sitter-typescript.wasm",
   ]);
 }, 120_000);
+
+it("ships Deck's diff worker, and a diff job runs in it from the shipped runtime", async () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-runtime-resources-"),
+  );
+  temporaryDirectories.push(root);
+  // The local API starts the worker by its URL beside `diff-job.ts`, so it
+  // must load from the shipped package, its jsdiff included: a rewritten
+  // lockfile comes back too large to compare and a small file with hunks.
+  const script = path.join(root, "diff.mjs");
+  await writeFile(
+    script,
+    `
+const { createWorkerDeckDiffs } = await import(${JSON.stringify(
+      pathToFileURL(path.join(runtimeRoot, "apps/api/src/deck-diffs.ts")).href,
+    )});
+const line = (index, tag) => '  "' + tag + "-" + index + '": "value",\\n';
+const old = Array.from({ length: 4200 }, (_, index) => line(index, "a"));
+const lock = old.map((text, index) => (index >= 100 && index < 4100 ? line(index, "b") : text));
+const file = (old, next) => ({ old, new: next, binary: false, tooLarge: false });
+const diffs = createWorkerDeckDiffs();
+const written = await diffs.write(
+  [{ path: "lock.json", changeType: "edit" }, { path: "a.ts", changeType: "edit" }],
+  new Map([["lock.json", file(old.join(""), lock.join(""))], ["a.ts", file("one\\n", "1\\n")]]),
+  "open",
+  new AbortController().signal,
+);
+await diffs.close();
+console.log(JSON.stringify({ tooLarge: [...written.tooLarge.keys()], hunks: written.text.includes("@@ -1,1 +1,1 @@") }));
+`,
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", "--no-warnings", script],
+    { encoding: "utf8", cwd: root },
+  );
+
+  expect(result.stderr.trim()).toBe("");
+  expect(JSON.parse(result.stdout.trim())).toEqual({
+    tooLarge: ["lock.json"],
+    hunks: true,
+  });
+}, 120_000);

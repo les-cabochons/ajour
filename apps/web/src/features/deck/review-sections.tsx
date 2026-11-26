@@ -1,9 +1,11 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { RiCheckLine as Check } from "@remixicon/react";
@@ -18,6 +20,7 @@ import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
+  fileOnCodeHost,
   fileWithoutLines,
   hunkLabel,
   hunkRowCount,
@@ -29,6 +32,7 @@ import {
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
+import { useCodeHostLink } from "./code-host-link";
 import { useHunkLines } from "./review-line-selection";
 import { highlightOfSelection, LinesToolbar } from "./review-lines";
 import { useReviewLines, type AddComment } from "./review-lines-context";
@@ -106,6 +110,7 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const note = inConcern ? fileNote(file) : undefined;
   // The page's selected lines and cited line, when they are in this hunk.
   const lines = useReviewLines();
+  const codeHost = useCodeHostLink();
   const shown = useHunkLines(lines?.selection, hunk.id);
   const onSelectLines = useMemo(
     () =>
@@ -170,7 +175,20 @@ export const ReviewHunkView = memo(function ReviewHunkView({
         <LinesToolbar selection={shown.selection} hunk={box} />
       ) : null}
       {viewed ? null : withoutLines ? (
-        <p className="deck-file-empty">{withoutLines}</p>
+        <p className="deck-file-empty">
+          {withoutLines}
+          {file.tooLarge && codeHost ? (
+            <>
+              {" "}
+              <FileOnCodeHostLink
+                pullRequestUrl={codeHost.pullRequestUrl}
+                path={file.path}
+              >
+                {`Open in ${codeHost.pluginName}`}
+              </FileOnCodeHostLink>
+            </>
+          ) : null}
+        </p>
       ) : (
         <DiffHunk
           hunkId={hunk.id}
@@ -190,6 +208,45 @@ export const ReviewHunkView = memo(function ReviewHunkView({
     </div>
   );
 });
+
+/**
+ * A link to a file in the pull request's files on the code host. Its
+ * address takes a hash to find, so it links the pull request until then.
+ */
+function FileOnCodeHostLink({
+  pullRequestUrl,
+  path,
+  children,
+}: {
+  pullRequestUrl: string;
+  path: string;
+  children: ReactNode;
+}) {
+  const [found, setFound] = useState<{
+    pullRequestUrl: string;
+    path: string;
+    href: string;
+  }>();
+  useEffect(() => {
+    let current = true;
+    void fileOnCodeHost(pullRequestUrl, { path }).then((href) => {
+      if (current) setFound({ pullRequestUrl, path, href });
+    });
+    return () => {
+      current = false;
+    };
+  }, [pullRequestUrl, path]);
+  const shown = found?.pullRequestUrl === pullRequestUrl && found.path === path;
+  return (
+    <a
+      href={shown ? found.href : pullRequestUrl}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
 
 /**
  * A section's header: a file's path and note, or a concern's number, title,
