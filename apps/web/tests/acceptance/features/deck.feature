@@ -114,6 +114,17 @@ Feature: Deck lists the pull requests on your plate
     When I follow the summary's line about the test
     Then the test's hunk is in view and focused
 
+  Scenario: Read the agent's guide and go back to the one built from the code
+    Given the local API shows the guide an agent regrouped
+    When I open Deck
+    And I open the requested pull request summary
+    Then the guide says it was grouped by Claude Code
+    And the summary shows the agent's inferred problem and breaking change
+    When I open Regroup…
+    Then its instruction is ready to send as is
+    When I go back to the guide built from the code
+    Then the guide says it was built from the code
+
   Scenario: Draft a review beside the lines and finish it
     Given the local API built the requested pull request's guide
     And the code host takes reviews

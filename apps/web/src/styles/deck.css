@@ -277,7 +277,8 @@
     align-items: center;
     gap: 0.25rem 0.5rem;
     max-width: 72ch;
-    margin-top: 0.375rem;
+    /* Half the changes' 1.5rem gap: it belongs to the header above it. */
+    margin-top: -0.75rem;
   }
 
   .deck-regroup-field {
