@@ -691,6 +691,19 @@ export function createDeckService(options: {
    * preload doesn't read one from the cache again to find it has none.
    */
   const overGuideLimit = new Set<string>();
+
+  /**
+   * The pull requests not cached because the clock stopped one of their
+   * files: a preload doesn't read one again, and leaves the next try to an
+   * open. An open that compares every file forgets it.
+   */
+  const clockStopped = new Set<string>();
+  const notedClock = (key: DeckCacheKey, stopped: boolean) => {
+    const id = deckCacheKeyString(key);
+    if (stopped) clockStopped.add(id);
+    else clockStopped.delete(id);
+    return stopped;
+  };
   const overLimit = (key: DeckCacheKey, diff: DeckPullRequestDiff) => {
     if (!guideSkippedFor(diff)) return false;
     overGuideLimit.add(deckCacheKeyString(key));
@@ -968,7 +981,9 @@ export function createDeckService(options: {
         checkConnection(work);
         // A file the clock stopped, which a faster try may compare, isn't
         // kept: the next open reads and compares the pull request again.
-        if (!result.clockStopped) void cache.put(key, result, generation);
+        if (!notedClock(key, result.clockStopped)) {
+          void cache.put(key, result, generation);
+        }
         return overLimit(key, result.diff)
           ? null
           : buildGuide(key, result.guideInput, "open", tickets, stop.signal);
@@ -1041,6 +1056,7 @@ export function createDeckService(options: {
     const key = keyOf(source, request, content);
     const cached = await fromCache(key);
     if (cached) return cached;
+    if (clockStopped.has(deckCacheKeyString(key))) return skipped;
     const result = await buildPullRequestDiff(
       codeHost,
       request.repository,
@@ -1056,7 +1072,7 @@ export function createDeckService(options: {
     }
     // A file the clock stopped isn't kept, as on an open, and its guide,
     // which nothing could keep, waits for the open.
-    if (result.clockStopped) {
+    if (notedClock(key, result.clockStopped)) {
       return { ...skipped, fileReadCount: result.fileReadCount };
     }
     await cache.put(key, result, generation);

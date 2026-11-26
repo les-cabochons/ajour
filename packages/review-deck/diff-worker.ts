@@ -35,7 +35,8 @@ function write(job: DiffJob): DiffJobResult {
       const content = job.contents.get(change.path)!;
       const { timeout, maxEditLength } = job.fileBudget;
       const limited = Boolean(content.old && content.new);
-      const started = performance.now();
+      // jsdiff's own clock, so a jump of it, as after a sleep, reads the same here.
+      const started = Date.now();
       const part = fileDiff(
         change,
         content,
@@ -46,9 +47,9 @@ function write(job: DiffJob): DiffJobResult {
         continue;
       }
       // jsdiff says only that it stopped: one that stopped before its time
-      // was up stopped at the edit limit. Near the time, it counts as the
-      // clock's, so it's compared again rather than kept too large.
-      const took = performance.now() - started;
+      // was up stopped at the edit limit. Any other counts as the clock's,
+      // so it's compared again rather than kept too large.
+      const took = Date.now() - started;
       tooLarge.set(change.path, {
         oldLines: lineCount(content.old),
         newLines: lineCount(content.new),

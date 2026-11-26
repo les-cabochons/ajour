@@ -206,6 +206,35 @@ describe("a file too large to compare, in the content cache", () => {
     expect(again.cached).toBe(false);
   });
 
+  it("isn't read again by each preload, and leaves the next comparison to an open", async () => {
+    const deck = await startService({ diffs: tooLargeDiffs("clock") });
+    deck.releasePuts();
+    let reads = 0;
+    const counting: DeckCodeHost = {
+      run(operation, request) {
+        if (operation === "getFileContent") reads += 1;
+        return codeHost.run(operation, request);
+      },
+    };
+    const preload = () =>
+      deck.service.preloadPullRequests(
+        SOURCE,
+        [{ repository: "acme/api", number: 20 }],
+        counting,
+      );
+    await preload();
+    await preload();
+    expect(reads).toBe(1);
+
+    const opened = await deck.service.openPullRequest(
+      SOURCE,
+      { repository: "acme/api", number: 20 },
+      counting,
+    );
+    expect(opened.cached).toBe(false);
+    expect(reads).toBe(2);
+  });
+
   it("stays cached when its edits passed the limit", async () => {
     const { again, reads } = await openTwice("edits");
 
