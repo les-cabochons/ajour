@@ -393,9 +393,12 @@ it("shows a file too large to compare with its line counts and a link to it on t
       "Not shown: too large to compare here, 4,200 lines before and 4,210 after.",
     ),
   ).toBeTruthy();
+  // The pull request's files, at the file: there it shows what changed.
   const link = within(changes).getByRole("link", { name: "Open in GitHub" });
-  expect(link.getAttribute("href")).toBe(
-    "https://github.com/acme/api/blob/head/pnpm-lock.yaml",
+  await waitFor(() =>
+    expect(link.getAttribute("href")).toBe(
+      "https://github.com/acme/api/pull/1/files#diff-32824c984905bb02bc7ffcef96a77addd1f1602cff71a11fbbfdd7f53ee026bb",
+    ),
   );
   // The rest of the pull request shows as usual.
   expect(

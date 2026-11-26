@@ -43,26 +43,30 @@ export function fileWithoutLines(file: DeckFile): string | undefined {
   return "No changes to show.";
 }
 
-/** A path's segments, each encoded for a URL, its slashes kept. */
-const encodePath = (path: string) =>
-  path.split("/").map(encodeURIComponent).join("/");
+/** GitHub's anchor of a file in a pull request's files: "diff-" and the SHA-256 of its path, in hex. */
+async function githubFileAnchor(path: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(path),
+  );
+  const hex = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return `diff-${hex}`;
+}
 
 /**
- * Where the code host shows a file of the pull request at `url`: on GitHub,
- * the file at the head, or at the base once deleted; on Azure DevOps, the
- * file in the pull request's files. On a code host whose pull request
- * addresses it doesn't know, the pull request itself.
+ * Where the code host shows what changed in a file of the pull request at
+ * `url`, by its path (a renamed file's new one): on GitHub and on Azure
+ * DevOps, the file in the pull request's files. On a code host whose pull
+ * request addresses it doesn't know, the pull request itself.
  */
-export function fileOnCodeHost(
+export async function fileOnCodeHost(
   url: string,
-  file: Pick<DeckFile, "path" | "status">,
-  versions: { headSha: string; baseSha: string },
-): string {
-  const github = /^(https?:\/\/[^?#]+)\/pull\/\d+\/?$/.exec(url);
-  if (github) {
-    const sha = file.status === "deleted" ? versions.baseSha : versions.headSha;
-    return `${github[1]}/blob/${sha}/${encodePath(file.path)}`;
-  }
+  file: Pick<DeckFile, "path">,
+): Promise<string> {
+  const github = /^(https?:\/\/[^?#]+\/pull\/\d+)\/?$/.exec(url);
+  if (github) return `${github[1]}/files#${await githubFileAnchor(file.path)}`;
   if (/^https?:\/\/[^?#]+\/_git\/[^/?#]+\/pullrequest\/\d+\/?$/i.test(url)) {
     return `${url.replace(/\/$/, "")}?_a=files&path=${encodeURIComponent(`/${file.path}`)}`;
   }

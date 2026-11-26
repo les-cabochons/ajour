@@ -62,7 +62,11 @@ describe("Deck's diff workers", () => {
     );
 
     expect([...written.tooLarge]).toEqual([
-      ["lock.json", { oldLines: 4_200, newLines: 4_200 }],
+      [
+        "lock.json",
+        // The edit limit or the clock, whichever comes first here.
+        { oldLines: 4_200, newLines: 4_200, stoppedBy: expect.any(String) },
+      ],
     ]);
     expect(written.text).toContain(
       "Binary files a/lock.json and b/lock.json differ",
@@ -83,7 +87,21 @@ describe("Deck's diff workers", () => {
       "open",
       new AbortController().signal,
     );
-    expect([...written.tooLarge.keys()]).toEqual(["lock.json"]);
+    expect([...written.tooLarge]).toEqual([
+      ["lock.json", { oldLines: 4_200, newLines: 4_200, stoppedBy: "edits" }],
+    ]);
+  });
+
+  it("says when the clock stopped a file under the edit limit", async () => {
+    // No edit limit to speak of, and a millisecond.
+    const { changes, contents } = lockfile();
+    const written = await diffsOf({
+      timeout: 1,
+      maxEditLength: 1_000_000,
+    }).write(changes, contents, "open", new AbortController().signal);
+    expect([...written.tooLarge]).toEqual([
+      ["lock.json", { oldLines: 4_200, newLines: 4_200, stoppedBy: "clock" }],
+    ]);
   });
 
   it("shows the hunks of a long file with scattered edits, and of a long added file, under the edit limit", async () => {

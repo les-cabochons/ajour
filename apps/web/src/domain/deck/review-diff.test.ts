@@ -134,40 +134,49 @@ describe("hunkRowCount", () => {
 });
 
 describe("fileOnCodeHost", () => {
-  const versions = { headSha: "head1", baseSha: "base1" };
-
-  it("links a GitHub file at the head, or a deleted one at the base", () => {
+  it("links a GitHub file in the pull request's files, at GitHub's anchor for its path", async () => {
+    // GitHub's anchor is "diff-" and the SHA-256 of the path, in hex.
     expect(
-      fileOnCodeHost(
+      await fileOnCodeHost(
         "https://github.com/acme/api/pull/12",
-        file({ path: "src/a b#.ts" }),
-        versions,
+        file({ path: "abc" }),
       ),
-    ).toBe("https://github.com/acme/api/blob/head1/src/a%20b%23.ts");
+    ).toBe(
+      "https://github.com/acme/api/pull/12/files#diff-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    // A renamed file by its new path, a deleted one by its own.
     expect(
-      fileOnCodeHost(
+      await fileOnCodeHost(
         "https://git.acme.test/acme/api/pull/12/",
-        file({ path: "old.ts", status: "deleted" }),
-        versions,
+        file({ path: "abc", previousPath: "old.ts", status: "renamed" }),
       ),
-    ).toBe("https://git.acme.test/acme/api/blob/base1/old.ts");
+    ).toBe(
+      "https://git.acme.test/acme/api/pull/12/files#diff-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    expect(
+      await fileOnCodeHost(
+        "https://github.com/acme/api/pull/12",
+        file({ path: "", status: "deleted" }),
+      ),
+    ).toBe(
+      "https://github.com/acme/api/pull/12/files#diff-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
   });
 
-  it("links an Azure DevOps file in the pull request's files", () => {
+  it("links an Azure DevOps file in the pull request's files", async () => {
     expect(
-      fileOnCodeHost(
+      await fileOnCodeHost(
         "https://dev.azure.com/acme/Web/_git/api/pullrequest/7",
         file({ path: "src/a b.ts" }),
-        versions,
       ),
     ).toBe(
       "https://dev.azure.com/acme/Web/_git/api/pullrequest/7?_a=files&path=%2Fsrc%2Fa%20b.ts",
     );
   });
 
-  it("links the pull request itself on a code host it doesn't know", () => {
+  it("links the pull request itself on a code host it doesn't know", async () => {
     expect(
-      fileOnCodeHost("https://code.acme.test/reviews/7", file(), versions),
+      await fileOnCodeHost("https://code.acme.test/reviews/7", file()),
     ).toBe("https://code.acme.test/reviews/7");
   });
 });

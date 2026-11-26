@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
+import { fileDiff } from "../../../packages/review-deck/diff.ts";
+import type { DiffTooLarge } from "../../../packages/review-deck/diff-job.ts";
 import { createDeckContentCache } from "./deck-content-cache.ts";
+import type { DeckDiffs } from "./deck-diffs.ts";
 import { createGuideBuilds } from "./deck-guide-builds.ts";
 import {
   createDeckService,
@@ -27,7 +30,7 @@ const SOURCE = { pluginId: "github", connectionId: "c1" };
 
 const codeHost = addedFileCodeHost("head", "base");
 
-async function startService() {
+async function startService({ diffs }: { diffs?: DeckDiffs } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-service-"));
   roots.push(root);
   const cache = createDeckContentCache({
@@ -58,7 +61,7 @@ async function startService() {
       return cache.put(...args);
     },
   };
-  const service = createDeckService({ guides, cache: heldCache });
+  const service = createDeckService({ guides, cache: heldCache, diffs });
   return {
     service,
     cache,
@@ -142,5 +145,71 @@ describe("Deck's service when a connection is removed", () => {
       ),
     ).rejects.toBeInstanceOf(DeckConnectionRemoved);
     expect(operations).toEqual([]);
+  });
+});
+
+/** Diffs that find every file too large, stopped as `stoppedBy` says. */
+function tooLargeDiffs(stoppedBy: DiffTooLarge["stoppedBy"]): DeckDiffs {
+  return {
+    async write(changes, contents) {
+      const tooLarge = new Map<string, DiffTooLarge>();
+      const text = changes
+        .map((change) => {
+          tooLarge.set(change.path, { oldLines: 0, newLines: 1, stoppedBy });
+          return fileDiff(change, {
+            ...contents.get(change.path)!,
+            tooLarge: true,
+          });
+        })
+        .join("");
+      return { text, tooLarge };
+    },
+    close: async () => {},
+  };
+}
+
+describe("a file too large to compare, in the content cache", () => {
+  /** Opens #20, then #21, then #20 again, and counts the files read. */
+  async function openTwice(stoppedBy: DiffTooLarge["stoppedBy"]) {
+    const deck = await startService({ diffs: tooLargeDiffs(stoppedBy) });
+    deck.releasePuts();
+    let reads = 0;
+    const counting: DeckCodeHost = {
+      run(operation, request) {
+        if (operation === "getFileContent") reads += 1;
+        return codeHost.run(operation, request);
+      },
+    };
+    const open = (number: number) =>
+      deck.service.openPullRequest(
+        SOURCE,
+        { repository: "acme/api", number },
+        counting,
+      );
+    const first = await open(20);
+    await deck.cache.flush();
+    await open(21);
+    await deck.cache.flush();
+    const again = await open(20);
+    return { first, again, reads };
+  }
+
+  it("is compared again on the next open when the clock stopped it", async () => {
+    const { first, again, reads } = await openTwice("clock");
+
+    expect(first.opened.files[0]!.tooLarge).toEqual({
+      oldLines: 0,
+      newLines: 1,
+    });
+    // #20's one file read on each of its opens, and #21's.
+    expect(reads).toBe(3);
+    expect(again.cached).toBe(false);
+  });
+
+  it("stays cached when its edits passed the limit", async () => {
+    const { again, reads } = await openTwice("edits");
+
+    expect(reads).toBe(2);
+    expect(again.cached).toBe(true);
   });
 });
