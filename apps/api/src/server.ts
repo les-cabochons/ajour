@@ -233,6 +233,7 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   agentAnswerRequestSchema,
+  bridgeClaimRequestSchema,
   bridgeToolResultSchema,
   mcpClientCreateRequestSchema,
   mcpSettingsUpdateSchema,
@@ -2304,14 +2305,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       deckAsks.allowedNow(binding.pullRequest, binding.cli),
     deck: deckService,
     codeHost: deckCodeHostWrite,
-    // The draft review lives in the window (#784): the bridge hands it there.
-    async addDraftComment(draft) {
+    // The draft review lives in the window (#784): the bridge hands it
+    // there, and the window adds it only once the bridge grants its claim.
+    async addDraftComment(draft, grant) {
       let result;
       try {
-        result = await mcpBridge.call(DECK_DRAFT_COMMENT_TOOL, draft, {
-          id: "deck-chat",
-          name: "Deck's chat",
-        });
+        result = await mcpBridge.call(
+          DECK_DRAFT_COMMENT_TOOL,
+          draft,
+          { id: "deck-chat", name: "Deck's chat" },
+          undefined,
+          { turnId: draft.turnId, grant },
+        );
       } catch (error) {
         if (!(error instanceof BridgeCallError)) throw error;
         throw new DeckChatRefused(
@@ -3451,6 +3456,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const resolved = mcpBridge.resolve(result);
       unit.set({ mcp_bridge: { resolved } });
       writeJson(response, 200, { ok: resolved });
+    },
+
+    // The window asks to act on a call sent with a claim (#796): the
+    // bridge grants it only while the call may still run.
+    mcpBridgeClaim: async ({ request, response, unit }) => {
+      const { requestId, turnId } = await readRequest(
+        request,
+        bridgeClaimRequestSchema,
+      );
+      const claim = mcpBridge.claim(requestId, turnId);
+      if (!claim.granted) unit.refuse(claim.reason);
+      writeJson(response, 200, claim);
     },
 
     // The user's answer to an agent's question, from the agent panel.

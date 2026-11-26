@@ -737,6 +737,13 @@ text or argument enters its event:
 - A call that the Ajour window ran but the tool declined, with a sentence for
   the agent, ends `refused` with `tool_refused`. That is the tool working as
   designed, not a bug.
+- A call the window must claim first, a draft comment of Deck's chat (#796),
+  is one `mcp_bridge.claim` request. When the local API refuses the claim,
+  that request and the window's `agent_tool.call` both end `refused` with the
+  claim's reason: `call_not_waiting` (the API no longer waits for the call),
+  `call_already_claimed`, `claim_turn_mismatch`, `chat_turn_ended` or
+  `consent_revoked`. A claim that got no answer ends the window's call
+  `refused` with `claim_unanswered`. Neither names the comment or its file.
 - A call from an agent task run's client to a data tool its task doesn't
   declare (plugin API 4, #396) ends `refused` with `tool_not_declared`, and
   never reaches the window. The event names the tool and its `access`, and the
@@ -1214,6 +1221,7 @@ channel to read the event each emits.
 | `mcp.configure`                      | command, request                        | route, client call                               |
 | `mcp.request`                        | request                                 | local API                                        |
 | `mcp.status`                         | command, request                        | route, client call                               |
+| `mcp_bridge.claim`                   | command, request                        | route, client call                               |
 | `mcp_bridge.connection`              | job, request                            | route, renderer                                  |
 | `mcp_bridge.result`                  | command, request                        | route, client call                               |
 | `mention.search`                     | command, request, plugin_operation      | route, plugin method, client call                |

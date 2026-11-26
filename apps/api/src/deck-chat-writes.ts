@@ -38,11 +38,22 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * A write checks its turn, head and consent again as its last step, with
  * nothing awaited before the plugin starts or the window hears of it: the
  * user may stop the turn, or revoke the repository, while it reads the
- * diff or while the plugin is admitted.
+ * diff or while the plugin is admitted. A draft comment checks them once
+ * more when the window claims it, just before the window adds it: the
+ * window may hear of the call late, or after a Stop it never heard.
  */
 
 /** A write the chat can't make, with a sentence for the agent. */
 export class DeckChatRefused extends Error {}
+
+/**
+ * A draft comment's claim check, which the bridge runs when the window
+ * claims the call: a refusal with a sentence for the agent, or undefined
+ * to let the window add it. Synchronous, so nothing changes in between.
+ */
+export type DraftCommentGrant = () =>
+  | { reason: "chat_turn_ended" | "consent_revoked"; message: string }
+  | undefined;
 
 /** The running turn a call of a client's tools is part of. */
 export interface RunningTurn {
@@ -83,9 +94,13 @@ export interface DeckChatWritesOptions {
   ): Promise<CodeHostOperationResult<Operation>>;
   /**
    * Adds a draft comment to the window's draft review, over the bridge,
-   * which hands the window the call before it awaits anything.
+   * which hands the window the call before it awaits anything. The window
+   * adds it only once `grant` lets it claim the call.
    */
-  addDraftComment(call: DeckDraftCommentCall): Promise<{ draftId: string }>;
+  addDraftComment(
+    call: DeckDraftCommentCall,
+    grant: DraftCommentGrant,
+  ): Promise<{ draftId: string }>;
   /** Sends a turn event to the window. */
   publish(event: AgentTurnEvent): void;
   createId?: () => string;
@@ -171,30 +186,44 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
      * The write's last check: the same turn still runs, at the same head,
      * and the user still allows the repository. Nothing in it waits.
      */
-    const confirm = () => {
+    const refusalNow: DraftCommentGrant = () => {
       const now = options.runningTurnOf(clientId);
       if (
         now?.id !== turn.id ||
         now.pullRequest !== binding.pullRequest ||
         now.head !== binding.head
       ) {
-        throw new DeckChatRefused(TURN_ENDED);
+        return { reason: "chat_turn_ended", message: TURN_ENDED };
       }
-      if (!options.allowedNow(binding)) throw new DeckChatRefused(REVOKED);
+      if (!options.allowedNow(binding)) {
+        return { reason: "consent_revoked", message: REVOKED };
+      }
+      return undefined;
     };
-    return { turn, source, facts: chatTurns.get(turn.id), confirm };
+    const confirm = () => {
+      const refusal = refusalNow();
+      if (refusal) throw new DeckChatRefused(refusal.message);
+    };
+    return { turn, source, facts: chatTurns.get(turn.id), confirm, refusalNow };
   }
 
   /**
    * The window's answer to a draft comment, or a refusal as soon as the
-   * turn ends: a call queued behind the window's other calls doesn't keep
-   * the tool waiting.
+   * turn ends before the window claimed it: a call queued behind the
+   * window's other calls doesn't keep the tool waiting, and its claim is
+   * refused. A call the window claimed is added, so it waits for its line.
    */
-  function untilTurnEnds<T>(turnId: string, work: Promise<T>): Promise<T> {
+  function untilTurnEnds<T>(
+    turnId: string,
+    work: Promise<T>,
+    claimed: () => boolean,
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const waits = draftWaits.get(turnId) ?? new Set<() => void>();
       draftWaits.set(turnId, waits);
-      const stop = () => reject(new DeckChatRefused(TURN_ENDED));
+      const stop = () => {
+        if (!claimed()) reject(new DeckChatRefused(TURN_ENDED));
+      };
       waits.add(stop);
       work.then(resolve, reject).finally(() => {
         waits.delete(stop);
@@ -287,7 +316,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     ) => Promise<DeckChatToolOutput>;
   } = {
     async add_draft_comment(clientId, binding, { body, ...lines }) {
-      const { turn, source, facts, confirm } = await chatTurnOf(
+      const { turn, source, facts, confirm, refusalNow } = await chatTurnOf(
         clientId,
         binding,
       );
@@ -300,29 +329,29 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
           posted: { kind: "draft_comment", draftId },
         });
       confirm();
-      // The window hears of it in this tick, and adds nothing for a turn
-      // it already heard end.
-      const adding = options.addDraftComment({
-        turnId: turn.id,
-        pluginId: source.pluginId,
-        connectionId: source.connectionId,
-        ...ref(source),
-        headSha: binding.head,
-        anchor: lines,
-        body,
-        lineText,
-      });
-      try {
-        const { draftId } = await untilTurnEnds(turn.id, adding);
-        return line(draftId);
-      } catch (error) {
-        // The window may have added it before it heard the turn end: its
-        // line still shows, so the user can delete it.
-        if (error instanceof DeckChatRefused && error.message === TURN_ENDED) {
-          adding.then(({ draftId }) => line(draftId)).catch(() => undefined);
-        }
-        throw error;
-      }
+      // The window hears of it in this tick, and adds it only once it
+      // claimed it, which the same check grants. A claim granted before
+      // Stop finishes: the draft comment is added and its line shows.
+      let claimed = false;
+      const adding = options.addDraftComment(
+        {
+          turnId: turn.id,
+          pluginId: source.pluginId,
+          connectionId: source.connectionId,
+          ...ref(source),
+          headSha: binding.head,
+          anchor: lines,
+          body,
+          lineText,
+        },
+        () => {
+          const refusal = refusalNow();
+          if (!refusal) claimed = true;
+          return refusal;
+        },
+      );
+      const { draftId } = await untilTurnEnds(turn.id, adding, () => claimed);
+      return line(draftId);
     },
 
     async post_comment(clientId, binding, { body, lines }) {

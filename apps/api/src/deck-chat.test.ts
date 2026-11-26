@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentTurnAction,
   AgentTurnEvent,
@@ -147,7 +147,10 @@ const call = (name: string, args: Record<string, unknown> = {}) => ({
 });
 
 /** The API, pull request #482 open in Deck and allowed, and the window's stream open with MCP off. */
-async function startChatApi(conversation: FakeConversation) {
+async function startChatApi(
+  conversation: FakeConversation,
+  options: { mcpBridgeTimeoutMs?: number } = {},
+) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-chat-"));
   stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const report = path.join(root, "report.jsonl");
@@ -167,6 +170,7 @@ async function startChatApi(conversation: FakeConversation) {
     agentCliAdapters: [
       fakeCliAdapter([{ exit: 0 }], report, () => mcpUrl, conversation),
     ],
+    ...options,
   });
   stops.push(api.stop);
   mcpUrl = `${api.baseUrl}/mcp/ajour`;
@@ -196,8 +200,8 @@ async function startChatApi(conversation: FakeConversation) {
       })
     ).status,
   ).toBe(200);
-  const stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
-  stops.push(stream.close);
+  let stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
+  stops.push(() => stream.close());
   const reportLines = async () =>
     (await readFile(report, "utf8").catch(() => ""))
       .trim()
@@ -211,7 +215,28 @@ async function startChatApi(conversation: FakeConversation) {
 
   return {
     ...api,
-    stream,
+    get stream() {
+      return stream;
+    },
+    /** The window's stream drops, as when the window was blocked, and opens again. */
+    async disconnect() {
+      await stream.close();
+    },
+    async reconnect() {
+      stream = await openEventStream(api.baseUrl, "/api/handoffs/bridge");
+    },
+    /** The window asks to act on a call, as it does before it adds a draft comment. */
+    async claim(call: { requestId: string; claim?: { turnId: string } }) {
+      const claimed = await apiRequest(api.baseUrl, "/api/mcp/bridge/claims", {
+        requestId: call.requestId,
+        turnId: call.claim?.turnId ?? "",
+      });
+      expect(claimed.status).toBe(200);
+      return claimed.body as { granted: boolean; reason?: string };
+    },
+    cancel(turnId: string) {
+      return apiRequest(api.baseUrl, `/api/agent-turns/${turnId}/cancel`, {});
+    },
     guide() {
       return apiRequest(api.baseUrl, `${deck}/guide`, {
         repository: REPOSITORY,
@@ -273,6 +298,15 @@ async function startChatApi(conversation: FakeConversation) {
           };
           if (seen.has(data.requestId)) continue;
           seen.add(data.requestId);
+          const claimed = await apiRequest(
+            api.baseUrl,
+            "/api/mcp/bridge/claims",
+            {
+              requestId: data.requestId,
+              turnId: (data as { claim?: { turnId: string } }).claim?.turnId,
+            },
+          );
+          if (!claimed.body.granted) continue;
           drafts.push(data.input);
           await apiRequest(api.baseUrl, "/api/mcp/bridge/results", {
             requestId: data.requestId,
@@ -616,6 +650,144 @@ describe("Deck's chat writes", () => {
         "doesn't show src/api.ts:40",
       );
       expect(hostWrites()).toEqual([]);
+    },
+  );
+});
+
+/** The tool call the window hears of, with the claim it must make first. */
+type HeardCall = {
+  requestId: string;
+  tool: string;
+  claim?: { turnId: string };
+};
+
+describe("a draft comment's claim (#796)", () => {
+  const draftComment = () =>
+    call("add_draft_comment", {
+      path: "src/api.ts",
+      side: "head",
+      line: 2,
+      body: "Rename this.",
+    });
+
+  it(
+    "refuses the claim of a window that hears of the call after the local API stopped waiting for it",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(
+        () => [
+          { readTurn: true },
+          draftComment(),
+          { stream: ["Done."] },
+          { result: true },
+          { readTurn: true },
+        ],
+        { mcpBridgeTimeoutMs: 200 },
+      );
+      await api.consent();
+
+      const chatted = await api.chat();
+      const heard = await api.stream.waitFor<HeardCall>("tool-call");
+      expect(heard.claim).toEqual({ turnId: chatted.body.turn.id });
+      await api.ended(chatted.body.turn.id);
+
+      // The window was blocked past the API's wait, and hears of it now.
+      expect(await api.claim(heard)).toEqual({
+        granted: false,
+        reason: "call_not_waiting",
+      });
+      const [reply] = await api.mcpReplies();
+      expect(reply!.reply.result.isError).toBe(true);
+      expect(reply!.reply.result.content[0].text).toContain(
+        "the draft comment wasn't added",
+      );
+      expect(api.actions(chatted.body.turn.id)).toEqual([]);
+      expect(
+        api.events.find((event) => event.name === "mcp_bridge.claim"),
+      ).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "call_not_waiting",
+      });
+    },
+  );
+
+  it(
+    "refuses the claim of a call whose turn the user stopped while the window's stream was down",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        draftComment(),
+        { stream: ["Done."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+
+      const chatted = await api.chat();
+      const turnId = chatted.body.turn.id as string;
+      const heard = await api.stream.waitFor<HeardCall>("tool-call");
+      await api.disconnect();
+      expect((await api.cancel(turnId)).status).toBe(200);
+      // The stream that comes back replays no `ended`.
+      await api.reconnect();
+
+      expect(await api.claim(heard)).toEqual({
+        granted: false,
+        reason: "chat_turn_ended",
+      });
+      await api.ended(turnId);
+      const [reply] = await api.mcpReplies();
+      expect(reply!.reply.result.isError).toBe(true);
+      expect(api.actions(turnId)).toEqual([]);
+      expect(
+        api.events.find((event) => event.name === "mcp_bridge.claim"),
+      ).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "chat_turn_ended",
+      });
+    },
+  );
+
+  it(
+    "finishes a draft comment the window claimed before Stop, with its action line, and grants one claim only",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        draftComment(),
+        { stream: ["Done."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+
+      const chatted = await api.chat();
+      const turnId = chatted.body.turn.id as string;
+      const heard = await api.stream.waitFor<HeardCall>("tool-call");
+      expect(await api.claim(heard)).toEqual({ granted: true });
+      expect(await api.claim(heard)).toEqual({
+        granted: false,
+        reason: "call_already_claimed",
+      });
+      expect((await api.cancel(turnId)).status).toBe(200);
+      // The window added it, and answers.
+      await apiRequest(api.baseUrl, "/api/mcp/bridge/results", {
+        requestId: heard.requestId,
+        ok: true,
+        output: { draftId: "draft-1" },
+      });
+
+      await api.ended(turnId);
+      await vi.waitFor(() =>
+        expect(api.actions(turnId)).toEqual([
+          expect.objectContaining({
+            kind: "draft_comment",
+            text: "Added a draft comment on src/api.ts:2",
+            posted: { kind: "draft_comment", draftId: "draft-1" },
+          }),
+        ]),
+      );
     },
   );
 });

@@ -410,46 +410,6 @@ describe("a draft comment from Deck's chat (#796)", () => {
     });
   });
 
-  it("adds nothing for a turn the window already heard end", async () => {
-    const { call, localStore } = await setup();
-    const { receiveAgentTurnEvent } = await import("@/lib/agent-turns");
-    receiveAgentTurnEvent({
-      type: "ended",
-      turnId: "turn-1",
-      conversationId: "conversation-1",
-      outcome: "cancelled",
-    });
-
-    expect(await call("deck_add_draft_comment", draftCall())).toMatchObject({
-      ok: false,
-      error: expect.stringContaining("ended"),
-    });
-    expect(localStore.snapshot().deckDraftReviews ?? []).toEqual([]);
-  });
-
-  it("tells the bridge its turn, so a call queued past the turn's end runs no more", async () => {
-    const { agentToolCallTurn } =
-      await import("@/features/agents/agent-tool-runner");
-    const client = { id: "c1", name: "Claude Code" };
-
-    expect(
-      agentToolCallTurn({
-        requestId: "r1",
-        tool: "deck_add_draft_comment",
-        input: draftCall(),
-        client,
-      }),
-    ).toBe("turn-1");
-    expect(
-      agentToolCallTurn({
-        requestId: "r2",
-        tool: "list_projects",
-        input: { turnId: "turn-1" },
-        client,
-      }),
-    ).toBeUndefined();
-  });
-
   it("refuses one on another head than the draft's", async () => {
     const { call, localStore } = await setup();
     await call("deck_add_draft_comment", draftCall());

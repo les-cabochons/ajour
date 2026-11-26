@@ -30,10 +30,7 @@ vi.mock("@/lib/app-api", () => ({
   postMcpBridgeResult: postResult,
   setHandoffVisibility: setVisibility,
 }));
-vi.mock("./agent-tool-runner", () => ({
-  runAgentToolCall: runToolCall,
-  agentToolCallTurn: () => undefined,
-}));
+vi.mock("./agent-tool-runner", () => ({ runAgentToolCall: runToolCall }));
 
 class FakeEventSource extends EventTarget {
   static instances: FakeEventSource[] = [];

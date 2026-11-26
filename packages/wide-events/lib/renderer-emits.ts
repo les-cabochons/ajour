@@ -147,6 +147,7 @@ export const APP_API_CLIENT = {
   createMcpClient: "agent_client.create",
   revokeMcpClient: "agent_client.revoke",
   postMcpBridgeResult: "mcp_bridge.result",
+  claimMcpBridgeCall: "mcp_bridge.claim",
   answerAgentQuestion: "question.answer",
   dismissAgentSession: "agent_session.dismiss",
   stopAgentRun: "agent_run.stop",

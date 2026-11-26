@@ -11,10 +11,7 @@ import {
   setAgentsSnapshot,
   useAgentBridgeState,
 } from "@/features/agents/agent-bridge-state";
-import {
-  agentToolCallTurn,
-  runAgentToolCall,
-} from "@/features/agents/agent-tool-runner";
+import { runAgentToolCall } from "@/features/agents/agent-tool-runner";
 
 const QUESTION_PREVIEW_LENGTH = 80;
 
@@ -72,7 +69,6 @@ export function AgentBridgeHost() {
         },
         onAgents: setAgentsSnapshot,
         onAgentTurn: receiveAgentTurnEvent,
-        turnOfCall: agentToolCallTurn,
       },
       // Keep the MCP tool route while enabled. The handoff route also accepts
       // subscriptions while MCP is off; both carry handoff snapshots.

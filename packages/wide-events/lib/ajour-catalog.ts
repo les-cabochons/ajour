@@ -172,6 +172,18 @@ const requestReasons = [
 ] as const;
 
 /**
+ * Why the local API refused the window's claim of a bridge call (#796), as
+ * `bridgeClaimRefusalReasons` in the shared agent tools lists them.
+ */
+const claimRefusalReasons = [
+  "call_not_waiting",
+  "call_already_claimed",
+  "claim_turn_mismatch",
+  "chat_turn_ended",
+  "consent_revoked",
+] as const;
+
+/**
  * Why a request about one worktree did nothing (#862): a delete, its
  * preview, a forget or an open of its folder.
  */
@@ -441,6 +453,10 @@ export const catalog = defineCatalog({
         "outside_pull_request",
         /** A pull request conversation's agent asked to merge: Ajour has no such tool (#796). */
         "merge_refused",
+        /** In the renderer: the local API refused the window's claim of the call (#796). */
+        ...claimRefusalReasons,
+        /** In the renderer: the claim of the call got no answer, so the window did nothing. */
+        "claim_unanswered",
         ...requestReasons,
       ],
       fields: {
@@ -493,6 +509,15 @@ export const catalog = defineCatalog({
         /** False when the call had already timed out. */
         mcp_bridge: { resolved: operational<boolean>() },
       },
+    },
+    /**
+     * The window claims a call before it acts on it, as a draft comment of
+     * Deck's chat (#796). A refusal says why; the window then does nothing.
+     */
+    "mcp_bridge.claim": {
+      kinds: ["command", "request"],
+      reasons: [...claimRefusalReasons, ...requestReasons],
+      fields: { ...requestFields },
     },
     "mcp.status": {
       kinds: ["command", "request"],

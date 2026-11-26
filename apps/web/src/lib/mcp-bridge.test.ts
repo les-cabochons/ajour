@@ -5,11 +5,15 @@ import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import { connectMcpBridge, type McpBridgeStatus } from "./mcp-bridge";
 import { replaceEventSink, wideEvents } from "./wide-events";
 
-const { postMcpBridgeResult, postedIn } = vi.hoisted(() => {
+const { postMcpBridgeResult, postedIn, claimMcpBridgeCall } = vi.hoisted(() => {
   /** The traceparent of the unit active when each result was posted. */
   const postedIn: (string | undefined)[] = [];
   return {
     postedIn,
+    claimMcpBridgeCall: vi.fn(
+      (_claim: { requestId: string; turnId: string }): Promise<unknown> =>
+        Promise.resolve({ granted: true }),
+    ),
     postMcpBridgeResult: vi.fn((_result: BridgeToolResult) => {
       postedIn.push(wideEvents.current()?.traceparent());
       return Promise.resolve({ ok: true });
@@ -20,6 +24,7 @@ vi.mock("@/lib/app-api", () => ({
   // Where the window calls /api, which may differ from where the API listens.
   appApiUrl: (path: string) => `http://window-requests.test${path}`,
   postMcpBridgeResult,
+  claimMcpBridgeCall,
 }));
 
 /** An EventSource the test drives by hand. */
@@ -47,10 +52,6 @@ class FakeEventSource {
   /** The API sends a tool call. */
   sendToolCall(call: object) {
     this.listeners.get("tool-call")?.({ data: JSON.stringify(call) });
-  }
-  /** The API sends an event of a turn. */
-  sendTurnEvent(event: object) {
-    this.listeners.get("agent-turn")?.({ data: JSON.stringify(event) });
   }
   open() {
     this.readyState = FakeEventSource.OPEN;
@@ -160,126 +161,100 @@ describe("MCP bridge connection", () => {
   });
 });
 
-describe("a draft comment queued behind another call (#796)", () => {
+describe("a call the window must claim (#796)", () => {
   const client = { id: "c1", name: "Claude Code" };
-  const draftCall = (requestId: string, turnId: string) => ({
+  const draftCall = (requestId: string) => ({
     requestId,
     tool: "deck_add_draft_comment",
     client,
-    input: {
-      turnId,
-      pluginId: "github",
-      connectionId: "gh-1",
-      repository: "acme/api",
-      number: 7,
-      headSha: "a41c9e2f0d",
-      anchor: { path: "src/api.ts", side: "head", line: 2 },
-      body: "Rename this.",
-      lineText: "TWO",
-    },
+    input: { turnId: "turn-1", body: "Rename this." },
+    claim: { turnId: "turn-1" },
   });
-
-  /** The runner's word on which turn a call acts in. */
-  const turnOfCall = (call: { input?: unknown }) =>
-    (call.input as { turnId?: string } | undefined)?.turnId;
+  let sink: ReturnType<typeof createRecordingSink<AjourEvent>>;
 
   beforeEach(() => {
+    sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
     postMcpBridgeResult.mockClear();
+    claimMcpBridgeCall.mockClear();
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
   });
   afterEach(() => {
-    vi.useRealTimers();
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.resolve({ granted: true }),
+    );
     vi.unstubAllGlobals();
   });
 
-  it("runs no more once it waited longer than the local API waits for its answer, though its turn still runs", async () => {
-    vi.useFakeTimers();
+  function connect() {
     const ran: string[] = [];
-    const slow = (ms: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, ms));
     connectMcpBridge({
-      runToolCall: async (call) => {
+      runToolCall: (call) => {
         ran.push(call.requestId);
-        if (call.requestId === "r1") await slow(6_000);
-        if (call.requestId === "r3") await slow(3_000);
         return { requestId: call.requestId, ok: true, output: null };
       },
       onStatus: () => undefined,
-      turnOfCall,
     });
-    const stream = FakeEventSource.instances[0]!;
+    return { ran, stream: FakeEventSource.instances[0]! };
+  }
 
-    // Behind a call that takes longer than the API's answer is worth.
-    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
-    stream.sendToolCall(draftCall("r2", "turn-1"));
-    await vi.advanceTimersByTimeAsync(6_000);
-    // Behind one that leaves time.
-    stream.sendToolCall({ requestId: "r3", tool: "list_projects", client });
-    stream.sendToolCall(draftCall("r4", "turn-1"));
-    await vi.advanceTimersByTimeAsync(3_000);
-    await vi.waitFor(() =>
-      expect(postMcpBridgeResult).toHaveBeenCalledTimes(4),
-    );
+  it("runs it once the local API grants its claim, however long it waited", async () => {
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
+    await vi.waitFor(() => expect(postMcpBridgeResult).toHaveBeenCalled());
 
-    expect(ran).toEqual(["r1", "r3", "r4"]);
-    expect(postMcpBridgeResult.mock.calls[1]![0]).toEqual({
-      requestId: "r2",
-      ok: false,
-      error: expect.stringContaining("busy"),
+    expect(claimMcpBridgeCall).toHaveBeenCalledWith({
+      requestId: "r1",
+      turnId: "turn-1",
     });
+    expect(ran).toEqual(["r1"]);
   });
 
-  it("runs no more once its turn ends, however many turns come after", async () => {
-    let release!: () => void;
-    const blocking = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const ran: string[] = [];
-    const turnEvents: string[] = [];
-    connectMcpBridge({
-      runToolCall: async (call) => {
-        ran.push(call.requestId);
-        if (call.requestId === "r1") await blocking;
-        return { requestId: call.requestId, ok: true, output: null };
-      },
-      onStatus: () => undefined,
-      onAgentTurn: (event) => turnEvents.push(event.type),
-      turnOfCall,
-    });
-    const stream = FakeEventSource.instances[0]!;
-
-    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
-    stream.sendToolCall(draftCall("r2", "turn-1"));
-    stream.sendToolCall(draftCall("r3", "turn-2"));
-    stream.sendTurnEvent({
-      type: "ended",
-      turnId: "turn-1",
-      conversationId: "conversation-1",
-      outcome: "cancelled",
-    });
-    // Newer turns come and go while the call waits.
-    for (let turn = 0; turn < 60; turn += 1) {
-      stream.sendTurnEvent({
-        type: "ended",
-        turnId: `later-${turn}`,
-        conversationId: "conversation-1",
-        outcome: "done",
-      });
-    }
-    release();
+  it("runs nothing and posts nothing when the local API refuses its claim, and says why", async () => {
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.resolve({ granted: false, reason: "chat_turn_ended" }),
+    );
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
     await vi.waitFor(() =>
-      expect(postMcpBridgeResult).toHaveBeenCalledTimes(3),
+      expect(
+        sink.events.filter((event) => event.name === "agent_tool.call"),
+      ).toHaveLength(1),
     );
 
-    // The window still hears every event.
-    expect(turnEvents).toHaveLength(61);
-    expect(ran).toEqual(["r1", "r3"]);
-    expect(postMcpBridgeResult.mock.calls[1]![0]).toEqual({
-      requestId: "r2",
-      ok: false,
-      error: expect.stringContaining("ended"),
-    });
+    expect(ran).toEqual([]);
+    expect(postMcpBridgeResult).not.toHaveBeenCalled();
+    expect(
+      sink.events.find((event) => event.name === "agent_tool.call"),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "chat_turn_ended" });
+    expect(JSON.stringify(sink.events)).not.toContain("Rename this.");
+  });
+
+  it("runs nothing when its claim gets no answer", async () => {
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.reject(new TypeError("Failed to fetch")),
+    );
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
+    await vi.waitFor(() =>
+      expect(
+        sink.events.find((event) => event.name === "agent_tool.call"),
+      ).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "claim_unanswered",
+      }),
+    );
+    expect(ran).toEqual([]);
+    expect(postMcpBridgeResult).not.toHaveBeenCalled();
+  });
+
+  it("claims no call sent without a claim", async () => {
+    const { ran, stream } = connect();
+    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
+    await vi.waitFor(() => expect(postMcpBridgeResult).toHaveBeenCalled());
+    expect(claimMcpBridgeCall).not.toHaveBeenCalled();
+    expect(ran).toEqual(["r1"]);
   });
 });
 

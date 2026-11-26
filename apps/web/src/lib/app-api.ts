@@ -132,9 +132,11 @@ import {
 } from "@ajour/shared";
 import {
   agentsSnapshotSchema,
+  bridgeClaimResponseSchema,
   mcpBridgeResultAckSchema,
   mcpClientCreateResponseSchema,
   mcpSettingsSchema,
+  type BridgeClaimRequest,
   type BridgeToolResult,
 } from "@ajour/shared/agent-tools";
 import {
@@ -2677,6 +2679,19 @@ export async function postMcpBridgeResult(result: BridgeToolResult) {
     "/api/mcp/bridge/results",
     { method: "POST", body: JSON.stringify(result) },
     mcpBridgeResultAckSchema,
+  );
+}
+
+/**
+ * Asks the local API to claim a call it sent with a claim (#796), before
+ * the window acts on it. A refusal says why, and the window does nothing.
+ */
+export async function claimMcpBridgeCall(claim: BridgeClaimRequest) {
+  return appApiRequest(
+    "claimMcpBridgeCall",
+    "/api/mcp/bridge/claims",
+    { method: "POST", body: JSON.stringify(claim) },
+    bridgeClaimResponseSchema,
   );
 }
 

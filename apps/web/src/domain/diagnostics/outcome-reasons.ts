@@ -46,12 +46,22 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "No Ajour window was connected to answer the agent's tool call.",
   browser_origin:
     "The request came from a web page, not from a tool, so it was refused.",
+  call_already_claimed:
+    "The window had already claimed this tool call, so the second claim did nothing.",
+  call_not_waiting:
+    "The local API no longer waited for the tool call: it had timed out or been answered, so the window did nothing.",
   capability_off: "That capability of the plugin is turned off.",
   capacity:
     "The plugin host was already running as many operations as it allows, so this one didn't start.",
   capture_incomplete: "The command's output couldn't be captured in full.",
   changed_since:
     "The record changed after this action, so undoing it would overwrite newer work.",
+  chat_turn_ended:
+    "The chat turn had ended, such as after Stop, so the window did nothing with its tool call.",
+  claim_turn_mismatch:
+    "The claim named another turn than the tool call's, so the window did nothing.",
+  claim_unanswered:
+    "The local API didn't answer the window's claim of the tool call, so the window did nothing.",
   cli_exited:
     "The agent's command-line program exited before the turn finished.",
   cli_failed: "The agent's command-line program reported an error.",
@@ -69,6 +79,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The connection was removed while Deck read its pull request, so nothing more was read or kept.",
   connection_refused:
     "Turning the capability on checked a connection, and the plugin refused it, so the capability stays off.",
+  consent_revoked:
+    "The user no longer allowed the repository with this agent, so the window did nothing with its tool call.",
   crashed:
     "The plugin's process ended while it worked: it crashed, ran out of memory or was killed.",
   debugger: "Plugins are off because a debugger is attached to Ajour.",

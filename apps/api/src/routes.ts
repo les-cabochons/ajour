@@ -282,6 +282,11 @@ export const ROUTES = {
     path: "/api/mcp/bridge/results",
     name: "mcp_bridge.result",
   },
+  mcpBridgeClaim: {
+    method: "POST",
+    path: "/api/mcp/bridge/claims",
+    name: "mcp_bridge.claim",
+  },
   agentQuestionAnswer: {
     method: "POST",
     path: "/api/mcp/questions/:questionId/answer",

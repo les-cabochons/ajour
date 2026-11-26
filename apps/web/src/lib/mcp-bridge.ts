@@ -5,7 +5,6 @@ import {
 import { handoffsSnapshotSchema } from "@ajour/shared/handoffs";
 import { setHandoffs } from "./handoffs";
 import {
-  BRIDGE_CALL_TIMEOUT_MS,
   agentsSnapshotSchema,
   bridgeToolCallSchema,
   dataToolOutputSchemas,
@@ -17,7 +16,11 @@ import {
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
 import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
-import { appApiUrl, postMcpBridgeResult } from "@/lib/app-api";
+import {
+  appApiUrl,
+  claimMcpBridgeCall,
+  postMcpBridgeResult,
+} from "@/lib/app-api";
 import { wideEvents } from "@/lib/wide-events";
 
 /**
@@ -30,6 +33,13 @@ import { wideEvents } from "@/lib/wide-events";
  * process dying. That is `reconnecting`. When the API answers with an error
  * status, EventSource closes for good, so the bridge opens a new stream a few
  * seconds later and reports `disconnected` until it succeeds.
+ *
+ * A call sent with a claim, such as a draft comment of Deck's chat (#796),
+ * runs only once the local API grants the window's claim of it (ADR 0024).
+ * The API owns that decision: it knows whether it still waits for the call
+ * and whether the call's turn still runs, which the window can't tell from
+ * a stream that may have dropped while the turn stopped. A refused claim,
+ * or one that got no answer, runs nothing and posts nothing.
  *
  * Each stream is one `mcp_bridge.connection` job, from open to close, which
  * counts the calls it carried and its own reconnects. Each tool call is one
@@ -55,24 +65,6 @@ export interface McpBridgeHandlers {
   onAgents?(snapshot: AgentsSnapshot): void;
   /** A turn's progress, such as an ask's answer streaming in (#791). */
   onAgentTurn?(event: AgentTurnEvent): void;
-  /**
-   * The turn a call may act in only while it runs, such as a draft comment
-   * from Deck's chat (#796). Undefined for a call of no turn.
-   */
-  turnOfCall?(call: BridgeToolCall): string | undefined;
-}
-
-/**
- * A call waiting its turn in the queue. A call of a turn runs only while
- * its turn runs and the local API still waits for its answer.
- */
-interface QueuedCall {
-  call: BridgeToolCall;
-  unit: Unit<AjourCatalog, "agent_tool.call">;
-  queuedAt: number;
-  turnId?: string;
-  /** Its turn ended while it waited. */
-  turnEnded: boolean;
 }
 
 /**
@@ -98,28 +90,6 @@ async function runSafely(
   }
 }
 
-/** What a call whose turn ended while it waited in the queue answers. */
-const TURN_ENDED =
-  "This chat turn ended before Ajour ran the call, so it did nothing. Stop.";
-
-/**
- * How long a call of a turn may wait in the queue: well inside the time
- * the local API waits for its answer, so whatever it does reaches the API,
- * which shows it, and never lands after the API told the agent it failed.
- */
-const TURN_CALL_WAIT_MS = BRIDGE_CALL_TIMEOUT_MS / 2;
-
-const TOO_BUSY =
-  "The Ajour window was busy with other calls, so it did nothing. Try once more.";
-
-/** Why a queued call of a turn runs no more, if it doesn't run. */
-function refusalOf(queued: QueuedCall): string | undefined {
-  if (queued.turnId === undefined) return undefined;
-  if (queued.turnEnded) return TURN_ENDED;
-  if (Date.now() - queued.queuedAt > TURN_CALL_WAIT_MS) return TOO_BUSY;
-  return undefined;
-}
-
 /** Starts a tool call's job as it arrives, so its wait in the queue counts. */
 function startToolCall(call: BridgeToolCall) {
   const unit = wideEvents.start("agent_tool.call", {
@@ -142,18 +112,43 @@ function startToolCall(call: BridgeToolCall) {
 }
 
 /**
- * Runs a tool call in its job, posts its result, and ends the job once. A
- * call of a turn that may no longer run is refused instead.
+ * Asks the local API to claim a call sent with a claim. The reason the
+ * call doesn't run, or undefined when it may.
  */
-async function runToolCall(handlers: McpBridgeHandlers, queued: QueuedCall) {
-  const { call, unit } = queued;
+async function claimRefusal(
+  call: BridgeToolCall,
+  unit: Unit<AjourCatalog, "agent_tool.call">,
+) {
+  const { claim } = call;
+  if (!claim) return undefined;
+  const answer = await unit
+    .enter(() =>
+      claimMcpBridgeCall({ requestId: call.requestId, turnId: claim.turnId }),
+    )
+    .catch(() => undefined);
+  if (!answer) return "claim_unanswered" as const;
+  return answer.granted ? undefined : answer.reason;
+}
+
+/**
+ * Runs a tool call in its job, posts its result, and ends the job once. A
+ * call whose claim the local API refused runs nothing and posts nothing:
+ * the API no longer waits for it, or answered it itself.
+ */
+async function runToolCall(
+  handlers: McpBridgeHandlers,
+  call: BridgeToolCall,
+  unit: Unit<AjourCatalog, "agent_tool.call">,
+  queuedAt: number,
+) {
   try {
-    unit.set({ agent_tool: { queue_ms: Date.now() - queued.queuedAt } });
-    const refusal = refusalOf(queued);
-    const result: BridgeToolResult =
-      refusal !== undefined
-        ? { requestId: call.requestId, ok: false, error: refusal }
-        : await unit.enter(() => runSafely(handlers, call, unit));
+    unit.set({ agent_tool: { queue_ms: Date.now() - queuedAt } });
+    const refused = await claimRefusal(call, unit);
+    if (refused) {
+      unit.refuse(refused);
+      return;
+    }
+    const result = await unit.enter(() => runSafely(handlers, call, unit));
     // A refusal is the tool working as designed; a failure, recorded above,
     // is a bug.
     if (!result.ok && !result.failed) unit.refuse("tool_refused");
@@ -173,12 +168,6 @@ export function connectMcpBridge(
   let connection: Unit<AjourCatalog, "mcp_bridge.connection"> | undefined;
   let reopenTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<void> = Promise.resolve();
-  /**
-   * The queued calls of each turn, which its end marks. The stream sends a
-   * turn's call before its end, so a call queued for a turn is one the
-   * turn still ran for: the window needs no memory of older turns.
-   */
-  const queuedByTurn = new Map<string, Set<QueuedCall>>();
 
   const open = () => {
     const stream = new EventSource(appApiUrl(endpoint));
@@ -226,13 +215,7 @@ export function connectMcpBridge(
         const parsed = agentTurnEventSchema.safeParse(
           JSON.parse((message as MessageEvent<string>).data),
         );
-        if (!parsed.success) return;
-        if (parsed.data.type === "ended") {
-          const queued = queuedByTurn.get(parsed.data.turnId);
-          queuedByTurn.delete(parsed.data.turnId);
-          queued?.forEach((call) => (call.turnEnded = true));
-        }
-        handlers.onAgentTurn?.(parsed.data);
+        if (parsed.success) handlers.onAgentTurn?.(parsed.data);
       } catch {
         /* Ignore an invalid event. */
       }
@@ -244,27 +227,11 @@ export function connectMcpBridge(
       if (!parsed.success) return;
       calls += 1;
       job.set({ mcp_bridge: { call_count: calls } });
-      const turnId = handlers.turnOfCall?.(parsed.data);
-      const waiting: QueuedCall = {
-        call: parsed.data,
-        unit: startToolCall(parsed.data),
-        queuedAt: Date.now(),
-        ...(turnId !== undefined ? { turnId } : {}),
-        turnEnded: false,
-      };
-      if (turnId !== undefined) {
-        const queued = queuedByTurn.get(turnId) ?? new Set();
-        queued.add(waiting);
-        queuedByTurn.set(turnId, queued);
-      }
-      queue = queue.then(() => {
-        if (turnId !== undefined) {
-          const queued = queuedByTurn.get(turnId);
-          queued?.delete(waiting);
-          if (queued?.size === 0) queuedByTurn.delete(turnId);
-        }
-        return runToolCall(handlers, waiting);
-      });
+      const unit = startToolCall(parsed.data);
+      const queuedAt = Date.now();
+      queue = queue.then(() =>
+        runToolCall(handlers, parsed.data, unit, queuedAt),
+      );
     });
   };
 

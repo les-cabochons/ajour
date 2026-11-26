@@ -12,6 +12,7 @@ import {
   createDeckChatWrites,
   DeckChatRefused,
   type DeckChatWritesOptions,
+  type DraftCommentGrant,
   type RunningTurn,
 } from "./deck-chat-writes.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
@@ -93,6 +94,8 @@ function setup(path = "src/api.ts") {
   const hostCalls: string[] = [];
   const drafts: DeckDraftCommentCall[] = [];
   let answerDraft: (draftId: string) => void = () => {};
+  /** The bridge's claim of the latest draft comment, as the window asks for it. */
+  let claimDraft: () => ReturnType<DraftCommentGrant> = () => undefined;
   const held = {
     key: "key",
     diff: diffOf(path),
@@ -117,8 +120,9 @@ function setup(path = "src/api.ts") {
       hostCalls.push(operation);
       return { commentId: "c-1", url: state.url } as never;
     },
-    addDraftComment(call) {
+    addDraftComment(call, grant) {
       drafts.push(call);
+      claimDraft = grant;
       return new Promise((resolve) => {
         answerDraft = (draftId) => resolve({ draftId });
       });
@@ -141,6 +145,7 @@ function setup(path = "src/api.ts") {
     hostCalls,
     drafts,
     answerDraft: (draftId: string) => answerDraft(draftId),
+    claimDraft: () => claimDraft(),
     actions: () =>
       published.flatMap((event) =>
         event.type === "action" ? [event.action] : [],
@@ -230,7 +235,7 @@ describe("a chat write's last check", () => {
     expect(chat.drafts).toEqual([]);
   });
 
-  it("names its turn to the window, and stops waiting for the window when the turn ends", async () => {
+  it("names its turn to the window, and refuses the window's claim once the turn ended: the agent hears at once that nothing was added", async () => {
     const chat = setup();
     const adding = chat.writes.run("add_draft_comment", "client-1", binding, {
       ...onLine(),
@@ -243,11 +248,43 @@ describe("a chat write's last check", () => {
 
     chat.end();
     await expect(adding).rejects.toThrow("ended");
+    // The window hears of the call only now, as after a disconnect.
+    expect(chat.claimDraft()).toEqual({
+      reason: "chat_turn_ended",
+      message: expect.stringContaining("ended"),
+    });
+    expect(chat.actions()).toEqual([]);
+  });
 
-    // The window added it before it heard the turn end: its line still
-    // shows, so the user can delete it.
-    chat.answerDraft("draft-1");
+  it("refuses the window's claim once the repository is revoked", async () => {
+    const chat = setup();
+    void chat.writes
+      .run("add_draft_comment", "client-1", binding, {
+        ...onLine(),
+        body: "Lower case?",
+      })
+      .catch(() => undefined);
     await new Promise((resolve) => setImmediate(resolve));
+    chat.state.allowed = false;
+
+    expect(chat.claimDraft()).toMatchObject({ reason: "consent_revoked" });
+  });
+
+  it("finishes a draft comment the window claimed before Stop, with its line", async () => {
+    const chat = setup();
+    const adding = chat.writes.run("add_draft_comment", "client-1", binding, {
+      ...onLine(),
+      body: "Lower case?",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(chat.claimDraft()).toBeUndefined();
+
+    chat.end();
+    chat.answerDraft("draft-1");
+
+    await expect(adding).resolves.toMatchObject({
+      action: "Added a draft comment on src/api.ts:2",
+    });
     expect(chat.actions()).toEqual([
       expect.objectContaining({
         kind: "draft_comment",
