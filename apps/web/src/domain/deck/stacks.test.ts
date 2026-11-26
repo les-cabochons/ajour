@@ -210,6 +210,16 @@ describe("pull requests that can't stack", () => {
       expect(deckStackIndex(all).size).toBe(0);
     }
   });
+
+  it("starts a stack on the ambiguous branch with the layers above it", () => {
+    const intoMain = layer(1, "a", "main");
+    const intoRelease = layer(2, "a", "release/x");
+    const onA = layer(3, "b", "a");
+    const onB = layer(4, "c", "b");
+    const position = deckStackOf(onB, [intoMain, intoRelease, onA, onB])!;
+    expect(position.base).toBe("a");
+    expect(numbers(position.layers)).toEqual([3, 4]);
+  });
 });
 
 describe("the stale-base check", () => {

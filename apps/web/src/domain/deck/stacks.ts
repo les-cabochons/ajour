@@ -152,7 +152,8 @@ function layersOf(item: LocalPullRequest, graph: StackGraph) {
   if (graph.broken.has(item)) return undefined;
   const below: LocalPullRequest[] = [];
   for (let at = graph.parent.get(item); at; at = graph.parent.get(at))
-    below.unshift(at);
+    below.push(at);
+  below.reverse();
   const above: LocalPullRequest[] = [];
   for (
     let at = graph.children.get(item)?.[0];

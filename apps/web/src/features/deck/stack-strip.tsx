@@ -24,6 +24,11 @@ import { rollupSummary } from "@/domain/deck/review-status";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { NARROW_VIEW_QUERY } from "@/lib/breakpoints";
 import { useShortcut } from "@/lib/shortcut-handlers";
+import {
+  getShortcut,
+  getShortcutPlatform,
+  matchesChord,
+} from "@/lib/shortcuts";
 import { openSourceUrl } from "@/lib/source-navigation";
 import { useMediaQuery } from "@/lib/use-media-query";
 
@@ -126,11 +131,11 @@ export function StackStrip({
   // The app's dispatcher leaves single letters to a dialog with focus in
   // it, so the popover and the sheet take L themselves to close.
   const closeOnL = (event: KeyboardEvent) => {
+    const platform = getShortcutPlatform();
     if (
-      event.key.toLowerCase() !== "l" ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey
+      !getShortcut("deck.stack").keys.some((chord) =>
+        matchesChord(event.nativeEvent, chord, platform),
+      )
     )
       return;
     event.preventDefault();
