@@ -126,6 +126,27 @@ export type PluginRequestAnswerAddress =
  * What every `request` event carries, whatever its route: the method, the
  * route's pattern (never its values), the status and the sizes.
  */
+/**
+ * What a Deck turn did with the user's local clone (#795): read it, none
+ * chosen, or why it couldn't. Never its path or a reason's words.
+ */
+type DeckCloneFact =
+  | "read"
+  | "not_chosen"
+  | "agent_reads_no_files"
+  | "clone_missing"
+  | "remote_changed"
+  | "no_git"
+  | "wsl_unavailable"
+  | "head_not_full"
+  | "no_head_ref"
+  | "no_fork_remote"
+  | "fetch_failed"
+  | "fetch_timeout"
+  | "head_not_found"
+  | "checkout_failed"
+  | "cancelled";
+
 const requestFields = {
   http: {
     method: operational<HttpMethod>(),
@@ -3342,23 +3363,7 @@ export const catalog = defineCatalog({
            * What the turn did with the user's local clone (#795): read it,
            * none chosen, or why it couldn't. Never its path or a reason's words.
            */
-          clone: operational<
-            | "read"
-            | "not_chosen"
-            | "agent_reads_no_files"
-            | "clone_missing"
-            | "remote_changed"
-            | "no_git"
-            | "wsl_unavailable"
-            | "head_not_full"
-            | "no_head_ref"
-            | "no_fork_remote"
-            | "fetch_failed"
-            | "fetch_timeout"
-            | "head_not_found"
-            | "checkout_failed"
-            | "cancelled"
-          >(),
+          clone: operational<DeckCloneFact>(),
         },
         agent: { turn_id: operational() },
       },
@@ -3453,23 +3458,7 @@ export const catalog = defineCatalog({
           /** The anchor a Continue in chat chip carried in, if any. */
           anchor_kind: operational<"concern" | "summary" | "lines">(),
           /** What the turn did with the user's local clone, as for an ask. */
-          clone: operational<
-            | "read"
-            | "not_chosen"
-            | "agent_reads_no_files"
-            | "clone_missing"
-            | "remote_changed"
-            | "no_git"
-            | "wsl_unavailable"
-            | "head_not_full"
-            | "no_head_ref"
-            | "no_fork_remote"
-            | "fetch_failed"
-            | "fetch_timeout"
-            | "head_not_found"
-            | "checkout_failed"
-            | "cancelled"
-          >(),
+          clone: operational<DeckCloneFact>(),
         },
         agent: { turn_id: operational() },
       },

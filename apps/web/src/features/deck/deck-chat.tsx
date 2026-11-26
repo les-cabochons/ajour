@@ -1,18 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { RiCloseLine } from "@remixicon/react";
-import type {
-  DeckAskAnchor,
-  DeckConsentCovers,
-  DeckNeedsConsent,
-} from "@ajour/shared/deck";
-import { DECK_QUESTION_MAX } from "@ajour/shared/deck";
+import { DECK_QUESTION_MAX, type DeckAskAnchor } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
 import { SidePanel } from "@/components/side-panel";
 import { TooltipButton } from "@/components/tooltip-button";
@@ -28,15 +16,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { askText } from "@/domain/deck/ask";
 import { chatGoing, chatHeader, type ChatEntry } from "@/domain/deck/chat";
 import { useAgentRunner } from "@/lib/agent-runner";
-import { getDeckClones, grantDeckConsent } from "@/lib/app-api";
+import { getDeckClones } from "@/lib/app-api";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import type { ConsentAnswer } from "./deck-ask-sessions";
 import {
   useChatState,
   type DeckChatSession,
   type DeckChatTarget,
 } from "./deck-chat-session";
-import { DeckConsentDialog } from "./deck-consent-dialog";
 
 /*
  * Deck's chat (#796), the fallback for what the asks don't cover. **Chat**
@@ -58,63 +44,6 @@ export const DeckChatContext = createContext<DeckChatContextValue | null>(null);
 /** Continue in chat, or undefined outside the review page. */
 export function useContinueInChat() {
   return useContext(DeckChatContext)?.continueInChat;
-}
-
-/**
- * The chat's consent: the same once-per-repository dialog as the asks',
- * for the agent the refusal names.
- */
-export function useChatConsent(target: {
-  pluginId: string;
-  connectionId: string;
-}) {
-  const [asking, setAsking] = useState<{
-    request: DeckNeedsConsent;
-    resolve: (answer: ConsentAnswer) => void;
-  }>();
-  const requestConsent = useCallback(
-    (request: DeckNeedsConsent) =>
-      new Promise<ConsentAnswer>((resolve) =>
-        setAsking((current) => {
-          current?.resolve(false);
-          return { request, resolve };
-        }),
-      ),
-    [],
-  );
-  const answer = async (covers: DeckConsentCovers | null) => {
-    const current = asking;
-    if (!current) return;
-    setAsking(undefined);
-    if (!covers) {
-      current.resolve(false);
-      return;
-    }
-    try {
-      await grantDeckConsent(
-        target.pluginId,
-        target.connectionId,
-        current.request.repository,
-        current.request.provider.cli,
-        covers,
-      );
-      current.resolve(true);
-    } catch (error) {
-      current.resolve({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Ajour couldn't record your answer.",
-      });
-    }
-  };
-  const dialog = (
-    <DeckConsentDialog
-      request={asking?.request}
-      onAnswer={(covers) => void answer(covers)}
-    />
-  );
-  return { requestConsent, dialog };
 }
 
 /** Whether the user chose a local clone for the repository, read once as the chat opens. */
@@ -161,6 +90,10 @@ export interface DeckChatPanelProps {
   pluginName: string;
   /** Scrolls the review page to a line an action line names. */
   onShow(at: { path: string; side: "base" | "head"; line: number }): void;
+  /** Scrolls the review page to the guide, after a regroup. */
+  onShowGuide(): void;
+  /** The pull request on the code host, where a write without a link of its own shows. */
+  pullRequestUrl: string;
 }
 
 /** The chat panel, or the full-height sheet in the narrow view. Nothing mounts while it's closed. */
@@ -204,6 +137,8 @@ function ChatBody({
   target,
   pluginName,
   onShow,
+  onShowGuide,
+  pullRequestUrl,
   titled,
 }: DeckChatPanelProps & { titled: boolean }) {
   const state = useChatState(session);
@@ -266,6 +201,8 @@ function ChatBody({
                 void session.delete(action, target, pluginName)
               }
               onShow={onShow}
+              onShowGuide={onShowGuide}
+              pullRequestUrl={pullRequestUrl}
             />
           ))
         )}
@@ -351,11 +288,12 @@ function ChatLine({
   entry,
   onDelete,
   onShow,
+  onShowGuide,
+  pullRequestUrl,
 }: {
   entry: ChatEntry;
   onDelete: (action: Extract<ChatEntry, { kind: "action" }>["action"]) => void;
-  onShow: DeckChatPanelProps["onShow"];
-}) {
+} & Pick<DeckChatPanelProps, "onShow" | "onShowGuide" | "pullRequestUrl">) {
   if (entry.kind === "message") {
     return (
       <li className="deck-chat-message">
@@ -385,7 +323,21 @@ function ChatLine({
           >
             Show
           </button>
-        ) : null}
+        ) : action.kind === "regroup" ? (
+          <button
+            type="button"
+            className="deck-chat-link"
+            onClick={onShowGuide}
+          >
+            Show
+          </button>
+        ) : (
+          // Every line has a link: a write the code host gave no address
+          // for shows on the pull request.
+          <a href={pullRequestUrl} target="_blank" rel="noreferrer">
+            Open
+          </a>
+        )}
         {action.posted && deletion !== "deleted" ? (
           <button
             type="button"

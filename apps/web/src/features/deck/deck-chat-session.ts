@@ -19,7 +19,7 @@ import {
   stopReply,
   type ChatState,
 } from "@/domain/deck/chat";
-import { watchAgentTurn } from "@/lib/agent-turns";
+import { watchAgentTurn, watchClosedConversations } from "@/lib/agent-turns";
 import {
   AppApiError,
   cancelAgentTurn,
@@ -53,8 +53,12 @@ export class DeckChatSession {
   readonly #onAction: (action: AgentTurnAction) => void;
   /** Stops following the reply's turn. */
   #unwatch?: () => void;
-  /** Stops the message before its turn starts. */
+  /** Stops the message before its turn starts, while it waits for consent too. */
   #starting?: AbortController;
+  /** Stops hearing about closed conversations. */
+  #unwatchClosed?: () => void;
+  /** The conversation the reply's turn runs in. */
+  #conversationId?: string;
   /** What the last turn did with the user's clone, which the header says. */
   clone?: DeckCloneUse;
 
@@ -96,9 +100,11 @@ export class DeckChatSession {
     if (!sending) return;
     this.#set(sending.state);
     const { text, anchor } = sending.message;
+    // One controller for the message: Stop aborts it while the consent
+    // dialog shows too.
+    const starting = new AbortController();
+    this.#starting = starting;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const starting = new AbortController();
-      this.#starting = starting;
       try {
         const chatted = await chatDeck(
           target.pluginId,
@@ -117,19 +123,22 @@ export class DeckChatSession {
         if (this.#starting !== starting) return;
         this.#starting = undefined;
         if (chatted.clone) this.clone = chatted.clone;
+        this.#conversationId = chatted.turn.conversationId;
         this.#set(replyStarted(this.#state, chatted.turn.id));
         this.#watch(chatted.turn.id);
         return;
       } catch (error) {
         if (this.#starting !== starting) return;
-        this.#starting = undefined;
         const consent =
           error instanceof AppApiError
             ? deckNeedsConsentSchema.safeParse(error.payload)
             : undefined;
         if (consent?.success && attempt === 0) {
           const answer = await this.#requestConsent(consent.data);
+          // Stopped while the dialog showed: nothing is sent.
+          if (this.#starting !== starting) return;
           if (answer === true) continue;
+          this.#starting = undefined;
           this.#set(
             failReply(
               this.#state,
@@ -140,6 +149,7 @@ export class DeckChatSession {
           );
           return;
         }
+        this.#starting = undefined;
         this.#set(
           failReply(
             this.#state,
@@ -223,10 +233,31 @@ export class DeckChatSession {
     this.#onAction(action);
   }
 
-  /** The page is gone: the chat stops following its turn. */
+  /**
+   * The page shows: the chat follows its reply's turn again, and hears its
+   * conversation close. React's development remount detaches it first.
+   */
+  attach() {
+    this.#unwatchClosed ??= watchClosedConversations((event) => {
+      // A conversation closed under a reply still coming: it comes no more.
+      if (event.conversationId === this.#conversationId && this.going) {
+        this.#unwatch?.();
+        this.#unwatch = undefined;
+        this.#set(stopReply(this.#state));
+      }
+    });
+    const reply = this.#state.entries.at(-1);
+    if (reply?.kind === "reply" && reply.turnId && this.going) {
+      this.#watch(reply.turnId);
+    }
+  }
+
+  /** The page is gone: the chat stops following its turn, and writes nothing to the page. */
   detach() {
     this.#unwatch?.();
     this.#unwatch = undefined;
+    this.#unwatchClosed?.();
+    this.#unwatchClosed = undefined;
   }
 
   #watch(turnId: string) {

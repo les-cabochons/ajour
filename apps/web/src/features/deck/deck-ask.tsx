@@ -14,8 +14,6 @@ import {
   DECK_QUESTION_MAX,
   deckLinesLabel,
   type DeckAskAnchor,
-  type DeckConsentCovers,
-  type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
@@ -29,10 +27,9 @@ import {
 } from "@/domain/deck/ask";
 import { anchorSelection, linkCitations } from "@/domain/deck/line-selection";
 import { watchClosedConversations } from "@/lib/agent-turns";
-import { grantDeckConsent } from "@/lib/app-api";
 import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
 import { DeckClonePicker, type DeckCloneTarget } from "./deck-clone-picker";
-import { DeckConsentDialog } from "./deck-consent-dialog";
+import { useDeckConsent } from "./deck-consent-dialog";
 import {
   askKey,
   DeckAskSessions,
@@ -40,7 +37,6 @@ import {
   useAskSession,
   useHunkAsks,
   type AskSession,
-  type ConsentAnswer,
   type DeckAskTarget,
 } from "./deck-ask-sessions";
 import { useReviewLines } from "./review-lines-context";
@@ -140,30 +136,8 @@ export function DeckAskProvider({
     picking?.resolve(chosen);
     setPicking(undefined);
   };
-  const [asking, setAsking] = useState<{
-    request: DeckNeedsConsent;
-    resolve: (answer: ConsentAnswer) => void;
-  }>();
-  const requestConsent = useCallback(
-    (request: DeckNeedsConsent) =>
-      new Promise<ConsentAnswer>((resolve) =>
-        setAsking((current) => {
-          // A second ask while the dialog shows waits on the same answer.
-          if (current) {
-            const first = current.resolve;
-            return {
-              request,
-              resolve: (answer) => {
-                first(answer);
-                resolve(answer);
-              },
-            };
-          }
-          return { request, resolve };
-        }),
-      ),
-    [],
-  );
+  const consent = useDeckConsent(pluginId, connectionId);
+  const { requestConsent } = consent;
   const [sessions] = useState(() => new DeckAskSessions(requestConsent));
   // The asks follow their turns while the page shows. React's development
   // remount detaches them and attaches them again.
@@ -192,33 +166,6 @@ export function DeckAskProvider({
       stopClosed();
     };
   }, [sessions, pluginId, connectionId, repository]);
-  const answer = async (covers: DeckConsentCovers | null) => {
-    const current = asking;
-    if (!current) return;
-    setAsking(undefined);
-    if (!covers) {
-      current.resolve(false);
-      return;
-    }
-    try {
-      // Only for the agent the dialog named, and what it said leaves.
-      await grantDeckConsent(
-        pluginId,
-        connectionId,
-        current.request.repository,
-        current.request.provider.cli,
-        covers,
-      );
-      current.resolve(true);
-    } catch (error) {
-      current.resolve({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Ajour couldn't record your answer.",
-      });
-    }
-  };
   const value = useMemo(
     () => (target ? { target, sessions, pickClone } : null),
     [target, sessions, pickClone],
@@ -226,10 +173,7 @@ export function DeckAskProvider({
   return (
     <DeckAskContext.Provider value={value}>
       {children}
-      <DeckConsentDialog
-        request={asking?.request}
-        onAnswer={(covers) => void answer(covers)}
-      />
+      {consent.dialog}
       <DeckClonePicker
         target={picking?.target}
         onOpenChange={(open) => {

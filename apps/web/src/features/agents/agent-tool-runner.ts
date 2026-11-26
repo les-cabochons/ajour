@@ -7,6 +7,10 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
+  DECK_DRAFT_COMMENT_TOOL,
+  deckDraftCommentCallSchema,
+} from "@ajour/shared/deck";
+import {
   findEntriesForAgent,
   getLastSavedEntryForAgent,
   getWeekChangesForAgent,
@@ -20,6 +24,7 @@ import {
   weekNeedsPluginNames,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { draftOnOtherHead } from "@/domain/deck/draft-review";
 import { getWeekDates } from "@/domain/time/local-date";
 import { LockedWeekError } from "@/domain/time/locked-weeks";
 import {
@@ -50,11 +55,6 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
-import {
-  DECK_DRAFT_COMMENT_TOOL,
-  deckDraftCommentCallSchema,
-} from "@ajour/shared/deck";
-import { draftReviewOf } from "@/domain/deck/draft-review";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
@@ -270,11 +270,13 @@ function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
     repository: input.repository,
     number: input.number,
   };
-  const draft = draftReviewOf(
-    localStore.snapshot().deckDraftReviews ?? [],
-    ref,
-  );
-  if (draft && draft.headSha !== input.headSha) {
+  if (
+    draftOnOtherHead(
+      localStore.snapshot().deckDraftReviews ?? [],
+      ref,
+      input.headSha,
+    )
+  ) {
     throw new AgentToolRefusal(
       "The user's draft review is on another head of this pull request, so Ajour added nothing. Tell the user to refresh the page.",
     );

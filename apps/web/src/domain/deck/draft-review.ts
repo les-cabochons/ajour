@@ -133,11 +133,19 @@ function withDraft(
 }
 
 /**
- * The text of lines on the diff, from `startLine` to `line`, each after its
- * `+`, `-` or space and one per row, or undefined when the diff doesn't
- * show one of them.
+ * Whether the pull request's draft holds comments on another head than
+ * `headSha`: a comment on lines of `headSha` can't join it until the page
+ * reads the new head and moves the draft there. Deck's chat (#796) adds
+ * nothing then.
  */
-export const lineTextOf = deckLineText;
+export function draftOnOtherHead(
+  reviews: readonly DeckDraftReview[],
+  ref: DeckReviewRef,
+  headSha: string,
+) {
+  const draft = draftReviewOf(reviews, ref);
+  return draft !== undefined && draft.headSha !== headSha;
+}
 
 /** Adds a comment on lines of `headSha`. A blank comment adds nothing. */
 export function addDraftComment(
@@ -228,7 +236,7 @@ export function refreshDraftReview(
   if (!draft || draft.headSha === diff.headSha) return { reviews, outdated: 0 };
   let outdated = 0;
   const comments = draft.comments.map((comment) => {
-    if (comment.outdated || lineTextOf(diff, comment) === comment.lineText)
+    if (comment.outdated || deckLineText(diff, comment) === comment.lineText)
       return comment;
     outdated += 1;
     return { ...comment, outdated: true as const };

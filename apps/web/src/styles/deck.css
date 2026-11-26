@@ -1727,9 +1727,10 @@
     color: var(--text-secondary);
   }
 
+  /* Links take the accent (ui-rules). */
   .deck-chat-action a,
   .deck-chat-link {
-    color: var(--foreground);
+    color: var(--primary);
     text-decoration: underline;
     text-underline-offset: 2px;
   }

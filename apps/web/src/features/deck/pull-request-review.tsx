@@ -8,14 +8,13 @@ import {
 } from "react";
 import type { CodeHostReviewThread } from "@ajour/shared";
 import type { AgentTurnAction } from "@ajour/shared/agent-runs";
-import type { DeckAskAnchor } from "@ajour/shared/deck";
+import { deckLineText, type DeckAskAnchor } from "@ajour/shared/deck";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { showErrorToast } from "@/components/ui/toast";
 import {
   draftReviewOf,
   lineAnchor,
-  lineTextOf,
   nameSubmission,
   placeDrafts,
   type DeckDraftComment,
@@ -48,7 +47,8 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { cn } from "@/lib/utils";
-import { DeckChatContext, DeckChatPanel, useChatConsent } from "./deck-chat";
+import { DeckChatContext, DeckChatPanel } from "./deck-chat";
+import { useDeckConsent } from "./deck-consent-dialog";
 import { DeckChatSession, type DeckChatTarget } from "./deck-chat-session";
 import { DraftToggle, MergePullRequest } from "./author-actions";
 import {
@@ -391,7 +391,7 @@ export function PullRequestReview({
         ...(lines.start < lines.end ? { startLine: lines.start } : {}),
         // Every line of the range, so a push to any of them outdates it.
         lineText:
-          lineTextOf(shown, {
+          deckLineText(shown, {
             path,
             side,
             line: lines.end,
@@ -542,13 +542,19 @@ export function PullRequestReview({
       if (action.kind !== "draft_comment") reloadConversation();
     };
   });
-  const chatConsent = useChatConsent({ pluginId, connectionId });
+  const chatConsent = useDeckConsent(pluginId, connectionId);
   const [chat] = useState(
     () =>
       new DeckChatSession(chatConsent.requestConsent, (action) =>
         chatActionRef.current(action),
       ),
   );
+  // The chat follows its turn while the page shows (React's development
+  // remount detaches it and attaches it again).
+  useEffect(() => {
+    chat.attach();
+    return () => chat.detach();
+  }, [chat]);
   const author = authorActions(pullRequest.facts);
   const chatTarget = useMemo(
     (): DeckChatTarget | undefined =>
@@ -577,6 +583,10 @@ export function PullRequestReview({
     }),
     [chat],
   );
+  const showGuide = useCallback(() => {
+    const first = shown?.guide?.concerns[0]?.hunkIds[0];
+    if (first) onReach(first);
+  }, [shown, onReach]);
   const showLine = useCallback(
     (at: { path: string; side: "base" | "head"; line: number }) => {
       const found = shown ? findLine(shown, at) : undefined;
@@ -808,6 +818,8 @@ export function PullRequestReview({
             target={chatTarget}
             pluginName={pullRequest.pluginName}
             onShow={showLine}
+            onShowGuide={showGuide}
+            pullRequestUrl={pullRequest.facts.url}
           />
         ) : null}
       </div>

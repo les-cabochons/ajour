@@ -438,7 +438,7 @@ const PULL_REQUEST_INSTRUCTIONS = [
   "Ajour's tools for one pull request at one head commit, which this conversation is bound to.",
   "read_hunks reads the changed lines by hunk id (`path#index`), read_file a changed file at the base or the head, read_threads the review threads, read_guide the guide's concerns in reading order.",
   "In a chat turn only, add_draft_comment, post_comment, reply_to_thread, resolve_thread, submit_review, edit_title and set_draft make the review writes the user asks for, in their name, and submit_guide regroups the guide when they ask. Ajour never merges.",
-  "submit_guide hands back a regrouped guide, only in a turn that asks you to regroup it.",
+  "submit_guide hands back a regrouped guide, only in a turn that asks you to regroup it or a chat turn whose user asks for it.",
   "Ajour refuses any other tool, and any other pull request or head.",
 ].join("\n");
 

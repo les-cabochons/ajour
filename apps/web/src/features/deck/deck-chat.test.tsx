@@ -578,3 +578,20 @@ it("is a full-height sheet in the narrow view", async () => {
   expect(within(sheet).getByText("#1 · Claude Code · PR")).toBeTruthy();
   expect(chatPanel()).toBeNull();
 });
+
+it("stops a reply whose conversation closed, so the next message can go", async () => {
+  vi.mocked(api.chatDeck).mockResolvedValueOnce({ turn: turn("t7") });
+  await renderReview();
+  press("a");
+  sendMessage("Hi");
+  await waitFor(() => expect(api.chatDeck).toHaveBeenCalled());
+  const log = within(chatPanel()!).getByRole("log", { name: "Messages" });
+  await within(log).findByText("Thinking…");
+
+  send({ type: "conversation-closed", conversationId: "c1", reason: "idle" });
+
+  expect(within(log).getByText("Stopped.")).toBeTruthy();
+  expect(
+    within(chatPanel()!).getByRole("button", { name: "Send" }),
+  ).toBeTruthy();
+});
