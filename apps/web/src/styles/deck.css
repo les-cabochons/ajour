@@ -429,8 +429,9 @@
     margin-top: 0.125rem;
   }
 
-  /* A hunk: its file in a concern, its Viewed mark, then its lines. */
+  /* A hunk: its file in a concern, its Viewed mark, then its lines, then the answers about them. */
   .deck-hunk {
+    position: relative;
     display: flex;
     min-width: 0;
     flex-direction: column;
@@ -446,6 +447,68 @@
   .deck-hunk:focus-visible > .deck-hunk-header {
     border-radius: var(--radius-sm);
     box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  /*
+   * The toolbar above selected lines (#793), set on the first selected
+   * line's top as it mounts, and out of sight until then.
+   */
+  .deck-lines-toolbar {
+    position: absolute;
+    left: 2.5rem;
+    /* Under the sticky versions bar (z-index 5), which it scrolls beneath. */
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--background);
+    transform: translateY(calc(-100% - 0.25rem));
+    visibility: hidden;
+  }
+
+  .deck-lines-toolbar[data-placed] {
+    visibility: visible;
+  }
+
+  .deck-lines-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-xs);
+  }
+
+  .deck-lines-action:hover {
+    background: var(--surface-tint);
+  }
+
+  .deck-lines-action:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -1px;
+  }
+
+  .deck-lines-action kbd {
+    color: var(--text-tertiary);
+    font-family: var(--font-sans);
+  }
+
+  /* An answer's `path:line`, which scrolls to its line: it reads as the link it is. */
+  .markdown-citation {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
   }
 
   .deck-hunk-header {

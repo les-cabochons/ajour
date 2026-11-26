@@ -445,6 +445,52 @@ describe("an ask that reads the user's clone", () => {
   );
 
   it(
+    "reads the clone for selected lines too, asking again once a clone is chosen",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startCloneApi();
+      const anchor = {
+        kind: "lines",
+        path: "app.ts",
+        start: { side: "base", line: 1 },
+        end: { side: "head", line: 1 },
+      };
+      const asked = await api.ask({ anchor });
+      expect(asked.status).toBe(201);
+      expect(asked.body.clone).toEqual({ state: "not_chosen" });
+      await api.ended(asked.body.turn.id);
+      expect((await api.launches())[0]).not.toContain("--add-dir");
+
+      await api.choose((await api.addFolder()).id);
+      const again = await api.ask({ anchor });
+
+      expect(again.status).toBe(201);
+      expect(again.body.clone).toEqual({ state: "read" });
+      await api.ended(again.body.turn.id);
+      const launches = await api.launches();
+      expect(launches).toHaveLength(2);
+      const root = launches[1]![launches[1]!.indexOf("--add-dir") + 1]!;
+      expect(launches[1]![launches[1]!.indexOf("--tools") + 1]).toBe(
+        "Read,Grep,Glob",
+      );
+      const turn = (await api.turnsRead())[1];
+      // The lines as the diff has them, and the clone to read around them.
+      expect(turn).toContain("app.ts#0");
+      expect(turn).toContain(
+        "-export const answer = 1;\n+export const answer = 42;",
+      );
+      expect(turn).toContain(
+        `you can also read the whole repository at the pull request's head, in ${root}`,
+      );
+      // Cached, the line answer still says it read the clone.
+      expect((await api.ask({ anchor })).body).toMatchObject({
+        kind: "answer",
+        clone: { state: "read" },
+      });
+    },
+  );
+
+  it(
     "falls back on the pull request alone when the clone is gone",
     { timeout: 30_000 },
     async () => {

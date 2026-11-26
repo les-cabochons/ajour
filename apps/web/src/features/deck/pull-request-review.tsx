@@ -151,10 +151,10 @@ export function PullRequestReview({
 
   const retryConversation = conversation.retry;
   const onAddComment = useCallback<AddComment>(
-    (path, _hunkId, lines) => {
-      if (!shown) return;
+    (path, _hunkId, lines, body) => {
+      if (!shown) return false;
       const side = lines.side === "deletions" ? "base" : "head";
-      setComposer({
+      const target: ComposerTarget = {
         path,
         side,
         line: lines.end,
@@ -167,10 +167,17 @@ export function PullRequestReview({
             line: lines.end,
             startLine: lines.start,
           }) ?? "",
-        body: "",
-      });
+        body: body ?? "",
+      };
+      // The composer open there keeps its words and adds these after them;
+      // another composer holding words keeps them, and the answer stays.
+      if (body !== undefined && !composerState.transfer(target, body)) {
+        return false;
+      }
+      setComposer(target);
+      return true;
     },
-    [shown],
+    [shown, composerState],
   );
   const headSha = shown?.headSha;
   const actions = useMemo(

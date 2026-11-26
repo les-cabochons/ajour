@@ -132,6 +132,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         prefix,
         event,
         platform,
+        (id) => registry.find(id) !== undefined,
       );
       clearPrefix();
 

@@ -380,13 +380,96 @@ export function deckPullRequestLabel(key: string): string {
   return source ? `${source.repository}#${source.number}` : key;
 }
 
-/** What an ask is about. Only a concern for now; selected lines come with #790. */
-export const deckAskAnchorSchema = z.object({
-  kind: z.literal("concern"),
-  /** The concern's id in the guide. */
-  id: z.string().min(1).max(100),
+/**
+ * The question an ask about selected lines opens on (#793): Explain sends
+ * it as is, so its answer is cached as the default one.
+ */
+export const DECK_LINES_DEFAULT_QUESTION =
+  "Explain these lines: what they do, why they changed, and what a reviewer should check.";
+
+/** A line of a hunk: a removed line by the base's number, any other by the head's. */
+export const deckLinePointSchema = z.object({
+  side: z.enum(["base", "head"]),
+  line: z.number().int().positive(),
 });
+export type DeckLinePoint = z.infer<typeof deckLinePointSchema>;
+
+/**
+ * What an ask is about: a concern of the guide, or lines selected in one
+ * hunk, from `start` to `end` in the hunk's row order. The lines can run
+ * over both sides, as a change's removed and added lines do.
+ */
+export const deckAskAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("concern"),
+    /** The concern's id in the guide. */
+    id: z.string().min(1).max(100),
+  }),
+  z.object({
+    kind: z.literal("lines"),
+    /** The file's path, as the diff names it. */
+    path: pathSchema,
+    start: deckLinePointSchema,
+    end: deckLinePointSchema,
+  }),
+]);
 export type DeckAskAnchor = z.infer<typeof deckAskAnchorSchema>;
+export type DeckLinesAnchor = Extract<DeckAskAnchor, { kind: "lines" }>;
+
+/** Whether two points are the same line of a hunk. */
+export const sameLinePoint = (a: DeckLinePoint, b: DeckLinePoint) =>
+  a.side === b.side && a.line === b.line;
+
+/**
+ * One row of a hunk after its `@@` line: the line it is on, its numbers on
+ * each side (a context row has both), and its text with its `+`, `-` or
+ * space.
+ */
+export interface DeckHunkRow {
+  point: DeckLinePoint;
+  base?: number;
+  head?: number;
+  text: string;
+}
+
+/** A hunk's rows in order, numbered from its `@@` line; none for a file shown without hunks. */
+export function deckHunkRows(
+  hunk: Pick<DeckHunk, "header" | "oldStart" | "newStart" | "patch">,
+): DeckHunkRow[] {
+  const rows = hunk.patch.split("\n");
+  const at = rows.indexOf(hunk.header);
+  if (!hunk.header || at < 0) return [];
+  let base = hunk.oldStart;
+  let head = hunk.newStart;
+  const out: DeckHunkRow[] = [];
+  for (const text of rows.slice(at + 1)) {
+    if (text.startsWith("-")) {
+      out.push({ point: { side: "base", line: base }, base: base++, text });
+    } else if (text.startsWith("+")) {
+      out.push({ point: { side: "head", line: head }, head: head++, text });
+    } else if (text.startsWith(" ")) {
+      out.push({
+        point: { side: "head", line: head },
+        base: base++,
+        head: head++,
+        text,
+      });
+    }
+  }
+  return out;
+}
+
+const pointName = (point: DeckLinePoint) =>
+  point.side === "base" ? `removed line ${point.line}` : `line ${point.line}`;
+
+/** How the page and the agent name selected lines: "line 12", "lines 12–14", "removed line 3 to line 5". */
+export function deckLinesLabel({ start, end }: DeckLinesAnchor): string {
+  if (start.side === end.side && start.line === end.line)
+    return pointName(start);
+  if (start.side === end.side)
+    return `${start.side === "base" ? "removed lines" : "lines"} ${start.line}–${end.line}`;
+  return `${pointName(start)} to ${pointName(end)}`;
+}
 
 /**
  * What Deck needs to read the user's clone at the pull request's head,
