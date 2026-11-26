@@ -40,6 +40,7 @@ import {
 import {
   DECK_CACHE_DEFAULT_CAP_BYTES,
   deckCacheSettingsUpdateSchema,
+  deckConsentCovers,
 } from "../../../packages/shared/deck.ts";
 import {
   DEFAULT_WORKTREE_CLEAN_UP,
@@ -3021,7 +3022,6 @@ export class AppApiStorage {
     return (await this.readState()).agentRunner.deckConsents;
   }
 
-  /** Records a repository's consent, replacing an earlier one for it. */
   /**
    * Records a repository's consent in place of the one it had. One for the
    * code alone keeps what the same agent's consent covered: an older page
@@ -3034,7 +3034,9 @@ export class AppApiStorage {
           sameDeckRepository(entry, consent) && entry.cli === consent.cli,
       );
       const covers =
-        kept?.covers === "context" ? ("context" as const) : consent.covers;
+        kept && deckConsentCovers(kept.covers, consent.covers)
+          ? kept.covers
+          : consent.covers;
       return {
         nextState: {
           ...state,

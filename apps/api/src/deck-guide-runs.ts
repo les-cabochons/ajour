@@ -65,13 +65,13 @@ export interface DeckGuideRunsOptions {
       concerns: GroupedConcern[],
       signal?: AbortSignal,
     ): Promise<GuideJobBuilt | undefined>;
-    /** Writes nothing once `stillValid`, asked right before the write, says no. */
+    /** Writes nothing once `refusalNow`, asked right before the write, gives a refusal. */
     setAgentGuide(
       pullRequest: string,
       head: string,
       guide: DeckGuide,
-      stillValid: () => Promise<boolean>,
-    ): Promise<{ guide: DeckGuide | null } | undefined>;
+      refusalNow: () => Promise<string | undefined>,
+    ): Promise<{ guide: DeckGuide | null } | { refused: string } | undefined>;
   };
   /**
    * Refuses a turn about a repository the user hasn't allowed for the
@@ -356,20 +356,18 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       // The user may stop the turn, or revoke the repository, until the
       // guide is written: then it isn't theirs to show. Deck asks right
       // before it writes, after it read the pull request again.
-      let refusal: string | undefined;
-      const stillValid = async () => {
-        if (!(await options.allowed(binding))) refusal = REVOKED;
-        else if (!going()) refusal = STOPPED;
-        return refusal === undefined;
-      };
       const saved = await options.deck.setAgentGuide(
         binding.pullRequest,
         binding.head,
         guide,
-        stillValid,
+        async () => {
+          if (!(await options.allowed(binding))) return REVOKED;
+          // Last, with nothing awaited after it before the write.
+          return going() ? undefined : STOPPED;
+        },
       );
-      if (refusal) throw new DeckGuideRefused(refusal);
       if (!saved) throw new DeckGuideRefused(MOVED_ON);
+      if ("refused" in saved) throw new DeckGuideRefused(saved.refused);
       tried.saved = "saved";
       // The first valid guide ends the turn, once this answer is on its way.
       setTimeout(() => options.completeTurn(turnId), 0).unref();

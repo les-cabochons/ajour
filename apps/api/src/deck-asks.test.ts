@@ -8,6 +8,7 @@ import {
   DECK_LINES_DEFAULT_QUESTION,
   deckAgentConsentSchema,
   deckPullRequestKey,
+  type DeckConsentCovers,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAsks } from "./deck-asks.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
@@ -222,8 +223,8 @@ async function startAskApi(conversation: FakeConversation) {
         ...body,
       });
     },
-    /** Allows the repository, as the dialog that says what `covers` names. */
-    consent(cli = "claude-code", covers?: "code" | "context") {
+    /** Allows the repository, as a dialog that listed what `covers` names would. */
+    consent(cli = "claude-code", covers?: DeckConsentCovers) {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
         cli,

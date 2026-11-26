@@ -19,7 +19,7 @@ import {
  * description and linked tickets a regroup sends (#794). Allow records
  * this, so a change to the list changes it too.
  */
-const COVERS: DeckConsentCovers = "context";
+const LISTED_COVERS: DeckConsentCovers = "context";
 
 /**
  * The once-per-repository consent of Deck's asks (#791): it names the agent
@@ -84,7 +84,7 @@ export function DeckConsentDialog({
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel>Not now</AlertDialogCancel>
-          <AlertDialogAction onClick={() => onAnswer(COVERS)}>
+          <AlertDialogAction onClick={() => onAnswer(LISTED_COVERS)}>
             Allow
           </AlertDialogAction>
         </AlertDialogFooter>

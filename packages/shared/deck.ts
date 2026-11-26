@@ -605,6 +605,14 @@ export type DeckGuideResponse = z.infer<typeof deckGuideResponseSchema>;
 export const deckConsentCoversSchema = z.enum(["code", "context"]);
 export type DeckConsentCovers = z.infer<typeof deckConsentCoversSchema>;
 
+/** Whether a consent that covers `given` covers `needed`: the context covers the code too. */
+export function deckConsentCovers(
+  given: DeckConsentCovers,
+  needed: DeckConsentCovers,
+) {
+  return needed === "code" || given === "context";
+}
+
 /** The user allowed asks about a repository's pull requests, with one agent. */
 export const deckAgentConsentSchema = z.object({
   pluginId: z.string().min(1),

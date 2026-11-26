@@ -9,6 +9,7 @@ import {
   DECK_CONCERN_DEFAULT_QUESTION,
   DECK_LINES_DEFAULT_QUESTION,
   DECK_SUMMARY_DEFAULT_QUESTION,
+  deckConsentCovers,
   deckHunkRows,
   deckLinesLabel,
   deckPullRequestKey,
@@ -250,7 +251,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         consent.connectionId === source.connectionId &&
         consent.repository === source.repository &&
         consent.cli === cli &&
-        (covers === "code" || consent.covers === "context"),
+        deckConsentCovers(consent.covers, covers),
     );
   }
 

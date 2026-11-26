@@ -11,8 +11,8 @@ import {
   type DeckGuideRuntime,
 } from "./deck-guide-builds.ts";
 import { createDeckGuideRuns } from "./deck-guide-runs.ts";
-import { createDeckService, type DeckCodeHost } from "./deck-service.ts";
-import { builtFrom } from "./test-support/deck-guides.ts";
+import { createDeckService } from "./deck-service.ts";
+import { addedFileCodeHost, builtFrom } from "./test-support/deck-guides.ts";
 import {
   fakeCliAdapter,
   type FakeConversation,
@@ -786,26 +786,7 @@ describe("a guide saved while Deck reads the pull request again", () => {
     pullRequest,
     head: binding.head,
   };
-  const codeHost: DeckCodeHost = {
-    async run(operation) {
-      if (operation === "getPullRequestContent") {
-        return {
-          headSha: binding.head,
-          baseSha: "b52d0f3",
-          files: [
-            {
-              path: "a.ts",
-              status: "added",
-              additions: 1,
-              deletions: 0,
-              binary: false,
-            },
-          ],
-        } as never;
-      }
-      return { kind: "text", content: "export const a = 1;\n" } as never;
-    },
-  };
+  const codeHost = addedFileCodeHost(binding.head, "b52d0f3");
   const submission: DeckSubmitGuideInput = {
     concerns: [
       {

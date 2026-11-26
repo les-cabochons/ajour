@@ -1,4 +1,4 @@
-import { builtFrom } from "./test-support/deck-guides.ts";
+import { addedFileCodeHost, builtFrom } from "./test-support/deck-guides.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -25,28 +25,7 @@ afterEach(async () => {
 
 const SOURCE = { pluginId: "github", connectionId: "c1" };
 
-/** A code host whose pull requests each add one file. */
-const codeHost: DeckCodeHost = {
-  async run(operation, request) {
-    if (operation === "getPullRequestContent") {
-      return {
-        headSha: "head",
-        baseSha: "base",
-        files: [
-          {
-            path: "a.ts",
-            status: "added",
-            additions: 1,
-            deletions: 0,
-            binary: false,
-          },
-        ],
-      } as never;
-    }
-    void request;
-    return { kind: "text", content: "export const a = 1;\n" } as never;
-  },
-};
+const codeHost = addedFileCodeHost("head", "base");
 
 async function startService() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-service-"));

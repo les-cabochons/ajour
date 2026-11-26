@@ -1095,16 +1095,16 @@ export function createDeckService(options: {
    * Shows `guide`, an agent's, or the built guide again when null, for the
    * pull request at `head`, on screen and in the content cache. Returns the
    * guide shown now, or undefined when Deck no longer holds it there.
-   * `stillValid` is asked last, once Deck read the pull request and its
-   * built guide: when it says no, nothing is written and the result is
-   * undefined too.
+   * `refusalNow` is asked last, once Deck read the pull request and its
+   * built guide: when it gives a refusal, nothing is written and the
+   * result carries it.
    */
-  async function setAgentGuide(
+  async function setAgentGuide<Refusal = never>(
     pullRequest: string,
     head: string,
     guide: DeckGuide | null,
-    stillValid?: () => Promise<boolean> | boolean,
-  ): Promise<{ guide: DeckGuide | null } | undefined> {
+    refusalNow?: () => Promise<Refusal | undefined>,
+  ): Promise<{ guide: DeckGuide | null } | { refused: Refusal } | undefined> {
     const source = parseDeckPullRequestKey(pullRequest);
     if (!source) return undefined;
     const found = await heldAt({ ...source, headSha: head });
@@ -1115,8 +1115,9 @@ export function createDeckService(options: {
     } catch {
       return undefined;
     }
-    // Nothing awaits between this answer and the write below.
-    if (stillValid && !(await stillValid())) return undefined;
+    // Once the guard answers, nothing awaits before the write below.
+    const refused = await refusalNow?.();
+    if (refused !== undefined) return { refused };
     // The one on screen may have been opened again meanwhile.
     for (const entry of [found.entry, onScreen]) {
       if (
