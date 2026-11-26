@@ -142,7 +142,7 @@ export function viewedHunks(
   const viewed = new Set<string>();
   if (!marks) return viewed;
   for (const [id, { path, key }] of signed(diff)) {
-    if (marks.files[path]?.includes(key)) viewed.add(id);
+    if (keysOf(marks.files, path)?.includes(key)) viewed.add(id);
   }
   return viewed;
 }
@@ -180,7 +180,7 @@ function marksFor(
   taken: ReadonlySet<string>,
   now: number,
 ): DeckViewedMarks {
-  const files: Record<string, string[]> = {};
+  const files = record<string[]>();
   for (const [id, { path, key }] of signed(diff)) {
     if (viewed.has(id)) (files[path] ??= []).push(key);
   }
@@ -314,11 +314,37 @@ const storedMarksSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
 });
 
+/**
+ * A record keyed by file paths. It has no prototype, so a file named
+ * `constructor` or `__proto__` is a key like any other.
+ */
+function record<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
+/** The keys marked in `path`, read as an own property. */
+function keysOf(
+  files: Record<string, string[]>,
+  path: string,
+): string[] | undefined {
+  return Object.hasOwn(files, path) ? files[path] : undefined;
+}
+
 /** The stored viewed marks it can read. */
 export function normalizeViewedMarks(value: unknown): DeckViewedMarks[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw): DeckViewedMarks[] => {
     const parsed = storedMarksSchema.safeParse(raw);
-    return parsed.success ? [parsed.data] : [];
+    if (!parsed.success) return [];
+    // The schema copies `files` into a plain object, which drops a
+    // `__proto__` key: rebuild it from the stored entries.
+    const stored = (raw as { files: Record<string, unknown> }).files;
+    const files = record<string[]>();
+    for (const [path, keys] of Object.entries(stored)) {
+      const read = z.array(z.string().min(1)).safeParse(keys);
+      if (!read.success) return [];
+      files[path] = read.data;
+    }
+    return [{ ...parsed.data, files }];
   });
 }

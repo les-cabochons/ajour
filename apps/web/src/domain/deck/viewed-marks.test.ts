@@ -371,4 +371,25 @@ describe("viewed marks", () => {
     expect(normalizeViewedMarks([{ pluginId: "github" }, 3])).toEqual([]);
     expect(normalizeViewedMarks(undefined)).toEqual([]);
   });
+
+  it("marks files named like object properties, before and after storage", () => {
+    const names = ["constructor", "toString", "__proto__", "hasOwnProperty"];
+    const diff: DeckPullRequestDiff = {
+      headSha: "head-1",
+      baseSha: "base-1",
+      files: names.map((name) =>
+        file(name, [hunk(name, 0, "@@ -1,1 +1,2 @@", [" a", "+b"])]),
+      ),
+    };
+    const ids = names.map((name) => `${name}#0`);
+    expect(viewedAt([], diff)).toEqual([]);
+    const { marks } = setHunksViewed([], REF, diff, ids, true, NOW);
+    expect(viewedAt(marks, diff)).toEqual([...ids].sort());
+    const stored = normalizeViewedMarks(
+      JSON.parse(JSON.stringify(marks)) as unknown,
+    );
+    expect(viewedAt(stored, diff)).toEqual([...ids].sort());
+    const cleared = setHunksViewed(stored, REF, diff, ids, false, NOW).marks;
+    expect(viewedAt(cleared, diff)).toEqual([]);
+  });
 });
