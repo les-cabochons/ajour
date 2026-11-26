@@ -855,6 +855,7 @@ export type CodeHostOperations = {
         closedAt?: number | undefined;
         baseRef?: string | undefined;
         headRef?: string | undefined;
+        baseSha?: string | undefined;
         repositoryIdentity?:
           | {
               cloneUrls: string[];

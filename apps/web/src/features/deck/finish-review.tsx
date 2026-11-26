@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { CodeHostSubmitReviewRequest } from "@ajour/shared";
 import { MessagePanel } from "@/components/app-surface";
 import {
@@ -20,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { showToast } from "@/components/ui/toast";
+import { showActionToast, showToast } from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import {
   reviewVerdicts,
@@ -45,7 +46,9 @@ import { useShortcut } from "@/lib/shortcut-handlers";
  * draft review and shows the dialog with the reason and Retry, which sends
  * the same name; nothing is queued. When the code host can't tell whether
  * an earlier try reached it, the dialog says so and the user chooses to
- * post again, as a new submission.
+ * post again, as a new submission. On a layer of a stack, sending the
+ * review offers **Next in stack**, the layer above (#788): the dialog stays
+ * on what was sent, and R then Y's toast carries it.
  */
 
 type Verdict = CodeHostSubmitReviewRequest["verdict"];
@@ -68,6 +71,14 @@ export function mayAlreadyBeThere(
 ) {
   return `This ${what} may already be on ${pullRequest.pluginName}: something you posted since may be it. Check the pull request, then post again if it's not there.`;
 }
+
+/** What a sent review is called, in the toast and the sent dialog. */
+const sentTitle = (verdict: Verdict) =>
+  verdict === "approve" ? "Approved" : "Review sent";
+
+/** The line that names the layer above, offered once a review is sent. */
+const nextInStack = (layer: LocalPullRequest) =>
+  `Next in stack: #${layer.facts.number} ${layer.facts.title}`;
 
 /** The dialog's line on what goes with the review, and what stays in the draft. */
 function goesWithIt(draft: DeckDraftReview | undefined) {
@@ -94,6 +105,7 @@ export function FinishReview({
   draft,
   headSha,
   onSubmitted,
+  nextLayer,
 }: {
   pullRequest: LocalPullRequest;
   draft: DeckDraftReview | undefined;
@@ -101,7 +113,10 @@ export function FinishReview({
   headSha: string | undefined;
   /** After the code host took the review, so the page reads its threads again. */
   onSubmitted: () => void;
+  /** The layer above in its stack, offered once the review is sent. */
+  nextLayer?: LocalPullRequest;
 }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [verdict, setVerdict] = useState<Verdict>("comment");
   const [summary, setSummary] = useState("");
@@ -109,6 +124,8 @@ export function FinishReview({
   const [failure, setFailure] = useState<string | undefined>();
   /** The last try couldn't be settled: submitting again posts it anew. */
   const [uncertain, setUncertain] = useState(false);
+  /** What the dialog sent, while it offers the next layer. */
+  const [sent, setSent] = useState<Verdict | undefined>();
   const summaryId = useId();
   const verdicts = reviewVerdicts(pullRequest.pluginId);
   const count = draft?.comments.length ?? 0;
@@ -116,12 +133,18 @@ export function FinishReview({
   // A request for changes, or a comment, says something.
   const empty = verdict !== "approve" && !summary.trim() && !current;
 
-  function show(next: Verdict) {
-    setVerdict(next);
+  function show(chosen: Verdict) {
+    setVerdict(chosen);
     setFailure(undefined);
+    setSent(undefined);
     setOpen(true);
   }
-  async function submit(next: Verdict, body: string, again = false) {
+  function openNext() {
+    if (!nextLayer) return;
+    setOpen(false);
+    void navigate({ to: "/deck/$itemId", params: { itemId: nextLayer._id } });
+  }
+  async function submit(chosen: Verdict, body: string, again = false) {
     if (sending || !headSha) return;
     setSending(true);
     setFailure(undefined);
@@ -136,7 +159,7 @@ export function FinishReview({
     // the same name, and the plugin completes only what's missing.
     const { request, sent } = localStore.prepareReviewSubmission(ref, {
       headSha: draft?.headSha ?? headSha,
-      verdict: next,
+      verdict: chosen,
       body,
       again,
     });
@@ -147,20 +170,33 @@ export function FinishReview({
         request,
       );
       if ("uncertain" in result) {
-        setVerdict(next);
+        setVerdict(chosen);
         setFailure(mayAlreadyBeThere("review", pullRequest));
         setUncertain(true);
         setOpen(true);
         return;
       }
       localStore.completeReviewSubmission(ref, sent);
-      setOpen(false);
       setSummary("");
-      showToast(next === "approve" ? "Approved" : "Review sent");
+      const done = sentTitle(chosen);
+      if (!nextLayer) {
+        setOpen(false);
+        showToast(done);
+      } else if (open) {
+        // The dialog says what was sent, and offers the layer above.
+        setSent(chosen);
+      } else
+        showActionToast({
+          title: done,
+          description: nextInStack(nextLayer),
+          actionLabel: "Next in stack",
+          onAction: openNext,
+          timeout: 8_000,
+        });
       onSubmitted();
     } catch (error) {
       // Nothing left the draft: the dialog shows why, with Retry.
-      setVerdict(next);
+      setVerdict(chosen);
       setFailure(writeFailure(error, pullRequest));
       setOpen(true);
     } finally {
@@ -186,76 +222,109 @@ export function FinishReview({
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          if (!sending) setOpen(next);
+        onOpenChange={(shown) => {
+          if (!sending) setOpen(shown);
+          if (!shown) setSent(undefined);
         }}
       >
         <DialogContent>
-          <form
-            className="contents"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!empty) void submit(verdict, summary, uncertain);
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Finish review</DialogTitle>
-              <DialogDescription>{goesWithIt(draft)}</DialogDescription>
-            </DialogHeader>
-            <label htmlFor={summaryId} className="sr-only">
-              Summary
-            </label>
-            <Textarea
-              id={summaryId}
-              placeholder="Leave a summary (optional)"
-              rows={4}
-              value={summary}
-              onChange={(event) => setSummary(event.target.value)}
-            />
-            <fieldset className="deck-verdicts">
-              <legend className="sr-only">Verdict</legend>
-              {(["comment", "request_changes", "approve"] as const).map(
-                (value) => (
-                  <label key={value} className="deck-verdict">
-                    <input
-                      type="radio"
-                      name="verdict"
-                      value={value}
-                      checked={verdict === value}
-                      onChange={() => setVerdict(value)}
-                      disabled={sending}
-                      className="accent-primary focus-visible:outline-2 focus-visible:outline-ring"
-                    />
-                    <span>{verdicts[value]}</span>
-                  </label>
-                ),
-              )}
-            </fieldset>
-            {failure ? (
-              <MessagePanel role="alert">
-                {failure} Your draft review is kept.
-              </MessagePanel>
-            ) : null}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={sending}
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={empty || sending || !ready}>
-                {sending
-                  ? "Sending…"
-                  : uncertain
-                    ? "Post again"
-                    : failure
-                      ? "Retry"
-                      : "Submit review"}
-              </Button>
-            </DialogFooter>
-          </form>
+          {sent ? (
+            // Once sent it stays sent: a sync that drops the layer above
+            // takes Next in stack away, never back to the form.
+            <>
+              <DialogHeader>
+                <DialogTitle>{sentTitle(sent)}</DialogTitle>
+                <DialogDescription>
+                  {nextLayer
+                    ? nextInStack(nextLayer)
+                    : "The layer above left the stack."}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpen(false);
+                    setSent(undefined);
+                  }}
+                >
+                  Close
+                </Button>
+                {nextLayer ? (
+                  <Button type="button" autoFocus onClick={openNext}>
+                    Next in stack
+                  </Button>
+                ) : null}
+              </DialogFooter>
+            </>
+          ) : (
+            <form
+              className="contents"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!empty) void submit(verdict, summary, uncertain);
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>Finish review</DialogTitle>
+                <DialogDescription>{goesWithIt(draft)}</DialogDescription>
+              </DialogHeader>
+              <label htmlFor={summaryId} className="sr-only">
+                Summary
+              </label>
+              <Textarea
+                id={summaryId}
+                placeholder="Leave a summary (optional)"
+                rows={4}
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+              />
+              <fieldset className="deck-verdicts">
+                <legend className="sr-only">Verdict</legend>
+                {(["comment", "request_changes", "approve"] as const).map(
+                  (value) => (
+                    <label key={value} className="deck-verdict">
+                      <input
+                        type="radio"
+                        name="verdict"
+                        value={value}
+                        checked={verdict === value}
+                        onChange={() => setVerdict(value)}
+                        disabled={sending}
+                        className="accent-primary focus-visible:outline-2 focus-visible:outline-ring"
+                      />
+                      <span>{verdicts[value]}</span>
+                    </label>
+                  ),
+                )}
+              </fieldset>
+              {failure ? (
+                <MessagePanel role="alert">
+                  {failure} Your draft review is kept.
+                </MessagePanel>
+              ) : null}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={sending}
+                  onClick={() => setOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={empty || sending || !ready}>
+                  {sending
+                    ? "Sending…"
+                    : uncertain
+                      ? "Post again"
+                      : failure
+                        ? "Retry"
+                        : "Submit review"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </>

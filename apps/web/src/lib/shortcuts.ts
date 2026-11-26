@@ -78,6 +78,7 @@ export type ShortcutActionId =
   | "deck.next-concern"
   | "deck.previous-concern"
   | "deck.guide-tree"
+  | "deck.stack"
   | "deck.review-comment"
   | "deck.review-request-changes"
   | "deck.review-approve"
@@ -254,6 +255,13 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Open or close the guide tree",
     scope: "deck",
     keys: [{ key: "f" }],
+  },
+  // Stacks (#788): L opens the full stack. No app key takes L.
+  {
+    id: "deck.stack",
+    label: "Open the full stack",
+    scope: "deck",
+    keys: [{ key: "l" }],
   },
   // Finish review (#784): R, then the verdict. R takes no app key, and the
   // second letter only counts after it, so N still starts an entry.

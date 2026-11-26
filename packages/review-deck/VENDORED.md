@@ -59,6 +59,10 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   or type-checking it with its own settings.
 - `saved.ts`: the `saved-reviews` format 4.
 - `stack.ts`: stack detection among open pull requests, and trunk patterns.
+  The web app takes only its trunk patterns, `isTrunk` and `shortBranch`
+  (`domain/deck/stacks.ts`, #788). Deck's graph is its own: upstream's
+  `stackFor` reads the whole list for each pull request, lowercases branch
+  names and knows nothing of forks, and changing it would fork the copy.
 
 ## Local changes
 
@@ -106,12 +110,17 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
      steps show as the description signal on hunk pairs, and as group titles.
 8. **`tsconfig.json`** turns `noUncheckedIndexedAccess` off, which the
    upstream code was written without.
+9. **`stack/stacks.ts`** reads a stack's bottom layer as `layers[0]!`, in
+   `stackFor` and `stackIndex`, because the web app imports `stack.ts`
+   (`apps/web/src/domain/deck/stacks.ts`, #788) and type-checks it with
+   `noUncheckedIndexedAccess`. A stack always has a layer, so nothing else
+   changed.
 
 ## Syncing
 
 1. Clone upstream at the new commit.
 2. Copy the folders and files in the table and `LICENSE`, then apply local
    change 1.
-3. Diff against this package and carry changes 2 to 7 over.
+3. Diff against this package and carry changes 2 to 7 and 9 over.
 4. Run `just test`, `just typecheck` and `just lint-boundaries`.
 5. Update the commit above and this list.

@@ -128,16 +128,20 @@ function ChecksMenu({
 }
 
 /**
- * The pull request's status in one line: its state, its checks and its
- * approvals, as `Open · 2 checks pending · 1 approval`. The checks and the
+ * The pull request's status in one line: its state, its checks, its
+ * approvals and, for a layer of a stack, the merge order, as `Open · 2
+ * checks pending · 1 approval · Merges after #479`. The checks and the
  * approvals each open a small menu.
  */
 export function PullRequestStatusLine({
   pullRequest,
   checks,
+  mergesAfter,
 }: {
   pullRequest: LocalPullRequest;
   checks: PullRequestReadState<CodeHostChecksResult>;
+  /** The layer below in its stack, which merges first (#788). */
+  mergesAfter?: LocalPullRequest;
 }) {
   const { facts } = pullRequest;
   const checksText =
@@ -185,6 +189,12 @@ export function PullRequestStatusLine({
       >
         {approvalsSummary(approvals)}
       </StatusItem>
+      {mergesAfter ? (
+        <span className="deck-status-text">
+          <span aria-hidden="true">·</span>
+          <span className="px-1">Merges after #{mergesAfter.facts.number}</span>
+        </span>
+      ) : null}
     </p>
   );
 }

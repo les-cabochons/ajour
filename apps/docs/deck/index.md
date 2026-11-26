@@ -49,6 +49,18 @@ The author's **Description** is folded away until you open it. Then come its cha
 
 Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. In **Files A–Z**, each file has a **File viewed** mark, which marks all its hunks. Ajour keeps viewed marks on your computer, so you pick up where you stopped, also after closing Ajour. On GitHub, a file whose hunks are all viewed is marked viewed on GitHub too, and a file you marked viewed on GitHub shows viewed here; Azure DevOps doesn't share which files you viewed, so there the marks stay on your computer. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one; a folded hunk folds its threads too. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. Ajour keeps the pull requests it read on this computer, and after each sync reads the ones waiting on you, so they open at once. **Settings › Storage** shows how much Deck keeps, sets its size limit, and has **Clear cache**. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
+## Stacks
+
+When a pull request targets the branch of another one you see in Deck, they form a stack, reviewed bottom first. Under the status line, the stack strip shows the whole stack, such as **Stack 2 of 3 · main ← #479 ← #482 this ← #485**: click a number, or ‹ and ›, to open the layer below or above. The status line adds the merge order, such as **Merges after #479**.
+
+Branch names match exactly, case included, except the usual trunk names such as `main`, in any case. A fork's branch never counts as the one below, and a pull request shows no stack when two open pull requests come from the branch it targets, or when branches target each other in a loop.
+
+Press <kbd>L</kbd>, or click **Stack 2 of 3**, for the full stack with each layer's title and checks. In a [narrow window](/app/narrow-windows), the strip folds to **Stack 2/3**, which opens it.
+
+When the layer below changed since this one was based on it, a quiet line says so, so you don't review against an old base. On Azure DevOps, **Restack in Review Deck** opens the pull request in [Review Deck](https://github.com/les-cabochons/review-deck), where you can rebase the stack. Ajour itself never rebases.
+
+Deck's list keeps a stack's layers together, each with its place, such as **Stack 2/3**. After you send a review of a layer, the dialog offers **Next in stack**, the layer above.
+
 ## Changes since your review
 
 Above the changes, the versions bar lists the pull request's **Pushes** on GitHub, or **Iterations** on Azure DevOps: **v1 · v2 · v3**, with a check after the one you last reviewed. Click them to see each one's commits. The page shows the latest version.
