@@ -107,8 +107,9 @@ describe("viewed marks", () => {
       false,
       NOW,
     );
-    // The last mark gone, the pull request keeps nothing.
-    expect(none).toEqual([]);
+    // The last mark gone, only the file the user decided on stays named.
+    expect(viewedAt(none, V1)).toEqual([]);
+    expect(viewedMarksOf(none, REF)?.files).toEqual({});
   });
 
   it("says which files became viewed or not, so the code host can follow", () => {
@@ -265,6 +266,87 @@ describe("viewed marks", () => {
     expect(adoptViewedFiles([], REF, V1, [], NOW)).toEqual([]);
   });
 
+  it("takes in a file the code host says was viewed once per head, so one unmarked since stays unmarked, after a restart too", () => {
+    const adopted = adoptViewedFiles([], REF, V1, ["readme.md"], NOW);
+    const unmarked = setHunksViewed(
+      adopted,
+      REF,
+      V1,
+      ["readme.md#0"],
+      false,
+      NOW,
+    ).marks;
+    const stored = normalizeViewedMarks(JSON.parse(JSON.stringify(unmarked)));
+    expect(adoptViewedFiles(stored, REF, V1, ["readme.md"], NOW)).toBe(stored);
+    expect(viewedAt(stored, V1)).toEqual([]);
+    // A new head asks the code host afresh.
+    const atV2 = refreshViewedMarks(stored, REF, V2, NOW).marks;
+    expect(
+      viewedAt(adoptViewedFiles(atV2, REF, V2, ["readme.md"], NOW), V2),
+    ).toEqual(["readme.md#0"]);
+  });
+
+  it("leaves to the user a file they marked or unmarked here, whatever a later read says", () => {
+    const marked = setHunksViewed(
+      [],
+      REF,
+      V1,
+      ["src/api.ts#0", "src/api.ts#1"],
+      true,
+      NOW,
+    ).marks;
+    const unmarked = setHunksViewed(
+      marked,
+      REF,
+      V1,
+      ["src/api.ts#1"],
+      false,
+      NOW,
+    ).marks;
+    // A read sent before the unmark landed still says viewed.
+    expect(adoptViewedFiles(unmarked, REF, V1, ["src/api.ts"], NOW)).toBe(
+      unmarked,
+    );
+    expect(viewedAt(unmarked, V1)).toEqual(["src/api.ts#0"]);
+  });
+
+  it("clears the mark of a file shown without lines at a new head, since nothing tells its change", () => {
+    const binary = (headSha: string): DeckPullRequestDiff => ({
+      headSha,
+      baseSha: "base-1",
+      files: [
+        {
+          path: "logo.png",
+          status: "modified",
+          binary: true,
+          hunks: [
+            {
+              id: "logo.png#0",
+              header: "",
+              oldStart: 0,
+              oldLines: 0,
+              newStart: 0,
+              newLines: 0,
+              patch: "diff --git a/logo.png b/logo.png\n",
+            },
+          ],
+        },
+      ],
+    });
+    const { marks } = setHunksViewed(
+      [],
+      REF,
+      binary("head-1"),
+      ["logo.png#0"],
+      true,
+      NOW,
+    );
+    expect(viewedAt(marks, binary("head-1"))).toEqual(["logo.png#0"]);
+    const refreshed = refreshViewedMarks(marks, REF, binary("head-2"), NOW);
+    expect(refreshed.cleared).toBe(1);
+    expect(viewedAt(refreshed.marks, binary("head-2"))).toEqual([]);
+  });
+
   it("forgets the marks of pull requests that left", () => {
     const one = setHunksViewed([], REF, V1, ["readme.md#0"], true, NOW).marks;
     const both = setHunksViewed(
@@ -275,9 +357,11 @@ describe("viewed marks", () => {
       true,
       NOW,
     ).marks;
-    const kept = forgetViewedMarks(both, (ref) => ref.number === 8);
+    const kept = forgetViewedMarks(both, [
+      { ...OTHER, repository: "ACME/api" },
+    ]);
     expect(kept.map((entry) => entry.number)).toEqual([8]);
-    expect(forgetViewedMarks(kept, () => true)).toBe(kept);
+    expect(forgetViewedMarks(kept, [OTHER, REF])).toBe(kept);
   });
 
   it("reads back what it stored, and drops what it can't read", () => {

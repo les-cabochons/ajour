@@ -237,25 +237,15 @@ export function PullRequestReview({
     [viewed, ref, open, fileSync],
   );
   // The files the code host says the user viewed, each taken in once per
-  // head: a file unmarked here since isn't marked again by the next read.
+  // head: a file the user marked or unmarked since stays as they left it.
   const hostViewed =
     conversation.state.status === "ready"
       ? conversation.state.value.viewedPaths
       : undefined;
-  const adopted = useRef<{ headSha?: string; paths: Set<string> }>({
-    paths: new Set(),
-  });
   useEffect(() => {
-    if (!shown || !hostViewed) return;
-    if (adopted.current.headSha !== shown.headSha)
-      adopted.current = { headSha: shown.headSha, paths: new Set() };
-    const taken = adopted.current.paths;
-    const fresh = hostViewed.filter(
-      (path) => !taken.has(path) && !fileSync.pending(path),
-    );
-    for (const path of fresh) taken.add(path);
-    if (fresh.length) localStore.adoptViewedFiles(ref, shown, fresh);
-  }, [shown, hostViewed, ref, fileSync]);
+    if (shown && hostViewed?.length)
+      localStore.adoptViewedFiles(ref, shown, hostViewed);
+  }, [shown, hostViewed, ref]);
 
   // Replies and resolves, kept per thread while its card scrolls away.
   const [threadStates] = useState(() => new ThreadStates());
@@ -281,12 +271,7 @@ export function PullRequestReview({
                   createId: () => `reply_submission_${crypto.randomUUID()}`,
                 },
               );
-              threadStates.update(thread.id, {
-                posting: true,
-                failure: undefined,
-                uncertain: false,
-                submission,
-              });
+              threadStates.replyStarted(thread.id, submission);
               let result;
               try {
                 result = await replyToPullRequestThread(
@@ -295,32 +280,22 @@ export function PullRequestReview({
                   { repository, number, threadId: thread.id, body, ...fields },
                 );
               } catch (error) {
-                threadStates.answer(thread.id, submission.id, {
-                  posting: false,
-                  failure: writeFailure(error, pullRequest),
-                });
+                threadStates.replyFailed(
+                  thread.id,
+                  submission.id,
+                  writeFailure(error, pullRequest),
+                );
                 return;
               }
               if ("uncertain" in result) {
-                threadStates.answer(thread.id, submission.id, {
-                  posting: false,
-                  failure: mayAlreadyBeThere("reply", pullRequest),
-                  uncertain: true,
-                  submission: undefined,
-                });
+                threadStates.replyUnsettled(
+                  thread.id,
+                  submission.id,
+                  mayAlreadyBeThere("reply", pullRequest),
+                );
                 return;
               }
-              // The reply shows at once, until the conversation reads it.
-              const sent = [...threadStates.of(thread.id).sent, body];
-              const sender = threadStates.sender(thread.id, submission.id);
-              // Words typed while it posted stay, as a new reply.
-              if (sender?.body === body) threadStates.closeReply(thread.id);
-              else if (sender)
-                threadStates.update(thread.id, {
-                  posting: false,
-                  submission: undefined,
-                });
-              threadStates.update(thread.id, { sent });
+              threadStates.replySent(thread.id, submission.id, body);
               reloadConversation();
             },
             setResolved: async (thread: CodeHostReviewThread, resolved) => {

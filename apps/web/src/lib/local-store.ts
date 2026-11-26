@@ -1465,14 +1465,22 @@ function updateDraftReviews(
   });
 }
 
+/** The state with `after` as its viewed marks; the same marks give the same state. */
+function withViewedMarks(
+  state: LocalAppState,
+  before: readonly DeckViewedMarks[],
+  after: readonly DeckViewedMarks[],
+): LocalAppState {
+  return after === before ? state : { ...state, deckViewedMarks: [...after] };
+}
+
 /** Replaces the viewed marks; a transition that returns them unchanged writes nothing. */
 function updateViewedMarks(
   change: (marks: readonly DeckViewedMarks[]) => readonly DeckViewedMarks[],
 ) {
   return updateState((state) => {
     const before = state.deckViewedMarks ?? [];
-    const after = change(before);
-    return after === before ? state : { ...state, deckViewedMarks: [...after] };
+    return withViewedMarks(state, before, change(before));
   });
 }
 
@@ -1797,15 +1805,14 @@ const store = {
       );
       // A pull request that left the list takes its viewed marks with it.
       const before = state.deckViewedMarks ?? [];
-      const deckViewedMarks = forgetViewedMarks(before, (ref) =>
-        pullRequests.some(
-          (item) =>
-            item.pluginId === ref.pluginId &&
-            item.connectionId === ref.connectionId &&
-            item.facts.repository.toLowerCase() ===
-              ref.repository.toLowerCase() &&
-            item.facts.number === ref.number,
-        ),
+      const deckViewedMarks = forgetViewedMarks(
+        before,
+        pullRequests.map((item) => ({
+          pluginId: item.pluginId,
+          connectionId: item.connectionId,
+          repository: item.facts.repository,
+          number: item.facts.number,
+        })),
       );
       return deckViewedMarks === before
         ? { ...state, pullRequests }
@@ -1897,11 +1904,7 @@ const store = {
         viewed,
         Date.now(),
       );
-      return {
-        state:
-          marks === before ? state : { ...state, deckViewedMarks: [...marks] },
-        result: files,
-      };
+      return { state: withViewedMarks(state, before, marks), result: files };
     });
   },
   /**
@@ -1917,11 +1920,7 @@ const store = {
         diff,
         Date.now(),
       );
-      return {
-        state:
-          marks === before ? state : { ...state, deckViewedMarks: [...marks] },
-        result: cleared,
-      };
+      return { state: withViewedMarks(state, before, marks), result: cleared };
     });
   },
   /** Marks viewed every hunk of the files the code host says the user viewed. */

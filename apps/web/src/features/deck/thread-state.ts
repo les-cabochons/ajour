@@ -102,6 +102,45 @@ export class ThreadStates {
     if (this.sender(threadId, submissionId)) this.update(threadId, change);
   }
 
+  /** The reply's try named `submission` is on its way. */
+  replyStarted(threadId: string, submission: DeckReviewSubmission) {
+    this.update(threadId, {
+      posting: true,
+      failure: undefined,
+      uncertain: false,
+      submission,
+    });
+  }
+
+  /** It failed: the words and the name stay, for Retry. */
+  replyFailed(threadId: string, submissionId: string, failure: string) {
+    this.answer(threadId, submissionId, { posting: false, failure });
+  }
+
+  /** The code host couldn't tell whether it has it: the next try is a new reply, Post again. */
+  replyUnsettled(threadId: string, submissionId: string, failure: string) {
+    this.answer(threadId, submissionId, {
+      posting: false,
+      failure,
+      uncertain: true,
+      submission: undefined,
+    });
+  }
+
+  /**
+   * The code host took `body`: it shows at the end of the thread until the
+   * conversation is read again. The field closes, unless words were typed
+   * into it meanwhile, which stay as a new reply.
+   */
+  replySent(threadId: string, submissionId: string, body: string) {
+    const sender = this.sender(threadId, submissionId);
+    const sent = [...this.of(threadId).sent, body];
+    if (sender?.body === body) this.closeReply(threadId);
+    else if (sender)
+      this.update(threadId, { posting: false, submission: undefined });
+    this.update(threadId, { sent });
+  }
+
   /**
    * The conversation was read again: what it says replaces the replies
    * shown as sent and the resolved state set here. Words being written stay.

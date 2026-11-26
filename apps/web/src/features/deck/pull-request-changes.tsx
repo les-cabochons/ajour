@@ -38,8 +38,8 @@ import {
   type SectionNavigator,
 } from "./review-scroll";
 import { ReviewNotesContext } from "./review-notes";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
-  fileIsViewed,
   ReviewSectionView,
   SECTION_ATTRIBUTE,
   type AddComment,

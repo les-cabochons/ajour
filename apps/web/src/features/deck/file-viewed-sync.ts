@@ -46,16 +46,6 @@ export class FileViewedSync {
     if (!this.#sending.has(path)) void this.#run(path);
   }
 
-  /** A write of `path` is on its way or waiting, so what the code host says of it may be stale. */
-  pending(path: string) {
-    return this.#sending.has(path) || this.#wanted.has(path);
-  }
-
-  /** The page stops telling the code host. */
-  get stopped() {
-    return this.#stopped;
-  }
-
   async #run(path: string) {
     this.#sending.add(path);
     try {

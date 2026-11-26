@@ -30,8 +30,8 @@ import {
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
-  fileIsViewed,
   ReviewHunkView,
   ReviewSectionHeader,
   useNoteMarks,

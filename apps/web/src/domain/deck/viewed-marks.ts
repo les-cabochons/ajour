@@ -4,7 +4,7 @@ import type {
   DeckHunk,
   DeckPullRequestDiff,
 } from "@ajour/shared/deck";
-import type { DeckReviewRef } from "./draft-review";
+import { sameReviewRef, type DeckReviewRef } from "./draft-review";
 
 /*
  * Viewed marks (#785): the hunks a reviewer marked viewed on a pull
@@ -19,7 +19,9 @@ import type { DeckReviewRef } from "./draft-review";
  * A file is viewed once all its hunks are. Marking hunks says which files
  * turned viewed or not, so the page can tell the code host where it keeps
  * per-file viewed state (GitHub); a file the code host says the user viewed
- * has all its hunks marked here. Per-hunk marks never leave this computer.
+ * has all its hunks marked here, once per file and head: a file the user
+ * marked or unmarked here is theirs, whatever a later read says. Per-hunk
+ * marks never leave this computer.
  */
 
 export interface DeckViewedMarks extends DeckReviewRef {
@@ -30,6 +32,11 @@ export interface DeckViewedMarks extends DeckReviewRef {
    * copy number in the file, so two hunks making the same change differ.
    */
   files: Record<string, string[]>;
+  /**
+   * The files at this head the code host's word no longer marks: taken in
+   * from it once already, or marked or unmarked by the user here.
+   */
+  taken: string[];
   updatedAt: number;
 }
 
@@ -39,18 +46,12 @@ export interface ViewedFileChange {
   viewed: boolean;
 }
 
-const sameRef = (marks: DeckReviewRef, ref: DeckReviewRef) =>
-  marks.pluginId === ref.pluginId &&
-  marks.connectionId === ref.connectionId &&
-  marks.repository.toLowerCase() === ref.repository.toLowerCase() &&
-  marks.number === ref.number;
-
 /** The pull request's viewed marks, when it has any. */
 export function viewedMarksOf(
   all: readonly DeckViewedMarks[],
   ref: DeckReviewRef,
 ) {
-  return all.find((marks) => sameRef(marks, ref));
+  return all.find((marks) => sameReviewRef(marks, ref));
 }
 
 /** cyrb53: a fast 53-bit string hash, as 14 hex digits. */
@@ -73,10 +74,11 @@ function hash(text: string) {
 /**
  * A hunk's changed lines with their exact bytes, from its patch: each `+`
  * and `-` line after the `@@` line, `\r` kept, and the "\" marker of a
- * changed line with no final newline. A file shown without hunks is signed
- * by what it is.
+ * changed line with no final newline. A file shown without hunks, binary
+ * or too large to read, shows nothing that tells a change, so it is signed
+ * with the head too: a new head clears its mark.
  */
-function signatureOf(file: DeckFile, hunk: DeckHunk) {
+function signatureOf(file: DeckFile, hunk: DeckHunk, headSha: string) {
   if (!hunk.header)
     return hash(
       JSON.stringify([
@@ -84,6 +86,7 @@ function signatureOf(file: DeckFile, hunk: DeckHunk) {
         file.status,
         file.previousPath ?? "",
         file.binary,
+        headSha,
       ]),
     );
   const lines: string[] = [];
@@ -121,7 +124,7 @@ function signed(diff: DeckPullRequestDiff): ReadonlyMap<string, SignedHunk> {
   for (const file of diff.files) {
     const copies = new Map<string, number>();
     for (const hunk of file.hunks) {
-      const signature = signatureOf(file, hunk);
+      const signature = signatureOf(file, hunk, diff.headSha);
       const copy = (copies.get(signature) ?? 0) + 1;
       copies.set(signature, copy);
       byId.set(hunk.id, { path: file.path, key: `${signature}#${copy}` });
@@ -144,23 +147,29 @@ export function viewedHunks(
   return viewed;
 }
 
+/** Whether every hunk of the file is viewed: then the file is. */
+export const fileIsViewed = (file: DeckFile, viewed: ReadonlySet<string>) =>
+  file.hunks.every((hunk) => viewed.has(hunk.id));
+
 /** The files of `diff` whose hunks are all viewed. */
 function viewedFiles(diff: DeckPullRequestDiff, viewed: ReadonlySet<string>) {
   return new Set(
     diff.files
-      .filter((file) => file.hunks.every((hunk) => viewed.has(hunk.id)))
+      .filter((file) => fileIsViewed(file, viewed))
       .map((file) => file.path),
   );
 }
 
-/** The marks with the pull request's replaced, or dropped once it has none. */
+/** The marks with the pull request's replaced, or dropped once it has nothing to keep. */
 function withMarks(
   all: readonly DeckViewedMarks[],
   ref: DeckReviewRef,
-  next: DeckViewedMarks | undefined,
+  next: DeckViewedMarks,
 ) {
-  const others = all.filter((marks) => !sameRef(marks, ref));
-  return next && Object.keys(next.files).length ? [...others, next] : others;
+  const others = all.filter((marks) => !sameReviewRef(marks, ref));
+  return Object.keys(next.files).length || next.taken.length
+    ? [...others, next]
+    : others;
 }
 
 /** Marks naming exactly `viewed`, the hunks of `diff` at its head. */
@@ -168,6 +177,7 @@ function marksFor(
   ref: DeckReviewRef,
   diff: DeckPullRequestDiff,
   viewed: ReadonlySet<string>,
+  taken: ReadonlySet<string>,
   now: number,
 ): DeckViewedMarks {
   const files: Record<string, string[]> = {};
@@ -182,14 +192,16 @@ function marksFor(
     number,
     headSha: diff.headSha,
     files,
+    taken: [...taken],
     updatedAt: now,
   };
 }
 
 /**
  * After the review page read the pull request at a new head: the marks of
- * hunks it shows unchanged stay, whatever their position, and the rest are
- * cleared. Returns how many were cleared; the same head changes nothing.
+ * hunks it shows unchanged stay, whatever their position, the rest are
+ * cleared, and the code host's word counts again. Returns how many were
+ * cleared; the same head changes nothing.
  */
 export function refreshViewedMarks(
   all: readonly DeckViewedMarks[],
@@ -206,7 +218,7 @@ export function refreshViewedMarks(
     0,
   );
   return {
-    marks: withMarks(all, ref, marksFor(ref, diff, kept, now)),
+    marks: withMarks(all, ref, marksFor(ref, diff, kept, new Set(), now)),
     cleared: before - kept.size,
   };
 }
@@ -214,7 +226,8 @@ export function refreshViewedMarks(
 /**
  * Marks hunks of `diff` viewed, or not, refreshing marks made at another
  * head first. `files` lists the files whose hunks all became viewed, or
- * stopped being, for the code host.
+ * stopped being, for the code host. The files it changes are the user's
+ * from then on: a later read of the code host doesn't mark them again.
  */
 export function setHunksViewed(
   all: readonly DeckViewedMarks[],
@@ -225,13 +238,17 @@ export function setHunksViewed(
   now: number,
 ): { marks: readonly DeckViewedMarks[]; files: ViewedFileChange[] } {
   const current = refreshViewedMarks(all, ref, diff, now).marks;
-  const before = viewedHunks(viewedMarksOf(current, ref), diff);
+  const marks = viewedMarksOf(current, ref);
+  const before = viewedHunks(marks, diff);
   const known = signed(diff);
   const after = new Set(before);
+  const taken = new Set(marks?.taken);
   for (const id of hunkIds) {
-    if (!known.has(id)) continue;
+    const hunk = known.get(id);
+    if (!hunk || before.has(id) === viewed) continue;
     if (viewed) after.add(id);
     else after.delete(id);
+    taken.add(hunk.path);
   }
   if (after.size === before.size && [...after].every((id) => before.has(id)))
     return { marks: current, files: [] };
@@ -243,14 +260,16 @@ export function setHunksViewed(
       : [{ path: file.path, viewed: isViewed.has(file.path) }],
   );
   return {
-    marks: withMarks(current, ref, marksFor(ref, diff, after, now)),
+    marks: withMarks(current, ref, marksFor(ref, diff, after, taken, now)),
     files,
   };
 }
 
 /**
- * Marks every hunk of the files the code host says the user viewed. Paths
- * the diff doesn't have are left out; nothing new returns `all` as it was.
+ * Marks every hunk of the files the code host says the user viewed, each
+ * file once per head: one taken in before, or marked or unmarked by the
+ * user since, is left as it is. Paths the diff doesn't have are left out;
+ * nothing new returns `all` as it was.
  */
 export function adoptViewedFiles(
   all: readonly DeckViewedMarks[],
@@ -259,20 +278,28 @@ export function adoptViewedFiles(
   paths: readonly string[],
   now: number,
 ): readonly DeckViewedMarks[] {
-  const wanted = new Set(paths);
-  const hunkIds = diff.files
-    .filter((file) => wanted.has(file.path))
-    .flatMap((file) => file.hunks.map((hunk) => hunk.id));
-  if (!hunkIds.length) return all;
-  return setHunksViewed(all, ref, diff, hunkIds, true, now).marks;
+  const current = refreshViewedMarks(all, ref, diff, now).marks;
+  const marks = viewedMarksOf(current, ref);
+  const taken = new Set(marks?.taken);
+  const wanted = new Set(paths.filter((path) => !taken.has(path)));
+  const files = diff.files.filter((file) => wanted.has(file.path));
+  if (!files.length) return all;
+  const viewed = viewedHunks(marks, diff);
+  for (const file of files) {
+    taken.add(file.path);
+    for (const hunk of file.hunks) viewed.add(hunk.id);
+  }
+  return withMarks(current, ref, marksFor(ref, diff, viewed, taken, now));
 }
 
-/** The marks of the pull requests `keep` still wants; all kept returns `all`. */
+/** The marks of the pull requests in `refs`; all kept returns `all`. */
 export function forgetViewedMarks(
   all: readonly DeckViewedMarks[],
-  keep: (ref: DeckReviewRef) => boolean,
+  refs: readonly DeckReviewRef[],
 ): readonly DeckViewedMarks[] {
-  const kept = all.filter(keep);
+  const kept = all.filter((marks) =>
+    refs.some((ref) => sameReviewRef(marks, ref)),
+  );
   return kept.length === all.length ? all : kept;
 }
 
@@ -283,6 +310,7 @@ const storedMarksSchema = z.object({
   number: z.number().int().positive(),
   headSha: z.string().min(1),
   files: z.record(z.string(), z.array(z.string().min(1))),
+  taken: z.array(z.string()).default([]),
   updatedAt: z.number().int().nonnegative(),
 });
 

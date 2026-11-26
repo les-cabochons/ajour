@@ -21,6 +21,7 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import { renderNoteCard } from "./review-notes";
 
 /*
@@ -43,10 +44,6 @@ export type AddComment = (
 
 /** Marks every hunk of a file viewed, or none. */
 export type ToggleFileViewed = (file: DeckFile) => void;
-
-/** Whether every hunk of the file is viewed. */
-export const fileIsViewed = (file: DeckFile, viewed: ReadonlySet<string>) =>
-  file.hunks.every((hunk) => viewed.has(hunk.id));
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";
