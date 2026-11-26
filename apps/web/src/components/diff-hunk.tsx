@@ -234,27 +234,26 @@ export function lineElement(box: Element, { side, line }: HunkLine) {
   );
 }
 
-const lineName = ({ side, line }: HunkLine) =>
-  side === "deletions"
-    ? `Comment on removed line ${line}`
-    : `Comment on line ${line}`;
+const lineName = ({ side, line }: HunkLine, verb: "Comment on" | "Select") =>
+  `${verb} ${side === "deletions" ? "removed line" : "line"} ${line}`;
 
 /**
- * The hunk's keyboard way to comment: one button, hidden until it has
+ * The hunk's keyboard way to its lines: one button, hidden until it has
  * focus, on one line at a time. Up and Down, Home and End move it, and
- * the hunk highlights its line; Enter or Space opens the composer there.
- * With `onSelect`, Shift and Up or Down select the lines from where it
- * was to where it goes, for the page's toolbar. The hunk's lines are read
- * on its first key, not at rest.
+ * the hunk highlights its line. With `onAddComment`, Enter or Space opens
+ * the composer there; without it, they select the line. With `onSelect`,
+ * Shift and Up or Down select the lines from where it was to where it
+ * goes, for the page's toolbar. The hunk's lines are read on its first
+ * key, not at rest.
  */
-function LineCommentKey({
+function LineKey({
   patch,
   onAddComment,
   onLine,
   onSelect,
 }: {
   patch: string;
-  onAddComment: (lines: DiffLineRange) => void;
+  onAddComment?: (lines: DiffLineRange) => void;
   onLine: (line: HunkLine | null) => void;
   onSelect?: (from: HunkLine | null, to?: HunkLine) => void;
 }) {
@@ -265,7 +264,7 @@ function LineCommentKey({
   const [focused, setFocused] = useState(false);
   const shown = current ?? hunkLines(patch, true)[0];
   if (!shown) return null;
-  const name = lineName(shown);
+  const name = lineName(shown, onAddComment ? "Comment on" : "Select");
   function move(event: KeyboardEvent<HTMLButtonElement>) {
     const steps: Record<string, (index: number, last: number) => number> = {
       ArrowDown: (index, last) => Math.min(index + 1, last),
@@ -313,11 +312,20 @@ function LineCommentKey({
           onLine(null);
         }}
         onKeyDown={move}
-        onClick={() =>
-          onAddComment({ side: shown.side, start: shown.line, end: shown.line })
-        }
+        onClick={() => {
+          if (onAddComment)
+            onAddComment({
+              side: shown.side,
+              start: shown.line,
+              end: shown.line,
+            });
+          else {
+            anchor.current = undefined;
+            onSelect?.(shown, shown);
+          }
+        }}
       >
-        <Plus aria-hidden="true" />
+        {onAddComment ? <Plus aria-hidden="true" /> : null}
         {name}
         <span className="diff-line-key-hint" aria-hidden="true">
           ↑↓
@@ -471,8 +479,9 @@ export const DiffHunk = memo(function DiffHunk({
           : undefined
       }
     >
-      {mounted && onAddComment ? (
-        <LineCommentKey
+      {/* Closed pull requests take no comment, but their lines still select. */}
+      {mounted && (onAddComment || onSelectLines) ? (
+        <LineKey
           patch={patch}
           onAddComment={onAddComment}
           onLine={(line) => {

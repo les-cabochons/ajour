@@ -527,6 +527,61 @@ it("turns an answer into a draft comment on its lines", async () => {
   ]);
 });
 
+it("selects lines of a closed pull request from the keyboard, to explain but not to comment", async () => {
+  vi.mocked(api.askDeck).mockResolvedValue({
+    kind: "answer",
+    text: "It shouts.",
+    head: HEAD,
+  });
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [
+        {
+          ...pullRequestFacts,
+          repository: "acme/billing-api",
+          state: "closed",
+          closedAt: Date.now(),
+        },
+      ],
+    },
+  );
+  await renderReviewPage();
+
+  // No line takes a comment, but the hunk's button still picks lines.
+  expect(screen.queryByRole("button", { name: /^Comment on/ })).toBeNull();
+  const [key] = screen.getAllByRole("button", { name: "Select line 1" });
+  fireEvent.focus(key!);
+  fireEvent.keyDown(key!, { key: "ArrowDown", shiftKey: true });
+
+  const bar = toolbar()!;
+  expect(bar.getAttribute("aria-label")).toBe(
+    "Line 1 to removed line 2 selected",
+  );
+  expect(
+    within(bar)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["ExplainE", "Ask…A"]);
+  press("c");
+  expect(screen.queryByRole("form", { name: "New comment" })).toBeNull();
+
+  press("e");
+  const answer = await screen.findByRole("region", {
+    name: "Explanation of line 1 to removed line 2",
+  });
+  await within(answer).findByText("It shouts.");
+  expect(
+    within(answer).queryByRole("button", { name: "Turn into a comment" }),
+  ).toBeNull();
+});
+
 it("adds an answer after the words already typed in the composer on its lines", async () => {
   vi.mocked(api.askDeck).mockResolvedValue({
     kind: "answer",
