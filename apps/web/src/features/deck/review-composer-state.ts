@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
+import type { DeckReviewSubmission } from "@/domain/deck/draft-review";
 import {
   composerIdentity,
   type ComposerTarget,
@@ -26,6 +27,13 @@ export interface ComposerState {
    * the next one posts anew, as Post again.
    */
   uncertain: boolean;
+  /**
+   * Comment now's last try, named: Retry with the same words and lines
+   * sends the same name. Each composer keeps its own, so an earlier post
+   * that lands while another composer is open leaves that one's name be.
+   * Undefined after an answer, so the next try is a new post.
+   */
+  submission?: DeckReviewSubmission;
   /** The field takes the focus as it mounts, once: right after it opens. */
   focus: boolean;
 }
@@ -62,6 +70,22 @@ export class ReviewComposerState {
     if (composerIdentity(target) !== this.#identity || !this.#state) return;
     this.#state = { ...this.#state, ...change };
     for (const listener of this.#listeners) listener();
+  }
+
+  /**
+   * The code host answered the try named `submissionId`: `target`'s
+   * composer forgets that name, unless a later try renamed it.
+   */
+  settle(
+    target: ComposerTarget,
+    submissionId: string,
+    change: Partial<ComposerState>,
+  ) {
+    const named = this.holds(target) ? this.#state?.submission : undefined;
+    this.update(target, {
+      ...change,
+      ...(named?.id === submissionId ? { submission: undefined } : {}),
+    });
   }
 
   /** True while `target`'s composer is the one open. */

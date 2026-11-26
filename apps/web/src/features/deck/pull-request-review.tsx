@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SectionHeading } from "@/components/section-heading";
 import {
   draftReviewOf,
@@ -8,7 +8,6 @@ import {
   placeDrafts,
   type DeckDraftComment,
   type DeckReviewRef,
-  type DeckReviewSubmission,
 } from "@/domain/deck/draft-review";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
 import { placeThreads } from "@/domain/deck/review-threads";
@@ -156,12 +155,6 @@ export function PullRequestReview({
     [shown],
   );
   const headSha = shown?.headSha;
-  /**
-   * Comment now's last try, named: Retry with the same words and lines sends
-   * the same name. Like the composer's words, it lives only while the page
-   * is open. Undefined after an uncertain answer, so Post again posts anew.
-   */
-  const commentNowTry = useRef<DeckReviewSubmission | undefined>(undefined);
   const actions = useMemo(
     (): ReviewNoteActions => ({
       onHover: setHovered,
@@ -180,10 +173,10 @@ export function PullRequestReview({
       },
       commentNow: async (target, body) => {
         if (!headSha) return;
-        composerState.update(target, { posting: true, failure: undefined });
         const anchor = { ...lineAnchor(target), headSha };
+        // Like the words, the name lives with this composer while the page is open.
         const { submission, fields } = nameSubmission(
-          commentNowTry.current,
+          composerState.of(target).submission,
           JSON.stringify([anchor, body]),
           false,
           {
@@ -191,7 +184,12 @@ export function PullRequestReview({
             createId: () => `comment_submission_${crypto.randomUUID()}`,
           },
         );
-        commentNowTry.current = submission;
+        composerState.update(target, {
+          posting: true,
+          failure: undefined,
+          uncertain: false,
+          submission,
+        });
         let result;
         try {
           result = await postPullRequestComment(pluginId, connectionId, {
@@ -209,15 +207,15 @@ export function PullRequestReview({
           return;
         }
         // Taken, or unsettled: the next try is a new post.
-        commentNowTry.current = undefined;
         if ("uncertain" in result) {
-          composerState.update(target, {
+          composerState.settle(target, submission.id, {
             posting: false,
             failure: mayAlreadyBeThere("comment", pullRequest),
             uncertain: true,
           });
           return;
         }
+        composerState.settle(target, submission.id, {});
         // Another composer opened meanwhile keeps its words.
         if (composerState.holds(target)) closeComposer();
         retryConversation();

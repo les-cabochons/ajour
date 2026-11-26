@@ -516,6 +516,70 @@ it("asks before posting a comment again when the code host can't tell whether Co
   expect(calls()[2]).not.toHaveProperty("firstTriedAt");
 });
 
+it("offers Retry, not Post again, once a new post after an uncertain answer fails", async () => {
+  vi.mocked(api.postPullRequestComment)
+    .mockResolvedValueOnce({ uncertain: true })
+    .mockRejectedValueOnce(new Error("The connection dropped."));
+  await renderReviewPage();
+  const form = compose("Look here.");
+  fireEvent.click(within(form).getByRole("button", { name: "Comment now" }));
+  fireEvent.click(
+    await within(form).findByRole("button", { name: "Post again" }),
+  );
+
+  // The next click sends that new post's name again: a retry, not a new post.
+  fireEvent.click(await within(form).findByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("form", { name: "New comment" })).toBeNull(),
+  );
+  const calls = vi
+    .mocked(api.postPullRequestComment)
+    .mock.calls.map((call) => call[2]);
+  expect(calls[2]).toMatchObject({
+    submissionId: calls[1]!.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+});
+
+it("keeps a later composer's name for its Retry when an earlier Comment now lands meanwhile", async () => {
+  let landA: (value: { commentId: string }) => void = () => {};
+  vi.mocked(api.postPullRequestComment)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          landA = resolve;
+        }),
+    )
+    .mockRejectedValueOnce(new Error("The connection dropped."));
+  await renderReviewPage();
+  // A, on line 2, waits for the code host.
+  const a = compose("On B.");
+  fireEvent.click(within(a).getByRole("button", { name: "Comment now" }));
+  // B, on line 1, reaches it, but its answer is lost.
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+  const b = screen.getByRole("form", { name: "New comment" });
+  fireEvent.change(within(b).getByRole("textbox", { name: "Comment" }), {
+    target: { value: "On a." },
+  });
+  fireEvent.click(within(b).getByRole("button", { name: "Comment now" }));
+  await within(b).findByRole("button", { name: "Retry" });
+
+  await act(async () => landA({ commentId: "comment-a" }));
+  fireEvent.click(within(b).getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("form", { name: "New comment" })).toBeNull(),
+  );
+  const [, first, retry] = vi
+    .mocked(api.postPullRequestComment)
+    .mock.calls.map((call) => call[2]);
+  // The same name as B's first try, so the plugin finds the one it posted.
+  expect(retry).toMatchObject({
+    body: "On a.",
+    submissionId: first!.submissionId,
+    firstTriedAt: expect.any(Number),
+  });
+});
+
 /** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
 const HUGE: DeckOpenedPullRequest = {
   headSha: "one",
