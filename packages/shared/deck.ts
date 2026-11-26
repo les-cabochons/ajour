@@ -77,6 +77,29 @@ export const deckOpenRequestSchema = codeHostPullRequestRefSchema.extend({
 });
 export type DeckOpenRequest = z.infer<typeof deckOpenRequestSchema>;
 
+const hunkIdSchema = z.string().min(1).max(1_100);
+
+/**
+ * A kind of change, on a concern and on the summary (#662). Rules find
+ * `tests`, `docs`, `dependencies` and `build` from the paths; the agent's
+ * guide run gives the others (#794).
+ */
+export const deckChangeKindSchema = z.enum([
+  "breaking",
+  "feature",
+  "fix",
+  "refactor",
+  "performance",
+  "tests",
+  "docs",
+  "dependencies",
+  "build",
+]);
+export type DeckChangeKind = z.infer<typeof deckChangeKindSchema>;
+
+/** The kinds in the order the page lists them. */
+export const DECK_CHANGE_KINDS = deckChangeKindSchema.options;
+
 /**
  * One concern of a guide: hunks that belong together, with a title and a
  * one-line rationale, as Review Deck's pipeline groups them.
@@ -87,18 +110,81 @@ export const deckConcernSchema = z.object({
   title: z.string().max(500),
   rationale: z.string().max(2_000),
   /** Hunk ids of the diff, in reading order. */
-  hunkIds: z.array(z.string().min(1).max(1_100)).min(1),
+  hunkIds: z.array(hunkIdSchema).min(1),
+  /** Its kinds of change, in `DECK_CHANGE_KINDS` order. */
+  kinds: z.array(deckChangeKindSchema).max(DECK_CHANGE_KINDS.length),
 });
 export type DeckConcern = z.infer<typeof deckConcernSchema>;
 
+/** The tickets a pull request is linked to, as the summary shows them: never their text. */
+export const deckTicketSchema = z.object({
+  number: z.number().int().positive(),
+  /** A GitHub issue's repository. Absent for a work item. */
+  repository: z.string().min(1).max(240).optional(),
+  title: z.string().min(1).max(1_000),
+  url: z.string().url().max(2_000),
+  /** The code host's name for its state, such as "Open" or "Active". */
+  state: z.string().min(1).max(100),
+});
+export type DeckTicket = z.infer<typeof deckTicketSchema>;
+
 /**
- * A pull request's guide: its concerns in reading order. `madeWith: "code"`
- * is the guide Deck builds locally, from the code, with the vendored
- * pipeline.
+ * One line of the summary, with the hunks it is about. Its id is stable for
+ * the pull request at one head, so a later ask can anchor to it (#793).
+ */
+export const deckSummaryLineSchema = z.object({
+  id: z.string().min(1).max(200),
+  text: z.string().min(1).max(500),
+  /** In the diff's order. The page's link goes to the first. */
+  hunkIds: z.array(hunkIdSchema).min(1),
+  /** The concern a test coverage line is about. */
+  concernId: z.string().min(1).max(100).optional(),
+});
+export type DeckSummaryLine = z.infer<typeof deckSummaryLineSchema>;
+
+/** As many as a guide's concerns: test coverage has a line per concern. */
+const summaryLinesSchema = z.array(deckSummaryLineSchema).max(3_000);
+
+/**
+ * What Deck shows in place of the description (#662). The rules fill it in
+ * the guide build (#789); the agent's guide run fills `problem` when no
+ * ticket is linked, the other kinds and `breaking` later (#794), in the
+ * same fields as its `submit_guide`.
+ */
+export const deckSummarySchema = z.object({
+  /** The problem the pull request fixes: the first linked ticket's title, from the rules. */
+  problem: z
+    .object({
+      text: z.string().min(1).max(1_000),
+      source: z.enum(["ticket", "inferred"]),
+      ticket: deckTicketSchema.optional(),
+    })
+    .nullable(),
+  /** Every linked ticket in the code host's order, or null when they couldn't be read. */
+  tickets: z.array(deckTicketSchema).max(50).nullable(),
+  /** The union of the concerns' kinds, in `DECK_CHANGE_KINDS` order. */
+  kinds: z.array(deckChangeKindSchema).max(DECK_CHANGE_KINDS.length),
+  breaking: summaryLinesSchema,
+  /** Migrations, auth and security, deletion, locking and concurrency. */
+  risks: summaryLinesSchema,
+  /** The test files of each concern that has some. */
+  tests: summaryLinesSchema,
+  /** Changed code no test in the pull request covers, per concern. */
+  untested: summaryLinesSchema,
+  /** `TODO` and `FIXME` lines, debug output, commented-out code and skipped tests the pull request adds. */
+  leftovers: summaryLinesSchema,
+});
+export type DeckSummary = z.infer<typeof deckSummarySchema>;
+
+/**
+ * A pull request's guide: its concerns in reading order, and the summary
+ * built with them. `madeWith: "code"` is the guide Deck builds locally,
+ * from the code, with the vendored pipeline and the summary's rules.
  */
 export const deckGuideSchema = z.object({
   madeWith: z.literal("code"),
   concerns: z.array(deckConcernSchema).max(3_000),
+  summary: deckSummarySchema,
 });
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 
@@ -285,13 +371,96 @@ export function deckPullRequestLabel(key: string): string {
   return source ? `${source.repository}#${source.number}` : key;
 }
 
-/** What an ask is about. Only a concern for now; selected lines come with #790. */
-export const deckAskAnchorSchema = z.object({
-  kind: z.literal("concern"),
-  /** The concern's id in the guide. */
-  id: z.string().min(1).max(100),
+/**
+ * The question an ask about selected lines opens on (#793): Explain sends
+ * it as is, so its answer is cached as the default one.
+ */
+export const DECK_LINES_DEFAULT_QUESTION =
+  "Explain these lines: what they do, why they changed, and what a reviewer should check.";
+
+/** A line of a hunk: a removed line by the base's number, any other by the head's. */
+export const deckLinePointSchema = z.object({
+  side: z.enum(["base", "head"]),
+  line: z.number().int().positive(),
 });
+export type DeckLinePoint = z.infer<typeof deckLinePointSchema>;
+
+/**
+ * What an ask is about: a concern of the guide, or lines selected in one
+ * hunk, from `start` to `end` in the hunk's row order. The lines can run
+ * over both sides, as a change's removed and added lines do.
+ */
+export const deckAskAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("concern"),
+    /** The concern's id in the guide. */
+    id: z.string().min(1).max(100),
+  }),
+  z.object({
+    kind: z.literal("lines"),
+    /** The file's path, as the diff names it. */
+    path: pathSchema,
+    start: deckLinePointSchema,
+    end: deckLinePointSchema,
+  }),
+]);
 export type DeckAskAnchor = z.infer<typeof deckAskAnchorSchema>;
+export type DeckLinesAnchor = Extract<DeckAskAnchor, { kind: "lines" }>;
+
+/** Whether two points are the same line of a hunk. */
+export const sameLinePoint = (a: DeckLinePoint, b: DeckLinePoint) =>
+  a.side === b.side && a.line === b.line;
+
+/**
+ * One row of a hunk after its `@@` line: the line it is on, its numbers on
+ * each side (a context row has both), and its text with its `+`, `-` or
+ * space.
+ */
+export interface DeckHunkRow {
+  point: DeckLinePoint;
+  base?: number;
+  head?: number;
+  text: string;
+}
+
+/** A hunk's rows in order, numbered from its `@@` line; none for a file shown without hunks. */
+export function deckHunkRows(
+  hunk: Pick<DeckHunk, "header" | "oldStart" | "newStart" | "patch">,
+): DeckHunkRow[] {
+  const rows = hunk.patch.split("\n");
+  const at = rows.indexOf(hunk.header);
+  if (!hunk.header || at < 0) return [];
+  let base = hunk.oldStart;
+  let head = hunk.newStart;
+  const out: DeckHunkRow[] = [];
+  for (const text of rows.slice(at + 1)) {
+    if (text.startsWith("-")) {
+      out.push({ point: { side: "base", line: base }, base: base++, text });
+    } else if (text.startsWith("+")) {
+      out.push({ point: { side: "head", line: head }, head: head++, text });
+    } else if (text.startsWith(" ")) {
+      out.push({
+        point: { side: "head", line: head },
+        base: base++,
+        head: head++,
+        text,
+      });
+    }
+  }
+  return out;
+}
+
+const pointName = (point: DeckLinePoint) =>
+  point.side === "base" ? `removed line ${point.line}` : `line ${point.line}`;
+
+/** How the page and the agent name selected lines: "line 12", "lines 12–14", "removed line 3 to line 5". */
+export function deckLinesLabel({ start, end }: DeckLinesAnchor): string {
+  if (start.side === end.side && start.line === end.line)
+    return pointName(start);
+  if (start.side === end.side)
+    return `${start.side === "base" ? "removed lines" : "lines"} ${start.line}–${end.line}`;
+  return `${pointName(start)} to ${pointName(end)}`;
+}
 
 /** Asks about a pull request at one head, on its default question or a typed one. */
 export const deckAskRequestSchema = z.object({

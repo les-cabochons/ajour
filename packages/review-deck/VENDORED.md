@@ -29,8 +29,8 @@ Not copied: `src/node/` (CLI, embedder, CLI titler), `src/render/`,
 off.
 
 Ajour's own files are the entry points `saved.ts`, `stack.ts`, `diff.ts`,
-`guide-job.ts` and `guide-worker.ts`, the block
-at the end of `pipeline.ts`, `ajour/deps.ts`, and the tests
+`summary.ts`, `guide-job.ts` and `guide-worker.ts`, the block
+at the end of `pipeline.ts`, `ajour/deps.ts` and `ajour/summary.ts`, and the tests
 `build-diff.test.ts`, `deps-grammar.test.ts`, `deps-init.test.ts`,
 `description.test.ts` and `languages.test.ts`, which Ajour rewrote. The
 copied files keep upstream's formatting, so `.prettierignore` lists them.
@@ -44,11 +44,18 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   back as a patch for rendering, and their types. It loads no parser,
   so Deck's service in the local API builds a diff without the pipeline
   (#779).
+- `summary.ts`: `summarizeRules`, Ajour's summary rules (#789). From the
+  diff's files and the concerns the pipeline grouped, it finds each
+  concern's kinds of change, the risky areas, the test coverage and the
+  leftovers. The worker runs it right after the pipeline, on the files the
+  pipeline parsed. It finds tests with the pipeline's own `isTestPath` and
+  `logicalModule`, and loads no parser.
 - `guide-worker.ts`: the worker thread Deck's service in the local API runs
   the pipeline in, one pull request at a time, with Ajour's `PipelineDeps`
-  (#782). It answers each job with the groups in reading order.
-- `guide-job.ts`: the worker's messages and `GUIDE_WORKER_URL`. It imports
-  nothing, so the local API starts the worker without loading the pipeline,
+  (#782), then the summary's rules (#789). It answers each job with the
+  groups in reading order, their kinds, and the summary's lines.
+- `guide-job.ts`: the worker's messages and `GUIDE_WORKER_URL`. It imports only types,
+  so the local API starts the worker without loading the pipeline,
   or type-checking it with its own settings.
 - `saved.ts`: the `saved-reviews` format 4.
 - `stack.ts`: stack detection among open pull requests, and trunk patterns.

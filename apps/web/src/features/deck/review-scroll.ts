@@ -1,3 +1,5 @@
+import { lineElement, type HunkLine } from "@/components/diff-hunk";
+
 /*
  * How Deck's review page moves between its sections (#782, #790): J, K and
  * the guide tree's ticks read the sections' tops once per press and scroll
@@ -34,6 +36,87 @@ export interface SectionNavigator {
   tops(): number[];
   /** Scrolls section `index` to the reading line and focuses its title. */
   reach(index: number): void;
+  /**
+   * Scrolls the line `point` of hunk `hunkId`, on its row `row`, a few
+   * rows below the reading line, as a citation goes to it (#793).
+   */
+  reveal(hunkId: string, row: number, point: HunkLine): void;
+  /**
+   * Scrolls the hunk to the reading line and focuses it, for a summary
+   * line (#789). False when the list doesn't show it.
+   */
+  reachHunk(hunkId: string): boolean;
+}
+
+/** The rows a cited line lands below the reading line, so what leads to it shows. */
+export const CITATION_ROWS = 3;
+
+/** The height of a hunk's line, `--diff-line-height` in styles/deck.css. */
+export function lineHeightOf(element: HTMLElement) {
+  const height = Number.parseFloat(
+    getComputedStyle(element).getPropertyValue("--diff-line-height"),
+  );
+  return height > 0 ? height : 20;
+}
+
+/** The drawn box of hunk `hunkId` under `list`, or undefined while it isn't mounted. */
+export function hunkBoxOf(list: HTMLElement | null, hunkId: string) {
+  return [...(list?.querySelectorAll<HTMLElement>("[data-hunk]") ?? [])].find(
+    (box) => box.dataset.hunk === hunkId,
+  );
+}
+
+/**
+ * How far to scroll so the line `point`, row `row` of `box`, lands a few
+ * rows below the reading line: from its drawn line, or from its row before
+ * the hunk draws.
+ */
+export function revealDistance(box: HTMLElement, row: number, point: HunkLine) {
+  const scroller = scrollerOf(box);
+  const height = lineHeightOf(box);
+  const top =
+    lineElement(box, point)?.getBoundingClientRect().top ??
+    box.getBoundingClientRect().top + row * height;
+  return (
+    top -
+    (scroller?.getBoundingClientRect().top ?? 0) -
+    readingOffset(box) -
+    CITATION_ROWS * height
+  );
+}
+
+/** Scrolls `scroller`, or the window, by `distance` at once. */
+export function scrollByDistance(
+  scroller: HTMLElement | undefined,
+  distance: number,
+) {
+  if (scroller)
+    scroller.scrollTo({
+      top: scroller.scrollTop + distance,
+      behavior: "instant",
+    });
+  else window.scrollTo({ top: window.scrollY + distance, behavior: "instant" });
+}
+
+/** Scrolls `element` to `offset` below the top of its scroller, or of the window. */
+export function scrollToReadingLine(element: HTMLElement, offset: number) {
+  const scroller = scrollerOf(element);
+  const top = element.getBoundingClientRect().top;
+  if (scroller) {
+    scroller.scrollTo({
+      top:
+        scroller.scrollTop +
+        top -
+        scroller.getBoundingClientRect().top -
+        offset,
+      behavior: "instant",
+    });
+  } else {
+    window.scrollTo({
+      top: window.scrollY + top - offset,
+      behavior: "instant",
+    });
+  }
 }
 
 /** The element that scrolls `element`, or undefined for the window. */

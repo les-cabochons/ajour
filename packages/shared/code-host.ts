@@ -353,6 +353,39 @@ export const codeHostChecksResultSchema = z.object({
 });
 export type CodeHostChecksResult = z.infer<typeof codeHostChecksResultSchema>;
 
+/**
+ * A ticket a pull request is linked to: a GitHub issue it closes or is
+ * linked to, or an Azure DevOps work item. Deck heads the pull request's
+ * summary with the first one's title.
+ */
+export const codeHostLinkedTicketSchema = z.object({
+  /** The issue's number, or the work item's id. */
+  number: z.number().int().positive(),
+  /** The issue's repository. Absent for a work item. */
+  repository: repositorySchema.optional(),
+  title: z.string().trim().min(1).max(1_000),
+  /** As the code host stores it: Markdown on GitHub, HTML on Azure DevOps. */
+  body: bodySchema,
+  /** The ticket's page on the code host. */
+  url: z.string().url().max(2_000),
+  /** The code host's own name for its state, such as "Open", "Closed" or "Active". */
+  state: z.string().trim().min(1).max(100),
+});
+export type CodeHostLinkedTicket = z.infer<typeof codeHostLinkedTicketSchema>;
+
+export const codeHostLinkedTicketsRequestSchema = codeHostPullRequestRefSchema;
+export type CodeHostLinkedTicketsRequest = z.infer<
+  typeof codeHostLinkedTicketsRequestSchema
+>;
+
+/** The pull request's linked tickets, in the code host's order. */
+export const codeHostLinkedTicketsResultSchema = z.object({
+  tickets: z.array(codeHostLinkedTicketSchema).max(50),
+});
+export type CodeHostLinkedTicketsResult = z.infer<
+  typeof codeHostLinkedTicketsResultSchema
+>;
+
 /** A commit a version brought, as its timeline or iteration lists it. */
 export const codeHostVersionCommitSchema = z.object({
   sha: shaSchema,
@@ -604,6 +637,10 @@ export const codeHostOperations = {
   getChecks: {
     request: codeHostChecksRequestSchema,
     result: codeHostChecksResultSchema,
+  },
+  getLinkedTickets: {
+    request: codeHostLinkedTicketsRequestSchema,
+    result: codeHostLinkedTicketsResultSchema,
   },
   getPullRequestVersions: {
     request: codeHostVersionsRequestSchema,

@@ -1,4 +1,11 @@
-import { memo, useCallback, useId, useMemo, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { RiCheckLine as Check } from "@remixicon/react";
 import type { DeckFile, DeckHunk } from "@ajour/shared/deck";
 import {
@@ -6,7 +13,7 @@ import {
   type DiffHunkAnnotation,
   type DiffLineRange,
 } from "@/components/diff-hunk";
-import { ConcernRationale } from "./deck-ask";
+import { ConcernRationale, HunkAsks } from "./deck-ask";
 import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
@@ -22,6 +29,10 @@ import {
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
+import { useHunkLines } from "./review-line-selection";
+import { highlightOfSelection, LinesToolbar } from "./review-lines";
+import { useReviewLines, type AddComment } from "./review-lines-context";
+import { ChangeKinds } from "./pull-request-summary";
 import { renderNoteCard } from "./review-notes";
 
 /*
@@ -32,21 +43,20 @@ import { renderNoteCard } from "./review-notes";
  * has one too, which marks all its hunks. A hunk's review threads
  * (#783), draft comments and the composer (#784) sit after their lines, or
  * only mark them when the gutter beside the sections holds the cards. A
- * "+" beside a line opens the composer on it.
+ * "+" beside a line opens the composer on it. Lines selected in a hunk
+ * (#793) show the toolbar above them, and the answers about them follow
+ * the hunk's lines.
  */
 
-/** Opens the composer on lines of a hunk of the file at `path`. */
-export type AddComment = (
-  path: string,
-  hunkId: string,
-  lines: DiffLineRange,
-) => void;
+export type { AddComment };
 
 /** Marks every hunk of a file viewed, or none. */
 export type ToggleFileViewed = (file: DeckFile) => void;
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";
+/** Holds a hunk's id on its element, which a summary line scrolls to. */
+export const HUNK_ATTRIBUTE = "data-hunk-id";
 
 /** The lines a hovered note highlights, kept inside its hunk. */
 function highlightOf(hunk: DeckHunk, entry: ReviewNote | undefined) {
@@ -94,8 +104,49 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
   const label = hunk.header ? hunkLabel(file, hunk) : file.path;
   const note = inConcern ? fileNote(file) : undefined;
+  // The page's selected lines and cited line, when they are in this hunk.
+  const lines = useReviewLines();
+  const shown = useHunkLines(lines?.selection, hunk.id);
+  const onSelectLines = useMemo(
+    () =>
+      lines
+        ? (
+            range: Parameters<typeof lines.select>[1],
+            change: Parameters<typeof lines.select>[2],
+          ) => lines.select(hunk.id, range, change)
+        : undefined,
+    [lines, hunk.id],
+  );
+  // The selection wins over the keyboard's line and the hover; a cited
+  // line shows only while no note is hovered and no composer is open.
+  const selected = useMemo(
+    () =>
+      shown?.selection ? highlightOfSelection(shown.selection) : undefined,
+    [shown],
+  );
+  const cited = useMemo(
+    () =>
+      shown?.cited
+        ? {
+            side: shown.cited.side,
+            start: shown.cited.line,
+            end: shown.cited.line,
+          }
+        : undefined,
+    [shown],
+  );
+  const noted = annotations ? highlightOf(hunk, hovered) : undefined;
+  const box = useRef<HTMLDivElement>(null);
+  const drawn = !viewed && !withoutLines;
+  const attribute = { [HUNK_ATTRIBUTE]: hunk.id };
   return (
-    <div className="deck-hunk" data-viewed={viewed || undefined}>
+    <div
+      ref={box}
+      className="deck-hunk"
+      data-viewed={viewed || undefined}
+      tabIndex={-1}
+      {...attribute}
+    >
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
@@ -115,6 +166,9 @@ export const ReviewHunkView = memo(function ReviewHunkView({
           Viewed
         </button>
       </div>
+      {drawn && shown?.selection && shown.settled ? (
+        <LinesToolbar selection={shown.selection} hunk={box} />
+      ) : null}
       {viewed ? null : withoutLines ? (
         <p className="deck-file-empty">{withoutLines}</p>
       ) : (
@@ -126,10 +180,13 @@ export const ReviewHunkView = memo(function ReviewHunkView({
           theme={theme}
           annotations={annotations}
           renderAnnotation={annotations ? renderAnnotation : undefined}
-          highlight={annotations ? highlightOf(hunk, hovered) : undefined}
+          highlight={noted ?? cited}
+          selected={selected}
+          onSelectLines={onSelectLines}
           onAddComment={addComment}
         />
       )}
+      {drawn ? <HunkAsks hunkId={hunk.id} /> : null}
     </div>
   );
 });
@@ -194,6 +251,7 @@ export function ReviewSectionHeader({
           <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
           {section.title}
         </h3>
+        <ChangeKinds kinds={section.kinds ?? []} />
         {section.concernId ? (
           <ConcernRationale
             concernId={section.concernId}

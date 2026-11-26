@@ -1,3 +1,4 @@
+import { NO_DECK_SUMMARY } from "../../test-support/deck";
 import { describe, expect, it } from "vitest";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import {
@@ -34,18 +35,21 @@ const PULL_REQUEST: DeckOpenedPullRequest = {
   files: [file("src/b.ts", 2), file("README.md", 1), file("src/a.ts", 1)],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Read the config",
         rationale: "Both readers change together.",
         hunkIds: ["src/b.ts#1", "src/a.ts#0"],
+        kinds: [],
       },
       {
         id: "misc",
         title: "Other changes",
         rationale: "Changes with no strong link to the rest.",
         hunkIds: ["README.md#0"],
+        kinds: [],
       },
     ],
   },
@@ -105,18 +109,21 @@ describe("the review page's order", () => {
         files: [file("src/a.ts", 1)],
         guide: {
           madeWith: "code",
+          summary: NO_DECK_SUMMARY,
           concerns: [
             {
               id: "g1",
               title: "Gone",
               rationale: "",
               hunkIds: ["src/gone.ts#0"],
+              kinds: [],
             },
             {
               id: "g2",
               title: "Kept",
               rationale: "",
               hunkIds: ["src/a.ts#0", "src/a.ts#0"],
+              kinds: [],
             },
           ],
         },

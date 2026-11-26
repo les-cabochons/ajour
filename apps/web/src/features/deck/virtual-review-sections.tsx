@@ -25,13 +25,17 @@ import {
 import { hunkRowCount } from "@/domain/deck/review-diff";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import {
+  CITATION_ROWS,
   SECTION_MARGIN,
+  hunkBoxOf,
   readingOffset,
+  revealDistance,
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
+  HUNK_ATTRIBUTE,
   ReviewHunkView,
   ReviewSectionHeader,
   useNoteMarks,
@@ -140,6 +144,14 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   /** How far below the scroller's top the reading line is: under the sticky versions bar, and 16px more. */
   const readingLine = useRef(SECTION_MARGIN);
   const { rows, sectionRows } = useMemo(() => reviewRows(sections), [sections]);
+  /** Each hunk's row, which a summary line reaches. */
+  const hunkRows = useMemo(() => {
+    const byId = new Map<string, number>();
+    rows.forEach((row, index) => {
+      if (row.kind === "hunk") byId.set(row.entry.hunk.id, index);
+    });
+    return byId;
+  }, [rows]);
   const { byHunk, renderAnnotation, hoveredEntry } = useNoteMarks({
     notes,
     floating,
@@ -253,11 +265,11 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   };
 
   /**
-   * Focuses section `index`'s title once its row has mounted, and holds it
-   * on the reading line while the rows around it draw: a hunk's drawn
-   * height can differ from the height it held, after the virtualizer's
-   * jump. It stops once the title stays put for three frames, after 60
-   * frames, or when another reach starts.
+   * Focuses `target`, a section's title or a hunk, once its row has
+   * mounted, and holds the row on the reading line while the rows around
+   * it draw: a hunk's drawn height can differ from the height it held,
+   * after the virtualizer's jump. It stops once the row stays put for
+   * three frames, after 60 frames, or when another reach starts.
    */
   const reaching = useRef(0);
   // An unmounted page stops a reach still holding its title.
@@ -267,16 +279,14 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     },
     [],
   );
-  const settle = (index: number, offset: number) => {
+  const settle = (target: string, offset: number) => {
     const run = (reaching.current += 1);
     let frames = 0;
     let still = 0;
     const attempt = () => {
       if (run !== reaching.current || !scroller) return;
       frames += 1;
-      const heading = list.current?.querySelector<HTMLElement>(
-        `[data-section-index="${index}"] h3`,
-      );
+      const heading = list.current?.querySelector<HTMLElement>(target);
       if (heading) {
         if (document.activeElement !== heading) {
           heading.focus({ preventScroll: true });
@@ -335,7 +345,52 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
       // mount and draw.
       const start = virtualizer.measurementsCache[row]?.start ?? 0;
       virtualizer.scrollToOffset(start - offset);
-      settle(index, offset);
+      settle(`[data-section-index="${index}"] h3`, offset);
+    },
+    reachHunk(hunkId) {
+      const row = hunkRows.get(hunkId);
+      if (row === undefined || !scroller || !list.current) return false;
+      const offset = readingOffset(list.current);
+      const start = virtualizer.measurementsCache[row]?.start ?? 0;
+      virtualizer.scrollToOffset(start - offset);
+      settle(`[data-index="${row}"] [${HUNK_ATTRIBUTE}]`, offset);
+      return true;
+    },
+    reveal(hunkId, row, point) {
+      const index = rows.findIndex(
+        (entry) => entry.kind === "hunk" && entry.entry.hunk.id === hunkId,
+      );
+      if (index < 0 || !scroller || !list.current) return;
+      // A jump to where the rows above say its line is, then the line
+      // holds its place by its own position as the rows near it draw.
+      const start = virtualizer.measurementsCache[index]?.start ?? 0;
+      virtualizer.scrollToOffset(
+        start +
+          HUNK_PADDING +
+          HUNK_HEADER +
+          HUNK_GAP +
+          (row - CITATION_ROWS) * lineHeight -
+          readingOffset(list.current),
+      );
+      const run = (reaching.current += 1);
+      let frames = 0;
+      let still = 0;
+      const attempt = () => {
+        if (run !== reaching.current) return;
+        frames += 1;
+        const box = hunkBoxOf(list.current, hunkId);
+        if (box) {
+          const distance = revealDistance(box, row, point);
+          if (Math.abs(distance) > 1) {
+            virtualizer.scrollToOffset(scroller.scrollTop + distance);
+            still = 0;
+          } else {
+            still += 1;
+          }
+        }
+        if (still < 3 && frames < 60) requestAnimationFrame(attempt);
+      };
+      requestAnimationFrame(attempt);
     },
   }));
 

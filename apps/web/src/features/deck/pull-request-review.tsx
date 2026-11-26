@@ -57,6 +57,7 @@ import {
 } from "./pull-request-conversation";
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
+import { PullRequestSummary, type ReachHunk } from "./pull-request-summary";
 import { ReviewComposerState } from "./review-composer-state";
 import {
   DraftCommentCard,
@@ -82,15 +83,15 @@ const notSupported = (error: unknown) =>
 
 /**
  * A pull request's review page: its header with **Finish review** and the
- * row's actions, the title, the status line, the description drawer, the
- * changes in the guide's order or A–Z with each review thread and draft
- * comment beside or after its line, the draft comments a push made
- * outdated, then the conversation. The diff and its guide, the
- * conversation, the checks and the versions are read at once when the page
- * opens, and again on Refresh after a push came in. A "+" beside a line
- * opens the composer there (#784); a thread takes replies and resolves,
- * and the viewed marks last, a file's synced with the code host where it
- * keeps them (#785).
+ * row's actions, the title, the status line, the summary once the guide is
+ * built, the description drawer, the changes under their versions bar in
+ * the guide's order or A–Z with each review thread and draft comment beside
+ * or after its line, the draft comments a push made outdated, then the
+ * conversation. The diff and its guide, the conversation, the checks and
+ * the versions are read at once when the page opens, and again on Refresh
+ * after a push came in. A "+" beside a line opens the composer there (#784);
+ * a thread takes replies and resolves, and the viewed marks last, a file's
+ * synced with the code host where it keeps them (#785).
  */
 export function PullRequestReview({
   pullRequest,
@@ -105,6 +106,11 @@ export function PullRequestReview({
   const versions = usePullRequestVersions(pullRequest);
   const floating = useMediaQuery(DECK_GUTTER_QUERY);
   const [hovered, setHovered] = useState<string | undefined>();
+  // The changes set it once they show, so a summary line reaches its hunk.
+  const reachHunk = useRef<ReachHunk | undefined>(undefined);
+  const onReach = useCallback((hunkId: string) => {
+    reachHunk.current?.(hunkId);
+  }, []);
   const [composer, setComposer] = useState<ComposerTarget | undefined>();
   // The open composer's words, kept while its hunk scrolls away.
   const [composerState] = useState(() => new ReviewComposerState());
@@ -343,10 +349,10 @@ export function PullRequestReview({
     ],
   );
   const onAddComment = useCallback<AddComment>(
-    (path, _hunkId, lines) => {
-      if (!shown) return;
+    (path, _hunkId, lines, body) => {
+      if (!shown) return false;
       const side = lines.side === "deletions" ? "base" : "head";
-      setComposer({
+      const target: ComposerTarget = {
         path,
         side,
         line: lines.end,
@@ -359,10 +365,17 @@ export function PullRequestReview({
             line: lines.end,
             startLine: lines.start,
           }) ?? "",
-        body: "",
-      });
+        body: body ?? "",
+      };
+      // The composer open there keeps its words and adds these after them;
+      // another composer holding words keeps them, and the answer stays.
+      if (body !== undefined && !composerState.transfer(target, body)) {
+        return false;
+      }
+      setComposer(target);
+      return true;
     },
-    [shown],
+    [shown, composerState],
   );
   const headSha = shown?.headSha;
   const actions = useMemo(
@@ -581,6 +594,13 @@ export function PullRequestReview({
             onPosted={retryConversation}
           />
         ) : null}
+        {shown ? (
+          <PullRequestSummary
+            pullRequest={shown}
+            repository={pullRequest.facts.repository}
+            onReach={onReach}
+          />
+        ) : null}
         <DescriptionDrawer
           state={conversation.state}
           retry={conversation.retry}
@@ -595,6 +615,7 @@ export function PullRequestReview({
             hovered,
             onAddComment: open ? onAddComment : undefined,
           }}
+          reachHunkRef={reachHunk}
           versions={versionsView}
           viewing={viewing}
         />

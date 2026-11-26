@@ -36,7 +36,7 @@ The plugin searches open pull requests in three ways: the ones you wrote, the on
 
 For each pull request, Ajour gets the facts it needs to decide if it needs you: reviews, review requests, comments, mentions, checks and the last push. It does not store the text of comments or reviews.
 
-When you open a pull request in [Deck](/deck/), the plugin reads its changed files, then each one at the commit its branch started from and at its head. Ajour builds the diff from them and keeps it in memory while the pull request is on screen. A file with a NUL byte, or over 5,000,000 characters, shows as not shown.
+When you open a pull request in [Deck](/deck/), the plugin reads its changed files, then each one at the commit its branch started from and at its head. Ajour builds the diff from them and keeps it in memory while the pull request is on screen. A file with a NUL byte, or over 5,000,000 characters, shows as not shown. It also reads the issues the pull request closes or is linked to, and the first one's title heads its summary. Needs GitHub plugin 0.6.0.
 
 ## Limits
 

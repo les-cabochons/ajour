@@ -1,9 +1,13 @@
+import { builtFrom } from "./test-support/deck-guides.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
-import { deckPullRequestKey } from "../../../packages/shared/deck.ts";
+import {
+  DECK_LINES_DEFAULT_QUESTION,
+  deckPullRequestKey,
+} from "../../../packages/shared/deck.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import {
   fakeCliAdapter,
@@ -77,14 +81,15 @@ export async function getPullRequestConversation() {
 
 /** The guide, as the pipeline would build it: one concern. */
 const guideRuntime: DeckGuideRuntime = {
-  build: async () => [
-    {
-      id: "g1",
-      title: "Upper-case the second line",
-      rationale: "The handler now shouts.",
-      hunkIds: ["src/api.ts#0"],
-    },
-  ],
+  build: async (input) =>
+    builtFrom(input, [
+      {
+        id: "g1",
+        title: "Upper-case the second line",
+        rationale: "The handler now shouts.",
+        hunkIds: ["src/api.ts#0"],
+      },
+    ]),
   close: async () => {},
 };
 
@@ -439,11 +444,15 @@ describe("consent for one agent", () => {
       await api.consent();
       const asked = await api.ask();
       await api.waitForStarted(asked.body.turn.id);
+      // The agent has the turn: one not sent yet is refused instead (#937).
+      await vi.waitFor(async () =>
+        expect(await api.turnsRead()).toHaveLength(1),
+      );
 
       // Claude Code still runs; the repository is now allowed with Codex only.
       expect((await api.pick("codex")).status).toBe(200);
       expect((await api.consent("codex")).status).toBe(200);
-      await api.answerOf(asked.body.turn.id);
+      expect(await api.answerOf(asked.body.turn.id)).toBe("Done.");
 
       const [read] = await api.mcpReplies();
       expect(read!.reply.result.isError).toBe(true);
@@ -473,6 +482,10 @@ describe("consent for one agent", () => {
       const third = await api.startTurn("And the tests?");
       expect(second.status).toBe(201);
       expect(third.status).toBe(201);
+      // The agent has the first turn: one not sent yet is refused too (#937).
+      await vi.waitFor(async () =>
+        expect(await api.turnsRead()).toHaveLength(1),
+      );
 
       await api.pick("codex");
       await api.consent("codex");
@@ -605,6 +618,80 @@ describe("answers", () => {
 
     expect(again.status).toBe(201);
     expect(await api.answerOf(again.body.turn.id)).toBe("Whole.");
+  });
+
+  it(
+    "sends selected lines as the diff has them, cached per path, lines and head",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [
+        ...answer("It shouts here."),
+        ...answer("Line two alone."),
+        { readTurn: true },
+      ]);
+      await api.consent();
+      const lines = {
+        kind: "lines",
+        path: "src/api.ts",
+        start: { side: "base", line: 2 },
+        end: { side: "head", line: 3 },
+      };
+
+      const first = await api.ask({ anchor: lines });
+      expect(first.status).toBe(201);
+      expect(await api.answerOf(first.body.turn.id)).toBe("It shouts here.");
+      const again = await api.ask({ anchor: lines });
+      const other = await api.ask({
+        anchor: {
+          ...lines,
+          start: { side: "head", line: 2 },
+          end: { side: "head", line: 2 },
+        },
+      });
+
+      expect(again.body).toEqual({
+        kind: "answer",
+        text: "It shouts here.",
+        head: HEAD,
+      });
+      expect(other.status).toBe(201);
+      expect(await api.answerOf(other.body.turn.id)).toBe("Line two alone.");
+      const [turn, second] = await api.turnsRead();
+      // Quoted from the diff Ajour holds, never from the page's words.
+      expect(turn).toContain("src/api.ts");
+      expect(turn).toContain("src/api.ts#0");
+      expect(turn).toContain("-two\n+TWO\n three");
+      expect(turn).toContain(DECK_LINES_DEFAULT_QUESTION);
+      expect(second).toContain("+TWO");
+      expect(second).not.toContain("-two");
+    },
+  );
+
+  it("refuses lines the diff doesn't show", { timeout: 20_000 }, async () => {
+    const api = await startAskApi(() => [{ readTurn: true }]);
+    await api.consent();
+
+    const asked = await api.ask({
+      anchor: {
+        kind: "lines",
+        path: "src/api.ts",
+        start: { side: "head", line: 40 },
+        end: { side: "head", line: 41 },
+      },
+    });
+    const elsewhere = await api.ask({
+      anchor: {
+        kind: "lines",
+        path: "src/other.ts",
+        start: { side: "head", line: 1 },
+        end: { side: "head", line: 1 },
+      },
+    });
+
+    expect(asked.status).toBe(404);
+    expect(asked.body.reason).toBe("unknown_anchor");
+    expect(elsewhere.status).toBe(404);
+    expect(await api.launches()).toEqual([]);
   });
 
   it(

@@ -284,6 +284,15 @@ export async function getPullRequestConversation(connection) {
     viewedPaths: [CHANGED_PATH], mergeMethods: ["squash"],
   };
 }
+export async function getLinkedTickets(connection) {
+  await check(connection);
+  return {
+    tickets: [{
+      number: 7, repository: REPOSITORY, title: "Ticket " + MARKER, body: "Ticket body " + MARKER,
+      url: "https://example.test/" + MARKER, state: "Open " + MARKER,
+    }],
+  };
+}
 export async function getPullRequestVersions(connection) {
   await check(connection);
   const commit = (sha) => ({ sha, headline: "Commit " + MARKER, authorName: "Ana " + MARKER, createdAt: 1760000040000 });
@@ -1361,6 +1370,7 @@ describe("the privacy canary", () => {
         { repository: REPOSITORY, sha: "sha7", path: CHANGED_PATH },
       ],
       ["getPullRequestConversation", pull],
+      ["getLinkedTickets", pull],
       [
         "browsePullRequests",
         { repository: REPOSITORY, state: "open", text: MARKER },
