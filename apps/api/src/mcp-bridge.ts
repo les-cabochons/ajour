@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import {
+  BRIDGE_CALL_TIMEOUT_MS,
   BRIDGE_TIMEOUT_MESSAGE,
   BRIDGE_UNAVAILABLE_MESSAGE,
   type AgentClientRef,
@@ -16,7 +17,7 @@ import {
 
 export { BRIDGE_TIMEOUT_MESSAGE, BRIDGE_UNAVAILABLE_MESSAGE };
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = BRIDGE_CALL_TIMEOUT_MS;
 const KEEP_ALIVE_MS = 25_000;
 
 export class BridgeCallError extends Error {

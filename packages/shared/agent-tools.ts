@@ -37,6 +37,8 @@ function isRealCalendarDate(value: string) {
 export const BRIDGE_UNAVAILABLE_MESSAGE =
   "Open the Ajour window to use this tool.";
 export const BRIDGE_TIMEOUT_MESSAGE = "Ajour did not answer in time.";
+/** How long the local API waits for the window's answer to a tool call. */
+export const BRIDGE_CALL_TIMEOUT_MS = 10_000;
 
 /** An agent client as Settings lists it. The token is never part of it. */
 export const mcpClientSchema = z.object({

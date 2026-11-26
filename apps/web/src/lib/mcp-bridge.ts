@@ -2,13 +2,10 @@ import {
   agentTurnEventSchema,
   type AgentTurnEvent,
 } from "@ajour/shared/agent-runs";
-import {
-  DECK_DRAFT_COMMENT_TOOL,
-  deckDraftCommentCallSchema,
-} from "@ajour/shared/deck";
 import { handoffsSnapshotSchema } from "@ajour/shared/handoffs";
 import { setHandoffs } from "./handoffs";
 import {
+  BRIDGE_CALL_TIMEOUT_MS,
   agentsSnapshotSchema,
   bridgeToolCallSchema,
   dataToolOutputSchemas,
@@ -58,6 +55,24 @@ export interface McpBridgeHandlers {
   onAgents?(snapshot: AgentsSnapshot): void;
   /** A turn's progress, such as an ask's answer streaming in (#791). */
   onAgentTurn?(event: AgentTurnEvent): void;
+  /**
+   * The turn a call may act in only while it runs, such as a draft comment
+   * from Deck's chat (#796). Undefined for a call of no turn.
+   */
+  turnOfCall?(call: BridgeToolCall): string | undefined;
+}
+
+/**
+ * A call waiting its turn in the queue. A call of a turn runs only while
+ * its turn runs and the local API still waits for its answer.
+ */
+interface QueuedCall {
+  call: BridgeToolCall;
+  unit: Unit<AjourCatalog, "agent_tool.call">;
+  queuedAt: number;
+  turnId?: string;
+  /** Its turn ended while it waited. */
+  turnEnded: boolean;
 }
 
 /**
@@ -83,18 +98,27 @@ async function runSafely(
   }
 }
 
-/**
- * The turn a call may act only in: Deck's chat adds a draft comment only
- * while its turn runs (#796). Undefined for a call of no turn.
- */
-function turnOfCall(call: BridgeToolCall): string | undefined {
-  if (call.tool !== DECK_DRAFT_COMMENT_TOOL) return undefined;
-  return deckDraftCommentCallSchema.safeParse(call.input).data?.turnId;
-}
-
 /** What a call whose turn ended while it waited in the queue answers. */
 const TURN_ENDED =
   "This chat turn ended before Ajour ran the call, so it did nothing. Stop.";
+
+/**
+ * How long a call of a turn may wait in the queue: well inside the time
+ * the local API waits for its answer, so whatever it does reaches the API,
+ * which shows it, and never lands after the API told the agent it failed.
+ */
+const TURN_CALL_WAIT_MS = BRIDGE_CALL_TIMEOUT_MS / 2;
+
+const TOO_BUSY =
+  "The Ajour window was busy with other calls, so it did nothing. Try once more.";
+
+/** Why a queued call of a turn runs no more, if it doesn't run. */
+function refusalOf(queued: QueuedCall): string | undefined {
+  if (queued.turnId === undefined) return undefined;
+  if (queued.turnEnded) return TURN_ENDED;
+  if (Date.now() - queued.queuedAt > TURN_CALL_WAIT_MS) return TOO_BUSY;
+  return undefined;
+}
 
 /** Starts a tool call's job as it arrives, so its wait in the queue counts. */
 function startToolCall(call: BridgeToolCall) {
@@ -119,20 +143,17 @@ function startToolCall(call: BridgeToolCall) {
 
 /**
  * Runs a tool call in its job, posts its result, and ends the job once. A
- * call whose turn ended while it waited runs no more and is refused.
+ * call of a turn that may no longer run is refused instead.
  */
-async function runToolCall(
-  handlers: McpBridgeHandlers,
-  call: BridgeToolCall,
-  unit: Unit<AjourCatalog, "agent_tool.call">,
-  queuedAt: number,
-  turnEnded: () => boolean,
-) {
+async function runToolCall(handlers: McpBridgeHandlers, queued: QueuedCall) {
+  const { call, unit } = queued;
   try {
-    unit.set({ agent_tool: { queue_ms: Date.now() - queuedAt } });
-    const result: BridgeToolResult = turnEnded()
-      ? { requestId: call.requestId, ok: false, error: TURN_ENDED }
-      : await unit.enter(() => runSafely(handlers, call, unit));
+    unit.set({ agent_tool: { queue_ms: Date.now() - queued.queuedAt } });
+    const refusal = refusalOf(queued);
+    const result: BridgeToolResult =
+      refusal !== undefined
+        ? { requestId: call.requestId, ok: false, error: refusal }
+        : await unit.enter(() => runSafely(handlers, call, unit));
     // A refusal is the tool working as designed; a failure, recorded above,
     // is a bug.
     if (!result.ok && !result.failed) unit.refuse("tool_refused");
@@ -153,11 +174,11 @@ export function connectMcpBridge(
   let reopenTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<void> = Promise.resolve();
   /**
-   * The queued calls of each turn, whose flag its end sets. The stream
-   * sends a turn's call before its end, so a call queued for a turn is one
-   * the turn still ran for: the window needs no memory of older turns.
+   * The queued calls of each turn, which its end marks. The stream sends a
+   * turn's call before its end, so a call queued for a turn is one the
+   * turn still ran for: the window needs no memory of older turns.
    */
-  const queuedByTurn = new Map<string, Set<{ ended: boolean }>>();
+  const queuedByTurn = new Map<string, Set<QueuedCall>>();
 
   const open = () => {
     const stream = new EventSource(appApiUrl(endpoint));
@@ -209,7 +230,7 @@ export function connectMcpBridge(
         if (parsed.data.type === "ended") {
           const queued = queuedByTurn.get(parsed.data.turnId);
           queuedByTurn.delete(parsed.data.turnId);
-          queued?.forEach((call) => (call.ended = true));
+          queued?.forEach((call) => (call.turnEnded = true));
         }
         handlers.onAgentTurn?.(parsed.data);
       } catch {
@@ -223,10 +244,14 @@ export function connectMcpBridge(
       if (!parsed.success) return;
       calls += 1;
       job.set({ mcp_bridge: { call_count: calls } });
-      const unit = startToolCall(parsed.data);
-      const queuedAt = Date.now();
-      const turnId = turnOfCall(parsed.data);
-      const waiting = { ended: false };
+      const turnId = handlers.turnOfCall?.(parsed.data);
+      const waiting: QueuedCall = {
+        call: parsed.data,
+        unit: startToolCall(parsed.data),
+        queuedAt: Date.now(),
+        ...(turnId !== undefined ? { turnId } : {}),
+        turnEnded: false,
+      };
       if (turnId !== undefined) {
         const queued = queuedByTurn.get(turnId) ?? new Set();
         queued.add(waiting);
@@ -238,13 +263,7 @@ export function connectMcpBridge(
           queued?.delete(waiting);
           if (queued?.size === 0) queuedByTurn.delete(turnId);
         }
-        return runToolCall(
-          handlers,
-          parsed.data,
-          unit,
-          queuedAt,
-          () => waiting.ended,
-        );
+        return runToolCall(handlers, waiting);
       });
     });
   };

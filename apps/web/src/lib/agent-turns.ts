@@ -37,9 +37,7 @@ export function receiveAgentTurnEvent(event: AgentTurnEvent) {
 
 /**
  * Whether the window heard the turn end. A turn it never heard of, or
- * forgot among older ones, hasn't: this is no proof a turn still runs. The
- * bridge drops a queued call whose turn ends while it waits
- * (`lib/mcp-bridge.ts`), and that holds however many turns come after.
+ * forgot among older ones, hasn't: this is no proof a turn still runs.
  */
 export function agentTurnEnded(turnId: string) {
   return kept.get(turnId)?.some((event) => event.type === "ended") ?? false;

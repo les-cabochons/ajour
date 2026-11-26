@@ -179,13 +179,55 @@ describe("a draft comment queued behind another call (#796)", () => {
     },
   });
 
+  /** The runner's word on which turn a call acts in. */
+  const turnOfCall = (call: { input?: unknown }) =>
+    (call.input as { turnId?: string } | undefined)?.turnId;
+
   beforeEach(() => {
     postMcpBridgeResult.mockClear();
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("runs no more once it waited longer than the local API waits for its answer, though its turn still runs", async () => {
+    vi.useFakeTimers();
+    const ran: string[] = [];
+    const slow = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+    connectMcpBridge({
+      runToolCall: async (call) => {
+        ran.push(call.requestId);
+        if (call.requestId === "r1") await slow(6_000);
+        if (call.requestId === "r3") await slow(3_000);
+        return { requestId: call.requestId, ok: true, output: null };
+      },
+      onStatus: () => undefined,
+      turnOfCall,
+    });
+    const stream = FakeEventSource.instances[0]!;
+
+    // Behind a call that takes longer than the API's answer is worth.
+    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
+    stream.sendToolCall(draftCall("r2", "turn-1"));
+    await vi.advanceTimersByTimeAsync(6_000);
+    // Behind one that leaves time.
+    stream.sendToolCall({ requestId: "r3", tool: "list_projects", client });
+    stream.sendToolCall(draftCall("r4", "turn-1"));
+    await vi.advanceTimersByTimeAsync(3_000);
+    await vi.waitFor(() =>
+      expect(postMcpBridgeResult).toHaveBeenCalledTimes(4),
+    );
+
+    expect(ran).toEqual(["r1", "r3", "r4"]);
+    expect(postMcpBridgeResult.mock.calls[1]![0]).toEqual({
+      requestId: "r2",
+      ok: false,
+      error: expect.stringContaining("busy"),
+    });
   });
 
   it("runs no more once its turn ends, however many turns come after", async () => {
@@ -203,6 +245,7 @@ describe("a draft comment queued behind another call (#796)", () => {
       },
       onStatus: () => undefined,
       onAgentTurn: (event) => turnEvents.push(event.type),
+      turnOfCall,
     });
     const stream = FakeEventSource.instances[0]!;
 

@@ -427,6 +427,29 @@ describe("a draft comment from Deck's chat (#796)", () => {
     expect(localStore.snapshot().deckDraftReviews ?? []).toEqual([]);
   });
 
+  it("tells the bridge its turn, so a call queued past the turn's end runs no more", async () => {
+    const { agentToolCallTurn } =
+      await import("@/features/agents/agent-tool-runner");
+    const client = { id: "c1", name: "Claude Code" };
+
+    expect(
+      agentToolCallTurn({
+        requestId: "r1",
+        tool: "deck_add_draft_comment",
+        input: draftCall(),
+        client,
+      }),
+    ).toBe("turn-1");
+    expect(
+      agentToolCallTurn({
+        requestId: "r2",
+        tool: "list_projects",
+        input: { turnId: "turn-1" },
+        client,
+      }),
+    ).toBeUndefined();
+  });
+
   it("refuses one on another head than the draft's", async () => {
     const { call, localStore } = await setup();
     await call("deck_add_draft_comment", draftCall());

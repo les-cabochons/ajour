@@ -262,9 +262,9 @@ function finishWrite(
  * A draft comment Deck's chat adds (#796): the draft review lives here, in
  * the window's local state (#784), so the local API hands it over. It goes
  * on the head the draft's other comments are on, never another, and only
- * while its turn runs. The bridge drops a call whose turn ended while it
- * waited behind the window's other calls (`lib/mcp-bridge.ts`), however
- * long it waited; this checks once more for a turn the window heard end.
+ * while its turn runs: the bridge runs no call of a turn that ended while
+ * it waited (`agentToolCallTurn`), and a turn the window heard end adds
+ * nothing either.
  */
 function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
   const input = deckDraftCommentCallSchema.parse(call.input);
@@ -302,6 +302,12 @@ function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
     ok: true,
     output: { draftId: comment.id },
   };
+}
+
+/** The turn a call may act in only while it runs, for the bridge's queue. */
+export function agentToolCallTurn(call: BridgeToolCall): string | undefined {
+  if (call.tool !== DECK_DRAFT_COMMENT_TOOL) return undefined;
+  return deckDraftCommentCallSchema.safeParse(call.input).data?.turnId;
 }
 
 /** The bridge's `agent_tool.call` job, which it hands the call it runs. */
