@@ -121,10 +121,14 @@ vi.stubGlobal(
       private readonly callback: (entries: IntersectionObserverEntry[]) => void,
     ) {}
     observe(target: Element) {
+      // Inside act, as a browser frame would leave it: the hunk drawn, and
+      // its cards subscribed to the page's stores, before the next click.
       queueMicrotask(() =>
-        this.callback([
-          { target, isIntersecting: true } as IntersectionObserverEntry,
-        ]),
+        act(() =>
+          this.callback([
+            { target, isIntersecting: true } as IntersectionObserverEntry,
+          ]),
+        ),
       );
     }
     unobserve() {}
@@ -328,8 +332,16 @@ const tick = (name: string) =>
     within(changes()).getByRole("navigation", { name: "Guide tree" }),
   ).getByRole("button", { name });
 
-function writeReply(text: string) {
-  fireEvent.click(within(threadCard()).getByRole("button", { name: "Reply" }));
+/** The thread's card, once its hunk drew it. */
+const findThread = () =>
+  within(changes()).findByRole("article", {
+    name: "Thread on src/api.ts, line 2",
+  });
+
+/** Opens the thread's reply field and types. */
+async function writeReply(text: string) {
+  const card = await findThread();
+  fireEvent.click(within(card).getByRole("button", { name: "Reply" }));
   const form = within(threadCard()).getByRole("form", {
     name: "Reply to the thread",
   });
@@ -340,7 +352,7 @@ function writeReply(text: string) {
 
 it("replies to a thread at once, named, and shows the reply while the conversation reads again", async () => {
   await renderReviewPage();
-  const { field } = writeReply("Done in the next push.");
+  const { field } = await writeReply("Done in the next push.");
   expect(document.activeElement).toBe(field);
   // A conversation read that hasn't answered yet keeps the thread showing.
   let answer: (value: CodeHostConversationResult) => void = () => {};
@@ -388,7 +400,7 @@ it("keeps a failed reply's words with Retry, which sends the same name, and asks
     new Error("GitHub is unavailable."),
   );
   await renderReviewPage();
-  const { form } = writeReply("Agreed.");
+  const { form } = await writeReply("Agreed.");
   fireEvent.click(within(form).getByRole("button", { name: "Reply" }));
 
   expect((await within(form).findByRole("alert")).textContent).toBe(
@@ -434,7 +446,7 @@ it("sends a reply's Ctrl+Enter to the reply alone, not to the open composer", as
   fireEvent.change(within(composer).getByRole("textbox", { name: "Comment" }), {
     target: { value: "A line comment." },
   });
-  const { field } = writeReply("A reply.");
+  const { field } = await writeReply("A reply.");
   fireEvent.keyDown(field, { key: "Enter", ctrlKey: true });
   await waitFor(() =>
     expect(api.replyToPullRequestThread).toHaveBeenCalledTimes(1),
@@ -456,7 +468,7 @@ it("resolves and unresolves a thread at once, and says why when it fails", async
   );
   await renderReviewPage();
   fireEvent.click(
-    within(threadCard()).getByRole("button", { name: "Resolve" }),
+    within(await findThread()).getByRole("button", { name: "Resolve" }),
   );
   expect(
     await within(threadCard()).findByRole("button", { name: "Unresolve" }),
@@ -487,7 +499,7 @@ it("points to the access choice when the connection can't review", async () => {
   );
   await renderReviewPage();
   fireEvent.click(
-    within(threadCard()).getByRole("button", { name: "Resolve" }),
+    within(await findThread()).getByRole("button", { name: "Resolve" }),
   );
   expect((await within(threadCard()).findByRole("alert")).textContent).toBe(
     "Couldn't resolve the thread: This GitHub connection can't review pull requests. Turn on Review pull requests for Work in Settings › Plugins, then retry.",
@@ -608,7 +620,7 @@ it("shows viewed the files GitHub says the user viewed, and doesn't mark one aga
   await within(changes()).findByRole("article", {
     name: "Thread on src/api.ts, line 2",
   });
-  writeReply("Thanks.");
+  await writeReply("Thanks.");
   fireEvent.click(within(threadCard()).getByRole("button", { name: "Reply" }));
   await within(threadCard()).findByText("You");
   // The read is in once the reply it doesn't hold stops showing.
@@ -617,6 +629,31 @@ it("shows viewed the files GitHub says the user viewed, and doesn't mark one aga
   );
   expect(api.readPullRequestConversation).toHaveBeenCalledTimes(2);
   expect(viewedMark("Viewed file: src/api.ts")).toBe("false");
+});
+
+it("opens a thread's reply on the first click as its unmarked hunk draws again", async () => {
+  vi.mocked(api.readPullRequestConversation).mockImplementation(async () =>
+    conversation({ viewedPaths: ["src/api.ts"] }),
+  );
+  await renderReviewPage();
+  await waitFor(() =>
+    expect(viewedMark("Viewed file: src/api.ts")).toBe("true"),
+  );
+  // Unmarking unfolds the hunk, which mounts its lines and the thread anew.
+  fireEvent.click(
+    within(changes()).getByRole("button", { name: "Viewed file: src/api.ts" }),
+  );
+  const card = () =>
+    within(changes()).queryByRole("article", {
+      name: "Thread on src/api.ts, line 2",
+    });
+  // No waitFor: nothing but the hunk's own mount runs before the click.
+  for (let tick = 0; tick < 200 && !card(); tick += 1)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  fireEvent.click(within(card()!).getByRole("button", { name: "Reply" }));
+  expect(
+    within(card()!).getByRole("form", { name: "Reply to the thread" }),
+  ).toBeTruthy();
 });
 
 it("keeps a host without per-file viewed state to this computer, without asking again", async () => {
