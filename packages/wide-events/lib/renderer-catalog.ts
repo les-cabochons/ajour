@@ -737,6 +737,8 @@ export const rendererEvents = {
   "pull_request.unsettle": command(pullRequest),
   "pull_request.snooze": command(pullRequest),
   "pull_request.unsnooze": command(pullRequest),
+  /** Deck remembers the version the user reviewed (#787). */
+  "pull_request.remember_review": command(pullRequest),
 
   // Deck's draft review (#784). Never a path, a line or a comment's words.
   "deck.draft_comment_add": command({}),

@@ -47,6 +47,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   openDeckPullRequest: vi.fn(),
   readPullRequestConversation: vi.fn(),
   readPullRequestChecks: vi.fn(),
+  readPullRequestVersions: vi.fn(),
+  readDeckSinceReview: vi.fn(),
 }));
 // Highlighting runs in the window here: jsdom has no workers.
 vi.mock("@/components/diff-highlighter", () => ({
@@ -269,6 +271,7 @@ beforeEach(() => {
 beforeEach(() => {
   vi.mocked(api.readPullRequestConversation).mockResolvedValue(CONVERSATION);
   vi.mocked(api.readPullRequestChecks).mockResolvedValue({ checks: [] });
+  vi.mocked(api.readPullRequestVersions).mockResolvedValue({ versions: [] });
 });
 
 afterEach(() => {

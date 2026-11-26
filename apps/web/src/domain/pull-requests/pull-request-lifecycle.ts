@@ -38,6 +38,11 @@ export interface LocalPullRequest {
   lastActionAt?: number;
   closedAt?: number;
   missingFromSync: boolean;
+  /**
+   * The version the user last reviewed, by its head, as Deck's versions bar
+   * worked it out or a review sent from Deck set it (#787).
+   */
+  reviewed?: { headSha: string; at: number };
 }
 
 export const CLOSED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -487,13 +492,19 @@ export function reattachPullRequests(
 
 export type PullRequestCommand =
   | { type: "settle" | "unsettle" | "unsnooze" | "open" }
-  | { type: "snooze"; until: number };
+  | { type: "snooze"; until: number }
+  /** The user reviewed the version whose head is `headSha`, at `at`. */
+  | { type: "reviewed"; headSha: string; at: number };
 
 export function changePullRequest(
   item: LocalPullRequest,
   command: PullRequestCommand,
   now: number,
 ): LocalPullRequest {
+  if (command.type === "reviewed")
+    return item.reviewed && item.reviewed.at >= command.at
+      ? item
+      : { ...item, reviewed: { headSha: command.headSha, at: command.at } };
   if (command.type === "open")
     return {
       ...item,
@@ -572,6 +583,12 @@ const storedPullRequestSchema = z.object({
   lastActionAt: z.number().int().nonnegative().optional(),
   closedAt: z.number().int().nonnegative().optional(),
   missingFromSync: z.boolean().default(false),
+  reviewed: z
+    .object({
+      headSha: z.string().min(1).max(120),
+      at: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 export function normalizePullRequests(value: unknown): LocalPullRequest[] {

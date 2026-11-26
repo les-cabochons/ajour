@@ -173,7 +173,7 @@ What Deck shows in place of a pull request's description: the problem it fixes, 
 _Avoid_: Description, overview, AI summary
 
 **Content cache**:
-What Deck keeps on disk of each pull request it read, at one base and head: both versions of each changed file, the diff and the guide. It lets a pull request open without asking the code host. Draft reviews are never part of it.
+What Deck keeps on disk of each pull request it read, at one base and head: both versions of each changed file, the diff, the guide, and which hunks changed since each version the user reviewed. It lets a pull request open without asking the code host. Draft reviews are never part of it.
 _Avoid_: Offline copy, download, mirror
 
 **Ask**:

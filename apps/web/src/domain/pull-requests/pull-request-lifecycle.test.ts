@@ -11,6 +11,7 @@ import {
   enabledCodeHostGroups,
   findRetainedConnection,
   isPullRequestReturned,
+  normalizePullRequests,
   reattachPullRequests,
   reconcilePullRequests,
   selectPullRequestsToPreload,
@@ -494,6 +495,47 @@ describe("pull request lifecycle", () => {
     expect(changePullRequest(first, { type: "snooze", until: NaN }, 600)).toBe(
       first,
     );
+  });
+
+  it("remembers the version the user reviewed, the later one winning, through a sync and a reload", () => {
+    const item = settled();
+    const reviewed = changePullRequest(
+      item,
+      { type: "reviewed", headSha: "one", at: 600 },
+      700,
+    );
+    expect(reviewed.reviewed).toEqual({ headSha: "one", at: 600 });
+    // It changes nothing else, not even the last action's time.
+    expect({ ...reviewed, reviewed: undefined }).toEqual({
+      ...item,
+      reviewed: undefined,
+    });
+    // An older review doesn't replace it.
+    expect(
+      changePullRequest(
+        reviewed,
+        { type: "reviewed", headSha: "zero", at: 500 },
+        800,
+      ),
+    ).toBe(reviewed);
+    // A closed pull request remembers it too.
+    const closed = { ...item, facts: { ...facts, state: "merged" as const } };
+    expect(
+      changePullRequest(closed, { type: "reviewed", headSha: "one", at: 1 }, 2)
+        .reviewed,
+    ).toEqual({ headSha: "one", at: 1 });
+
+    const synced = reconcilePullRequests(
+      [reviewed],
+      source,
+      sync({ ...facts, headSha: "two" }),
+      options,
+    )[0]!;
+    expect(synced.reviewed).toEqual({ headSha: "one", at: 600 });
+    expect(normalizePullRequests([synced])[0]!.reviewed).toEqual({
+      headSha: "one",
+      at: 600,
+    });
   });
 
   describe("restoring records after a reinstall", () => {

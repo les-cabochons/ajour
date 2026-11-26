@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   DeckOpenRequest,
   DeckOpenedPullRequest,
+  DeckSinceReview,
 } from "@ajour/shared/deck";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import {
   AppApiError,
   openDeckPullRequest,
+  readDeckSinceReview,
   readPullRequestChecks,
   readPullRequestConversation,
+  readPullRequestVersions,
 } from "@/lib/app-api";
 
 export type PullRequestReadState<T> =
@@ -21,6 +24,23 @@ export type PullRequestReadState<T> =
   | { status: "unavailable"; message: string }
   | { status: "error"; message: string };
 
+/** A failed read: unavailable when retrying won't help, an error otherwise. */
+function failedRead(
+  error: unknown,
+  fallback: string,
+): PullRequestReadState<never> {
+  const message = error instanceof Error ? error.message : fallback;
+  const reason =
+    error instanceof AppApiError ? error.payload?.reason : undefined;
+  return {
+    status:
+      reason === "not_supported" || reason === "connection_removed"
+        ? "unavailable"
+        : "error",
+    message,
+  };
+}
+
 type Read<T> = (
   pluginId: string,
   connectionId: string,
@@ -32,7 +52,9 @@ type Read<T> = (
  * when it opens. A sync that finds a new push doesn't read it again: Retry,
  * or opening the pull request again, does. `withHead` sends the head the
  * last sync saw, so the content cache answers without the code host when it
- * holds that head (#781).
+ * holds that head (#781). `refresh` reads it again without that head, so
+ * the local API finds the newest one: the last sync may not have seen a
+ * push the page already knows of.
  */
 function usePullRequestRead<T>(
   pullRequest: LocalPullRequest | undefined,
@@ -43,7 +65,7 @@ function usePullRequestRead<T>(
   const [state, setState] = useState<PullRequestReadState<T>>({
     status: "loading",
   });
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState({ count: 0, newestHead: false });
   const pluginId = pullRequest?.pluginId;
   const connectionId = pullRequest?.connectionId;
   const repository = pullRequest?.facts.repository;
@@ -56,23 +78,15 @@ function usePullRequestRead<T>(
     let current = true;
     setState({ status: "loading" });
     const head =
-      withHead && headSha.current ? { headSha: headSha.current } : {};
+      withHead && !attempt.newestHead && headSha.current
+        ? { headSha: headSha.current }
+        : {};
     read(pluginId, connectionId, { repository, number, ...head }).then(
       (value) => {
         if (current) setState({ status: "ready", value });
       },
       (error: unknown) => {
-        if (!current) return;
-        const message = error instanceof Error ? error.message : fallback;
-        const reason =
-          error instanceof AppApiError ? error.payload?.reason : undefined;
-        setState({
-          status:
-            reason === "not_supported" || reason === "connection_removed"
-              ? "unavailable"
-              : "error",
-          message,
-        });
+        if (current) setState(failedRead(error, fallback));
       },
     );
     return () => {
@@ -88,8 +102,15 @@ function usePullRequestRead<T>(
     fallback,
     withHead,
   ]);
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-  return { state, retry };
+  const retry = useCallback(
+    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: false })),
+    [],
+  );
+  const refresh = useCallback(
+    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: true })),
+    [],
+  );
+  return { state, retry, refresh };
 }
 
 /** The pull request's diff from the merge base to the head, and its guide, as the local API builds them. */
@@ -120,3 +141,64 @@ export const usePullRequestChecks = (
     readPullRequestChecks,
     "Unable to read the pull request's checks.",
   );
+
+/** The pull request's versions, each push or iteration with its commits. */
+export const usePullRequestVersions = (
+  pullRequest: LocalPullRequest | undefined,
+) =>
+  usePullRequestRead(
+    pullRequest,
+    readPullRequestVersions,
+    "Unable to read the pull request's versions.",
+  );
+
+export type SinceReviewState =
+  { status: "none" } | PullRequestReadState<DeckSinceReview>;
+
+/**
+ * Which hunks of the diff at `head` changed since the version whose head is
+ * `reviewedHead`, as the local API compares them, read once for each pair.
+ * None while either is unknown.
+ */
+export function useSinceReview(
+  pullRequest: LocalPullRequest,
+  head: string | undefined,
+  reviewedHead: string | undefined,
+) {
+  const [state, setState] = useState<SinceReviewState>({ status: "none" });
+  const [attempt, setAttempt] = useState(0);
+  const { pluginId, connectionId } = pullRequest;
+  const { repository, number } = pullRequest.facts;
+  useEffect(() => {
+    if (!head || !reviewedHead) {
+      setState({ status: "none" });
+      return;
+    }
+    let current = true;
+    setState({ status: "loading" });
+    readDeckSinceReview(pluginId, connectionId, {
+      repository,
+      number,
+      head,
+      reviewedHead,
+    }).then(
+      (value) => {
+        if (current) setState({ status: "ready", value });
+      },
+      (error: unknown) => {
+        if (current)
+          setState(
+            failedRead(
+              error,
+              "Unable to compare with the version you reviewed.",
+            ),
+          );
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [pluginId, connectionId, repository, number, head, reviewedHead, attempt]);
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
+  return { state, retry };
+}

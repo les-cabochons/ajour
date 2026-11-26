@@ -26,6 +26,7 @@ import { hunkRowCount } from "@/domain/deck/review-diff";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import {
   SECTION_MARGIN,
+  readingOffset,
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
@@ -101,6 +102,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   onAddComment,
   onNoteRowsChange,
   focusedHunk,
+  changed,
 }: {
   sections: readonly ReviewSection[];
   viewed: ReadonlySet<string>;
@@ -123,12 +125,16 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   onNoteRowsChange: (hunkIds: ReadonlySet<string>) => void;
   /** The hunk of the gutter's card holding the focus, kept mounted off screen like the row holding it. */
   focusedHunk?: string;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
 }) {
   const baseId = useId();
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
   /** How far below the top of the scroller's content the rows start. */
   const [margin, setMargin] = useState(0);
   const [lineHeight, setLineHeight] = useState(20);
+  /** How far below the scroller's top the reading line is: under the sticky versions bar, and 16px more. */
+  const readingLine = useRef(SECTION_MARGIN);
   const { rows, sectionRows } = useMemo(() => reviewRows(sections), [sections]);
   const { byHunk, renderAnnotation, hoveredEntry } = useNoteMarks({
     notes,
@@ -158,6 +164,8 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
       getComputedStyle(element).getPropertyValue("--diff-line-height"),
     );
     if (height > 0) setLineHeight(height);
+    // One read: the bar keeps its height.
+    readingLine.current = readingOffset(element);
     // The summary and the heading above the rows can change height.
     const measure = () => {
       const offset =
@@ -226,6 +234,19 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     // Rows measured a frame later, so their new heights never loop the observer.
     useAnimationFrameWithResizeObserver: true,
   });
+  // The library's own rule, with the fold moved down to the reading line,
+  // under the sticky versions bar: a row above it that resizes, ending there
+  // or measured for the first time, moves the page by as much, so a section
+  // J or a tick reached stays put as the hunks above it draw.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+    item,
+    _delta,
+    instance,
+  ) => {
+    const fold = (instance.scrollOffset ?? 0) + readingLine.current;
+    if (!instance.itemSizeCache.has(item.key)) return item.start < fold;
+    return item.end <= fold && instance.scrollDirection !== "backward";
+  };
 
   /**
    * Focuses section `index`'s title once its row has mounted, and holds it
@@ -242,7 +263,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     },
     [],
   );
-  const settle = (index: number) => {
+  const settle = (index: number, offset: number) => {
     const run = (reaching.current += 1);
     let frames = 0;
     let still = 0;
@@ -260,7 +281,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
           heading
             .closest<HTMLElement>(".deck-review-row")!
             .getBoundingClientRect().top -
-          (scroller.getBoundingClientRect().top + SECTION_MARGIN);
+          (scroller.getBoundingClientRect().top + offset);
         if (Math.abs(off) > 1) {
           // Through the virtualizer, which otherwise keeps the offset it
           // last saw and moves the page back from there as rows resize.
@@ -302,13 +323,15 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
     },
     reach(index) {
       const row = sectionRows[index];
-      if (row === undefined || !scroller) return;
+      if (row === undefined || !scroller || !list.current) return;
+      // Below the sticky versions bar, read once per reach.
+      const offset = readingOffset(list.current);
       // A jump to where the rows above it say it starts, then the title
       // holds the reading line by its own position as the rows near it
       // mount and draw.
       const start = virtualizer.measurementsCache[row]?.start ?? 0;
-      virtualizer.scrollToOffset(start - SECTION_MARGIN);
-      settle(index);
+      virtualizer.scrollToOffset(start - offset);
+      settle(index, offset);
     },
   }));
 
@@ -371,6 +394,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
                     : undefined
                 }
                 onAddComment={onAddComment}
+                changedIn={changed?.get(row.entry.hunk.id)}
               />
             )}
           </div>

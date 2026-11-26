@@ -9,6 +9,7 @@ import {
   type Ref,
   type RefObject,
 } from "react";
+import type { CodeHostVersion, CodeHostVersionsResult } from "@ajour/shared";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
@@ -24,14 +25,15 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
+import { sinceReviewSections, versionNames } from "@/domain/deck/versions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
 import {
-  SECTION_MARGIN,
   atEnd,
+  readingOffset,
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
@@ -42,7 +44,11 @@ import {
   type AddComment,
 } from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
-import type { PullRequestReadState } from "./use-pull-request-read";
+import type {
+  PullRequestReadState,
+  SinceReviewState,
+} from "./use-pull-request-read";
+import { NewPushesBanner, VersionsBar } from "./versions-bar";
 import { VirtualReviewSections } from "./virtual-review-sections";
 
 /** Every section mounted, for a pull request that isn't huge. */
@@ -59,6 +65,7 @@ function MountedReviewSections({
   hoveredSection,
   onAnchor,
   onAddComment,
+  changed,
 }: {
   sections: readonly ReviewSection[];
   viewed: ReadonlySet<string>;
@@ -75,6 +82,8 @@ function MountedReviewSections({
   hoveredSection: string | undefined;
   onAnchor: (element: HTMLElement | null) => void;
   onAddComment: AddComment | undefined;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
 }) {
   const all = () => [
     ...(listRef.current?.querySelectorAll<HTMLElement>(
@@ -105,6 +114,7 @@ function MountedReviewSections({
           hovered={hoveredSection === section.key ? hovered : undefined}
           onAnchor={onAnchor}
           onAddComment={onAddComment}
+          changed={changed}
         />
       ))}
     </div>
@@ -155,6 +165,26 @@ function notesBySection(
   return kept;
 }
 
+/** The versions bar's reads and the since-review marks, as `PullRequestReview` works them out. */
+export interface ReviewVersionsView {
+  state: PullRequestReadState<CodeHostVersionsResult>;
+  retry: () => void;
+  /** The version the user last reviewed. */
+  reviewed: CodeHostVersion | undefined;
+  since: SinceReviewState;
+  retrySince: () => void;
+  /**
+   * The hunks changed since the version reviewed, with the version each
+   * last changed in; empty when the version reviewed is the one on screen.
+   * Undefined until known.
+   */
+  changed: ReadonlyMap<string, number> | undefined;
+  /** The pushes after the head on screen. */
+  pushes: number;
+  refresh: () => void;
+  baseRef: string | undefined;
+}
+
 /**
  * The guide, or the files A–Z, of an opened pull request, with the guide
  * tree beside it, and each review thread, draft comment and the composer
@@ -164,19 +194,45 @@ function notesBySection(
  */
 function ReviewChanges({
   pullRequest,
-  notes: { notes, floating, hovered, onAddComment },
+  notes: { notes: allNotes, floating, hovered, onAddComment },
+  versions,
 }: {
   pullRequest: DeckOpenedPullRequest;
   notes: ReviewNotesView;
+  versions: ReviewVersionsView;
 }) {
   const onHover = useContext(ReviewNotesContext)?.onHover;
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
   const order: ReviewOrder = pullRequest.guide ? chosen : "files";
-  const sections = useMemo(
+  const all = useMemo(
     () => reviewSections(pullRequest, order),
     [pullRequest, order],
   );
+  // The latest version shows by default; the filter keeps what changed since the review.
+  const [filtering, setFiltering] = useState(false);
+  const { changed } = versions;
+  const since = useMemo(
+    () =>
+      filtering && changed ? sinceReviewSections(all, changed) : undefined,
+    [all, changed, filtering],
+  );
+  const sections = since ? since.sections : all;
+  const hunkCount = useMemo(
+    () =>
+      pullRequest.files.reduce((count, file) => count + file.hunks.length, 0),
+    [pullRequest.files],
+  );
+  const shownCount = sections.reduce(
+    (count, section) => count + section.hunks.length,
+    0,
+  );
+  const shownVersion =
+    versions.state.status === "ready"
+      ? versions.state.value.versions.find(
+          (version) => version.headSha === pullRequest.headSha,
+        )
+      : undefined;
   const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
   const onToggleViewed = useCallback(
     (hunkId: string) => setViewed((marks) => toggleViewed(marks, hunkId)),
@@ -203,7 +259,7 @@ function ReviewChanges({
     const scroller = scrollerOf(element);
     const target = sectionToReach(
       tops,
-      (scroller?.getBoundingClientRect().top ?? 0) + SECTION_MARGIN,
+      (scroller?.getBoundingClientRect().top ?? 0) + readingOffset(element),
       direction,
       atEnd(scroller) ? reached.current : undefined,
     );
@@ -238,6 +294,11 @@ function ReviewChanges({
       for (const entry of section.hunks) map.set(entry.hunk.id, section.key);
     return map;
   }, [sections]);
+  // Under the filter, only the notes on the hunks it shows.
+  const notes = useMemo(
+    () => allNotes.filter((entry) => sectionOfHunk.has(entry.hunkId)),
+    [allNotes, sectionOfHunk],
+  );
   const grouped = useRef<ReadonlyMap<string, readonly ReviewNote[]>>(new Map());
   const bySection = useMemo(
     () => notesBySection(notes, sectionOfHunk, grouped.current),
@@ -281,9 +342,23 @@ function ReviewChanges({
     scheduleRef.current?.();
   }, [sections, viewed]);
 
-  const count = order === "guide" ? sections.length : pullRequest.files.length;
+  const count = order === "guide" ? all.length : pullRequest.files.length;
   return (
     <>
+      <VersionsBar
+        versions={versions.state}
+        retryVersions={versions.retry}
+        shownHead={pullRequest.headSha}
+        reviewed={versions.reviewed}
+        since={versions.since}
+        retrySince={versions.retrySince}
+        changed={changed}
+        filtering={filtering}
+        onFilter={setFiltering}
+        hunkCount={hunkCount}
+        shownCount={shownCount}
+        baseRef={versions.baseRef}
+      />
       <div className="deck-guide-header">
         <SectionHeading trailing={count} className="deck-guide-heading">
           {order === "guide" ? "Guide" : "Files"}
@@ -342,6 +417,7 @@ function ReviewChanges({
                 onAddComment={onAddComment}
                 onNoteRowsChange={onNoteRowsChange}
                 focusedHunk={focusedCardHunk}
+                changed={changed}
               />
             ) : (
               <MountedReviewSections
@@ -357,6 +433,7 @@ function ReviewChanges({
                 hoveredSection={hoveredSection}
                 onAnchor={onAnchor}
                 onAddComment={onAddComment}
+                changed={changed}
               />
             )}
             {gutter ? (
@@ -377,9 +454,33 @@ function ReviewChanges({
             onReach={reach}
           />
         </div>
+      ) : since ? (
+        <p className="deck-file-empty">
+          {`Nothing changed since your review of v${versions.reviewed?.number ?? ""}.`}{" "}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFiltering(false)}
+          >
+            {shownVersion ? `Show all of v${shownVersion.number}` : "Show all"}
+          </Button>
+        </p>
       ) : (
         <p className="deck-file-empty">This pull request changes no files.</p>
       )}
+      {sections.length && since?.folded.length ? (
+        <p className="deck-unchanged">
+          <span>Unchanged since your review:</span>
+          {since.folded.map((section) => (
+            <span key={section.key} className="deck-unchanged-item">
+              {section.number ? (
+                <span className="deck-unchanged-number">{section.number}</span>
+              ) : null}
+              {section.title}
+            </span>
+          ))}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -394,11 +495,13 @@ export function PullRequestChanges({
   state,
   retry,
   notes,
+  versions,
 }: {
   pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
   notes: ReviewNotesView;
+  versions: ReviewVersionsView;
 }) {
   return (
     // Named outright: the heading's count would join its name.
@@ -427,11 +530,23 @@ export function PullRequestChanges({
           number={pullRequest.facts.number}
           head={state.value.headSha}
         >
-          {/* A new diff, or another head, starts with no hunk marked viewed. */}
+          {versions.pushes ? (
+            <NewPushesBanner
+              count={versions.pushes}
+              names={versionNames(
+                versions.state.status === "ready"
+                  ? versions.state.value.versionName
+                  : undefined,
+              )}
+              onRefresh={versions.refresh}
+            />
+          ) : null}
+          {/* A new diff, or another head, starts with no hunk viewed and the latest version shown. */}
           <ReviewChanges
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
             notes={notes}
+            versions={versions}
           />
         </DeckAskProvider>
       )}

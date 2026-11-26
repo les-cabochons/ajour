@@ -11,6 +11,11 @@ import {
 } from "@/domain/deck/draft-review";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
 import { placeThreads } from "@/domain/deck/review-threads";
+import {
+  changedHunks,
+  pushesSince,
+  reviewedVersion,
+} from "@/domain/deck/versions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { postPullRequestComment } from "@/lib/app-api";
 import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
@@ -23,7 +28,10 @@ import {
   mayAlreadyBeThere,
   writeFailure,
 } from "./finish-review";
-import { PullRequestChanges } from "./pull-request-changes";
+import {
+  PullRequestChanges,
+  type ReviewVersionsView,
+} from "./pull-request-changes";
 import {
   DescriptionDrawer,
   PullRequestConversation,
@@ -41,6 +49,8 @@ import {
   usePullRequestChecks,
   usePullRequestConversation,
   usePullRequestDiff,
+  usePullRequestVersions,
+  useSinceReview,
 } from "./use-pull-request-read";
 
 /**
@@ -49,8 +59,9 @@ import {
  * changes in the guide's order or A–Z with each review thread and draft
  * comment beside or after its line, the draft comments a push made
  * outdated, then the conversation. The diff and its guide, the
- * conversation and the checks are read at once when the page opens. A
- * "+" beside a line opens the composer there (#784).
+ * conversation, the checks and the versions are read at once when the page
+ * opens, and again on Refresh after a push came in. A "+" beside a line
+ * opens the composer there (#784).
  */
 export function PullRequestReview({
   pullRequest,
@@ -62,6 +73,7 @@ export function PullRequestReview({
   const diff = usePullRequestDiff(pullRequest);
   const conversation = usePullRequestConversation(pullRequest);
   const checks = usePullRequestChecks(pullRequest);
+  const versions = usePullRequestVersions(pullRequest);
   const floating = useMediaQuery(DECK_GUTTER_QUERY);
   const [hovered, setHovered] = useState<string | undefined>();
   const [composer, setComposer] = useState<ComposerTarget | undefined>();
@@ -253,6 +265,89 @@ export function PullRequestReview({
   );
   const outdated = drafts?.elsewhere ?? [];
 
+  const shownHead =
+    diffState.status === "ready" ? diffState.value.headSha : undefined;
+  const list =
+    versions.state.status === "ready"
+      ? versions.state.value.versions
+      : undefined;
+  const { _id: id, viewerLogin, reviewed: remembered } = pullRequest;
+  const { reviews: hostReviews } = pullRequest.facts;
+  const reviewed = useMemo(
+    () =>
+      list &&
+      reviewedVersion(list, {
+        viewerLogin,
+        reviews: hostReviews,
+        remembered,
+      }),
+    [list, viewerLogin, hostReviews, remembered],
+  );
+  // The version reviewed is remembered with the pull request, so it outlives
+  // a review the code host stops listing.
+  useEffect(() => {
+    if (reviewed && (!remembered || reviewed.at > remembered.at))
+      localStore.changePullRequest(id, {
+        type: "reviewed",
+        headSha: reviewed.version.headSha,
+        at: reviewed.at,
+      });
+  }, [id, reviewed, remembered]);
+  const shownVersion = list?.find((version) => version.headSha === shownHead);
+  const since = useSinceReview(
+    pullRequest,
+    shownHead,
+    reviewed && shownVersion && reviewed.version.number < shownVersion.number
+      ? reviewed.version.headSha
+      : undefined,
+  );
+  // Reviewed at the version on screen, or a later one: nothing changed since.
+  const reviewedOnScreen =
+    !!reviewed &&
+    !!shownVersion &&
+    reviewed.version.number >= shownVersion.number;
+  const changed = useMemo(
+    () =>
+      since.state.status === "ready"
+        ? changedHunks(since.state.value.changed)
+        : reviewedOnScreen
+          ? changedHunks([])
+          : undefined,
+    [since.state, reviewedOnScreen],
+  );
+  const { refresh: refreshDiff } = diff;
+  const { retry: retryChecks } = checks;
+  const { retry: retryVersions } = versions;
+  // The head the last sync had seen when the diff was read: a later sync
+  // that sees another one means a push came in during the review.
+  const syncedHead = pullRequest.facts.headSha;
+  const [syncedAtOpen, setSyncedAtOpen] = useState(syncedHead);
+  const refresh = useCallback(() => {
+    setSyncedAtOpen(syncedHead);
+    // The newest head, wherever it is: the last sync may not know it yet.
+    refreshDiff();
+    retryConversation();
+    retryChecks();
+    retryVersions();
+  }, [syncedHead, refreshDiff, retryConversation, retryChecks, retryVersions]);
+
+  const versionsView: ReviewVersionsView = {
+    state: versions.state,
+    retry: retryVersions,
+    reviewed: reviewed?.version,
+    since: since.state,
+    retrySince: since.retry,
+    changed,
+    pushes: shownHead
+      ? pushesSince(list, shownHead, {
+          synced: syncedHead,
+          syncedAtOpen,
+        })
+      : 0,
+    refresh,
+    baseRef: pullRequest.facts.baseRef,
+  };
+
   return (
     <ReviewNotesContext.Provider value={actions}>
       <PullRequestHeader
@@ -291,6 +386,7 @@ export function PullRequestReview({
           hovered,
           onAddComment: open ? onAddComment : undefined,
         }}
+        versions={versionsView}
       />
       {outdated.length ? (
         <section className="deck-draft-elsewhere" aria-label="Draft comments">

@@ -1155,6 +1155,7 @@ channel to read the event each emits.
 | `deck.preload`                       | request, job                            | route, client call, renderer                     |
 | `deck.review_submission_complete`    | command                                 | store command                                    |
 | `deck.review_submission_prepare`     | command                                 | store command                                    |
+| `deck.since_review`                  | command, request                        | route, client call                               |
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
 | `deck.storage_update`                | request, command                        | route, client call                               |
@@ -1248,9 +1249,11 @@ channel to read the event each emits.
 | `pull_request.load_checks`           | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load_conversation`     | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load_file`             | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.load_versions`         | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.mark_file_viewed`      | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.merge`                 | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.open`                  | command                                 | store command                                    |
+| `pull_request.remember_review`       | command                                 | store command                                    |
 | `pull_request.reply`                 | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.resolve_thread`        | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.settle`                | command                                 | store command                                    |

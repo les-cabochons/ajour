@@ -7,6 +7,7 @@ import {
   type DiffLineRange,
 } from "@/components/diff-hunk";
 import { ConcernRationale } from "./deck-ask";
+import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import {
   fileNote,
@@ -61,6 +62,7 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   renderAnnotation,
   hovered,
   onAddComment,
+  changedIn,
 }: {
   entry: ReviewHunk;
   inConcern: boolean;
@@ -73,6 +75,8 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   /** The hovered note, or else the composer, when it's on this hunk. */
   hovered: ReviewNote | undefined;
   onAddComment: AddComment | undefined;
+  /** The version the hunk last changed in, when it changed since the review (#787). */
+  changedIn: number | undefined;
 }) {
   const { file, hunk } = entry;
   const addComment = useMemo(
@@ -90,6 +94,9 @@ export const ReviewHunkView = memo(function ReviewHunkView({
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
+        {changedIn ? (
+          <Chip className="deck-hunk-changed">{`Changed in v${changedIn}`}</Chip>
+        ) : null}
         <button
           type="button"
           className="deck-hunk-viewed"
@@ -145,6 +152,9 @@ export function ReviewSectionHeader({
         {file.path}
       </h3>
       {note ? <span className="deck-file-note">{note}</span> : null}
+      {section.of ? (
+        <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+      ) : null}
     </header>
   ) : (
     <header className="deck-concern-header">
@@ -169,6 +179,9 @@ export function ReviewSectionHeader({
           <p className="deck-concern-rationale">{section.rationale}</p>
         ) : null}
       </div>
+      {section.of ? (
+        <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+      ) : null}
       <Value tone="muted" className="deck-concern-progress">
         {seen}/{total}
       </Value>
@@ -251,6 +264,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   hovered,
   onAnchor,
   onAddComment,
+  changed,
 }: {
   section: ReviewSection;
   viewed: ReadonlySet<string>;
@@ -266,6 +280,8 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   onAnchor: (element: HTMLElement | null) => void;
   /** Opens the composer; undefined when the pull request takes no comments. */
   onAddComment: AddComment | undefined;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
 }) {
   const headingId = useId();
   const { byHunk, renderAnnotation, hoveredEntry } = useNoteMarks({
@@ -300,6 +316,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
             hoveredEntry?.hunkId === entry.hunk.id ? hoveredEntry : undefined
           }
           onAddComment={onAddComment}
+          changedIn={changed?.get(entry.hunk.id)}
         />
       ))}
     </section>
