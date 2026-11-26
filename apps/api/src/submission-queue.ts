@@ -8,6 +8,10 @@
  * A try that waited behind another of its name runs after it as a retry:
  * it's told when the first of them was tried, so the plugin finds what that
  * one posted and sends only the rest.
+ *
+ * Merges queue by their pull request the same way (#786): the plugin reads
+ * whether it already merged before it merges, so a second window's merge
+ * finds the first one's instead of racing it.
  */
 
 interface Tail {
