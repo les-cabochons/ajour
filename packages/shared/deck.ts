@@ -493,6 +493,49 @@ export function deckHunkRows(
 const pointName = (point: DeckLinePoint) =>
   point.side === "base" ? `removed line ${point.line}` : `line ${point.line}`;
 
+/**
+ * The text of lines of the diff on one side, from `startLine` to `line`,
+ * each after its `+`, `-` or space and one per row, or undefined when the
+ * diff doesn't show one of them: what a draft comment keeps, so a push that
+ * changes its lines marks it outdated (#784). The base side finds a renamed
+ * file by its path before the rename.
+ */
+export function deckLineText(
+  diff: DeckPullRequestDiff,
+  anchor: {
+    path: string;
+    side: "base" | "head";
+    line: number;
+    startLine?: number;
+  },
+): string | undefined {
+  const file = diff.files.find(
+    (entry) =>
+      entry.path === anchor.path ||
+      (anchor.side === "base" && entry.previousPath === anchor.path),
+  );
+  const textOf = (line: number) => {
+    for (const hunk of file?.hunks ?? []) {
+      const row = deckHunkRows(hunk).find(
+        (candidate) => candidate[anchor.side] === line,
+      );
+      if (row) return row.text.slice(1);
+    }
+    return undefined;
+  };
+  const first =
+    anchor.startLine !== undefined && anchor.startLine < anchor.line
+      ? anchor.startLine
+      : anchor.line;
+  const texts: string[] = [];
+  for (let line = first; line <= anchor.line; line += 1) {
+    const text = textOf(line);
+    if (text === undefined) return undefined;
+    texts.push(text);
+  }
+  return texts.join("\n");
+}
+
 /** How the page and the agent name selected lines: "line 12", "lines 12–14", "removed line 3 to line 5". */
 export function deckLinesLabel({ start, end }: DeckLinesAnchor): string {
   if (start.side === end.side && start.line === end.line)
@@ -557,6 +600,42 @@ export const deckAskResponseSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type DeckAskResponse = z.infer<typeof deckAskResponseSchema>;
+
+/**
+ * A message of Deck's chat (#796), the fallback for what no ask covers: a
+ * `deck.chat` turn of the pull request's conversation, at one head. A
+ * chip from Continue in chat carries an ask's anchor in, which Ajour writes
+ * out from what it holds, as an ask's.
+ */
+export const deckChatRequestSchema = z.object({
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  number: codeHostPullRequestRefSchema.shape.number,
+  /** The head the page shows. */
+  head: z.string().regex(/^[0-9a-f]{7,64}$/i, "A head is a commit ID."),
+  message: z.string().trim().min(1).max(DECK_QUESTION_MAX),
+  /** The anchor its chip carries, from Continue in chat. */
+  anchor: deckAskAnchorSchema.optional(),
+  /**
+   * The user authored the pull request, so the chat may edit its title and
+   * toggle draft, as the page lets them (#786).
+   */
+  author: z.boolean().optional(),
+  /**
+   * The pull request's address on its code host: an action line links
+   * only to its origin (`deckLinkOnHost`).
+   */
+  pullRequestUrl: z.string().url().max(2_000).optional(),
+  /** Where the repository is cloned from, so the agent can read the user's clone too. */
+  clone: deckCloneSourceSchema.optional(),
+});
+export type DeckChatRequest = z.infer<typeof deckChatRequestSchema>;
+
+/** A chat message's turn, whose `agent-turn` events stream the reply and its action lines. */
+export const deckChatResponseSchema = z.object({
+  turn: agentTurnSchema,
+  clone: deckCloneUseSchema.optional(),
+});
+export type DeckChatResponse = z.infer<typeof deckChatResponseSchema>;
 
 /** The agent an ask would send the pull request to, as the consent dialog names it. */
 export const deckAgentProviderSchema = z.object({
@@ -802,6 +881,8 @@ export const deckToolOutputSchemas = {
   read_threads: z.object({
     threads: z.array(
       z.object({
+        /** What reply_to_thread and resolve_thread name it by. */
+        id: z.string(),
         path: z.string(),
         side: z.enum(["base", "head"]),
         line: z.number().optional(),
@@ -825,6 +906,112 @@ export const deckToolOutputSchemas = {
 export type DeckToolOutput<Name extends DeckToolName> = z.infer<
   (typeof deckToolOutputSchemas)[Name]
 >;
+
+/*
+ * The chat's writes (#796, ADR 0024): the review writes the user can make
+ * from Deck, for a chat turn's agent only, each bound to the client's pull
+ * request and head and sent at once (ADR 0002). Merge is not one of them.
+ */
+
+const chatBodySchema = z.string().trim().min(1).max(65_536);
+
+/** Lines of the diff at the conversation's head, on one side, as a comment's anchor. */
+const chatLinesSchema = z.object({
+  path: pathSchema,
+  side: z.enum(["base", "head"]),
+  line: z.number().int().positive(),
+  /** The first line of a comment on several lines. */
+  startLine: z.number().int().positive().optional(),
+});
+
+export const deckChatToolInputSchemas = {
+  add_draft_comment: chatLinesSchema.extend({ body: chatBodySchema }),
+  post_comment: z.object({
+    body: chatBodySchema,
+    /** Lines it is on; without them, it comments on the whole pull request. */
+    lines: chatLinesSchema.optional(),
+  }),
+  reply_to_thread: z.object({
+    threadId: z.string().min(1).max(400),
+    body: chatBodySchema,
+  }),
+  resolve_thread: z.object({
+    threadId: z.string().min(1).max(400),
+    /** False opens it again. */
+    resolved: z.boolean(),
+  }),
+  submit_review: z.object({
+    verdict: z.enum(["approve", "request_changes", "comment"]),
+    body: chatBodySchema.optional(),
+  }),
+  edit_title: z.object({ title: z.string().trim().min(1).max(1_000) }),
+  set_draft: z.object({ draft: z.boolean() }),
+} as const;
+export type DeckChatToolName = keyof typeof deckChatToolInputSchemas;
+export type DeckChatToolInput<Name extends DeckChatToolName> = z.infer<
+  (typeof deckChatToolInputSchemas)[Name]
+>;
+
+/** What each chat write answers the agent: the action line it showed the user. */
+export const deckChatToolOutputSchema = z.object({
+  action: z.string(),
+  url: z.string().optional(),
+});
+export type DeckChatToolOutput = z.infer<typeof deckChatToolOutputSchema>;
+
+/**
+ * The draft comment a chat turn adds, as the local API hands it to the
+ * window over the bridge: the draft review lives in the renderer's local
+ * state (#784), so the window adds it there.
+ */
+export const DECK_DRAFT_COMMENT_TOOL = "deck_add_draft_comment";
+
+export const deckDraftCommentCallSchema = z.object({
+  /**
+   * The chat turn that adds it: the window adds nothing for a turn it
+   * already heard end.
+   */
+  turnId: z.string().min(1),
+  pluginId: z.string().min(1),
+  connectionId: z.string().min(1),
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  number: codeHostPullRequestRefSchema.shape.number,
+  headSha: z.string().min(1),
+  anchor: chatLinesSchema,
+  body: chatBodySchema,
+  /** The text of its lines, which tells a later push changed them. */
+  lineText: z.string(),
+});
+export type DeckDraftCommentCall = z.infer<typeof deckDraftCommentCallSchema>;
+
+export const deckDraftCommentResultSchema = z.object({ draftId: z.string() });
+
+/**
+ * The link an action line may show for what a chat write posted (#796): an
+ * http(s) address on the pull request's own origin, as the plugin gave it,
+ * or undefined, and the line links the pull request instead. A plugin's
+ * address is never trusted as it comes: `javascript:` or a look-alike
+ * host would otherwise reach the page as a link.
+ */
+export function deckLinkOnHost(
+  url: string | undefined,
+  pullRequestUrl: string | undefined,
+): string | undefined {
+  if (!url || !pullRequestUrl) return undefined;
+  try {
+    const link = new URL(url);
+    const home = new URL(pullRequestUrl);
+    const web = (protocol: string) =>
+      protocol === "https:" || protocol === "http:";
+    return web(link.protocol) &&
+      web(home.protocol) &&
+      link.origin === home.origin
+      ? url
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /*
  * The guide run's answer (#794): `submit_guide`, a tool of a conversation's

@@ -213,7 +213,8 @@ async function startGuideApi(
   conversation: FakeConversation,
   {
     tickets = [] as unknown[],
-    consent = true,
+    /** What the repository is allowed for: the context, the code, or nothing. */
+    consent = true as boolean | "code",
     /** The guide's build can't read the tickets; the regroup's read can. */
     ticketsFailFirst = false,
     runtime = guideRuntime,
@@ -270,7 +271,7 @@ async function startGuideApi(
         await apiRequest(api.baseUrl, `${deck}/consent`, {
           repository: REPOSITORY,
           cli: "claude-code",
-          covers: "context",
+          covers: consent === "code" ? "code" : "context",
         })
       ).status,
     ).toBe(200);
@@ -301,6 +302,24 @@ async function startGuideApi(
     },
     stop(turnId: string) {
       return apiRequest(api.baseUrl, `/api/agent-turns/${turnId}/cancel`, {});
+    },
+    chat(message: string) {
+      return apiRequest(api.baseUrl, `${deck}/chat`, {
+        ...ref,
+        head: HEAD,
+        message,
+      });
+    },
+    /** The action lines of a turn, as the window gets them. */
+    actionsOf(turnId: string) {
+      return stream.events.flatMap((event) => {
+        const data = event.data as AgentTurnEvent;
+        return event.event === "agent-turn" &&
+          data.type === "action" &&
+          data.turnId === turnId
+          ? [data.action]
+          : [];
+      });
     },
     revoke() {
       return apiRequest(api.baseUrl, "/api/deck/consents/revoke", {
@@ -737,6 +756,94 @@ describe("a regroup", () => {
         provider: { cli: "claude-code", label: "Claude Code" },
       });
       expect(await api.launches()).toEqual([]);
+    },
+  );
+});
+
+describe("a regroup asked for in the chat (#796)", () => {
+  const ticket = {
+    number: 12,
+    title: "Handlers are too quiet",
+    body: "Nobody hears the second line.",
+    url: "https://github.com/acme/billing-api/issues/12",
+    state: "Open",
+  };
+  const fromTicket = regrouped((input) => {
+    input.summary.problem = {
+      text: "The second line goes unheard.",
+      source: "ticket",
+      ticket: { number: 12 },
+    };
+  });
+
+  it(
+    "first hands the agent the description and linked tickets a regroup reads, then saves a guide written from them",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(regrouped()),
+          submit(fromTicket),
+          { stream: ["Regrouped."] },
+          { result: true },
+          { readTurn: true },
+        ],
+        { tickets: [ticket] },
+      );
+
+      const chatted = await api.chat("Regroup the guide.");
+      expect(chatted.status).toBe(201);
+      expect(await api.endingOf(chatted.body.turn.id)).toMatchObject({
+        outcome: "done",
+      });
+
+      const [context, saved] = await api.mcpReplies();
+      expect(context!.reply.result.isError).toBe(true);
+      const text = replyText(context!);
+      expect(text).toContain("saved nothing");
+      expect(text).toContain("Calm the retry storm.");
+      expect(text).toContain("#12 (Open): Handlers are too quiet");
+      expect(text).toContain("Nobody hears the second line.");
+      expect(saved!.reply.result.structuredContent).toEqual({
+        saved: true,
+        concernCount: 2,
+      });
+      expect((await api.guide()).summary.problem).toMatchObject({
+        source: "ticket",
+        ticket: { number: 12, title: "Handlers are too quiet" },
+      });
+      expect(
+        api.actionsOf(chatted.body.turn.id).map(({ kind }) => kind),
+      ).toEqual(["regroup"]);
+    },
+  );
+
+  it(
+    "saves nothing while the repository is allowed for the code alone, and has the agent send the user to Regroup…",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(fromTicket),
+          { stream: ["Allow it first."] },
+          { result: true },
+          { readTurn: true },
+        ],
+        { tickets: [ticket], consent: "code" },
+      );
+
+      const chatted = await api.chat("Regroup the guide.");
+      await api.endingOf(chatted.body.turn.id);
+
+      const [refused] = await api.mcpReplies();
+      expect(refused!.reply.result.isError).toBe(true);
+      expect(replyText(refused!)).toContain("description and linked tickets");
+      expect(replyText(refused!)).toContain("Regroup…");
+      expect(replyText(refused!)).not.toContain("Calm the retry storm.");
+      expect((await api.guide()).madeWith).toBe("code");
+      expect(api.actionsOf(chatted.body.turn.id)).toEqual([]);
     },
   );
 });

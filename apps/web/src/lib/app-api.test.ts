@@ -7,6 +7,7 @@ import {
   getPluginsOverview,
   isPluginApiMissing,
   subscribePluginsOverview,
+  claimMcpBridgeCall,
 } from "./app-api";
 
 const overview: PluginsOverview = {
@@ -142,5 +143,27 @@ describe("item types lookup", () => {
     });
     await expect(lookup).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("claiming a bridge call", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("asks once: a lost answer reaches the window as a failure, never as a second claim", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const claim = claimMcpBridgeCall({
+      requestId: "call-1",
+      turnId: "turn-1",
+    }).catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    expect(await claim).toBeInstanceOf(Error);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

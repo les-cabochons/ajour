@@ -126,6 +126,27 @@ export type PluginRequestAnswerAddress =
  * What every `request` event carries, whatever its route: the method, the
  * route's pattern (never its values), the status and the sizes.
  */
+/**
+ * What a Deck turn did with the user's local clone (#795): read it, none
+ * chosen, or why it couldn't. Never its path or a reason's words.
+ */
+type DeckCloneFact =
+  | "read"
+  | "not_chosen"
+  | "agent_reads_no_files"
+  | "clone_missing"
+  | "remote_changed"
+  | "no_git"
+  | "wsl_unavailable"
+  | "head_not_full"
+  | "no_head_ref"
+  | "no_fork_remote"
+  | "fetch_failed"
+  | "fetch_timeout"
+  | "head_not_found"
+  | "checkout_failed"
+  | "cancelled";
+
 const requestFields = {
   http: {
     method: operational<HttpMethod>(),
@@ -148,6 +169,18 @@ const requestReasons = [
   "invalid_request",
   "client_closed",
   "stopping",
+] as const;
+
+/**
+ * Why the local API refused the window's claim of a bridge call (#796), as
+ * `bridgeClaimRefusalReasons` in the shared agent tools lists them.
+ */
+const claimRefusalReasons = [
+  "call_not_waiting",
+  "call_already_claimed",
+  "claim_turn_mismatch",
+  "chat_turn_ended",
+  "consent_revoked",
 ] as const;
 
 /**
@@ -418,6 +451,12 @@ export const catalog = defineCatalog({
         "tool_not_declared",
         /** A pull request conversation's client called a tool outside its pull request. */
         "outside_pull_request",
+        /** A pull request conversation's agent asked to merge: Ajour has no such tool (#796). */
+        "merge_refused",
+        /** In the renderer: the local API refused the window's claim of the call (#796). */
+        ...claimRefusalReasons,
+        /** In the renderer: the claim of the call got no answer, so the window did nothing. */
+        "claim_unanswered",
         ...requestReasons,
       ],
       fields: {
@@ -470,6 +509,15 @@ export const catalog = defineCatalog({
         /** False when the call had already timed out. */
         mcp_bridge: { resolved: operational<boolean>() },
       },
+    },
+    /**
+     * The window claims a call before it acts on it, as a draft comment of
+     * Deck's chat (#796). A refusal says why; the window then does nothing.
+     */
+    "mcp_bridge.claim": {
+      kinds: ["command", "request"],
+      reasons: [...claimRefusalReasons, ...requestReasons],
+      fields: { ...requestFields },
     },
     "mcp.status": {
       kinds: ["command", "request"],
@@ -3090,6 +3138,11 @@ export const catalog = defineCatalog({
       reasons: pluginRequestReasons,
       fields: { ...requestFields, ...pluginOperationFields },
     },
+    "pull_request.delete_comment": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
     "pull_request.resolve_thread": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
@@ -3335,23 +3388,7 @@ export const catalog = defineCatalog({
            * What the turn did with the user's local clone (#795): read it,
            * none chosen, or why it couldn't. Never its path or a reason's words.
            */
-          clone: operational<
-            | "read"
-            | "not_chosen"
-            | "agent_reads_no_files"
-            | "clone_missing"
-            | "remote_changed"
-            | "no_git"
-            | "wsl_unavailable"
-            | "head_not_full"
-            | "no_head_ref"
-            | "no_fork_remote"
-            | "fetch_failed"
-            | "fetch_timeout"
-            | "head_not_found"
-            | "checkout_failed"
-            | "cancelled"
-          >(),
+          clone: operational<DeckCloneFact>(),
         },
         agent: { turn_id: operational() },
       },
@@ -3415,6 +3452,40 @@ export const catalog = defineCatalog({
         ...requestFields,
         plugin: { id: operational() },
         connection: { id: operational() },
+      },
+    },
+    /**
+     * A message in Deck's chat (#796): a `deck.chat` turn of the pull
+     * request's conversation. The message, the reply and what the chat
+     * writes are content, so none of them is here.
+     */
+    "deck.chat": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "repository_not_allowed",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The chip's concern, summary line or lines aren't in the guide or the diff. */
+        "unknown_anchor",
+        /** Never a chat's, but its refusals share an ask's reasons. */
+        "no_guide",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          /** The anchor a Continue in chat chip carried in, if any. */
+          anchor_kind: operational<"concern" | "summary" | "lines">(),
+          /** What the turn did with the user's local clone, as for an ask. */
+          clone: operational<DeckCloneFact>(),
+        },
+        agent: { turn_id: operational() },
       },
     },
     /** The picker asks for a repository's clone and the known folders that could be it (#795). */

@@ -14,8 +14,6 @@ import {
   DECK_QUESTION_MAX,
   deckLinesLabel,
   type DeckAskAnchor,
-  type DeckConsentCovers,
-  type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
@@ -29,10 +27,9 @@ import {
 } from "@/domain/deck/ask";
 import { anchorSelection, linkCitations } from "@/domain/deck/line-selection";
 import { watchClosedConversations } from "@/lib/agent-turns";
-import { grantDeckConsent } from "@/lib/app-api";
 import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
 import { DeckClonePicker, type DeckCloneTarget } from "./deck-clone-picker";
-import { DeckConsentDialog } from "./deck-consent-dialog";
+import { useDeckConsent } from "./deck-consent-dialog";
 import {
   askKey,
   DeckAskSessions,
@@ -40,10 +37,10 @@ import {
   useAskSession,
   useHunkAsks,
   type AskSession,
-  type ConsentAnswer,
   type DeckAskTarget,
 } from "./deck-ask-sessions";
 import { useReviewLines } from "./review-lines-context";
+import { useContinueInChat } from "./deck-chat";
 
 /*
  * Deck's quiet asks (#791, #793, #794): a faint `more ›` ends each
@@ -139,30 +136,8 @@ export function DeckAskProvider({
     picking?.resolve(chosen);
     setPicking(undefined);
   };
-  const [asking, setAsking] = useState<{
-    request: DeckNeedsConsent;
-    resolve: (answer: ConsentAnswer) => void;
-  }>();
-  const requestConsent = useCallback(
-    (request: DeckNeedsConsent) =>
-      new Promise<ConsentAnswer>((resolve) =>
-        setAsking((current) => {
-          // A second ask while the dialog shows waits on the same answer.
-          if (current) {
-            const first = current.resolve;
-            return {
-              request,
-              resolve: (answer) => {
-                first(answer);
-                resolve(answer);
-              },
-            };
-          }
-          return { request, resolve };
-        }),
-      ),
-    [],
-  );
+  const consent = useDeckConsent(pluginId, connectionId);
+  const { requestConsent } = consent;
   const [sessions] = useState(() => new DeckAskSessions(requestConsent));
   // The asks follow their turns while the page shows. React's development
   // remount detaches them and attaches them again.
@@ -191,33 +166,6 @@ export function DeckAskProvider({
       stopClosed();
     };
   }, [sessions, pluginId, connectionId, repository]);
-  const answer = async (covers: DeckConsentCovers | null) => {
-    const current = asking;
-    if (!current) return;
-    setAsking(undefined);
-    if (!covers) {
-      current.resolve(false);
-      return;
-    }
-    try {
-      // Only for the agent the dialog named, and what it said leaves.
-      await grantDeckConsent(
-        pluginId,
-        connectionId,
-        current.request.repository,
-        current.request.provider.cli,
-        covers,
-      );
-      current.resolve(true);
-    } catch (error) {
-      current.resolve({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Ajour couldn't record your answer.",
-      });
-    }
-  };
   const value = useMemo(
     () => (target ? { target, sessions, pickClone } : null),
     [target, sessions, pickClone],
@@ -225,10 +173,7 @@ export function DeckAskProvider({
   return (
     <DeckAskContext.Provider value={value}>
       {children}
-      <DeckConsentDialog
-        request={asking?.request}
-        onAnswer={(covers) => void answer(covers)}
-      />
+      {consent.dialog}
       <DeckClonePicker
         target={picking?.target}
         onOpenChange={(open) => {
@@ -242,9 +187,10 @@ export function DeckAskProvider({
 
 /**
  * The ask about `anchor`: its `more ›` and, once open, its question or
- * answer. Null while the page asks nothing.
+ * answer. Null while the page asks nothing. `chipLabel` names the anchor
+ * when Continue in chat carries it into the chat (#796).
  */
-function useMore(anchor: DeckAskAnchor) {
+function useMore(anchor: DeckAskAnchor, chipLabel: string) {
   const context = useContext(DeckAskContext);
   const key = context ? askKey(context.target.head, anchor) : "";
   const session = useAskSession(context?.sessions, key);
@@ -278,6 +224,7 @@ function useMore(anchor: DeckAskAnchor) {
         context={context}
         onClosed={focusMore}
         label="More detail"
+        chipLabel={chipLabel}
         placeholder="Getting more detail…"
         defaultQuestion={defaultQuestionOf(anchor)}
       />
@@ -288,16 +235,19 @@ function useMore(anchor: DeckAskAnchor) {
 /** A concern's rationale, ended by its `more ›`, and the answer under it. */
 export function ConcernRationale({
   concernId,
+  title,
   rationale,
 }: {
   concernId: string;
+  /** The concern's title, which names its chip in the chat. */
+  title?: string;
   rationale: string;
 }) {
   const anchor = useMemo(
     (): DeckAskAnchor => ({ kind: "concern", id: concernId }),
     [concernId],
   );
-  const more = useMore(anchor);
+  const more = useMore(anchor, title ?? "This concern");
   return (
     <>
       <p className="deck-concern-rationale">
@@ -320,16 +270,19 @@ export function ConcernRationale({
  */
 export function SummaryLineAsk({
   lineId,
+  label,
   children,
 }: {
   lineId: string;
+  /** The line's words, which name its chip in the chat. */
+  label: string;
   children: ReactNode;
 }) {
   const anchor = useMemo(
     (): DeckAskAnchor => ({ kind: "summary", id: lineId }),
     [lineId],
   );
-  const more = useMore(anchor);
+  const more = useMore(anchor, label);
   return (
     <>
       {children}
@@ -352,6 +305,7 @@ function AskAnswer({
   context,
   onClosed,
   label,
+  chipLabel,
   placeholder,
   defaultQuestion,
   actions,
@@ -364,6 +318,8 @@ function AskAnswer({
   onClosed: () => void;
   /** Names the block, "More detail" on a concern. */
   label: string;
+  /** Names the anchor's chip when Continue in chat carries it in (#796). */
+  chipLabel: string;
   /** What shows while nothing came yet. */
   placeholder: string;
   /** The anchor's default question, which sent as is asks with none. */
@@ -374,6 +330,7 @@ function AskAnswer({
   const { target, sessions, pickClone } = context;
   const { state, turnId, starting } = session;
   const lines = useReviewLines();
+  const continueInChat = useContinueInChat();
   const ask = (question?: string) =>
     void sessions.ask(target, session.anchor, question, onClosed);
   const close = () => {
@@ -483,6 +440,15 @@ function AskAnswer({
               </Button>
             ) : null}
             {state.kind === "answered" && actions ? actions(text) : null}
+            {state.kind === "answered" && continueInChat ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => continueInChat(session.anchor, chipLabel)}
+              >
+                Continue in chat
+              </Button>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={close}>
               Dismiss
             </Button>
@@ -648,6 +614,7 @@ function LinesAnswer({
       context={context}
       onClosed={() => {}}
       label={`Explanation of ${deckLinesLabel(anchor)}`}
+      chipLabel={`${anchor.path}, ${deckLinesLabel(anchor)}`}
       placeholder="Explaining…"
       defaultQuestion={DECK_LINES_DEFAULT_QUESTION}
       actions={

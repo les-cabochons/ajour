@@ -133,6 +133,11 @@ export class PluginExportMissing extends PluginOperationFailure {}
 export interface PreparedOperation<T> {
   invocation: PluginInvocation;
   parse(value: unknown): T;
+  /**
+   * The caller's last check, right before the runtime starts the plugin,
+   * with nothing awaited between them: what it throws starts nothing.
+   */
+  beforeStart?: () => void;
 }
 
 /** What a host learns about an operation while it prepares it, for its event. */
@@ -311,6 +316,7 @@ export class PluginOperationLifetime<TMethod extends string> {
           const prepared = await prepare(record);
           if (registered.cancelled) throw registered.cancelled;
           this.assertRunning();
+          prepared.beforeStart?.();
           unit.set({ worker: { prepare_ms: Date.now() - admittedAt } });
           return await this.invoke(registered, method, prepared, unit);
         } finally {

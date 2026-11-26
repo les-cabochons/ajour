@@ -16,6 +16,7 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createApiEvents } from "./events.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
+import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 import { readPlugin, pluginProcessPackageKey } from "./plugin-package.ts";
 import { ProcessBroker } from "./process-broker.ts";
 vi.mock("./plugin-package.ts", async (original) => {
@@ -1025,6 +1026,66 @@ describe("PluginManager", () => {
         },
       ),
     ).rejects.toThrow('Plugin "jira" does not provide pull requests.');
+  });
+
+  it("checks the caller's last refusal after the plugin's admission, and a refusal runs nothing", async () => {
+    const root = await tempDir();
+    const directory = await createPluginDirectory(
+      root,
+      "github",
+      [
+        "export async function setThreadResolved(connection, request) {",
+        "  (globalThis.resolvedThreads ??= []).push(request.threadId);",
+        "  return { resolved: request.resolved };",
+        "}",
+      ].join("\n"),
+      { capabilities: { codeHost: {} } },
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [directory],
+      allowDevelopmentPlugins: true,
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "github",
+      label: "octocat",
+      tenantLabel: "github.com",
+      autoSync: true,
+      autoSyncIntervalMinutes: 5,
+      connectedAt: 1,
+      config: {},
+    };
+    const order: string[] = [];
+    let admitted!: () => void;
+    const admission = new Promise<void>((resolve) => {
+      admitted = resolve;
+    });
+    const resolving = pluginManager.runCodeHostOperation(
+      "github",
+      "setThreadResolved",
+      connection,
+      { repository: "acme/api", number: 1, threadId: "t1", resolved: true },
+      async () => {
+        order.push("admitting");
+        await admission;
+        order.push("admitted");
+      },
+      {
+        beforeStart: () => {
+          order.push("checked");
+          throw new PluginOperationRefused("The turn ended.", "agent_access");
+        },
+      },
+    );
+    await vi.waitFor(() => expect(order).toEqual(["admitting"]));
+    admitted();
+
+    await expect(resolving).rejects.toMatchObject({ reason: "agent_access" });
+    expect(order).toEqual(["admitting", "admitted", "checked"]);
+    expect(
+      (globalThis as { resolvedThreads?: string[] }).resolvedThreads,
+    ).toBeUndefined();
   });
 
   it.each(["person-private-id", null, undefined])(

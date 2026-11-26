@@ -5,11 +5,15 @@ import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import { connectMcpBridge, type McpBridgeStatus } from "./mcp-bridge";
 import { replaceEventSink, wideEvents } from "./wide-events";
 
-const { postMcpBridgeResult, postedIn } = vi.hoisted(() => {
+const { postMcpBridgeResult, postedIn, claimMcpBridgeCall } = vi.hoisted(() => {
   /** The traceparent of the unit active when each result was posted. */
   const postedIn: (string | undefined)[] = [];
   return {
     postedIn,
+    claimMcpBridgeCall: vi.fn(
+      (_claim: { requestId: string; turnId: string }): Promise<unknown> =>
+        Promise.resolve({ granted: true }),
+    ),
     postMcpBridgeResult: vi.fn((_result: BridgeToolResult) => {
       postedIn.push(wideEvents.current()?.traceparent());
       return Promise.resolve({ ok: true });
@@ -20,6 +24,7 @@ vi.mock("@/lib/app-api", () => ({
   // Where the window calls /api, which may differ from where the API listens.
   appApiUrl: (path: string) => `http://window-requests.test${path}`,
   postMcpBridgeResult,
+  claimMcpBridgeCall,
 }));
 
 /** An EventSource the test drives by hand. */
@@ -153,6 +158,107 @@ describe("MCP bridge connection", () => {
       ok: false,
       error: "Not allowed",
     });
+  });
+});
+
+describe("a call the window must claim (#796)", () => {
+  const client = { id: "c1", name: "Claude Code" };
+  const draftCall = (requestId: string) => ({
+    requestId,
+    tool: "deck_add_draft_comment",
+    client,
+    input: { turnId: "turn-1", body: "Rename this." },
+    claim: { turnId: "turn-1" },
+  });
+  let sink: ReturnType<typeof createRecordingSink<AjourEvent>>;
+
+  beforeEach(() => {
+    sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+    postMcpBridgeResult.mockClear();
+    claimMcpBridgeCall.mockClear();
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => {
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.resolve({ granted: true }),
+    );
+    vi.unstubAllGlobals();
+  });
+
+  function connect() {
+    const ran: string[] = [];
+    connectMcpBridge({
+      runToolCall: (call) => {
+        ran.push(call.requestId);
+        return { requestId: call.requestId, ok: true, output: null };
+      },
+      onStatus: () => undefined,
+    });
+    return { ran, stream: FakeEventSource.instances[0]! };
+  }
+
+  it("runs it once the local API grants its claim, however long it waited", async () => {
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
+    await vi.waitFor(() => expect(postMcpBridgeResult).toHaveBeenCalled());
+
+    expect(claimMcpBridgeCall).toHaveBeenCalledWith({
+      requestId: "r1",
+      turnId: "turn-1",
+    });
+    expect(ran).toEqual(["r1"]);
+  });
+
+  it("runs nothing and posts nothing when the local API refuses its claim, and says why", async () => {
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.resolve({ granted: false, reason: "chat_turn_ended" }),
+    );
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
+    await vi.waitFor(() =>
+      expect(
+        sink.events.filter((event) => event.name === "agent_tool.call"),
+      ).toHaveLength(1),
+    );
+
+    expect(ran).toEqual([]);
+    expect(postMcpBridgeResult).not.toHaveBeenCalled();
+    expect(
+      sink.events.find((event) => event.name === "agent_tool.call"),
+    ).toMatchObject({ outcome: "refused", outcome_reason: "chat_turn_ended" });
+    expect(JSON.stringify(sink.events)).not.toContain("Rename this.");
+  });
+
+  it("runs nothing when its claim gets no answer, and tells the agent at once", async () => {
+    claimMcpBridgeCall.mockImplementation(() =>
+      Promise.reject(new TypeError("Failed to fetch")),
+    );
+    const { ran, stream } = connect();
+    stream.sendToolCall(draftCall("r1"));
+    await vi.waitFor(() =>
+      expect(
+        sink.events.find((event) => event.name === "agent_tool.call"),
+      ).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "claim_unanswered",
+      }),
+    );
+    expect(ran).toEqual([]);
+    expect(postMcpBridgeResult).toHaveBeenCalledWith({
+      requestId: "r1",
+      ok: false,
+      error: expect.stringContaining("did nothing"),
+    });
+  });
+
+  it("claims no call sent without a claim", async () => {
+    const { ran, stream } = connect();
+    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
+    await vi.waitFor(() => expect(postMcpBridgeResult).toHaveBeenCalled());
+    expect(claimMcpBridgeCall).not.toHaveBeenCalled();
+    expect(ran).toEqual(["r1"]);
   });
 });
 

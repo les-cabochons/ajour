@@ -843,11 +843,99 @@ describe("a consent's scope", () => {
     expect(refused).toMatchObject({ body: { reason: "needs_consent" } });
     expect((refused as { body: object }).body).not.toHaveProperty("again");
   });
+
+  it("tells what a consent covers with the conversation's agent, and, without waiting, what Ajour holds now", async () => {
+    let stored = [before];
+    const asks = createDeckAsks({
+      storage: {
+        getDeckConsents: async () =>
+          stored.map((consent) => deckAgentConsentSchema.parse(consent)),
+        deckConsentsNow: () =>
+          stored.map((consent) => deckAgentConsentSchema.parse(consent)),
+        getAgentRunnerSettings: async () => ({ cli: "claude-code" }),
+      },
+      selectedCli: async () => null,
+      deck: { held: async () => undefined },
+      startTurn: async () => {
+        throw new Error("No turn starts here.");
+      },
+    });
+
+    await expect(asks.allowedWith(pullRequest, "claude-code")).resolves.toBe(
+      true,
+    );
+    // A chat's regroup sends the context: the code alone doesn't cover it.
+    await expect(
+      asks.allowedWith(pullRequest, "claude-code", "context"),
+    ).resolves.toBe(false);
+    expect(asks.allowedNow(pullRequest, "claude-code")).toBe(true);
+    expect(asks.allowedNow(pullRequest, "codex")).toBe(false);
+
+    stored = [];
+    expect(asks.allowedNow(pullRequest, "claude-code")).toBe(false);
+  });
+});
+
+describe("a chat message's turn", () => {
+  it("hands the caller its turn as it is queued, before the turn can run", async () => {
+    const order: string[] = [];
+    const held = {
+      key: "key",
+      diff: { headSha: "a41c9e2f0d", baseSha: "b52d0f3a11", files: [] },
+      guide: null,
+      builtGuide: null,
+      versions: { old: new Map(), new: new Map() },
+    };
+    const asks = createDeckAsks({
+      storage: {
+        getDeckConsents: async () => [
+          deckAgentConsentSchema.parse({
+            pluginId: "github",
+            connectionId: "work",
+            repository: REPOSITORY,
+            cli: "claude-code",
+            consentedAt: 1,
+          }),
+        ],
+        getAgentRunnerSettings: async () => ({ cli: "claude-code" }),
+      },
+      selectedCli: async () => null,
+      deck: { held: async () => held as never },
+      // The runner queues the turn, which may run before this answers.
+      startTurn: async (request, turnOptions) => {
+        turnOptions?.queued?.("turn-1");
+        order.push("running");
+        return {
+          id: "turn-1",
+          conversationId: "conversation-1",
+          task: request.task,
+          pullRequest: request.pullRequest,
+          head: request.head,
+          state: "running",
+        };
+      },
+    });
+
+    const chatted = await asks.chat(
+      { pluginId: "github", connectionId: "work" },
+      {
+        repository: REPOSITORY,
+        number: 482,
+        head: "a41c9e2f0d",
+        message: "Rename it.",
+      },
+      undefined,
+      (turnId) => order.push(`queued ${turnId}`),
+    );
+
+    expect(chatted.turn.id).toBe("turn-1");
+    expect(order).toEqual(["queued turn-1", "running"]);
+  });
 });
 
 describe("the agent's reads", () => {
   it(
-    "lists Deck's four reads and submit_guide, and answers the reads for this pull request at this head",
+    "lists Deck's reads, submit_guide and the chat's writes, and answers the reads for this pull request at this head",
     { timeout: 20_000 },
     async () => {
       const call = (name: string, args: Record<string, unknown> = {}) => ({
@@ -880,6 +968,14 @@ describe("the agent's reads", () => {
         "read_threads",
         "read_guide",
         "submit_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
       ]);
       expect(hunks!.reply.result.structuredContent).toEqual({
         hunks: [
@@ -899,6 +995,7 @@ describe("the agent's reads", () => {
       expect(threads!.reply.result.structuredContent).toEqual({
         threads: [
           {
+            id: "t1",
             path: "src/api.ts",
             side: "head",
             line: 2,

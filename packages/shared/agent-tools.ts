@@ -37,6 +37,8 @@ function isRealCalendarDate(value: string) {
 export const BRIDGE_UNAVAILABLE_MESSAGE =
   "Open the Ajour window to use this tool.";
 export const BRIDGE_TIMEOUT_MESSAGE = "Ajour did not answer in time.";
+/** How long the local API waits for the window's answer to a tool call. */
+export const BRIDGE_CALL_TIMEOUT_MS = 10_000;
 
 /** An agent client as Settings lists it. The token is never part of it. */
 export const mcpClientSchema = z.object({
@@ -89,8 +91,52 @@ export const bridgeToolCallSchema = z.object({
    * its trace. Absent from an older API.
    */
   traceparent: z.string().optional(),
+  /**
+   * Set when the window must claim the call before it acts, such as a
+   * draft comment of Deck's chat (#796): the local API decides, at the
+   * claim, whether the call may still run. Absent from an older API.
+   */
+  claim: z.object({ turnId: z.string().min(1) }).optional(),
 });
 export type BridgeToolCall = z.infer<typeof bridgeToolCallSchema>;
+
+/**
+ * How long the local API waits for the window's answer to a call it
+ * claimed: the window acts at once, so only a crash takes this long.
+ */
+export const BRIDGE_CLAIMED_CALL_TIMEOUT_MS = 60_000;
+
+/** Why the local API refused the window's claim of a call. */
+export const bridgeClaimRefusalReasons = [
+  /** The API no longer waits for the call: it timed out, or was answered. */
+  "call_not_waiting",
+  /** The window already claimed the call. */
+  "call_already_claimed",
+  /** The claim named another turn than the call's. */
+  "claim_turn_mismatch",
+  /** The call's turn no longer runs, as after Stop. */
+  "chat_turn_ended",
+  /** The user no longer allows the repository with the turn's agent. */
+  "consent_revoked",
+] as const;
+export type BridgeClaimRefusalReason =
+  (typeof bridgeClaimRefusalReasons)[number];
+
+/** The window asks to act on a call the API sent with `claim`. */
+export const bridgeClaimRequestSchema = z.object({
+  requestId: z.string().min(1),
+  turnId: z.string().min(1),
+});
+export type BridgeClaimRequest = z.infer<typeof bridgeClaimRequestSchema>;
+
+export const bridgeClaimResponseSchema = z.discriminatedUnion("granted", [
+  z.object({ granted: z.literal(true) }),
+  z.object({
+    granted: z.literal(false),
+    reason: z.enum(bridgeClaimRefusalReasons),
+  }),
+]);
+export type BridgeClaimResponse = z.infer<typeof bridgeClaimResponseSchema>;
 
 /**
  * What the renderer posts back. A refusal carries a sentence for the agent.

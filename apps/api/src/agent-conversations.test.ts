@@ -740,6 +740,14 @@ describe("a conversation's tools", () => {
         "read_threads",
         "read_guide",
         "submit_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
       ]);
       for (const [reply, tool] of [
         [projects, "list_projects"],
@@ -1497,6 +1505,14 @@ describe("a conversation on OpenCode", () => {
         "read_threads",
         "read_guide",
         "submit_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
       ]);
       expect(
         named(api.events, "agent.turn").find(

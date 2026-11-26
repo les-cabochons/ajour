@@ -303,6 +303,17 @@ export type PluginAdmission = (
   manifest: PluginManifest,
 ) => Promise<PluginAdmitted | void> | PluginAdmitted | void;
 
+/** What a caller adds to one plugin call. */
+export interface PluginCallOptions {
+  /**
+   * The caller's last refusal, after the admission and everything else the
+   * call awaits, right before the plugin starts: a write in a chat turn
+   * checks its turn and consent there (#796). Throw a
+   * `PluginOperationRefused` to start nothing.
+   */
+  beforeStart?: () => void;
+}
+
 /** What an admission answers: the fields the call's secrets are found with. */
 export type PluginAdmitted = SecretConnectionFields;
 export type { PluginMethod };
@@ -894,6 +905,7 @@ export class PluginManager {
     connection: PluginInvocationConnection,
     request: CodeHostOperationRequest<Operation>,
     admit?: PluginAdmission,
+    options: PluginCallOptions = {},
   ): Promise<CodeHostOperationResult<Operation>> {
     const contract = codeHostOperations[operation];
     const resultSchema = contract.result as {
@@ -910,6 +922,7 @@ export class PluginManager {
         resultSchema,
         admit,
         requireCapability("codeHost"),
+        options.beforeStart,
       );
     const parsed = contract.request.parse(
       request,
@@ -1527,6 +1540,7 @@ export class PluginManager {
     },
     admit?: PluginAdmission,
     requirement?: Requirement,
+    beforeStart?: () => void,
   ): Promise<T> {
     const connection = params.connection as
       { id?: unknown; config?: PluginFieldValues } | undefined;
@@ -1660,6 +1674,7 @@ export class PluginManager {
               ...(schema.quiet ? { quiet: schema.quiet } : {}),
             },
             parse: (result: unknown) => schema.parse(result),
+            ...(beforeStart ? { beforeStart } : {}),
           };
         },
         {

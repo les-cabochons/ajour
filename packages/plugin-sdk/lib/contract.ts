@@ -1095,7 +1095,8 @@ export type CodeHostOperations = {
       submissionId?: string | undefined;
       firstTriedAt?: number | undefined;
     };
-    result: { uncertain: true } | { reviewId: string };
+    result:
+      { uncertain: true } | { reviewId: string; url?: string | undefined };
   };
   readonly postComment: {
     request: {
@@ -1114,7 +1115,8 @@ export type CodeHostOperations = {
       submissionId?: string | undefined;
       firstTriedAt?: number | undefined;
     };
-    result: { uncertain: true } | { commentId: string };
+    result:
+      { uncertain: true } | { commentId: string; url?: string | undefined };
   };
   readonly replyToThread: {
     request: {
@@ -1125,7 +1127,12 @@ export type CodeHostOperations = {
       submissionId?: string | undefined;
       firstTriedAt?: number | undefined;
     };
-    result: { uncertain: true } | { commentId: string };
+    result:
+      { uncertain: true } | { commentId: string; url?: string | undefined };
+  };
+  readonly deleteComment: {
+    request: { number: number; commentId: string; repository: string };
+    result: { deleted: true };
   };
   readonly setThreadResolved: {
     request: {

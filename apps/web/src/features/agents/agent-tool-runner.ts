@@ -7,6 +7,10 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
+  DECK_DRAFT_COMMENT_TOOL,
+  deckDraftCommentCallSchema,
+} from "@ajour/shared/deck";
+import {
   findEntriesForAgent,
   getLastSavedEntryForAgent,
   getWeekChangesForAgent,
@@ -20,6 +24,7 @@ import {
   weekNeedsPluginNames,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { draftOnOtherHead } from "@/domain/deck/draft-review";
 import { getWeekDates } from "@/domain/time/local-date";
 import { LockedWeekError } from "@/domain/time/locked-weeks";
 import {
@@ -252,6 +257,46 @@ function finishWrite(
   };
 }
 
+/**
+ * A draft comment Deck's chat adds (#796): the draft review lives here, in
+ * the window's local state (#784), so the local API hands it over. It goes
+ * on the head the draft's other comments are on, never another. The bridge
+ * runs it only once the local API granted the window's claim of the call,
+ * which it does only while the call's turn runs (ADR 0024).
+ */
+function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
+  const input = deckDraftCommentCallSchema.parse(call.input);
+  const ref = {
+    pluginId: input.pluginId,
+    connectionId: input.connectionId,
+    repository: input.repository,
+    number: input.number,
+  };
+  if (
+    draftOnOtherHead(
+      localStore.snapshot().deckDraftReviews ?? [],
+      ref,
+      input.headSha,
+    )
+  ) {
+    throw new AgentToolRefusal(
+      "The user's draft review is on another head of this pull request, so Ajour added nothing. Tell the user to refresh the page.",
+    );
+  }
+  const comment = localStore.addDraftComment(ref, {
+    headSha: input.headSha,
+    anchor: input.anchor,
+    body: input.body,
+    lineText: input.lineText,
+  });
+  if (!comment) throw new AgentToolRefusal("The draft comment is blank.");
+  return {
+    requestId: call.requestId,
+    ok: true,
+    output: { draftId: comment.id },
+  };
+}
+
 /** The bridge's `agent_tool.call` job, which it hands the call it runs. */
 type AgentToolUnit = Unit<AjourCatalog, "agent_tool.call">;
 
@@ -305,6 +350,9 @@ export async function runAgentToolCall(
       return asAgent(() =>
         finishWrite(call, runAgentUndo(call.input, call.client.id), unit),
       );
+    }
+    if (tool === DECK_DRAFT_COMMENT_TOOL) {
+      return asAgent(() => addDeckDraftComment(call));
     }
     if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);

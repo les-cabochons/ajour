@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import {
   repositoryName,
   type DeckConsentCovers,
@@ -13,6 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { grantDeckConsent } from "@/lib/app-api";
+import type { ConsentAnswer } from "./deck-ask-sessions";
 
 /**
  * What the dialog's list says leaves the machine: the code, and the
@@ -94,4 +97,70 @@ export function DeckConsentDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/**
+ * The page's consent requests and its one dialog (#791, #796): asks,
+ * regroups and the chat ask through it. A second request while the dialog
+ * shows waits on the same answer. Allow records the consent for the agent
+ * the dialog named and what its list says leaves the machine.
+ */
+export function useDeckConsent(pluginId: string, connectionId: string) {
+  const [asking, setAsking] = useState<{
+    request: DeckNeedsConsent;
+    resolve: (answer: ConsentAnswer) => void;
+  }>();
+  const requestConsent = useCallback(
+    (request: DeckNeedsConsent) =>
+      new Promise<ConsentAnswer>((resolve) =>
+        setAsking((current) => {
+          if (current) {
+            const first = current.resolve;
+            return {
+              request,
+              resolve: (answer) => {
+                first(answer);
+                resolve(answer);
+              },
+            };
+          }
+          return { request, resolve };
+        }),
+      ),
+    [],
+  );
+  const answer = async (covers: DeckConsentCovers | null) => {
+    const current = asking;
+    if (!current) return;
+    setAsking(undefined);
+    if (!covers) {
+      current.resolve(false);
+      return;
+    }
+    try {
+      // Only for the agent the dialog named, and what it said leaves.
+      await grantDeckConsent(
+        pluginId,
+        connectionId,
+        current.request.repository,
+        current.request.provider.cli,
+        covers,
+      );
+      current.resolve(true);
+    } catch (error) {
+      current.resolve({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Ajour couldn't record your answer.",
+      });
+    }
+  };
+  const dialog = (
+    <DeckConsentDialog
+      request={asking?.request}
+      onAnswer={(covers) => void answer(covers)}
+    />
+  );
+  return { requestConsent, dialog };
 }

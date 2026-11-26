@@ -24,10 +24,13 @@ export function PullRequestHeader({
   now,
   review,
   author,
+  chat,
 }: {
   pullRequest: LocalPullRequest;
   now: number;
   review: ReactNode;
+  /** Chat, which opens the chat panel (#796). */
+  chat?: ReactNode;
   /** Draft and ready, and Merge, for the author of an open pull request. */
   author?: ReactNode;
 }) {
@@ -37,6 +40,7 @@ export function PullRequestHeader({
         backLink={{ label: "Deck", to: "/deck" }}
         actions={
           <>
+            {chat}
             {review}
             {author}
             {pullRequestActions(pullRequest, now).map((action) => (

@@ -148,7 +148,10 @@ import {
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import {
+  DECK_DRAFT_COMMENT_TOOL,
   deckAskRequestSchema,
+  deckChatRequestSchema,
+  deckDraftCommentResultSchema,
   deckCacheSettingsUpdateSchema,
   deckCloneChooseRequestSchema,
   deckCloneForgetRequestSchema,
@@ -169,6 +172,7 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
+import { createDeckChatWrites, DeckChatRefused } from "./deck-chat-writes.ts";
 import {
   createDeckAsks,
   DeckAskStopped,
@@ -229,6 +233,7 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   agentAnswerRequestSchema,
+  bridgeClaimRequestSchema,
   bridgeToolResultSchema,
   mcpClientCreateRequestSchema,
   mcpSettingsUpdateSchema,
@@ -278,7 +283,7 @@ import {
   type ApiEvents,
   type ApiLaunch,
 } from "./events.ts";
-import { McpBridge } from "./mcp-bridge.ts";
+import { BridgeCallError, McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
 import type { LocalLogReader } from "./local-log-reader.ts";
@@ -2146,6 +2151,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     publishTurnEvent: (event) => {
       deckAsks.observe(event);
       deckGuideRuns.observe(event);
+      deckChat.observe(event);
       mcpBridge.publish("agent-turn", event);
     },
     // Each turn is sent only while its repository is allowed with its agent.
@@ -2229,6 +2235,111 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   /** A Deck pull request's threads, for the agent's `read_threads`. */
   const deckConversation = (source: DeckPullRequestSource) =>
     deckCodeHostRead(source, "getPullRequestConversation", "threads");
+  /**
+   * A chat write's code host operation (#796), through the pull request's
+   * plugin and connection, as the user's own writes go: refused before the
+   * plugin runs when the connection's access doesn't allow it, or when
+   * `beforeStart`, the chat's last check, refuses it after the admission.
+   */
+  async function deckCodeHostWrite<Operation extends CodeHostOperation>(
+    source: DeckPullRequestSource,
+    operation: Operation,
+    request: CodeHostOperationRequest<Operation>,
+    beforeStart: () => void,
+  ): Promise<CodeHostOperationResult<Operation>> {
+    const { plugin } = await findPlugin(pluginManager, source.pluginId);
+    if (!plugin || !pluginHasCodeHost(plugin)) {
+      throw new DeckChatRefused("The pull request's code host is off.");
+    }
+    const connection = await storage.connectionForOperation(
+      source.pluginId,
+      source.connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!connection) {
+      throw new DeckChatRefused("The pull request's connection was removed.");
+    }
+    if (connectionAccessRefusal(plugin, connection, operation, request)) {
+      throw new DeckChatRefused(
+        `The user's access choices don't let Ajour write to this pull request: turn on Review pull requests for the connection in Settings › Plugins. Tell the user so.`,
+      );
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    /** The chat's own refusal, which the agent reads as it is. */
+    let refused: DeckChatRefused | undefined;
+    try {
+      return await pluginManager.runCodeHostOperation(
+        source.pluginId,
+        operation,
+        pluginConnection(connection),
+        request,
+        call.admit,
+        {
+          beforeStart() {
+            try {
+              beforeStart();
+            } catch (error) {
+              if (!(error instanceof DeckChatRefused)) throw error;
+              refused = error;
+              // The operation's event records it as the route's refusal.
+              throw new PluginOperationRefused(error.message, "agent_access");
+            }
+          },
+        },
+      );
+    } catch (error) {
+      if (refused) throw refused;
+      // The plugin's own words may hold what the agent shouldn't see.
+      throw new DeckChatRefused(
+        error instanceof PluginExportMissing
+          ? `${plugin.displayName} doesn't offer this yet. Tell the user to do it on ${plugin.displayName}.`
+          : `${plugin.displayName} didn't take it. Tell the user it wasn't done.`,
+      );
+    }
+  }
+  const deckChat = createDeckChatWrites({
+    runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    allowedNow: (binding) =>
+      deckAsks.allowedNow(binding.pullRequest, binding.cli),
+    deck: deckService,
+    codeHost: deckCodeHostWrite,
+    // The draft review lives in the window (#784): the bridge hands it
+    // there, and the window adds it only once the bridge grants its claim.
+    async addDraftComment(draft, claimCheck) {
+      let result;
+      try {
+        result = await mcpBridge.call(
+          DECK_DRAFT_COMMENT_TOOL,
+          draft,
+          { id: "deck-chat", name: "Deck's chat" },
+          undefined,
+          { turnId: draft.turnId, refusal: claimCheck },
+        );
+      } catch (error) {
+        if (!(error instanceof BridgeCallError)) throw error;
+        throw new DeckChatRefused(
+          error.claimed
+            ? "The Ajour window took the draft comment but never confirmed it. Tell the user it may be in their draft review, and don't add it again."
+            : "The Ajour window didn't answer, so the draft comment wasn't added.",
+        );
+      }
+      const parsed = result.ok
+        ? deckDraftCommentResultSchema.safeParse(result.output)
+        : undefined;
+      if (!parsed?.success) {
+        throw new DeckChatRefused(
+          result.ok
+            ? "The Ajour window didn't add the draft comment."
+            : result.error,
+        );
+      }
+      return parsed.data;
+    },
+    publish: (event) => mcpBridge.publish("agent-turn", event),
+  });
+
   const deckReads = createDeckAgentReads({
     deck: deckService,
     allowed: (binding) =>
@@ -2243,11 +2354,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     deck: deckService,
     requireConsent: (pullRequest) =>
       deckAsks.requireTurnConsent(pullRequest, "context"),
-    allowed: (binding) =>
-      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    allowed: (binding, covers) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli, covers),
     runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
     startTurn: (request) => agentRunner.startTurn(request),
     completeTurn: (turnId) => void agentRunner.completeTurn(turnId),
+    regrouped: (clientId, turnId) => deckChat.regrouped(clientId, turnId),
     labelOf: (cli) =>
       agentCliAdapters.find((adapter) => adapter.id === cli)?.label ?? cli,
     // Read again for each regroup: Deck keeps neither (#789).
@@ -2304,6 +2416,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     localLogs: options.localLogs,
     deckReads,
     deckGuides: deckGuideRuns,
+    deckChat,
   };
 
   /**
@@ -3345,6 +3458,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const resolved = mcpBridge.resolve(result);
       unit.set({ mcp_bridge: { resolved } });
       writeJson(response, 200, { ok: resolved });
+    },
+
+    // The window asks to act on a call sent with a claim (#796): the
+    // bridge grants it only while the call may still run.
+    mcpBridgeClaim: async ({ request, response, unit }) => {
+      const { requestId, turnId } = await readRequest(
+        request,
+        bridgeClaimRequestSchema,
+      );
+      const claim = mcpBridge.claim(requestId, turnId);
+      if (!claim.granted) unit.refuse(claim.reason);
+      writeJson(response, 200, claim);
     },
 
     // The user's answer to an agent's question, from the agent panel.
@@ -5091,6 +5216,59 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
       writeJson(response, 200, shown);
+    },
+
+    // A message in Deck's chat (#796): its turn, whose events stream the
+    // reply and the action line of each write it makes.
+    deckChat: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckChatRequestSchema);
+      if (payload.anchor) {
+        unit.set({ deck: { anchor_kind: payload.anchor.kind } });
+      }
+      // The window stopped the message while its clone was prepared: git stops too.
+      const stop = new AbortController();
+      response.once("close", () => {
+        if (!response.writableFinished) stop.abort();
+      });
+      try {
+        // What the page says about the turn is kept as the turn is queued,
+        // before its first tool call can come. The API keeps no pull
+        // request facts, so the page tells whether the user authored it.
+        const { cloneFact, ...chatted } = await deckAsks.chat(
+          { pluginId, connectionId },
+          payload,
+          stop.signal,
+          (turnId) =>
+            deckChat.chatStarted(turnId, {
+              author: payload.author === true,
+              ...(payload.pullRequestUrl
+                ? { pullRequestUrl: payload.pullRequestUrl }
+                : {}),
+            }),
+        );
+        unit.set({
+          agent: { turn_id: chatted.turn.id },
+          ...(cloneFact ? { deck: { clone: cloneFact } } : {}),
+        });
+        writeJson(response, 201, chatted);
+      } catch (error) {
+        if (error instanceof DeckAskStopped) {
+          unit.refuse("client_closed");
+          return;
+        }
+        if (
+          !answerRefusedDeckTurn(
+            response,
+            (reason) => unit.refuse(reason),
+            error,
+          )
+        ) {
+          throw error;
+        }
+      }
     },
 
     deckConsent: async ({ request, response, params, unit }) => {

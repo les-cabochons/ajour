@@ -132,9 +132,11 @@ import {
 } from "@ajour/shared";
 import {
   agentsSnapshotSchema,
+  bridgeClaimResponseSchema,
   mcpBridgeResultAckSchema,
   mcpClientCreateResponseSchema,
   mcpSettingsSchema,
+  type BridgeClaimRequest,
   type BridgeToolResult,
 } from "@ajour/shared/agent-tools";
 import {
@@ -190,11 +192,13 @@ import {
   type CodeHostMergeRequest,
   type CodeHostUpdatePullRequestRequest,
   codeHostConversationResultSchema,
+  codeHostDeleteCommentResultSchema,
   codeHostResolveThreadResultSchema,
   codeHostSetFileViewedResultSchema,
   codeHostSubmitReviewResultSchema,
   type CodeHostPostCommentRequest,
   type CodeHostReplyRequest,
+  type CodeHostDeleteCommentRequest,
   type CodeHostResolveThreadRequest,
   type CodeHostSetFileViewedRequest,
   type CodeHostSubmitReviewRequest,
@@ -206,6 +210,7 @@ import {
 } from "@ajour/shared";
 import {
   deckAskResponseSchema,
+  deckChatResponseSchema,
   deckCacheSettingsUpdateSchema,
   deckCacheStorageSchema,
   deckCloneSchema,
@@ -218,6 +223,7 @@ import {
   deckPreloadResultSchema,
   deckSinceReviewSchema,
   type DeckAskRequest,
+  type DeckChatRequest,
   type DeckCloneSource,
   type DeckConsentCovers,
   type DeckConsentRevokeRequest,
@@ -334,6 +340,34 @@ export function revertDeckGuide(
       body: JSON.stringify(request),
     },
     deckGuideResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Sends a message of Deck's chat (#796): its `deck.chat` turn, whose
+ * `agent-turn` events stream the reply and the action line of each write
+ * it makes. A repository the user hasn't allowed yet answers 409 with
+ * `reason: "needs_consent"` and the agent, as an ask does.
+ */
+export function chatDeck(
+  pluginId: string,
+  connectionId: string,
+  message: DeckChatRequest,
+  /** Stops the message before its turn starts, as while the clone is fetched. */
+  signal?: AbortSignal,
+) {
+  return appApiRequest(
+    "chatDeck",
+    deckPath(pluginId, connectionId, "chat"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+      ...(signal ? { signal } : {}),
+    },
+    deckChatResponseSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
@@ -667,6 +701,30 @@ export function replyToPullRequestThread(
       body: JSON.stringify(reply),
     },
     codeHostPostCommentResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Deletes a comment or reply the user posted, here one Deck's chat posted
+ * for them (#796), at once. A code host that can't delete one answers 404
+ * with the reason `not_supported`.
+ */
+export function deletePullRequestComment(
+  pluginId: string,
+  connectionId: string,
+  request: CodeHostDeleteCommentRequest,
+) {
+  return appApiRequest(
+    "deletePullRequestComment",
+    codeHostPath(pluginId, connectionId, "deleteComment"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    codeHostDeleteCommentResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
@@ -1166,6 +1224,16 @@ function startClientUnit<Client extends AppApiClientFunction>(
  * makes it. The active unit is the one on top of the scope when the call
  * starts: a job runs its calls inside its own `enter`.
  */
+/**
+ * Calls the local API sends once, with no retry: a lost answer must reach
+ * the caller as a failure. A bridge claim the API granted and then retried
+ * would come back refused as already claimed, and the window would drop a
+ * call the API waits on (#796).
+ */
+const SENT_ONCE: ReadonlySet<AppApiClientFunction> = new Set([
+  "claimMcpBridgeCall",
+]);
+
 async function appApiRequest<Client extends AppApiClientFunction, T>(
   client: Client,
   path: string,
@@ -1200,6 +1268,7 @@ async function appApiRequest<Client extends AppApiClientFunction, T>(
       },
       schema,
       {
+        retry: !SENT_ONCE.has(client),
         attempted: () => {
           attempts += 1;
         },
@@ -1230,7 +1299,12 @@ async function requestAppApi<T>(
   path: string,
   init: RequestInit,
   schema: { parse: (value: unknown) => T },
-  observe: { attempted(): void; answered(status: number): void },
+  observe: {
+    /** False for a call sent once: its first network failure throws. */
+    retry: boolean;
+    attempted(): void;
+    answered(status: number): void;
+  },
 ): Promise<T> {
   let response: Response | null = null;
   let lastNetworkError: unknown;
@@ -1254,6 +1328,7 @@ async function requestAppApi<T>(
     } catch (error) {
       lastNetworkError = error;
       if (
+        !observe.retry ||
         !isDefaultInternalAppApi() ||
         attempt === APP_API_RETRY_DELAYS_MS.length
       ) {
@@ -2621,6 +2696,19 @@ export async function postMcpBridgeResult(result: BridgeToolResult) {
     "/api/mcp/bridge/results",
     { method: "POST", body: JSON.stringify(result) },
     mcpBridgeResultAckSchema,
+  );
+}
+
+/**
+ * Asks the local API to claim a call it sent with a claim (#796), before
+ * the window acts on it. A refusal says why, and the window does nothing.
+ */
+export async function claimMcpBridgeCall(claim: BridgeClaimRequest) {
+  return appApiRequest(
+    "claimMcpBridgeCall",
+    "/api/mcp/bridge/claims",
+    { method: "POST", body: JSON.stringify(claim) },
+    bridgeClaimResponseSchema,
   );
 }
 

@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { DeckFile, DeckPullRequestDiff } from "@ajour/shared/deck";
+import {
+  deckLineText,
+  type DeckFile,
+  type DeckPullRequestDiff,
+} from "@ajour/shared/deck";
 import {
   addDraftComment,
   completeDraftComments,
   completeReviewSubmission,
   discardDraftReview,
+  draftOnOtherHead,
   draftReviewOf,
   editDraftComment,
   finishReviewRequest,
-  lineTextOf,
   normalizeDraftReviews,
   placeDrafts,
   prepareCommentPost,
@@ -95,13 +99,21 @@ function withComment(
       headSha: diff.headSha,
       anchor: { path: "src/api.ts", side, line },
       body,
-      lineText: lineTextOf(diff, { path: "src/api.ts", side, line }) ?? "",
+      lineText: deckLineText(diff, { path: "src/api.ts", side, line }) ?? "",
     },
     options(),
   );
 }
 
 describe("the draft review", () => {
+  it("is on another head when its comments are, and on none before its first", () => {
+    const { reviews } = withComment([], 2);
+    const { headSha } = draftReviewOf(reviews, REF)!;
+    expect(draftOnOtherHead([], REF, "anything")).toBe(false);
+    expect(draftOnOtherHead(reviews, REF, headSha)).toBe(false);
+    expect(draftOnOtherHead(reviews, REF, `${headSha}0`)).toBe(true);
+  });
+
   it("adds a comment to a new draft for the pull request, on its head", () => {
     const { reviews, comment } = withComment([], 2);
     expect(comment).toMatchObject({
@@ -375,7 +387,7 @@ describe("a comment on several lines", () => {
         headSha: FIRST.headSha,
         anchor,
         body: "These.",
-        lineText: lineTextOf(FIRST, anchor) ?? "",
+        lineText: deckLineText(FIRST, anchor) ?? "",
       },
       options(),
     );
@@ -384,7 +396,7 @@ describe("a comment on several lines", () => {
   it("keeps the text of every line it's on", () => {
     expect(onLines(2, 3).comment?.lineText).toBe("B\nc");
     expect(
-      lineTextOf(FIRST, {
+      deckLineText(FIRST, {
         path: "src/api.ts",
         side: "head",
         line: 4,

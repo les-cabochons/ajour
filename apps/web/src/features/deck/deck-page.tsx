@@ -87,25 +87,23 @@ export function DeckPage({ itemId }: { itemId?: string }) {
       </div>
     );
   if (itemId)
-    return (
+    return !item ? (
       <div className="backlog-item-page">
-        {!item ? (
-          <>
-            <PageHeader backLink={{ label: "Deck", to: "/deck" }} />
-            <MessagePanel>
-              This pull request is no longer in the local list.
-            </MessagePanel>
-          </>
-        ) : (
-          // Another pull request starts with its drawer closed, its own viewed marks, no ask and no composer open.
-          <PullRequestReview
-            key={item._id}
-            pullRequest={item}
-            now={now}
-            stack={stack}
-          />
-        )}
+        <PageHeader backLink={{ label: "Deck", to: "/deck" }} />
+        <MessagePanel>
+          This pull request is no longer in the local list.
+        </MessagePanel>
       </div>
+    ) : (
+      // Another pull request starts with its drawer closed, its own viewed
+      // marks, no ask, no composer open and an empty chat. The review page
+      // lays itself out, beside its chat panel.
+      <PullRequestReview
+        key={item._id}
+        pullRequest={item}
+        now={now}
+        stack={stack}
+      />
     );
   const sections = [
     {

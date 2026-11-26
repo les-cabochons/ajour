@@ -1219,6 +1219,55 @@ export async function mergePullRequest(connection, request) {
   });
 });
 
+describe("deleting a comment (#796)", () => {
+  const withDelete = `${pluginSource}
+export async function deleteComment(connection, request) {
+  (globalThis.deckDeletes ??= []).push(request.commentId);
+  return { deleted: true };
+}
+`;
+  afterEach(() => {
+    delete (globalThis as { deckDeletes?: unknown }).deckDeletes;
+  });
+  const remove = (baseUrl: string, connectionId: string) =>
+    apiRequest(
+      baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/deleteComment`,
+      { repository: "acme/api", number: 7, commentId: "c-9" },
+    );
+
+  it("deletes the comment through the plugin, at once", async () => {
+    const { api, connectionId } = await startDeck(withDelete);
+
+    await expect(remove(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 200,
+      body: { deleted: true },
+    });
+    expect((globalThis as { deckDeletes?: string[] }).deckDeletes).toEqual([
+      "c-9",
+    ]);
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.delete_comment" &&
+          event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok" });
+  });
+
+  it("says the plugin doesn't offer it when it has no deleteComment", async () => {
+    const { api, connectionId } = await startDeck();
+
+    await expect(remove(api.baseUrl, connectionId)).resolves.toEqual({
+      status: 404,
+      body: {
+        error: "GitHub doesn't offer this yet.",
+        reason: "not_supported",
+      },
+    });
+  });
+});
+
 describe("the guide of a pull request opened in Deck", () => {
   it("is built by Review Deck's pipeline from the same diff, its concerns in reading order", async () => {
     const { api, open } = await startDeck();

@@ -180,6 +180,14 @@ _Avoid_: Offline copy, download, mirror
 A question to the agent asked in place, anchored to selected lines, a concern or a summary line. Its answer streams in below the anchor.
 _Avoid_: Prompt, chat message, query
 
+**Deck chat**:
+The panel on a review page where the user talks to the agent about the pull request, for what no ask covers. It can make the review writes the user asks for, except merge. See ADR 0024.
+_Avoid_: Agent panel (that is the timesheet's), assistant, copilot
+
+**Action line**:
+One line in the Deck chat for one write it made in the user's name: what it did, where it shows, and Delete for what it posted.
+_Avoid_: Activity, receipt, log entry
+
 **Local clone**:
 The user's own Git clone of a pull request's repository, on this computer or in a WSL distribution, chosen once per repository. Deck fetches the pull request into it, into refs of Ajour's own, and an ask's agent reads it at the pull request's head, in a worktree Ajour makes and removes. See ADR 0023.
 _Avoid_: Checkout, repository folder (a project's folder for hand offs), workspace

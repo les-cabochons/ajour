@@ -16,7 +16,11 @@ import {
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
 import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
-import { appApiUrl, postMcpBridgeResult } from "@/lib/app-api";
+import {
+  appApiUrl,
+  claimMcpBridgeCall,
+  postMcpBridgeResult,
+} from "@/lib/app-api";
 import { wideEvents } from "@/lib/wide-events";
 
 /**
@@ -29,6 +33,13 @@ import { wideEvents } from "@/lib/wide-events";
  * process dying. That is `reconnecting`. When the API answers with an error
  * status, EventSource closes for good, so the bridge opens a new stream a few
  * seconds later and reports `disconnected` until it succeeds.
+ *
+ * A call sent with a claim, such as a draft comment of Deck's chat (#796),
+ * runs only once the local API grants the window's claim of it (ADR 0024).
+ * The API owns that decision: it knows whether it still waits for the call
+ * and whether the call's turn still runs, which the window can't tell from
+ * a stream that may have dropped while the turn stopped. A refused claim,
+ * or one that got no answer, runs nothing and posts nothing.
  *
  * Each stream is one `mcp_bridge.connection` job, from open to close, which
  * counts the calls it carried and its own reconnects. Each tool call is one
@@ -100,7 +111,35 @@ function startToolCall(call: BridgeToolCall) {
   return unit;
 }
 
-/** Runs a tool call in its job, posts its result, and ends the job once. */
+/**
+ * Asks the local API to claim a call sent with a claim. The reason the
+ * call doesn't run, or undefined when it may.
+ */
+async function claimRefusal(
+  call: BridgeToolCall,
+  unit: Unit<AjourCatalog, "agent_tool.call">,
+) {
+  const { claim } = call;
+  if (!claim) return undefined;
+  const answer = await unit
+    .enter(() =>
+      claimMcpBridgeCall({ requestId: call.requestId, turnId: claim.turnId }),
+    )
+    .catch(() => undefined);
+  if (!answer) return "claim_unanswered" as const;
+  return answer.granted ? undefined : answer.reason;
+}
+
+/** What a call whose claim got no answer tells the agent. */
+const CLAIM_UNANSWERED =
+  "The Ajour window couldn't confirm with Ajour that it may act, so it did nothing.";
+
+/**
+ * Runs a tool call in its job, posts its result, and ends the job once. A
+ * call whose claim the local API refused runs nothing and posts nothing:
+ * the API no longer waits for it, or answered it itself. One whose claim
+ * got no answer runs nothing either, and says so.
+ */
 async function runToolCall(
   handlers: McpBridgeHandlers,
   call: BridgeToolCall,
@@ -109,6 +148,24 @@ async function runToolCall(
 ) {
   try {
     unit.set({ agent_tool: { queue_ms: Date.now() - queuedAt } });
+    const refused = await claimRefusal(call, unit);
+    if (refused) {
+      unit.refuse(refused);
+      // The API may have granted a claim whose answer was lost, and waits:
+      // the agent hears at once that nothing was done.
+      if (refused === "claim_unanswered") {
+        await unit
+          .enter(() =>
+            postMcpBridgeResult({
+              requestId: call.requestId,
+              ok: false,
+              error: CLAIM_UNANSWERED,
+            }),
+          )
+          .catch(() => undefined);
+      }
+      return;
+    }
     const result = await unit.enter(() => runSafely(handlers, call, unit));
     // A refusal is the tool working as designed; a failure, recorded above,
     // is a bug.

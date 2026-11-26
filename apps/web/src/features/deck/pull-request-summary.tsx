@@ -55,7 +55,7 @@ function SummaryLineView({
   const count = line.hunkIds.length;
   return (
     <li className="deck-summary-line">
-      <SummaryLineAsk lineId={line.id}>
+      <SummaryLineAsk lineId={line.id} label={line.text}>
         {concern !== undefined ? (
           <Value tone="muted" className="deck-summary-concern" aria-hidden>
             {concern}

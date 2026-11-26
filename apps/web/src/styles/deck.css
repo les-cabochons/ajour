@@ -1629,4 +1629,148 @@
   .diff-hunk[data-drawn] {
     min-height: calc(var(--diff-hunk-rows) * var(--diff-line-height));
   }
+
+  /*
+   * The chat (#796): a 360px panel docked on the review page's right, which
+   * scrolls on its own beside the page, or a full-height sheet in the narrow
+   * view. While it's open the page gives up its centred column, so the
+   * panel reaches the window's edge, as the Backlog's does.
+   */
+  .deck-review-stack {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .deck-review-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .page-container:has(> .deck-review-stack.has-chat) {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .deck-chat-panel {
+    background: var(--background);
+  }
+
+  .deck-chat-scroll {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
+
+  .deck-chat {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 100%;
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .deck-chat-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .deck-chat-reads {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  .deck-chat-log {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .deck-chat-empty {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .deck-chat-message {
+    display: flex;
+    align-self: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    max-width: 90%;
+    border-radius: var(--radius-md);
+    background: var(--hover-bg);
+    padding: 0.5rem 0.75rem;
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+  }
+
+  .deck-chat-reply {
+    font-size: var(--text-sm);
+  }
+
+  /* One line per write, quiet: what it did, its link and Delete. */
+  .deck-chat-action {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  /* Links take the accent (ui-rules). */
+  .deck-chat-action a,
+  .deck-chat-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .deck-chat-link:disabled {
+    color: var(--text-tertiary);
+    text-decoration: none;
+  }
+
+  .deck-chat-note {
+    color: var(--text-tertiary);
+  }
+
+  .deck-chat-composer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--background);
+    padding-top: 0.5rem;
+  }
+
+  .deck-chat-composer-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .deck-chat-chip {
+    align-self: flex-start;
+    max-width: 100%;
+  }
+
+  .deck-chat-chip-remove {
+    display: inline-flex;
+    margin-left: 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .deck-chat-chip-remove:focus-visible {
+    outline: 2px solid var(--focus-ring);
+  }
 }

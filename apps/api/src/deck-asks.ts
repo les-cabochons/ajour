@@ -20,6 +20,9 @@ import {
   type DeckConsentCovers,
   type DeckAskAnchor,
   type DeckAskRequest,
+  type DeckChatRequest,
+  type DeckChatResponse,
+  type DeckCloneSource,
   type DeckAskResponse,
   type DeckCloneUse,
   type DeckTurnRefusal,
@@ -92,6 +95,11 @@ export class DeckTurnRefused extends Error {
 export interface DeckAsksOptions {
   storage: {
     getDeckConsents(): Promise<DeckAgentConsent[]>;
+    /**
+     * The consents as Ajour holds them now, without waiting, or undefined
+     * before they are first read.
+     */
+    deckConsentsNow?(): DeckAgentConsent[] | undefined;
     getAgentRunnerSettings(): Promise<{ cli: AgentCliId | null }>;
   };
   /**
@@ -249,6 +257,49 @@ function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
 }
 
 /**
+ * A chat message's turn words (#796): what its chip carries in, written
+ * from what Ajour holds, as an ask's anchor, then the user's message.
+ */
+function chatMessage(held: DeckHeldPullRequest, request: DeckChatRequest) {
+  const { anchor, message } = request;
+  if (!anchor) return message;
+  if (anchor.kind === "summary") {
+    const line = summaryLineOf(held.guide, anchor.id);
+    if (!line) {
+      throw new DeckTurnRefused(404, {
+        error: "The summary has no such line.",
+        reason: "unknown_anchor",
+      });
+    }
+    return `The user continues from this line of the summary, under "${line.section}": ${line.line.text} Its hunks: ${line.line.hunkIds.join(", ")}.\n\n${message}`;
+  }
+  if (anchor.kind === "lines") {
+    const selected = selectedRows(held.diff, anchor);
+    if (!selected) {
+      throw new DeckTurnRefused(404, {
+        error: "The diff doesn't show those lines.",
+        reason: "unknown_anchor",
+      });
+    }
+    const context = [
+      `The user continues from ${deckLinesLabel(anchor)} of ${anchor.path}, in hunk ${selected.hunkId}:`,
+      "```diff",
+      ...selected.rows,
+      "```",
+    ].join("\n");
+    return `${context}\n\n${message}`;
+  }
+  const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
+  if (!concern) {
+    throw new DeckTurnRefused(404, {
+      error: "The guide has no such concern.",
+      reason: "unknown_anchor",
+    });
+  }
+  return `The user continues from the guide's concern "${concern.title}", whose hunks are ${concern.hunkIds.join(", ")}.\n\n${message}`;
+}
+
+/**
  * The anchor as its answers are cached: a concern or a summary line by its
  * id, lines by their path and ends.
  */
@@ -263,6 +314,23 @@ const anchorKey = (anchor: DeckAskAnchor) =>
         anchor.end.side,
         anchor.end.line,
       ];
+
+/** Whether `consents` allow the repository with `cli`, for what `covers` names. */
+function consentIn(
+  consents: DeckAgentConsent[],
+  source: DeckPullRequestSource,
+  cli: AgentCliId,
+  covers: DeckConsentCovers,
+) {
+  return consents.some(
+    (consent) =>
+      consent.pluginId === source.pluginId &&
+      consent.connectionId === source.connectionId &&
+      consent.repository === source.repository &&
+      consent.cli === cli &&
+      deckConsentCovers(consent.covers, covers),
+  );
+}
 
 export function createDeckAsks(options: DeckAsksOptions) {
   /** Done answers by `cacheKey`, oldest first. */
@@ -313,7 +381,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
   async function cloneFor(
     source: DeckPullRequestSource,
     held: DeckHeldPullRequest,
-    request: DeckAskRequest,
+    request: { head: string; clone?: DeckCloneSource },
     signal?: AbortSignal,
   ): Promise<{ use?: DeckCloneUse; root?: string; fact?: DeckAskCloneFact }> {
     const { clones } = options;
@@ -371,14 +439,11 @@ export function createDeckAsks(options: DeckAsksOptions) {
     covers: DeckConsentCovers = "code",
   ) {
     if (!cli) return false;
-    const consents = await options.storage.getDeckConsents();
-    return consents.some(
-      (consent) =>
-        consent.pluginId === source.pluginId &&
-        consent.connectionId === source.connectionId &&
-        consent.repository === source.repository &&
-        consent.cli === cli &&
-        deckConsentCovers(consent.covers, covers),
+    return consentIn(
+      await options.storage.getDeckConsents(),
+      source,
+      cli,
+      covers,
     );
   }
 
@@ -426,9 +491,36 @@ export function createDeckAsks(options: DeckAsksOptions) {
      * each turn is sent to it, and at each of its reads. Another agent's
      * consent never counts.
      */
-    async allowedWith(pullRequest: string, cli: AgentCliId | undefined) {
+    async allowedWith(
+      pullRequest: string,
+      cli: AgentCliId | undefined,
+      covers: DeckConsentCovers = "code",
+    ) {
       const source = parseDeckPullRequestKey(pullRequest);
-      return source !== undefined && (await consentedWith(source, cli ?? null));
+      return (
+        source !== undefined &&
+        (await consentedWith(source, cli ?? null, covers))
+      );
+    },
+
+    /**
+     * The same, from the consents Ajour holds now, without waiting: the
+     * last check of a chat write, right before it is made (#796). False
+     * before the consents are first read.
+     */
+    allowedNow(
+      pullRequest: string,
+      cli: AgentCliId | undefined,
+      covers: DeckConsentCovers = "code",
+    ) {
+      const source = parseDeckPullRequestKey(pullRequest);
+      const consents = options.storage.deckConsentsNow?.();
+      return (
+        source !== undefined &&
+        cli !== undefined &&
+        consents !== undefined &&
+        consentIn(consents, source, cli, covers)
+      );
     },
 
     /**
@@ -513,6 +605,52 @@ export function createDeckAsks(options: DeckAsksOptions) {
       });
       return {
         kind: "turn",
+        turn,
+        ...(clone.use ? { clone: clone.use } : {}),
+        ...(clone.fact ? { cloneFact: clone.fact } : {}),
+      };
+    },
+
+    /**
+     * Starts a chat message's `deck.chat` turn (#796): never from a cache,
+     * since each message follows the ones before it. It sends what an ask
+     * sends, so the same consent covers it, and reads the user's clone as
+     * an ask does. Its writes are the chat's tools.
+     */
+    async chat(
+      source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
+      request: DeckChatRequest,
+      signal?: AbortSignal,
+      /** Called with the turn's ID as it is queued, before it can run. */
+      queued?: (turnId: string) => void,
+    ): Promise<DeckChatResponse & { cloneFact?: DeckAskCloneFact }> {
+      const pullRequestSource: DeckPullRequestSource = {
+        ...source,
+        repository: request.repository,
+        number: request.number,
+      };
+      await requireConsent(pullRequestSource, "code");
+      const pullRequest = deckPullRequestKey(pullRequestSource);
+      const held = await options.deck.held(pullRequest, request.head);
+      if (!held) {
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
+      }
+      const message = chatMessage(held, request);
+      const clone = await cloneFor(pullRequestSource, held, request, signal);
+      // The pull request may have left while the clone was prepared.
+      if (clone.root && !(await options.deck.held(pullRequest, request.head))) {
+        void options.clones?.release(held.key).catch(() => undefined);
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
+      }
+      if (signal?.aborted) throw new DeckAskStopped();
+      const turn = await options.startTurn(
+        { task: "deck.chat", pullRequest, head: request.head, message },
+        {
+          ...(clone.root ? { readRoot: clone.root } : {}),
+          ...(queued ? { queued } : {}),
+        },
+      );
+      return {
         turn,
         ...(clone.use ? { clone: clone.use } : {}),
         ...(clone.fact ? { cloneFact: clone.fact } : {}),

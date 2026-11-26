@@ -145,6 +145,8 @@ export function applyTurnEvent(
       }
       if (event.outcome === "cancelled") return stopAsk(state);
       return failAsk(state, event.error ?? "The answer couldn't be finished.");
+    // An ask's turn makes no writes; a chat's are its own (#796).
+    case "action":
     case "conversation-closed":
       return state;
   }

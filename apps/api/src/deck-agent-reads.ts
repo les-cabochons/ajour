@@ -110,6 +110,7 @@ export function createDeckAgentReads(options: DeckAgentReadsOptions) {
       const { threads } = await options.conversation(source);
       return {
         threads: threads.map((thread) => ({
+          id: thread.id,
           path: thread.path,
           side: thread.side,
           ...(thread.line === undefined ? {} : { line: thread.line }),

@@ -39,6 +39,7 @@ export const CODE_HOST_EVENTS = {
   submitReview: "pull_request.submit_review",
   postComment: "pull_request.comment",
   replyToThread: "pull_request.reply",
+  deleteComment: "pull_request.delete_comment",
   setThreadResolved: "pull_request.resolve_thread",
   setFileViewed: "pull_request.mark_file_viewed",
   updatePullRequest: "pull_request.update",

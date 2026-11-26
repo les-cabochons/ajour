@@ -282,6 +282,11 @@ export const ROUTES = {
     path: "/api/mcp/bridge/results",
     name: "mcp_bridge.result",
   },
+  mcpBridgeClaim: {
+    method: "POST",
+    path: "/api/mcp/bridge/claims",
+    name: "mcp_bridge.claim",
+  },
   agentQuestionAnswer: {
     method: "POST",
     path: "/api/mcp/questions/:questionId/answer",
@@ -524,6 +529,11 @@ export const ROUTES = {
     method: "POST",
     path: "/api/deck/:pluginId/connections/:connectionId/guide/revert",
     name: "deck.guide_revert",
+  },
+  deckChat: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/chat",
+    name: "deck.chat",
   },
   deckConsent: {
     method: "POST",

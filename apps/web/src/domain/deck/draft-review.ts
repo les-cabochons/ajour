@@ -5,7 +5,7 @@ import type {
   CodeHostPostCommentRequest,
   CodeHostSubmitReviewRequest,
 } from "@ajour/shared";
-import type { DeckPullRequestDiff } from "@ajour/shared/deck";
+import { deckLineText, type DeckPullRequestDiff } from "@ajour/shared/deck";
 import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
 
 /*
@@ -133,30 +133,18 @@ function withDraft(
 }
 
 /**
- * The text of lines on the diff, from `startLine` to `line`, each after its
- * `+`, `-` or space and one per row, or undefined when the diff doesn't
- * show one of them.
+ * Whether the pull request's draft holds comments on another head than
+ * `headSha`: a comment on lines of `headSha` can't join it until the page
+ * reads the new head and moves the draft there. Deck's chat (#796) adds
+ * nothing then.
  */
-export function lineTextOf(
-  diff: DeckPullRequestDiff,
-  anchor: {
-    path: string;
-    side: CodeHostDiffSide;
-    line: number;
-    startLine?: number;
-  },
+export function draftOnOtherHead(
+  reviews: readonly DeckDraftReview[],
+  ref: DeckReviewRef,
+  headSha: string,
 ) {
-  const first =
-    anchor.startLine !== undefined && anchor.startLine < anchor.line
-      ? anchor.startLine
-      : anchor.line;
-  const texts: string[] = [];
-  for (let line = first; line <= anchor.line; line += 1) {
-    const text = findLine(diff, { ...anchor, line })?.text;
-    if (text === undefined) return undefined;
-    texts.push(text);
-  }
-  return texts.join("\n");
+  const draft = draftReviewOf(reviews, ref);
+  return draft !== undefined && draft.headSha !== headSha;
 }
 
 /** Adds a comment on lines of `headSha`. A blank comment adds nothing. */
@@ -248,7 +236,7 @@ export function refreshDraftReview(
   if (!draft || draft.headSha === diff.headSha) return { reviews, outdated: 0 };
   let outdated = 0;
   const comments = draft.comments.map((comment) => {
-    if (comment.outdated || lineTextOf(diff, comment) === comment.lineText)
+    if (comment.outdated || deckLineText(diff, comment) === comment.lineText)
       return comment;
     outdated += 1;
     return { ...comment, outdated: true as const };
