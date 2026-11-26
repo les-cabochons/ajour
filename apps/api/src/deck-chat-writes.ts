@@ -20,6 +20,7 @@ import {
   type DeckDraftCommentCall,
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
+import type { BridgeClaim } from "./mcp-bridge.ts";
 import type { McpClientPullRequestBinding } from "./storage.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
@@ -51,9 +52,7 @@ export class DeckChatRefused extends Error {}
  * claims the call: a refusal with a sentence for the agent, or undefined
  * to let the window add it. Synchronous, so nothing changes in between.
  */
-export type DraftCommentGrant = () =>
-  | { reason: "chat_turn_ended" | "consent_revoked"; message: string }
-  | undefined;
+export type DraftCommentClaimCheck = BridgeClaim["refusal"];
 
 /** The running turn a call of a client's tools is part of. */
 export interface RunningTurn {
@@ -95,11 +94,11 @@ export interface DeckChatWritesOptions {
   /**
    * Adds a draft comment to the window's draft review, over the bridge,
    * which hands the window the call before it awaits anything. The window
-   * adds it only once `grant` lets it claim the call.
+   * adds it only once `claimCheck` lets it claim the call.
    */
   addDraftComment(
     call: DeckDraftCommentCall,
-    grant: DraftCommentGrant,
+    claimCheck: DraftCommentClaimCheck,
   ): Promise<{ draftId: string }>;
   /** Sends a turn event to the window. */
   publish(event: AgentTurnEvent): void;
@@ -186,7 +185,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
      * The write's last check: the same turn still runs, at the same head,
      * and the user still allows the repository. Nothing in it waits.
      */
-    const refusalNow: DraftCommentGrant = () => {
+    const refusalNow: DraftCommentClaimCheck = () => {
       const now = options.runningTurnOf(clientId);
       if (
         now?.id !== turn.id ||

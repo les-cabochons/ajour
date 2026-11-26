@@ -130,10 +130,15 @@ async function claimRefusal(
   return answer.granted ? undefined : answer.reason;
 }
 
+/** What a call whose claim got no answer tells the agent. */
+const CLAIM_UNANSWERED =
+  "The Ajour window couldn't confirm with Ajour that it may act, so it did nothing.";
+
 /**
  * Runs a tool call in its job, posts its result, and ends the job once. A
  * call whose claim the local API refused runs nothing and posts nothing:
- * the API no longer waits for it, or answered it itself.
+ * the API no longer waits for it, or answered it itself. One whose claim
+ * got no answer runs nothing either, and says so.
  */
 async function runToolCall(
   handlers: McpBridgeHandlers,
@@ -146,6 +151,19 @@ async function runToolCall(
     const refused = await claimRefusal(call, unit);
     if (refused) {
       unit.refuse(refused);
+      // The API may have granted a claim whose answer was lost, and waits:
+      // the agent hears at once that nothing was done.
+      if (refused === "claim_unanswered") {
+        await unit
+          .enter(() =>
+            postMcpBridgeResult({
+              requestId: call.requestId,
+              ok: false,
+              error: CLAIM_UNANSWERED,
+            }),
+          )
+          .catch(() => undefined);
+      }
       return;
     }
     const result = await unit.enter(() => runSafely(handlers, call, unit));

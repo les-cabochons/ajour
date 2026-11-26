@@ -671,14 +671,15 @@ describe("a draft comment's claim (#796)", () => {
     });
 
   it(
-    "refuses the claim of a window that hears of the call after the local API stopped waiting for it",
+    "refuses the claim of a window that hears of the call after the local API stopped waiting for it, while the turn still runs",
     { timeout: 20_000 },
     async () => {
       const api = await startChatApi(
         () => [
           { readTurn: true },
           draftComment(),
-          { stream: ["Done."] },
+          { stream: ["It wasn't added."] },
+          { waitForInterrupt: true },
           { result: true },
           { readTurn: true },
         ],
@@ -687,21 +688,27 @@ describe("a draft comment's claim (#796)", () => {
       await api.consent();
 
       const chatted = await api.chat();
+      const turnId = chatted.body.turn.id as string;
       const heard = await api.stream.waitFor<HeardCall>("tool-call");
-      expect(heard.claim).toEqual({ turnId: chatted.body.turn.id });
-      await api.ended(chatted.body.turn.id);
+      expect(heard.claim).toEqual({ turnId });
+      // The agent heard the API's timeout; the turn goes on.
+      await vi.waitFor(async () =>
+        expect(await api.mcpReplies()).toHaveLength(1),
+      );
+      const [reply] = await api.mcpReplies();
+      expect(reply!.reply.result.isError).toBe(true);
+      expect(reply!.reply.result.content[0].text).toContain(
+        "the draft comment wasn't added",
+      );
 
       // The window was blocked past the API's wait, and hears of it now.
       expect(await api.claim(heard)).toEqual({
         granted: false,
         reason: "call_not_waiting",
       });
-      const [reply] = await api.mcpReplies();
-      expect(reply!.reply.result.isError).toBe(true);
-      expect(reply!.reply.result.content[0].text).toContain(
-        "the draft comment wasn't added",
-      );
-      expect(api.actions(chatted.body.turn.id)).toEqual([]);
+      await api.cancel(turnId);
+      await api.ended(turnId);
+      expect(api.actions(turnId)).toEqual([]);
       expect(
         api.events.find((event) => event.name === "mcp_bridge.claim"),
       ).toMatchObject({

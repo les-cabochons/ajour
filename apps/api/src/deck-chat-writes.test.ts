@@ -12,7 +12,7 @@ import {
   createDeckChatWrites,
   DeckChatRefused,
   type DeckChatWritesOptions,
-  type DraftCommentGrant,
+  type DraftCommentClaimCheck,
   type RunningTurn,
 } from "./deck-chat-writes.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
@@ -95,7 +95,7 @@ function setup(path = "src/api.ts") {
   const drafts: DeckDraftCommentCall[] = [];
   let answerDraft: (draftId: string) => void = () => {};
   /** The bridge's claim of the latest draft comment, as the window asks for it. */
-  let claimDraft: () => ReturnType<DraftCommentGrant> = () => undefined;
+  let claimDraft: () => ReturnType<DraftCommentClaimCheck> = () => undefined;
   const held = {
     key: "key",
     diff: diffOf(path),
@@ -120,9 +120,9 @@ function setup(path = "src/api.ts") {
       hostCalls.push(operation);
       return { commentId: "c-1", url: state.url } as never;
     },
-    addDraftComment(call, grant) {
+    addDraftComment(call, claimCheck) {
       drafts.push(call);
-      claimDraft = grant;
+      claimDraft = claimCheck;
       return new Promise((resolve) => {
         answerDraft = (draftId) => resolve({ draftId });
       });

@@ -231,7 +231,7 @@ describe("a call the window must claim (#796)", () => {
     expect(JSON.stringify(sink.events)).not.toContain("Rename this.");
   });
 
-  it("runs nothing when its claim gets no answer", async () => {
+  it("runs nothing when its claim gets no answer, and tells the agent at once", async () => {
     claimMcpBridgeCall.mockImplementation(() =>
       Promise.reject(new TypeError("Failed to fetch")),
     );
@@ -246,7 +246,11 @@ describe("a call the window must claim (#796)", () => {
       }),
     );
     expect(ran).toEqual([]);
-    expect(postMcpBridgeResult).not.toHaveBeenCalled();
+    expect(postMcpBridgeResult).toHaveBeenCalledWith({
+      requestId: "r1",
+      ok: false,
+      error: expect.stringContaining("did nothing"),
+    });
   });
 
   it("claims no call sent without a claim", async () => {

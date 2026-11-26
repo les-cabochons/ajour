@@ -33,11 +33,18 @@ const KEEP_ALIVE_MS = 25_000;
 
 export class BridgeCallError extends Error {
   readonly reason: "unavailable" | "timeout";
+  /** The window had claimed the call, so it may have acted on it. */
+  readonly claimed: boolean;
 
-  constructor(message: string, reason: "unavailable" | "timeout") {
+  constructor(
+    message: string,
+    reason: "unavailable" | "timeout",
+    claimed = false,
+  ) {
     super(message);
     this.name = "BridgeCallError";
     this.reason = reason;
+    this.claimed = claimed;
   }
 }
 
@@ -54,10 +61,10 @@ export interface BridgeClaimRefusal {
 export interface BridgeClaim {
   turnId: string;
   /**
-   * The call's last check, synchronous: a refusal, or undefined to grant
-   * the claim. Nothing may await between it and the grant.
+   * The call's last check, synchronous: why the claim is refused, or
+   * undefined to grant it. Nothing may await between it and the grant.
    */
-  grant(): BridgeClaimRefusal | undefined;
+  refusal(): BridgeClaimRefusal | undefined;
 }
 
 interface PendingCall {
@@ -164,13 +171,14 @@ export class McpBridge {
   claim(requestId: string, turnId: string): BridgeClaimResponse {
     const pending = this.pending.get(requestId);
     if (!pending) return { granted: false, reason: "call_not_waiting" };
+    // A call sent without a claim is of no turn, so no claim matches it.
     if (pending.claim?.turnId !== turnId) {
       return { granted: false, reason: "claim_turn_mismatch" };
     }
     if (pending.claimed) {
       return { granted: false, reason: "call_already_claimed" };
     }
-    const refusal = pending.claim.grant();
+    const refusal = pending.claim.refusal();
     if (refusal) {
       this.resolve({ requestId, ok: false, error: refusal.message });
       return { granted: false, reason: refusal.reason };
@@ -205,9 +213,11 @@ export class McpBridge {
   /**
    * Fails the tool calls the window hasn't answered, when MCP turns off. The
    * stream stays: it also carries handoffs and agent turns, which need no MCP.
+   * A call the window claimed keeps waiting: the window is acting on it.
    */
   failPendingCalls() {
     for (const [requestId, pending] of this.pending) {
+      if (pending.claimed) continue;
       clearTimeout(pending.timer);
       this.pending.delete(requestId);
       pending.reject(
@@ -220,7 +230,9 @@ export class McpBridge {
     return setTimeout(() => {
       const pending = this.pending.get(requestId);
       this.pending.delete(requestId);
-      pending?.reject(new BridgeCallError(BRIDGE_TIMEOUT_MESSAGE, "timeout"));
+      pending?.reject(
+        new BridgeCallError(BRIDGE_TIMEOUT_MESSAGE, "timeout", pending.claimed),
+      );
     }, ms);
   }
 

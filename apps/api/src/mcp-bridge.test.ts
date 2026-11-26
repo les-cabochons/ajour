@@ -131,7 +131,7 @@ describe("a claimed call (#796)", () => {
       undefined,
       {
         turnId: "turn-1",
-        grant: () => check.refusal,
+        refusal: () => check.refusal,
       },
     );
     pending.catch(() => undefined);
@@ -218,12 +218,35 @@ describe("a claimed call (#796)", () => {
     await expect(pending).resolves.toMatchObject({ ok: true });
   });
 
-  it("still gives up on a granted call the window never answers", async () => {
+  it("still gives up on a granted call the window never answers, and says the window had claimed it", async () => {
     vi.useFakeTimers();
     const { bridge, pending, requestId } = claimable();
     bridge.claim(requestId, "turn-1");
-    const timedOut = expect(pending).rejects.toThrow(BRIDGE_TIMEOUT_MESSAGE);
+    const timedOut = expect(pending).rejects.toMatchObject({
+      message: BRIDGE_TIMEOUT_MESSAGE,
+      claimed: true,
+    });
     await vi.advanceTimersByTimeAsync(BRIDGE_CLAIMED_CALL_TIMEOUT_MS);
     await timedOut;
+  });
+
+  it("keeps waiting for a granted call when MCP turns off, and fails the others", async () => {
+    const { bridge, pending, requestId } = claimable();
+    // A second call of the turn, which the window never claims.
+    const unclaimed = bridge.call(
+      "deck_add_draft_comment",
+      {},
+      client,
+      undefined,
+      { turnId: "turn-1", refusal: () => undefined },
+    );
+    bridge.claim(requestId, "turn-1");
+    bridge.failPendingCalls();
+
+    await expect(unclaimed).rejects.toThrow(BRIDGE_UNAVAILABLE_MESSAGE);
+    expect(
+      bridge.resolve({ requestId, ok: true, output: { draftId: "d-1" } }),
+    ).toBe(true);
+    await expect(pending).resolves.toMatchObject({ ok: true });
   });
 });

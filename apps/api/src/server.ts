@@ -2307,7 +2307,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     codeHost: deckCodeHostWrite,
     // The draft review lives in the window (#784): the bridge hands it
     // there, and the window adds it only once the bridge grants its claim.
-    async addDraftComment(draft, grant) {
+    async addDraftComment(draft, claimCheck) {
       let result;
       try {
         result = await mcpBridge.call(
@@ -2315,12 +2315,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           draft,
           { id: "deck-chat", name: "Deck's chat" },
           undefined,
-          { turnId: draft.turnId, grant },
+          { turnId: draft.turnId, refusal: claimCheck },
         );
       } catch (error) {
         if (!(error instanceof BridgeCallError)) throw error;
         throw new DeckChatRefused(
-          "The Ajour window didn't answer, so the draft comment wasn't added.",
+          error.claimed
+            ? "The Ajour window took the draft comment but never confirmed it. Tell the user it may be in their draft review, and don't add it again."
+            : "The Ajour window didn't answer, so the draft comment wasn't added.",
         );
       }
       const parsed = result.ok
