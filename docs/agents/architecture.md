@@ -1966,8 +1966,11 @@ ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
   (a WSL clone's under `~/.cache/ajour/deck-worktrees/<id>` in its
   distribution, read as `\\wsl.localhost\…`). `<id>` hashes the cache entry's
   key. Every call has no hooks, no fsmonitor, no maintenance; the checkout
-  turns filters, LFS, submodules and symbolic links off. Writes to one clone run
-  one at a time. A WSL clone runs `wsl.exe -d <distro> --exec env … git`
+  turns filters, LFS, submodules and symbolic links off, and sparse checkout:
+  it has every file even when the user's clone is sparse, and when the clone
+  keeps per-worktree settings, the worktree's own say it isn't sparse. Before
+  git makes the folder, Deck writes its mark beside it, `<id>.deck`. Writes to
+  one clone run one at a time. A WSL clone runs `wsl.exe -d <distro> --exec env … git`
   (`WslGit`).
 - **The turn.** `AgentConversations.startTurn` takes `readRoot` as an option
   Ajour sets, never from the window. An adapter whose conversation
@@ -1987,8 +1990,19 @@ ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
   (`liveEntries`), and the folders under `deck-cache/worktrees/` no live
   entry owns; a WSL clone is swept at its first use, so a start never wakes
   WSL. Forgetting or replacing a clone removes its worktrees first, while
-  its mapping says where they are. `git worktree prune` runs only when every
-  stale registration is Deck's.
+  its mapping says where they are. The start's sweep waits for the state's
+  first load rather than loading it, so the load stays the first request's.
+- **What cleanup may remove.** Only a folder Deck proves its own: a direct
+  child of the worktrees folder, named like an `<id>`, with its `<id>.deck`
+  mark. Anything else there, a worktree the user made included, stays, and
+  git's `worktree remove --force --force` runs only on a proven one. A junction
+  or link at that path goes itself, never what it points to; a folder goes
+  only when its real path is the `<id>` under the worktrees folder's real
+  path, and the worktrees folder itself isn't a link. In WSL, Windows can't
+  read a Linux link over `\\wsl.localhost`, so one stays.
+  `git worktree prune`, which is repository-wide, runs only when every stale
+  registration is a proven one whose folder is gone. A sweep counts as done once it
+  finishes, so a removal that comes during it waits for it.
 - **Failure.** Any failure leaves the ask on the pull request alone, with a
   reason in the response's `clone` (`deckCloneUseSchema`) and a code in
   `deck.ask`'s `deck.clone`, never a path or git's words.
