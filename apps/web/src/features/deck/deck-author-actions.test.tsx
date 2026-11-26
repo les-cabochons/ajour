@@ -528,3 +528,78 @@ it("refuses to merge a draft, and offers only Azure DevOps's allowed merge types
       .hasAttribute("disabled"),
   ).toBe(true);
 });
+
+it("reads the versions again after a refused merge, so a push since holds Merge back", async () => {
+  await renderAuthorPage();
+  vi.mocked(api.mergePullRequest).mockRejectedValueOnce(
+    new Error(
+      "The pull request has new commits since you read it. Refresh to review them before merging.",
+    ),
+  );
+  vi.mocked(api.readPullRequestVersions).mockResolvedValue({
+    versions: [
+      { number: 1, headSha: "one", pushedAt: 1, commits: [] },
+      { number: 2, headSha: "two", pushedAt: 2, commits: [] },
+    ],
+  });
+
+  const dialog = await openMerge();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+  expect(
+    await within(dialog).findByText(
+      "1 new push since you opened this pull request. Refresh to review it before merging.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(dialog)
+      .getByRole("button", { name: "Retry" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(api.mergePullRequest).toHaveBeenCalledTimes(1);
+});
+
+it("holds Merge while Azure DevOps is still completing it, until a sync says how", async () => {
+  vi.mocked(api.mergePullRequest).mockResolvedValue({});
+  const id = await renderAuthorPage({}, "azure_devops");
+
+  const dialog = await openMerge();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+  await waitFor(() =>
+    expect(toasts.show).toHaveBeenCalledWith(
+      "Azure DevOps is completing the merge",
+    ),
+  );
+  expect(facts(id).state).toBe("open");
+  const button = screen.getByRole("button", { name: "Merging…" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+
+  // A sync that still finds it open lets the author try again.
+  act(() => {
+    sync({ id: `pr${number}`, number, updatedAt: 200 }, "azure_devops");
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Merge…" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+});
+
+it("sends nothing from an old toast's Retry once the draft state is what it asked for", async () => {
+  await renderAuthorPage();
+  vi.mocked(api.updatePullRequest).mockRejectedValueOnce(
+    new Error("GitHub request failed (502)."),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+  await waitFor(() => expect(toasts.action).toHaveBeenCalledTimes(1));
+  // The user tries again from the button, and it lands.
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Convert to draft" }),
+  );
+  await screen.findByRole("button", { name: "Ready for review" });
+
+  act(() => toasts.action.mock.calls[0]![0].onAction());
+  expect(api.updatePullRequest).toHaveBeenCalledTimes(2);
+});

@@ -497,8 +497,8 @@ export type PullRequestCommand =
   | { type: "reviewed"; headSha: string; at: number }
   /** The author edited the title or draft state: what the code host answered (#786). */
   | { type: "edited"; title: string; draft: boolean }
-  /** The author merged it from Deck, at `at`. The next sync says how. */
-  | { type: "merged"; at: number };
+  /** The author merged it from Deck. The next sync says how. */
+  | { type: "merged" };
 
 export function changePullRequest(
   item: LocalPullRequest,
@@ -528,8 +528,8 @@ export function changePullRequest(
     case "merged":
       return {
         ...item,
-        facts: { ...item.facts, state: "merged", closedAt: command.at },
-        closedAt: command.at,
+        facts: { ...item.facts, state: "merged", closedAt: now },
+        closedAt: now,
       };
     case "settle":
       return {

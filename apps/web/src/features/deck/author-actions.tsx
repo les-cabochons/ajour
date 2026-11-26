@@ -1,10 +1,11 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { RiPencilLine } from "@remixicon/react";
 import type {
   CodeHostMergeMethod,
   CodeHostVersionsResult,
 } from "@ajour/shared";
 import { MessagePanel } from "@/components/app-surface";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -100,15 +101,13 @@ export function PullRequestTitle({
       <div className="deck-title-row">
         <h1 className="backlog-item-page-title">{title}</h1>
         {editable ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Edit the title"
-            title="Edit the title"
+          <TooltipButton
+            label="Edit the title"
+            render={<Button variant="ghost" size="icon-sm" />}
             onClick={() => setEditing(title)}
           >
             <RiPencilLine aria-hidden />
-          </Button>
+          </TooltipButton>
         ) : null}
       </div>
     );
@@ -132,8 +131,9 @@ export function PullRequestTitle({
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => setEditing(event.target.value)}
         onBlur={() => {
-          // Leaving an unchanged title closes it; changed words stay to save.
-          if (!saving && !failure && editing.trim() === title) close();
+          // Leaving an unchanged or empty title closes it; changed words stay to save.
+          const words = editing.trim();
+          if (!saving && !failure && (!words || words === title)) close();
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
@@ -186,9 +186,13 @@ export function DraftToggle({
   pullRequest: LocalPullRequest;
 }) {
   const [sending, setSending] = useState(false);
+  // Read when a toast's Retry runs, which may be long after it showed.
+  const sendingRef = useRef(false);
   const { draft } = pullRequest.facts;
 
   async function toggle(next: boolean) {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const result = await updatePullRequest(
@@ -205,9 +209,17 @@ export function DraftToggle({
         title: draftActionFailure(pullRequest.pluginId, next),
         description: writeFailure(error, pullRequest),
         actionLabel: "Retry",
-        onAction: () => void toggle(next),
+        onAction: () => {
+          // Only while the pull request still isn't what it asked for.
+          const now = localStore
+            .snapshot()
+            .pullRequests?.find((item) => item._id === pullRequest._id);
+          if (now?.facts.state === "open" && now.facts.draft !== next)
+            void toggle(next);
+        },
       });
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -237,6 +249,7 @@ export function MergePullRequest({
   methods,
   pushes,
   versionName,
+  onFailed,
 }: {
   pullRequest: LocalPullRequest;
   /** The head the page shows. Undefined until the page read the diff. */
@@ -246,16 +259,24 @@ export function MergePullRequest({
   /** Pushes after the head on screen. */
   pushes: number;
   versionName?: CodeHostVersionsResult["versionName"];
+  /** A merge failed: the page reads the versions again, so a push since shows. */
+  onFailed?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<CodeHostMergeMethod | undefined>();
   const [commitTitle, setCommitTitle] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
+  /**
+   * The facts' update time when the code host took a merge it's still
+   * completing: Merge waits until a sync brings newer facts.
+   */
+  const [completingAt, setCompletingAt] = useState<number | undefined>();
   const titleId = useId();
   const { pluginId, connectionId, facts } = pullRequest;
   const labels = mergeMethodLabels(pluginId);
-  const ready = headSha !== undefined && methods !== undefined;
+  const completing = completingAt === facts.updatedAt;
+  const ready = headSha !== undefined && methods !== undefined && !completing;
   const chosen =
     method && methods?.includes(method) ? method : (methods?.[0] ?? undefined);
   const blocker = methods
@@ -285,12 +306,10 @@ export function MergePullRequest({
       });
       setOpen(false);
       if (result.mergeCommitSha) {
-        localStore.changePullRequest(pullRequest._id, {
-          type: "merged",
-          at: Date.now(),
-        });
+        localStore.changePullRequest(pullRequest._id, { type: "merged" });
         showToast("Merged");
       } else {
+        setCompletingAt(facts.updatedAt);
         showToast(`${pullRequest.pluginName} is completing the merge`);
       }
       // The next sync says how it closed.
@@ -299,6 +318,7 @@ export function MergePullRequest({
       );
     } catch (error) {
       setFailure(writeFailure(error, pullRequest));
+      onFailed?.();
     } finally {
       setSending(false);
     }
@@ -314,7 +334,7 @@ export function MergePullRequest({
           setOpen(true);
         }}
       >
-        Merge…
+        {completing ? "Merging…" : "Merge…"}
       </Button>
       <Dialog
         open={open}

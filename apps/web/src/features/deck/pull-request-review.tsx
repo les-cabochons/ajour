@@ -391,6 +391,7 @@ export function PullRequestReview({
                     : undefined
                 }
                 pushes={versionsView.pushes}
+                onFailed={retryVersions}
                 versionName={
                   versions.state.status === "ready"
                     ? versions.state.value.versionName

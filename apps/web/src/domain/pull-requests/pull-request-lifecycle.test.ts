@@ -556,7 +556,7 @@ describe("pull request lifecycle", () => {
 
   it("closes a pull request the author merged, until the next sync says how (#786)", () => {
     const item = settled();
-    const merged = changePullRequest(item, { type: "merged", at: 650 }, 700);
+    const merged = changePullRequest(item, { type: "merged" }, 650);
     expect(merged.facts).toEqual({
       ...item.facts,
       state: "merged",
@@ -564,9 +564,7 @@ describe("pull request lifecycle", () => {
     });
     expect(merged.closedAt).toBe(650);
     // A closed one doesn't merge again.
-    expect(changePullRequest(merged, { type: "merged", at: 800 }, 900)).toBe(
-      merged,
-    );
+    expect(changePullRequest(merged, { type: "merged" }, 900)).toBe(merged);
     const synced = reconcilePullRequests(
       [merged],
       source,
