@@ -6,6 +6,7 @@ import {
   deckStackIndex,
   deckStackOf,
   groupByStack,
+  restackUrl,
   reviewDeckUrl,
 } from "./stacks";
 
@@ -37,6 +38,9 @@ const layer = (
   activeAt: 0,
   missingFromSync: false,
 });
+
+const staleBase = (position: { stale: boolean[]; index: number }) =>
+  position.stale[position.index];
 
 const numbers = (items: readonly LocalPullRequest[]) =>
   items.map((item) => item.facts.number);
@@ -138,7 +142,7 @@ describe("the stale-base check", () => {
     const onOld = layer(482, "per-route", "rate-limits", {
       baseSha: "an-older-head",
     });
-    expect(deckStackOf(onOld, [bottom, onOld])!.staleBase).toBe(true);
+    expect(staleBase(deckStackOf(onOld, [bottom, onOld])!)).toBe(true);
     // Each layer's, for the full stack.
     expect(deckStackOf(bottom, [bottom, onOld])!.stale).toEqual([false, true]);
   });
@@ -147,19 +151,21 @@ describe("the stale-base check", () => {
     const onHead = layer(482, "per-route", "rate-limits", {
       baseSha: "HEAD-479",
     });
-    expect(deckStackOf(onHead, [bottom, onHead])!.staleBase).toBe(false);
+    expect(staleBase(deckStackOf(onHead, [bottom, onHead])!)).toBe(false);
   });
 
   it("stays quiet without a base commit, and for the bottom layer", () => {
     const unknown = layer(482, "per-route", "rate-limits");
-    expect(deckStackOf(unknown, [bottom, unknown])!.staleBase).toBe(false);
+    expect(staleBase(deckStackOf(unknown, [bottom, unknown])!)).toBe(false);
     const onTop = layer(482, "per-route", "rate-limits", {
       baseSha: "elsewhere",
     });
     const movedTrunk = layer(479, "rate-limits", "main", {
       baseSha: "an-old-main",
     });
-    expect(deckStackOf(movedTrunk, [movedTrunk, onTop])!.staleBase).toBe(false);
+    expect(staleBase(deckStackOf(movedTrunk, [movedTrunk, onTop])!)).toBe(
+      false,
+    );
   });
 });
 
@@ -220,6 +226,17 @@ describe("Restack in Review Deck", () => {
     ).toBe(
       "https://ado.example.com/tfs/Main/My%20Project/_apps/hub/Cabochonio.review-deck.review-hub?pr=7&repo=My+Repo",
     );
+  });
+
+  it("is offered on Azure DevOps only", () => {
+    const azure = {
+      ...layer(482, "per-route", "rate-limits", {
+        url: "https://dev.azure.com/acme/Payments/_git/api/pullrequest/482",
+      }),
+      pluginId: "azure_devops",
+    };
+    expect(restackUrl(azure)).toContain("/_apps/hub/");
+    expect(restackUrl(layer(482, "per-route", "rate-limits"))).toBeUndefined();
   });
 
   it("has no link for a page in another shape", () => {

@@ -5,6 +5,7 @@ import {
   RiArrowLeftSLine as Below,
   RiArrowRightSLine as Above,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -18,7 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { reviewDeckUrl, type DeckStackPosition } from "@/domain/deck/stacks";
+import { restackUrl, type DeckStackPosition } from "@/domain/deck/stacks";
 import { rollupSummary } from "@/domain/deck/review-status";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { NARROW_VIEW_QUERY } from "@/lib/breakpoints";
@@ -120,10 +121,7 @@ export function StackStrip({
   const place = stack.index + 1;
   const size = stack.layers.length;
   const { below, above } = stack;
-  const restack =
-    pullRequest.pluginId === "azure_devops"
-      ? reviewDeckUrl(pullRequest.facts.url)
-      : undefined;
+  const restack = restackUrl(pullRequest);
   const close = () => setOpen(false);
   const go = (layer: LocalPullRequest | undefined) => {
     if (layer) void navigate(layerLink(layer));
@@ -160,17 +158,21 @@ export function StackStrip({
         </>
       ) : (
         <p className="deck-stack-strip">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={
+          <TooltipButton
+            label={
               below ? `Layer below, #${below.facts.number}` : "Layer below"
             }
-            disabled={!below}
-            onClick={() => go(below)}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={!below}
+                onClick={() => go(below)}
+              />
+            }
           >
             <Below aria-hidden="true" />
-          </Button>
+          </TooltipButton>
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger
               render={<button type="button" className="deck-stack-name" />}
@@ -203,27 +205,31 @@ export function StackStrip({
                 <Link
                   {...layerLink(layer)}
                   className="deck-stack-link"
-                  title={layer.facts.title}
+                  title={`${layer.facts.title} · ${layerStatus(layer)}`}
                 >
                   #{layer.facts.number}
                 </Link>
               )}
             </Fragment>
           ))}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={
+          <TooltipButton
+            label={
               above ? `Layer above, #${above.facts.number}` : "Layer above"
             }
-            disabled={!above}
-            onClick={() => go(above)}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={!above}
+                onClick={() => go(above)}
+              />
+            }
           >
             <Above aria-hidden="true" />
-          </Button>
+          </TooltipButton>
         </p>
       )}
-      {stack.staleBase && below ? (
+      {stack.stale[stack.index] && below ? (
         <p className="deck-stack-stale">
           #{below.facts.number} changed since this layer was based on it.
         </p>

@@ -39,9 +39,10 @@ export interface DeckStackPosition {
   below?: LocalPullRequest;
   /** The layer above, the next one to review bottom-up. */
   above?: LocalPullRequest;
-  /** The layer below moved since this one was based on it. */
-  staleBase: boolean;
-  /** For each layer, whether the one below it moved since it was based on it. */
+  /**
+   * For each layer, whether the one below it moved since it was based on
+   * it; `stale[index]` is this layer's warning.
+   */
   stale: boolean[];
 }
 
@@ -130,7 +131,6 @@ export function deckStackOf(
     base: position.base.branch,
     ...(below ? { below } : {}),
     ...(above ? { above } : {}),
-    staleBase: !!below && isStale(pullRequest, below),
     stale: items.map((item, at) => {
       const under = items[at - 1];
       return !!under && isStale(item, under);
@@ -140,6 +140,16 @@ export function deckStackOf(
 
 /** Review Deck's extension hub on Azure DevOps, where its Restack is. */
 const REVIEW_DECK_HUB = "Cabochonio.review-deck.review-hub";
+
+/**
+ * Where an Azure DevOps pull request restacks: Review Deck's hub. Undefined
+ * on another code host, where Ajour offers no restack.
+ */
+export function restackUrl(pullRequest: LocalPullRequest): string | undefined {
+  return pullRequest.pluginId === "azure_devops"
+    ? reviewDeckUrl(pullRequest.facts.url)
+    : undefined;
+}
 
 /**
  * The pull request in Review Deck's hub on Azure DevOps, read from its page

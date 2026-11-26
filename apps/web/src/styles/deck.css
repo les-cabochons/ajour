@@ -994,7 +994,7 @@
 
   .deck-stack-layer {
     display: flex;
-    min-height: 2.75rem;
+    min-height: 2.5rem;
     align-items: center;
     gap: 0.5rem;
     padding: 0 0.5rem;

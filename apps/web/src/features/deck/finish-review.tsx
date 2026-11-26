@@ -72,6 +72,14 @@ export function mayAlreadyBeThere(
   return `This ${what} may already be on ${pullRequest.pluginName}: something you posted since may be it. Check the pull request, then post again if it's not there.`;
 }
 
+/** What a sent review is called, in the toast and the sent dialog. */
+const sentTitle = (verdict: Verdict) =>
+  verdict === "approve" ? "Approved" : "Review sent";
+
+/** The line that names the layer above, offered once a review is sent. */
+const nextInStack = (layer: LocalPullRequest) =>
+  `Next in stack: #${layer.facts.number} ${layer.facts.title}`;
+
 /** The dialog's line on what goes with the review, and what stays in the draft. */
 function goesWithIt(draft: DeckDraftReview | undefined) {
   const current = draft?.comments.filter((comment) => !comment.outdated) ?? [];
@@ -97,7 +105,7 @@ export function FinishReview({
   draft,
   headSha,
   onSubmitted,
-  next,
+  nextLayer,
 }: {
   pullRequest: LocalPullRequest;
   draft: DeckDraftReview | undefined;
@@ -106,7 +114,7 @@ export function FinishReview({
   /** After the code host took the review, so the page reads its threads again. */
   onSubmitted: () => void;
   /** The layer above in its stack, offered once the review is sent. */
-  next?: LocalPullRequest;
+  nextLayer?: LocalPullRequest;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -132,9 +140,9 @@ export function FinishReview({
     setOpen(true);
   }
   function openNext() {
-    if (!next) return;
+    if (!nextLayer) return;
     setOpen(false);
-    void navigate({ to: "/deck/$itemId", params: { itemId: next._id } });
+    void navigate({ to: "/deck/$itemId", params: { itemId: nextLayer._id } });
   }
   async function submit(chosen: Verdict, body: string, again = false) {
     if (sending || !headSha) return;
@@ -170,8 +178,8 @@ export function FinishReview({
       }
       localStore.completeReviewSubmission(ref, sent);
       setSummary("");
-      const done = chosen === "approve" ? "Approved" : "Review sent";
-      if (!next) {
+      const done = sentTitle(chosen);
+      if (!nextLayer) {
         setOpen(false);
         showToast(done);
       } else if (open) {
@@ -180,7 +188,7 @@ export function FinishReview({
       } else
         showActionToast({
           title: done,
-          description: `Next in stack: #${next.facts.number} ${next.facts.title}`,
+          description: nextInStack(nextLayer),
           actionLabel: "Next in stack",
           onAction: openNext,
           timeout: 8_000,
@@ -220,15 +228,11 @@ export function FinishReview({
         }}
       >
         <DialogContent>
-          {sent && next ? (
+          {sent && nextLayer ? (
             <>
               <DialogHeader>
-                <DialogTitle>
-                  {sent === "approve" ? "Approved" : "Review sent"}
-                </DialogTitle>
-                <DialogDescription>
-                  Next in stack: #{next.facts.number} {next.facts.title}
-                </DialogDescription>
+                <DialogTitle>{sentTitle(sent)}</DialogTitle>
+                <DialogDescription>{nextInStack(nextLayer)}</DialogDescription>
               </DialogHeader>
               <DialogFooter>
                 <Button

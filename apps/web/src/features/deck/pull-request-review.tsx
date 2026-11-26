@@ -586,7 +586,7 @@ export function PullRequestReview({
                 draft={draft}
                 headSha={headSha}
                 onSubmitted={retryConversation}
-                next={stack?.above}
+                nextLayer={stack?.above}
               />
             ) : null
           }
