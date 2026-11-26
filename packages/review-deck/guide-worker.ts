@@ -3,6 +3,7 @@
 // summary's rules, and answers each job with its groups in reading order and the summary's lines. The parsers load with the first job and stay for the next ones.
 import { parentPort } from "node:worker_threads";
 import type { GuideJob, GuideJobResult } from "./guide-job.ts";
+import { parseDiff } from "./diff.ts";
 import { createPipelineDeps, mergeConfig, runPipeline } from "./pipeline.ts";
 import { summarizeRules } from "./summary.ts";
 
@@ -14,6 +15,13 @@ parentPort?.on("message", (job: GuideJob) => {
 
 async function build(job: GuideJob): Promise<GuideJobResult> {
   try {
+    // Concerns an agent grouped need only the rules, and load no parser.
+    if (job.concerns) {
+      return {
+        id: job.id,
+        ...summarizeRules(parseDiff(job.diff), job.concerns),
+      };
+    }
     // A grammar that fails to load leaves its files to path-only grouping.
     const deps = await createPipelineDeps({ onGrammarError: () => {} });
     const result = await runPipeline(

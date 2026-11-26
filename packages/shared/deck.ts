@@ -179,16 +179,34 @@ export const deckSummarySchema = z.object({
 });
 export type DeckSummary = z.infer<typeof deckSummarySchema>;
 
+/** The agent that grouped a guide, as its source label names it: "Grouped by Claude Code". */
+export const deckGuideProviderSchema = z.object({
+  cli: agentCliIdSchema,
+  label: z.string().min(1).max(100),
+});
+export type DeckGuideProvider = z.infer<typeof deckGuideProviderSchema>;
+
+const guideFields = {
+  concerns: z.array(deckConcernSchema).max(3_000),
+  summary: deckSummarySchema,
+};
+
 /**
  * A pull request's guide: its concerns in reading order, and the summary
  * built with them. `madeWith: "code"` is the guide Deck builds locally,
  * from the code, with the vendored pipeline and the summary's rules.
+ * `madeWith: "agent"` is the one an agent's guide run regrouped (#794),
+ * naming the agent: its summary keeps the rules' lines and adds the
+ * agent's. Deck keeps the built one beside it, to go back to.
  */
-export const deckGuideSchema = z.object({
-  madeWith: z.literal("code"),
-  concerns: z.array(deckConcernSchema).max(3_000),
-  summary: deckSummarySchema,
-});
+export const deckGuideSchema = z.discriminatedUnion("madeWith", [
+  z.object({ madeWith: z.literal("code"), ...guideFields }),
+  z.object({
+    madeWith: z.literal("agent"),
+    provider: deckGuideProviderSchema,
+    ...guideFields,
+  }),
+]);
 export type DeckGuide = z.infer<typeof deckGuideSchema>;
 
 /** Why an opened pull request has no guide although nothing failed. */
@@ -381,6 +399,13 @@ export function deckPullRequestLabel(key: string): string {
 }
 
 /**
+ * The question an ask about a summary line opens on (#794). Sent as is, the
+ * ask carries no question, as a concern's default one does.
+ */
+export const DECK_SUMMARY_DEFAULT_QUESTION =
+  "Give more detail on this line of the summary: what it refers to in the code, and what a reviewer should check.";
+
+/**
  * The question an ask about selected lines opens on (#793): Explain sends
  * it as is, so its answer is cached as the default one.
  */
@@ -395,15 +420,21 @@ export const deckLinePointSchema = z.object({
 export type DeckLinePoint = z.infer<typeof deckLinePointSchema>;
 
 /**
- * What an ask is about: a concern of the guide, or lines selected in one
- * hunk, from `start` to `end` in the hunk's row order. The lines can run
- * over both sides, as a change's removed and added lines do.
+ * What an ask is about: a concern of the guide, a line of its summary
+ * (#794), or lines selected in one hunk, from `start` to `end` in the
+ * hunk's row order. The lines can run over both sides, as a change's
+ * removed and added lines do.
  */
 export const deckAskAnchorSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("concern"),
     /** The concern's id in the guide. */
     id: z.string().min(1).max(100),
+  }),
+  z.object({
+    kind: z.literal("summary"),
+    /** The summary line's id, stable for the guide at one head. */
+    id: z.string().min(1).max(200),
   }),
   z.object({
     kind: z.literal("lines"),
@@ -543,13 +574,82 @@ export const deckNeedsConsentSchema = z.object({
   reason: z.literal("needs_consent"),
   repository: z.string(),
   provider: deckAgentProviderSchema,
+  /**
+   * The repository is allowed for questions only, and a regroup sends more:
+   * the dialog says why it asks again.
+   */
+  again: z.literal("regroup").optional(),
 });
 export type DeckNeedsConsent = z.infer<typeof deckNeedsConsentSchema>;
 
-/** Why Deck refused an ask, as the page reads it. */
-export type DeckAskRefusal =
+/** Why Deck refused an ask or a regroup, as the page reads it. */
+export type DeckTurnRefusal =
   | (DeckNeedsConsent & { error: string })
-  | { error: string; reason: "not_open" | "unknown_anchor" };
+  | { error: string; reason: "not_open" | "unknown_anchor" | "no_guide" };
+
+/*
+ * Regroup (#794): a `deck.guide` turn of the pull request's conversation.
+ * The agent hands its guide back through `submit_guide`, which Ajour checks
+ * and saves beside the guide built from the code.
+ */
+
+/** The longest instruction a regroup carries. */
+export const DECK_REGROUP_INSTRUCTION_MAX = 500;
+
+/**
+ * The instruction Regroup… opens on. Sent as is, the regroup carries none,
+ * and the agent groups the changes its own way.
+ */
+export const DECK_REGROUP_DEFAULT_INSTRUCTION =
+  "Group the changes in the order a reviewer should read them.";
+
+/** Regroups the guide of a pull request at one head, with the user's instruction. */
+export const deckRegroupRequestSchema = z.object({
+  repository: codeHostPullRequestRefSchema.shape.repository,
+  number: codeHostPullRequestRefSchema.shape.number,
+  head: z.string().regex(/^[0-9a-f]{7,64}$/i, "A head is a commit ID."),
+  instruction: z
+    .string()
+    .trim()
+    .min(1)
+    .max(DECK_REGROUP_INSTRUCTION_MAX)
+    .optional(),
+});
+export type DeckRegroupRequest = z.infer<typeof deckRegroupRequestSchema>;
+
+/** The `deck.guide` turn a regroup started. Its end says whether a guide came back. */
+export const deckRegroupResponseSchema = z.object({ turn: agentTurnSchema });
+
+/** Reads the guide Deck shows for a pull request at one head, or goes back to the built one. */
+export const deckGuideRequestSchema = deckRegroupRequestSchema.pick({
+  repository: true,
+  number: true,
+  head: true,
+});
+export type DeckGuideRequest = z.infer<typeof deckGuideRequestSchema>;
+
+/** The guide Deck shows now: the agent's, or the one built from the code. */
+export const deckGuideResponseSchema = z.object({
+  guide: deckGuideSchema.nullable(),
+});
+export type DeckGuideResponse = z.infer<typeof deckGuideResponseSchema>;
+
+/**
+ * What a repository's consent covers (#794). `code`: the changed lines, the
+ * hunks and files the agent reads, the review threads and the question, all
+ * the dialog said before Regroup. `context`: those, and the pull request's
+ * description and linked tickets a regroup sends, as the dialog says now.
+ */
+export const deckConsentCoversSchema = z.enum(["code", "context"]);
+export type DeckConsentCovers = z.infer<typeof deckConsentCoversSchema>;
+
+/** Whether a consent that covers `given` covers `needed`: the context covers the code too. */
+export function deckConsentCovers(
+  given: DeckConsentCovers,
+  needed: DeckConsentCovers,
+) {
+  return needed === "code" || given === "context";
+}
 
 /** The user allowed asks about a repository's pull requests, with one agent. */
 export const deckAgentConsentSchema = z.object({
@@ -558,6 +658,8 @@ export const deckAgentConsentSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
   /** The agent allowed. Another one asks again. */
   cli: agentCliIdSchema,
+  /** One recorded before Regroup has none, and covers the code. */
+  covers: deckConsentCoversSchema.default("code"),
   cliVersion: z.string().max(120).optional(),
   consentedAt: z.number().int().nonnegative(),
 });
@@ -565,11 +667,14 @@ export type DeckAgentConsent = z.infer<typeof deckAgentConsentSchema>;
 
 /**
  * Allows asks about a repository's pull requests with the agent the consent
- * dialog named. It is refused when Settings › Agents picks another one now.
+ * dialog named, for what it said leaves the machine. It is refused when
+ * Settings › Agents picks another one now.
  */
 export const deckConsentRequestSchema = z.object({
   repository: codeHostPullRequestRefSchema.shape.repository,
   cli: agentCliIdSchema,
+  /** What the dialog listed. A page from before Regroup sends none: the code. */
+  covers: deckConsentCoversSchema.default("code"),
 });
 
 /** Takes a repository's consent back. */
@@ -720,3 +825,60 @@ export const deckToolOutputSchemas = {
 export type DeckToolOutput<Name extends DeckToolName> = z.infer<
   (typeof deckToolOutputSchemas)[Name]
 >;
+
+/*
+ * The guide run's answer (#794): `submit_guide`, a tool of a conversation's
+ * client that only a `deck.guide` turn may call, bound to the pull request
+ * and head. Its schema only caps sizes: Ajour checks the rules itself, so a
+ * rejected submission says in a sentence what to fix.
+ */
+
+/** The most concerns a guide run may return. */
+export const DECK_SUBMIT_CONCERNS_MAX = 40;
+/** The longest concern title a guide run may return. */
+export const DECK_SUBMIT_TITLE_MAX = 80;
+/** The longest rationale, and the longest summary text, a guide run may return. */
+export const DECK_SUBMIT_TEXT_MAX = 300;
+
+const submittedText = z.string().max(5_000);
+const submittedHunkIds = z.array(z.string().max(1_100)).max(3_000);
+const submittedLine = z.object({
+  text: submittedText,
+  hunkIds: submittedHunkIds,
+});
+
+export const deckSubmitGuideInputSchema = z.object({
+  /** In reading order. */
+  concerns: z
+    .array(
+      z.object({
+        title: submittedText,
+        rationale: submittedText,
+        hunkIds: submittedHunkIds,
+        kinds: z.array(deckChangeKindSchema).max(DECK_CHANGE_KINDS.length),
+      }),
+    )
+    .max(1_000),
+  summary: z.object({
+    problem: z.object({
+      text: submittedText,
+      source: z.enum(["ticket", "inferred"]),
+      /** The linked ticket it is written from, by number, and repository for an issue elsewhere. */
+      ticket: z
+        .object({
+          number: z.number().int().positive(),
+          repository: z.string().max(240).optional(),
+        })
+        .optional(),
+    }),
+    breaking: z.array(submittedLine).max(100),
+    risks: z.array(submittedLine).max(100),
+  }),
+});
+export type DeckSubmitGuideInput = z.infer<typeof deckSubmitGuideInputSchema>;
+
+export const deckSubmitGuideOutputSchema = z.object({
+  saved: z.literal(true),
+  concernCount: z.number().int().positive(),
+});
+export type DeckSubmitGuideOutput = z.infer<typeof deckSubmitGuideOutputSchema>;

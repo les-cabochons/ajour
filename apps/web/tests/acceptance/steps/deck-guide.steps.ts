@@ -289,3 +289,128 @@ Then("the test's hunk is in view and focused", async ({ page }) => {
   ]);
   expect(top).toBeGreaterThanOrEqual(bar - 1);
 });
+
+/*
+ * The agent's guide (#794): after a regroup, the local API shows the
+ * agent's guide, labelled with the agent, until the user goes back to the
+ * guide built from the code.
+ */
+
+const AGENT_GUIDE = {
+  madeWith: "agent",
+  provider: { cli: "claude-code", label: "Claude Code" },
+  concerns: [
+    {
+      id: "agent-1",
+      title: "Back off between retries, with its test",
+      rationale:
+        "The retry waits longer each time, and its test says how long.",
+      hunkIds: ["src/client/retry.ts#0", "src/client/retry.test.ts#0"],
+      kinds: ["breaking", "fix", "tests"],
+    },
+    {
+      id: "agent-2",
+      title: "Sign each webhook payload",
+      rationale: "A new signer, read by nothing yet.",
+      hunkIds: ["src/webhooks/signer.ts#0"],
+      kinds: ["feature"],
+    },
+  ],
+  summary: {
+    ...OPENED.guide.summary,
+    problem: {
+      text: "Retries come back too fast for a slow receiver.",
+      source: "inferred",
+    },
+    tickets: [],
+    kinds: ["breaking", "feature", "fix", "tests"],
+    breaking: [
+      {
+        id: "breaking:5d1c",
+        text: "The retry delay grows with each attempt",
+        hunkIds: ["src/client/retry.ts#0"],
+      },
+    ],
+    tests: [],
+    untested: [],
+  },
+};
+
+Given("the local API shows the guide an agent regrouped", async ({ page }) => {
+  const cors = { "access-control-allow-origin": "*" };
+  await page.route(
+    `${apiUrl}/api/deck/github/connections/work/open`,
+    async (route) =>
+      route.fulfill({
+        json: { ...OPENED, guide: AGENT_GUIDE },
+        headers: cors,
+      }),
+  );
+  await page.route(
+    `${apiUrl}/api/deck/github/connections/work/guide/revert`,
+    async (route) =>
+      route.fulfill({ json: { guide: OPENED.guide }, headers: cors }),
+  );
+});
+
+Then("the guide says it was grouped by Claude Code", async ({ page }) => {
+  await expect(changes(page).getByRole("heading", { level: 3 })).toHaveText([
+    "Concern 1: Back off between retries, with its test",
+    "Concern 2: Sign each webhook payload",
+  ]);
+  await expect(
+    changes(page).getByText("Grouped by Claude Code · Built from the code"),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/deck-agent-guide.png" });
+});
+
+Then(
+  "the summary shows the agent's inferred problem and breaking change",
+  async ({ page }) => {
+    const summary = page.getByRole("region", { name: "Summary" });
+    await expect(summary.getByText("Inferred, no linked ticket")).toBeVisible();
+    await expect(
+      summary.getByRole("button", {
+        name: "The retry delay grows with each attempt",
+      }),
+    ).toBeVisible();
+    await expect(
+      summary.getByRole("list", { name: "Kinds of change" }),
+    ).toHaveText(/Breaking.*Feature.*Fix.*Tests/);
+    // Each line ends with its more ›.
+    await expect(
+      summary.getByRole("button", { name: "More detail" }),
+    ).toHaveCount(2);
+    await page.screenshot({ path: "test-results/deck-agent-summary.png" });
+  },
+);
+
+When("I open Regroup…", async ({ page }) => {
+  await changes(page).getByRole("button", { name: "Regroup…" }).click();
+});
+
+Then("its instruction is ready to send as is", async ({ page }) => {
+  const field = changes(page).getByRole("textbox", { name: "Instruction" });
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(
+    "Group the changes in the order a reviewer should read them.",
+  );
+  await page.screenshot({ path: "test-results/deck-regroup.png" });
+  await field.press("Escape");
+  await expect(field).toHaveCount(0);
+});
+
+When("I go back to the guide built from the code", async ({ page }) => {
+  await changes(page)
+    .getByRole("button", { name: "Built from the code" })
+    .click();
+});
+
+Then("the guide says it was built from the code", async ({ page }) => {
+  await expect(changes(page).getByRole("heading", { level: 3 })).toHaveText([
+    "Concern 1: Sign each webhook payload",
+    "Concern 2: Back off between retries",
+  ]);
+  await expect(changes(page).getByText("Grouped by")).toHaveCount(0);
+  await expect(changes(page).getByText("Built from the code")).toBeVisible();
+});

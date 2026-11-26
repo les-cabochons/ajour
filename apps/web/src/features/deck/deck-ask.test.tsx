@@ -469,14 +469,19 @@ it("asks once for the repository, naming the agent and what leaves the machine, 
   expect(dialog.textContent).toContain("Claude Code 2.1.318");
   expect(dialog.textContent).toContain("the changed lines");
   expect(dialog.textContent).toContain("the review threads");
+  expect(dialog.textContent).toContain(
+    "for a regroup, the pull request's description and its linked tickets",
+  );
   fireEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
 
   await waitFor(() => expect(api.askDeck).toHaveBeenCalledTimes(2));
+  // The dialog lists what a regroup sends, so the consent covers it.
   expect(api.grantDeckConsent).toHaveBeenCalledWith(
     "github",
     "work",
     "acme/billing-api",
     "claude-code",
+    "context",
   );
   expect(
     await within(concern).findByRole("region", { name: "More detail" }),

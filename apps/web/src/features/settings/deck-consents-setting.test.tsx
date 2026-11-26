@@ -30,6 +30,7 @@ const BILLING: DeckAgentConsent = {
   connectionId: "work",
   repository: "acme/billing-api",
   cli: "claude-code",
+  covers: "context",
   consentedAt: 0,
 };
 

@@ -158,8 +158,11 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   network:
     "The service couldn't be reached: no network, a name that didn't resolve, or a refused connection.",
   no_agent_task: "The plugin has no agent task with that id.",
+  no_guide: "The pull request has no guide to regroup or ask about.",
   no_origin:
     "The window's agent connection carried no origin, so it was refused.",
+  no_result:
+    "The agent ended its turn without what the task asks for, such as a regrouped guide.",
   no_route: "No route of the local API matches that address.",
   not_found: "There was nothing of that name to change.",
   not_open:
@@ -282,7 +285,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
     "The answer couldn't be checked for secrets within the broker's budget, so it was dropped.",
   undeclared: "The plugin asked for something its manifest doesn't declare.",
   uninstalled: "The plugin was uninstalled while it ran.",
-  unknown_anchor: "The guide has no such concern, so nothing was asked.",
+  unknown_anchor:
+    "The guide has no such concern or summary line, so nothing was asked.",
   unknown_client: "The agent client isn't one Ajour knows.",
   unknown_distro: "That WSL distro isn't installed.",
   unknown_hook:

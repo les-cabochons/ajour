@@ -18,15 +18,17 @@ import type { GuideBuildInput } from "./deck-guide-builds.ts";
  * Deck's content cache (#596, #781): what Deck read of a pull request at one
  * base and head, on disk under the local API's data folder, so it opens at
  * once and survives a restart. An entry holds both versions of each changed
- * file, the built diff, the guide once it is built, and what changed since
- * each version the user reviewed (#787), per version pair. A new push makes a
+ * file, the built diff, the guide once it is built, the guide an agent
+ * regrouped (#794) beside it, and what changed since each version the user
+ * reviewed (#787), per version pair. A new push makes a
  * new entry; the old one stays until it is evicted. Over the cap, closed
  * pull requests go first, then the least recently used, never the one on
  * screen. Draft reviews never live here: they're the window's.
  *
- * Each entry is up to four files named by a hash of its key, so no
+ * Each entry is up to five files named by a hash of its key, so no
  * repository, path or commit is in a file name: `<id>.content.json`,
- * `<id>.guide.json` once its guide is built, `<id>.since.json` once a
+ * `<id>.guide.json` once its guide is built, `<id>.agent.json` once an
+ * agent regrouped it, `<id>.since.json` once a
  * comparison with a reviewed version is, and `<id>.meta.json`, which says
  * the entry is whole. Every file is written whole or not at all. A file that
  * doesn't read back drops its entry, and the pull request is read again.
@@ -64,6 +66,8 @@ export interface DeckCachedContent {
 export interface DeckCachedEntry extends DeckCachedContent {
   key: DeckCacheKey;
   guide: DeckGuide | null;
+  /** The guide an agent regrouped (#794), null without one. */
+  agentGuide: DeckGuide | null;
 }
 
 export interface DeckCacheUsage {
@@ -97,6 +101,8 @@ const metaSchema = z.object({
   guideBytes: z.number().int().nonnegative(),
   /** Zero until a comparison with a reviewed version is saved. Absent before #787. */
   sinceBytes: z.number().int().nonnegative().default(0),
+  /** Zero until an agent regroups the guide. Absent before #794. */
+  agentBytes: z.number().int().nonnegative().default(0),
 });
 type Meta = z.infer<typeof metaSchema>;
 
@@ -145,8 +151,8 @@ const idOf = (key: DeckCacheKey) =>
     .digest("hex")
     .slice(0, 40);
 
-const ENTRY_FILE = /^([0-9a-f]{40})\.(meta|content|guide|since)\.json$/;
-type Part = "meta" | "content" | "guide" | "since";
+const ENTRY_FILE = /^([0-9a-f]{40})\.(meta|content|guide|agent|since)\.json$/;
+type Part = "meta" | "content" | "guide" | "agent" | "since";
 
 /** Delete errors Windows gives for a moment while another process, such as an antivirus scan, holds the file. */
 const TRANSIENT_DELETE_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
@@ -183,14 +189,23 @@ const ofSource = (key: DeckCacheKey, source: DeckCacheForgotten) =>
   (source.connectionId === undefined ||
     key.connectionId === source.connectionId);
 
-const PARTS: Part[] = ["content", "guide", "since", "meta"];
-/** The bytes of an entry's contents, guide and comparisons files, as counted. */
-type PartSizes = { content?: number; guide?: number; since?: number };
+const PARTS: Part[] = ["content", "guide", "agent", "since", "meta"];
+/** The bytes of an entry's contents, guides and comparisons files, as counted. */
+type PartSizes = {
+  content?: number;
+  guide?: number;
+  agent?: number;
+  since?: number;
+};
 const bytesOf = (sizes: PartSizes) =>
-  (sizes.content ?? 0) + (sizes.guide ?? 0) + (sizes.since ?? 0);
+  (sizes.content ?? 0) +
+  (sizes.guide ?? 0) +
+  (sizes.agent ?? 0) +
+  (sizes.since ?? 0);
 const sizesOf = (meta: Meta): PartSizes => ({
   content: meta.contentBytes,
   guide: meta.guideBytes,
+  agent: meta.agentBytes,
   since: meta.sinceBytes,
 });
 
@@ -254,6 +269,7 @@ export function createDeckContentCache(options: {
   const sizesOnDisk = async (id: string): Promise<PartSizes> => ({
     content: await sizeOf(fileOf(id, "content")),
     guide: await sizeOf(fileOf(id, "guide")),
+    agent: await sizeOf(fileOf(id, "agent")),
     since: await sizeOf(fileOf(id, "since")),
   });
 
@@ -404,6 +420,9 @@ export function createDeckContentCache(options: {
         if (meta.guideBytes > 0 && !found.has("guide")) {
           meta = { ...meta, guideBytes: 0 };
         }
+        if (meta.agentBytes > 0 && !found.has("agent")) {
+          meta = { ...meta, agentBytes: 0 };
+        }
         if (meta.sinceBytes > 0 && !found.has("since")) {
           meta = { ...meta, sinceBytes: 0 };
         }
@@ -457,20 +476,23 @@ export function createDeckContentCache(options: {
         JSON.parse(await readFile(fileOf(id, "content"), "utf8")),
       );
       if (!sameKey(content.key, meta.key)) throw new Error("Not its entry.");
-      let guide: DeckGuide | null = null;
-      if (meta.guideBytes > 0) {
+      const readGuide = async (part: "guide" | "agent", bytes: number) => {
+        if (bytes === 0) return null;
         const parsed = guideFileSchema.safeParse(
           JSON.parse(
-            await readFile(fileOf(id, "guide"), "utf8").catch(() => "null"),
+            await readFile(fileOf(id, part), "utf8").catch(() => "null"),
           ),
         );
-        if (parsed.success) guide = parsed.data.guide;
-      }
+        return parsed.success ? parsed.data.guide : null;
+      };
+      const guide = await readGuide("guide", meta.guideBytes);
+      const agentGuide = await readGuide("agent", meta.agentBytes);
       const used: Meta = {
         ...meta,
         lastUsedAt: now(),
-        // A guide that doesn't read back is built again.
+        // A guide that doesn't read back is built again; an agent's is gone.
         guideBytes: guide ? meta.guideBytes : 0,
+        agentBytes: agentGuide ? meta.agentBytes : 0,
       };
       entries.set(id, used);
       await writeMeta(id, used).catch(() => undefined);
@@ -483,6 +505,7 @@ export function createDeckContentCache(options: {
           new: new Map(content.guideInput.new),
         },
         guide,
+        agentGuide,
       };
     } catch {
       await remove(id);
@@ -503,6 +526,33 @@ export function createDeckContentCache(options: {
       return undefined;
     }
   };
+
+  /** Writes an entry's built or agent guide, and counts it. */
+  const putGuidePart = (
+    key: DeckCacheKey,
+    part: "guide" | "agent",
+    guide: DeckGuide,
+  ) =>
+    serial(async () => {
+      await load();
+      const id = idOf(key);
+      const meta = entries.get(id);
+      if (!meta) return;
+      try {
+        const text = JSON.stringify({ version: VERSION, guide });
+        await writeFileAtomically(fileOf(id, part), text);
+        const bytes = Buffer.byteLength(text);
+        const next =
+          part === "guide"
+            ? { ...meta, guideBytes: bytes }
+            : { ...meta, agentBytes: bytes };
+        await writeMeta(id, next);
+        entries.set(id, next);
+      } catch {
+        return;
+      }
+      await evictNow();
+    });
 
   return {
     /** The entry at exactly this base and head, as used now. */
@@ -591,9 +641,10 @@ export function createDeckContentCache(options: {
             contentBytes: Buffer.byteLength(text),
             guideBytes: 0,
             sinceBytes: 0,
+            agentBytes: 0,
           };
-          // A guide or comparisons an older entry left, without its meta, aren't this one's.
-          for (const part of ["guide", "since"] as const) {
+          // Guides or comparisons an older entry left, without its meta, aren't this one's.
+          for (const part of ["guide", "agent", "since"] as const) {
             if (!(await deleteFile(fileOf(id, part)))) {
               throw new Error("An older part stays.");
             }
@@ -613,21 +664,33 @@ export function createDeckContentCache(options: {
 
     /** Adds its built guide to an entry still cached. */
     putGuide(key: DeckCacheKey, guide: DeckGuide) {
+      return putGuidePart(key, "guide", guide);
+    },
+
+    /**
+     * Keeps the guide an agent regrouped (#794) with an entry still cached,
+     * beside the built one, in place of an earlier agent's.
+     */
+    putAgentGuide(key: DeckCacheKey, guide: DeckGuide) {
+      return putGuidePart(key, "agent", guide);
+    },
+
+    /** Drops an entry's agent guide, so the built one shows again. */
+    dropAgentGuide(key: DeckCacheKey) {
       return serial(async () => {
         await load();
         const id = idOf(key);
         const meta = entries.get(id);
-        if (!meta) return;
+        if (!meta || meta.agentBytes === 0) return;
+        // The meta says it's gone first: a file that stays is never read.
+        const next = { ...meta, agentBytes: 0 };
         try {
-          const text = JSON.stringify({ version: VERSION, guide });
-          await writeFileAtomically(fileOf(id, "guide"), text);
-          const next = { ...meta, guideBytes: Buffer.byteLength(text) };
           await writeMeta(id, next);
-          entries.set(id, next);
         } catch {
           return;
         }
-        await evictNow();
+        entries.set(id, next);
+        await deleteFile(fileOf(id, "agent"));
       });
     },
 
