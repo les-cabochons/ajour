@@ -19,6 +19,8 @@ Given(
       const key = "ajour.local-state.v2";
       const state = JSON.parse(localStorage.getItem(key) ?? "{}");
       const now = Date.now();
+      // A head in the repository itself: a fork's branch is never a layer.
+      const identity = { cloneUrls: ["https://github.com/acme/api.git"] };
       const layer = (
         id: string,
         number: number,
@@ -43,6 +45,7 @@ Given(
           headRef,
           baseRef,
           baseSha,
+          repositoryIdentity: identity,
           createdAt: now - 3 * 3600000,
           updatedAt: now - 5000,
           lastPushedAt: now - 5000,
@@ -63,6 +66,7 @@ Given(
                     headRef: "rate-limits-per-route",
                     baseRef: "rate-limits",
                     baseSha: "an-older-head",
+                    repositoryIdentity: identity,
                   },
                 }
               : entry,

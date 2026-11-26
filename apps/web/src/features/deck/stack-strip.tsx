@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, type KeyboardEvent } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as Fold,
@@ -123,6 +123,19 @@ export function StackStrip({
   const { below, above } = stack;
   const restack = restackUrl(pullRequest);
   const close = () => setOpen(false);
+  // The app's dispatcher leaves single letters to a dialog with focus in
+  // it, so the popover and the sheet take L themselves to close.
+  const closeOnL = (event: KeyboardEvent) => {
+    if (
+      event.key.toLowerCase() !== "l" ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    )
+      return;
+    event.preventDefault();
+    close();
+  };
   const go = (layer: LocalPullRequest | undefined) => {
     if (layer) void navigate(layerLink(layer));
   };
@@ -142,6 +155,7 @@ export function StackStrip({
           </button>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetContent
+              onKeyDown={closeOnL}
               side="bottom"
               className="flex max-h-[85dvh] flex-col gap-3 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
             >
@@ -179,7 +193,11 @@ export function StackStrip({
             >
               Stack {place} of {size}
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-96 max-w-[90vw] gap-2">
+            <PopoverContent
+              align="start"
+              className="w-96 max-w-[90vw] gap-2"
+              onKeyDown={closeOnL}
+            >
               <PopoverTitle className="text-sm">Stack</PopoverTitle>
               <FullStack
                 pullRequest={pullRequest}

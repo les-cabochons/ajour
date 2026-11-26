@@ -59,7 +59,10 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   or type-checking it with its own settings.
 - `saved.ts`: the `saved-reviews` format 4.
 - `stack.ts`: stack detection among open pull requests, and trunk patterns.
-  The web app finds Deck's stacks with it (`domain/deck/stacks.ts`, #788).
+  The web app takes only its trunk patterns, `isTrunk` and `shortBranch`
+  (`domain/deck/stacks.ts`, #788). Deck's graph is its own: upstream's
+  `stackFor` reads the whole list for each pull request, lowercases branch
+  names and knows nothing of forks, and changing it would fork the copy.
 
 ## Local changes
 

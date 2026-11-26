@@ -2,19 +2,28 @@ import {
   DEFAULT_TRUNK_PATTERNS,
   isTrunk,
   shortBranch,
-  stackFor,
-  stackIndex,
-  type StackPr,
 } from "@ajour/review-deck/stack.ts";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
 /*
- * Stacks among the pull requests Deck lists (#788), found by Review Deck's
- * stack code: a pull request is a layer on another when it targets that
- * one's branch, in the same repository of the same connection. Ajour has no
- * trunk setting, so the usual trunk branches end a stack, and a stack needs
- * two open layers: one pull request into a branch that isn't a trunk, such
- * as `develop` on another name, is alone.
+ * Stacks among the pull requests Deck lists (#788): a pull request is a
+ * layer on another when it targets that one's branch, in the same
+ * repository of the same connection. Review Deck's trunk patterns end a
+ * stack; the graph is Ajour's own, built once per list in one pass, because
+ * Review Deck's `stackFor` reads the whole list for each pull request.
+ *
+ * - Branch names compare exactly, `refs/heads/` aside: Git's are
+ *   case-sensitive, and so are Azure Repos' unless a repository turns on
+ *   case enforcement, which only stops new names that differ by case.
+ * - A pull request from a fork, or from a head repository Ajour doesn't
+ *   know, is never a lower layer: its branch isn't the base repository's
+ *   branch of that name.
+ * - When more than one open pull request comes from the branch a pull
+ *   request targets, the edge is ambiguous and it gets no lower layer.
+ * - Pull requests in a cycle, or above one, have no stack.
+ * - Ajour has no trunk setting, so the usual trunk branches end a stack,
+ *   and a stack needs two open layers: one pull request into a branch that
+ *   isn't a trunk, such as `develop` on another name, is alone.
  */
 
 /** Where stacks end. Review Deck's defaults, and the other usual names. */
@@ -53,53 +62,106 @@ export interface DeckStackRow {
   stack: string;
 }
 
-type Layer = StackPr & { item: LocalPullRequest };
-
 const repositoryKey = (item: LocalPullRequest) =>
   JSON.stringify([
     item.pluginId,
     item.connectionId,
     item.facts.repository.toLowerCase(),
   ]);
-const branchKey = (ref: string) => shortBranch(ref).toLowerCase();
+
+/** Whether the pull request's head branch is known to be in its own repository. */
+const headInRepository = (item: LocalPullRequest) =>
+  !!item.facts.repositoryIdentity && !item.facts.repositoryIdentity.source;
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
 
 /**
- * The open pull requests that may be layers, by repository. One into a trunk
- * with nothing on top of it never is, so a long list of lone pull requests
- * costs one pass, and Review Deck's code, which reads the whole list for
- * each stack, only sees the few that may stack.
+ * The stacks among one repository's open pull requests: each one's layer
+ * below, its layers above in number order, and the ones that can't stack.
  */
-function candidates(all: readonly LocalPullRequest[]): Map<string, Layer[]> {
-  const repositories = new Map<string, Layer[]>();
-  for (const item of all) {
-    const { headRef, baseRef, state, number } = item.facts;
-    if (state !== "open" || !headRef || !baseRef) continue;
-    const key = repositoryKey(item);
-    const layer: Layer = {
-      id: number,
-      repository: { id: key },
-      sourceBranch: headRef,
-      targetBranch: baseRef,
-      status: "active",
-      item,
-    };
-    const list = repositories.get(key);
-    if (list) list.push(layer);
-    else repositories.set(key, [layer]);
+interface StackGraph {
+  parent: Map<LocalPullRequest, LocalPullRequest>;
+  children: Map<LocalPullRequest, LocalPullRequest[]>;
+  /** In a cycle, or above one. */
+  broken: Set<LocalPullRequest>;
+}
+
+function stackGraph(items: readonly LocalPullRequest[]): StackGraph {
+  const heads = new Map<string, LocalPullRequest[]>();
+  for (const item of items)
+    if (headInRepository(item))
+      push(heads, shortBranch(item.facts.headRef!), item);
+  const parent = new Map<LocalPullRequest, LocalPullRequest>();
+  const children = new Map<LocalPullRequest, LocalPullRequest[]>();
+  for (const item of items) {
+    const target = item.facts.baseRef!;
+    if (isTrunk(target, TRUNKS)) continue;
+    const from = heads
+      .get(shortBranch(target))
+      ?.filter((head) => head !== item);
+    if (from?.length !== 1) continue;
+    parent.set(item, from[0]!);
+    push(children, from[0]!, item);
   }
-  for (const [key, layers] of repositories) {
-    const targets = new Set(
-      layers.map((layer) => branchKey(layer.targetBranch)),
-    );
-    const stackable = layers.filter(
-      (layer) =>
-        !isTrunk(layer.targetBranch, TRUNKS) ||
-        targets.has(branchKey(layer.sourceBranch)),
-    );
-    if (stackable.length < 2) repositories.delete(key);
-    else repositories.set(key, stackable);
+  for (const list of children.values())
+    list.sort((left, right) => left.facts.number - right.facts.number);
+  // Each pull request has one layer below at most, so one walk down from
+  // each, stopping at what an earlier walk saw, finds every cycle and what
+  // sits above one.
+  const broken = new Set<LocalPullRequest>();
+  const done = new Set<LocalPullRequest>();
+  for (const item of items) {
+    const path = new Set<LocalPullRequest>();
+    let at: LocalPullRequest | undefined = item;
+    while (at && !done.has(at) && !path.has(at)) {
+      path.add(at);
+      at = parent.get(at);
+    }
+    const cut = !!at && (path.has(at) || broken.has(at));
+    for (const visited of path) {
+      done.add(visited);
+      if (cut) broken.add(visited);
+    }
+  }
+  return { parent, children, broken };
+}
+
+/** The open pull requests that may be layers, by repository. */
+function byRepository(
+  all: readonly LocalPullRequest[],
+): Map<string, LocalPullRequest[]> {
+  const repositories = new Map<string, LocalPullRequest[]>();
+  for (const item of all) {
+    const { headRef, baseRef, state } = item.facts;
+    if (state === "open" && headRef && baseRef)
+      push(repositories, repositoryKey(item), item);
   }
   return repositories;
+}
+
+/**
+ * `item`'s stack, bottom to top: the layers below it, then the first layer
+ * above each one where the stack forks. Undefined when it is alone or
+ * can't stack.
+ */
+function layersOf(item: LocalPullRequest, graph: StackGraph) {
+  if (graph.broken.has(item)) return undefined;
+  const below: LocalPullRequest[] = [];
+  for (let at = graph.parent.get(item); at; at = graph.parent.get(at))
+    below.unshift(at);
+  const above: LocalPullRequest[] = [];
+  for (
+    let at = graph.children.get(item)?.[0];
+    at;
+    at = graph.children.get(at)?.[0]
+  )
+    above.push(at);
+  const layers = [...below, item, ...above];
+  return layers.length < 2 ? undefined : { layers, index: below.length };
 }
 
 /** Whether `layer` was based on an older head of `below` than its current one. */
@@ -116,23 +178,22 @@ export function deckStackOf(
   pullRequest: LocalPullRequest,
   all: readonly LocalPullRequest[],
 ): DeckStackPosition | undefined {
-  const layers = candidates(all).get(repositoryKey(pullRequest));
-  const self = layers?.find((layer) => layer.item._id === pullRequest._id);
-  if (!layers || !self) return undefined;
-  const position = stackFor(self, layers, TRUNKS);
-  if (!position || position.layers.length < 2) return undefined;
-  const items = position.layers.map((layer) => layer.item);
-  const index = items.findIndex((item) => item._id === pullRequest._id);
-  const below = items[index - 1];
-  const above = items[index + 1];
+  const items = byRepository(all).get(repositoryKey(pullRequest));
+  const self = items?.find((item) => item._id === pullRequest._id);
+  if (!items || !self) return undefined;
+  const position = layersOf(self, stackGraph(items));
+  if (!position) return undefined;
+  const { layers, index } = position;
+  const below = layers[index - 1];
+  const above = layers[index + 1];
   return {
-    layers: items,
+    layers,
     index,
-    base: position.base.branch,
+    base: shortBranch(layers[0]!.facts.baseRef!),
     ...(below ? { below } : {}),
     ...(above ? { above } : {}),
-    stale: items.map((item, at) => {
-      const under = items[at - 1];
+    stale: layers.map((item, at) => {
+      const under = layers[at - 1];
       return !!under && isStale(item, under);
     }),
   };
@@ -176,20 +237,50 @@ export function reviewDeckUrl(pageUrl: string): string | undefined {
   return `${url.origin}${project}/_apps/hub/${REVIEW_DECK_HUB}?${query}`;
 }
 
-/** Each layer's place among `all`, by its `_id`, for the list's "2/3". */
+/**
+ * Each layer's place among `all`, by its `_id`, for the list's "2/3": its
+ * place in its own stack, as its page shows it. Linear in pull requests:
+ * each one's depth and height are found once and reused.
+ */
 export function deckStackIndex(
   all: readonly LocalPullRequest[],
 ): Map<string, DeckStackRow> {
   const rows = new Map<string, DeckStackRow>();
-  for (const [key, layers] of candidates(all)) {
-    const byNumber = new Map(layers.map((layer) => [layer.id, layer.item]));
-    for (const [number, place] of stackIndex(layers, TRUNKS)) {
-      const item = byNumber.get(number);
-      if (!item || place.size < 2) continue;
+  for (const [key, items] of byRepository(all)) {
+    const graph = stackGraph(items);
+    const depth = new Map<LocalPullRequest, number>();
+    const bottom = new Map<LocalPullRequest, LocalPullRequest>();
+    const height = new Map<LocalPullRequest, number>();
+    const measure = (
+      item: LocalPullRequest,
+      next: (at: LocalPullRequest) => LocalPullRequest | undefined,
+      known: Map<LocalPullRequest, number>,
+      end?: Map<LocalPullRequest, LocalPullRequest>,
+    ) => {
+      const path: LocalPullRequest[] = [];
+      let at: LocalPullRequest | undefined = item;
+      while (at && !known.has(at)) {
+        path.push(at);
+        at = next(at);
+      }
+      let count = at ? known.get(at)! : -1;
+      const last = at ? end?.get(at) : path.at(-1);
+      for (const visited of path.reverse()) {
+        known.set(visited, ++count);
+        if (end && last) end.set(visited, last);
+      }
+      return known.get(item)!;
+    };
+    for (const item of items) {
+      if (graph.broken.has(item)) continue;
+      const index = measure(item, (at) => graph.parent.get(at), depth, bottom);
+      const size =
+        index + 1 + measure(item, (at) => graph.children.get(at)?.[0], height);
+      if (size < 2) continue;
       rows.set(item._id, {
-        index: place.index,
-        size: place.size,
-        stack: `${key}#${place.bottomId}`,
+        index: index + 1,
+        size,
+        stack: `${key}#${bottom.get(item)!.facts.number}`,
       });
     }
   }

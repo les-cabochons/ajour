@@ -105,6 +105,7 @@ const facts = (
   headSha: `head-${number}`,
   headRef,
   baseRef,
+  repositoryIdentity: { cloneUrls: ["https://github.com/acme/api.git"] },
   ...extra,
 });
 
@@ -268,6 +269,25 @@ it("opens the full stack with L, in merge order, each layer a link", async () =>
   expect(within(stack).getByText("This layer")).toBeTruthy();
   fireEvent.click(within(stack).getByRole("link", { name: /#485/ }));
   await waitFor(() => expect(title()).toBe("Layer 485"));
+});
+
+it("closes the full stack with L or Escape, with focus inside it", async () => {
+  for (const narrow of [false, true]) {
+    stubNarrowView(narrow);
+    await renderReviewPage(482);
+    for (const key of ["l", "L", "Escape"]) {
+      press("l");
+      const stack = await screen.findByRole("dialog", { name: "Stack" });
+      const link = within(stack).getByRole("link", { name: /#479/ });
+      act(() => link.focus());
+      fireEvent.keyDown(link, { key });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Stack" })).toBeNull(),
+      );
+    }
+    cleanup();
+  }
+  stubNarrowView(false);
 });
 
 it("leaves S to the timer on the review page", async () => {

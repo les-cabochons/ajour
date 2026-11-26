@@ -30,6 +30,7 @@ const layer = (
     number,
     title: `Layer ${number}`,
     headSha: `head-${number}`,
+    repositoryIdentity: { cloneUrls: ["https://github.com/acme/api.git"] },
     ...(head ? { headRef: head } : {}),
     ...(base ? { baseRef: base } : {}),
     ...facts,
@@ -117,12 +118,21 @@ describe("a pull request's place in its stack", () => {
     );
   });
 
-  it("matches branches as the code host names them, refs/heads/ and case aside", () => {
-    const azureBottom = layer(7, "refs/heads/Users/Alex/Base", "main");
-    const azureTop = layer(8, "users/alex/top", "users/alex/base");
+  it("matches branches as the code host names them, refs/heads/ aside", () => {
+    const azureBottom = layer(7, "refs/heads/users/alex/base", "main");
+    const azureTop = layer(8, "users/alex/top", "refs/heads/users/alex/base");
     expect(
       numbers(deckStackOf(azureTop, [azureBottom, azureTop])!.layers),
     ).toEqual([7, 8]);
+  });
+
+  it("keeps the case of branch names, on GitHub and Azure DevOps alike", () => {
+    for (const pluginId of ["github", "azure_devops"]) {
+      const bottom = { ...layer(7, "Feature", "main"), pluginId };
+      const top = { ...layer(8, "top", "feature"), pluginId };
+      expect(deckStackOf(top, [bottom, top])).toBeUndefined();
+      expect(deckStackIndex([bottom, top]).size).toBe(0);
+    }
   });
 
   it("follows the first layer above where the stack forks", () => {
@@ -132,6 +142,73 @@ describe("a pull request's place in its stack", () => {
     expect(
       numbers(deckStackOf(other, [bottom, middle, other])!.layers),
     ).toEqual([479, 483]);
+  });
+});
+
+describe("branches of forks", () => {
+  const fromFork = {
+    cloneUrls: ["https://github.com/acme/api.git"],
+    source: {
+      repository: "alice/api",
+      cloneUrls: ["https://github.com/alice/api.git"],
+    },
+  };
+
+  it("never takes a fork's branch for the base repository's branch of that name", () => {
+    const forked = layer(70, "feature", "main", {
+      repositoryIdentity: fromFork,
+    });
+    const onFeature = layer(71, "top", "feature");
+    expect(deckStackOf(onFeature, [forked, onFeature])).toBeUndefined();
+    expect(deckStackOf(forked, [forked, onFeature])).toBeUndefined();
+    expect(deckStackIndex([forked, onFeature]).size).toBe(0);
+  });
+
+  it("stacks a fork's pull request on the base repository's branch", () => {
+    const bottom = layer(72, "feature", "main");
+    const forkedTop = layer(73, "top", "feature", {
+      repositoryIdentity: fromFork,
+    });
+    expect(
+      numbers(deckStackOf(forkedTop, [bottom, forkedTop])!.layers),
+    ).toEqual([72, 73]);
+  });
+
+  it("makes no layer of a pull request whose head repository isn't known", () => {
+    const unknown = layer(74, "feature", "main");
+    delete (unknown.facts as Partial<CodeHostPullRequestFacts>)
+      .repositoryIdentity;
+    const onFeature = layer(75, "top", "feature");
+    expect(deckStackOf(onFeature, [unknown, onFeature])).toBeUndefined();
+  });
+});
+
+describe("pull requests that can't stack", () => {
+  it("shows no stack for a cycle, nor for a layer above one", () => {
+    const one = layer(80, "a", "b");
+    const two = layer(81, "b", "a");
+    const above = layer(82, "c", "a");
+    const all = [one, two, above];
+    for (const item of all) expect(deckStackOf(item, all)).toBeUndefined();
+    expect(deckStackIndex(all).size).toBe(0);
+    expect(numbers(groupByStack(all, deckStackIndex(all)))).toEqual([
+      80, 81, 82,
+    ]);
+  });
+
+  it("gives no lower layer when two open pull requests come from the branch", () => {
+    const intoMain = layer(1, "a", "main");
+    const intoRelease = layer(2, "a", "release/x");
+    const onA = layer(3, "b", "a");
+    for (const all of [
+      [intoMain, intoRelease, onA],
+      [onA, intoRelease, intoMain],
+    ]) {
+      expect(deckStackOf(onA, all)).toBeUndefined();
+      expect(deckStackOf(intoMain, all)).toBeUndefined();
+      expect(deckStackOf(intoRelease, all)).toBeUndefined();
+      expect(deckStackIndex(all).size).toBe(0);
+    }
   });
 });
 
@@ -199,14 +276,43 @@ describe("the list's stacks", () => {
     ]);
   });
 
+  // A store write costs about 75 ms in production (code-standards.md); the
+  // list's stacks are a small part of one, even at thousands of rows.
+  const BUDGET_MS = 40;
+  const timed = (all: LocalPullRequest[]) => {
+    deckStackIndex(all);
+    const started = performance.now();
+    const index = deckStackIndex(all);
+    return { index, elapsed: performance.now() - started };
+  };
+
   it("stays linear on a long list of lone pull requests", () => {
     const many = Array.from({ length: 5_000 }, (_, index) =>
       layer(1_000 + index, `branch-${index}`, "main"),
     );
-    const started = performance.now();
-    const index = deckStackIndex([...many, bottom, middle]);
+    const { index, elapsed } = timed([...many, bottom, middle]);
     expect(index.size).toBe(2);
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(elapsed).toBeLessThan(BUDGET_MS);
+  });
+
+  it("stays linear when every pull request targets a branch that isn't a trunk", () => {
+    const many = Array.from({ length: 5_000 }, (_, index) =>
+      layer(1_000 + index, `branch-${index}`, `target-${index}`),
+    );
+    const { index, elapsed } = timed(many);
+    expect(index.size).toBe(0);
+    expect(elapsed).toBeLessThan(BUDGET_MS);
+  });
+
+  it("stays linear on thousands of real stacks", () => {
+    const many = Array.from({ length: 2_500 }, (_, index) => [
+      layer(10_000 + index, `base-${index}`, "main"),
+      layer(20_000 + index, `top-${index}`, `base-${index}`),
+    ]).flat();
+    const { index, elapsed } = timed(many);
+    expect(index.size).toBe(5_000);
+    expect(index.get(many[1]!._id)).toMatchObject({ index: 2, size: 2 });
+    expect(elapsed).toBeLessThan(BUDGET_MS);
   });
 });
 

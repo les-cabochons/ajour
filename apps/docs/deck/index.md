@@ -53,6 +53,8 @@ Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per 
 
 When a pull request targets the branch of another one you see in Deck, they form a stack, reviewed bottom first. Under the status line, the stack strip shows the whole stack, such as **Stack 2 of 3 · main ← #479 ← #482 this ← #485**: click a number, or ‹ and ›, to open the layer below or above. The status line adds the merge order, such as **Merges after #479**.
 
+Branch names match exactly, case included. A fork's branch never counts as the one below, and a pull request shows no stack when two open pull requests come from the branch it targets, or when branches target each other in a loop.
+
 Press <kbd>L</kbd>, or click **Stack 2 of 3**, for the full stack with each layer's title and checks. In a [narrow window](/app/narrow-windows), the strip folds to **Stack 2/3**, which opens it.
 
 When the layer below changed since this one was based on it, a quiet line says so, so you don't review against an old base. On Azure DevOps, **Restack in Review Deck** opens the pull request in [Review Deck](https://github.com/les-cabochons/review-deck), where you can rebase the stack. Ajour itself never rebases.
