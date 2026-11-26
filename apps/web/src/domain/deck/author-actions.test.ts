@@ -154,10 +154,17 @@ describe("pendingMerge", () => {
     );
   });
 
-  it("fails it when the branches turn out to conflict", () => {
+  it("fails it when the sync after the merge finds the branches conflict", () => {
+    expect(
+      pendingMerge({ ...open, mergeability: "conflicting" }, { synced: true }),
+    ).toBe("conflicting");
+  });
+
+  it("doesn't fail it on a conflict the facts held before that sync", () => {
+    // Facts from before the merge: the code host took it, so it saw no conflict then.
     expect(
       pendingMerge({ ...open, mergeability: "conflicting" }, { synced: false }),
-    ).toBe("conflicting");
+    ).toBe("completing");
   });
 
   it("ends it when the sync after the merge finds it still open, so Merge can ask again", () => {

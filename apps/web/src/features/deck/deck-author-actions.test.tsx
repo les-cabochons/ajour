@@ -574,7 +574,7 @@ function heldSync() {
         resolve({ viewer: { login: "alex", isBot: false }, pullRequests: [] });
     }),
   );
-  return () => finish();
+  return finish;
 }
 
 /** Merges from the dialog, which Azure DevOps answers as still completing. */
@@ -613,7 +613,7 @@ it("holds Merge while Azure DevOps is still completing it, until the sync after 
 
 it("says the merge failed when a sync finds the branches conflict, whatever the activity time", async () => {
   vi.mocked(api.mergePullRequest).mockResolvedValue({});
-  heldSync();
+  const finishSync = heldSync();
   const id = await renderAuthorPage({ updatedAt: 100 }, "azure_devops");
   await mergeStillCompleting(id);
 
@@ -628,6 +628,7 @@ it("says the merge failed when a sync finds the branches conflict, whatever the 
       "azure_devops",
     );
   });
+  await act(async () => finishSync());
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "Merge…" }).hasAttribute("disabled"),
