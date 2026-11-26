@@ -1135,6 +1135,90 @@ export async function replyToThread(connection, request) { return write("reply",
   });
 });
 
+describe("merges (#786)", () => {
+  /*
+   * A code host whose check and merge race: a merge first reads whether the
+   * pull request merged, as a retry after a lost answer must, then merges
+   * after a pause. Two windows merging at once would both find it open and
+   * both merge, unless the local API runs them one at a time.
+   */
+  const withMerge = `${pluginSource}
+export async function mergePullRequest(connection, request) {
+  const host = (globalThis.deckMerges ??= { merges: [], tries: 0 });
+  host.tries += 1;
+  const done = host.merges.find((merge) => merge.number === request.number);
+  if (done) return { mergeCommitSha: done.sha };
+  await globalThis.deckMergeGate;
+  const sha = "merge" + (host.merges.length + 1);
+  host.merges.push({ number: request.number, sha });
+  return { mergeCommitSha: sha };
+}
+`;
+  const host = () =>
+    (globalThis as { deckMerges?: { merges: unknown[]; tries: number } })
+      .deckMerges ?? { merges: [], tries: 0 };
+  afterEach(() => {
+    delete (globalThis as { deckMerges?: unknown }).deckMerges;
+    delete (globalThis as { deckMergeGate?: unknown }).deckMergeGate;
+  });
+  const merge = (baseUrl: string, connectionId: string, number = 7) =>
+    apiRequest(
+      baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/mergePullRequest`,
+      { repository: "acme/api", number, method: "squash", headSha: "head" },
+    );
+
+  it("merges a pull request once when two windows merge it at the same time", async () => {
+    const { api, connectionId } = await startDeck(withMerge);
+    let open!: () => void;
+    (globalThis as { deckMergeGate?: Promise<void> }).deckMergeGate =
+      new Promise<void>((resolve) => (open = resolve));
+
+    const answers = Promise.all([
+      merge(api.baseUrl, connectionId),
+      merge(api.baseUrl, connectionId),
+    ]);
+    // Until both reached the plugin, or a moment passed without the second.
+    for (let wait = 0; wait < 30 && host().tries < 2; wait += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    open();
+
+    expect(await answers).toEqual([
+      { status: 200, body: { mergeCommitSha: "merge1" } },
+      { status: 200, body: { mergeCommitSha: "merge1" } },
+    ]);
+    expect(host().merges).toHaveLength(1);
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.merge" && event.kind === "request",
+      ),
+    ).toMatchObject({
+      outcome: "ok",
+      pull_request: { merge_method: "squash" },
+    });
+  });
+
+  it("merges different pull requests side by side", async () => {
+    const { api, connectionId } = await startDeck(withMerge);
+    let open!: () => void;
+    (globalThis as { deckMergeGate?: Promise<void> }).deckMergeGate =
+      new Promise<void>((resolve) => (open = resolve));
+
+    const answers = Promise.all([
+      merge(api.baseUrl, connectionId, 7),
+      merge(api.baseUrl, connectionId, 8),
+    ]);
+    for (let wait = 0; wait < 30 && host().tries < 2; wait += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    // Both reached the plugin before either merged.
+    expect(host().tries).toBe(2);
+    open();
+    await answers;
+    expect(host().merges).toHaveLength(2);
+  });
+});
+
 describe("the guide of a pull request opened in Deck", () => {
   it("is built by Review Deck's pipeline from the same diff, its concerns in reading order", async () => {
     const { api, open } = await startDeck();
