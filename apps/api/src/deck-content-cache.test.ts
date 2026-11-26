@@ -80,7 +80,19 @@ const FRESH = 0;
 
 const guide: DeckGuide = {
   madeWith: "code",
-  concerns: [{ id: "g1", title: "Title", rationale: "", hunkIds: ["a#0"] }],
+  concerns: [
+    { id: "g1", title: "Title", rationale: "", hunkIds: ["a#0"], kinds: [] },
+  ],
+  summary: {
+    problem: null,
+    tickets: [],
+    kinds: [],
+    breaking: [],
+    risks: [],
+    tests: [],
+    untested: [],
+    leftovers: [],
+  },
 };
 
 function start(

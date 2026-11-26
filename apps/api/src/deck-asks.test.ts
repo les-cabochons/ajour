@@ -1,3 +1,4 @@
+import { builtFrom } from "./test-support/deck-guides.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -77,14 +78,15 @@ export async function getPullRequestConversation() {
 
 /** The guide, as the pipeline would build it: one concern. */
 const guideRuntime: DeckGuideRuntime = {
-  build: async () => [
-    {
-      id: "g1",
-      title: "Upper-case the second line",
-      rationale: "The handler now shouts.",
-      hunkIds: ["src/api.ts#0"],
-    },
-  ],
+  build: async (input) =>
+    builtFrom(input, [
+      {
+        id: "g1",
+        title: "Upper-case the second line",
+        rationale: "The handler now shouts.",
+        hunkIds: ["src/api.ts#0"],
+      },
+    ]),
   close: async () => {},
 };
 

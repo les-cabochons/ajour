@@ -19,6 +19,7 @@ import * as api from "@/lib/app-api";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { NO_DECK_SUMMARY } from "@/test-support/deck";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
   makeScrollable,
@@ -99,17 +100,20 @@ const diffAt = (headSha: string): DeckOpenedPullRequest => ({
   ],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Handle the request",
         rationale: "The handler.",
+        kinds: [],
         hunkIds: ["src/api.ts#0", "src/api.ts#1"],
       },
       {
         id: "g2",
         title: "Read the config",
         rationale: "The setting.",
+        kinds: [],
         hunkIds: ["src/config.ts#0"],
       },
     ],
@@ -328,6 +332,52 @@ it("keeps only the hunks changed since your review, marks them, and folds the un
   expect(hunkNames(changes)).toHaveLength(3);
 });
 
+it("shows every hunk again when a summary line goes to one the filter hides", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+  vi.mocked(api.openDeckPullRequest).mockImplementation(
+    async (_plugin, _connection, request) => {
+      const opened = diffAt(request.headSha ?? "two");
+      return {
+        ...opened,
+        guide: {
+          ...opened.guide!,
+          summary: {
+            ...NO_DECK_SUMMARY,
+            leftovers: [
+              {
+                id: "leftover:0",
+                text: "TODO in src/config.ts:3: // TODO: read it once",
+                hunkIds: ["src/config.ts#0"],
+              },
+            ],
+          },
+        },
+      };
+    },
+  );
+  const changes = await renderReviewPage();
+  const since = await within(versionsBar(changes)).findByRole("button", {
+    name: "Changes since your review 1",
+  });
+  fireEvent.click(since);
+  expect(hunkNames(changes)).toEqual(["src/api.ts, line 40"]);
+
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "Summary" })).getByRole(
+      "button",
+      { name: /^TODO in src\/config\.ts/ },
+    ),
+  );
+
+  expect(since.getAttribute("aria-pressed")).toBe("false");
+  expect(hunkNames(changes)).toHaveLength(3);
+  await waitFor(() =>
+    expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+      "src/config.ts#0",
+    ),
+  );
+});
+
 /**
  * A huge pull request at "two" (#790): 700 hunks in its first concern, of
  * which v2 changed the first 600, then a config hunk it left untouched and
@@ -353,23 +403,27 @@ const hugeAt = (headSha: string): DeckOpenedPullRequest => {
     ],
     guide: {
       madeWith: "code",
+      summary: NO_DECK_SUMMARY,
       concerns: [
         {
           id: "g1",
           title: "Handle the request",
           rationale: "The handler.",
+          kinds: [],
           hunkIds: big.map((entry) => entry.id),
         },
         {
           id: "g2",
           title: "Read the config",
           rationale: "The setting.",
+          kinds: [],
           hunkIds: ["src/config.ts#0"],
         },
         {
           id: "g3",
           title: "Document it",
           rationale: "The docs.",
+          kinds: [],
           hunkIds: ["src/docs.ts#0"],
         },
       ],

@@ -21,6 +21,7 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
+import { ChangeKinds } from "./pull-request-summary";
 import { renderNoteCard } from "./review-notes";
 
 /*
@@ -42,6 +43,8 @@ export type AddComment = (
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";
+/** Holds a hunk's id on its element, which a summary line scrolls to. */
+export const HUNK_ATTRIBUTE = "data-hunk-id";
 
 /** The lines a hovered note highlights, kept inside its hunk. */
 function highlightOf(hunk: DeckHunk, entry: ReviewNote | undefined) {
@@ -89,8 +92,14 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const withoutLines = hunk.header ? undefined : fileWithoutLines(file);
   const label = hunk.header ? hunkLabel(file, hunk) : file.path;
   const note = inConcern ? fileNote(file) : undefined;
+  const attribute = { [HUNK_ATTRIBUTE]: hunk.id };
   return (
-    <div className="deck-hunk" data-viewed={viewed || undefined}>
+    <div
+      className="deck-hunk"
+      data-viewed={viewed || undefined}
+      tabIndex={-1}
+      {...attribute}
+    >
       <div className="deck-hunk-header">
         {inConcern ? <span className="deck-hunk-path">{file.path}</span> : null}
         {note ? <span className="deck-file-note">{note}</span> : null}
@@ -170,6 +179,7 @@ export function ReviewSectionHeader({
           <span className="sr-only">{`Concern ${section.number}:`}</span>{" "}
           {section.title}
         </h3>
+        <ChangeKinds kinds={section.kinds ?? []} />
         {section.concernId ? (
           <ConcernRationale
             concernId={section.concernId}
