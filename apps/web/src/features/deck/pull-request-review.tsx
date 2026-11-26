@@ -38,6 +38,7 @@ import {
 } from "./pull-request-conversation";
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
+import { DeckAskProvider } from "./deck-ask";
 import { PullRequestSummary, type ReachHunk } from "./pull-request-summary";
 import { ReviewComposerState } from "./review-composer-state";
 import {
@@ -385,30 +386,39 @@ export function PullRequestReview({
           onPosted={retryConversation}
         />
       ) : null}
-      {shown ? (
-        <PullRequestSummary
-          pullRequest={shown}
-          repository={pullRequest.facts.repository}
-          onReach={onReach}
+      {/* The summary's lines and the concerns ask about the head on screen. */}
+      <DeckAskProvider
+        pluginId={pluginId}
+        connectionId={connectionId}
+        repository={repository}
+        number={number}
+        head={shown?.headSha}
+      >
+        {shown ? (
+          <PullRequestSummary
+            pullRequest={shown}
+            repository={pullRequest.facts.repository}
+            onReach={onReach}
+          />
+        ) : null}
+        <DescriptionDrawer
+          state={conversation.state}
+          retry={conversation.retry}
         />
-      ) : null}
-      <DescriptionDrawer
-        state={conversation.state}
-        retry={conversation.retry}
-      />
-      <PullRequestChanges
-        pullRequest={pullRequest}
-        state={diff.state}
-        retry={diff.retry}
-        notes={{
-          notes,
-          floating,
-          hovered,
-          onAddComment: open ? onAddComment : undefined,
-        }}
-        reachHunkRef={reachHunk}
-        versions={versionsView}
-      />
+        <PullRequestChanges
+          state={diff.state}
+          retry={diff.retry}
+          onGuide={diff.replaceGuide}
+          notes={{
+            notes,
+            floating,
+            hovered,
+            onAddComment: open ? onAddComment : undefined,
+          }}
+          reachHunkRef={reachHunk}
+          versions={versionsView}
+        />
+      </DeckAskProvider>
       {outdated.length ? (
         <section className="deck-draft-elsewhere" aria-label="Draft comments">
           <SectionHeading trailing={outdated.length}>

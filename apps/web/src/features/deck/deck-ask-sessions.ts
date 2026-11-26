@@ -1,7 +1,9 @@
 import { useCallback, useSyncExternalStore } from "react";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_SUMMARY_DEFAULT_QUESTION,
   deckNeedsConsentSchema,
+  type DeckAskAnchor,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import {
@@ -22,7 +24,7 @@ import { AppApiError, askDeck, cancelAgentTurn } from "@/lib/app-api";
  * the rows near the screen (#790), so a header scrolled away unmounts: its
  * question, its answer and the turn writing it carry on here, and show
  * again as it comes back. Each ask is keyed by the head it is about and
- * its concern. A revoked consent drops the repository's answers, cached
+ * its anchor, a concern or a summary line (#794). A revoked consent drops the repository's answers, cached
  * ones too, and stops the asks still waiting for one.
  */
 
@@ -38,7 +40,7 @@ export interface DeckAskTarget {
 /** True once the repository is allowed, false for Not now, or why recording the consent failed. */
 export type ConsentAnswer = boolean | { error: string };
 
-/** A concern's open ask. */
+/** An open ask, about a concern or a summary line. */
 export interface AskSession {
   /** Nothing is asked yet: the question shows, to send or edit. */
   composing: boolean;
@@ -61,9 +63,16 @@ export interface AskSession {
 const holdsAnswer = (session: AskSession) =>
   !session.composing && !session.awaitingConsent && !askGoing(session.state);
 
-/** The key of `concernId`'s ask at `head`. */
-export function askKey(head: string, concernId: string) {
-  return `${head} ${concernId}`;
+/** The key of the ask about `anchor` at `head`. */
+export function askKey(head: string, anchor: DeckAskAnchor) {
+  return `${head} ${anchor.kind}:${anchor.id}`;
+}
+
+/** The question an ask about `anchor` opens on, which it sends as no question. */
+export function defaultQuestionOf(anchor: DeckAskAnchor) {
+  return anchor.kind === "concern"
+    ? DECK_CONCERN_DEFAULT_QUESTION
+    : DECK_SUMMARY_DEFAULT_QUESTION;
 }
 
 const headOf = (key: string) => key.slice(0, key.indexOf(" "));
@@ -105,11 +114,19 @@ export class DeckAskSessions {
     };
   }
 
-  /** Opens the ask on the concern's default question. */
-  open(key: string) {
+  /**
+   * Asks the user to allow the repository, with the page's one consent
+   * dialog, as a regroup does before its turn (#794).
+   */
+  requestConsent(request: DeckNeedsConsent): Promise<ConsentAnswer> {
+    return this.#requestConsent(request);
+  }
+
+  /** Opens the ask on its anchor's default question. */
+  open(key: string, anchor: DeckAskAnchor) {
     this.#set(key, {
       composing: true,
-      question: DECK_CONCERN_DEFAULT_QUESTION,
+      question: defaultQuestionOf(anchor),
       focusQuestion: true,
       followUp: "",
       state: startAsk(),
@@ -140,16 +157,16 @@ export class DeckAskSessions {
   }
 
   /**
-   * Asks `question`, or the default one, about the concern at `target`'s
+   * Asks `question`, or the default one, about `anchor` at `target`'s
    * head. Not now in the consent dialog closes the ask and calls `declined`.
    */
   async ask(
     target: DeckAskTarget,
-    concernId: string,
+    anchor: DeckAskAnchor,
     question: string | undefined,
     declined: () => void,
   ) {
-    const key = askKey(target.head, concernId);
+    const key = askKey(target.head, anchor);
     const mine = this.#bump(key);
     this.#unwatch(key);
     this.#update(key, () => ({
@@ -167,7 +184,7 @@ export class DeckAskSessions {
           repository: target.repository,
           number: target.number,
           head: target.head,
-          anchor: { kind: "concern", id: concernId },
+          anchor,
           ...(question === undefined ? {} : { question }),
         });
         if (!current()) return;

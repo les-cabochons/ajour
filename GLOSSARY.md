@@ -157,7 +157,7 @@ The view that lists the user's pull requests and opens each one for review. The 
 _Avoid_: Pull requests page, PR hub, inbox
 
 **Guide**:
-A pull request's changes split into concerns, in reading order, each with a title and a one-line rationale.
+A pull request's changes split into concerns, in reading order, each with a title and a one-line rationale. Deck always builds one from the code; an agent can regroup it, and Deck keeps the built one to go back to.
 _Avoid_: AI review, walkthrough, guided view
 
 **Concern**:

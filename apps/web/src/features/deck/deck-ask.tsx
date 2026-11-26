@@ -10,8 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import {
-  DECK_CONCERN_DEFAULT_QUESTION,
   DECK_QUESTION_MAX,
+  type DeckAskAnchor,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -26,6 +26,7 @@ import { DeckConsentDialog } from "./deck-consent-dialog";
 import {
   askKey,
   DeckAskSessions,
+  defaultQuestionOf,
   useAskSession,
   type AskSession,
   type ConsentAnswer,
@@ -33,12 +34,13 @@ import {
 } from "./deck-ask-sessions";
 
 /*
- * Deck's quiet asks (#791): a faint `more ›` ends each concern's rationale.
- * It opens on the concern's default question, which Enter sends as is or as
+ * Deck's quiet asks (#791): a faint `more ›` ends each concern's rationale,
+ * and each line of the summary (#794). It opens on its default question,
+ * which Enter sends as is or as
  * edited; the answer streams in under the rationale, ending with the commit
  * it is about. The first ask in a repository opens the consent dialog.
- * Nothing names the agent. At rest a concern mounts one button and no
- * listener. The asks live in the page's `DeckAskSessions`, so a concern
+ * Nothing names the agent. At rest a concern or a line mounts one button
+ * and no listener. The asks live in the page's `DeckAskSessions`, so a concern
  * that unmounts, as a huge pull request's rows do off screen (#790), finds
  * its ask as it left it.
  */
@@ -50,7 +52,16 @@ interface DeckAskContextValue {
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
 
-/** Gives the page's asks their pull request at `head`, and its one consent dialog. */
+/**
+ * The page's asks and the pull request they're about, or null while its
+ * changes don't show: Regroup asks for consent through them (#794).
+ */
+export const useDeckAsk = () => useContext(DeckAskContext);
+
+/**
+ * Gives the page's asks their pull request at `head`, and its one consent
+ * dialog. Without a head, while the changes load or fail, nothing is asked.
+ */
 export function DeckAskProvider({
   pluginId,
   connectionId,
@@ -58,9 +69,15 @@ export function DeckAskProvider({
   number,
   head,
   children,
-}: DeckAskTarget & { children: ReactNode }) {
+}: Omit<DeckAskTarget, "head"> & {
+  head: string | undefined;
+  children: ReactNode;
+}) {
   const target = useMemo(
-    () => ({ pluginId, connectionId, repository, number, head }),
+    () =>
+      head === undefined
+        ? undefined
+        : { pluginId, connectionId, repository, number, head },
     [pluginId, connectionId, repository, number, head],
   );
   const [asking, setAsking] = useState<{
@@ -94,7 +111,9 @@ export function DeckAskProvider({
     sessions.attach();
     return () => sessions.detach();
   }, [sessions]);
-  useEffect(() => sessions.keepHead(head), [sessions, head]);
+  useEffect(() => {
+    if (head !== undefined) sessions.keepHead(head);
+  }, [sessions, head]);
   // A revoked repository's answers show no more, in this window or another.
   useEffect(() => {
     const stopRevocations = watchDeckConsentRevocations((revoked) => {
@@ -124,8 +143,8 @@ export function DeckAskProvider({
     try {
       // Only for the agent the dialog named.
       await grantDeckConsent(
-        target.pluginId,
-        target.connectionId,
+        pluginId,
+        connectionId,
         current.request.repository,
         current.request.provider.cli,
       );
@@ -139,7 +158,10 @@ export function DeckAskProvider({
       });
     }
   };
-  const value = useMemo(() => ({ target, sessions }), [target, sessions]);
+  const value = useMemo(
+    () => (target ? { target, sessions } : null),
+    [target, sessions],
+  );
   return (
     <DeckAskContext.Provider value={value}>
       {children}
@@ -151,6 +173,49 @@ export function DeckAskProvider({
   );
 }
 
+/**
+ * The ask about `anchor`: its `more ›` and, once open, its question or
+ * answer. Null while the page asks nothing.
+ */
+function useMore(anchor: DeckAskAnchor) {
+  const context = useContext(DeckAskContext);
+  const key = context ? askKey(context.target.head, anchor) : "";
+  const session = useAskSession(context?.sessions, key);
+  const open = session !== undefined;
+  const answerId = useId();
+  const more = useRef<HTMLButtonElement>(null);
+  // Focus goes back to `more ›`, as it would from a closed popover.
+  const focusMore = useCallback(() => more.current?.focus(), []);
+  if (!context) return null;
+  return {
+    button: (
+      <button
+        ref={more}
+        type="button"
+        className="deck-more"
+        aria-label="More detail"
+        aria-expanded={open}
+        aria-controls={open ? answerId : undefined}
+        onClick={() => {
+          if (!open) context.sessions.open(key, anchor);
+        }}
+      >
+        more ›
+      </button>
+    ),
+    answer: session ? (
+      <AskAnswer
+        id={answerId}
+        askKey={key}
+        anchor={anchor}
+        session={session}
+        context={context}
+        onClosed={focusMore}
+      />
+    ) : null,
+  };
+}
+
 /** A concern's rationale, ended by its `more ›`, and the answer under it. */
 export function ConcernRationale({
   concernId,
@@ -159,47 +224,48 @@ export function ConcernRationale({
   concernId: string;
   rationale: string;
 }) {
-  const context = useContext(DeckAskContext);
-  const key = context ? askKey(context.target.head, concernId) : "";
-  const session = useAskSession(context?.sessions, key);
-  const open = session !== undefined;
-  const answerId = useId();
-  const more = useRef<HTMLButtonElement>(null);
-  // Focus goes back to `more ›`, as it would from a closed popover.
-  const focusMore = useCallback(() => more.current?.focus(), []);
+  const anchor = useMemo(
+    (): DeckAskAnchor => ({ kind: "concern", id: concernId }),
+    [concernId],
+  );
+  const more = useMore(anchor);
   return (
     <>
       <p className="deck-concern-rationale">
         {rationale}
-        {context ? (
+        {more ? (
           <>
             {rationale ? " " : null}
-            <button
-              ref={more}
-              type="button"
-              className="deck-more"
-              aria-label="More detail"
-              aria-expanded={open}
-              aria-controls={open ? answerId : undefined}
-              onClick={() => {
-                if (!open) context.sessions.open(key);
-              }}
-            >
-              more ›
-            </button>
+            {more.button}
           </>
         ) : null}
       </p>
-      {context && session ? (
-        <AskAnswer
-          id={answerId}
-          askKey={key}
-          concernId={concernId}
-          session={session}
-          context={context}
-          onClosed={focusMore}
-        />
-      ) : null}
+      {more?.answer}
+    </>
+  );
+}
+
+/**
+ * A summary line, ended by its `more ›` (#794), then the answer under it.
+ * `children` is what the line shows before it.
+ */
+export function SummaryLineAsk({
+  lineId,
+  children,
+}: {
+  lineId: string;
+  children: ReactNode;
+}) {
+  const anchor = useMemo(
+    (): DeckAskAnchor => ({ kind: "summary", id: lineId }),
+    [lineId],
+  );
+  const more = useMore(anchor);
+  return (
+    <>
+      {children}
+      {more?.button}
+      {more?.answer}
     </>
   );
 }
@@ -213,14 +279,14 @@ export function ConcernRationale({
 function AskAnswer({
   id,
   askKey: key,
-  concernId,
+  anchor,
   session,
   context,
   onClosed,
 }: {
   id: string;
   askKey: string;
-  concernId: string;
+  anchor: DeckAskAnchor;
   session: AskSession;
   context: DeckAskContextValue;
   /** After the ask closes. */
@@ -229,7 +295,7 @@ function AskAnswer({
   const { target, sessions } = context;
   const { state, turnId } = session;
   const ask = (question?: string) =>
-    void sessions.ask(target, concernId, question, onClosed);
+    void sessions.ask(target, anchor, question, onClosed);
   const close = () => {
     sessions.close(key);
     onClosed();
@@ -244,6 +310,7 @@ function AskAnswer({
     return (
       <AskQuestion
         id={id}
+        defaultQuestion={defaultQuestionOf(anchor)}
         draft={session.question}
         focus={session.focusQuestion}
         onFocused={focused}
@@ -339,6 +406,7 @@ function AskAnswer({
  */
 function AskQuestion({
   id,
+  defaultQuestion,
   draft,
   focus,
   onFocused,
@@ -347,6 +415,8 @@ function AskQuestion({
   onClose,
 }: {
   id: string;
+  /** Sent unedited, it is no question, and its answer is cached as the default one. */
+  defaultQuestion: string;
   draft: string;
   /** Takes the focus as it mounts. Coming back on screen, it doesn't. */
   focus: boolean;
@@ -366,7 +436,7 @@ function AskQuestion({
   const send = () => {
     const question = draft.trim();
     if (!question) return;
-    onAsk(question === DECK_CONCERN_DEFAULT_QUESTION ? undefined : question);
+    onAsk(question === defaultQuestion ? undefined : question);
   };
   return (
     <form

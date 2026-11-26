@@ -3353,7 +3353,7 @@ export const catalog = defineCatalog({
     },
     /** The guide Deck shows for a pull request at one head, read again after a regroup (#794). */
     "deck.guide": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: [
         /** Ajour no longer holds the pull request at this head. */
         "not_open",

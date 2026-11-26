@@ -1150,9 +1150,12 @@ channel to read the event each emits.
 | `deck.draft_review_complete`         | command                                 | store command                                    |
 | `deck.draft_review_discard`          | command                                 | store command                                    |
 | `deck.draft_review_refresh`          | command                                 | store command                                    |
+| `deck.guide`                         | command, request                        | route, client call                               |
 | `deck.guide_build`                   | job                                     | local API                                        |
+| `deck.guide_revert`                  | command, request                        | route, client call                               |
 | `deck.open`                          | command, request                        | route, client call                               |
 | `deck.preload`                       | request, job                            | route, client call, renderer                     |
+| `deck.regroup`                       | command, request                        | route, client call                               |
 | `deck.review_submission_complete`    | command                                 | store command                                    |
 | `deck.review_submission_prepare`     | command                                 | store command                                    |
 | `deck.since_review`                  | command, request                        | route, client call                               |

@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import type { CodeHostVersion, CodeHostVersionsResult } from "@ajour/shared";
-import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
+import type { DeckGuide, DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
@@ -27,10 +27,14 @@ import {
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { sinceReviewSections, versionNames } from "@/domain/deck/versions";
-import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
-import { DeckAskProvider } from "./deck-ask";
+import {
+  GuideSource,
+  RegroupAction,
+  RegroupPanel,
+  useRegroup,
+} from "./deck-regroup";
 import { GuideTree } from "./guide-tree";
 import type { ReachHunk } from "./pull-request-summary";
 import {
@@ -210,16 +214,20 @@ export interface ReviewVersionsView {
  */
 function ReviewChanges({
   pullRequest,
+  onGuide,
   notes: { notes: allNotes, floating, hovered, onAddComment },
   reachHunkRef,
   versions,
 }: {
   pullRequest: DeckOpenedPullRequest;
+  /** Shows another guide of this diff: the agent's, or the built one again (#794). */
+  onGuide: (guide: DeckGuide | null) => void;
   notes: ReviewNotesView;
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
 }) {
   const onHover = useContext(ReviewNotesContext)?.onHover;
+  const regroup = useRegroup(onGuide);
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
   const order: ReviewOrder = pullRequest.guide ? chosen : "files";
@@ -415,8 +423,11 @@ function ReviewChanges({
         <SectionHeading trailing={count} className="deck-guide-heading">
           {order === "guide" ? "Guide" : "Files"}
         </SectionHeading>
-        {order === "guide" ? (
-          <span className="deck-guide-source">Built from the code</span>
+        {order === "guide" && pullRequest.guide ? (
+          <>
+            <GuideSource guide={pullRequest.guide} regroup={regroup} />
+            <RegroupAction regroup={regroup} />
+          </>
         ) : null}
         {pullRequest.guide ? (
           <ToggleGroup
@@ -437,6 +448,7 @@ function ReviewChanges({
           <span className="deck-guide-source">{noGuideNote(pullRequest)}</span>
         ) : null}
       </div>
+      {pullRequest.guide ? <RegroupPanel regroup={regroup} /> : null}
       {sections.length ? (
         <div ref={review} className="deck-review">
           <div
@@ -543,16 +555,16 @@ function ReviewChanges({
  * after it.
  */
 export function PullRequestChanges({
-  pullRequest,
   state,
   retry,
+  onGuide,
   notes,
   reachHunkRef,
   versions,
 }: {
-  pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
+  onGuide: (guide: DeckGuide | null) => void;
   notes: ReviewNotesView;
   /** Set while the changes show, to the way a summary line reaches its hunk. */
   reachHunkRef: RefObject<ReachHunk | undefined>;
@@ -578,13 +590,7 @@ export function PullRequestChanges({
           </Button>
         </MessagePanel>
       ) : (
-        <DeckAskProvider
-          pluginId={pullRequest.pluginId}
-          connectionId={pullRequest.connectionId}
-          repository={pullRequest.facts.repository}
-          number={pullRequest.facts.number}
-          head={state.value.headSha}
-        >
+        <>
           {versions.pushes ? (
             <NewPushesBanner
               count={versions.pushes}
@@ -600,11 +606,12 @@ export function PullRequestChanges({
           <ReviewChanges
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
+            onGuide={onGuide}
             notes={notes}
             reachHunkRef={reachHunkRef}
             versions={versions}
           />
-        </DeckAskProvider>
+        </>
       )}
     </section>
   );

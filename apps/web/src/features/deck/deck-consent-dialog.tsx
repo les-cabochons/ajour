@@ -49,12 +49,16 @@ export function DeckConsentDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="text-sm">
-          <p>What leaves this computer, for each question:</p>
+          <p>What leaves this computer, for each question or regroup:</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             <li>the changed lines the question is about;</li>
             <li>any other hunks and changed files it reads;</li>
             <li>the review threads and their comments;</li>
-            <li>your question, when you type one.</li>
+            <li>your question, when you type one;</li>
+            <li>
+              for a regroup, the pull request's description and its linked
+              tickets.
+            </li>
           </ul>
           <p className="mt-2 text-muted-foreground">
             Nothing is sent before you ask. Settings › Agents lists the

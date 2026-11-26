@@ -9,7 +9,7 @@ next: false
 
 # Privacy policy
 
-Last updated: November 24, 2026
+Last updated: November 26, 2026
 
 <a href="/legal/confidentialite" lang="fr">Version française</a> · [Terms of service](/legal/terms)
 
@@ -60,7 +60,7 @@ A plugin's own service requests are described below. Opening an external link or
 
 MCP and the agent runner are optional. An agent can send the information it reads to its provider, including time entries, notes, work-item content and pages it visits. We do not receive that information merely because you use Ajour's agent features.
 
-When you ask for more detail about a pull request in Deck, Ajour sends what the question needs to the agent you picked in Settings › Agents, which sends it to its provider: the concern's title, rationale and changed lines, any other hunks and changed files of that pull request the agent reads, at the base or the latest commit, the pull request's review threads with their comments and authors' names, and your question when you type one. Ajour asks once for each repository before the first question, naming the agent and its version, and asks again when you pick another agent. Settings › Agents lists the repositories you allowed, with Revoke. Nothing is sent before you ask. Ajour keeps each answer in memory for the pull request and commit it is about, so asking again shows it at once; closing Ajour clears them.
+When you ask for more detail about a pull request in Deck, Ajour sends what the question needs to the agent you picked in Settings › Agents, which sends it to its provider: the concern's title, rationale and changed lines, any other hunks and changed files of that pull request the agent reads, at the base or the latest commit, the pull request's review threads with their comments and authors' names, and your question when you type one. When you regroup a pull request's guide, it also sends the guide's concerns with their changed lines, the pull request's description, and the titles, descriptions and states of its linked tickets, read again from the code host, and your instruction when you type one; Ajour keeps the agent's guide in its content cache on your device, beside the one it built. Ajour asks once for each repository before the first question, naming the agent and its version, and asks again when you pick another agent. Settings › Agents lists the repositories you allowed, with Revoke. Nothing is sent before you ask. Ajour keeps each answer in memory for the pull request and commit it is about, so asking again shows it at once; closing Ajour clears them.
 
 When you ask an agent about a pull request in Deck, the agent's CLI saves the conversation, its transcript included, in its own folder in your user profile: `~/.claude/projects/` for Claude Code, `~/.codex/sessions/` for Codex and `~/.local/share/opencode/` for OpenCode. It keeps it so a later question about the same pull request can continue the conversation. Ajour keeps only the conversation's ID, in memory. Timesheet agent tasks save no conversation on Claude Code or Codex. OpenCode keeps each timesheet task's run in its session history too. [Your data](/app/data#agent-conversations-about-pull-requests) explains how to remove these files. Removing them doesn't delete what the agent already sent to its provider.
 
@@ -203,6 +203,8 @@ Send privacy complaints to the same address. In Quebec, you can also contact the
 ## Changes to this policy
 
 We will publish changes here and update the date above. Material changes will include a notice on this page explaining what changed. A policy update does not by itself authorise a new use of your information where consent is required. The page's earlier versions remain available in the repository's history.
+
+November 26, 2026: Added what Ajour sends to the agent you picked when you regroup a pull request's guide in Deck, the pull request's description and its linked tickets among it, and that it keeps the agent's guide in the content cache.
 
 November 24, 2026: Added that the GitHub and Azure DevOps plugins read the issues and work items a pull request you open in Deck is linked to, and that Ajour shows their titles and states in its summary, built on your device and kept with the guide in Deck's content cache, without their descriptions.
 

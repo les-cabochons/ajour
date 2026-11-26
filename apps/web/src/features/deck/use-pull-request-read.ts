@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  DeckGuide,
   DeckOpenRequest,
   DeckOpenedPullRequest,
   DeckSinceReview,
@@ -110,17 +111,41 @@ function usePullRequestRead<T>(
     () => setAttempt(({ count }) => ({ count: count + 1, newestHead: true })),
     [],
   );
-  return { state, retry, refresh };
+  /** Changes what was read in place, such as a regrouped guide, with no read. */
+  const update = useCallback(
+    (change: (value: T) => T) =>
+      setState((now) =>
+        now.status === "ready"
+          ? { status: "ready", value: change(now.value) }
+          : now,
+      ),
+    [],
+  );
+  return { state, retry, refresh, update };
 }
 
-/** The pull request's diff from the merge base to the head, and its guide, as the local API builds them. */
-export const usePullRequestDiff = (pullRequest: LocalPullRequest | undefined) =>
-  usePullRequestRead<DeckOpenedPullRequest>(
+/**
+ * The pull request's diff from the merge base to the head, and its guide,
+ * as the local API builds them. `replaceGuide` shows another guide of the
+ * same diff, such as the agent's after a regroup (#794), keeping the rest.
+ */
+export function usePullRequestDiff(pullRequest: LocalPullRequest | undefined) {
+  const read = usePullRequestRead<DeckOpenedPullRequest>(
     pullRequest,
     openDeckPullRequest,
     "Unable to read the pull request's changes.",
     true,
   );
+  const { update } = read;
+  const replaceGuide = useCallback(
+    (guide: DeckGuide | null) =>
+      update((opened) =>
+        opened.guide === guide ? opened : { ...opened, guide },
+      ),
+    [update],
+  );
+  return { ...read, replaceGuide };
+}
 
 /** The pull request's description, timeline and review threads. */
 export const usePullRequestConversation = (

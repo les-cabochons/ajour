@@ -200,12 +200,16 @@ import {
   deckCacheSettingsUpdateSchema,
   deckCacheStorageSchema,
   deckConsentsSchema,
+  deckGuideResponseSchema,
   deckOpenedPullRequestSchema,
+  deckRegroupResponseSchema,
   deckPreloadResultSchema,
   deckSinceReviewSchema,
   type DeckAskRequest,
   type DeckConsentRevokeRequest,
+  type DeckGuideRequest,
   type DeckOpenRequest,
+  type DeckRegroupRequest,
   type DeckSinceReviewRequest,
 } from "@ajour/shared/deck";
 import {
@@ -249,6 +253,70 @@ export function askDeck(
       body: JSON.stringify(ask),
     },
     deckAskResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Regroups a pull request's guide in Deck (#794): the `deck.guide` turn
+ * whose agent hands the guide back. A repository the user hasn't allowed
+ * yet answers 409 with `reason: "needs_consent"`, as an ask does.
+ */
+export function regroupDeckGuide(
+  pluginId: string,
+  connectionId: string,
+  regroup: DeckRegroupRequest,
+) {
+  return appApiRequest(
+    "regroupDeckGuide",
+    deckPath(pluginId, connectionId, "regroup"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(regroup),
+    },
+    deckRegroupResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** The guide Deck shows for a pull request at one head, read again after a regroup. */
+export function readDeckGuide(
+  pluginId: string,
+  connectionId: string,
+  request: DeckGuideRequest,
+) {
+  return appApiRequest(
+    "readDeckGuide",
+    deckPath(pluginId, connectionId, "guide"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    deckGuideResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** Goes back to the guide built from the code: the agent's is dropped. */
+export function revertDeckGuide(
+  pluginId: string,
+  connectionId: string,
+  request: DeckGuideRequest,
+) {
+  return appApiRequest(
+    "revertDeckGuide",
+    deckPath(pluginId, connectionId, "guide/revert"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    deckGuideResponseSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
