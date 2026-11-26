@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_LINES_DEFAULT_QUESTION,
   DECK_SUMMARY_DEFAULT_QUESTION,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
@@ -19,12 +20,14 @@ import { watchAgentTurn } from "@/lib/agent-turns";
 import { AppApiError, askDeck, cancelAgentTurn } from "@/lib/app-api";
 
 /*
- * The open asks of Deck's review page (#791), kept by the page rather than
- * by the concern header that shows one. A huge pull request mounts only
- * the rows near the screen (#790), so a header scrolled away unmounts: its
- * question, its answer and the turn writing it carry on here, and show
- * again as it comes back. Each ask is keyed by the head it is about and
- * its anchor, a concern or a summary line (#794). A revoked consent drops the repository's answers, cached
+ * The open asks of Deck's review page (#791, #793, #794), kept by the
+ * page rather than by the concern header, the summary line or the hunk that
+ * shows one. A huge pull request mounts only the rows near the screen
+ * (#790), so a header or a hunk scrolled away unmounts: its question, its
+ * answer and the turn writing it carry on here, and show again as it comes
+ * back. Each ask is keyed by the head it is about and its anchor, a
+ * concern, a summary line or lines of a hunk, and each hunk finds the asks
+ * about its lines. A revoked consent drops the repository's answers, cached
  * ones too, and stops the asks still waiting for one.
  */
 
@@ -40,8 +43,12 @@ export interface DeckAskTarget {
 /** True once the repository is allowed, false for Not now, or why recording the consent failed. */
 export type ConsentAnswer = boolean | { error: string };
 
-/** An open ask, about a concern or a summary line. */
+/** A concern's, a summary line's or selected lines' open ask. */
 export interface AskSession {
+  /** What it asks about. */
+  anchor: DeckAskAnchor;
+  /** The hunk whose lines it asks about, which shows it under its lines. */
+  hunkId?: string;
   /** Nothing is asked yet: the question shows, to send or edit. */
   composing: boolean;
   /** The question as written so far. */
@@ -63,17 +70,33 @@ export interface AskSession {
 const holdsAnswer = (session: AskSession) =>
   !session.composing && !session.awaitingConsent && !askGoing(session.state);
 
-/** The key of the ask about `anchor` at `head`. */
+/**
+ * The key of the ask about `anchor` at `head`: a concern by its id, a
+ * summary line by its id, lines by their path and ends.
+ */
 export function askKey(head: string, anchor: DeckAskAnchor) {
-  return `${head} ${anchor.kind}:${anchor.id}`;
+  if (anchor.kind === "concern") return `${head} ${anchor.id}`;
+  if (anchor.kind === "summary") return `${head} summary:${anchor.id}`;
+  return `${head} lines:${JSON.stringify([
+    anchor.path,
+    anchor.start.side,
+    anchor.start.line,
+    anchor.end.side,
+    anchor.end.line,
+  ])}`;
 }
 
 /** The question an ask about `anchor` opens on, which it sends as no question. */
 export function defaultQuestionOf(anchor: DeckAskAnchor) {
-  return anchor.kind === "concern"
-    ? DECK_CONCERN_DEFAULT_QUESTION
-    : DECK_SUMMARY_DEFAULT_QUESTION;
+  if (anchor.kind === "concern") return DECK_CONCERN_DEFAULT_QUESTION;
+  if (anchor.kind === "summary") return DECK_SUMMARY_DEFAULT_QUESTION;
+  return DECK_LINES_DEFAULT_QUESTION;
 }
+
+const NO_ASKS: readonly string[] = [];
+
+/** Where a hunk's asks are heard: never an ask's key, which starts with a head. */
+const hunkChannel = (hunkId: string) => `hunk:${hunkId}`;
 
 const headOf = (key: string) => key.slice(0, key.indexOf(" "));
 
@@ -147,6 +170,8 @@ export class DeckAskSessions {
   readonly #conversations = new Map<string, number>();
   /** When the latest revocation this page heard was made. */
   #revokedAt = Number.NEGATIVE_INFINITY;
+  /** The keys of the asks about each hunk's lines, in the order they opened. */
+  readonly #byHunk = new Map<string, readonly string[]>();
 
   constructor(
     requestConsent: (request: DeckNeedsConsent) => Promise<ConsentAnswer>,
@@ -156,6 +181,16 @@ export class DeckAskSessions {
 
   get(key: string): AskSession | undefined {
     return this.#sessions.get(key);
+  }
+
+  /** The keys of the open asks about `hunkId`'s lines, the same list while they are the same. */
+  hunkAsks(hunkId: string): readonly string[] {
+    return this.#byHunk.get(hunkId) ?? NO_ASKS;
+  }
+
+  /** Hears the asks about `hunkId`'s lines open and close. */
+  subscribeHunk(hunkId: string, listener: () => void): () => void {
+    return this.subscribe(hunkChannel(hunkId), listener);
   }
 
   subscribe(key: string, listener: () => void): () => void {
@@ -176,16 +211,34 @@ export class DeckAskSessions {
     return this.#requestConsent(request);
   }
 
-  /** Opens the ask on its anchor's default question. */
-  open(key: string, anchor: DeckAskAnchor) {
+  /**
+   * Opens the ask about `anchor` at `head` on its default question, unless
+   * `question` says, to send as is or edit. `hunkId` shows it under that
+   * hunk's lines. An ask already open there starts again, and an answer
+   * still coming for it is dropped.
+   */
+  open(
+    head: string,
+    anchor: DeckAskAnchor,
+    {
+      question = defaultQuestionOf(anchor),
+      hunkId,
+    }: { question?: string; hunkId?: string } = {},
+  ) {
+    const key = askKey(head, anchor);
+    this.#bump(key);
+    this.#unwatch(key);
     this.#set(key, {
+      anchor,
+      ...(hunkId === undefined ? {} : { hunkId }),
       composing: true,
-      question: defaultQuestionOf(anchor),
+      question,
       focusQuestion: true,
       followUp: "",
       state: startAsk(),
       awaitingConsent: false,
     });
+    return key;
   }
 
   /** Closes the ask. A turn still going ends on its own and is cached. */
@@ -211,8 +264,9 @@ export class DeckAskSessions {
   }
 
   /**
-   * Asks `question`, or the default one, about `anchor` at `target`'s
-   * head. Not now in the consent dialog closes the ask and calls `declined`.
+   * Asks `question`, or the default one, about the open ask on `anchor` at
+   * `target`'s head. Not now in the consent dialog closes the ask and
+   * calls `declined`.
    */
   async ask(
     target: DeckAskTarget,
@@ -377,13 +431,48 @@ export class DeckAskSessions {
   }
 
   #set(key: string, session: AskSession | undefined) {
+    const before = this.#sessions.get(key);
     if (session) this.#sessions.set(key, session);
     else this.#sessions.delete(key);
+    if (before?.hunkId !== session?.hunkId) {
+      if (before?.hunkId) this.#index(before.hunkId, key, false);
+      if (session?.hunkId) this.#index(session.hunkId, key, true);
+    }
     this.#listeners.get(key)?.forEach((listener) => listener());
+  }
+
+  /** Adds `key` to the asks about `hunkId`'s lines, or takes it out. */
+  #index(hunkId: string, key: string, open: boolean) {
+    const keys = this.#byHunk.get(hunkId) ?? NO_ASKS;
+    const next = open
+      ? keys.includes(key)
+        ? keys
+        : [...keys, key]
+      : keys.filter((entry) => entry !== key);
+    if (next === keys) return;
+    if (next.length) this.#byHunk.set(hunkId, next);
+    else this.#byHunk.delete(hunkId);
+    this.#listeners.get(hunkChannel(hunkId))?.forEach((listener) => listener());
   }
 }
 
 const NO_SESSIONS = () => () => {};
+
+/** The keys of the open asks about `hunkId`'s lines. */
+export function useHunkAsks(
+  sessions: DeckAskSessions | undefined,
+  hunkId: string,
+): readonly string[] {
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      sessions ? sessions.subscribeHunk(hunkId, listener) : NO_SESSIONS(),
+    [sessions, hunkId],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => sessions?.hunkAsks(hunkId) ?? NO_ASKS,
+  );
+}
 
 /** The ask at `key`, or undefined while none is open. */
 export function useAskSession(

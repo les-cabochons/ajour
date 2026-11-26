@@ -30,7 +30,7 @@ import {
   revertDeckGuide,
 } from "@/lib/app-api";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { useDeckAsk } from "./deck-ask";
+import { useDeckAsks } from "./deck-ask";
 import { withConsent } from "./deck-ask-sessions";
 
 /*
@@ -47,7 +47,7 @@ import { withConsent } from "./deck-ask-sessions";
 export function useRegroup(
   onGuide: (guide: DeckGuide | null, head: string) => void,
 ) {
-  const context = useDeckAsk();
+  const context = useDeckAsks();
   const [state, setState] = useState<RegroupState>(REGROUP_CLOSED);
   const turnId = useRef<string | undefined>(undefined);
   const stopWatching = useRef<(() => void) | undefined>(undefined);

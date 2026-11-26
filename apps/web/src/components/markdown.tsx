@@ -4,6 +4,10 @@ import { cn } from "@/lib/utils";
 
 const MarkdownRenderer = lazy(() => import("@/components/markdown-renderer"));
 
+/** The text of each `citation:` link alone, as the parser would show it. */
+const withoutCitationLinks = (text: string) =>
+  text.replace(/\[([^\]]*)\]\(citation:[^)]*\)/g, "$1");
+
 /**
  * Renders user or source text as GitHub-flavoured markdown. Raw HTML is shown
  * as text and unsafe link protocols are dropped, so synced descriptions cannot
@@ -14,9 +18,15 @@ const MarkdownRenderer = lazy(() => import("@/components/markdown-renderer"));
 export function Markdown({
   children,
   className,
+  onCitation,
 }: {
   children: string;
   className?: string;
+  /**
+   * Shows each `citation:` link, such as an answer's `path:line`, as a
+   * button that calls this with its address. Without it they stay text.
+   */
+  onCitation?: (href: string) => void;
 }) {
   return (
     <div
@@ -39,8 +49,14 @@ export function Markdown({
         className,
       )}
     >
-      <Suspense fallback={<p className="whitespace-pre-line">{children}</p>}>
-        <MarkdownRenderer>{children}</MarkdownRenderer>
+      <Suspense
+        fallback={
+          <p className="whitespace-pre-line">
+            {onCitation ? withoutCitationLinks(children) : children}
+          </p>
+        }
+      >
+        <MarkdownRenderer onCitation={onCitation}>{children}</MarkdownRenderer>
       </Suspense>
     </div>
   );

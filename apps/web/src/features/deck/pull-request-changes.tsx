@@ -39,11 +39,16 @@ import { GuideTree } from "./guide-tree";
 import type { ReachHunk } from "./pull-request-summary";
 import {
   atEnd,
+  hunkBoxOf,
   readingOffset,
+  revealDistance,
+  scrollByDistance,
   scrollerOf,
   scrollToReadingLine,
   type SectionNavigator,
 } from "./review-scroll";
+import { useReviewLinesValue } from "./review-lines";
+import { ReviewLinesContext } from "./review-lines-context";
 import { ReviewNotesContext } from "./review-notes";
 import {
   HUNK_ATTRIBUTE,
@@ -106,6 +111,11 @@ function MountedReviewSections({
       // Instant, so a second J reads where the first one landed.
       section.scrollIntoView({ block: "start", behavior: "instant" });
       section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    },
+    reveal(hunkId, row, point) {
+      const box = hunkBoxOf(listRef.current, hunkId);
+      if (box)
+        scrollByDistance(scrollerOf(box), revealDistance(box, row, point));
     },
     reachHunk(hunkId) {
       const element = listRef.current;
@@ -210,7 +220,8 @@ export interface ReviewVersionsView {
  * tree beside it, and each review thread, draft comment and the composer
  * beside its line in the gutter or after it. J and K move between its
  * sections and F opens the tree's titles, while the page is mounted
- * (`deck` shortcuts).
+ * (`deck` shortcuts). Lines selected in a hunk show the toolbar above
+ * them, whose keys work only then (#793).
  */
 function ReviewChanges({
   pullRequest,
@@ -402,6 +413,14 @@ function ReviewChanges({
     scheduleRef.current?.();
   }, [sections, viewed]);
 
+  const lines = useReviewLinesValue({
+    diff: pullRequest,
+    onAddComment,
+    navigator,
+    viewed,
+    onToggleViewed,
+  });
+
   const count = order === "guide" ? all.length : pullRequest.files.length;
   return (
     <>
@@ -450,74 +469,77 @@ function ReviewChanges({
       </div>
       {pullRequest.guide ? <RegroupPanel regroup={regroup} /> : null}
       {sections.length ? (
-        <div ref={review} className="deck-review">
-          <div
-            className="deck-review-grid"
-            data-gutter={gutter || undefined}
-            onFocus={(event) => {
-              const key = (event.target as Element).closest<HTMLElement>(
-                "[data-card]",
-              )?.dataset.card;
-              const hunkId = notes.find((entry) => entry.key === key)?.hunkId;
-              setFocusedCardHunk(hunkId);
-            }}
-            onBlur={(event) => {
-              const next = event.relatedTarget as Element | null;
-              if (!next?.closest("[data-card]")) setFocusedCardHunk(undefined);
-            }}
-          >
-            {huge ? (
-              <VirtualReviewSections
-                sections={sections}
-                viewed={viewed}
-                theme={theme}
-                onToggleViewed={onToggleViewed}
-                navigator={navigator}
-                listRef={list}
-                notes={notes}
-                floating={gutter}
-                hovered={hovered}
-                onAnchor={onAnchor}
-                onAddComment={onAddComment}
-                onNoteRowsChange={onNoteRowsChange}
-                focusedHunk={focusedCardHunk}
-                changed={changed}
-              />
-            ) : (
-              <MountedReviewSections
-                sections={sections}
-                viewed={viewed}
-                theme={theme}
-                onToggleViewed={onToggleViewed}
-                navigator={navigator}
-                listRef={list}
-                bySection={bySection}
-                floating={gutter}
-                hovered={hovered}
-                hoveredSection={hoveredSection}
-                onAnchor={onAnchor}
-                onAddComment={onAddComment}
-                changed={changed}
-              />
-            )}
-            {gutter ? (
-              <ThreadGutter
-                notes={gutterNotes}
-                columnRef={list}
-                hovered={hovered}
-                scheduleRef={scheduleRef}
-              />
-            ) : null}
+        <ReviewLinesContext.Provider value={lines}>
+          <div ref={review} className="deck-review">
+            <div
+              className="deck-review-grid"
+              data-gutter={gutter || undefined}
+              onFocus={(event) => {
+                const key = (event.target as Element).closest<HTMLElement>(
+                  "[data-card]",
+                )?.dataset.card;
+                const hunkId = notes.find((entry) => entry.key === key)?.hunkId;
+                setFocusedCardHunk(hunkId);
+              }}
+              onBlur={(event) => {
+                const next = event.relatedTarget as Element | null;
+                if (!next?.closest("[data-card]"))
+                  setFocusedCardHunk(undefined);
+              }}
+            >
+              {huge ? (
+                <VirtualReviewSections
+                  sections={sections}
+                  viewed={viewed}
+                  theme={theme}
+                  onToggleViewed={onToggleViewed}
+                  navigator={navigator}
+                  listRef={list}
+                  notes={notes}
+                  floating={gutter}
+                  hovered={hovered}
+                  onAnchor={onAnchor}
+                  onAddComment={onAddComment}
+                  onNoteRowsChange={onNoteRowsChange}
+                  focusedHunk={focusedCardHunk}
+                  changed={changed}
+                />
+              ) : (
+                <MountedReviewSections
+                  sections={sections}
+                  viewed={viewed}
+                  theme={theme}
+                  onToggleViewed={onToggleViewed}
+                  navigator={navigator}
+                  listRef={list}
+                  bySection={bySection}
+                  floating={gutter}
+                  hovered={hovered}
+                  hoveredSection={hoveredSection}
+                  onAnchor={onAnchor}
+                  onAddComment={onAddComment}
+                  changed={changed}
+                />
+              )}
+              {gutter ? (
+                <ThreadGutter
+                  notes={gutterNotes}
+                  columnRef={list}
+                  hovered={hovered}
+                  scheduleRef={scheduleRef}
+                />
+              ) : null}
+            </div>
+            <GuideTree
+              sections={sections}
+              viewed={viewed}
+              open={treeOpen}
+              heading={order === "guide" ? "Guide" : "Files"}
+              onToggle={() => setTreeOpen((open) => !open)}
+              onReach={reach}
+            />
           </div>
-          <GuideTree
-            sections={sections}
-            viewed={viewed}
-            open={treeOpen}
-            heading={order === "guide" ? "Guide" : "Files"}
-            onToggle={() => setTreeOpen((open) => !open)}
-            onReach={reach}
-          />
-        </div>
+        </ReviewLinesContext.Provider>
       ) : since ? (
         <p className="deck-file-empty">
           {`Nothing changed since your review of v${versions.reviewed?.number ?? ""}.`}{" "}

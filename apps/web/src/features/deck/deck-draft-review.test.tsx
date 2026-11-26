@@ -962,7 +962,10 @@ it("keeps a closed pull request's draft, to post as comments or discard", async 
     "This pull request was merged. Your draft review is kept: post its comments, or discard it.",
   );
   expect(screen.queryByRole("button", { name: /Finish review/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /line \d/ })).toBeNull();
+  // Its lines still select, for Explain and Ask, but take no comment.
+  expect(
+    screen.queryByRole("button", { name: /^Comment on .*line \d/ }),
+  ).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Post as comments · 1" }));
   await waitFor(() => expect(draftComments() ?? []).toEqual([]));

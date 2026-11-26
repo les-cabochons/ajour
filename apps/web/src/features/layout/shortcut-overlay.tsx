@@ -23,6 +23,7 @@ const SCOPE_HEADINGS: Record<ShortcutScope, string> = {
   global: "Anywhere",
   time: "Time page",
   deck: "Deck review page",
+  lines: "Selected lines on Deck review page",
   item: "Focused row or card",
 };
 

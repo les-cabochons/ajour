@@ -7,10 +7,14 @@ import type {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_LINES_DEFAULT_QUESTION,
   DECK_SUMMARY_DEFAULT_QUESTION,
+  deckHunkRows,
+  deckLinesLabel,
   deckPullRequestKey,
   parseDeckPullRequestKey,
   repositoryName,
+  sameLinePoint,
   type DeckAgentConsent,
   type DeckAskAnchor,
   type DeckAskRequest,
@@ -18,6 +22,8 @@ import {
   type DeckTurnRefusal,
   type DeckConcern,
   type DeckGuide,
+  type DeckLinesAnchor,
+  type DeckPullRequestDiff,
   type DeckPullRequestSource,
   type DeckSummaryLine,
 } from "../../../packages/shared/deck.ts";
@@ -25,9 +31,9 @@ import { AgentRunError, PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
- * Deck's asks (#791). An ask is a `deck.ask` turn of the pull request's
- * conversation, anchored to a concern or a summary line (#794): Ajour
- * writes the turn from the guide
+ * Deck's asks (#791, #793, #794). An ask is a `deck.ask` turn of the pull
+ * request's conversation, anchored to a concern, a summary line or lines
+ * selected in one hunk: Ajour writes the turn from the guide and the diff
  * it holds, never from the page's words, with the anchor's default question
  * or the user's own. Nothing reaches the agent before the user allowed the
  * repository with that agent. A done answer is cached per anchor, typed
@@ -93,6 +99,28 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
     .join("\n");
 }
 
+/** The selected rows of the hunk that shows them, in its order, or undefined when none does. */
+function selectedRows(diff: DeckPullRequestDiff, anchor: DeckLinesAnchor) {
+  const file = diff.files.find((entry) => entry.path === anchor.path);
+  for (const hunk of file?.hunks ?? []) {
+    const rows = deckHunkRows(hunk);
+    const first = rows.findIndex(({ point }) =>
+      sameLinePoint(point, anchor.start),
+    );
+    const last = rows.findIndex(({ point }) =>
+      sameLinePoint(point, anchor.end),
+    );
+    if (first < 0 || last < 0) continue;
+    return {
+      hunkId: hunk.id,
+      rows: rows
+        .slice(Math.min(first, last), Math.max(first, last) + 1)
+        .map(({ text }) => text),
+    };
+  }
+  return undefined;
+}
+
 /** The summary's sections, as the page names them, for an ask about one of their lines. */
 const SUMMARY_SECTIONS = [
   ["breaking", "Breaking changes"],
@@ -124,6 +152,72 @@ function summaryLineMessage(
   ].join("\n");
 }
 
+/** The turn's words for selected lines: where they are, the rows as the diff has them, then the question. */
+function linesMessage(
+  anchor: DeckLinesAnchor,
+  selected: { hunkId: string; rows: string[] },
+  question: string | undefined,
+) {
+  return [
+    `The user selected ${deckLinesLabel(anchor)} of ${anchor.path}, in hunk ${selected.hunkId}:`,
+    "```diff",
+    ...selected.rows,
+    "```",
+    "Read the hunk with read_hunks, and the file with read_file, for what is around them.",
+    "",
+    `The question: ${question ?? DECK_LINES_DEFAULT_QUESTION}`,
+  ].join("\n");
+}
+
+/** The turn's words for the ask's anchor; refused when Ajour holds no such anchor. */
+function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
+  const { anchor, question } = request;
+  if (anchor.kind === "lines") {
+    const selected = selectedRows(held.diff, anchor);
+    if (!selected) {
+      throw new DeckTurnRefused(404, {
+        error: "The diff doesn't show those lines.",
+        reason: "unknown_anchor",
+      });
+    }
+    return linesMessage(anchor, selected, question);
+  }
+  if (anchor.kind === "summary") {
+    const line = summaryLineOf(held.guide, anchor.id);
+    if (!line) {
+      throw new DeckTurnRefused(404, {
+        error: "The summary has no such line.",
+        reason: "unknown_anchor",
+      });
+    }
+    return summaryLineMessage(line, question);
+  }
+  const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
+  if (!concern) {
+    throw new DeckTurnRefused(404, {
+      error: "The guide has no such concern.",
+      reason: "unknown_anchor",
+    });
+  }
+  return concernMessage(concern, question);
+}
+
+/**
+ * The anchor as its answers are cached: a concern or a summary line by its
+ * id, lines by their path and ends.
+ */
+const anchorKey = (anchor: DeckAskAnchor) =>
+  anchor.kind !== "lines"
+    ? [anchor.kind, anchor.id]
+    : [
+        anchor.kind,
+        anchor.path,
+        anchor.start.side,
+        anchor.start.line,
+        anchor.end.side,
+        anchor.end.line,
+      ];
+
 export function createDeckAsks(options: DeckAsksOptions) {
   /** Done answers by `cacheKey`, oldest first. */
   const answers = new Map<string, string>();
@@ -136,13 +230,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     anchor: DeckAskAnchor,
     question: string | undefined,
   ) =>
-    JSON.stringify([
-      pullRequest,
-      head,
-      anchor.kind,
-      anchor.id,
-      question ?? null,
-    ]);
+    JSON.stringify([pullRequest, head, ...anchorKey(anchor), question ?? null]);
 
   /** Whether the user allowed the repository with this agent. */
   async function consentedWith(
@@ -241,33 +329,11 @@ export function createDeckAsks(options: DeckAsksOptions) {
       if (!held) {
         throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
-      const { anchor } = request;
-      let message: string;
-      if (anchor.kind === "concern") {
-        const concerns = held.guide?.concerns ?? [];
-        const concern = concerns.find(({ id }) => id === anchor.id);
-        if (!concern) {
-          throw new DeckTurnRefused(404, {
-            error: "The guide has no such concern.",
-            reason: "unknown_anchor",
-          });
-        }
-        message = concernMessage(concern, request.question);
-      } else {
-        const line = summaryLineOf(held.guide, anchor.id);
-        if (!line) {
-          throw new DeckTurnRefused(404, {
-            error: "The summary has no such line.",
-            reason: "unknown_anchor",
-          });
-        }
-        message = summaryLineMessage(line, request.question);
-      }
       const turn = await options.startTurn({
         task: "deck.ask",
         pullRequest,
         head: request.head,
-        message,
+        message: turnMessage(held, request),
       });
       streaming.set(turn.id, { key, pieces: [] });
       return { kind: "turn", turn };
