@@ -538,6 +538,44 @@ describe("pull request lifecycle", () => {
     });
   });
 
+  it("takes the title and draft state the code host answered an author's edit with (#786)", () => {
+    const item = settled();
+    const edited = changePullRequest(
+      item,
+      { type: "edited", title: "Stop retrying on 410", draft: true },
+      700,
+    );
+    expect(edited.facts).toEqual({
+      ...item.facts,
+      title: "Stop retrying on 410",
+      draft: true,
+    });
+    // The user's plate and the last action stay as they were.
+    expect({ ...edited, facts: item.facts }).toEqual(item);
+  });
+
+  it("closes a pull request the author merged, until the next sync says how (#786)", () => {
+    const item = settled();
+    const merged = changePullRequest(item, { type: "merged", at: 650 }, 700);
+    expect(merged.facts).toEqual({
+      ...item.facts,
+      state: "merged",
+      closedAt: 650,
+    });
+    expect(merged.closedAt).toBe(650);
+    // A closed one doesn't merge again.
+    expect(changePullRequest(merged, { type: "merged", at: 800 }, 900)).toBe(
+      merged,
+    );
+    const synced = reconcilePullRequests(
+      [merged],
+      source,
+      sync({ ...facts, state: "merged", closedAt: 640 }),
+      options,
+    )[0]!;
+    expect(synced.facts.closedAt).toBe(640);
+  });
+
   describe("restoring records after a reinstall", () => {
     const instanceUrl = "https://github.com";
     const retained = (

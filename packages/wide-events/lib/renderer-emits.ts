@@ -71,6 +71,8 @@ export const APP_API_CLIENT = {
   readPullRequestChecks: "pull_request.load_checks",
   submitPullRequestReview: "pull_request.submit_review",
   postPullRequestComment: "pull_request.comment",
+  updatePullRequest: "pull_request.update",
+  mergePullRequest: "pull_request.merge",
   readPullRequestVersions: "pull_request.load_versions",
   readDeckSinceReview: "deck.since_review",
   askDeck: "deck.ask",

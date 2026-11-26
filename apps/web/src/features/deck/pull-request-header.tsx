@@ -6,6 +6,7 @@ import {
   isPullRequestSnoozed,
   type LocalPullRequest,
 } from "@/domain/pull-requests/pull-request-lifecycle";
+import { PullRequestTitle } from "./author-actions";
 import {
   pullRequestActions,
   reasonLabels,
@@ -13,18 +14,22 @@ import {
 } from "./pull-request-row";
 
 /**
- * A review page's top: the header with `review` (Finish review) and the
- * row's actions, then the title and the meta line: the repository and
- * number, the connection, the author, and on your plate.
+ * A review page's top: the header with `review` (Finish review), the
+ * author's actions and the row's actions, then the title, which the author
+ * edits in place, and the meta line: the repository and number, the
+ * connection, the author, and on your plate.
  */
 export function PullRequestHeader({
   pullRequest,
   now,
   review,
+  author,
 }: {
   pullRequest: LocalPullRequest;
   now: number;
   review: ReactNode;
+  /** Draft and ready, and Merge, for the author of an open pull request. */
+  author?: ReactNode;
 }) {
   return (
     <>
@@ -33,6 +38,7 @@ export function PullRequestHeader({
         actions={
           <>
             {review}
+            {author}
             {pullRequestActions(pullRequest, now).map((action) => (
               <Button
                 key={action.id}
@@ -51,7 +57,7 @@ export function PullRequestHeader({
         }
       />
       <header>
-        <h1 className="backlog-item-page-title">{pullRequest.facts.title}</h1>
+        <PullRequestTitle pullRequest={pullRequest} />
         <p className="backlog-item-page-meta">
           {pullRequest.facts.repository} #{pullRequest.facts.number} ·{" "}
           {pullRequest.connectionLabel} · {personName(pullRequest.facts.author)}{" "}

@@ -3910,6 +3910,8 @@ export const PULL_REQUEST_COMMANDS = {
   snooze: "pull_request.snooze",
   unsnooze: "pull_request.unsnooze",
   reviewed: "pull_request.remember_review",
+  edited: "pull_request.apply_edit",
+  merged: "pull_request.apply_merge",
 } as const satisfies Record<PullRequestCommand["type"], string>;
 
 /** A backlog item command whose first argument is the item's ID. */
