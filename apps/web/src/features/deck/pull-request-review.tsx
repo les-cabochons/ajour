@@ -18,6 +18,7 @@ import {
   type DeckDraftComment,
   type DeckReviewRef,
 } from "@/domain/deck/draft-review";
+import { authorActions } from "@/domain/deck/author-actions";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
 import { placeThreads } from "@/domain/deck/review-threads";
 import { viewedHunks, viewedMarksOf } from "@/domain/deck/viewed-marks";
@@ -40,6 +41,7 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { DraftToggle, MergePullRequest } from "./author-actions";
 import {
   ClosedDraftReview,
   FinishReview,
@@ -588,6 +590,29 @@ export function PullRequestReview({
                 onSubmitted={retryConversation}
                 nextLayer={stack?.above}
               />
+            ) : null
+          }
+          author={
+            authorActions(pullRequest.facts) ? (
+              <>
+                <DraftToggle pullRequest={pullRequest} />
+                <MergePullRequest
+                  pullRequest={pullRequest}
+                  headSha={headSha}
+                  methods={
+                    conversation.state.status === "ready"
+                      ? conversation.state.value.mergeMethods
+                      : undefined
+                  }
+                  pushes={versionsView.pushes}
+                  onFailed={retryVersions}
+                  versionName={
+                    versions.state.status === "ready"
+                      ? versions.state.value.versionName
+                      : undefined
+                  }
+                />
+              </>
             ) : null
           }
         />

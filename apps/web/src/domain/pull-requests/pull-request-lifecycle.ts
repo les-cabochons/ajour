@@ -494,7 +494,11 @@ export type PullRequestCommand =
   | { type: "settle" | "unsettle" | "unsnooze" | "open" }
   | { type: "snooze"; until: number }
   /** The user reviewed the version whose head is `headSha`, at `at`. */
-  | { type: "reviewed"; headSha: string; at: number };
+  | { type: "reviewed"; headSha: string; at: number }
+  /** The author edited the title or draft state: what the code host answered (#786). */
+  | { type: "edited"; title: string; draft: boolean }
+  /** The author merged it from Deck. The next sync says how. */
+  | { type: "merged" };
 
 export function changePullRequest(
   item: LocalPullRequest,
@@ -514,8 +518,19 @@ export function changePullRequest(
           ? undefined
           : item.snoozedUntil,
     };
+  if (command.type === "edited")
+    return {
+      ...item,
+      facts: { ...item.facts, title: command.title, draft: command.draft },
+    };
   if (item.facts.state !== "open") return item;
   switch (command.type) {
+    case "merged":
+      return {
+        ...item,
+        facts: { ...item.facts, state: "merged", closedAt: now },
+        closedAt: now,
+      };
     case "settle":
       return {
         ...item,

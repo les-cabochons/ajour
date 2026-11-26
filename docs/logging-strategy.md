@@ -1251,6 +1251,8 @@ channel to read the event each emits.
 | `project_source.apply_sync`          | command                                 | store command                                    |
 | `project_source.resolve_held`        | command                                 | store command                                    |
 | `project_source.sync`                | job, request, plugin_operation          | route, plugin method, client call, renderer      |
+| `pull_request.apply_edit`            | command                                 | store command                                    |
+| `pull_request.apply_merge`           | command                                 | store command                                    |
 | `pull_request.apply_sync`            | command                                 | store command                                    |
 | `pull_request.browse`                | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.change`                | command                                 | store command                                    |
@@ -1262,7 +1264,7 @@ channel to read the event each emits.
 | `pull_request.load_tickets`          | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.load_versions`         | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.mark_file_viewed`      | command, request, plugin_operation      | route, plugin method, client call                |
-| `pull_request.merge`                 | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.merge`                 | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.open`                  | command                                 | store command                                    |
 | `pull_request.remember_review`       | command                                 | store command                                    |
 | `pull_request.reply`                 | command, request, plugin_operation      | route, plugin method, client call                |
@@ -1273,7 +1275,7 @@ channel to read the event each emits.
 | `pull_request.sync`                  | job, request, plugin_operation          | route, plugin method, client call, renderer      |
 | `pull_request.unsettle`              | command                                 | store command                                    |
 | `pull_request.unsnooze`              | command                                 | store command                                    |
-| `pull_request.update`                | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.update`                | command, request, plugin_operation      | route, plugin method, client call                |
 | `question.answer`                    | command, request                        | route, client call                               |
 | `repository_folder.add`              | request, command                        | route                                            |
 | `repository_folder.choose`           | ipc                                     | IPC channel                                      |

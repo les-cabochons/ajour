@@ -184,7 +184,11 @@ import {
 } from "@ajour/shared";
 import {
   codeHostChecksResultSchema,
+  codeHostMergeResultSchema,
   codeHostPostCommentResultSchema,
+  codeHostUpdatePullRequestResultSchema,
+  type CodeHostMergeRequest,
+  type CodeHostUpdatePullRequestRequest,
   codeHostConversationResultSchema,
   codeHostResolveThreadResultSchema,
   codeHostSetFileViewedResultSchema,
@@ -639,6 +643,57 @@ export function setPullRequestFileViewed(
     codeHostSetFileViewedResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Edits the author's pull request: its title, its draft state or both, at
+ * once (ADR 0002). Answers with what the code host then holds.
+ */
+export function updatePullRequest(
+  pluginId: string,
+  connectionId: string,
+  update: CodeHostUpdatePullRequestRequest,
+) {
+  return appApiRequest(
+    "updatePullRequest",
+    codeHostPath(pluginId, connectionId, "updatePullRequest"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    },
+    codeHostUpdatePullRequestResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Merges the author's pull request at the head they read, after Deck's
+ * confirmation (ADR 0002). The plugin finds an earlier try's merge, so
+ * Retry after a lost answer merges nothing twice.
+ */
+export function mergePullRequest(
+  pluginId: string,
+  connectionId: string,
+  merge: CodeHostMergeRequest,
+) {
+  return appApiRequest(
+    "mergePullRequest",
+    codeHostPath(pluginId, connectionId, "mergePullRequest"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(merge),
+    },
+    codeHostMergeResultSchema,
+    (unit) =>
+      unit.set({
+        plugin: { id: pluginId },
+        connection: { id: connectionId },
+        pull_request: { merge_method: merge.method },
+      }),
   );
 }
 

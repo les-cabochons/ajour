@@ -739,6 +739,10 @@ export const rendererEvents = {
   "pull_request.unsnooze": command(pullRequest),
   /** Deck remembers the version the user reviewed (#787). */
   "pull_request.remember_review": command(pullRequest),
+  /** The title and draft state the code host answered an author's edit with (#786). */
+  "pull_request.apply_edit": command(pullRequest),
+  /** The author merged the pull request from Deck (#786). */
+  "pull_request.apply_merge": command(pullRequest),
 
   // Deck's draft review (#784). Never a path, a line or a comment's words.
   "deck.draft_comment_add": command({}),
