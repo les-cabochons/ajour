@@ -128,35 +128,36 @@ function workerLane(workerUrl: URL) {
         contents,
         fileBudgetMs: DECK_FILE_DIFF_BUDGET_MS,
       };
+      const onAbort = () => {
+        const holder = holders.get(id);
+        const waiting = holder?.pending.get(id);
+        if (!holder || !waiting) return;
+        holder.pending.delete(id);
+        waiting.reject(new DeckDiffCancelled());
+        if (current?.worker !== holder.worker) return;
+        // The worker may be writing this diff: end it, and send the
+        // diffs behind it to a new one.
+        void stop();
+        if (!holder.pending.size) return;
+        const next = start();
+        current = next;
+        for (const [queued, entry] of holder.pending) {
+          next.pending.set(queued, entry);
+          holders.set(queued, next);
+          next.worker.postMessage(entry.job);
+        }
+        holder.pending.clear();
+      };
+      // A settled diff lets go of the signal, which a caller may reuse.
       const written = new Promise<DiffJobWritten>((resolve, reject) => {
         pending.set(id, { job, resolve, reject });
-      }).finally(() => holders.delete(id));
+      }).finally(() => {
+        holders.delete(id);
+        signal.removeEventListener("abort", onAbort);
+      });
       holders.set(id, current);
       worker.postMessage(job);
-      signal.addEventListener(
-        "abort",
-        () => {
-          const holder = holders.get(id);
-          const waiting = holder?.pending.get(id);
-          if (!holder || !waiting) return;
-          holder.pending.delete(id);
-          waiting.reject(new DeckDiffCancelled());
-          if (current?.worker !== holder.worker) return;
-          // The worker may be writing this diff: end it, and send the
-          // diffs behind it to a new one.
-          void stop();
-          if (!holder.pending.size) return;
-          const next = start();
-          current = next;
-          for (const [queued, entry] of holder.pending) {
-            next.pending.set(queued, entry);
-            holders.set(queued, next);
-            next.worker.postMessage(entry.job);
-          }
-          holder.pending.clear();
-        },
-        { once: true },
-      );
+      signal.addEventListener("abort", onAbort, { once: true });
       return written;
     },
     async close() {

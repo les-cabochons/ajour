@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
   FileChange,
@@ -114,5 +115,15 @@ describe("Deck's diff workers", () => {
 
     await expect(stoppedFirst).rejects.toBeInstanceOf(DeckDiffCancelled);
     await expect(moved).rejects.toBeInstanceOf(DeckDiffCancelled);
+  });
+
+  it("lets go of the signal once a diff is written", async () => {
+    const diffs = diffsOf();
+    const signal = new AbortController().signal;
+    for (let index = 0; index < 12; index += 1) {
+      const small = modified(`f${index}.ts`, "one\n", "1\n");
+      await diffs.write(small.changes, small.contents, "open", signal);
+    }
+    expect(getEventListeners(signal, "abort")).toHaveLength(0);
   });
 });
