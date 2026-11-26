@@ -1,7 +1,12 @@
-import { memo } from "react";
+import { memo, useContext } from "react";
 import type { CodeHostReviewThread } from "@ajour/shared";
 import { Markdown } from "@/components/markdown";
 import { personName } from "@/domain/deck/review-status";
+import { ThreadActionsContext, ThreadFooter } from "./thread-actions";
+import { ThreadStates, useThreadState } from "./thread-state";
+
+/** No actions: what a thread holds without them. */
+const NO_ACTIONS = new ThreadStates();
 
 /** When something was written, as the review page shows it. */
 export function EventTime({ at }: { at: number }) {
@@ -29,9 +34,11 @@ export function threadLocation(
 }
 
 /**
- * One review thread: each comment with its author and time, then whether
- * it's resolved or outdated. Hovering or focusing it calls `onHover`, so the
- * page can highlight its line.
+ * One review thread: each comment with its author and time, the replies
+ * posted since the conversation was read, then whether it's resolved or
+ * outdated, and Reply and Resolve when the page offers them (#785).
+ * Hovering or focusing it calls `onHover`, so the page can highlight its
+ * line.
  */
 export const ReviewThreadCard = memo(function ReviewThreadCard({
   thread,
@@ -46,8 +53,11 @@ export const ReviewThreadCard = memo(function ReviewThreadCard({
   /** Names its file and lines, for a thread away from them. */
   showLocation?: boolean;
 }) {
+  const actions = useContext(ThreadActionsContext);
+  const state = useThreadState(actions?.states ?? NO_ACTIONS, thread.id);
+  const resolved = state.resolved ?? thread.resolved;
   const marks = [
-    thread.resolved ? "Resolved" : undefined,
+    resolved ? "Resolved" : undefined,
     thread.outdated ? "Outdated" : undefined,
   ].filter(Boolean);
   return (
@@ -77,8 +87,25 @@ export const ReviewThreadCard = memo(function ReviewThreadCard({
           <Markdown>{comment.body}</Markdown>
         </div>
       ))}
+      {state.sent.map((body, index) => (
+        <div key={`sent-${index}`} className="deck-comment">
+          <p className="deck-comment-meta">
+            <span className="deck-comment-author">You</span>
+            <span>Just now</span>
+          </p>
+          <Markdown>{body}</Markdown>
+        </div>
+      ))}
       {marks.length ? (
         <p className="deck-thread-marks">{marks.join(" · ")}</p>
+      ) : null}
+      {actions ? (
+        <ThreadFooter
+          thread={thread}
+          state={state}
+          resolved={resolved}
+          actions={actions}
+        />
       ) : null}
     </article>
   );

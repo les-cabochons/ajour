@@ -10,6 +10,7 @@ import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { DeckDraftComment } from "@/domain/deck/draft-review";
+import { withSuggestion } from "@/domain/deck/suggestion";
 import {
   composerIdentity,
   type ComposerTarget,
@@ -138,8 +139,10 @@ export const DraftCommentCard = memo(function DraftCommentCard({
  * keeps the comment in the draft review, **Comment now** posts it at once,
  * and a failed post keeps the words with the reason and Retry, or Post
  * again when the code host couldn't tell whether it has it. Editing a
- * draft comment offers Save instead. Its words live with the page, so a
- * huge pull request's hunk scrolling away and back keeps them.
+ * draft comment offers Save instead. On lines of the head, **Suggest
+ * change** adds a suggestion block holding the lines' text (#785). Its
+ * words live with the page, so a huge pull request's hunk scrolling away
+ * and back keeps them.
  */
 function ReviewComposer({ target }: { target: ComposerTarget }) {
   const { addToReview, commentNow, cancelComposer, composer } =
@@ -228,6 +231,23 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
         >
           Cancel
         </Button>
+        {target.side === "head" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="deck-suggest"
+            disabled={posting}
+            onClick={() => {
+              composer.update(target, {
+                body: withSuggestion(body, target.lineText),
+              });
+              field.current?.focus({ preventScroll: true });
+            }}
+          >
+            Suggest change
+          </Button>
+        ) : null}
       </div>
     </form>
   );

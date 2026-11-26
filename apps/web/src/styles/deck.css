@@ -1011,6 +1011,42 @@
     font-size: var(--text-xs);
   }
 
+  /* Suggest change, at the end of the composer's actions. */
+  .deck-suggest {
+    margin-left: auto;
+  }
+
+  /* A thread's Reply and Resolve, or its reply field, under its comments (#785). */
+  .deck-thread > .deck-note-actions {
+    padding-top: 0.25rem;
+  }
+
+  .deck-thread > .deck-composer-error {
+    padding: 0.25rem 0.625rem 0;
+  }
+
+  .deck-reply {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-top: 1px solid var(--border-row);
+  }
+
+  .deck-reply .deck-note-actions {
+    padding: 0;
+  }
+
+  /* A suggested change in a comment: its block says what it is. */
+  .deck-comment pre:has(> code.language-suggestion)::before {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text-secondary);
+    content: "Suggested change";
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+  }
+
   /* Finish review's verdicts, one per row. */
   .deck-verdicts {
     display: flex;

@@ -5,7 +5,6 @@ import {
   reviewSections,
   sectionToReach,
   tickLength,
-  toggleViewed,
   treeVirtualized,
   viewedCount,
   virtualized,
@@ -164,14 +163,10 @@ describe("moving between concerns", () => {
 });
 
 describe("viewed marks", () => {
-  it("toggles a hunk's mark and counts the viewed hunks of a section", () => {
-    let viewed = toggleViewed(new Set(), "src/a.ts#0");
-    viewed = toggleViewed(viewed, "README.md#0");
-    viewed = toggleViewed(viewed, "README.md#0");
-
+  it("counts the viewed hunks of a section", () => {
+    const viewed = new Set(["src/a.ts#0", "elsewhere.ts#0"]);
     const [first] = reviewSections(PULL_REQUEST, "guide");
     expect(viewedCount(first!, viewed)).toBe(1);
-    expect([...viewed]).toEqual(["src/a.ts#0"]);
   });
 
   it("gives a tick a length that grows with the hunks, within bounds", () => {

@@ -65,7 +65,11 @@ function usePullRequestRead<T>(
   const [state, setState] = useState<PullRequestReadState<T>>({
     status: "loading",
   });
-  const [attempt, setAttempt] = useState({ count: 0, newestHead: false });
+  const [attempt, setAttempt] = useState({
+    count: 0,
+    newestHead: false,
+    quiet: false,
+  });
   const pluginId = pullRequest?.pluginId;
   const connectionId = pullRequest?.connectionId;
   const repository = pullRequest?.facts.repository;
@@ -76,7 +80,8 @@ function usePullRequestRead<T>(
   useEffect(() => {
     if (!pluginId || !connectionId || !repository || !number) return;
     let current = true;
-    setState({ status: "loading" });
+    // A quiet read keeps what shows until the new answer is in.
+    if (!attempt.quiet) setState({ status: "loading" });
     const head =
       withHead && !attempt.newestHead && headSha.current
         ? { headSha: headSha.current }
@@ -86,7 +91,13 @@ function usePullRequestRead<T>(
         if (current) setState({ status: "ready", value });
       },
       (error: unknown) => {
-        if (current) setState(failedRead(error, fallback));
+        if (!current) return;
+        // A quiet read that failed leaves the last answer showing.
+        setState((shown) =>
+          attempt.quiet && shown.status === "ready"
+            ? shown
+            : failedRead(error, fallback),
+        );
       },
     );
     return () => {
@@ -103,14 +114,34 @@ function usePullRequestRead<T>(
     withHead,
   ]);
   const retry = useCallback(
-    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: false })),
+    () =>
+      setAttempt(({ count }) => ({
+        count: count + 1,
+        newestHead: false,
+        quiet: false,
+      })),
     [],
   );
   const refresh = useCallback(
-    () => setAttempt(({ count }) => ({ count: count + 1, newestHead: true })),
+    () =>
+      setAttempt(({ count }) => ({
+        count: count + 1,
+        newestHead: true,
+        quiet: false,
+      })),
     [],
   );
-  return { state, retry, refresh };
+  /** Reads it again behind what shows, after a write changed it. */
+  const reload = useCallback(
+    () =>
+      setAttempt(({ count }) => ({
+        count: count + 1,
+        newestHead: false,
+        quiet: true,
+      })),
+    [],
+  );
+  return { state, retry, refresh, reload };
 }
 
 /** The pull request's diff from the merge base to the head, and its guide, as the local API builds them. */

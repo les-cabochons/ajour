@@ -1159,6 +1159,9 @@ channel to read the event each emits.
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
 | `deck.storage_update`                | request, command                        | route, client call                               |
+| `deck.viewed_files_adopt`            | command                                 | store command                                    |
+| `deck.viewed_marks_refresh`          | command                                 | store command                                    |
+| `deck.viewed_marks_set`              | command                                 | store command                                    |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |
 | `description.write`                  | command, request, plugin_operation      | route, plugin method, client call                |
 | `dev_plugins.configure`              | command, ipc                            | IPC channel                                      |
@@ -1250,12 +1253,12 @@ channel to read the event each emits.
 | `pull_request.load_conversation`     | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load_file`             | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.load_versions`         | command, request, plugin_operation      | route, plugin method, client call                |
-| `pull_request.mark_file_viewed`      | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.mark_file_viewed`      | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.merge`                 | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.open`                  | command                                 | store command                                    |
 | `pull_request.remember_review`       | command                                 | store command                                    |
-| `pull_request.reply`                 | command, request, plugin_operation      | route, plugin method                             |
-| `pull_request.resolve_thread`        | command, request, plugin_operation      | route, plugin method                             |
+| `pull_request.reply`                 | command, request, plugin_operation      | route, plugin method, client call                |
+| `pull_request.resolve_thread`        | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.settle`                | command                                 | store command                                    |
 | `pull_request.snooze`                | command                                 | store command                                    |
 | `pull_request.submit_review`         | command, request, plugin_operation      | route, plugin method, client call                |
