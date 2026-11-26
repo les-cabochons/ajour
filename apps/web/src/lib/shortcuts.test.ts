@@ -444,6 +444,20 @@ describe("resolveShortcut", () => {
       "deck.lines-comment",
     );
     expect(resolved("e", ["deck.lines-explain"])).toBe("deck.lines-explain");
+    // With no line selected, the keys of selected lines are no keys at all:
+    // never a sequence waiting for its next key, so Escape still closes a
+    // panel and A types nothing away.
+    for (const key of ["Escape", "a", "e"]) {
+      expect(
+        resolveShortcut(
+          APP_SHORTCUTS,
+          [],
+          press(key),
+          "mac",
+          (id) => id === "entry.continue",
+        ),
+      ).toEqual({ kind: "none" });
+    }
     expect(resolved("a", ["deck.lines-ask"])).toBe("deck.lines-ask");
     // R then C still finishes the review on Comment while lines are selected.
     const second = resolveShortcut(

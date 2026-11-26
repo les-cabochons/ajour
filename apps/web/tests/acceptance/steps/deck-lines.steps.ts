@@ -28,9 +28,17 @@ const lineNumber = (page: Page, line: number, path?: string) =>
 
 async function dragOver(page: Page, from: number, to: number, path?: string) {
   const start = lineNumber(page, from, path);
-  await start.scrollIntoViewIfNeeded();
-  const a = (await start.boundingBox())!;
-  const b = (await lineNumber(page, to, path).boundingBox())!;
+  const end = lineNumber(page, to, path);
+  // The hunk draws its lines again once its highlighter answers, which can
+  // replace them while they are measured.
+  let a = { x: 0, y: 0, width: 0, height: 0 };
+  let b = a;
+  await expect(async () => {
+    await start.scrollIntoViewIfNeeded({ timeout: 2_000 });
+    a = (await start.boundingBox({ timeout: 2_000 }))!;
+    b = (await end.boundingBox({ timeout: 2_000 }))!;
+    expect(a && b).toBeTruthy();
+  }).toPass();
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 4 });

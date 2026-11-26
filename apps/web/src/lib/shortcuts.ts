@@ -577,20 +577,20 @@ export function resolveShortcut(
   platform: ShortcutPlatform,
   handled?: (id: ShortcutActionId) => boolean,
 ): ShortcutResolution {
+  // The keys of selected lines count only while their toolbar handles
+  // them, and then win over the app's: C is Comment, and Continue again
+  // once no line is selected. Unhandled, they are no keys at all, nor the
+  // start of a sequence, so Escape and A pass through.
   const candidates = shortcuts.filter(
     (shortcut) =>
       shortcut.keys.length > prefix.length &&
       prefix.every((chord, index) => sameChord(chord, shortcut.keys[index]!)) &&
-      matchesChord(event, shortcut.keys[prefix.length]!, platform),
+      matchesChord(event, shortcut.keys[prefix.length]!, platform) &&
+      (shortcut.scope !== "lines" || !handled || handled(shortcut.id)),
   );
 
-  // The keys of selected lines count only while their toolbar handles
-  // them, and then win over the app's: C is Comment, and Continue again
-  // once no line is selected.
   const completes = candidates.filter(
-    (shortcut) =>
-      shortcut.keys.length === prefix.length + 1 &&
-      (shortcut.scope !== "lines" || !handled || handled(shortcut.id)),
+    (shortcut) => shortcut.keys.length === prefix.length + 1,
   );
   // Shift+digit always starts a pinned task, even where it types "?", such as
   // Shift+6 on Canadian French layouts. "?" still works on other layouts.
