@@ -888,8 +888,11 @@
     border-radius: 50%;
   }
 
+  /* With its separator, so a wrap never leaves a · at a line's end. */
   .deck-status-text {
-    padding: 0 0.25rem;
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0 0.25rem 0 0;
     white-space: nowrap;
   }
 
@@ -909,12 +912,14 @@
     font-size: var(--text-xs);
   }
 
+  /* Inline flow, not flex, so the spaces around · and ← stay. */
   .deck-stack-strip {
-    display: flex;
     min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.125rem;
+    line-height: 1.375rem;
+  }
+
+  .deck-stack-strip > * {
+    vertical-align: middle;
   }
 
   .deck-stack-name,
@@ -951,7 +956,12 @@
   }
 
   .deck-stack-base {
+    padding: 0 0.25rem;
     font-family: var(--font-mono);
+  }
+
+  .deck-stack-sep {
+    color: var(--text-tertiary);
   }
 
   .deck-stack-this {

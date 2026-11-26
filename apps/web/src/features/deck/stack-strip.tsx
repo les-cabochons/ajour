@@ -186,11 +186,15 @@ export function StackStrip({
               />
             </PopoverContent>
           </Popover>
-          <span aria-hidden="true"> · </span>
+          <span className="deck-stack-sep" aria-hidden="true">
+            {" · "}
+          </span>
           <span className="deck-stack-base">{stack.base}</span>
           {stack.layers.map((layer) => (
             <Fragment key={layer._id}>
-              <span aria-hidden="true"> ← </span>
+              <span className="deck-stack-sep" aria-hidden="true">
+                {" ← "}
+              </span>
               {layer._id === pullRequest._id ? (
                 <span className="deck-stack-this" aria-current="page">
                   #{layer.facts.number} this

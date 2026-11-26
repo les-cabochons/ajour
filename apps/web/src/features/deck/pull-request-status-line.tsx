@@ -190,12 +190,10 @@ export function PullRequestStatusLine({
         {approvalsSummary(approvals)}
       </StatusItem>
       {mergesAfter ? (
-        <>
+        <span className="deck-status-text">
           <span aria-hidden="true">·</span>
-          <span className="deck-status-text">
-            Merges after #{mergesAfter.facts.number}
-          </span>
-        </>
+          <span className="px-1">Merges after #{mergesAfter.facts.number}</span>
+        </span>
       ) : null}
     </p>
   );

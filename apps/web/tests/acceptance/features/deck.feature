@@ -248,3 +248,26 @@ Feature: Deck lists the pull requests on your plate
     When I open Deck on a narrow screen
     And I open the requested pull request summary
     Then the guide fits the narrow viewport
+
+  Scenario: Move through a stack from its strip and the full stack
+    Given the requested pull request is the middle layer of a stack
+    And the local API built the requested pull request's guide
+    When I open Deck
+    Then the stack's layers show together, each with its place
+    When I open the requested pull request summary
+    Then the stack strip reads "Stack 2 of 3 · main ← #3 ← #1 this ← #4"
+    And the strip warns that #3 changed since this layer was based on it
+    And the status line says it merges after #3
+    When I press the "l" key
+    Then the full stack lists its layers in merge order
+    When I open #4 from the full stack
+    Then the review page of "Rate limits per user" shows
+
+  Scenario: Fold the stack strip on a narrow screen
+    Given the requested pull request is the middle layer of a stack
+    And the local API built the requested pull request's guide
+    When I open Deck on a narrow screen
+    And I open the requested pull request summary
+    Then the stack strip folds to Stack 2/3 and the page fits the viewport
+    When I unfold the stack strip
+    Then the full stack lists its layers in merge order
