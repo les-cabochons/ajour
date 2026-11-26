@@ -163,8 +163,11 @@ export function PullRequestReview({
           }) ?? "",
         body: body ?? "",
       };
-      // The composer open there keeps its words and adds these after them.
-      if (body !== undefined) composerState.transfer(target, body);
+      // The composer open there keeps its words and adds these after them;
+      // another composer holding words keeps them, and the answer stays.
+      if (body !== undefined && !composerState.transfer(target, body)) {
+        return false;
+      }
       setComposer(target);
       return true;
     },

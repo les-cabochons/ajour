@@ -618,6 +618,41 @@ it("adds an answer after the words already typed in the composer on its lines", 
   ).toBeNull();
 });
 
+it("keeps the words typed in a composer on other lines, and the answer, when it's turned into a comment", async () => {
+  vi.mocked(api.askDeck).mockResolvedValue({
+    kind: "answer",
+    text: "It shouts.",
+    head: HEAD,
+  });
+  await renderReviewPage();
+
+  drag(FIRST, { start: 2, side: "additions", end: 3, endSide: "additions" });
+  press("e");
+  const answer = await screen.findByRole("region", {
+    name: "Explanation of lines 2–3",
+  });
+  await within(answer).findByText("It shouts.");
+
+  // A composer on overlapping but other lines holds typed words.
+  drag(FIRST, { start: 1, side: "additions", end: 2, endSide: "additions" });
+  press("c");
+  const form = await screen.findByRole("form", { name: "New comment" });
+  const field = within(form).getByRole("textbox", {
+    name: "Comment",
+  }) as HTMLTextAreaElement;
+  fireEvent.change(field, { target: { value: "Typed words" } });
+
+  fireEvent.click(
+    within(answer).getByRole("button", { name: "Turn into a comment" }),
+  );
+
+  // Neither is lost: the composer keeps its words, the answer stays.
+  expect(field.value).toBe("Typed words");
+  expect(
+    screen.getByRole("region", { name: "Explanation of lines 2–3" }),
+  ).toBeTruthy();
+});
+
 it("asks a typed question about the lines with A", async () => {
   vi.mocked(api.askDeck).mockResolvedValue({
     kind: "answer",

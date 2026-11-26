@@ -69,19 +69,24 @@ export class ReviewComposerState {
   /**
    * `target`'s composer takes `words`, an answer turned into a comment
    * (#793): after the words it holds, when it's the one open, keeping its
-   * try's name and state; as its words, when it opens with them.
+   * try's name and state; as its words, when it opens with them. False,
+   * taking nothing, while another composer holds words or is posting: they
+   * are never dropped for an answer.
    */
-  transfer(target: ComposerTarget, words: string) {
+  transfer(target: ComposerTarget, words: string): boolean {
     const held = this.holds(target) ? this.#state : undefined;
     if (!held) {
+      const other = this.#state;
+      if (other && (other.posting || other.body.trim() !== "")) return false;
       this.close();
       this.of({ ...target, body: words });
-      return;
+      return true;
     }
     const before = held.body.trimEnd();
     this.update(target, {
       body: before ? `${before}\n\n${words}` : words,
     });
+    return true;
   }
 
   /** Changes what `target`'s composer holds, while it's the one open. */
