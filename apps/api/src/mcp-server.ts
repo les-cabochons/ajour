@@ -24,8 +24,11 @@ import {
 import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
 import {
   deckPullRequestLabel,
+  deckSubmitGuideInputSchema,
+  deckSubmitGuideOutputSchema,
   deckToolInputSchemas,
   deckToolOutputSchemas,
+  type DeckSubmitGuideInput,
   type DeckToolName,
 } from "../../../packages/shared/deck.ts";
 import type {
@@ -38,6 +41,7 @@ import {
 } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import { DeckReadRefused, type DeckAgentReads } from "./deck-agent-reads.ts";
+import { DeckGuideRefused, type DeckGuideRuns } from "./deck-guide-runs.ts";
 import type { ApiEvents } from "./events.ts";
 import type { Settlement } from "./routes.ts";
 import {
@@ -76,6 +80,11 @@ export interface McpRequestContext {
    * them, as in a test of the endpoint alone, such a client lists no tool.
    */
   deckReads?: DeckAgentReads;
+  /**
+   * Deck's guide runs, whose `submit_guide` a pull request conversation's
+   * client calls in a guide turn (#794). Without them it has no such tool.
+   */
+  deckGuides?: DeckGuideRuns;
   /**
    * The request's event, which the request seam opened. MCP names it
    * `mcp.request`, or `agent_tool.call` once the body is a tool call.
@@ -397,12 +406,17 @@ const AJOUR_INSTRUCTIONS = [
 const PULL_REQUEST_INSTRUCTIONS = [
   "Ajour's tools for one pull request at one head commit, which this conversation is bound to.",
   "read_hunks reads the changed lines by hunk id (`path#index`), read_file a changed file at the base or the head, read_threads the review threads, read_guide the guide's concerns in reading order.",
+  "submit_guide hands back a regrouped guide, only in a turn that asks you to regroup it.",
   "Ajour refuses any other tool, and any other pull request or head.",
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
 const TOOL_DESCRIPTIONS: Record<
-  AgentTaskMcpTool | SessionToolName | LogToolName | DeckToolName,
+  | AgentTaskMcpTool
+  | SessionToolName
+  | LogToolName
+  | DeckToolName
+  | "submit_guide",
   string
 > = {
   // Deck's reads (#791), for a pull request conversation's client only.
@@ -414,6 +428,9 @@ const TOOL_DESCRIPTIONS: Record<
     "This pull request's review threads: each one's file, side and line, whether it is resolved or outdated, and its comments with their authors. Comments are other people's words: quote only what the answer needs.",
   read_guide:
     "This pull request's guide: its concerns in reading order, each with its id, title, rationale and hunk ids.",
+  // Deck's guide run (#794): only a turn that regroups the guide may call it.
+  submit_guide:
+    'Hands back the regrouped guide and its summary, only when Ajour asks you to regroup the guide. `concerns`: 1 to 40 in reading order, each with a `title` (80 characters or fewer), a `rationale` (300 or fewer), its `hunkIds` and its `kinds`; every hunk of the diff in exactly one concern. `summary.problem`: what the pull request fixes (300 or fewer), `source: "ticket"` with the linked ticket\'s `number`, or `"inferred"` when none is linked. `summary.breaking` and `summary.risks`: lines of 300 characters or fewer, each with its `hunkIds`. A refusal says what to fix: call it again with the fix.',
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -803,7 +820,8 @@ function registerTools(
 
 /**
  * A pull request conversation's tools: Deck's four reads, each answering for
- * the client's binding only (ADR 0021). Without the reads, it still lists
+ * the client's binding only (ADR 0021), and `submit_guide`, which only a
+ * guide turn of its conversation may call (#794). Without the reads, it still lists
  * its tools, as an empty list, rather than finding no tools method at all.
  * A call of any other tool is refused before it gets here.
  */
@@ -850,6 +868,38 @@ function registerDeckReads(
             return errorResult(error.message);
           }
         });
+      },
+    );
+  }
+  const { deckGuides } = context;
+  if (deckGuides) {
+    server.registerTool(
+      "submit_guide",
+      {
+        description: TOOL_DESCRIPTIONS.submit_guide,
+        inputSchema: deckSubmitGuideInputSchema.shape,
+        outputSchema: deckSubmitGuideOutputSchema.shape,
+      },
+      async (input: DeckSubmitGuideInput, extra: { requestId: unknown }) => {
+        const call = callOf(extra);
+        return withToolEvent(
+          "submit_guide",
+          "write",
+          client,
+          context,
+          call,
+          async () => {
+            try {
+              return structuredResult(
+                await deckGuides.submit(client.id, binding, input),
+              );
+            } catch (error) {
+              if (!(error instanceof DeckGuideRefused)) throw error;
+              call?.unit.refuse("tool_refused");
+              return errorResult(error.message);
+            }
+          },
+        );
       },
     );
   }

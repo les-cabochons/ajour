@@ -87,6 +87,14 @@ export interface AgentConversationsOptions {
    * user took the repository back from (#791).
    */
   admits: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
+  /**
+   * Why a turn the CLI ended as done failed all the same, or undefined:
+   * a guide turn that saved no guide (#794).
+   */
+  doneFailure?: (turn: {
+    id: string;
+    task: CoreAgentTask;
+  }) => string | undefined;
   idleMs?: number;
   killGraceMs?: number;
   interruptGraceMs?: number;
@@ -121,7 +129,13 @@ type TurnEnding =
       outcome: "failed";
       /** For the window. Never logged. */
       message: string;
-      reason: "cli_failed" | "cli_exited" | "mcp_failed" | "stalled";
+      reason:
+        | "cli_failed"
+        | "cli_exited"
+        | "mcp_failed"
+        | "stalled"
+        /** Done, but it gave back nothing its task asks for, such as a guide. */
+        | "no_result";
     }
   | { outcome: "failed"; message: string; launchFailure: LaunchFailure }
   | {
@@ -318,6 +332,29 @@ export class AgentConversations {
     if (!found) return false;
     this.stopTurn(found.conversation, found.turn, "user");
     return true;
+  }
+
+  /**
+   * The turn running now in the conversation whose client is `clientId`,
+   * once it is sent to its CLI: what a call of that client's tools is part
+   * of. Undefined between turns, and for any other client.
+   */
+  runningTurnOf(
+    clientId: string,
+  ):
+    | { id: string; task: CoreAgentTask; pullRequest: string; head: string }
+    | undefined {
+    const { conversation } = this;
+    if (!conversation || conversation.closing) return undefined;
+    if (conversation.client?.id !== clientId) return undefined;
+    const turn = conversation.turns[0];
+    if (!turn?.started || turn.settled || !turn.process) return undefined;
+    return {
+      id: turn.id,
+      task: turn.task,
+      pullRequest: conversation.key,
+      head: conversation.binding.head,
+    };
   }
 
   /**
@@ -981,8 +1018,15 @@ export class AgentConversations {
     turn.interruptTimer.unref();
   }
 
-  private endTurn(conversation: Conversation, turn: Turn, ending: TurnEnding) {
+  private endTurn(conversation: Conversation, turn: Turn, done: TurnEnding) {
     this.turns.delete(turn.id);
+    const failure =
+      done.outcome === "done"
+        ? this.options.doneFailure?.({ id: turn.id, task: turn.task })
+        : undefined;
+    const ending: TurnEnding = failure
+      ? { outcome: "failed", message: failure, reason: "no_result" }
+      : done;
     const { unit } = turn;
     unit.set({
       agent: {

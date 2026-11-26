@@ -618,6 +618,8 @@ export const catalog = defineCatalog({
         "stalled",
         /** Refused: the repository isn't allowed with the conversation's agent now (#791). */
         "repository_not_allowed",
+        /** Done, but it gave back nothing its task asks for: a guide turn that saved no guide (#794). */
+        "no_result",
       ],
       fields: {
         agent: {
@@ -3295,7 +3297,43 @@ export const catalog = defineCatalog({
         "repository_not_allowed",
         /** Ajour no longer holds the pull request at this head. */
         "not_open",
-        /** The guide has no such concern. */
+        /** The guide has no such concern or summary line. */
+        "unknown_anchor",
+        /** The pull request has no guide to ask about. */
+        "no_guide",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          anchor_kind: operational<"concern" | "summary">(),
+          /** The user typed a question in place of the default one. */
+          typed_question: operational<boolean>(),
+          /** Answered from the cache, with no turn. */
+          cached: operational<boolean>(),
+        },
+        agent: { turn_id: operational() },
+      },
+    },
+    /**
+     * A regroup in Deck (#794): the `deck.guide` turn it started, whose
+     * agent hands the guide back through `submit_guide`. The instruction is
+     * the user's words, so only whether one was given is here.
+     */
+    "deck.regroup": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "repository_not_allowed",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The pull request has no guide to regroup. */
+        "no_guide",
         "unknown_anchor",
         /** No agent is picked or installed. */
         "blocked",
@@ -3307,13 +3345,39 @@ export const catalog = defineCatalog({
         plugin: { id: operational() },
         connection: { id: operational() },
         deck: {
-          anchor_kind: operational<"concern">(),
-          /** The user typed a question in place of the default one. */
-          typed_question: operational<boolean>(),
-          /** Answered from the cache, with no turn. */
-          cached: operational<boolean>(),
+          /** The user changed the prefilled instruction. */
+          instructed: operational<boolean>(),
         },
         agent: { turn_id: operational() },
+      },
+    },
+    /** The guide Deck shows for a pull request at one head, read again after a regroup (#794). */
+    "deck.guide": {
+      kinds: ["request"],
+      reasons: [
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: { made_with: operational<"code" | "agent">() },
+      },
+    },
+    /** Back to the guide built from the code: the agent's guide is dropped (#794). */
+    "deck.guide_revert": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
       },
     },
     /** The user allowed Deck's asks about a repository with the agent picked. */

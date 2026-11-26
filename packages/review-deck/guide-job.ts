@@ -1,7 +1,8 @@
 // Entry point: the messages between Ajour and `guide-worker.ts`, the worker thread that runs the pipeline on one
 // pull request at a time (#782), then the summary's rules (#789). It imports only types, so a caller that starts
-// the worker by its URL never loads the pipeline itself.
-import type { RuleKind, RuleSummary } from "./summary.ts";
+// the worker by its URL never loads the pipeline itself. A job that names its concerns, as an agent regrouped them
+// (#794), skips the pipeline and runs the rules alone on them.
+import type { GroupedConcern, RuleKind, RuleSummary } from "./summary.ts";
 
 /** A job for the worker: the diff `buildDiff` wrote, and both versions of each file. */
 export interface GuideJob {
@@ -11,6 +12,8 @@ export interface GuideJob {
   old: Map<string, string>;
   /** Each file's head version, by its head path. */
   new: Map<string, string>;
+  /** Concerns grouped already, in reading order: the worker runs only the summary's rules on them. */
+  concerns?: GroupedConcern[];
 }
 
 /** A group of the pipeline's result, in reading order, with the kinds of change the rules found in it. */

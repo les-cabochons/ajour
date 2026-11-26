@@ -150,6 +150,9 @@ import {
 import {
   deckAskRequestSchema,
   deckCacheSettingsUpdateSchema,
+  deckGuideRequestSchema,
+  deckRegroupRequestSchema,
+  deckPullRequestKey,
   deckConsentRequestSchema,
   deckConsentRevokeRequestSchema,
   deckOpenRequestSchema,
@@ -161,6 +164,7 @@ import {
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
 import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import { createDeckGuideRuns } from "./deck-guide-runs.ts";
 import {
   createDeckContentCache,
   deckCacheKeyString,
@@ -1987,6 +1991,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     refresh: (id) => handoffs.refreshFromHook(id),
     ...options.handoffHooks,
   });
+  const agentCliAdapters = options.agentCliAdapters ?? [
+    claudeCodeAdapter,
+    codexAdapter,
+    opencodeAdapter,
+  ];
   const agentRunner = new AgentRunner({
     storage: {
       getMcpSettings: () => storage.getMcpSettings(),
@@ -2024,11 +2033,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       readAgentTaskPrompt: (pluginId, taskId) =>
         pluginManager.readAgentTaskPrompt(pluginId, taskId),
     },
-    adapters: options.agentCliAdapters ?? [
-      claudeCodeAdapter,
-      codexAdapter,
-      opencodeAdapter,
-    ],
+    adapters: agentCliAdapters,
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
     loginShellPath:
       options.agentCliPath === undefined
@@ -2044,10 +2049,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // Deck's asks read them too, to cache their answers.
     publishTurnEvent: (event) => {
       deckAsks.observe(event);
+      deckGuideRuns.observe(event);
       mcpBridge.publish("agent-turn", event);
     },
     // Each turn is sent only while its repository is allowed with its agent.
     admitsTurn: (pullRequest, cli) => deckAsks.allowedWith(pullRequest, cli),
+    // A guide turn that saved no guide fails (#794).
+    turnDoneFailure: (turn) => deckGuideRuns.doneFailure(turn),
     ...(options.agentConversationIdleMs === undefined
       ? {}
       : { conversationIdleMs: options.agentConversationIdleMs }),
@@ -2072,8 +2080,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     startTurn: (request) => agentRunner.startTurn(request),
   });
 
-  /** A Deck pull request's threads, for the agent's `read_threads`. */
-  async function deckConversation(source: DeckPullRequestSource) {
+  /**
+   * Reads a Deck pull request through its code host plugin for the agent,
+   * as the connection's access choices allow. Every failure is a
+   * `DeckReadRefused` the agent may read: the plugin's own words may hold
+   * what it shouldn't see.
+   */
+  async function deckCodeHostRead<
+    Operation extends "getPullRequestConversation" | "getLinkedTickets",
+  >(source: DeckPullRequestSource, operation: Operation, what: string) {
     const { plugin } = await findPlugin(pluginManager, source.pluginId);
     if (!plugin || !pluginHasCodeHost(plugin)) {
       throw new DeckReadRefused("The pull request's code host is off.");
@@ -2086,18 +2101,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     if (!connection) {
       throw new DeckReadRefused("The pull request's connection was removed.");
     }
-    if (
-      connectionAccessRefusal(plugin, connection, "getPullRequestConversation")
-    ) {
+    if (connectionAccessRefusal(plugin, connection, operation)) {
       throw new DeckReadRefused(
-        "The user's access choices don't let Ajour read this pull request's threads.",
+        `The user's access choices don't let Ajour read this pull request's ${what}.`,
       );
     }
     const call = admittedCall(plugin, connection.secrets);
     try {
       return await pluginManager.runCodeHostOperation(
         source.pluginId,
-        "getPullRequestConversation",
+        operation,
         pluginConnection(connection),
         { repository: source.repository, number: source.number },
         call.admit,
@@ -2106,16 +2119,47 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // The plugin's own words may hold what the agent shouldn't see.
       throw new DeckReadRefused(
         error instanceof PluginExportMissing
-          ? "This code host doesn't share a pull request's threads yet."
-          : "Ajour couldn't read the threads from the code host.",
+          ? `This code host doesn't share a pull request's ${what} yet.`
+          : `Ajour couldn't read the ${what} from the code host.`,
       );
     }
   }
+
+  /** A Deck pull request's threads, for the agent's `read_threads`. */
+  const deckConversation = (source: DeckPullRequestSource) =>
+    deckCodeHostRead(source, "getPullRequestConversation", "threads");
   const deckReads = createDeckAgentReads({
     deck: deckService,
     allowed: (binding) =>
       deckAsks.allowedWith(binding.pullRequest, binding.cli),
     conversation: deckConversation,
+  });
+  /**
+   * Deck's guide runs (#794): Regroup's turns, and the `submit_guide` they
+   * hand their guide back with.
+   */
+  const deckGuideRuns = createDeckGuideRuns({
+    deck: deckService,
+    requireConsent: (pullRequest) => deckAsks.requireTurnConsent(pullRequest),
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
+    startTurn: (request) => agentRunner.startTurn(request),
+    labelOf: (cli) =>
+      agentCliAdapters.find((adapter) => adapter.id === cli)?.label ?? cli,
+    // Read again for each regroup: Deck keeps neither (#789).
+    async readContext(source) {
+      const [conversation, linked] = await Promise.all([
+        deckConversation(source).catch(() => undefined),
+        deckCodeHostRead(source, "getLinkedTickets", "linked tickets").catch(
+          () => undefined,
+        ),
+      ]);
+      return {
+        ...(conversation ? { description: conversation.description } : {}),
+        ...(linked ? { tickets: linked.tickets } : {}),
+      };
+    },
   });
 
   const runtime: AppApiRuntime = {
@@ -2155,6 +2199,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     readBody: readJsonBody,
     localLogs: options.localLogs,
     deckReads,
+    deckGuides: deckGuideRuns,
   };
 
   /**
@@ -4855,6 +4900,77 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.refuse(error.status === 409 ? "already_running" : "blocked");
         writeJson(response, error.status, { error: error.message });
       }
+    },
+
+    deckRegroup: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckRegroupRequestSchema);
+      unit.set({ deck: { instructed: payload.instruction !== undefined } });
+      try {
+        const turn = await deckGuideRuns.regroup(
+          { pluginId, connectionId },
+          payload,
+        );
+        unit.set({ agent: { turn_id: turn.id } });
+        writeJson(response, 201, { turn });
+      } catch (error) {
+        if (error instanceof DeckAskRefused) {
+          unit.refuse(error.eventReason);
+          writeJson(response, error.status, error.body);
+          return;
+        }
+        if (!(error instanceof AgentRunError)) throw error;
+        unit.refuse(error.status === 409 ? "already_running" : "blocked");
+        writeJson(response, error.status, { error: error.message });
+      }
+    },
+
+    // The guide Deck shows now, after a regroup: the agent's or the built one.
+    deckGuide: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckGuideRequestSchema);
+      const held = await deckService.held(
+        deckPullRequestKey({ pluginId, connectionId, ...payload }),
+        payload.head,
+      );
+      if (!held) {
+        unit.refuse("not_open");
+        writeJson(response, 409, {
+          error:
+            "Open the pull request again: Ajour no longer holds it at this commit.",
+          reason: "not_open",
+        });
+        return;
+      }
+      if (held.guide) unit.set({ deck: { made_with: held.guide.madeWith } });
+      writeJson(response, 200, { guide: held.guide });
+    },
+
+    // Back to the guide built from the code: the agent's goes, the built one stays.
+    deckGuideRevert: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckGuideRequestSchema);
+      const shown = await deckService.setAgentGuide(
+        deckPullRequestKey({ pluginId, connectionId, ...payload }),
+        payload.head,
+        null,
+      );
+      if (!shown) {
+        unit.refuse("not_open");
+        writeJson(response, 409, {
+          error:
+            "Open the pull request again: Ajour no longer holds it at this commit.",
+          reason: "not_open",
+        });
+        return;
+      }
+      writeJson(response, 200, shown);
     },
 
     deckConsent: async ({ request, response, params, unit }) => {

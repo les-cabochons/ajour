@@ -626,7 +626,7 @@ describe("answers", () => {
 
 describe("the agent's reads", () => {
   it(
-    "lists Deck's four reads, and answers them for this pull request at this head",
+    "lists Deck's four reads and submit_guide, and answers the reads for this pull request at this head",
     { timeout: 20_000 },
     async () => {
       const call = (name: string, args: Record<string, unknown> = {}) => ({
@@ -653,7 +653,13 @@ describe("the agent's reads", () => {
         await api.mcpReplies();
       expect(
         list!.reply.result.tools.map((tool: { name: string }) => tool.name),
-      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
+      ).toEqual([
+        "read_hunks",
+        "read_file",
+        "read_threads",
+        "read_guide",
+        "submit_guide",
+      ]);
       expect(hunks!.reply.result.structuredContent).toEqual({
         hunks: [
           {

@@ -7,6 +7,7 @@ import type {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_SUMMARY_DEFAULT_QUESTION,
   deckPullRequestKey,
   parseDeckPullRequestKey,
   repositoryName,
@@ -16,14 +17,17 @@ import {
   type DeckAskResponse,
   type DeckAskRefusal,
   type DeckConcern,
+  type DeckGuide,
   type DeckPullRequestSource,
+  type DeckSummaryLine,
 } from "../../../packages/shared/deck.ts";
 import { AgentRunError, PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
  * Deck's asks (#791). An ask is a `deck.ask` turn of the pull request's
- * conversation, anchored to a concern: Ajour writes the turn from the guide
+ * conversation, anchored to a concern or a summary line (#794): Ajour
+ * writes the turn from the guide
  * it holds, never from the page's words, with the anchor's default question
  * or the user's own. Nothing reaches the agent before the user allowed the
  * repository with that agent. A done answer is cached per anchor, typed
@@ -83,6 +87,37 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
   ]
     .filter((line) => line !== undefined)
     .join("\n");
+}
+
+/** The summary's sections, as the page names them, for an ask about one of their lines. */
+const SUMMARY_SECTIONS = [
+  ["breaking", "Breaking changes"],
+  ["risks", "Risky areas"],
+  ["tests", "Tests"],
+  ["untested", "Tests"],
+  ["leftovers", "Leftovers"],
+] as const;
+
+/** A summary line of the guide, with the section it is in. */
+function summaryLineOf(guide: DeckGuide | null, id: string) {
+  for (const [field, section] of SUMMARY_SECTIONS) {
+    const line = guide?.summary[field].find((candidate) => candidate.id === id);
+    if (line) return { line, section };
+  }
+  return undefined;
+}
+
+/** The turn's words for a summary line: the line as Ajour holds it, then the question. */
+function summaryLineMessage(
+  { line, section }: { line: DeckSummaryLine; section: string },
+  question: string | undefined,
+) {
+  return [
+    `The user reads this line of the summary, under "${section}": ${line.text}`,
+    `Its hunks: ${line.hunkIds.join(", ")}. Read them with read_hunks.`,
+    "",
+    `The question: ${question ?? DECK_SUMMARY_DEFAULT_QUESTION}`,
+  ].join("\n");
 }
 
 export function createDeckAsks(options: DeckAsksOptions) {
@@ -206,19 +241,33 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "not_open",
         });
       }
-      const concerns = held.guide?.concerns ?? [];
-      const concern = concerns.find(({ id }) => id === request.anchor.id);
-      if (!concern) {
-        throw new DeckAskRefused(404, {
-          error: "The guide has no such concern.",
-          reason: "unknown_anchor",
-        });
+      const { anchor } = request;
+      let message: string;
+      if (anchor.kind === "concern") {
+        const concerns = held.guide?.concerns ?? [];
+        const concern = concerns.find(({ id }) => id === anchor.id);
+        if (!concern) {
+          throw new DeckAskRefused(404, {
+            error: "The guide has no such concern.",
+            reason: "unknown_anchor",
+          });
+        }
+        message = concernMessage(concern, request.question);
+      } else {
+        const line = summaryLineOf(held.guide, anchor.id);
+        if (!line) {
+          throw new DeckAskRefused(404, {
+            error: "The summary has no such line.",
+            reason: "unknown_anchor",
+          });
+        }
+        message = summaryLineMessage(line, request.question);
       }
       const turn = await options.startTurn({
         task: "deck.ask",
         pullRequest,
         head: request.head,
-        message: concernMessage(concern, request.question),
+        message,
       });
       streaming.set(turn.id, { key, pieces: [] });
       return { kind: "turn", turn };
