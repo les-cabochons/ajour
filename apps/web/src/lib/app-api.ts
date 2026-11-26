@@ -1224,6 +1224,16 @@ function startClientUnit<Client extends AppApiClientFunction>(
  * makes it. The active unit is the one on top of the scope when the call
  * starts: a job runs its calls inside its own `enter`.
  */
+/**
+ * Calls the local API sends once, with no retry: a lost answer must reach
+ * the caller as a failure. A bridge claim the API granted and then retried
+ * would come back refused as already claimed, and the window would drop a
+ * call the API waits on (#796).
+ */
+const SENT_ONCE: ReadonlySet<AppApiClientFunction> = new Set([
+  "claimMcpBridgeCall",
+]);
+
 async function appApiRequest<Client extends AppApiClientFunction, T>(
   client: Client,
   path: string,
@@ -1258,6 +1268,7 @@ async function appApiRequest<Client extends AppApiClientFunction, T>(
       },
       schema,
       {
+        retry: !SENT_ONCE.has(client),
         attempted: () => {
           attempts += 1;
         },
@@ -1288,7 +1299,12 @@ async function requestAppApi<T>(
   path: string,
   init: RequestInit,
   schema: { parse: (value: unknown) => T },
-  observe: { attempted(): void; answered(status: number): void },
+  observe: {
+    /** False for a call sent once: its first network failure throws. */
+    retry: boolean;
+    attempted(): void;
+    answered(status: number): void;
+  },
 ): Promise<T> {
   let response: Response | null = null;
   let lastNetworkError: unknown;
@@ -1312,6 +1328,7 @@ async function requestAppApi<T>(
     } catch (error) {
       lastNetworkError = error;
       if (
+        !observe.retry ||
         !isDefaultInternalAppApi() ||
         attempt === APP_API_RETRY_DELAYS_MS.length
       ) {
